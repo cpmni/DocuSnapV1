@@ -14,13 +14,15 @@ Usage:
   result = engine.extract(...)
 """
 
+import math
 import os
+import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker, value_quality, wordness
+from extraction import keyword, anchor, validator, ocr_corrector, template_matcher, template_mapper, format_anomaly_checker, value_quality, wordness, registration
 
 # Identity-fusion (text-led SUPPLIER identity) is optional — it needs rapidfuzz, which is
 # not yet in the bundled runtime. Used ONLY by the shadow measurement (extract(identity_
@@ -57,10 +59,421 @@ _TIER_A_OCR_MIN = 70
 # reads ~88-93). See _reconciliation_pick_total.
 _RECON_PICK_MIN_CONF = 70
 
+# The reconciliation pick's review note — SINGLE SOURCE (note-demote slice 2, Oracle W/COND
+# 2026-08-13). Both TOTAL write sites in _reconciliation_pick_total reference this constant, and
+# _demote_recon_total_corroborated_note's eligibility is EXACT equality with it (the C3 posture:
+# a write site opts IN by using the constant; composed/other notes are structurally ineligible).
+# The PASS-2 SUBTOTAL note deliberately stays a literal — in PASS 2 the pair elected each other,
+# so no per-field independent witness exists for the subtotal (never unify it into this).
+RECON_TOTAL_ADJUSTED_NOTE = ('adjusted to the total that balances against the line amounts '
+                             '— please verify')
+
 # The supplier IDENTITY fields — their VALUE is the learning scope key, so a GLOBAL ('' supplier)
 # format aggregates DIFFERENT suppliers and must never constrain them (see the fmt_entry fallback
 # in the Stage 4.5 loop). Mirrors COMPANY_KEYS in database/modules/document_types.js.
 _IDENTITY_FIELD_KEYS = frozenset({"supplier_name", "customer_name"})
+_NAME_SNAP_MIN_CONFIRMS = 5   # name suffix-snap: the scope's single dominant value needs >= this many
+                              # confirms to be "solid" (Oracle 2026-08-24; DARK NAME_DOMINANT_SNAP)
+
+# ── TEMPLATE_FIXED SEED vs a MISREAD MAPPING (2026-08-06; gary -> Oracle SIGN-OFF-W/COND C1..C7) ──
+# Stage 0 seeds a template's curated `fixed_value` for supplier_name at conf 95, method
+# `template_fixed` (template_matcher.py:819-824). The Stage-0.5 merge below then lets a mapping READ
+# displace that seed on AUTHORITY (`is_curated_refinement`), guarded only by `_ft_mapping_weak`
+# (free-text reads under conf 75). Edge-glyph misreads of the letterhead arrive ABOVE 75 and win, so
+# a wrong supplier is committed — a wrong OUTPUT FOLDER and a wrong LEARNING SCOPE (anchors/hints/
+# logos/template identity all key off supplier_name). Measured on the Castellan credit notes:
+#   'Castellan Security System:' @78 · 'Cas tellan Security System:' @78 · 'tastellan Security
+#   Systems' @95 (SILENT) · 'ba)' @78.
+# WHY THE WORST ONE WAS SILENT (the Oracle's seam): the more corrupted the string, the more
+# completely it EVADES the branding cross-check — `_branding_own_ratio` finds no bank for
+# 'tastellan Security Systems', returns None = "unjudgeable", and `_flag_branding_conflict`
+# fail-safes without flagging. So corruption buys immunity from the one guard meant to catch it.
+# THE FIX IS TO KEEP THE SEED, NOT TO SNAP THE READ. Both yield the same string, but keeping the
+# seed leaves `method == 'template_fixed'`, which is what BRANDING_NAMED_BLANK (:2983) and
+# TEMPLATE_FIXED_NAME_PRESENCE_VETO (:3018) key on EXACTLY, and puts the value back inside the
+# branding guard's jurisdiction. Snapping would mint a veto-exempt `template_mapping+snapped`.
+# SCOPED TO supplier_name ONLY — deliberately NOT _IDENTITY_FIELD_KEYS: `customer_name` is
+# legitimately VARIABLE per document (post-mig-44 COMPANY_KEYS is supplier_name only), so a
+# fixed-value near-match must never govern it.
+# Both default OFF; OFF is byte-identical. Pins: tests/test_template_fixed_near_match.py.
+_FIXED_SEED_KEYS = frozenset({"supplier_name"})
+_FIXED_SEED_METHODS = ("template_fixed", "template_fixed_locked")
+_FIXED_NEAR_MATCH_ON = os.environ.get('TEMPLATE_FIXED_NEAR_MATCH_RECONCILE', '0') != '0'
+_FIXED_FRAGMENT_DECLINE_ON = os.environ.get('TEMPLATE_FIXED_FRAGMENT_DECLINE', '0') != '0'
+# Chris round 17 card 2(a) (2026-08-23): the WIDE debris leg — a <=4-char read ('Gay') or a single short
+# piece of the curated name ('MENT') never displaces a curated seed, under TEMPLATE_IDENTITY_ON_PAGE only.
+_FIXED_DEBRIS_WIDE_ON = os.environ.get('TEMPLATE_FIXED_DEBRIS_WIDE', '0') != '0'
+# ISSUER REPAIR (2026-08-09, owner-reported and measured). The two guards above are calibrated for a
+# gentler failure than reality produces: near-match tolerates ONE edit, the fragment rule only debris
+# under 3 characters. Measured on 135 template-matched documents, 42 read something other than the
+# curated name — 15 an OCR garble of it (2-5 edits), 27 not a company name at all (a date line, a
+# registration code, a page heading). The app already knows: it prints "Letterhead may read
+# 'Castellan Security Systems' — detected 'DATE 14-03-2026 Job Ref JB-8887'" and then asks the
+# operator to confirm what it has itself worked out. This lets it act on that.
+# STILL NOT AN AUTHORITY FLIP: both new branches only DECLINE a read, keeping the curated seed and
+# its `template_fixed` method (which is what the branding and presence vetoes key on). A genuinely
+# different company is neither similar enough nor metadata-shaped, so it still displaces the seed
+# and a stale fixed_value can always be corrected by re-teaching — the invariant this must not break.
+# Default OFF; OFF is byte-identical. Pins: tests/test_issuer_repair.py.
+_FIXED_ISSUER_REPAIR_ON = os.environ.get('TEMPLATE_FIXED_ISSUER_REPAIR', '0') != '0'
+# REGION-SCOPED PRESENCE CONFIRM (2026-08-09 NIGHT; the owner's design, Oracle's Fix 2 — the
+# STANDING GUARD that sits behind the arbiter cure, TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE).
+# NOT redundant with the arbiter fix, and the distinction is the whole point: with the arbiter
+# silenced, an ANCHOR-LESS letterhead box on a genuinely drifted page has NO drift compensation
+# left at all, and whatever garble it reads still displaces the curated seed here via
+# `is_curated_refinement`. This fills that hole from the opposite direction — it asks a question
+# about THIS DOCUMENT ("is the curated name actually printed where the operator taught it?")
+# instead of about the layout.
+# THE ASYMMETRY IS DELIBERATE. It can only ever KEEP the seed, and only on POSITIVE evidence:
+#   * name found in the padded taught region -> keep the seed (its value, its 95, its
+#     `template_fixed` method — which is what BRANDING_NAMED_BLANK and
+#     TEMPLATE_FIXED_NAME_PRESENCE_VETO key on, so keeping it RE-ARMS those guards rather than
+#     disarming them; today, with a mapping/registration read winning, all of them are inert);
+#   * name NOT found -> fall through, today's behaviour verbatim;
+#   * region unreadable or empty -> ALSO fall through (Oracle C2': *not found* and *could not
+#     read* are different facts and neither is confirmation — fail-closed on the CONFIRM
+#     direction only).
+# SHARES THE PRIMITIVE WITH TEMPLATE_FIXED_NAME_PRESENCE_VETO, NEVER ITS DECISION: the fuzzy
+# distinctive-token test `_template_identity_corroborated` is reused, but NOT that veto's
+# >=3-sample/>=0.80 `supplier_prints_name` gate. That gate exists to protect a DESTRUCTIVE action
+# (blanking a stamped supplier) and would silently disarm a CONFIRMING one for exactly the new
+# suppliers this helps.
+# CONFIRMATION GRANTS NO NEW AUTHORITY: this branch never raises a confidence and never mints a
+# method. It licenses keeping what Stage 0 already seeded, nothing more.
+# NAMED FALSE POSITIVE (pinned, not hand-waved): a 150% pad can reach the recipient block on a
+# compact layout. Harmless when testing one known string — UNLESS the template was mis-taught and
+# its `fixed_value` IS the recipient, in which case this confirms the mis-teach. Re-teaching
+# remains the cure, exactly as for the other seed branches.
+# Default OFF; OFF is byte-identical. Pins: tests/test_issuer_region_presence.py.
+_ISSUER_REGION_PRESENCE_ON = os.environ.get('TEMPLATE_ISSUER_REGION_PRESENCE', '0') != '0'
+# AGREEMENT KEEPS THE SEED (2026-08-09 NIGHT, the first residual the issuer gate surfaced).
+# When the Stage-0.5 mapping read is EXACTLY the curated `fixed_value`, today's merge still lets the
+# read displace the seed — same string, lower confidence, different method. Measured on the issuer
+# arm: four documents keep a CORRECT company name but move `template_fixed`@95 ->
+# `template_mapping`@78, and all four fall out of the >=88 band as a result. Reading the same name a
+# second time is CORROBORATION; treating it as a refinement is what costs the confidence.
+# Oracle's rule for the region-presence guard says the same thing from the other side —
+# *confirmation grants no new authority* — so agreement should license KEEPING what is already
+# there, never demoting it.
+# NAME THE SEAM — this is the whole risk, and it is why this is its own switch rather than part of
+# either issuer fix. Keeping the seed keeps `method == 'template_fixed'`, and three guards key on
+# that string EXACTLY: TEMPLATE_FIXED_NAME_PRESENCE_VETO (which can BLANK the supplier),
+# BRANDING_NAMED_BLANK, and the branding note/cap. So this ARMS a destructive guard on every taught
+# document whose issuer reads correctly — the exact blast radius the raw-equality short-circuit was
+# written to avoid. The argument that it is safe: agreement means the name was READ off this page,
+# so the veto's absence test should pass by construction. That argument is not proof (a crop read
+# and the full-page PSM-3 text can disagree), which is why the gate below counts BLANKED suppliers
+# explicitly rather than only scoring the lane.
+# Default OFF; OFF is byte-identical (the agreement branch returns None and the read is applied
+# exactly as today). Pins: tests/test_fixed_seed_agreement.py.
+_FIXED_SEED_AGREEMENT_KEEP_ON = os.environ.get('TEMPLATE_FIXED_SEED_AGREEMENT_KEEP', '0') != '0'
+# FRAGMENT AGREEMENT KEEPS THE SEED (P4 of the two-line wordmark slice, 2026-08-22; gary → Oracle
+# SIGN-OFF-W/COND C4.1–C4.4). The owner's real scans: a STACKED wordmark ("DOCUMENT" over
+# "SOLUTIONS"); the taught issuer box reads ONE line ("DOCUMENT"); that Stage-0.5 read DISPLACED
+# the curated `template_fixed` seed ("supplier identity changed during extraction … using field
+# value"), and identity_fusion's variant-adopt then repaired it to the gazetteer canonical at ≤70
+# with a "please confirm" note that no later confirm or re-read could shed (it is regenerated from
+# the pixels). Neither existing keep fires: agreement-keep needs EXACT equality; region-presence
+# pads a one-line box that does not reach the second line. This branch keeps the seed when the
+# read is a WHOLE-TOKEN contiguous sub-run of the fixed value AND the page's issuer BAND prints
+# the fixed value as a contiguous run of lines (each line's issuer column — its first segment
+# before a column break — so 'SOLUTIONS    TS) iL' still reads as SOLUTIONS). Structural, never
+# bag-of-words (Oracle C4.2: 'Ticket' elsewhere in the band must not license "DOCUMENT SOLUTIONS
+# Ticket"). Same seam as the agreement keep: keeping `template_fixed` keeps the name-presence /
+# branding guards armed — here the band names the full company by construction of the leg. No
+# new authority: same method, same confidence, no note. Default OFF; OFF is byte-identical.
+# Pins: tests/test_fixed_seed_fragment_keep.py.
+_FIXED_SEED_FRAGMENT_KEEP_ON = os.environ.get('TEMPLATE_FIXED_SEED_FRAGMENT_KEEP', '0') != '0'
+
+# GARBLE-TOLERANT FRAGMENT AGREEMENT (slice 1 of the garbled-issuer arc, 2026-08-22 evening; gary →
+# Oracle SIGN-OFF-W/COND C1.1–C1.5). The owner's live run: the one-line issuer box over the stacked
+# "DOCUMENT" / "SOLUTIONS" wordmark read `NOCUMENT` @78 on two scans — one glyph wrong in ONE token.
+# P4 above needs EXACT token equality, the near-match / garble rules compare the WHOLE string
+# ('nocument' vs 'documentsolutions' = far), region-presence cannot see line 2 — so the garble won on
+# authority and minted a "NOCUMENT" sender; the identical read @73 lost only via the <75 weak rule.
+# This arm lets each READ token be a ≤1-edit variant of the corresponding fixed-value token — the
+# Oracle C2 per-token rule already in `_identity_geom_fuzzy_match` (tokens <6 chars stay EXACT, ≥6
+# chars budget 1; 'Ace'→'Ale' collides, 'document'→'nocument' does not) — while the contiguous
+# PROPER sub-run leg, the structural band leg (the page must print the FULL fixed value as a stack)
+# and `_name_tokens` stay byte-identical. Fuzz is READ-side only: the band leg is what proves the
+# company is on THIS page, and a fuzzy band would license a sister company ("DOCUMENT SOLUTION")
+# — Oracle refused 1b. C1.2 SISTER EXCLUSION: a fuzzed token must not EXACTLY equal a token of any
+# OTHER template's identity (a read that spells a known neighbour is not a garble of this seed).
+# `MENT` / `TIONS` stay out (length delta > budget). Keeping the seed keeps `template_fixed`, so the
+# name-presence / branding guards stay armed. Named trade-off (pinned): a one-token read one edit
+# from a ≥6-char seed token on a page that prints the full seed stacked keeps the seed @95.
+# Default OFF; OFF is byte-identical. Pins: tests/test_fixed_seed_fragment_keep.py (garble arm).
+_FIXED_SEED_FRAGMENT_GARBLE_ON = os.environ.get('TEMPLATE_FIXED_SEED_FRAGMENT_GARBLE', '0') != '0'
+
+
+# SUGGESTION = CANONICAL (slice 2, see the identity-conflict block in extract()). Garble-kind test
+# = `_identity_geom_fuzzy_match(resolved, canonical)`: every distinctive token of the RESOLVED read
+# must sit within the Oracle C2 edit budget of a canonical token (<6 chars exact, ≥6 chars one edit;
+# one ≥6-char token or two tokens required). 'NOCUMENT' → True; 'MENT' (4 chars) → False;
+# 'Quillstone Print & Packaging' vs 'Bramblewood Joinery Ltd' → False (whole-token disagreement).
+_IDENTITY_SUGGEST_CANONICAL_ON = os.environ.get('IDENTITY_SUGGEST_CANONICAL', '0') != '0'
+
+
+# Chris round 17 card 2(b): a JUNK read ('Gay', a date line, a 3-char scrap) is neither a garble of the
+# canonical nor a different company — the letterhead name is still the right offer. Rides slice 2
+# (IDENTITY_SUGGEST_CANONICAL); IDENTITY_SUGGEST_CANONICAL_JUNK=0 kills just this kind.
+_IDENTITY_SUGGEST_JUNK_ON = os.environ.get('IDENTITY_SUGGEST_CANONICAL_JUNK', '1') != '0'
+
+
+def _identity_junk_read(resolved, canonical):
+    """True when `resolved` is JUNK against `canonical`: fold <= 4 alnum chars; or `is_not_an_issuer_read`
+    (a date line / a 4+ digit run); or no token with >= 3 alpha chars; or a SINGLE token that is a proper
+    substring of the canonical fold. A DIFFERENT COMPANY (a >= 6-char token, or >= 2 tokens, none near the
+    canonical) is NOT junk — the buyer-issued PO still gets no suggestion. Pure; fails toward False."""
+    try:
+        r = str(resolved or '').strip(); c = str(canonical or '').strip()
+        if not r or not c:
+            return False
+        from extraction.name_match import fold_identity, is_not_an_issuer_read
+        fr, fc = fold_identity(r), fold_identity(c)
+        if not fr or fr == fc:
+            return False
+        if len(fr) <= 4:
+            return True
+        if is_not_an_issuer_read(r, c):
+            return True
+        import re as _re
+        toks = [t for t in _re.findall(r"[A-Za-z0-9]+", r)]
+        alpha_toks = [t for t in toks if len(_re.sub(r"[^a-z]", "", t.lower())) >= 3]
+        if not alpha_toks:
+            return True
+        if len(toks) == 1 and toks[0].lower() in fc and toks[0].lower() != fc:
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def _identity_garble_of(resolved, canonical):
+    """True when `resolved` reads as a GARBLE of `canonical` (slice 2 garble-kind gate). Pure;
+    fails toward False on anything empty / equal / a whole-token disagreement."""
+    try:
+        r = str(resolved or '').strip(); c = str(canonical or '').strip()
+        if not r or not c:
+            return False
+        from extraction.name_match import fold_identity
+        if fold_identity(r) == fold_identity(c):
+            return False
+        return bool(_identity_geom_fuzzy_match(r, c))
+    except Exception:
+        return False
+
+
+def _fragment_tokens_agree(read_toks, fixed_toks, other_tokens=None):
+    """Per-token agreement for the garble arm (C1.1/C1.2). `read_toks` and `fixed_toks` are equal-
+    length `_name_tokens` runs. Exact equality always agrees. Armed, a read token may be within ONE
+    edit of a fixed token of ≥6 characters (Oracle C2 floor) — unless that read token exactly equals a
+    token of another template's identity (`other_tokens`), the sister case. Pure."""
+    for r, f in zip(read_toks, fixed_toks):
+        if r == f:
+            continue
+        if not _FIXED_SEED_FRAGMENT_GARBLE_ON:
+            return False
+        if len(f) < 6 or not _token_within(r, f, 1):
+            return False
+        if other_tokens and r in other_tokens:
+            return False
+    return True
+
+
+def _is_exact_token_subrun(read_val, fixed_val):
+    """True when the read's `_name_tokens` are an EXACT contiguous sub-run of the fixed value's —
+    P4's original leg; used only to label the decline branch (exact vs garble) in the log/trace."""
+    F, R = _name_tokens(fixed_val), _name_tokens(read_val)
+    if not R or not F or len(R) > len(F):
+        return False
+    return any(F[i:i + len(R)] == R for i in range(0, len(F) - len(R) + 1))
+
+
+def _other_identity_tokens(templates, matched_tmpl):
+    """C1.2: the `_name_tokens` of every OTHER template's asserted identity (dominant supplier /
+    frozen supplier_name fixed value / name). Pure; empty when nothing else is known."""
+    out = set()
+    mid = (matched_tmpl or {}).get('id') if isinstance(matched_tmpl, dict) else None
+    for t in (templates or []):
+        if not isinstance(t, dict) or (mid is not None and t.get('id') == mid):
+            continue
+        names = [t.get('dominant_supplier'), t.get('name')]
+        for f in (t.get('fields') or []):
+            if (f or {}).get('field_key') == 'supplier_name' and not (f or {}).get('is_variable'):
+                names.append((f or {}).get('fixed_value'))
+        for nm in names:
+            if nm:
+                out.update(_name_tokens(nm))
+    return out
+try:
+    _ISSUER_REGION_PAD = float(os.environ.get('TEMPLATE_ISSUER_REGION_PAD', '1.5'))
+except ValueError:
+    _ISSUER_REGION_PAD = 1.5
+
+
+def _region_confirms_curated_seed(key, existing, data, tmpl_mappings, page_images):
+    """Is the curated `fixed_value` PRINTED in the taught issuer region on THIS page?
+
+    Returns True (confirmed — keep the seed), False (read the region, the name is not there) or
+    None (UNJUDGEABLE: not our field, nothing to compare, no taught box, no page, or the region
+    could not be read). Only True is actionable; the caller treats False and None identically
+    today, and they are kept distinct so a census can tell "absent" from "unreadable".
+
+    Preconditions mirror `_fixed_seed_declines_mapping` exactly — same key set, same seed methods,
+    same raw-equality short-circuit — so the two can never disagree about WHEN a curated seed is
+    under threat, only about WHY it should be kept."""
+    if key not in _FIXED_SEED_KEYS or not isinstance(existing, dict):
+        return None
+    if (existing.get("method") or "") not in _FIXED_SEED_METHODS:
+        return None
+    read_val = str((data or {}).get("value") or "")
+    fixed_val = str(existing.get("value") or "")
+    if not read_val or not fixed_val or read_val == fixed_val:
+        return None                       # agreement (or nothing to compare) -> inert
+    box = None
+    page_idx = 0
+    for m in (tmpl_mappings or []):
+        if (m or {}).get("field_key") != key:
+            continue
+        box = template_mapper._norm_box(m, "target")
+        try:
+            page_idx = int(m.get("page_number") or 0)
+        except (TypeError, ValueError):
+            page_idx = 0
+        break
+    if not box or not page_images or not (0 <= page_idx < len(page_images)):
+        return None                       # no taught geometry / no page -> unjudgeable
+    page = page_images[page_idx]
+    if page is None:
+        return None
+    text = template_mapper.region_text(page, box, _ISSUER_REGION_PAD)
+    # C2': unread (None) or blank region is NOT absence. `.strip()` matters — a whitespace-only
+    # read is truthy, and treating it as "the region says this name is not here" would turn a
+    # failed crop into evidence.
+    if not (text or '').strip():
+        return None
+    return bool(_template_identity_corroborated(fixed_val, text))
+
+
+def _name_tokens(text):
+    """Fold for the fragment-agreement leg: lower-case alphanumeric tokens, ≥3 ALPHA characters
+    (Oracle C4.3 — NO generic-word filter: "DOCUMENT" must pass; a 'Ltd' read against 'ACME / Ltd'
+    is a correct keep; the run-equality leg is the discriminator)."""
+    import re as _re
+    out = []
+    for tok in _re.findall(r"[A-Za-z0-9&'’.\-]+", str(text or "")):
+        t = _re.sub(r"[^a-z0-9]", "", tok.lower())
+        if len(_re.sub(r"[^a-z]", "", t)) >= 3:
+            out.append(t)
+    return out
+
+
+def _fragment_agreement_keeps_seed(key, existing, data, ocr_text, other_tokens=None):
+    """P4: does the Stage-0.5 read agree with the curated seed as a PARTIAL read of the same name?
+
+    True iff (same preconditions as `_region_confirms_curated_seed`) the read's tokens are a
+    contiguous PROPER sub-run of the fixed value's tokens AND the issuer band
+    (chrome_band.issuer_chrome_lines) contains a contiguous run of lines whose issuer-column
+    tokens join to EXACTLY the fixed value's tokens. Pure; the caller logs and keeps.
+    Garble arm (TEMPLATE_FIXED_SEED_FRAGMENT_GARBLE, see `_fragment_tokens_agree`): the sub-run
+    test tolerates one edit per ≥6-char READ token; `other_tokens` = the other templates' identity
+    tokens (C1.2 sister exclusion). The band leg is never fuzzed."""
+    if key not in _FIXED_SEED_KEYS or not isinstance(existing, dict):
+        return False
+    if (existing.get("method") or "") not in _FIXED_SEED_METHODS:
+        return False
+    read_val = str((data or {}).get("value") or "")
+    fixed_val = str(existing.get("value") or "")
+    if not read_val or not fixed_val or read_val == fixed_val:
+        return False
+    F = _name_tokens(fixed_val)
+    R = _name_tokens(read_val)
+    if len(F) < 2 or not R or len(R) >= len(F):
+        return False
+    # the read is a contiguous proper sub-run of the fixed value (per-token; exact unless the
+    # garble arm is armed — `_fragment_tokens_agree` is `==` when it is off)
+    sub = any(_fragment_tokens_agree(R, F[i:i + len(R)], other_tokens)
+              for i in range(0, len(F) - len(R) + 1))
+    if not sub:
+        return False
+    from extraction import chrome_band
+    import re as _re
+    lines = chrome_band.issuer_chrome_lines(ocr_text)
+    cols = []
+    for ln in lines:
+        first = _re.split(r" {4,}", ln.strip())[0] if ln.strip() else ""
+        cols.append(_name_tokens(first))
+    # a contiguous run of band lines whose issuer-column tokens join to exactly F
+    n = len(cols)
+    for i in range(n):
+        acc = []
+        for j in range(i, n):
+            if not cols[j]:
+                break                     # an empty issuer column breaks the run
+            acc = acc + cols[j]
+            if acc == F:
+                return True
+            if len(acc) >= len(F) or acc != F[:len(acc)]:
+                break
+    return False
+
+
+def _fixed_seed_declines_mapping(key, existing, data):
+    """Should the Stage-0.5 mapping read be DECLINED in favour of the curated template_fixed seed?
+
+    Returns 'near_match' | 'fragment' | 'garbled' | 'not_issuer' | 'agreement' | None. Pure — the
+    caller does the logging and the `continue`.
+
+    Every branch but 'agreement' fires on a genuine DISAGREEMENT with a curated seed. The
+    raw-equality short-circuit was written as load-bearing for blast radius — on the common case
+    (the mapping reads the name correctly) declining would flip method to `template_fixed`
+    corpus-wide and arm the presence veto on thousands of documents. TEMPLATE_FIXED_SEED_AGREEMENT_KEEP
+    (see its flag block) revisits exactly that trade, because "for zero benefit" turned out to be
+    wrong: letting the agreeing read through costs the field 95 -> 78.
+
+    NOT an authority flip: a genuinely DIFFERENT company (~20 edits — e.g. the recipient block
+    'Bramblewood Joinery Ltd') still displaces the seed exactly as today. Making `fixed_value`
+    authoritative would reinstate the frozen-stamp class TEMPLATE_FIXED_NAME_PRESENCE_VETO exists
+    for, and that veto needs >=3 confirms, so it is inert for precisely the new suppliers this helps."""
+    if key not in _FIXED_SEED_KEYS or not isinstance(existing, dict):
+        return None
+    if (existing.get("method") or "") not in _FIXED_SEED_METHODS:
+        return None
+    read_val = str((data or {}).get("value") or "")
+    fixed_val = str(existing.get("value") or "")
+    if not read_val or not fixed_val:
+        return None                       # nothing to compare -> byte-identical
+    if read_val == fixed_val:
+        # AGREEMENT. The taught box read the SAME string the operator confirmed. Armed, the seed is
+        # kept (95, `template_fixed`); unarmed, the read is let through exactly as before and the
+        # field lands at the mapping tier's confidence instead. EXACT equality only — a near-match
+        # belongs to the branches below, which exist precisely to judge inexact agreement.
+        return 'agreement' if _FIXED_SEED_AGREEMENT_KEEP_ON else None
+    # Per-FUNCTION import, matching this module's existing name_match usage (:1535/:1577/:1737).
+    # A module-level import here would be the odd one out; a bare module reference would be a
+    # call-time NameError that no module-load smoke can catch (the 2026-08-06 registration lesson).
+    from extraction import name_match as _nm
+    if _FIXED_NEAR_MATCH_ON and _nm.near_match_identity(read_val, fixed_val):
+        return 'near_match'
+    if _FIXED_FRAGMENT_DECLINE_ON and _nm.is_fragment_read(read_val, fixed_val):
+        return 'fragment'
+    # Chris round 17 card 2(a): the WIDE debris leg — only under TEMPLATE_IDENTITY_ON_PAGE (the doc carries
+    # this seed only because the page names the company; see is_debris_read). Own switch, default OFF.
+    if (_FIXED_DEBRIS_WIDE_ON and os.environ.get('TEMPLATE_IDENTITY_ON_PAGE', '0') != '0'
+            and _nm.is_debris_read(read_val, fixed_val)):
+        return 'debris'
+    if _FIXED_ISSUER_REPAIR_ON:
+        # Same name, misread past the one-edit budget ('lronciad Tool Hire' -> 'Ironclad Tool Hire',
+        # 0.88 similar). Bounded by a similarity floor, so it can narrow a garble back to the
+        # curated literal but can never turn one company into another.
+        if _nm.garbled_identity(read_val, fixed_val):
+            return 'garbled'
+        # Not a company name at all — a date line, a registration/account code. Mechanical and
+        # lexicon-free: a company name carries no printed date and no 4+ digit run.
+        if _nm.is_not_an_issuer_read(read_val, fixed_val):
+            return 'not_issuer'
+    return None
 
 # IDENTITY RESCUE kill-switch (Oracle-signed slice 1, 2026-07-10; ocr_corrector's
 # SNAP_ALLOW_SUBSTITUTION precedent — a module constant, no settings plumbing: the
@@ -76,15 +489,59 @@ IDENTITY_RESCUE_ENABLED = True
 # critical-field auto-file floor. See the Stage 2.6 block in extract().
 LATE_ANCHOR_RESCUE_ENABLED = True
 _LATE_RESCUE_CAP = 85
+# LATE LOCATED CROP-CORROBORATION (2026-07-24, gary design + Oracle SIGN-OFF-WITH-CONDITIONS): the
+# A-over-B follow-up named in the Stage-2.6 seam. When the supplier resolved LATE, the owned
+# authoritative anchor never ran, so a keyword-filled critical ref/date is capped by the taught-
+# ownership guard with no located corroboration — even when the value is correct and at the taught
+# position. Stage 2.6b re-runs JUST those anchors and remembers a GENUINELY-LOCATED read (Oracle C1:
+# {anchor_inline, anchor_crop_relocated} whitelist + located=True; C2: near-taught value-box
+# proximity, fail-CLOSED; C3: date canonicalised to the committed DD-MM-YYYY) so the UNCHANGED
+# _anchor_corroborates vouches -> the guard does not cap. CORROBORATE-ONLY (no results write).
+# DEFAULT ON (Oracle SIGN-OFF-WITH-CONDITIONS; corpus silentAutoFile UNCHANGED at 9, M_type 1,
+# lift 4 caps 6->2; #473 po_date 69+note -> 98 clean); kill LATE_RESCUE_LOCATED_CORROB=0 (byte-
+# identical off). Guarded by test_late_located_corrob.py.
+LATE_RESCUE_LOCATED_CORROB = os.environ.get('LATE_RESCUE_LOCATED_CORROB', '1') != '0'
 
-# Stage-4.5 GATE-FAILURE RE-READ kill switch (2026-07-11, ships DARK — default OFF; slice 3
-# flips it after the corpus A/B). When a structured value is WITHHELD on format grounds
-# (value=None), take ONE bounded second look: locate the garble on the page, tight-crop re-read
-# via the crop ladder, and adopt ONLY a read that passes the exact gate the original failed
-# (ocr.targeted_reread.is_adoptable) — review-bound, never a silent value. See _maybe_gate_reread
+# Stage-4.5 GATE-FAILURE RE-READ kill switch (2026-07-11; DEFAULT ON — the old "ships DARK"
+# note was stale). When a structured value is WITHHELD on format grounds (value=None), take ONE
+# bounded second look: locate the garble on the page, tight-crop re-read via the crop ladder, and
+# adopt ONLY a read that passes the exact gate the original failed (ocr.targeted_reread.is_adoptable).
+# An adopted read is REVIEW-BOUND (cap 69 + note) — EXCEPT the NORMALISATION-ONLY case (Oracle-signed
+# 2026-07-23, GATE_REREAD_CLEAN_ACCEPT below): when the re-read agrees with the original on every
+# alphanumeric character (and, for dates, on the CALENDAR date), the "correction" is spacing/
+# separator/case only — two independent reads agreeing on the content — so it files clean, un-noted.
+# See _maybe_gate_reread + _reread_is_normalisation_only
 # + docs/designs/REREAD_ESCALATION_DESIGN_2026-07-11.md.
 GATE_REREAD_ENABLED = os.environ.get('GATE_REREAD', '1') != '0'   # default ON; GATE_REREAD=0 disables
 _REREAD_CAP = 69
+# =0: every adopted re-read is review-bound again (the pre-2026-07-23 posture) — byte-identical legacy.
+GATE_REREAD_CLEAN_ACCEPT = os.environ.get('GATE_REREAD_CLEAN_ACCEPT', '1') != '0'
+
+
+def _reread_is_normalisation_only(garble, adopted, val_type) -> bool:
+    """True when a gate-reread's adopted value differs from the original garble ONLY by
+    normalisation — spacing/separators/case — i.e. the two reads AGREE on every alphanumeric
+    character (the 0-edit subset of targeted_reread's kinship band). For DATE fields the core
+    match is NOT sufficient (separator POSITION is semantic: '1/12/2026' vs '11/2/2026' share
+    the core '1122026' but are different days — Oracle C1), so dates additionally require BOTH
+    sides to PARSE and be CALENDAR-EQUAL; an unparseable side ⇒ not clean. A non-date field
+    where both sides nevertheless parse as dates gets the same calendar bar. Any error ⇒ False
+    (fail toward the review-bound path). Pure — pinned by test_gate_reread_clean.py."""
+    try:
+        from ocr.targeted_reread import _alnum
+        g, a = str(garble or ''), str(adopted or '')
+        ga, aa = _alnum(g), _alnum(a)
+        if not ga or ga != aa:
+            return False
+        gp = validator.parse_date(g)
+        ap = validator.parse_date(a)
+        if val_type == 'date':
+            return gp is not None and ap is not None and gp.date() == ap.date()
+        if gp is not None and ap is not None:
+            return gp.date() == ap.date()   # date-shaped content on any field: same calendar bar
+        return True
+    except Exception:
+        return False
 
 # c2 TAUGHT-FIELD OWNERSHIP GUARD kill switch (2026-07-11, DIRECTION_SUPREMACY): a NON-identity
 # field whose FINAL read is a plain 'keyword' match, while the user AUTHORITATIVELY taught that
@@ -92,6 +549,330 @@ _REREAD_CAP = 69
 # keyword stand-in for a taught position that couldn't be confirmed on this page → cap to review
 # (69) + note. HOLD-ONLY (value never touched). See _flag_taught_field_ownership.
 TAUGHT_FIELD_OWNERSHIP_ENABLED = os.environ.get('TAUGHT_FIELD_OWNERSHIP', '1') != '0'
+# CORROBORATION EXEMPTION (2026-07-15, gary+Oracle SIGN-OFF-WITH-CONDITIONS): the ownership cap is
+# DECLINED when the taught position ITSELF corroborated the value — a same-field candidate that is
+# authoritative (the ⊕ teach) OR genuinely located OR a Stage-0.5 mapping read the EXACT SAME non-
+# caption value the keyword winner did (two independent sources agree → not a generic-caption stand-in).
+# Oracle C1: a BLIND non-authoritative anchor (passive/__global__/Stage-2.6 late-rescue) may NOT vouch.
+# Own sub-switch so it A/Bs and rolls back independently of the c2 guard.
+TAUGHT_OWNERSHIP_CORROBORATE = os.environ.get('TAUGHT_OWNERSHIP_CORROBORATE', '1') != '0'
+# OWN-LABEL EXEMPTION (2026-07-24, reggie design + Oracle SIGN-OFF-WITH-CONDITIONS C1-C3): the
+# ownership cap is ALSO declined when the keyword read matched a caption UNIQUE TO THIS FIELD that
+# carries a field-identifying token ("Invoice No", "PO Date") — a precise labelled read, not a
+# generic-caption stand-in. A SHARED caption ("Date", "Issue Date", "Order No", "PO Number", "Order
+# Number" — carried by >=2 roles) or a purely-generic one ("#") stays HELD. keyword.
+# label_is_own_discriminating is the sole new gate; every other read stays capped as now.
+# Corpus (realdoc_regression, 449): +21 auto-files (311->332), M and M_type UNCHANGED (9/1), 45->6
+# over-flags removed, 0 accuracy drift. DEFAULT ON (Oracle's call — the residuals were closed at the
+# CONFIG layer per C2: "Printed On" removed from po_date labels, "Order Number" added to
+# purchase_order_number so it is SHARED->held; do NOT add a role-token rule, it would break legit
+# synonyms "Bill No"/"Order Ref" — pinned in test_taught_ownership_own_label.py). Kill: =0 (byte-
+# identical off). C3 owner live-check outstanding: the Thornbury invoice files clean, no 69 cap.
+TAUGHT_OWNERSHIP_OWN_LABEL = os.environ.get('TAUGHT_OWNERSHIP_OWN_LABEL', '1') != '0'
+# TYPE-SCOPED OWN-LABEL EXEMPTION — B' (2026-07-26, gary design + Oracle SIGN-OFF-WITH-CONDITIONS).
+# Extends the own-label exemption to a caption that is shared GLOBALLY but UNIQUE within the RESOLVED
+# doc type ("Order Date" is on po_date AND sales_order.order_date, but only po_date exists on a
+# purchase_order, so within that type it is discriminating). Fires ONLY on an AUTHORITATIVE type
+# (self._type_authoritative — a trusted standalone heading named it, and Stage 0 did not flag the type
+# ambiguous/refused): a type-scoped-unique label is not self-identifying, so the exemption leans on the
+# type being right. ADDS exemptions only; OFF or non-authoritative => byte-identical (the existing global
+# branch is untouched). DEFAULT ON (owner flip 2026-07-26 after ALL Oracle conditions passed): C1
+# make-or-break live-fire on the 13 held Copperfield POs — every po_date lifted 69->98, note gone, VALUES
+# UNCHANGED (method-only) · C2 realdoc OFF-vs-ON — the WHOLE diff is one line (ownership caps 13->5); the
+# would-auto-file set (396), M (2, #183/#583), M_type (0) and accuracy are byte-identical, so the enumerated
+# auto-file delta is EMPTY (Oracle C2's real gate — M is invariant by construction here and proves nothing) ·
+# C3 crash-safe (title_trusted-only; the un-wired type_confirmed dropped) · C4 pins (incl. B2 non-authoritative
+# HOLD + B6 wrong-type residual). Kill: =0 (byte-identical off).
+TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL = os.environ.get('TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL', '1') != '0'
+# INLINE-HARVEST ABSENCE HOLD — Fix A for #183 (gary design + Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-26).
+# A CRITICAL ref/date committed by the Stage-2 word-geometry inline harvest (method 'anchor_inline') that
+# NO independent source corroborates — no different-method-family rail agrees AND its alnum core is absent
+# from the full-page ocr_text — is a value assembled from scattered word boxes that appears NOWHERE on the
+# page (#183: harvested 'PO-20008' while the page prints 'PO-60906'; skew broke Tesseract row-grouping so
+# ocr_text never carried the true line, and the conformance boost rode the synthesis to a silent auto-file
+# @98). HOLD it (validation_note -> trust.js flagged gate). The general-doc sibling of the G1 veto-
+# fallthrough guard, which fires ONLY on identity-veto fall-through docs (#183 resolves its supplier
+# normally so G1 never runs on it). Note-only: no value/method/confidence change -> per-field accuracy
+# byte-identical. Keyed on the CORROBORATION invariant, NOT a rigid-crop-rejection signal (Oracle C2 — a
+# rejection is unobservable in production: on_reject is trace-only, and the _xsup_absolute_ok skip + the
+# supersede-not-reject path both yield anchor_inline with no rejection; a crop-box requirement would also
+# EXEMPT the label-less positional-anchor synthesis hole). DEFAULT ON (owner flip 2026-07-26 after the
+# Oracle conditions passed): realdoc A/B OFF-vs-ON — silentAutoFile 2->1 (#183 'PO-20008' flips SILENT->
+# flagged; #583 the date-M UNCHANGED, Oracle C4 — it's page-present, a different class), M_type 0, per-field
+# accuracy BYTE-IDENTICAL (note-only), no doc newly enabled to file. would-auto-file 396->391: 5 held = #183
+# (the silent-wrong win) + 4 correct-per-GT reads on the same degraded-scan family (181/185/189 Larkspur,
+# 471 Thornbury) — the honest fail-toward-review cost, 0.6%, since a correct and a wrong page-absent inline
+# synthesis are indistinguishable at runtime.
+# FLIPPED BACK DARK 2026-07-26 (owner live-test): on a SYSTEMATICALLY-skewed supplier (Northgate Textiles)
+# the false-positive rate is far worse than the corpus 0.6% — the whole PO batch over-flags a CORRECT,
+# VISIBLE ref (e.g. 'PO-60892', printed "Order No. PO-60892") because the skew keeps it out of the flat
+# ocr_text while the rigid crop ALSO read it (rejected only on the caption prefix, so that agreement is
+# invisible to the corroboration ledger). REFINE before any re-flip: let the rigid crop's OWN (even
+# rejected) read corroborate the inline value — that keeps #183 held (its crop read GARBAGE, disagreed)
+# while clearing the agree-case. Force on with =1. Kill/default: =0 (byte-identical off).
+INLINE_HARVEST_ABSENCE_HOLD = os.environ.get('INLINE_HARVEST_ABSENCE_HOLD', '0') != '0'
+
+# Crosscheck-outlier reconcile (Slice-1 — gary design + Oracle SIGN-OFF-W/COND 2026-08-03). anchor.py's
+# authoritative-crop cross-check flips a crop-vs-fullpage DISAGREEMENT to a FRESH full-page locate-OCR
+# ('anchor_crop_crosscheck', capped 70 + "please verify") which then wins Tier-A over the clean keyword/
+# mapping incumbent. But that fresh locate can ITSELF garble a valid-shaped digit (doc-09: correct
+# crop+keyword+mapping 'PO-83150', lone fresh-locate flip 'PO-83160') — so on disagreement ALONE the flip
+# can be the OUTLIER and discard the corroborated truth. E2 (_crosscheck_keyword_corroborated) only owns
+# the OPPOSITE direction (keyword==flip, the City-Office crop-mangled class). This pass owns the flip-
+# REFUTED direction: restore a >=2-independent-family (>=1 crop-family) + page-present alternative over an
+# UNcorroborated flip, re-based to anchor_inline@90 with the flag dropped (mirrors E2). Kill
+# CROSSCHECK_OUTLIER_RECONCILE=0 (byte-identical off: anchor.py never stashes _crosscheck_original, this
+# pass never runs). Slice-1 scope = the current crosscheck fire-gate (_is_ref_like_key OR date =
+# *_number/*_no/*reference*/date, custom included); text/numeric are Slice-2 (universal post-merge verify).
+CROSSCHECK_OUTLIER_RECONCILE = os.environ.get('CROSSCHECK_OUTLIER_RECONCILE', '0') != '0'
+
+# Slice-2 UNIVERSAL post-merge verify (gary+reggie+007 → Oracle SIGN-OFF-W/COND 2026-08-03; see
+# docs/oracle_log.md). ONE reusable pass over every field's winner using the always-on candidate
+# ledger + raw ocr_text — the owner's "all types where possible" ask. Two independently-gated tiers:
+#   RESTORE (ref/code · date · whole-number numeric · percentage) — Slice-1's 4-condition gate
+#     skeleton with per-tier AGREE/PRESENT primitives; a restore is DEMOTED to a flag by the
+#     Oracle's S-2 checks (confusable digit-substitution, date-shaped ref, prefix/length outlier,
+#     decimal-tailed numeric, credibility) because the content-nature flag chain (D1 etc.) runs
+#     BEFORE this pass and cannot re-examine a restored value.
+#   FLAG (text/name minus supplier_name · email/website/postcode_uk/vat_gb/iban) — note-only,
+#     names the disagreeing value; never changes a value (007: text divergence is bimodal —
+#     structural-substring vs unbounded garble — no tolerance restores safely; repair is Stage 4.5's
+#     jurisdiction). EXCLUDED entirely: currency/amount (the totals-reconciliation pass + Stage-4
+#     maths own amounts; invoices REPEAT amounts so a wrong-but-corroborated alternative is the
+#     NORM) and supplier_name (identity lane). Lone absence NEVER acts — only a corroborated
+#     DISAGREEING alternative can. Both switches default OFF = byte-identical; CENSUS mode logs
+#     would-fire decisions without mutating (mutation is governed SOLELY by the R/F switches).
+UNIVERSAL_VERIFY_RESTORE = os.environ.get('UNIVERSAL_VERIFY_RESTORE', '0') != '0'
+UNIVERSAL_VERIFY_FLAG    = os.environ.get('UNIVERSAL_VERIFY_FLAG', '0') != '0'
+UNIVERSAL_VERIFY_CENSUS  = os.environ.get('UNIVERSAL_VERIFY_CENSUS', '0') != '0'
+# Stage 2b sub-switch (Oracle C6): the 522-doc realdoc GT covers ref/date ONLY — a numeric restore
+# cannot FAIL that gate, so numeric/percentage stay dark behind their own switch until the
+# numeric/text GT arm (Customer Doc Test corpus) exists. RESTORE alone arms ref+date (stage 2a).
+UNIVERSAL_VERIFY_NUMERIC = os.environ.get('UNIVERSAL_VERIFY_NUMERIC', '0') != '0'
+
+# NAME-UNCLIP reconcile (reggie design → Oracle SIGN-OFF-W/COND 2026-08-04 — docs/oracle_log.md).
+# The free-text complement of _reconcile_clipped_suffix (which SKIPS name-like fields): a Stage-0.5
+# mapping whose drawn box CUTS a name mid-token ('Kingfisher Print Stuc' — the sliced 'd' misreads
+# as 'c') commits @90 and silently beats two agreeing independent fuller reads. Heal post-merge from
+# the ledger under FIVE conditions (C0 scope · C1 keyword+crop token-IDENTICAL witnesses · C2 cut
+# fingerprint incl. Oracle's ONE edge-glyph substitution at the cut · C3 winner remnant page-ABSENT —
+# the load-bearing genuine-shorter-name guard · C4 adopt page-present · C5 name-quality no worse).
+# First sanctioned post-merge value-rewrite of a Stage-0.5 winner — justified SOLELY by C3
+# page-absence ("the teach fixed the position, not the value"). On lexicon-rich scopes Stage 4.5's
+# wordness note fires FIRST and this pass correctly STARVES to that flag (pinned — do not reorder).
+# Default OFF = byte-identical.
+NAME_UNCLIP_RECONCILE = os.environ.get('NAME_UNCLIP_RECONCILE', '0') != '0'
+
+# TEMPLATE_DATE_INVALID_YIELD (Oracle SIGN-OFF-W/COND 2026-08-06). A Stage-0.5-located taught DATE
+# that OCR-misread into an IMPOSSIBLE calendar value ('33/04/2026' — a tilt glyph-misread of
+# '03/04/2026') used to WIN the kw-merge on AUTHORITY over a valid, confident keyword date. The teach
+# fixed the POSITION, not the value; an impossible date is a deterministic CONTENT flaw (same family as
+# the shipped date-in-ref / ref-length flags that already apply to taught reads). When the taught date
+# is unparseable AND unsalvageable and a >=90-conf rx-validated keyword read IS a valid date, yield to
+# it — but ALWAYS flagged to Review (the keyword is a valid date, not a verified-correct one; the NOTE
+# is the sole safety: Stage 4 floors a clean date's confidence to _CLEAN_DATE_CONF=94, so the cap is
+# cosmetic, but a non-empty validation_note blocks auto-file at any confidence). Heals ONLY the
+# impossible-date subset of the tilt-misread class (a misread landing on a DIFFERENT valid date parses
+# and is out of scope — see pendingfeatures). Default OFF (=1 arms); OFF = byte-identical. Pins:
+# tests/test_taught_date_invalid_yield.py.
+TEMPLATE_DATE_INVALID_YIELD = os.environ.get('TEMPLATE_DATE_INVALID_YIELD', '0') != '0'
+
+# TEMPLATE_DATE_FUTURE_YIELD (Oracle SIGN-OFF-W/COND 2026-08-06) — the sibling of the impossible-date
+# yield for the deterministically-FUTURE slice of the "misread → a different VALID date" residual. A
+# taught date box that OCR-misread the YEAR ('2026'->'2096') reads a VALID calendar date that is
+# absurdly far future and wins the merge over the correct keyword date. Stage 4 already FLAGS such a
+# date @40 ("date is in the future") — so the doc was never auto-filing — but the WRONG value shows.
+# Yield to the valid keyword date, FLAGGED. Its OWN switch (default OFF) because — unlike the
+# impossible arm, which drops garbage — this drops a VALID taught value (larger blast radius: a
+# genuinely >3y-future taught due/warranty date could be dropped; bounded to Review, M cannot rise
+# since the doc was already flagged). OFF = byte-identical; INVALID-on / FUTURE-off = the shipped
+# impossible-only behaviour. Pins: tests/test_taught_date_invalid_yield.py.
+TEMPLATE_DATE_FUTURE_YIELD = os.environ.get('TEMPLATE_DATE_FUTURE_YIELD', '0') != '0'
+# Fix #2 (Oracle 2026-08-28 SIGN-OFF-W/COND): the AUTHORITATIVE-side sibling of Lever Z (which
+# excludes authoritative reads). An authoritative date anchor OCR-misread into an implausible
+# value (a date-shaped confusable reference, e.g. "PI/26/2361"->"1/26/2361"->year 2361) must not
+# win Tier-A OUTRIGHT over a valid located competitor. DARK, default OFF, byte-identical off.
+TIER_A_DATE_PLAUSIBILITY = os.environ.get('TIER_A_DATE_PLAUSIBILITY', '0') != '0'
+# The taught-side FUTURE-YIELD trigger. DELIBERATELY on its own constant, HIGHER than the Stage-4
+# future FLAG (validator._FUTURE_DATE_TOLERANCE_DAYS=366): a YIELD DROPS a valid taught value, so it
+# must clear the whole plausible post-dated-business range (annual pre-billing, warranty/contract end
+# ~1-2y). A glyph year-misread lands DECADES out (2->9 = +70y), so ~3y cleanly separates the misread
+# class from any legitimate post-date. Retuning this must NOT retune the Stage-4 flag (kept separate).
+_DATE_YIELD_FUTURE_DAYS = 1096   # ~3 years
+
+
+def _invalid_taught_date_yields(taught_value, kw_value, now=None) -> str:
+    """REASON code for the located date-merge yield ('' = keep the taught read's authority):
+      'impossible' — taught is NOT a real calendar date (parse None AND salvage None; a spaced/junk-
+                     suffixed VALID date is recovered by salvage and correctly does NOT yield);
+      'future'     — taught PARSES but sits absurdly far future (glyph year-misread,
+                     > _DATE_YIELD_FUTURE_DAYS) while the keyword is a valid date Stage 4 would NOT
+                     itself future-flag (<= validator._FUTURE_DATE_TOLERANCE_DAYS — an INTENTIONAL
+                     coupling: only yield to a keyword date that is not itself clearly-future).
+    The keyword must be a valid calendar date in both cases; the caller still requires a date-typed
+    key + _kw_ok (conf>=90) and flags the swap to Review. Reason keys the accurate review note.
+    `now` is injectable for date-stable tests (routed through validator.days_in_future, the single
+    clock/parse source)."""
+    if not taught_value:                                     # an EMPTY taught read is a non-read
+        return ''
+    if validator.parse_date(kw_value) is None:               # keyword must be a valid calendar date
+        return ''
+    if validator.parse_date(taught_value) is None:           # (a) IMPOSSIBLE taught date
+        return 'impossible' if validator.salvage_date(taught_value) is None else ''
+    t_days = validator.days_in_future(taught_value, now)     # (b) CLEARLY-FUTURE taught date, kw not
+    k_days = validator.days_in_future(kw_value, now)
+    if (t_days is not None and k_days is not None
+            and t_days > _DATE_YIELD_FUTURE_DAYS
+            and k_days <= validator._FUTURE_DATE_TOLERANCE_DAYS):
+        return 'future'
+    return ''
+
+# DESKEW_RAW_CROPS — the Straighten-arc frame election (gary+007 → Oracle SIGN-OFF-W/COND C1-C7,
+# 2026-08-05 evening, docs/oracle_log.md). Taught boxes are stored RAW-frame (all three teach
+# surfaces back-transform on save), but under Straighten the crop machinery read them against the
+# DESKEWED page untransformed (1-2 glyph misplacement at 1.9°) AND any rotation of a noisy scan
+# degrades small print (interpolation hypothesis refuted) — while the RAW tilted page reads
+# perfectly at <=~2° (Tesseract self-tolerates). ELECTION: when Straighten produced raw pages,
+# the crop-family machinery reads the RAW pages with the stored raw coords; the deskewed frame
+# keeps serving full-page text (keyword), type detection, letterhead geometry and display.
+# Per-page angle bound (C3): raw only when |angle| <= DESKEW_RAW_CROP_MAX_ANGLE (default 2.0 —
+# proven at 1.9°; 2.5 only after a cap-edge lane greens); above the cap the page keeps today's
+# deskewed behaviour AND the Stage-2.5 raw witness still guards it (C2 — the witness is NOT
+# vestigial; global disable forbidden). C1: the election is computed ONCE per doc and the SAME
+# list object feeds every crop site. Default OFF (=1 arms); OFF = byte-identical by object
+# identity (the elected list is page_images itself).
+DESKEW_RAW_CROPS = os.environ.get('DESKEW_RAW_CROPS', '0') != '0'
+try:
+    DESKEW_RAW_CROP_MAX_ANGLE = float(os.environ.get('DESKEW_RAW_CROP_MAX_ANGLE', '2.0') or 2.0)
+except (TypeError, ValueError):
+    DESKEW_RAW_CROP_MAX_ANGLE = 2.0
+
+
+# TEACH_ANGLE_COMPOSE — the CANONICAL LEVEL-FRAME pivot (Oracle SIGN-OFF-W/COND C1-C6,
+# 2026-08-05 late, docs/oracle_log.md). Stored teach coords (template mappings + landmarks)
+# live in the TEACH SAMPLE's raw frame with its tilt θ_t baked in (every teach surface
+# back-transforms display→raw on save via anchorLabel.deskewedNormToRaw: raw = C + R(+θ)·level,
+# sign empirically pinned). Under Straighten-ON processing the pages are deskewed to LEVEL, so
+# the coords are off by θ_t on every sibling — the caption-grab/cut-value class. COMPOSITION:
+# rotate COPIES of the source template's mapping/landmark boxes to the level frame by the exact
+# inverse, level = C + R(−θ_t)·(raw − C), in pixel space on the current page's W,H (expand=False
+# keeps dims identical across frames). Fires ONLY when: switch ON · the doc was DESKEWED
+# (raw_pages present — mode-level, NOT per-page: a below-floor/born-digital sibling is level and
+# still exposes the full θ_t error) · the SOURCE template (mapping_src — the borrowed sibling's,
+# never blindly the matched one; Oracle C2) carries a non-null angle ≥ the 0.2° floor · and
+# DESKEW_RAW_CROPS is OFF (C3 mutual exclusion — level coords on a raw tilted page would be a
+# third wrong frame; the election wins by explicit precedence). Stored rows NEVER mutated.
+# Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_teach_angle_compose.py.
+TEACH_ANGLE_COMPOSE = os.environ.get('TEACH_ANGLE_COMPOSE', '0') != '0'
+
+# TEACH_ANGLE_COMPOSE_SCAN — PLACEMENT-ONLY skew correction (Oracle 2026-08-09, "fix placement,
+# not pixels"). The sibling of TEACH_ANGLE_COMPOSE above, for the path where the page is NOT
+# deskewed — i.e. ordinary import.
+#
+# THE PROBLEM IT SOLVES. A taught box carries the teach sample's tilt θ_t. The document being read
+# has its own tilt θ_s. At 1.6° a 0.16-wide box drifts ~0.003 page-height — about HALF A TEXT LINE,
+# which is exactly enough to shear a 2-row-tall free-text box onto the caption or the address row.
+# That is a PLACEMENT error of half a line.
+#
+# WHY NOT JUST STRAIGHTEN THE PAGE. Measured and ruled on: rotating the pixels fixed 213 of 1127
+# cells on a synthetic corpus, but that corpus tilts every page by at most 1.6° (gen_customer_test
+# .py:675) — entirely inside the band Tesseract self-tolerates and inside DESKEW_RAW_CROP_MAX_ANGLE
+# (2.0), and the band where this project's own doc-561 probe measured deskew making a REAL scan
+# WORSE ('DN-98447' -> 'Dobrery\Not\Ne:/DN/er!' after its own +1.9° deskew). Re-run at a 2.0° floor
+# the entire heal vanished — 0 of 1127 cells moved — proving the gain came only from the harmful
+# band. Rotating nine megapixels of paper to move one box half a line is the wrong instrument.
+#
+# THE TRANSFORM, derived from the two documented mappings rather than guessed:
+#     teach surfaces persist   raw   = C + R(+θ)·(level − C)      (anchorLabel.deskewedNormToRaw)
+#     _compose_box_to_level    out   = C + R(−θ)·(p − C)
+#   level        = C + R(−θ_t)·(teach_raw − C)
+#   current_raw  = C + R(+θ_s)·(level − C)
+#   ⇒ current_raw = C + R(θ_s − θ_t)·(teach_raw − C)  ⇒  pass θ = (θ_t − θ_s).
+# θ_s is measured NON-DESTRUCTIVELY (detect_skew_angle is documented "measures only"); not one
+# pixel is rotated, so the page, ocr_text, page-0 geometry, the logo phash and every learning write
+# all stay in ONE frame. The process_docs raw/deskewed identity split-brain cannot arise, and
+# raw_crop_recheck keeps its real cross-frame witness.
+# Stored rows are NEVER mutated — copies only, exactly as the deskew sibling does.
+# Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_teach_angle_compose_scan.py.
+TEACH_ANGLE_COMPOSE_SCAN = os.environ.get('TEACH_ANGLE_COMPOSE_SCAN', '0') != '0'
+_COMPOSE_SCAN_MIN_NET = 0.2    # below the detector's own noise floor a compose is not evidence
+_COMPOSE_SCAN_MAX_NET = 5.0    # beyond this the page is not "slightly askew" — leave it to review
+
+
+def _compose_box_to_level(x, y, w, h, theta_deg, W, H):
+    """Rotate one raw-frame box (page-norm) into the LEVEL frame: transform the box's
+    CENTRE by level = C + R(−θ)·(p − C) (the proven-sign inverse of deskewedNormToRaw)
+    and KEEP w/h — exactly mirroring the teach surfaces, which back-transform only the
+    top-left POINT and persist the LEVEL-frame w/h (deskewFinalizeAnchor). A corner-AABB
+    here BLOATS a wide box vertically by w·sinθ (~half a text line for a 0.2-wide
+    free-text box at 1.6°), pulling the caption line into the crop — the nf-gate
+    customer-lane crater ('INVOICE TO' commits). Pure; returns (x, y, w, h) clamped."""
+    th = math.radians(theta_deg)
+    c, s = math.cos(th), math.sin(th)
+    cx, cy = W / 2.0, H / 2.0
+    px = (x + w / 2.0) * W - cx
+    py = (y + h / 2.0) * H - cy
+    ncx = (cx + c * px + s * py) / W
+    ncy = (cy - s * px + c * py) / H
+    nx = min(max(0.0, ncx - w / 2.0), 1.0)
+    ny = min(max(0.0, ncy - h / 2.0), 1.0)
+    return (nx, ny, min(w, 1.0 - nx), min(h, 1.0 - ny))
+
+
+def _compose_mappings_to_level(mappings, theta_deg, W, H):
+    """COPIES of the mapping rows with anchor+target boxes composed to the level frame."""
+    out = []
+    for m in (mappings or []):
+        m2 = dict(m)
+        for pre in ("anchor", "target"):
+            try:
+                bx = float(m[f"{pre}_x_norm"]); by = float(m[f"{pre}_y_norm"])
+                bw = float(m[f"{pre}_w_norm"]); bh = float(m[f"{pre}_h_norm"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            nx, ny, nw, nh = _compose_box_to_level(bx, by, bw, bh, theta_deg, W, H)
+            m2[f"{pre}_x_norm"] = nx; m2[f"{pre}_y_norm"] = ny
+            m2[f"{pre}_w_norm"] = nw; m2[f"{pre}_h_norm"] = nh
+        out.append(m2)
+    return out
+
+
+def _compose_landmarks_to_level(landmarks, theta_deg, W, H):
+    """COPIES of the landmark rows composed to the level frame (same transform)."""
+    out = []
+    for lm in (landmarks or []):
+        l2 = dict(lm)
+        try:
+            bx = float(lm["x_norm"]); by = float(lm["y_norm"])
+            bw = float(lm["w_norm"]); bh = float(lm["h_norm"])
+        except (KeyError, TypeError, ValueError):
+            out.append(l2)
+            continue
+        nx, ny, nw, nh = _compose_box_to_level(bx, by, bw, bh, theta_deg, W, H)
+        l2["x_norm"] = nx; l2["y_norm"] = ny; l2["w_norm"] = nw; l2["h_norm"] = nh
+        out.append(l2)
+    return out
+
+
+def _elect_crop_pages(page_images, raw_pages, deskew_angles):
+    """The Slice-0 frame election (pure; C1 single-list contract). Returns `page_images`
+    BY IDENTITY when the election cannot or must not run (switch off, no raw pages, or a
+    defensive length mismatch — fail toward today's behaviour, never mis-index); else a
+    per-page list electing raw below the angle cap and the deskewed page above it."""
+    if not DESKEW_RAW_CROPS or not raw_pages or not page_images:
+        return page_images
+    if len(raw_pages) != len(page_images):
+        return page_images                      # parallelism broken upstream — fail to status quo
+    out = []
+    for i, img in enumerate(page_images):
+        ang = 0.0
+        if deskew_angles and i < len(deskew_angles):
+            try:
+                ang = abs(float(deskew_angles[i] or 0.0))
+            except (TypeError, ValueError):
+                ang = 0.0
+        out.append(raw_pages[i] if ang <= DESKEW_RAW_CROP_MAX_ANGLE else img)
+    return out
 
 
 def _late_rescue_applicable(s2_supplier, supplier_name):
@@ -106,6 +887,61 @@ def _late_rescue_applicable(s2_supplier, supplier_name):
     from extraction import keyword as _kw
     return (not s2_supplier) and _kw._is_plausible_supplier_name(supplier_name)
 
+
+def _apply_late_rescue_sticky_cap(results, cap=_LATE_RESCUE_CAP):
+    """TERMINAL re-cap of Stage-2.6 late-rescue reads (kill LATE_RESCUE_CAP_STICKY, gated at the
+    ONE call site in extract()). Pure over the results dict: for every field carrying the
+    `late_rescue` provenance stamped at the rescue (:3629), return its confidence to `cap` if a
+    later boost re-inflated it above the cap. VALUE is never touched (fail-toward-review — a wrong
+    blind read is HELD, not filed). Skips `_`-prefixed metadata and non-dict entries. Returns the
+    count re-capped. See the call site for the full rationale + the forward-seam warning."""
+    n = 0
+    for k, d in results.items():
+        if k.startswith('_') or not isinstance(d, dict):
+            continue
+        if d.get("late_rescue") and int(d.get("confidence") or 0) > cap:
+            d["confidence"] = cap
+            n += 1
+    return n
+
+
+def _filter_located_corrob(corrob_results, anchors_by_key, date_field_keys,
+                           tol_x, tol_y, normalise_date):
+    """PURE filter for Stage 2.6b late located crop-corroboration (Oracle C1-C3, unit-pinned by
+    tests/test_late_located_corrob.py). Keeps ONLY reads that may safely vouch for a keyword-filled
+    critical value at the taught-ownership guard, returning {field_key: candidate}:
+      C1  method in {anchor_inline, anchor_crop_relocated} (label-confirmed reads that carry a value
+          box) AND located is True — a BLIND authoritative rigid read (anchor_crop, located=False)
+          is DROPPED, so it can never vouch through _anchor_corroborates' `authoritative OR located`
+          (that bypass is the repeated-date hole).
+      C2  the located value box sits NEAR the taught value box (a second same-caption elsewhere reads
+          a different row -> dropped). FAILS CLOSED: no box / bad coords / no taught anchor -> dropped.
+      C3  a DATE candidate is canonicalised to DD-MM-YYYY (the form the validator already gave the
+          committed value) so the UNCHANGED token compare in _anchor_corroborates matches.
+    No I/O, no engine state — safe to unit-test directly."""
+    out = {}
+    for k, d in (corrob_results or {}).items():
+        if not isinstance(d, dict) or not d.get("value"):
+            continue
+        if str(d.get("method") or "") not in ("anchor_inline", "anchor_crop_relocated"):
+            continue                                   # C1: genuine-locate whitelist
+        if not d.get("located"):
+            continue                                   # C1: located-only (never a blind rigid read)
+        box, a = d.get("box"), (anchors_by_key or {}).get(k)
+        try:
+            near = (bool(box) and a is not None
+                    and abs(float(box["x_norm"]) - float(a.get("x_norm") or 0)) <= tol_x
+                    and abs(float(box["y_norm"]) - float(a.get("y_norm") or 0)) <= tol_y)
+        except Exception:
+            near = False
+        if not near:
+            continue                                   # C2: near-taught, fail-CLOSED
+        d = dict(d)
+        if k in (date_field_keys or set()):
+            d["value"] = normalise_date(d.get("value")) or d.get("value")   # C3
+        out[k] = d
+    return out
+
 # The resolved-identity ORIGINS a rescue may corroborate against: structural sources
 # (logo / template identity / fixed values / template anchor). keyword- and
 # hint-derived identities are excluded — corroborating a hint with a hint-derived
@@ -113,6 +949,9 @@ def _late_rescue_applicable(s2_supplier, supplier_name):
 _IDENTITY_STRUCTURAL_METHODS = frozenset({
     'logo', 'template_identity', 'template_fixed', 'template_fixed_locked', 'template_anchor',
 })
+# DELIBERATELY excludes 'template_identity_corroborated' (the S1 note-shed variant, Oracle C3
+# 2026-07-28): a page-corroborated identity is treated NON-structural, so the dual-key
+# customer_name rescue is a no-op on an S1 value — the safe direction.
 
 _STAGE05_LOCATED_METHODS = (
     "template_mapping", "template_mapping_expanded",
@@ -138,6 +977,49 @@ def _is_stage05_located(method: str | None) -> bool:
                              or method.startswith("template_registration"))
 
 
+def _identity_key_for_type(field_defs: list[dict]) -> str | None:
+    """The single IDENTITY (Document Issuer) field key FOR THIS TYPE — supplier_name when the
+    type carries one, else customer_name, else None. Mirrors COMPANY_KEYS precedence
+    (database/modules/document_types.js) and the _flag_recipient_caption_issuer derivation:
+    post-migration-44 every type's identity/scope key is supplier_name, and a customer_name
+    that co-exists on a dual-key type is an ordinary RECIPIENT field, NOT the issuer. Derived
+    PER-TYPE deliberately — do NOT reuse the module frozenset _IDENTITY_FIELD_KEYS (it still
+    lists BOTH keys, so it would treat a recipient customer_name as identity)."""
+    keys = {f.get('key') for f in (field_defs or [])}
+    if 'supplier_name' in keys:
+        return 'supplier_name'
+    if 'customer_name' in keys:
+        return 'customer_name'
+    return None
+
+
+def _is_positional_identity_read(method: str | None) -> bool:
+    """True for an identity read placed by landmark GEOMETRY alone — method ``anchor_registration``,
+    the "register, then read" rung (anchor.py:937-967) that positions its target box via the
+    per-page landmark transform and clears only a credibility/format gate, WITHOUT ever locating
+    this field's own caption. It is the single identity method flagged ``located_ok=True`` by method
+    fiat (anchor.py:1134-1136), so it alone BYPASSES the cross-supplier blind-read guard
+    (``anchor._is_blind_cross_supplier_anchor``, which runs only when ``not located_ok``) — the exact
+    vector by which a DIFFERENT supplier's identity anchor, admitted cross-supplier by
+    ``_anchor_matches``' identity branch, reads THIS page at a foreign landmark position (the
+    SuperStore "Item"/"Ship To:" junk — all 14 live cases are ``anchor_registration`` with no caption).
+
+    Deliberately NARROW (Oracle 2026-07-15 SEND-BACK of the original broad ``startswith('anchor') or
+    _is_stage05_located`` predicate, which regressed two shipped tested capabilities to close a hole
+    the corpus/audit show is empty). It does NOT match:
+      - content-located Stage-2 anchor reads off a REAL caption (``anchor`` / ``anchor_inline`` /
+        ``anchor_crop_relocated``) — a supplier's OWN "Supplier:" line still corrects a wrong template
+        guess (the Greenfield-over-Acme invariant ``_is_blind_cross_supplier_anchor`` preserves BY NAME);
+      - blind rigid ``anchor_crop`` reads — a NAMED cross-supplier one is already dropped by the
+        existing blind guard (``located_ok=False``);
+      - admin-curated Stage-0.5 ``template_mapping`` / ``template_registration`` reads — template-scoped,
+        never cross-applied.
+    Those legitimate origins are left to the existing guards. (The pre-existing false-locate residual —
+    a rigid ABSOLUTE read whose caption coincidentally appears on another layout — is unclosed by any
+    method-level predicate and deferred to the ``_place_from_located`` slice.)"""
+    return (method or "").startswith("anchor_registration")
+
+
 # A BLIND template_registration read placed its target box by landmark GEOMETRY alone, with NO
 # evidence that this field's own label sits near the value — so a mis-taught / layout-mismatched
 # mapping can land on a wrong-but-type-valid neighbour (e.g. a ZIP fragment "6102" for
@@ -148,6 +1030,19 @@ _KEYWORD_TRUST_FLOOR = 90   # only a confident, rx-validated keyword may challen
 _CONFLICT_CAP        = 88   # capped below the auto-file threshold → the conflict lands in Review
 
 
+def _count_valued_fields(results) -> int:
+    """Count real extracted fields that carry a value, honouring the results-dict invariant:
+    '_'-prefixed keys are METADATA — some are NON-dict (e.g. `_needs_review = True`, injected
+    mid-pipeline by the logo text-gate 'suggest' branch ~engine.py:2605) — and MUST be skipped
+    before any `.get()` on a value. This is the same guard every other results-iterator in the
+    engine already uses; the three diagnostic 'found' counters (Stage 0/1/2 log lines) were the
+    only sites that omitted it, which is how a bool value crashed extraction with
+    'bool object has no attribute get'. Log-only + behaviour-neutral (a non-dict metadata key was
+    never a valued field, so the count is unchanged on every working document)."""
+    return sum(1 for k, v in results.items()
+               if not str(k).startswith('_') and isinstance(v, dict) and v.get('value'))
+
+
 def _cmp_norm(value) -> str:
     """Compare-time normalisation for the keyword-vs-mapping disagreement check — reuses the shared
     token normaliser so '6 102' / '6102' compare equal; degrades to a plain lower/strip on error."""
@@ -156,6 +1051,203 @@ def _cmp_norm(value) -> str:
         return "".join(text_normalise.normalise_for_tokens(value).split())   # collapse ws: '6 102'=='6102'
     except Exception:
         return "".join(str(value or "").strip().lower().split())
+
+
+# Chris round 19 (2026-08-23, Oracle gate item (d)): the corroboration record compared a VALIDATOR-
+# normalised winner ('17-12-2026') with a raw keyword candidate ('17/12/2026') through _cmp_norm, which
+# folds whitespace but not date separators — so EVERY date read as a "disagreement" (independent_agree
+# False on correct rows; no date was ever corroborated) and the four GENUINE disagreements on the wrong
+# Copperfield dates (keyword '12/10/2026' vs the box's '02-10-2026') were indistinguishable from the
+# artefact. Date-aware compare: when BOTH strings are date-shaped, compare their normalised forms.
+# Record-only upstream; downstream the record LICENSES (the C3.3 exemption, critfield relax,
+# corroboration auto-file) and will feed the role-disagreement refusal — so it is its own switch.
+# Kill: FIELD_CORROBORATION_DATE_FOLD=0 (default ON for the emit: a record that lies is worse than one
+# that widens a licence the owner controls with its own switches).
+_DATE_SHAPE_RE = re.compile(r"^\s*\d{1,4}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\s*$")
+
+def _corrob_values_agree(a, b) -> bool:
+    """Corroboration-time equality: the shared token normaliser, plus a date fold when both values are
+    date-shaped (separator / padding differences are not disagreements)."""
+    if _cmp_norm(a) == _cmp_norm(b):
+        return True
+    if os.environ.get('FIELD_CORROBORATION_DATE_FOLD', '1') == '0':
+        return False
+    sa, sb = str(a or ''), str(b or '')
+    if not (_DATE_SHAPE_RE.match(sa) and _DATE_SHAPE_RE.match(sb)):
+        return False
+    try:
+        from extraction import validator as _v
+        da, db_ = _v.parse_date(sa), _v.parse_date(sb)
+        return bool(da and db_ and da == db_)
+    except Exception:
+        return False
+
+
+# Confidence a cross-check flip is RESTORED to when an independent keyword read corroborates it
+# (E2, below). Must clear trust.js's 88 critical-field floor with margin, and stay within the
+# located-inline ceiling (~93) — a corroborated located read, not a certainty.
+_CROSSCHECK_CORROB_CONF = 90
+
+
+def substantial_containment(clean, dirty) -> bool:
+    """CONTAINMENT WITNESS predicate (reggie spec 2026-08-12; owner-directed, SHIPS INERT — no
+    consumer yet; the consumer slice carries its own flag). True ⇔ the CLEAN reading is witnessed
+    INSIDE the DIRTY reading as "the same name plus junk" — the exhibit: keyword 'Bramblewood
+    Joinery Ltd' ⊂ relocate 'ne ay - Bramblewood Joinery Ltd' (a chopped-adjacent-line garble
+    prefix). Same-field, same-doc readings only — NEVER a cross-sender matcher.
+
+    Rules (each load-bearing, pinned in tests/test_substantial_containment.py):
+      · token-level, per-token edge-punct trim, alnum-bearing tokens only — never raw substring;
+      · a 1-token clean gets EQUALITY ONLY (kills "Ltd" ⊂ anything; consistent with the 08-11
+        single-token plausibility ruling — BP/IBM are valid VALUES but too small as WITNESSES);
+      · equality is refused here (that is _cmp_norm's claim — the caller tries equality first);
+      · the clean tokens must appear CONTIGUOUS and IN ORDER in the dirty list (bag-of-tokens
+        readmits recombination garbles; interleaved junk inside the span means the box did NOT
+        witness the name as printed);
+      · substantiality: the contained name is the MAJORITY of the dirty read's alnum mass;
+      · surplus-junk clause (the precision guard for nested REAL names): the uncontained
+        remainder must FAIL name-likeness (value_quality.name_quality < 0.5) — surplus 'ne ay'
+        is junk (fires), surplus 'Pelican' is a name (refuses: 'Office Interiors' ⊂ 'Pelican
+        Office Interiors' must never corroborate).
+    Direction is the SIGNATURE: True corroborates the FIRST argument and marks the container
+    read suspect; a winner that CONTAINS the other read gets no credit — its surplus tokens are
+    unwitnessed (the Pelican name+address-row box class). Pure; any error → False."""
+    try:
+        from extraction import value_quality
+        _edge = re.compile(r'^[^0-9A-Za-z]+|[^0-9A-Za-z]+$')
+        def _toks(v):
+            # CASED tokens (edge-punct trimmed, alnum-bearing only): the comparison below is
+            # casefolded, but the SURPLUS must keep its printed case — name_quality reads case
+            # as a wordness signal, and a lowercased 'pelican' would score as junk and wrongly
+            # corroborate the nested-real-name class.
+            out = []
+            for t in str(v or '').split():
+                t = _edge.sub('', t)
+                if t and any(c.isalnum() for c in t):
+                    out.append(t)
+            return out
+        C, D = _toks(clean), _toks(dirty)
+        Cf = [t.casefold() for t in C]
+        Df = [t.casefold() for t in D]
+        if len(C) < 2 or not D or Cf == Df:
+            return False
+        _mass = lambda toks: sum(sum(1 for c in t if c.isalnum()) for t in toks)
+        if _mass(C) * 2 <= _mass(D):
+            return False
+        for i in range(len(D) - len(C) + 1):
+            if Df[i:i + len(C)] == Cf:
+                surplus = ' '.join(D[:i] + D[i + len(C):])
+                try:
+                    q = value_quality.name_quality(surplus)
+                except Exception:
+                    return False
+                return q < 0.5
+        return False
+    except Exception:
+        return False
+
+
+def _values_normalise_equal(a, b, is_date) -> bool:
+    """THE ONE value-agreement core shared by BOTH corroboration paths — E2's crosscheck clear
+    and the KEYWORD_ANCHOR_CORROB lift (Oracle C1, 2026-07-23: a copy-pasted comparison is
+    exactly the drift the shared 90 constant exists to prevent; pinned by
+    test_keyword_anchor_corrob.py). Dates: BOTH sides must parse and be CALENDAR-equal
+    (anchor._reads_disagree strict polarity — 0ae0f46's C1; '12-06' vs '06-12' never
+    corroborates). Refs: ALPHANUMERIC-CORE equality (drop separators/spaces) so a formatting
+    difference between the keyword read (ref-suffix stripped, keyword.py:729-730) and a crop/
+    inline read (clean_crop_segment) still corroborates — 'DN-23333' == 'DN 23333' == 'DN23333'
+    — while 'DN-23333' != 'DN-99999'. Pure; empty/error → False (fail-toward-review).
+    ⚠ DATE-ARM POLARITY (inherited from E2, deliberately preserved): _reads_disagree is
+    salvage-aware AND fail-open on an UNPARSEABLE side ('zz/xx' does not register as
+    disagreement → this returns True). Every caller MUST therefore sit BEHIND a parse gate:
+    the corroboration lift sits after the merge loop's date-parse credibility guard (an
+    unparseable date witness is `continue`d before it can reach the lift — pinned), and E2's
+    flip values are parse-gated in anchor.py. Do NOT reuse this helper on ungated values."""
+    av = str(a or "").strip()
+    bv = str(b or "").strip()
+    if not av or not bv:
+        return False
+    if is_date:
+        try:
+            return not anchor._reads_disagree(bv, av, "date")   # calendar-equal
+        except Exception:
+            return False
+    avn = "".join(c for c in _cmp_norm(av) if c.isalnum())
+    bvn = "".join(c for c in _cmp_norm(bv) if c.isalnum())
+    return bool(avn) and avn == bvn
+
+
+def _resolve_detail_suggestion(resolved_field, suggested, norm) -> str:
+    """SPARSE-GUARD suggestion arbiter (pure; Oracle-signed 2026-07-23) — what should a stashed
+    coarse-miss detail-mark suggestion do, given the FINAL resolved supplier field?
+      'clean' — downstream resolved the SAME name (the measured 137-doc arm: un-noted, files as
+                in the starved baseline), OR the field is operator-pinned (human authority is
+                never second-guessed), OR it already carries a note (one-note-per-field
+                convention — the doc is already review-bound; never overwrite a more specific
+                note with a generic one).
+      'note'  — downstream resolved a DIFFERENT name un-noted: positive mark-vs-text conflict →
+                attach the disagree note (fail-toward-review on POSITIVE evidence only).
+      'fill'  — nothing resolved: the suggestion may fill, review-bound, AFTER the text gate
+                (the caller runs decide_logo_text_gate; abstain ⇒ the value-less
+                _logo_abstained affordance instead)."""
+    if not isinstance(resolved_field, dict) or not str(resolved_field.get("value") or "").strip():
+        return "fill"
+    if (resolved_field.get("method") or "") == "operator_pin":
+        return "clean"
+    if resolved_field.get("validation_note"):
+        return "clean"
+    try:
+        if norm(str(resolved_field.get("value"))) == norm(str(suggested)):
+            return "clean"
+    except Exception:
+        return "clean"   # an unjudgeable compare must never manufacture a conflict
+    return "note"
+
+
+def _crosscheck_keyword_corroborated(data, kw_entry, is_date) -> bool:
+    """E2 (Oracle-signed): is an anchor.py crop-vs-fullpage crosscheck FLIP corroborated by an
+    INDEPENDENT Stage-1 keyword read of the same field? True only when `data` is the crosscheck
+    result AND the incumbent `kw_entry` is a keyword/override read whose value NORMALISES-EQUAL to
+    the flipped value (the shared _values_normalise_equal core). Pure; no side effects. Fires the
+    flag-clear at the engine merge; a missing/disagreeing peer returns False → today's flag
+    stands (fail-toward-review)."""
+    if (data or {}).get("method") != "anchor_crop_crosscheck":
+        return False
+    if not isinstance(kw_entry, dict) or kw_entry.get("method") not in ("keyword", "keyword_override"):
+        return False
+    return _values_normalise_equal(data.get("value"), kw_entry.get("value"), is_date)
+
+
+def _name_guard_keyword_clears(data, existing, key) -> bool:
+    """NAME-GUARD KEYWORD CLEAR decision (Oracle SEND-BACK redirect 2026-07-24; kill
+    NAME_GUARD_KEYWORD_CLEAR). True iff the Stage-2 read carries the `_name_guard_clearable` marker —
+    set by anchor.py ONLY at the :586 clean-rigid-name vs off-page-junk site — AND an INDEPENDENT
+    Stage-1 keyword incumbent NORMALISES-EQUAL to the KEPT value. A STALE clean name is excluded BY
+    CONSTRUCTION: its keyword read disagrees -> False -> the phantom note stands (fail-toward-review).
+    Never clears supplier_name (the filing identity — mirrors _name_relocate_should_hold's exclusion).
+    Pure; no side effects. Unit-pinned by test_name_guard_keyword_clear.py."""
+    if not (isinstance(data, dict) and data.get("_name_guard_clearable")):
+        return False
+    # DEFAULT OFF (Oracle 2026-07-24): the clear is correct + pinned, but it lifts a doc's ONLY hold
+    # when the phantom name note is the sole blocker — on #259 (ThornburyFasteners_delivery_docket_02)
+    # that un-masked a REAL valid-shaped ref misread (DN-28472 read as DN-38472) into a SILENT wrong-
+    # file. Ships DARK. PRECONDITION to flip ON (=1): make the authoritative-crop cross-check
+    # (anchor.py:638-659) flag a crop-vs-full-page single-digit ref disagreement even when the crop
+    # read is sub-credible, so #259's ref is independently held. Until then: fail-toward-review — the
+    # Saltmarsh/Halcyon phantom flag stays (a cosmetic needless review), never a silent wrong result.
+    # SLICE-3 INTERACTION (Oracle B3, 2026-08-13): _demote_name_guard_corroborated_note clears the
+    # SAME note at terminal time under a STRICTER bar (crop witness + keyword witness + recorded
+    # guard-rejection + ledger unanimity, NO minting — this door mints at :6462 and needs only a
+    # keyword incumbent). Both-ON is idempotent: this clear fires at the merge, so the demoter
+    # then sees no note and no-ops — but flipping THIS on silently makes the weaker bar the live
+    # one. The #259 precondition above governs BOTH doors. Pinned in test_name_corrob_demote.py.
+    if os.environ.get("NAME_GUARD_KEYWORD_CLEAR", "0") != "1":
+        return False
+    if key == "supplier_name":
+        return False
+    if not (isinstance(existing, dict) and str(existing.get("method") or "").startswith("keyword")):
+        return False
+    return _values_normalise_equal(data.get("value"), existing.get("value"), False)
 
 
 _NAME_RELOCATE_NOTE = ("Two different names were read here — the clean value beside the label and a "
@@ -169,7 +1261,9 @@ def _candidate_source_label(method) -> str:
     m = method or ""
     if m in ("keyword", "keyword_override"):
         return "beside the label"
-    if m.startswith("anchor") or m in ("template_mapping", "template_mapping_expanded"):
+    if m.startswith("anchor") or m.startswith("template_mapping"):
+        # Prefix, not a tuple: suffixed variants (_edgegrow/_edgecut/_namegrow/_relocated/...)
+        # are still reads of the taught box (Oracle C4, 2026-08-11 name-grow vet).
         return "from the taught box"
     if m.startswith("template_fixed") or m == "template":
         return "from the template"
@@ -202,9 +1296,20 @@ def _name_relocate_should_hold(existing: dict | None, data: dict | None, field_k
         return False
     if not value_quality.is_name_like_field(field_key) or field_key == "supplier_name":
         return False
-    if existing.get("method") != "keyword" or not existing.get("value"):
+    # (D, 2026-07-21) The incumbent set was 'keyword' ONLY, which made this guard DEAD on every
+    # install that carries a label override for the field: `merge_label_overrides` re-labels the
+    # Stage-1 capture as method 'keyword_override', so the clean label-adjacent read — the very
+    # value this guard exists to protect — was not recognised as an incumbent and the garbled
+    # relocate won unopposed. An override is the SAME read from the SAME layer (a curated caption
+    # instead of a shipped one), so it belongs in the same set. Kill NAME_HOLD_ADMIT_OVERRIDE=0.
+    _INCUMBENTS = ("keyword", "keyword_override") if os.environ.get("NAME_HOLD_ADMIT_OVERRIDE", "1") != "0" else ("keyword",)
+    if existing.get("method") not in _INCUMBENTS or not existing.get("value"):
         return False
-    if data.get("method") not in _RELOCATE_METHODS or not data.get("value"):
+    # Oracle C2 (2026-07-15): admit a RIGID anchor_crop into the hold ONLY when anchor.py flagged it a
+    # fuzzy caption-bleed — never bare (a normal rigid taught read still wins Tier-A, byte-identical).
+    _m = data.get("method")
+    _rigid_bleed = (_m == "anchor_crop" and data.get("caption_bleed"))
+    if (_m not in _RELOCATE_METHODS and not _rigid_bleed) or not data.get("value"):
         return False
     ev, dv = existing.get("value"), data.get("value")
     if _cmp_norm(ev) == _cmp_norm(dv):        # must DISAGREE
@@ -236,9 +1341,17 @@ def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -
     incumbent. When both are plausible (or both implausible — e.g. a genuinely
     short "IBM" with no plausible alternative), there is no opinion and the
     caller's confidence comparison decides, so legitimate short names are never
-    hard-banned. Reuses keyword._is_plausible_supplier_name (shape test).
+    hard-banned.
+
+    ⚠ The INCUMBENT is judged by the SHAPE-BASE test (NOT the document-chrome layer):
+    a chrome-shaped but REAL short name ("Dell"→'deli', "Sage"→'sale') is edit-1 from a
+    title prefix, so letting the chrome demotion license this confidence-blind 'take'
+    would let a plausible WRONG challenger silently overwrite a correctly-resolved short
+    supplier (Oracle 2026-07-14). The CANDIDATE keeps the FULL check, so a chrome GARBLE
+    challenger ("INi") is correctly implausible and can't displace a real incumbent.
+    SuperStore's garble is corrected by the Stage-2.5a recovery, not this arm.
     """
-    e_ok = keyword._is_plausible_supplier_name((existing or {}).get("value"))
+    e_ok = keyword._is_plausible_supplier_name_base((existing or {}).get("value"))
     c_ok = keyword._is_plausible_supplier_name((candidate or {}).get("value"))
     if e_ok and not c_ok:
         return "keep"
@@ -253,11 +1366,210 @@ def _supplier_identity_decision(existing: dict | None, candidate: dict | None) -
 # company/address tokens only (a Thornbury fingerprint polluted with "Delivery"/"Docket" must NOT
 # score as "present" on a Cascade DELIVERY DOCKET — the #1/#42 collision-slip class, where the wrong
 # supplier's leaked doc-type words push its branding ratio above the threshold and suppress the flag).
-_BRANDING_STOPWORDS = frozenset({
-    "delivery", "docket", "note", "notes", "invoice", "order", "purchase", "sales",
-    "statement", "remittance", "receipt", "quote", "quotation", "worksheet",
-    "credit", "debit", "advice", "proforma", "job", "copy", "original",
-})
+# THE definitions moved to template_matcher.py (TEMPLATE_GATE_DISTINCTIVE, 2026-07-20) so the
+# Stage-0 gate and this flag judge "distinctive" by ONE rule — template_matcher is the leaf, this
+# module aliases. Two definitions would drift, and the drift was the Northgate/Vellum misfile class.
+_BRANDING_STOPWORDS     = template_matcher._BRANDING_STOPWORDS
+_BRANDING_MIN_WORDS     = template_matcher._BRANDING_MIN_WORDS
+_BRANDING_PRESENT_RATIO = template_matcher._BRANDING_PRESENT_RATIO
+
+
+# ── Branding evidence (shared: the late conflict FLAG + the text-agreement GATE) ──────────
+# Extracted VERBATIM from _flag_branding_conflict (2026-07-20, identity text-first slice 1a) so ONE
+# definition of "supplier X's distinctive letterhead words" and "are they on this page?" serves both
+# the flag and the gate. Two definitions would drift — the gate would then abstain on docs the guard
+# clears (or worse, assert on docs it flags). MODULE-LEVEL + norm INJECTED (not engine methods): the
+# guard's own test drives the predicate through a minimal fake self, and the gate's battery needs
+# these callable without an engine — keep them pure. Same K, same stopword strip, same EXACT
+# whole-page _keyword_hit_ratio: fuzzing own_ratio was deliberately REJECTED (it can only RAISE the
+# ratio and suppress a flag = fail-open to a silent wrong supplier).
+def _letterhead_type_phrases(patterns):
+    """Every printed phrase that names a DOCUMENT TYPE — the `document_type_keywords` bucket KEYS
+    **and** the phrases inside them. The letterhead reader excludes these so a type heading can
+    never be read as a company. Keys alone are NOT enough: the buckets carry the real printed forms
+    ("tax invoice", "vat invoice", "order confirmation"), which are multi-word (so title_pick's
+    GENERIC_SINGLES misses them) and longer than the chrome-fragment guard's 2-5 char window — a
+    logo-only letterhead would otherwise have suggested "TAX INVOICE" as the company."""
+    out = []
+    try:
+        buckets = (patterns or {}).get("document_type_keywords", {}) or {}
+        for key, phrases in buckets.items():
+            out.append(str(key))
+            if isinstance(phrases, dict):
+                out.extend(str(p) for p in phrases.keys())
+            elif isinstance(phrases, (list, tuple, set)):
+                out.extend(str(p) for p in phrases)
+    except Exception:
+        pass                       # a suggestion helper must never break an extraction
+    return out
+
+
+def _branding_banks(templates, norm):
+    """{norm_issuer: {'name': str, 'words': set}} — keyed by the template's DOMINANT confirmed
+    issuer (else its name); value = its distinctive branding tokens.
+
+    BRANDING_DISTINCTIVE_TOKENS (default ON, 2026-07-20 — the slice-2 half of the distinctive-token
+    train; must ship WITH the Stage-0 gate so the two banks can't drift, Oracle condition D): banks
+    use the SHARED template_matcher._distinctive_tokens, which additionally drops generic vocabulary,
+    calendar words and type-word PREFIXES ('INV', split off "INV-12345" at harvest). The junk cuts
+    both ways: for a WRONG supplier those fragments are the likeliest page hits (own_ratio inflated
+    above the 0.25 present-bar → the conflict flag SUPPRESSED — the same class as the misfile gate
+    defeat, through the other door); for the RIGHT supplier they dilute the denominator (false
+    flags). =0 restores the legacy len>=3 + type-stopword filter byte-identically."""
+    distinctive = os.environ.get("BRANDING_DISTINCTIVE_TOKENS", "1") != "0"
+    banks = {}
+    for t in (templates or []):
+        iss = (t.get("dominant_supplier") or "").strip() or (t.get("name") or "").strip()
+        kf = t.get("keyword_fingerprint") or []
+        if not iss or not kf:
+            continue
+        b = banks.setdefault(norm(iss), {"name": iss, "words": set()})
+        if distinctive:
+            b["words"].update(template_matcher._distinctive_tokens(kf))
+        else:
+            for w in kf:
+                wl = str(w or "").strip().lower()
+                if len(wl) >= 3 and wl not in _BRANDING_STOPWORDS:
+                    b["words"].add(wl)   # distinctive branding tokens only (doc-type words stripped)
+    return banks
+
+
+def _branding_alt_name(banks, ocr_text, exclude_norm):
+    """The DECISIVELY-present alternative supplier on this page, or None — extracted VERBATIM from
+    _flag_branding_conflict (slice 1a/C1) so the late FLAG and the gate's abstain-suggestion name
+    the alternative by ONE rule. Returns (named, fuzzy_on).
+
+    >=0.75 present AND a >=0.25 margin over any third (positive evidence, not weak agreement).
+    FUZZY (a garbled 'rthgate' still resolves 'northgate') and scoped to the ISSUER BAND ONLY (top
+    letterhead, truncated at the first recipient marker), so a mid-page recipient can never be named
+    as the issuer. Kill switch BRANDING_ALT_FUZZY: =0 restores the legacy exact whole-page scan,
+    whose result must NOT feed an actionable button (it can name a recipient) — hence fuzzy_on is
+    returned so callers gate the suggestion on it."""
+    fuzzy = os.environ.get("BRANDING_ALT_FUZZY", "1") != "0"
+    if not banks or not ocr_text:
+        return None, fuzzy
+    from extraction import template_matcher
+    issuer_tokens = None
+    if fuzzy:
+        import re as _re
+        from extraction import chrome_band
+        issuer_tokens = _re.findall(r"[a-z0-9]+", chrome_band.issuer_chrome(ocr_text).lower())
+    ocr_lower = ocr_text.lower()
+    alt, alt_ratio, second = None, 0.0, 0.0
+    for norm_key, b in banks.items():
+        if norm_key == exclude_norm or len(b["words"]) < _BRANDING_MIN_WORDS:
+            continue
+        if fuzzy:
+            r = template_matcher._keyword_hit_ratio_fuzzy(sorted(b["words"]), issuer_tokens)
+        else:
+            r = template_matcher._keyword_hit_ratio(
+                {"keyword_fingerprint": sorted(b["words"])}, ocr_lower)
+        if r > alt_ratio:
+            alt, second, alt_ratio = b["name"], alt_ratio, r
+        elif r > second:
+            second = r
+    named = alt if (alt and alt_ratio >= 0.75 and alt_ratio - second >= 0.25) else None
+    return named, fuzzy
+
+
+# ── Identity text-sufficiency floor (Oracle C2) ────────────────────────────────────────────
+# own_ratio is EXACT + whole-page, so a page whose letterhead OCR'd to mush scores ~0 — under the
+# late FLAG that only cost a review hold, but as a DESTRUCTIVE gate (abstain) it would delete a
+# CORRECT identity on a bad scan. Below this floor the page is UNJUDGEABLE (branch 2), never
+# "branding absent". MEASURED on the live corpus (133 docs with ocr_text, 2026-07-20): the THINNEST
+# real page had 18 issuer-band tokens / 76 whole-page tokens; median 25 / 116. The floor sits ~45%
+# BELOW the worst real page, so it routes ZERO healthy docs to branch 2 and fires only on OCR that
+# genuinely failed. Re-measure before moving it.
+_IDENTITY_MIN_BAND_TOKENS = 10
+_IDENTITY_MIN_PAGE_TOKENS = 50
+
+
+def _identity_text_sufficient(ocr_text):
+    """False when this page's text is too thin to judge branding presence either way (C2)."""
+    if not ocr_text:
+        return False
+    import re as _re
+    from extraction import chrome_band
+    page = _re.findall(r"[a-z0-9]+", ocr_text.lower())
+    if len(page) < _IDENTITY_MIN_PAGE_TOKENS:
+        return False
+    band = _re.findall(r"[a-z0-9]+", chrome_band.issuer_chrome(ocr_text).lower())
+    return len(band) >= _IDENTITY_MIN_BAND_TOKENS
+
+
+def decide_logo_text_gate(logo_supplier, banks, ocr_text, norm, accepted_issuers=(),
+                          geom_issuer_norm=None):
+    """PURE three-way decision for an accepted logo match (identity text-first, slice 1b).
+    Returns one of 'accept' | 'suggest' | 'abstain'.
+
+    'accept'  — the supplier's OWN distinctive branding is on the page: byte-identical to pre-slice
+                behaviour (value, confidence incl. the match_count bonus, method 'logo').
+    'suggest' — UNJUDGEABLE (no >=K-word bank for this supplier, or the page text is below the C2
+                sufficiency floor): keep the value but review-bound (<=69 + note). A logo alone
+                never ASSERTS, but withholding what it saw would leave the reviewer mute (Oracle Q1).
+    'abstain' — POSITIVE DISAGREEMENT (a bank exists, the page text is sufficient, and the
+                supplier's branding is absent): the logo is contradicted by the page — drop it.
+
+    An operator-allowlisted issuer ('Issuer is correct') NEVER abstains (Oracle C3): the human
+    already ruled on this identity; a text-poor page must not silently override them."""
+    if not logo_supplier:
+        return 'abstain'
+    # NAME-PRESENCE ACCEPT ARM (geometry witness; kill LOGO_NAME_PRESENCE_ACCEPT). An INDEPENDENT
+    # geometry-only read of the letterhead (the largest top-of-page name, recipient excluded by
+    # size+position — letterhead.pick_issuer_geometry, Oracle C1) that AGREES with the logo's
+    # supplier CONFIRMS the identity where the branding-fingerprint arms are UNJUDGEABLE: a
+    # single-word wordmark, or a minimalist letterhead below the token/band floors. It promotes a
+    # HOLD to ACCEPT only at the two unjudgeable returns below — it NEVER reaches the destructive
+    # 'abstain' (a decisively-present rival brand still wins). geom_issuer_norm is None unless the
+    # caller resolved a geometry pick with the switch on ⇒ inert (byte-identical) by default.
+    _name_confirmed = geom_issuer_norm is not None and geom_issuer_norm == norm(logo_supplier)
+    if not _identity_text_sufficient(ocr_text):
+        return 'accept' if _name_confirmed else 'suggest'   # thin band, but the name IS the letterhead
+    own_ratio = _branding_own_ratio(logo_supplier, banks, ocr_text, norm)
+    if own_ratio is None:
+        return 'accept' if _name_confirmed else 'suggest'   # no >=K-word bank, but name IS the letterhead
+    if own_ratio > _BRANDING_PRESENT_RATIO:
+        return 'accept'
+    if norm(logo_supplier) in (accepted_issuers or ()):
+        return 'suggest'                       # C3: operator allowlist outranks the text check
+    return 'abstain'                           # POSITIVE DISAGREEMENT — name arm never reaches here
+
+
+def _branding_own_ratio(supplier_name, banks, ocr_text, norm):
+    """How much of `supplier_name`'s OWN distinctive branding appears on the page.
+    None = UNJUDGEABLE (no bank for it, or fewer than K distinctive words) — the fail-safe class
+    BOTH callers must read as 'no evidence either way', never as 'branding absent'."""
+    if not supplier_name or not banks or not ocr_text:
+        return None
+    own = banks.get(norm(supplier_name))
+    if not own or len(own["words"]) < _BRANDING_MIN_WORDS:
+        return None
+    from extraction import template_matcher
+    return template_matcher._keyword_hit_ratio(
+        {"keyword_fingerprint": sorted(own["words"])}, ocr_text.lower())
+
+
+def _prints_name_stats(templates, norm):
+    """{norm(stamped supplier): (ratio, count)} from the templates payload's
+    supplier_prints_name enrichment (database/modules/templates.js getAll): the fraction of
+    that supplier's CONFIRMED docs whose page text corroborates its name, and the sample size.
+    Keyed by the value the template would STAMP (its fixed supplier_name), normalised with the
+    SAME _accept_norm the probe uses (Oracle condition 2 — parity, never bare .lower()).
+    Missing/old payload → {} → the TEMPLATE_FIXED_NAME_PRESENCE_VETO abstains (byte-identical
+    backward compat — pinned in tests/test_template_fixed_name_presence.py)."""
+    out = {}
+    for t in (templates or []):
+        spn = t.get("supplier_prints_name") if isinstance(t, dict) else None
+        if not isinstance(spn, dict):
+            continue
+        sup = (spn.get("supplier") or "").strip()
+        if not sup:
+            continue
+        try:
+            out[norm(sup)] = (float(spn.get("ratio") or 0), int(spn.get("count") or 0))
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def _genuine_template_supplier(matched_tmpl: dict | None) -> str | None:
@@ -288,6 +1600,496 @@ def _genuine_template_supplier(matched_tmpl: dict | None) -> str | None:
     return None
 
 
+# ── Template-identity supplier FILL (2026-07-14 night; gary-designed, Oracle-signed; corroboration-gated) ──
+# When a template matched but the supplier is UNRESOLVED (flaky logo drifted out of range), the doc reads
+# EMPTY — every supplier-scoped taught anchor is dropped, so the user re-teaches every field on every doc.
+# Fill the supplier from the template's DOMINANT CONFIRMED issuer so its anchors admit. ALWAYS REVIEW-BOUND
+# (persisted note): an INFERRED identity (no logo, no on-page read) must NEVER silently drive the filing folder.
+_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE = ("Company inferred from one previously filed document — "
+                                       "please confirm before filing.")
+_TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY = ("Company inferred from previously filed documents on this "
+                                         "layout — please confirm before filing.")
+
+
+def _template_identity_for_fill(matched_tmpl: dict | None):
+    """FILL an UNRESOLVED supplier from the matched template's DOMINANT CONFIRMED issuer. Returns
+    {'value','tier','note'} or None. tier 'majority' = >=2 confirms + strict majority; 'single' =
+    exactly one unanimous confirm; None = ambiguous plurality / zero confirms / implausible identity /
+    no template. Uses ONLY the confirmed-issuer distribution, NEVER matched_tmpl['name'] (a garble/
+    postcode). `note` is always non-empty so BOTH tiers stay review-bound (Oracle blocking condition)."""
+    if not matched_tmpl:
+        return None
+    value = (matched_tmpl.get("dominant_supplier") or "").strip()
+    if not value or not keyword._is_plausible_supplier_name(value):
+        return None
+    try:
+        count = int(matched_tmpl.get("dominant_supplier_count") or 0)
+        total = int(matched_tmpl.get("dominant_supplier_total") or 0)
+    except (TypeError, ValueError):
+        return None
+    if count >= 2 and count * 2 > total:
+        return {"value": value, "tier": "majority", "note": _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY}
+    if count == 1 and total == 1:
+        return {"value": value, "tier": "single", "note": _TEMPLATE_IDENTITY_FILL_NOTE_SINGLE}
+    return None
+
+
+def _template_identity_corroborated(value: str | None, ocr_text: str | None) -> bool:
+    """True → the IDENTITY we're about to FILL (the template's dominant issuer `value`) actually appears
+    on THIS page as text. This validates the IDENTITY, not the layout — which is what catches a POISONED
+    dominant issuer: templates 4/5/7 are NAMED 'Cascade Water Systems' but their dominant_supplier is
+    'Northgate Textiles' (the Cascade<->Northgate logo collision cross-contaminated their confirmed docs).
+    A Cascade docket carries NO 'Northgate'/'Textiles' text, so filling 'Northgate' on it can't corroborate
+    → no fill → the supplier resolves via logo/keyword/text-scan instead. (Checking the template's
+    FINGERPRINT instead would wrongly pass — the Cascade layout IS on a Cascade docket even when the
+    template's learned issuer is poisoned.) Requires >=60% of the value's distinctive name tokens (>=3
+    chars, minus generic company suffixes) present as WHOLE WORDS. FAIL-SAFE: a name not on the page
+    (logo-only letterhead) → no fill → review."""
+    # ONE implementation, shared with the template matcher's identity-on-page guard
+    # (TEMPLATE_IDENTITY_ON_PAGE, 2026-08-10). Both call sites ask the same question — "is this
+    # company named on this document?" — and this codebase has been bitten before by two spellings
+    # of one predicate drifting apart, so the FILL path and the MATCH path use the same function.
+    return template_matcher.identity_present_on_page(value, ocr_text)
+
+
+# Generic company-suffix stopwords, single-sourced so the strict shed predicate and the fuzzy
+# graduated shed below can never drift apart on what counts as a "distinctive" name token.
+_NAME_GENERIC_TOKENS = frozenset({
+    "ltd", "limited", "plc", "llp", "inc", "incorporated", "co", "company", "corp",
+    "group", "holdings", "services", "service", "the", "and"})
+
+
+def _collapse_ws(s):
+    """Collapse runs of whitespace to a single space (Lever E, 2026-08-20). LIGHT — NOT the full
+    text_normalise NFKC pass; only the 4-space COLUMN BREAKS that reconstruct_page_text injects
+    between the words of a wide letter-spaced/centred letterhead. `None`/'' → ''."""
+    return re.sub(r"\s+", " ", s or "").strip()
+
+
+def _identity_corroborated_strict(value: str | None, band: str | None) -> bool:
+    """STRICTER local predicate for SHEDDING a template-identity review note (S1, Oracle C1
+    2026-07-28) — distinct from `_template_identity_corroborated` (>=60%, used for the FILL).
+    True when EITHER the full normalised value appears as a contiguous alnum substring of the
+    (already issuer-band-truncated) `band`, OR EVERY distinctive name token (>=3 chars, minus
+    generic suffixes) is present as a whole word. The >=60% FILL test would shed on a 2-of-3
+    descriptor SUBSET ('...water systems' minus 'Cascade' = 0.67) — clearing the note on a
+    same-trade sibling inside the logo-collision cluster; requiring ALL tokens closes that.
+    Guarded so a lone short token (<6 chars) can never shed on its own. FAIL toward keeping the
+    note (any doubt → False)."""
+    if not value or not band:
+        return False
+    import re as _re
+    _norm  = " ".join(_re.findall(r"[a-z0-9]+", str(value).lower()))
+    _btext = " ".join(_re.findall(r"[a-z0-9]+", str(band).lower()))
+    # Substring arm: a multi-token value, or a single token >=6 chars, present contiguously. A lone
+    # SHORT value ('IN') must fall through to the token arm (which filters <3-char tokens out) so an
+    # incidental word match can never shed the note.
+    if _norm and (" " in _norm or len(_norm) >= 6) and _norm in _btext:
+        return True
+    _GENERIC = _NAME_GENERIC_TOKENS
+    toks = [t for t in _re.findall(r"[a-z0-9]+", str(value).lower())
+            if len(t) >= 3 and t not in _GENERIC]
+    if not toks:
+        return False
+    # A lone token must be long (>=6) to shed; otherwise require >=2 distinctive tokens.
+    if len(toks) < 2 and not (len(toks) == 1 and len(toks[0]) >= 6):
+        return False
+    present = sum(1 for t in toks if _re.search(r"\b" + _re.escape(t) + r"\b", _btext))
+    return present == len(toks)
+
+
+def _bounded_edit_distance(a: str, b: str, budget: int) -> int:
+    """Levenshtein distance between a and b, early-exiting once it exceeds `budget` (returns
+    budget+1). Pure stdlib fallback for the fuzzy shed when rapidfuzz is absent (Oracle C4)."""
+    la, lb = len(a), len(b)
+    if abs(la - lb) > budget:
+        return budget + 1
+    prev = list(range(lb + 1))
+    for i in range(1, la + 1):
+        cur = [i] + [0] * lb
+        row_min = cur[0]
+        ca = a[i - 1]
+        for j in range(1, lb + 1):
+            cost = 0 if ca == b[j - 1] else 1
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+            if cur[j] < row_min:
+                row_min = cur[j]
+        if row_min > budget:
+            return budget + 1
+        prev = cur
+    return prev[lb]
+
+
+def _token_within(a: str, b: str, budget: int) -> bool:
+    """True iff token a is within `budget` edits of token b. budget 0 ⇒ exact. Uses vendored
+    rapidfuzz when importable (lazily — the codebase has shipped WITHOUT it, test_branding_conflict
+    pins that path), else a bounded stdlib Levenshtein. Oracle C4."""
+    if budget <= 0:
+        return a == b
+    try:
+        from rapidfuzz.distance import Levenshtein as _Lev   # lazy: never bet the arm on availability
+        return _Lev.distance(a, b, score_cutoff=budget) <= budget
+    except Exception:
+        return _bounded_edit_distance(a, b, budget) <= budget
+
+
+def _identity_geom_fuzzy_match(value: str | None, geom_issuer_raw: str | None) -> bool:
+    """Garble-tolerant twin of `_identity_corroborated_strict`'s all-tokens arm, for a graduated
+    layout whose SCANNED letterhead is mangled. Every distinctive token of `value` (>=3 chars, minus
+    _NAME_GENERIC_TOKENS) must have a token in `geom_issuer_raw` within a bounded edit distance —
+    but SHORT tokens (<6 chars) stay EXACT (budget 0), fuzz (<= max(1, len//6)) applies ONLY to
+    >=6-char tokens (Oracle C2: a 3-5 char token at budget 1 collides 'Ace'->'Ale'). Requires >=2
+    distinctive tokens, or one >=6-char token (same floor as the strict arm). FAIL toward False on
+    any miss / empty / no available distance backend."""
+    if not value or not geom_issuer_raw:
+        return False
+    import re as _re
+    vtoks = [t for t in _re.findall(r"[a-z0-9]+", str(value).lower())
+             if len(t) >= 3 and t not in _NAME_GENERIC_TOKENS]
+    if not vtoks:
+        return False
+    if len(vtoks) < 2 and not (len(vtoks) == 1 and len(vtoks[0]) >= 6):
+        return False
+    gtoks = _re.findall(r"[a-z0-9]+", str(geom_issuer_raw).lower())
+    if not gtoks:
+        return False
+    for vt in vtoks:
+        budget = 0 if len(vt) < 6 else max(1, len(vt) // 6)
+        if not any(_token_within(vt, gt, budget) for gt in gtoks):
+            return False
+    return True
+
+
+def _should_shed_fill_note_geom_fuzzy(sn_cur, geom_issuer_raw, dom_count, dom_total,
+                                      window, env=None) -> bool:
+    """SHED the template-identity FILL review note on a HEAVILY-GRADUATED layout whose garbled
+    letterhead the STRICT geometry arm can't match exactly (gary → Oracle SIGN-OFF-W/COND
+    2026-08-14). Pure/static — the whole arm is unit-tested through this one function. True iff ALL:
+      1. TEMPLATE_IDENTITY_GEOM_FUZZY_GRADUATE armed (default '0' ⇒ False ⇒ OFF byte-identical);
+      2. `sn_cur` is a STILL-NOTED template_identity FILL with a value (idempotent: after a shed the
+         method is 'template_identity_corroborated', so no arm re-fires);
+      3. GRADUATION LICENSE — dom_count >= window AND share >= 0.9 (unanimous / strict-strong). A
+         thin (1/1, 2/2) or split (6/10) layout never earns fuzz tolerance;
+      4. the graduated issuer is FUZZILY present in the recipient-excluded geometry pick
+         (`_identity_geom_fuzzy_match`, short tokens exact).
+    FAIL toward keeping the note on any abstain."""
+    _env = env if env is not None else os.environ
+    if _env.get("TEMPLATE_IDENTITY_GEOM_FUZZY_GRADUATE", "0") == "0":
+        return False
+    if not (isinstance(sn_cur, dict) and sn_cur.get("method") == "template_identity"
+            and sn_cur.get("value")
+            and sn_cur.get("validation_note") in (_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE,
+                                                  _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY)):
+        return False
+    try:
+        c = int(dom_count or 0)
+        t = int(dom_total or 0)
+        w = max(1, int(window or 0))
+    except (TypeError, ValueError):
+        return False
+    if c < w or c * 10 < t * 9:          # >= window confirms AND share >= 0.9
+        return False
+    return _identity_geom_fuzzy_match(sn_cur.get("value"), geom_issuer_raw)
+
+
+# ── Corroboration-driven note resolution primitives (2026-08-15 held-queue arc) ──────────────
+# The independence half of the shared predicate — mirrors database/modules/trust.js `_corrobLicensed`
+# EXACTLY (pinned cross-language in tests/test_corroboration_emit.py): a corroboration record LICENSES
+# a note-clear iff independent agreement is RECORDED, no independent family DISAGREES, and the
+# agreeing set has >=2 families INCLUDING one that read this page's pixels. memory+hint are EXCLUDED
+# (both descend from past confirms → near-circular; the Oracle-C7 Quillstone refusal). independent_agree
+# alone is INSUFFICIENT (the emit sets it True on ANY single-family agree) — the >=2-page-family rule is
+# the real bar. Malformed/missing record → not licensed (fail closed).
+_CORROB_PAGE_FAMILIES = frozenset({"mapping", "crop", "keyword"})
+
+def _corrob_licensed(record) -> bool:
+    rec = record
+    if isinstance(rec, str):
+        import json as _json
+        try:
+            rec = _json.loads(rec)
+        except Exception:
+            return False
+    if not isinstance(rec, dict):
+        return False
+    if rec.get("independent_agree") is not True:
+        return False
+    dis = rec.get("disagree")
+    if isinstance(dis, list) and dis:
+        return False
+    fams = set()
+    if rec.get("winner_family"):
+        fams.add(rec.get("winner_family"))
+    for f in (rec.get("agree") or []):
+        if f:
+            fams.add(f)
+    if len(fams) < 2:
+        return False
+    return any(f in _CORROB_PAGE_FAMILIES for f in fams)
+
+
+# ── Class F: the "verification-doubt" note family (gary audit 2026-08-26, owner exhibit SuperStore
+# 31901). Notes that say "the value is PROBABLY right but I couldn't verify the fuller/other reading"
+# — written at ONE site each, hoisted here so the class-F allowlist below is the write-site constant
+# itself (a reword goes INERT, never wider — the classFixService CLEARABLE_NOTE_MARKS discipline).
+# DENY-BY-DEFAULT: disagreement / invalid-date / identity / type / Fix-A "not printed here" /
+# reconciliation / shape-mismatch notes are NEVER in this set. Names excluded at the arm (no shape rail).
+_SHAPE_TRIM_NOTE = 'trimmed to the expected format — please verify'
+_REREAD_NOTE_HEAD = 're-read from the page (was "'
+
+# ── BARCODE fields (2026-08-26, barry → gary design; DARK `BARCODE_FIELD`). The decode is the ONE
+# writer of a barcode-typed field; these notes hold the doc for a human glance (no learning yet —
+# correctness first). Deliberately NOT in the class-F allowlist above: a barcode read has one family.
+_BARCODE_CONFIRM_NOTE = 'Read from the barcode printed on this page — please confirm it once.'
+_BARCODE_SEVERAL_NOTE = 'Several barcodes on this page: {} — type the right one.'
+_BARCODE_UNSUPPORTED_NOTE = ("The barcode on this page doesn't hold a code (a web link or contact card) "
+                             "— type the value if there is one.")
+
+
+def _verification_doubt_note_marks():
+    """The class-F allowlist, resolved lazily (template_mapper's constants live in its module).
+    Each entry is (mark, match) where match ∈ {'exact', 'prefix'}."""
+    return (
+        (template_mapper._EDGE_CUT_NOTE, 'exact'),        # taught box edge cuts the value; fuller read unverified
+        (template_mapper._FT_FALLTHROUGH_NOTE, 'exact'),  # read from the surrounding line, not the taught box
+        (_SHAPE_TRIM_NOTE, 'exact'),                      # Stage-4.5 trimmed column-bleed to the learned shape
+        (_REREAD_NOTE_HEAD, 'prefix'),                    # Stage-4.5 re-read a garble from the page
+    )
+
+
+def _is_verification_doubt_note(note) -> bool:
+    n = str(note or "").strip()
+    if not n:
+        return False
+    for mark, how in _verification_doubt_note_marks():
+        if how == 'exact' and n == mark:
+            return True
+        if how == 'prefix' and n.startswith(mark):
+            return True
+    return False
+
+
+# The corroboration RECORD's family bucket (hoisted from _build_corroboration_emit so the class-F
+# witness check reads the ledger through the SAME lens the record was written with). Memory stamps
+# (template_fixed / template_identity*) are their own family; bare `anchor` folds into the KEYWORD
+# family (record-only, CORROB_ANCHOR_AS_KEYWORD, default on); everything else is the shared
+# _crosscheck_witness_bucket. The SHARED bucket is untouched (the live reconcile keeps excluding
+# bare anchor — pinned).
+_MEMORY_METHODS = ('template_anchor', 'template_identity', 'template_identity_corroborated')
+
+
+def _corrob_record_bucket(stage, method):
+    m = str(method or '')
+    if m.startswith('template_fixed') or m in _MEMORY_METHODS:
+        return ('memory', False)
+    if os.environ.get('CORROB_ANCHOR_AS_KEYWORD', '1') != '0' and m == 'anchor':
+        return ('keyword', False)
+    return _crosscheck_witness_bucket(stage, method)
+
+# Single-position glyph confusions of a digit (for the D snap-and-adopt + the B corrected_to check).
+# The CODE-STRUCTURAL separators '/' and '\\' are DELIBERATELY EXCLUDED (Oracle condition — treating a
+# printed separator as a confusable corrupts structured codes; the CODE_SEPARATOR / I->1 lesson). The
+# reverse mapping and case-fold are handled symmetrically in _one_confusable_diff.
+_CONFUSE_TO_DIGIT = {"]": "1", "[": "1", "|": "1", "l": "1", "I": "1", "i": "1",
+                     "O": "0", "o": "0", "S": "5", "B": "8", "Z": "2"}
+
+def _one_confusable_diff(a, b) -> bool:
+    """True iff `a` and `b` are the same length and differ in EXACTLY ONE position, and that one
+    difference is a known glyph confusion (symbol/letter <-> digit, or a pure case fold)."""
+    a = str(a); b = str(b)
+    if len(a) != len(b):
+        return False
+    diffs = 0
+    for ca, cb in zip(a, b):
+        if ca == cb:
+            continue
+        diffs += 1
+        if not (_CONFUSE_TO_DIGIT.get(ca) == cb or _CONFUSE_TO_DIGIT.get(cb) == ca
+                or ca.upper() == cb.upper()):
+            return False
+    return diffs == 1
+
+
+# ── P adopt lane (REF_PREFIX_CONFUSABLE_ADOPT; reggie design → Oracle SIGN-OFF-W/COND 2026-08-16,
+# owner-directed: "if the data shows PI is a consistent value, then P1 is a likely misdetection").
+# The note tail is the SHARED CONSTANT between the prefix-outlier writer and the P lane's matcher —
+# hoisted so the two can never drift apart (Oracle condition).
+_PREFIX_OUTLIER_NOTE_TAIL = "— likely a one-character misread. Please check."
+# Ref-LENGTH-guard note marks (engine.py:5890-5899). Built INTO the two notes so a reword
+# makes the P-lane matcher go inert (caught loudly by a MARK-in-NOTE pin), per the 1914-1917
+# convention. Oracle 2026-08-28 C1: key the witness form on the LONGER, unambiguous
+# reference-count phrase — NOT the bare pick-the-right-value tail, which is one glyph from the
+# 5697 blind-geom note and the 5967 D1 note (the literals live ONLY in the constants below).
+_REF_LENGTH_NOTE_MARK = "possibly an extra or missing digit"      # plain form (no corrected_to)
+_REF_LENGTH_WITNESS_NOTE_MARK = "references usually have"         # witness form (sets corrected_to)
+
+# The other two note classes the P lane reads (2026-08-19 widening). Each is composed from a
+# hoisted MARK shared with its WRITE site, for the same reason as the tail above: reword the prose
+# and the matcher goes INERT rather than quietly matching a class it was never reviewed against.
+# (The third, `_PAD_CODE_DISAGREE_MARK`, is owned by template_mapper and read from there.)
+_FILING_SANITY_ABSENT_MARK = "doesn't appear on this page as written"
+_FILING_SANITY_ABSENT_NOTE = ("'{}' " + _FILING_SANITY_ABSENT_MARK
+                              + " — please check the reference before filing.")
+
+
+def _nearest_confusable_page_token(page, rv) -> str:
+    """The first whole page token that is a ONE-glyph confusable of `rv` — 'P1/26/9687' for 'PI/26/9687' — so the
+    Gate-C note can say what the page actually read instead of flatly denying the value. '' when none."""
+    try:
+        rv = str(rv or '').strip()
+        if len(rv) < 4:
+            return ''
+        for t in re.split(r'\s+', str(page or '')):
+            t = t.strip('.,;:()[]{}"\'')
+            if t and len(t) == len(rv) and t.casefold() != rv.casefold() and _one_confusable_diff(t, rv):
+                return t
+    except Exception:
+        pass
+    return ''
+
+# OCR-confusable equivalence classes for CODE-PREFIX positions, one class per printed-glyph family.
+# EXPLICIT (not derived) so the adopt surface is exactly what was reviewed — the pin test asserts
+# these sets verbatim AND that every _CONFUSE_TO_DIGIT pair is covered, so an ocr_corrector map edit
+# can't silently widen (or orphan) this arm. Documented decisions:
+#   • uppercase 'L' joins the 1-class for THIS ARM ONLY (the Pelican I→L flavour, owner re-run
+#     evidence 2026-08-15) — deliberately NOT added to the shared _CONFUSE_TO_DIGIT, which the
+#     Oracle-signed B/D arms consume;
+#   • B↔E is EXCLUDED (one SB→SE sighting, n=1; a pure letter↔letter pair with the highest real
+#     prefix-collision risk — admit only if the decline census shows it recurring);
+#   • the separators '/' and '\\' stay excluded (standing Oracle condition — a printed separator is
+#     structure, never a confusable).
+_PREFIX_CONFUSE_CLASSES = (
+    frozenset("1Iil|][L"),
+    frozenset("0OoQ"),
+    frozenset("5Ss$"),
+    frozenset("2Zz"),
+    frozenset("8B"),
+    frozenset("7T"),
+    frozenset("6Gb"),
+    frozenset("9gq"),
+    frozenset("E€£"),
+)
+
+
+def _prefix_confusable_class(a, b) -> bool:
+    return any(a in c and b in c for c in _PREFIX_CONFUSE_CLASSES)
+
+
+# Casefolded twins of the classes, for comparisons made on casefolded projections (Gate-C v2 —
+# the page-match tolerance compares casefolded strings, where 'B'/'8' must still pair via 'b').
+_PREFIX_CONFUSE_CLASSES_CF = tuple(frozenset(ch.casefold() for ch in c) for c in _PREFIX_CONFUSE_CLASSES)
+# Class SYMBOLS (non-alphanumeric members: $ | ] [ € £) — the Oracle A1 correction: a projection
+# that strips every non-alnum char deletes the very glyph the confusable tolerance needs to see
+# ('VX$22033' would collapse to 'vx22033' and never same-length-compare against 'vxs22033').
+_PREFIX_CLASS_SYMBOLS = frozenset(ch for c in _PREFIX_CONFUSE_CLASSES_CF for ch in c if not ch.isalnum())
+
+
+def _prefix_confusable_class_cf(a, b) -> bool:
+    return any(a in c and b in c for c in _PREFIX_CONFUSE_CLASSES_CF)
+
+
+def _strip_all_alnum(s) -> str:
+    """Casefold and delete every non-alphanumeric character — the 'sepless' projection."""
+    return re.sub(r'[^0-9a-z]+', '', str(s).casefold())
+
+
+def _sepless_line_windows(page):
+    """Every 1-3 consecutive token join, SAME LINE ONLY. A cross-line join is manufactured
+    adjacency and is refused (the standing Gate-C v2 condition)."""
+    windows = []
+    for line in str(page).splitlines():
+        words = [w for w in line.split() if w]
+        for i in range(len(words)):
+            for j in range(i + 1, min(i + 4, len(words) + 1)):
+                windows.append((''.join(words[i:j]), j - i))
+    return windows
+
+
+def _page_carries_sepless(page, value) -> bool:
+    """W3 — 'is this exact string printed on the page?', allowing only for retokenisation.
+    PURE: no trace, no log (Oracle C5) — a caller emits its own events, so borrowing this witness
+    cannot pollute the Gate-C v2 census that would justify page-match v2 on its own merits.
+
+    ⚠ LEG 1 ONLY, and that restriction is load-bearing. `_page_match_v2`'s leg 2 is a BACKED-
+    CONFUSABLE tolerance: it answers True when the page carries a one-glyph in-class variant of
+    the value. As a witness for a candidate that is ITSELF a one-glyph variant of the read, leg 2
+    would be CIRCULAR — the misread that raised the note would witness its own correction. Never
+    widen this helper (pinned: a page carrying only 'P1/26/3152' must NOT witness 'PI/26/3152')."""
+    sv = _strip_all_alnum(value)
+    if len(sv) < 4:
+        return False                       # too short to judge — same bar as Gate-C v2
+    return any(_strip_all_alnum(joined) == sv for joined, _n in _sepless_line_windows(page))
+
+
+def _prefix_dominant_backed(rec_p) -> bool:
+    """The B/P dominance bars in ONE place (Oracle condition — a pin asserts this arithmetic is
+    identical to the B lane's): >=5 extractable prefixes, dominant count >=5, dominant share >=0.90
+    over the EXTRACTABLE prefixes (sum(counts), never rec['total'] — the prefixless-dilution
+    lesson: an OCR-lost prefix is the SAME prefix, not a competitor)."""
+    if not rec_p or not rec_p.get('dominant'):
+        return False
+    counts = rec_p.get('counts') or {}
+    dn = counts.get(rec_p.get('dominant'), 0)
+    ext_total = sum(counts.values())
+    return ext_total >= 5 and dn >= 5 and dn >= 0.90 * ext_total
+
+
+def _prefix_confusable_adopt(val, dom):
+    """The adopted value (dominant prefix + the read's own suffix), or None when the read's head is
+    not a single-confusable neighbour of the dominant. Rules (each a pinned refusal):
+      • the char AFTER the head must not be alpha (segmentation guard — a read whose own letter run
+        outruns the dominant, e.g. 'P1X/…' vs 'PI', is ambiguous, not confusable);
+      • pure case differences count zero; EXACTLY ONE confusable-class glyph substitution, in the
+        head only — the dominant licenses the head, history says nothing about the per-doc tail;
+      • zero substitutions (case-only) is NOT this arm — B owns the note there, value untouched."""
+    val = str(val or '')
+    dom = str(dom or '')
+    L = len(dom)
+    if not dom or len(val) < L:
+        return None
+    if len(val) > L and val[L].isalpha():
+        return None
+    subs = 0
+    for ca, cb in zip(val[:L], dom):
+        if ca == cb or ca.upper() == cb.upper():
+            continue
+        subs += 1
+        if subs > 1 or not _prefix_confusable_class(ca, cb):
+            return None
+    if subs != 1:
+        return None
+    return dom + val[L:]
+
+
+# S-A date-in-ref belt regexes (module-level — compiled once). A guard value must be a
+# FULL-STRING numeric 3-component date with the SAME separator repeated, or a month-name
+# date, AND parse via validator.parse_date — the pair keeps '20260731' / '21/07' /
+# 'DN-24/07/26' out of reach (pinned in tests/test_date_in_ref_flag.py).
+_NUM_DATE_RE  = re.compile(r'^\d{1,4}([/\-.])\d{1,2}\1\d{1,4}$')
+_NAME_DATE_RE = re.compile(
+    r'^\d{1,2}(?:st|nd|rd|th)?[\s\-.]+[A-Za-z]{3,9}\.?,?[\s\-.]+\d{2,4}$'
+    r'|^[A-Za-z]{3,9}\.?,?[\s\-.]+\d{1,2}(?:st|nd|rd|th)?,?[\s\-.]+\d{2,4}$')
+
+
+def _strong_single_prefix(rec) -> bool:
+    """Dominance guard for the prefix-garble adopt lane (Oracle C2, 2026-08-03). Once Stage-4.5
+    strips the '»' debris, a garbled 'PO-17039'->'0-17039' is MECHANICALLY indistinguishable from
+    a genuine numeric-leading '0-17039'; the ONLY separator is that this scope has never confirmed
+    a numeric-leading ref. So require: `all_prefixed` (every confirmed ref carries an alpha prefix —
+    load-bearing, DO NOT drop), dominant share >= 0.90 (stricter than the 0.80 index-arming bar),
+    and >= DOMINANT_MIN_COUNT confirmations. Reads the prefix rec from ocr_corrector.lookup_prefix
+    ({dominant, counts, total})."""
+    counts = (rec or {}).get('counts') or {}
+    total  = int((rec or {}).get('total') or 0)
+    dom    = (rec or {}).get('dominant')
+    if not dom or total <= 0:
+        return False
+    all_prefixed = (sum(counts.values()) == total)   # NO numeric-leading ref was ever confirmed
+    return (all_prefixed
+            and counts.get(dom, 0) / total >= 0.90
+            and counts.get(dom, 0) >= ocr_corrector.DOMINANT_MIN_COUNT)
+
+
 def _is_ref_field(key: str) -> bool:
     """Reference-number-style fields, by naming convention (no supplier/doc
     specifics): invoice_number / po_number / sales_order_number (..._number),
@@ -295,6 +2097,560 @@ def _is_ref_field(key: str) -> bool:
     types that follow the same convention."""
     k = (key or "").lower()
     return k.endswith("_number") or k.endswith("_no") or "reference" in k
+
+
+# ── G1 veto-fallthrough corroboration predicates (pure — Oracle SIGN-OFF-W/COND 2026-07-26) ──
+# On a doc whose template match arrived via the identity-veto FALL-THROUGH, a critical-field
+# winner must be corroborated by (i) an independent-family rail read or (ii) boundary-guarded
+# presence in the full-page text — else the doc is note-held (G1, final assembly). Pure module
+# functions so the unit file tests them directly. See tests/test_veto_fallthrough_corrob.py.
+
+def _method_family(method) -> str:
+    """Coarse read-provenance family. Arm (i) requires the corroborating candidate to come from a
+    DIFFERENT family than the winner — same-source agreement (anchor_inline vs anchor_crop: same
+    pixels, same pass family) deliberately counts for NOTHING (Oracle S5: same-pixel agreement is
+    weak; do not 'improve' this by letting anchor corroborate anchor)."""
+    m = str(method or "")
+    if m.startswith("keyword"):
+        return "keyword"
+    if m.startswith("anchor"):
+        return "anchor"
+    if m.startswith("template"):
+        return "template"
+    if m.startswith("hint"):
+        return "hint"
+    return m or "other"
+
+
+def _page_presence_corroborated(value, ocr_text) -> bool:
+    """Arm (ii): the value's alnum core appears in the page text, separator-tolerant BUT boundary-
+    guarded — the (?<![A-Za-z0-9]) / (?![A-Za-z0-9]) lookarounds are LOAD-BEARING (Oracle C2): they
+    are what stops '4/10/2026' corroborating against a page printing '14/10/2026' (the interior '4'
+    fails the left lookaround). Bounds (Oracle C3): core length 4..48 (shorter = too ambiguous;
+    longer = uncorroborated → hold, fail-toward-review), each char re.escape'd, bounded {0,3}
+    separator join (never *), IGNORECASE, compiled per value (literal-anchored, no backtracking
+    blowup)."""
+    import re as _re
+    core = "".join(c for c in str(value or "") if c.isalnum())
+    if not (4 <= len(core) <= 48) or not ocr_text:
+        return False
+    pat = (r"(?<![A-Za-z0-9])" + r"[\W_]{0,3}".join(_re.escape(c) for c in core)
+           + r"(?![A-Za-z0-9])")
+    try:
+        return _re.search(pat, ocr_text, _re.IGNORECASE) is not None
+    except _re.error:
+        return False
+
+
+def _fallthrough_critical_corroborated(winner, cands, ocr_text, is_date) -> bool:
+    """G1 predicate: is this critical-field WINNER corroborated?
+      (i) some rail candidate of a DIFFERENT method family normalise-equal to it (dates: BOTH sides
+          must validator.parse_date — closes the documented _values_normalise_equal fail-open date
+          polarity at this call site), OR
+      (ii) the winner's value present in the full-page text (boundary-guarded); for DATES the RAW
+          own-family rail captures are also tried through the SAME matcher (Oracle C2 — Stage 4
+          rewrites '4/10/2026'→'04-10-2026', whose collapsed core would falsely fail against a
+          genuine page '4/10/2026'; a bare substring test is FORBIDDEN here).
+    NO authoritative exemption (Oracle Q2 ruling): an authoritative winner keeps its value/method/
+    confidence — G1 only withholds the SILENT file. Keyword winners pass (ii) by construction."""
+    wv = str((winner or {}).get("value") or "")
+    if not wv:
+        return False
+    wfam = _method_family((winner or {}).get("method"))
+    for c in (cands or []):
+        cv = str((c or {}).get("value") or "")
+        if not cv or _method_family((c or {}).get("method")) == wfam:
+            continue
+        if is_date and not (validator.parse_date(wv) and validator.parse_date(cv)):
+            continue
+        if _values_normalise_equal(cv, wv, is_date):
+            return True
+    if _page_presence_corroborated(wv, ocr_text):
+        return True
+    if is_date:
+        for c in (cands or []):
+            if _method_family((c or {}).get("method")) != wfam:
+                continue
+            rv = str((c or {}).get("value") or "")
+            if rv and rv != wv and _page_presence_corroborated(rv, ocr_text):
+                return True
+    return False
+
+
+def _crosscheck_witness_bucket(stage, method):
+    """Read-provenance bucket for the crosscheck-outlier reconcile — FINER than _method_family, which
+    folds every anchor* into ONE bucket (Oracle C2: a crop OCR and the full-page text pass would then
+    both count as 'independent' when they are the same pixels). Returns (family, is_crop) or None to
+    EXCLUDE the read. EXCLUDED entirely: anchor_registration (located-by-fiat — an independence fraud),
+    bare 'anchor' (the same full-page line the keyword pass reads), and the crosscheck flip itself.
+    CROP-family = a drawn-box / located crop OCR, genuinely independent of the full-page text pass."""
+    st = str(stage or "")
+    m = str(method or "")
+    if m in ("anchor_registration", "anchor", "anchor_crop_crosscheck"):
+        return None
+    if st == "0.5_mapping" or m.startswith("template"):
+        return ("mapping", True)      # Stage-0.5 drawn-box crop OCR — different region AND recipe
+    if st == "1_keyword" or m.startswith("keyword"):
+        return ("keyword", False)     # regex over the full-page text — NOT crop-independent
+    if m in ("anchor_crop", "anchor_inline", "anchor_crop_relocated"):
+        return ("crop", True)
+    if m.startswith("hint"):
+        return ("hint", False)
+    return None                       # unknown / weak → not counted toward the family total
+
+
+def _crosscheck_corroborated_alternative(winner, cands, ocr_text, is_date):
+    """Slice-1 crosscheck-outlier reconcile predicate (pure). The WINNER is an 'anchor_crop_crosscheck'
+    flip. Return a DISTINCT-value alternative to RESTORE, or None (fail-toward-review — flip stays).
+    Fires ONLY when:
+      (0) the flip is itself UNcorroborated — _fallthrough_critical_corroborated False (reuses E2/G1's
+          different-family + page-presence test; City-Office's page-present flip returns True → bail); AND
+      an alternative value V (disagreeing with the flip, calendar-aware for dates) is:
+      (1) agreed by >=2 INDEPENDENT method families (per _crosscheck_witness_bucket), AND
+      (2) supported by >=1 CROP-family read (so the two legs are never both the full-page text — C2), AND
+      (3) present in the page text (_page_presence_corroborated — a SEPARATE AND, never a family).
+    The winner's own pre-flip crop read (_crosscheck_original, preserved by anchor.py under the same kill
+    switch — Oracle C1) is admitted as a crop-family witness, so a keyword+crop (NO-mapping) ⊕-taught doc
+    heals — not only a mapping-backed one (else this is a document fix, not a system fix)."""
+    if not isinstance(winner, dict):
+        return None
+    if str(winner.get("method") or "") != "anchor_crop_crosscheck":
+        return None                                  # only a live crosscheck flip is reconcilable
+    flip = str(winner.get("value") or "")
+    if not flip:
+        return None
+    if _fallthrough_critical_corroborated(winner, cands, ocr_text, is_date):
+        return None                                  # (0) the flip IS corroborated → never override it
+    buckets = {}   # alnum_key -> {"raw": str, "fams": set(), "crop": bool}
+
+    def _admit(value, fam_tuple):
+        if fam_tuple is None:
+            return
+        v = str(value or "").strip()
+        if not v or _values_normalise_equal(v, flip, is_date):
+            return                                   # only DISAGREEING alternatives are restore targets
+        key = "".join(c for c in _cmp_norm(v) if c.isalnum())
+        if not key:
+            return
+        slot = buckets.setdefault(key, {"raw": v, "fams": set(), "crop": False})
+        fam, is_crop = fam_tuple
+        slot["fams"].add(fam)
+        if is_crop:
+            slot["crop"] = True
+
+    for c in (cands or []):
+        _admit((c or {}).get("value"),
+               _crosscheck_witness_bucket((c or {}).get("stage"), (c or {}).get("method")))
+    _admit(winner.get("_crosscheck_original"), ("crop", True))   # C1 — pre-flip crop as a crop-family leg
+
+    best = None
+    for slot in buckets.values():
+        if len(slot["fams"]) >= 2 and slot["crop"] \
+                and _page_presence_corroborated(slot["raw"], ocr_text):
+            if best is None or len(slot["fams"]) > len(best["fams"]):
+                best = slot
+    return best["raw"] if best else None
+
+
+# ── Slice-2 universal post-merge verify — pure per-tier primitives ────────────────────────────
+# (gary+reggie+007 → Oracle SIGN-OFF-W/COND 2026-08-03.) The Slice-1 gate skeleton generalised:
+# per-tier AGREE (when do two candidate values corroborate each other) and PRESENT (when is a
+# value credibly printed on the page). Precision-first: a false AGREE/PRESENT can RESTORE a wrong
+# value, so every tier's failure mode errs toward "not a witness" (fail-toward-review).
+
+_UV_STRUCTURED_TYPES = {'email', 'website', 'postcode_uk', 'vat_gb', 'iban'}
+_UV_RESTORE_TIERS    = {'ref', 'date', 'numeric', 'percentage'}
+
+
+def _uv_tier(key, ftype, ref_field_key, date_field_keys):
+    """Slice-2 tier dispatch by field TYPE + structural role (type-keyed, never name-keyed beyond
+    the shipped _is_ref_field naming convention — a system rule, not a doc rule). None = EXCLUDED:
+    currency/amount (totals pass owns), supplier_name (identity lane), precise network types
+    (mac/ip machinery owns), unknown types (no safe predicate)."""
+    k = str(key or '')
+    t = str(ftype or '').lower()
+    if k == 'supplier_name':
+        return None
+    if t in ('currency', 'amount', 'currency_code'):
+        return None
+    if t == 'date' or k in (date_field_keys or ()):
+        return 'date'
+    if t in _UV_STRUCTURED_TYPES:
+        return 'structured'
+    if t == 'number':
+        return 'numeric'
+    if t == 'percentage':
+        return 'percentage'
+    if t in ('reference', 'reference_code', 'alphanumeric', 'job_reference') \
+            or (ref_field_key and k == ref_field_key) or _is_ref_field(k):
+        return 'ref'
+    if t in ('', 'text', 'multiline_text'):
+        return 'text'
+    return None
+
+
+# Strict numeric grammar (reggie): comma/NBSP thousands only, optional 1-2 digit decimal tail.
+# A value failing the grammar (garbled grouping, comma-decimal '1.600,50', lakh '1,60,000') is
+# NOT a witness. Space grouping deliberately rejected: row-rebuilt ocr_text merges adjacent
+# columns onto one line, so 'Qty 1 600.00' must never assemble '1600'.
+_UV_NUM_RE = re.compile('^[+-]?(\\d{1,3}(?:[, ]\\d{3})+|\\d+)(?:\\.(\\d{1,2}))?$')
+
+
+def _uv_numeric_canon(value, pct=False):
+    """(int_digits, decimal_tail_rstripped) or None. Leading zeros are SIGNIFICANT (a zero-led
+    'number' is really a code — exact-string equality keeps '042' != '42')."""
+    s = str(value or '').strip()
+    if pct:
+        s = re.sub('\\s*%$', '', s).strip()
+    m = _UV_NUM_RE.match(s)
+    if not m:
+        return None
+    ints = m.group(1).replace(',', '').replace(' ', '')
+    dec = (m.group(2) or '').rstrip('0')
+    return (ints, dec)
+
+
+def _uv_numeric_agree(a, b, pct=False) -> bool:
+    ca, cb = _uv_numeric_canon(a, pct), _uv_numeric_canon(b, pct)
+    return ca is not None and ca == cb
+
+
+def _uv_numeric_page_present(value, ocr_text, min_int_digits=4, pct=False) -> bool:
+    """Grouped-render presence for a numeric value (reggie + Oracle). Builds the comma/NBSP
+    grouped pattern from the canonical int digits with TWO extra guards over the generic
+    presence primitive: fixed-width lookbehind (?<![0-9][,. ]) kills the grouped-tail steal
+    ('250000' must not match inside '1,250,000'); lookahead (?![.,][0-9]) kills the decimal
+    interior ('1250' must not match inside '1,250.75'). A whole-number winner accepts a
+    zero-cents render ('1,600.00' corroborates 1600); '16.00' can never corroborate '1600'
+    (a digit cannot be skipped). min_int_digits=1 is the WINNER-DEFENCE mode (gary's symmetry
+    trap: a correct short winner '42' must be defensible even though it is never a restore
+    target); the ALTERNATIVE leg keeps the >=4 floor. Percentage mode requires the printed
+    '%' anchor, which makes even 1-2 digit percentages safely locatable."""
+    c = _uv_numeric_canon(value, pct=pct)
+    if not c or not ocr_text:
+        return False
+    ints, dec = c
+    if len(ints) < (1 if pct else min_int_digits):
+        return False
+    parts = []
+    for i, ch in enumerate(ints):
+        parts.append(re.escape(ch))
+        rem = len(ints) - 1 - i
+        if rem and rem % 3 == 0:
+            parts.append('[, ]?')
+    body = ''.join(parts)
+    if dec:
+        tail = '\\.' + re.escape(dec) + ('0?' if len(dec) == 1 else '')
+    else:
+        tail = '(?:\\.0{1,2})?'
+    lead = '(?<![0-9A-Za-z])(?<![0-9][,.  ])'
+    trail = '(?![0-9A-Za-z])(?![.,][0-9])'
+    pat = lead + body + tail + ('\\s?%' if pct else trail)
+    try:
+        return re.search(pat, ocr_text) is not None
+    except re.error:
+        return False
+
+
+def _uv_date_agree(a, b) -> bool:
+    """Calendar equality with BOTH sides parse-gated (the documented _values_normalise_equal
+    date-arm fail-open makes an ungated call unsafe — never 'simplify' to that helper here)."""
+    da = validator.parse_date(str(a or ''))
+    db = validator.parse_date(str(b or ''))
+    return bool(da and db and da.date() == db.date())
+
+
+def _uv_date_page_present(value, ocr_text) -> bool:
+    """Locate-and-parse presence (reggie): run the shipped salvage LOCATORS over the page text,
+    parse each hit, present iff some hit calendar-equals the target. Inherits salvage's guarantees:
+    a locator hit needs real separators or a month name (a bare ref '41026' can never corroborate a
+    date), and greedy leftmost matching means a page '14/10/2026' yields 14-Oct — never an interior
+    '4/10/2026' — so the collapsed-core trap can't arise by construction."""
+    tgt = validator.parse_date(str(value or ''))
+    if not tgt or not ocr_text:
+        return False
+    try:
+        for m in validator._NUMERIC_DATE_RE.finditer(ocr_text):
+            d = validator.parse_date(re.sub('\\s+', '', m.group(0)))
+            if d and d.date() == tgt.date():
+                return True
+        for m in validator._MONTH_NAME_DATE_RE.finditer(ocr_text):
+            d = validator.parse_date(re.sub('\\s{2,}', ' ', m.group(0)).strip())
+            if d and d.date() == tgt.date():
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _uv_text_tokens_agree(a, b) -> bool:
+    """Tolerant text AGREE — FLAG tier only, NEVER feeds a restore (007: text divergence is
+    bimodal; the tolerance that admits OCR jitter also admits one-letter-different real names).
+    Normalised content tokens; ONE adjacent-pair join allowed on either side (absorbs a
+    'North gate'/'Northgate' split); pairwise exact, or len>=5 Levenshtein<=1 under a TOTAL
+    budget of 1 across the whole value (deliberately NOT name_match._close — its budget-2 arm
+    passes northgate/northdale, which must disagree)."""
+    try:
+        from extraction import text_normalise as _tn
+        from extraction import name_match as _nm
+        ta = [t for t in _tn.tokenise(a) if _nm._is_content(t)]
+        tb = [t for t in _tn.tokenise(b) if _nm._is_content(t)]
+        if not ta or not tb:
+            return False
+
+        def _variants(toks):
+            yield toks
+            for i in range(len(toks) - 1):
+                yield toks[:i] + [toks[i] + toks[i + 1]] + toks[i + 2:]
+
+        for xa in _variants(ta):
+            for xb in _variants(tb):
+                if len(xa) != len(xb):
+                    continue
+                budget = 1
+                ok = True
+                for p, q in zip(xa, xb):
+                    if p == q:
+                        continue
+                    if len(p) >= 5 and len(q) >= 5:
+                        d = _nm._levenshtein(p, q)
+                        if d <= budget:
+                            budget -= d
+                            continue
+                    ok = False
+                    break
+                if ok:
+                    return True
+    except Exception:
+        return False
+    return False
+
+
+def _uv_text_page_present(value, ocr_text) -> bool:
+    """Per-token containment (007's polarity catch): every QUALIFYING content token (alnum core
+    4..48) must be present via the shipped boundary-guarded primitive. Tokenising — instead of one
+    whole-value mega-join — stops the 48-char cap systematically failing long correct values.
+    Short tokens (core <4, e.g. 'Ltd') are skipped as unverifiable; a value with NO qualifying
+    token is simply not page-verifiable → False (which only ever suppresses a flag/restore)."""
+    try:
+        from extraction import text_normalise as _tn
+        from extraction import name_match as _nm
+        toks = [t for t in _tn.tokenise(value) if _nm._is_content(t)]
+    except Exception:
+        return False
+    qual = [t for t in toks if 4 <= len("".join(c for c in t if c.isalnum())) <= 48]
+    if not qual:
+        return False
+    return all(_page_presence_corroborated(t, ocr_text) for t in qual)
+
+
+def _uv_structured_canon(ftype, value) -> str:
+    v = str(value or '').strip()
+    if ftype == 'email':
+        return v.lower().replace(' ', '')
+    if ftype == 'website':
+        v = re.sub('^https?://', '', v.lower()).rstrip('/')
+        return re.sub('^www\\.', '', v)
+    if ftype == 'postcode_uk':
+        return v.upper().replace(' ', '')
+    if ftype == 'vat_gb':
+        v = v.upper().replace(' ', '')
+        return v[2:] if v.startswith('GB') else v
+    if ftype == 'iban':
+        return v.upper().replace(' ', '')
+    return v
+
+
+def _uv_structured_agree(ftype, a, b) -> bool:
+    ca, cb = _uv_structured_canon(ftype, a), _uv_structured_canon(ftype, b)
+    return bool(ca) and ca == cb
+
+
+def _uv_structured_page_present(ftype, value, ocr_text) -> bool:
+    """Structure-anchored presence (reggie): the '@' and each '.' are REQUIRED literals with only
+    optional whitespace around them — the generic alnum-core join would falsely assemble
+    'johndoeacmeco' out of a letterhead line 'John Doe, Acme Co' that never prints the email."""
+    if not value or not ocr_text:
+        return False
+    try:
+        if ftype == 'email':
+            v = _uv_structured_canon(ftype, value)
+            if '@' not in v or '.' not in v.split('@', 1)[1]:
+                return False
+            pat = re.escape(v).replace('@', '\\s?@\\s?').replace('\\.', '\\s?\\.\\s?')
+        elif ftype == 'website':
+            v = _uv_structured_canon(ftype, value)
+            if '.' not in v:
+                return False
+            pat = '(?:www\\s?\\.\\s?)?' + re.escape(v).replace('\\.', '\\s?\\.\\s?')
+        elif ftype == 'postcode_uk':
+            v = _uv_structured_canon(ftype, value)
+            if len(v) < 5:
+                return False
+            pat = re.escape(v[:-3]) + '\\s?' + re.escape(v[-3:])
+        elif ftype == 'vat_gb':
+            v = _uv_structured_canon(ftype, value)
+            if not v.isdigit() or len(v) < 9:
+                return False
+            pat = '(?:GB\\s?)?' + '\\s?'.join(re.escape(c) for c in v)
+        elif ftype == 'iban':
+            v = _uv_structured_canon(ftype, value)
+            if len(v) < 15:
+                return False
+            pat = '[ ]?'.join(re.escape(c) for c in v)
+        else:
+            return False
+        pat = '(?<![A-Za-z0-9])' + pat + '(?![A-Za-z0-9])'
+        return re.search(pat, ocr_text, re.IGNORECASE) is not None
+    except re.error:
+        return False
+
+
+def _uv_agree(tier, ftype, a, b) -> bool:
+    """Tier-dispatched AGREE."""
+    if tier == 'date':
+        return _uv_date_agree(a, b)
+    if tier == 'numeric':
+        return _uv_numeric_agree(a, b)
+    if tier == 'percentage':
+        return _uv_numeric_agree(a, b, pct=True)
+    if tier == 'text':
+        return _uv_text_tokens_agree(a, b)
+    if tier == 'structured':
+        return _uv_structured_agree(ftype, a, b)
+    return _values_normalise_equal(a, b, False)          # ref: shipped alnum-core equality
+
+
+def _uv_present(tier, ftype, value, ocr_text, defending=False) -> bool:
+    """Tier-dispatched PRESENT. `defending=True` = the WINNER-defence leg (symmetric, floor-free
+    for numerics so a correct '42' is defensible); the ALTERNATIVE leg keeps every floor (a
+    restore target must clear the full bar). An all-digit ref core routes through the numeric
+    predicate (reggie's traced gap: the generic lookbehind lets '250000' match inside
+    '1,250,000' — Slice-2 path only, the shipped/gated Slice-1+G1 primitives stay untouched)."""
+    if tier == 'date':
+        return _uv_date_page_present(value, ocr_text)
+    if tier == 'numeric':
+        return _uv_numeric_page_present(value, ocr_text, min_int_digits=(1 if defending else 4))
+    if tier == 'percentage':
+        return _uv_numeric_page_present(value, ocr_text, pct=True)
+    if tier == 'text':
+        return _uv_text_page_present(value, ocr_text)
+    if tier == 'structured':
+        return _uv_structured_page_present(ftype, value, ocr_text)
+    core = "".join(c for c in str(value or '') if c.isalnum())
+    if core.isdigit():
+        return _uv_numeric_page_present(core, ocr_text, min_int_digits=(1 if defending else 4))
+    return _page_presence_corroborated(value, ocr_text)
+
+
+def _uv_winner_corroborated(winner, cands, ocr_text, tier, ftype) -> bool:
+    """Tier-aware WINNER defence (the Slice-2 analogue of _fallthrough_critical_corroborated):
+    a different-family rail tier-AGREEs with the winner, OR the winner is tier-PRESENT
+    (floor-free — the symmetric defence). Dates also try raw own-family rail captures through
+    the same present matcher (the shipped C2 route: Stage 4 rewrites '4/10/2026'→'04-10-2026')."""
+    wv = str((winner or {}).get('value') or '')
+    if not wv:
+        return False
+    wfam = _method_family((winner or {}).get('method'))
+    for c in (cands or []):
+        cv = str((c or {}).get('value') or '')
+        if not cv or _method_family((c or {}).get('method')) == wfam:
+            continue
+        if _uv_agree(tier, ftype, wv, cv):
+            return True
+    if _uv_present(tier, ftype, wv, ocr_text, defending=True):
+        return True
+    if tier == 'date':
+        for c in (cands or []):
+            if _method_family((c or {}).get('method')) != wfam:
+                continue
+            rv = str((c or {}).get('value') or '')
+            if rv and rv != wv and _uv_date_page_present(rv, ocr_text):
+                return True
+    return False
+
+
+def _uv_corroborated_alternative(winner, cands, ocr_text, tier, ftype, require_crop):
+    """Slice-2 alternative selection — the Slice-1 bucket loop with per-tier AGREE grouping and
+    per-tier PRESENT on the alternative leg. require_crop=True for the RESTORE tiers (>=1
+    crop-family leg, Oracle C2's independence bar); the FLAG tiers need >=2 distinct families
+    but no crop leg (a text field whose only witnesses are keyword+hint may still FLAG — the
+    cost of a false flag is a review note, not a wrong file). Grouping key per tier is the
+    tier-canonical form; an UNparseable/ungrammatical read is NOT a witness."""
+    wv = str((winner or {}).get('value') or '')
+    if not wv:
+        return None
+    buckets = {}
+
+    def _group_key(v):
+        if tier == 'date':
+            d = validator.parse_date(str(v or ''))
+            return d.date().isoformat() if d else None
+        if tier in ('numeric', 'percentage'):
+            c = _uv_numeric_canon(v, pct=(tier == 'percentage'))
+            return ('%s|%s' % c) if c else None
+        if tier == 'structured':
+            return _uv_structured_canon(ftype, v) or None
+        if tier == 'text':
+            try:
+                from extraction import text_normalise as _tn
+                from extraction import name_match as _nm
+                toks = [t for t in _tn.tokenise(v) if _nm._is_content(t)]
+                return ' '.join(toks) or None       # exact-normalised grouping: two witnesses
+            except Exception:                        # must genuinely agree (conservative — a
+                return None                          # tolerant grouping is non-transitive)
+        key = "".join(c for c in _cmp_norm(v) if c.isalnum())
+        return key or None
+
+    for c in (cands or []):
+        fam_tuple = _crosscheck_witness_bucket((c or {}).get('stage'), (c or {}).get('method'))
+        if fam_tuple is None:
+            continue
+        v = str((c or {}).get('value') or '').strip()
+        if not v or _uv_agree(tier, ftype, v, wv):
+            continue                                 # only DISAGREEING alternatives
+        gk = _group_key(v)
+        if gk is None:
+            continue                                 # unparseable → not a witness
+        slot = buckets.setdefault(gk, {'raw': v, 'fams': set(), 'crop': False,
+                                       'crop_method': None})
+        fam, is_crop = fam_tuple
+        slot['fams'].add(fam)
+        if is_crop:
+            slot['crop'] = True
+            if not slot['crop_method']:
+                slot['crop_method'] = (c or {}).get('method')
+
+    best = None
+    for slot in buckets.values():
+        if len(slot['fams']) < 2 or (require_crop and not slot['crop']):
+            continue
+        if not _uv_present(tier, ftype, slot['raw'], ocr_text, defending=False):
+            continue
+        if best is None or len(slot['fams']) > len(best['fams']):
+            best = slot
+    return best
+
+
+def _inline_absence_should_hold(winner, cands, ocr_text, is_date) -> bool:
+    """Fix A (#183, gary design + Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-26): should a CRITICAL
+    anchor_inline winner be HELD for review? True iff the winner was committed by the Stage-2 word-
+    geometry inline harvest (method 'anchor_inline') AND no independent source corroborates it
+    (_fallthrough_critical_corroborated is False: no different-method-family rail agrees AND the value's
+    alnum core is absent from the full-page text). Catches the skew-synthesis class — a valid-shaped
+    critical value the harvest assembled from scattered word boxes that appears NOWHERE on the page
+    (#183: 'PO-20008' while the page prints 'PO-60906'); the row-grouping loss hid it from ocr_text so it
+    rode the conformance boost to a silent auto-file.
+
+    Oracle C2 (2026-07-26): keyed on the CORROBORATION invariant, NOT on whether the rigid crop was
+    'rejected'. That story is SUFFICIENT-NOT-NECESSARY and unobservable in production (on_reject is trace-
+    only; the _xsup_absolute_ok skip and the supersede-not-reject path both yield anchor_inline with no
+    rejection) — do NOT re-scope this to demand a rejection signal or a crop box. Being a pure function of
+    the RESULT (no anchors-list correlation) it also closes the label-less/positional-anchor synthesis hole
+    (the blind-po_date class) that a crop-box requirement would have exempted."""
+    if str((winner or {}).get("method") or "") != "anchor_inline":
+        return False
+    return not _fallthrough_critical_corroborated(winner, cands or [], ocr_text or "", is_date)
 
 
 # Field TYPE → credibility validation key. Only STRUCTURED / code types are mapped;
@@ -442,6 +2798,123 @@ def select_mapping_source(matched_tmpl: dict, templates: list | None) -> tuple[l
     return best_maps, best_sib
 
 
+# ── Net-misread total FLAG (DEFAULT OFF — gary+reggie+Oracle 2026-08-06, docs/oracle_log.md) ──
+# A taught Stage-0.5 total read has NO net-vs-gross discipline (template_mapper reads a fixed box /
+# relocates off the literal "TOTAL" anchor), so on a variable-line-count credit note it can land on
+# the "Net Total" row and commit the NET at high confidence. The two existing safeties both need the
+# VAT line read correctly: _reconciliation_pick_total swaps only to a candidate that BALANCES, and the
+# Stage-4 flag needs `tax` present. When VAT is absent/mis-read, `total_reconciles(net)` FALSELY
+# balances (net ≈ subtotal + 0) so neither fires and the net auto-files silently. This pass catches
+# exactly that gap WITHOUT relying on total_reconciles: it keys on "committed total ≈ subtotal (the net)
+# AND a distinct, VAT-plausible, larger, confident total was also read" → cap + review note, NEVER swap
+# (fail-toward-review; preserves the authoritative-anchor invariant — arithmetic/role rail, not learned
+# shape). Byte-identical when OFF. Owner flip pending its own corpus false-flag gate (Oracle condition).
+NET_MISREAD_TOTAL_FLAG = os.environ.get('NET_MISREAD_TOTAL_FLAG', '0') != '0'
+_NET_MISREAD_MIN_CONF  = 70     # a corroborating gross candidate must be at least this confident
+_NET_MISREAD_RATIO_LO  = 1.01   # gross/net band — VAT-plausible (≈5%..25% + rounding). Oracle: keep
+_NET_MISREAD_RATIO_HI  = 1.30   # continuous + nearest-above; do NOT snap to {1.05,1.20} (mixed-rate baskets)
+_NET_MISREAD_CAP       = 50     # cap a flagged net to review level (matches validator _RECONCILE_CAP)
+
+
+def _net_misread_verdict(total, subtotal, candidates, tol):
+    """PURE (Oracle SIGN-OFF-W/COND 2026-08-06). Returns (gross_float, candidate_dict) when the
+    committed `total` looks like the NET/subtotal line AND a distinct larger VAT-plausible confident
+    total also exists — else None. `total`/`subtotal` are parsed floats; `candidates` = [{'value',
+    'confidence'}, …]. Keys on `total ≈ subtotal` + nearest-above VAT-plausible candidate — NOT
+    total_reconciles, which spuriously balances net==subtotal when VAT is absent (the exact silent-
+    commit case). A correct GROSS differs from the net by a real VAT > tol, so it fails step 2 and is
+    never flagged; a zero-VAT doc (net==gross) has no larger candidate, so it is never flagged."""
+    from extraction.validator import parse_amount
+    if total is None or subtotal is None or total <= 0 or subtotal <= 0:
+        return None
+    if abs(total - subtotal) > tol:
+        return None                       # total is NOT on the net line — a correct gross (protected)
+    best = None                            # nearest-above VAT-plausible gross
+    for c in (candidates or []):
+        g = parse_amount(c.get('value'))
+        if g is None or (c.get('confidence') or 0) < _NET_MISREAD_MIN_CONF:
+            continue
+        if g <= total + tol:
+            continue                       # must be strictly larger than the net
+        ratio = g / total
+        if not (_NET_MISREAD_RATIO_LO <= ratio <= _NET_MISREAD_RATIO_HI):
+            continue                       # implausible as a VAT gross (running balance / line-item)
+        if best is None or g < best[0]:
+            best = (g, c)                  # nearest-above = the gross, not a larger running balance
+    return best
+
+
+# ── Taught-read format-fail → keyword YIELD (DEFAULT OFF — gary+Oracle 2026-08-06) ──
+# The owner's rule: teaching must never make a field WORSE than not teaching. Measured on the stable
+# corpus, teaching HELPS most fields but HURTS total/po_ref: an authoritative Stage-0.5 template_mapping
+# read lands on the wrong row / adjacent field / clips / garbles ("Account" for po_ref; "L922.14" for a
+# total) yet keeps authoritative precedence over the CORRECT keyword read at the Stage-1 merge. This
+# yields such a FORMAT-FAILING taught read to a confident, format-PASSING, disagreeing keyword read
+# (swap + cap + review note — never silent). A VALID taught read passes _stage05_format_fails and never
+# yields, so the teaching gains (ref/date/issuer) are untouched. The format-VALID net-line case is owned
+# separately by NET_MISREAD_TOTAL_FLAG. Byte-identical when OFF.
+TEMPLATE_FORMAT_FAIL_YIELD = os.environ.get('TEMPLATE_FORMAT_FAIL_YIELD', '0') != '0'
+_FORMAT_FAIL_KW_FLOOR = 85   # REDESIGN 2026-08-09 (gary): 85 not 88 — the corpus challenger is a seeded
+                             # inline label read at base 80 +5 (right direction) = 85; the old 88 stranded
+                             # every such read (the po_ref 0-fire on the shapewarn cases). Below 85 is
+                             # unlabelled-noise territory; the challenger already PASSES the hard pattern
+                             # AND disagrees (via _cmp_norm), so the pattern is the quality gate, not this.
+
+
+def _stage05_format_fails(value, key, val_type, field_patterns, validation_patterns):
+    """PURE, DETERMINISTIC content-nature check (gary REDESIGN 2026-08-09 — supersedes the
+    2026-08-06 shapewarn/learned-shape version, which GATE-FAILED: L1 trusted the `_shapewarn`
+    TAG as 'wrong value', so a CORRECT taught ref shapewarn'd on a thin shape yielded to a
+    LOOSE-`alphanumeric`-passing garbage keyword read — the ref −1.0 regression).
+
+    True when a taught Stage-0.5 read demonstrably FAILS its field's FORMAT (landed on the wrong
+    row / adjacent field / clipped-to-junk / garbled). Two independent legs:
+
+      • REF-FAMILY — a reference/code field (…_number, …_no, an explicit "reference" field, OR a
+        `…_ref` field like the corpus `po_ref`/`job_ref` that the global `_is_ref_field` misses).
+        Judged by the HARD, DIGIT-BEARING, ANCHORED `reference_code` pattern — NOT the loose
+        `alphanumeric` many ref fields default to (which `re.search`-passes any 3-char run:
+        'Account'/'The'/'Tel 01632…' all slip through). 'Account'/'The'/prose FAIL (no digit /
+        spaces); 'PO-56863'/'INV-2026-001' PASS. Belt-and-braces: a value that is itself a full
+        numeric DATE also FAILS (a date-shaped keyword read must never be swapped into a ref).
+        A clipped-but-code-shaped '24511'/'19979' still PASSES here (format-valid, wrong value) —
+        that is a READ-layer error (taught box shifted), OUT of scope, accepted residual.
+
+      • CURRENCY — a strict validity check the lenient substring credibility let through. Uses the
+        pipeline's `parse_amount` + a strict leading-glyph guard (NOT a hand-rolled anglo regex)
+        so '-£662.18'/'£-662.18'/continental/swiss PASS while 'L922.14'/'-3 5982.70' FAIL. A
+        format-VALID net/bare total ('2', '£978.20') PASSES → left to NET_MISREAD_TOTAL_FLAG /
+        accepted magnitude residual (out of scope — not a FORMAT failure).
+
+    NO learned-shape veto and NO `_shapewarn`-tag trust (both dropped): the check is now purely a
+    function of the VALUE's content nature — the CLAUDE.md-sanctioned category for applying a
+    guard to an authoritative taught read (cf. date-in-ref / ref-length / prefix-outlier), never
+    a learned-shape veto (which the authoritative-read invariant forbids). Date + name-like
+    free-text are excluded by the CALLER's scope guard (they vary legitimately)."""
+    v = str(value or "").strip()
+    if not v:
+        return True
+    # REF-FAMILY — local predicate ALSO catches `…_ref` fields the global _is_ref_field misses
+    # (po_ref/job_ref); deliberately NOT broadening _is_ref_field (~6 call sites incl. two
+    # corroboration/override safety gates). Mirrors what _field_role already does for alphanumeric.
+    if _is_ref_field(key) or (key or "").lower().endswith("_ref"):
+        _rc = (validation_patterns or {}).get("reference_code")
+        if _rc and not keyword._validate(v, _rc):          # fails the hard digit-bearing code pattern
+            return True
+        # a date-shaped value is never a ref (guards a date challenger being swapped into a ref role)
+        if _NUM_DATE_RE.match(v) and validator.parse_date(v) is not None:
+            return True
+        return False
+    if val_type == "currency" or (field_patterns or {}).get(key, {}).get("validation") == "currency":
+        # leading glyph: optional symbol and/or sign then a DIGIT (rejects 'L922.14' the substring let by)
+        if not re.match(r"^[£$€¥]?\s*[-–]?\s*[£$€¥]?\s*\d", v):
+            return True
+        if validator.parse_amount(v) is None:
+            return True
+        return False
+    return False   # unknown structured field → no swap (fail-safe)
+
+
 class ExtractionEngine:
 
     def __init__(self,
@@ -455,9 +2928,12 @@ class ExtractionEngine:
         self.format_index        = {}   # populated by set_formats()
         self.dominant_index      = {}   # Stage 2.5d dominant-value snap (populated by set_formats)
         self.known_index         = {}   # confirmed values per scope — guards try_correct (set_formats)
+        self.confirmed_counts_index = {}   # per-scope confirmed-value counts — picker history ranking
         self.prefix_index        = {}   # dominant ref-code prefix per scope — prefix-outlier guard (set_formats)
+        self.length_index        = {}   # dominant ref digit-run profile per scope — S-B length guard (set_formats)
         self.noise_profile_index = {}   # populated by set_formats()
         self.format_class_index  = {}   # populated by set_formats()
+        self.provisional_shape_index = {}   # consent-only taught skeletons (set_formats)
         self.label_overrides     = []   # populated by set_label_overrides()
         self.field_rules_index   = {}   # populated by set_field_rules()
         self._multiline_index    = {}   # populated by set_field_rules() (multiline_continue)
@@ -468,7 +2944,9 @@ class ExtractionEngine:
         # field types in candidate_override_fields). See _resolve_candidates().
         self.candidate_override        = 'off'
         self.candidate_override_fields = set()
-        self._field_candidates   = {}    # per-run candidate ledger (built only when override on)
+        self._field_candidates   = {}    # per-run candidate ledger — ALWAYS built (see _remember_candidates);
+                                         # safety-load-bearing for the G1 veto-fallthrough corroboration arm (i):
+                                         # do NOT re-gate it behind candidate_override
         # Wordness gate (default OFF → byte-identical). When on, a free-text NAME read
         # that does not read like a name (document chrome, ref/code bleed, OCR garble)
         # is FLAGGED for review (note + conf cap); never rejected. See extraction/wordness.py.
@@ -503,6 +2981,160 @@ class ExtractionEngine:
         canonical form, so a taught 'Cloud VPS' matches 'cloud   vps' / ' Cloud VPS '."""
         return " ".join(str(value or "").strip().lower().split())
 
+    @staticmethod
+    def _noted_template_fill_value(sn_cur):
+        """The value of a REVIEW-BOUND template_identity FILL (method 'template_identity' + a
+        validation_note + a value) — the ONLY incumbent eligible for text-first graduation. Returns
+        None for: the un-noted template-supplier-precedence override (@90, no note), a
+        positional-dropped (None) value, or any other method. Pure/static so the eligibility gate is
+        unit-testable without a full extract()."""
+        if not isinstance(sn_cur, dict):
+            return None
+        if sn_cur.get("method") != "template_identity":
+            return None
+        if not sn_cur.get("validation_note"):
+            return None
+        return sn_cur.get("value") or None
+
+    @staticmethod
+    def _should_shed_template_identity_note(sn_cur, issuer_band, *, env=None):
+        """S1 decision (pure/static, unit-testable): may we shed the review note from a MAJORITY-tier
+        template-identity fill? True iff — S1 armed (TEMPLATE_IDENTITY_BAND_GRADUATE!='0'), the issuer
+        band is trusted (ISSUER_HINT_BAND!='0' — C2: never shed off the raw ocr_text[:600] fallback),
+        `sn_cur` is a still-noted MAJORITY template_identity fill with a value, AND that value is
+        STRICTLY corroborated in `issuer_band` (the caller's pre-computed _issuer_hint_band window).
+        SINGLE-tier fills are deliberately never shed BY THIS BAND ARM (a band substring can be a
+        recipient self-corroborating on a marker-free layout — the C2 hole; pin re-scoped 2026-07-31):
+        the GEOMETRY-WITNESS arm (_should_shed_fill_note_geom, Oracle-signed) may shed EITHER tier,
+        because its evidence is an independent geometry-only letterhead read, not a substring.
+        `env` is injectable for tests. FAIL toward keeping the note."""
+        _env = os.environ if env is None else env
+        if _env.get("TEMPLATE_IDENTITY_BAND_GRADUATE", "0") == "0":
+            return False
+        if _env.get("ISSUER_HINT_BAND", "1") == "0":
+            return False
+        if not isinstance(sn_cur, dict) or sn_cur.get("method") != "template_identity":
+            return False
+        if sn_cur.get("validation_note") != _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY:
+            return False
+        v = sn_cur.get("value")
+        return bool(v) and _identity_corroborated_strict(v, issuer_band)
+
+    @staticmethod
+    def _should_shed_fill_note_geom(sn_cur, geom_issuer_norm, value_norm, *, env=None):
+        """G decision (pure/static; 2026-07-31 gary→Oracle SIGN-OFF-W/COND; kill
+        TEMPLATE_IDENTITY_GEOM_WITNESS, default ON — flipped after unit+probe gates; INDEPENDENT of the band arm's switch —
+        Oracle G1): may the review note be shed from a template-identity fill because an INDEPENDENT
+        geometry-only letterhead read (pick_issuer_geometry — largest top-of-page name, recipient
+        excluded by size+position, two-candidate abstain; the SAME evidence class
+        LOGO_NAME_PRESENCE_ACCEPT already trusts to let a logo assert un-noted) AGREES with the
+        filled value? Tier-INDEPENDENT — a single-confirm supplier's page still prints its own
+        letterhead; the band arm's single-never-sheds pin is about SUBSTRING evidence, not this.
+        STRICT norm equality (caller passes _accept_norm(value) as `value_norm`): a token-superset
+        letterhead ("Ironbridge Fabrication Ltd" vs confirmed "Ironbridge Fabrication") does NOT
+        shed — pinned as a deliberate, measured limit (Oracle G5). FAIL toward keeping the note:
+        no witness / abstain / disagree / switch off → False."""
+        _env = os.environ if env is None else env
+        if _env.get("TEMPLATE_IDENTITY_GEOM_WITNESS", "1") == "0":
+            return False
+        if not isinstance(sn_cur, dict) or sn_cur.get("method") != "template_identity":
+            return False
+        if sn_cur.get("validation_note") not in (_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE,
+                                                 _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY):
+            return False
+        if not sn_cur.get("value") or not geom_issuer_norm or not value_norm:
+            return False
+        return value_norm == geom_issuer_norm
+
+    # How many top lines `_issuer_hint_band` may scan. Deliberately LARGE so the 600-character cap
+    # — not this line cap — is what binds on a marker-free page: the only intended narrowing is the
+    # recipient-marker truncation, and a line cap would smuggle in a second, unevidenced one.
+    # NOT the same as chrome_band.issuer_chrome's own default of 6, which must not be touched: that
+    # default is calibrated for TOKEN-RATIO consumers (_identity_text_sufficient's floor at
+    # _IDENTITY_MIN_BAND_TOKENS was measured against it), which degrade gracefully on a short band.
+    # This consumer is an all-or-nothing substring test and has no such tolerance.
+    _HINT_BAND_LINES = 40
+
+    @staticmethod
+    def _issuer_hint_band(ocr_text):
+        """The evidence window for matching a KNOWN supplier name (Stage 2.5a + the text-first
+        issuer graduation): today's top-600-character reach, TRUNCATED at the first recipient
+        marker ("Bill To"/"Sold To"/"FAO"/…).
+
+        WHY: the window used to be a raw `ocr_text[:600]`, which on a real invoice comfortably
+        contains the RECIPIENT block — measured at ~180 chars on a traced invoice and ~160 on a
+        purchase order. So the customer's name was admissible evidence for the ISSUER field. The
+        band is a strict subset of that slice, so this can only REMOVE candidates, never admit a
+        different company — with one deliberate exception, pinned in the tests: the band joins
+        lines with a space, so a name split across two visual rows ("HALCYON\\nLEISURE GROUP")
+        becomes matchable when it wasn't.
+
+        SCOPE, stated honestly: this protects MARKER-BEARING layouts only. On a page with no
+        recipient marker the band equals the legacy window and the hole stays open — the
+        "To:"-first / uncaptioned-address layout is exactly the hardest case and is NOT closed here.
+
+        Kill switch ISSUER_HINT_BAND=0 returns the legacy expression byte-identically.
+        """
+        if os.environ.get("ISSUER_HINT_BAND", "1") == "0":
+            return (ocr_text or "")[:600].lower()
+        from extraction import chrome_band     # local import: matches the existing callers, and
+                                               # keeps engine import-light (chrome_band is stdlib-only)
+        return chrome_band.issuer_chrome(
+            ocr_text, max_lines=ExtractionEngine._HINT_BAND_LINES)[:600].lower()
+
+    def _supplier_hint_upgrade(self, incumbent_value, hints, ocr_top, suppressed_norm):
+        """Pick the best qualifying `supplier_name` hint whose value appears in `ocr_top` — the
+        ISSUER BAND as produced by `_issuer_hint_band` (the caller narrows it; this function does
+        not, so the graduation pins can keep feeding it a pre-computed window).
+        ⚠ Before 2026-07-20 `ocr_top` was a raw `ocr_text[:600]` slice and this docstring's claim
+        that it was "the issuer band" was FALSE — the recipient block sat inside it.
+        Returns (value, usage_count) or None. Shared by the Stage-2.5a text-scan fallback and
+        the text-first issuer GRADUATION (gary-designed, Oracle-signed 2026-07-15) so the graduate/
+        hold/no-swap/C1 decision is unit-reachable without OCR or a DB.
+
+        A candidate hint must, IN THIS ORDER (the order is load-bearing — Oracle C1): be a
+        `supplier_name` hint · usage_count >= 3 · a PLAUSIBLE name · NOT the C1-suppressed vendor
+        (`suppressed_norm`, the buyer-issued guard's dropped caption) · [GRADUATION only] equal
+        `incumbent_value` (the no-swap invariant) · and finally be PRESENT in `ocr_top`. Highest
+        usage_count wins.
+
+        `incumbent_value` None  → original implausible-incumbent path: ANY qualifying hint may win
+                                  (swapping to a different supplier is the point there).
+        `incumbent_value` == V  → graduation path: ONLY a hint confirming V may win, so a graduation
+                                  can never adopt a DIFFERENT supplier than the fill already chose —
+                                  it only decides whether to shed the review note."""
+        grad_norm = self._accept_norm(incumbent_value) if incumbent_value else None
+        best_val, best_usage = None, 0
+        # Lever E (2026-08-20, Oracle SIGN-OFF-W/COND): the band-presence test below was a raw
+        # `val.lower() in ocr_top`. reconstruct_page_text renders a wide letter-spaced/centred
+        # letterhead with 4-SPACE COLUMN BREAKS ("silverbeck    cleaning    supplies"), so a
+        # single-spaced CONFIRMED hint value is not a substring and the note never sheds even with a
+        # usage>=42 hint present (measured: 16 live Silverbeck docs, all held). Collapsing internal
+        # whitespace on BOTH sides restores the match through the CONFIRMED value — the STRONGEST
+        # safety path (usage>=3 + no-swap + recipient-truncated band, all unchanged; the strict S1
+        # path already tokenises on [a-z0-9]+ and never had this bug). Kill switch
+        # HINT_BAND_WS_NORMALIZE default OFF: unarmed, `_haystack`/`_needle` are the raw lowercased
+        # strings and this stays byte-identical.
+        _ws_on = os.environ.get("HINT_BAND_WS_NORMALIZE", "0") != "0"
+        _haystack = _collapse_ws(ocr_top) if _ws_on else ocr_top
+        for h in (hints or []):
+            if h.get("field_key") != "supplier_name":
+                continue
+            if (h.get("usage_count") or 0) < 3:
+                continue
+            val = (h.get("hint_value") or "").strip()
+            if not keyword._is_plausible_supplier_name(val):
+                continue
+            if suppressed_norm and self._accept_norm(val) == suppressed_norm:
+                continue   # C1: never re-adopt the just-suppressed vendor caption
+            if grad_norm is not None and self._accept_norm(val) != grad_norm:
+                continue   # no-swap: a graduation may only confirm the fill's own value
+            _needle = _collapse_ws(val.lower()) if _ws_on else val.lower()
+            if val and _needle in _haystack:
+                if (h.get("usage_count") or 0) > best_usage:
+                    best_val, best_usage = val, (h.get("usage_count") or 0)
+        return (best_val, best_usage) if best_val else None
+
     def set_accepted_names(self, names) -> None:
         """Load the operator-accepted NAME allowlist (exact values the user marked valid).
         A name value in this set is exempt from the wordness + truncation flags. Empty/None
@@ -515,6 +3147,23 @@ class ExtractionEngine:
         this set never raises the conflict flag — the explicit complement to the automatic
         established-after-N-confirmations fallback. Empty/None → no change (byte-identical)."""
         self.accepted_issuers = {self._accept_norm(n) for n in (names or []) if str(n or "").strip()}
+
+    def set_supplier_identifiers(self, rows) -> None:
+        """Load the supplier hard-identifier registry (slice 1b MATCH, DARK). rows = learned
+        {supplier_name, kind, value_norm} — built into a reverse lookup (kind, value_norm) -> set of
+        suppliers, so a VAT read off a blank-issuer page can SUGGEST the sender. Empty/None → no map
+        (byte-identical: the suggest arm at :9704 is a no-op without it)."""
+        reg = {}
+        for r in (rows or []):
+            try:
+                kind = str(r.get("kind") or "").strip()
+                vn   = str(r.get("value_norm") or "").strip()
+                sup  = str(r.get("supplier_name") or "").strip()
+            except AttributeError:
+                continue
+            if kind and vn and sup:
+                reg.setdefault((kind, vn), set()).add(sup)
+        self._id_registry = reg
 
     def set_identity_conflict(self, on: bool):
         """Enable the ACTIVE text-led supplier-identity conflict flag (default OFF, opt-in). When
@@ -563,13 +3212,25 @@ class ExtractionEngine:
                 'authoritative': bool(data.get('authoritative')),
                 'located':       bool(data.get('located')),
                 'box':           data.get('box'),   # picker: value box (top-left norm) or None; inert to the ledger's consumers (Stage 4.6 + total reconciliation read named keys only)
+                # Oracle B3 (note-demote slice, 2026-08-12): a read that carried its own warning
+                # must never LICENSE a note demotion — the ledger strips notes, so without this
+                # bit a flag-only @70 read (the name edge-grow class) would qualify as a witness.
+                # Additive; every consumer reads named keys only.
+                'noted':         bool(str(data.get('validation_note') or '').strip()),
             })
 
     @staticmethod
     def _override_eligible(incumbent: dict) -> bool:
         """A winner may be reconsidered ONLY if it is a generic/auto source — NEVER
         an authoritative ⊕ anchor, a Stage 0.5 located mapping/registration, or an
-        admin label. This is what preserves the committed precedence guarantees."""
+        admin label. This is what preserves the committed precedence guarantees.
+        ⚠ TWO named, predicate-bound carve-outs exist OUTSIDE this gate — and only these two:
+        (1) _reconcile_name_truncation (Oracle 2026-08-04): rewrite justified solely by C3
+        page-absence + a keyword+crop token-identical witness pair. (2) _adopt_confirmed_dominant
+        (Oracle B-conditions 2026-08-12): a junk-flagged name-like read (re-fails the deterministic
+        junk predicates) replaced by an on-page candidate matching the scope's SINGLE confirmed
+        literal at ≥5 human confirms (owner-ruled strict variability clause). Neither is precedent
+        for broad Stage-0.5 rewrites; do not add exceptions here."""
         if incumbent.get('authoritative'):
             return False
         m = incumbent.get('method')
@@ -609,7 +3270,7 @@ class ExtractionEngine:
         qualifying.sort(key=lambda c: (-(c['confidence'] or 0), str(c['value'])))
         return qualifying[0]
 
-    def _build_candidate_emit(self, results):
+    def _build_candidate_emit(self, results, ocr_text=None):
         """Disambiguation picker (v1): for each NAME-LIKE non-supplier field carrying a
         validation_note with >=2 DISTINCT candidate values, build the picker list
         [{value, box, source_label, method, confidence}] (chosen value first, cap 3). Additive +
@@ -631,6 +3292,16 @@ class ExtractionEngine:
                 v = c.get("value")
                 if not v:
                     continue
+                # Guard A (Oracle C4): an UN-BOXED candidate (keyword/hint/late — no located position on
+                # THIS page) must actually appear in the page OCR text to be offered. A replayed hint like
+                # "Sandpiper Hotels" that isn't on the page is dropped, so the picker never presents an
+                # off-page value as "read from the page". Boxed candidates are inherently located → kept;
+                # the CHOSEN winner is re-injected below regardless. FAIL-SAFE: no ocr_text → keep
+                # (byte-identical). Reuses the proven on-page predicate. Kill switch CANDIDATE_OCR_VALIDATE.
+                if (os.environ.get("CANDIDATE_OCR_VALIDATE", "1") != "0"
+                        and c.get("box") is None and ocr_text
+                        and not _template_identity_corroborated(v, ocr_text)):
+                    continue
                 nk = _cmp_norm(v)
                 cur = by_norm.get(nk)
                 if cur is None:
@@ -649,7 +3320,35 @@ class ExtractionEngine:
             reps = list(by_norm.values())
             if len(reps) < 2:
                 continue
-            reps.sort(key=lambda c: (0 if _cmp_norm(c.get("value")) == chosen_norm else 1,
+            # HISTORY DISCRIMINATOR (owner exhibit ×3, 2026-08-11): a candidate that exactly
+            # matches (under _cmp_norm) a value CONFIRMED for this field in scope outranks a
+            # never-seen one — a one-glyph garble ('Ltc') and the real value ('Ltd') are both
+            # well-formed, so confirmed frequency is the ONLY separating evidence. Supplier
+            # scope first, then the doc-type-scoped ('') learning — the same resolution order
+            # as _make_format_lookup. Threshold ≥3: frequency, not mere presence — a single
+            # past confirm of a garble must never promote it (pendingfeatures trap list).
+            # RANKING + LABEL ONLY: the picker is suggestion-only ("pick never files") and
+            # this changes no committed value. Kill switch CANDIDATE_HISTORY_RANK.
+            _hist_on = os.environ.get("CANDIDATE_HISTORY_RANK", "1") != "0"
+            _cci  = getattr(self, "confirmed_counts_index", None) or {}
+            _sup  = (results.get("_supplier_name") or "").lower().strip()
+            _slug = (results.get("_document_slug") or "").lower().strip()
+            def _hist_count(c):
+                if not (_hist_on and _slug and _cci):
+                    return 0
+                nk = _cmp_norm(c.get("value"))
+                if not nk:
+                    return 0
+                bucket = (_cci.get((_sup, _slug, key)) if _sup else None) \
+                         or _cci.get(("", _slug, key)) or {}
+                return int(bucket.get(nk, 0))
+            for c in reps:
+                c["confirmed_count"] = _hist_count(c)
+            # Sub-threshold counts must not touch the ORDER at all (frequency, not mere
+            # presence) — only a ≥3-confirmed candidate ranks by its history.
+            _qual = lambda c: c["confirmed_count"] if c["confirmed_count"] >= 3 else 0
+            reps.sort(key=lambda c: (0 if _qual(c) else 1, -_qual(c),
+                                     0 if _cmp_norm(c.get("value")) == chosen_norm else 1,
                                      -(c.get("confidence") or 0), str(c.get("value"))))
             emit[key] = [{
                 "value":        c.get("value"),
@@ -657,8 +3356,1112 @@ class ExtractionEngine:
                 "source_label": _candidate_source_label(c.get("method")),
                 "method":       c.get("method"),
                 "confidence":   c.get("confidence") or 0,
+                "confirmed_count": c.get("confirmed_count") or 0,
             } for c in reps[:3]]
         return emit
+
+    def _adopt_confirmed_dominant(self, results, ocr_text, corrob):
+        """CONFIRMED_DOMINANT_ADOPT (owner-directed "minimise interaction where positive
+        confirmation exists"; gary design → Oracle SIGN-OFF-W/COND B1-B5, 2026-08-12; DEFAULT OFF).
+
+        Terminal adoption step — the SECOND named exception to _override_eligible's "never rewrite
+        a Stage-0.5 winner" (see that docstring): when the COMMITTED name-like value is provably
+        JUNK (re-fails the deterministic predicates that flagged it — so accepted_names /
+        authoritative exemptions provably did not apply) and the scope's confirmed history holds
+        EXACTLY ONE distinct value at ≥5 confirms (owner-ruled STRICT variability clause —
+        any second distinct key at ANY count refuses), adopt the on-page candidate that matches the
+        confirmed literal. Both live exhibits: Ironclad 'Sramblewood Joinery Ltg' garble vs 20×
+        'Bramblewood Joinery Ltd'; Meadowvale account-number-in-customer vs 38×.
+        ⚠ COUNT HONESTY (Oracle C6, machine-feed arc 2026-08-13): the counts index is built from
+        getFieldFormats value_counts, which counts ALL confirmed rows — "human confirms" was a
+        FALSE safety claim while machine auto-files feed the same substrate. The dom_count becomes
+        human-only exactly when `learning_exclude_machine_confirms` is armed (learning.js filter);
+        until that flip, a ≥5 count may be machine-inflated. The machine-observed second-key
+        refusal (variability seen only in machine rows) is the slice-2 refusal-side union.
+
+        Semantics: the CANDIDATE'S OWN page-read string is adopted (the counts index stores no
+        literals — memory LICENSES a this-page read, it never supplies a value); method gains
+        '+confirmed_adopt' (suffix inherits the base prefix so substring consumers still fire);
+        confidence = min(90, candidate's earned) — NO boost; note dies by PREMISE-FAILURE (the
+        flagged value is REPLACED — distinct from the forbidden corroboration-clears-notes, whose
+        target is a note about a value that stays). B1: the adoptee must itself PASS the junk
+        predicates — else fall to the picker. B2: the field's corroboration record is rewritten
+        HERE — winner_family 'memory', independent_agree False, the dead value retained as a
+        disagreement — so trust.js _corrobLicensed refuses STRUCTURALLY (memory never licenses the
+        corroborated auto-file route). Operator VALUES (override/template_fixed/fixed/pin) are
+        never rewritten; taught POSITIONS are ("the teach fixed the position, not the value" —
+        the S-A/S-B precedent). Refusals fall toward today's picker. Census:
+        CONFADOPT_CENSUS_DIR outcome counter. Pins: tests/test_confirmed_dominant_adopt.py."""
+        if os.environ.get("CONFIRMED_DOMINANT_ADOPT", "0") == "0" and not os.environ.get("CONFADOPT_CENSUS_DIR"):
+            return
+        armed = os.environ.get("CONFIRMED_DOMINANT_ADOPT", "0") != "0"
+        from extraction import wordness
+        _cci  = getattr(self, "confirmed_counts_index", None) or {}
+        _sup  = (results.get("_supplier_name") or "").lower().strip()
+        _slug = (results.get("_document_slug") or "").lower().strip()
+
+        def _census(row):
+            _cdir = os.environ.get("CONFADOPT_CENSUS_DIR")
+            if not _cdir:
+                return
+            try:
+                import json as _json
+                with open(os.path.join(_cdir, "confadopt_census.jsonl"), "a", encoding="utf-8") as _f:
+                    _f.write(_json.dumps(row) + "\n")
+            except Exception:
+                pass
+
+        _CHARSET_MARK = "unexpected characters ("
+
+        def _is_junk(v, note):
+            try:
+                if wordness.ref_bleed(v):
+                    return True
+                if wordness.name_structure_flag(v) is not None:
+                    return True
+            except Exception:
+                return False
+            return bool(note and str(note).startswith(_CHARSET_MARK))
+
+        for key, data in list(results.items()):
+            if key.startswith("_") or not isinstance(data, dict):
+                continue
+            if key == "supplier_name" or not value_quality.is_name_like_field(key):
+                continue
+            note = str(data.get("validation_note") or "")
+            val  = str(data.get("value") or "")
+            if not note or not val:
+                continue
+            m = str(data.get("method") or "")
+            refusal = None
+            # Operator-VALUE methods only — exact/prefix, never bare substring ('pin' ⊂ 'maPINg',
+            # the substring-consumer trap Oracle's rider named; caught by this slice's own pin 1).
+            if ("override" in m or m.startswith("template_fixed") or m == "fixed"
+                    or m == "operator_pin"):
+                refusal = "operator-method"
+            elif not _is_junk(val, note):
+                refusal = "not-junk"
+            elif not (_sup and _slug):
+                refusal = "no-scope"
+            else:
+                bucket = _cci.get((_sup, _slug, key)) or {}
+                keys5 = {k: c for k, c in bucket.items() if c}
+                # B4 STRICT: exactly ONE distinct normalised key in the exact-scope bucket, at any
+                # count — a second key at count 1 refuses (the multi-party residual's bound).
+                if len(keys5) != 1:
+                    refusal = "variability" if len(keys5) > 1 else "no-history"
+                else:
+                    dom_key, dom_count = next(iter(keys5.items()))
+                    if dom_count < 5:
+                        refusal = "count-below-5"
+                    elif int(bucket.get(_cmp_norm(val), 0)) >= 3:
+                        refusal = "committed-value-known"   # belt-and-braces under STRICT
+                    else:
+                        cand = None
+                        for c in (self._field_candidates.get(key) or []):
+                            cv = str(c.get("value") or "")
+                            if not cv or _cmp_norm(cv) != dom_key:
+                                continue
+                            on_page = bool(c.get("box")) or (cv and cv in (ocr_text or ""))
+                            if not on_page:
+                                continue
+                            # B1: the adoptee must itself PASS the junk predicates.
+                            try:
+                                if wordness.ref_bleed(cv) or wordness.name_structure_flag(cv) is not None:
+                                    continue
+                            except Exception:
+                                continue
+                            cand = c
+                            break
+                        if cand is None:
+                            refusal = "no-on-page-witness"
+                        else:
+                            _census({"field": key, "committed": val, "adopted": armed,
+                                     "to": str(cand.get("value")), "count": dom_count, "refusal": None})
+                            if not armed:
+                                continue
+                            old_rec = corrob.get(key) or {}
+                            new_val = str(cand.get("value"))
+                            results[key] = {
+                                **data,
+                                "value": new_val, "display_value": new_val,
+                                "method": str(cand.get("method") or "unknown") + "+confirmed_adopt",
+                                "confidence": min(90, int(cand.get("confidence") or 0)),
+                                "was_corrected": True, "corrected_to": new_val,
+                                "validation_note": None,
+                            }
+                            # B2: memory-family record, never independent; dead value retained.
+                            dis = list(old_rec.get("disagree") or [])
+                            dis.append({"family": old_rec.get("winner_family") or "unknown", "value": val})
+                            corrob[key] = {"winner_family": "memory", "agree": [],
+                                           "disagree": dis, "independent_agree": False}
+                            if self._trace:
+                                self._t("confirmed_adopt", field=key, from_value=val,
+                                        to_value=new_val, count=dom_count,
+                                        method=results[key]["method"])
+                            self.log(f"  Confirmed-dominant adopt: {key} '{val[:30]}' → "
+                                     f"'{new_val[:40]}' ({dom_count}× confirmed, junk read replaced)")
+                            continue
+            if refusal:
+                _census({"field": key, "committed": val, "adopted": False, "refusal": refusal})
+
+    def _demote_xcheck_corroborated_note(self, results, field_defs, date_field_keys,
+                                         rejected_reads, corrob):
+        """XCHECK_CORROB_NOTE_DEMOTE (owner corroboration STEP 3, slice 1; gary design → Oracle
+        SIGN-OFF-W/COND B1-B3 + C1-C5, 2026-08-12 NIGHT; DEFAULT OFF).
+
+        The exhibit: three reads agree on a date (taught mapping @90, keyword @85, full-page
+        crosscheck @70), the lone disagreeing taught-crop read was REJECTED — yet the field
+        carries the Stage-2 "please verify" note, which blocks auto-file at every floor and
+        costs the owner a click on a triple-verified value. The writer (anchor.py) runs at READ
+        time and structurally cannot see the later corroboration; E2 (:6302) clears only when
+        the instantaneous INCUMBENT was a keyword read. This step extends E2's licence to the
+        candidate LEDGER — the store the owner ordered built for exactly this (step 1, 08-11).
+
+        BOUNDARY (Oracle-ruled): (1) eligibility = EXACT equality with anchor.XCHECK_DISAGREE_
+        NOTE — a write-site-opted disagreement-uncertainty note; composed notes, the deskew
+        raw-witness note (a two-read consensus the value is WRONG — its own text, never unify),
+        charset/format/identity notes and the shadow-attribution note (its standing rule reads
+        SCOPED — structurally excluded here, pinned both directions) all stand. (2) The witness
+        must be pixel-independent of the full-page flip: CROP-SIDE family only (mapping/crop —
+        _crosscheck_witness_bucket is_crop), located, UN-NOTED, conf ≥80 (Oracle B3 — a
+        flag-only read never licenses); keyword/page-presence/hint NEVER license (the Pelican
+        Gate-C lesson: the full-page text carries the flip's own pixels). (3) B2: DATE FIELDS
+        ONLY — both sides must calendar-parse; refs inherit the recipe-ladder common-mode
+        (the serif I→1 class) and wait for that ladder fix before any widening. (4) Confidence
+        never minted above _CROSSCHECK_CORROB_CONF; the E2 posture exactly.
+
+        The dissent SURVIVES: the field's corroboration record gains an additive `note_demoted`
+        {note, witness_*, rejected_read} — the census's retro-audit key (Oracle C1) — and the
+        record's independent_agree is NEVER read or written here (C4: it feeds the corroborated
+        auto-file floor-lowering; writing it would be a floor back door).
+        Census: XCHECK_DEMOTE_CENSUS_DIR (inert unless set). Returns True when any field
+        demoted (the caller then recomputes overall/_needs_review — Oracle B1)."""
+        if os.environ.get("XCHECK_CORROB_NOTE_DEMOTE", "0") == "0":
+            return False
+        _date_keys = set(date_field_keys or ())
+        for f in (field_defs or []):
+            if str(f.get("type") or "").lower() == "date" and f.get("key"):
+                _date_keys.add(f.get("key"))
+        demoted = False
+        for key, data in results.items():
+            if str(key).startswith("_") or not isinstance(data, dict):
+                continue
+            if key not in _date_keys:
+                continue                                   # B2: date fields only
+            m = str(data.get("method") or "")
+            if not m.startswith("anchor_crop_crosscheck"):
+                continue
+            if str(data.get("validation_note") or "") != anchor.XCHECK_DISAGREE_NOTE:
+                continue                                   # exact equality ONLY (C3)
+            committed = str(data.get("value") or "")
+            if not committed or not validator.parse_date(committed):
+                continue
+            witness = None
+            for c in (self._field_candidates.get(key) or []):
+                fam = _crosscheck_witness_bucket(c.get("stage"), c.get("method"))
+                if not fam or not fam[1]:
+                    continue                               # crop-side family only
+                # A Stage-0.5 MAPPING candidate is located BY CONSTRUCTION (a drawn-box crop
+                # read — the bucket's own charter) but template_mapper never sets the ledger's
+                # `located` bit, so requiring the flag literally made this step INERT on its own
+                # founding exhibit (live Nordwind, 2026-08-12 — the first armed import). The
+                # anchor 'crop' family DOES set the bit and keeps the requirement.
+                if fam[0] != "mapping" and not c.get("located"):
+                    continue
+                if c.get("noted"):
+                    continue                               # B3: a flagged read never licenses
+                if int(c.get("confidence") or 0) < 80:
+                    continue
+                cv = str(c.get("value") or "")
+                if not cv or not validator.parse_date(cv):
+                    continue                               # calendar-parse BOTH sides
+                if not _values_normalise_equal(cv, committed, True):
+                    continue
+                witness = c
+                break
+            _cdir = os.environ.get("XCHECK_DEMOTE_CENSUS_DIR")
+            if _cdir:
+                try:
+                    import json as _json
+                    with open(os.path.join(_cdir, "xcheck_demote_census.jsonl"), "a",
+                              encoding="utf-8") as _f:
+                        _f.write(_json.dumps({
+                            "field": key, "committed": committed,
+                            "demoted": witness is not None,
+                            "witness": (witness or {}).get("method"),
+                            "rejected": str(rejected_reads.get(key) or "")}) + "\n")
+                except Exception:
+                    pass
+            if witness is None:
+                continue
+            data.pop("validation_note", None)
+            data.pop("was_corrected", None)
+            data.pop("corrected_to", None)
+            data["confidence"] = max(int(data.get("confidence") or 0), _CROSSCHECK_CORROB_CONF)
+            data["method"] = m + "+corrob_clear"
+            rec = dict(corrob.get(key) or {})
+            rec["note_demoted"] = {
+                "note":           anchor.XCHECK_DISAGREE_NOTE,
+                "witness_family": fam[0] if fam else None,
+                "witness_method": witness.get("method"),
+                "witness_value":  witness.get("value"),
+                "rejected_read":  rejected_reads.get(key),
+            }
+            corrob[key] = rec                              # additive; independent_agree untouched (C4)
+            if self._trace:
+                self._t("xcheck_note_demote", field=key, value=committed,
+                        witness=str(witness.get("method")),
+                        rejected=str(rejected_reads.get(key) or ""))
+            self.log(f"  Crosscheck note demoted: {key} '{committed}' corroborated by "
+                     f"{witness.get('method')} — disagreement note released (dissent recorded)")
+            demoted = True
+        return demoted
+
+    def _resolve_corroborated_notes(self, results, field_defs, corrob, matched_tmpl, page=""):
+        """2026-08-15 held-queue arc (gary → Oracle SIGN-OFF-W/COND). Let the DB's own recorded
+        corroboration + scope dominance RESOLVE a note that holds a document whose value is already
+        known-good. Runs inside the _d1/_d2/_d3 recompute guard, so clearing a note here also drops
+        its overall-confidence penalty (the trust floor then clears on import/reprocess) — the
+        stored-row remediation cannot, which is why the LIVE 84/72-conf docs need a reprocess.
+
+        Five classes, EACH gated by its OWN default-OFF env (OFF ⇒ byte-identical), each failing
+        TOWARD Review on any weak leg:
+          A TEMPLATE_IDENTITY_CORROB_NOTE_SHED   — inferred-company FILL note, corroboration-fed
+                (geometry-free twin of the G-FUZZY shed): shed iff licensed record + graduated
+                dominant issuer + committed value == that issuer. Value FIXED, method→corroborated@85.
+          B REF_DOMINANT_FORMAT_NOTE_DEMOTE      — 1/I rawwitness ref note: drop iff the committed
+                prefix == the scope's >=0.90-dominant learned prefix; also clear a vacuous / single-
+                confusable corrected_to. Value already correct — the note held a RIGHT value.
+          C RECON_SHADOW_ATTRIB_NOTE_DEMOTE      — doubly-corroborated total's shadow-attribution
+                note: drop iff licensed total + a penny-exact standard-VAT tie to a separately-read,
+                sign-agreeing operand. Total value NEVER changed; no confidence change.
+          D SNAP_CONFUSABLE_CLEAN_AUTOFILE       — charset note on a code that is a single-confusable
+                of a single-canonical (one confirmed value) constant AND an independent supplier_hints
+                family carries that constant: adopt the constant, clear the note.
+          E NAME_CORROB_SUGGESTION_ADOPT         — a Stage-4.5 name SUGGESTION on a NON-identity field:
+                ADOPT it iff it == the scope's dominant confirmed literal (share>=0.9, n>=5) AND the
+                page's OWN keyword-family read == the suggestion. supplier_name NEVER.
+          P REF_PREFIX_CONFUSABLE_ADOPT          — (2026-08-16, owner-directed PI/P1 class) a ref
+                whose head differs from the scope's >=0.90-dominant prefix by EXACTLY ONE
+                confusable-class glyph: ADOPT the dominant head (suffix untouched) iff a PAGE
+                witness independently carries the adopted form (W1 corrected_to byte-equal, or W2 a
+                keyword-family candidate) AND neither the read prefix nor the read head is itself an
+                established confirmed form AND the adopted value passes the learned shape. History
+                alone NEVER rewrites; NO confidence change (the 88 floor stays a live second gate).
+        Returns True if any field changed (feeds the shared B1 recompute — never `or`ed inline)."""
+        A_on = os.environ.get("TEMPLATE_IDENTITY_CORROB_NOTE_SHED", "0") != "0"
+        B_on = os.environ.get("REF_DOMINANT_FORMAT_NOTE_DEMOTE", "0") != "0"
+        C_on = os.environ.get("RECON_SHADOW_ATTRIB_NOTE_DEMOTE", "0") != "0"
+        D_on = os.environ.get("SNAP_CONFUSABLE_CLEAN_AUTOFILE", "0") != "0"
+        E_on = os.environ.get("NAME_CORROB_SUGGESTION_ADOPT", "0") != "0"
+        P_on = os.environ.get("REF_PREFIX_CONFUSABLE_ADOPT", "0") != "0"
+        # Fix #1 (Oracle 2026-08-28 C3): route the ref-LENGTH-guard note into the P adopt arm too.
+        # A DEDICATED sub-flag AND-ed with P_on (never folded into P_on, which is mig-81-live —
+        # folding would auto-arm this un-vetted change on merge). Default OFF, byte-identical off.
+        P_len_on = P_on and os.environ.get("REF_PREFIX_CONFUSABLE_ADOPT_LENGTH_NOTE", "0") != "0"
+        # F CORROB_VERIFICATION_DOUBT_CLEAR (gary audit 2026-08-26): ONE general rule for the
+        #   "please check/verify" doubt-note family — clear + LIFT to 90 iff >=2 distinct PAGE families
+        #   agree with an un-noted witness AND the value passes the learned shape. See the F arm.
+        F_on = os.environ.get("CORROB_VERIFICATION_DOUBT_CLEAR", "0") != "0"
+        if not (A_on or B_on or C_on or D_on or E_on or P_on or F_on):
+            return False                                   # OFF ⇒ byte-identical
+        from extraction import validator as _v
+        try:
+            grad_window = int(os.environ.get("GRADUATION_WINDOW") or 10)
+        except (TypeError, ValueError):
+            grad_window = 10
+        sup  = str(results.get("_supplier_name") or "")
+        slug = str(results.get("_document_slug") or "")
+        changed = False
+        for key, data in list(results.items()):
+            if str(key).startswith("_") or not isinstance(data, dict):
+                continue
+            note   = str(data.get("validation_note") or "").strip()
+            if not note and not ("_rawwitness" in str(data.get("method") or "")):
+                continue
+            method = str(data.get("method") or "")
+            val    = str(data.get("value") or "")
+            rec    = corrob.get(key) if isinstance(corrob, dict) else None
+
+            # ── A: inferred-company FILL note (corroboration-fed) ──
+            if A_on and method == "template_identity" and val \
+                    and note in (_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE, _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY):
+                graduated = False
+                if isinstance(matched_tmpl, dict):
+                    try:
+                        c = int(matched_tmpl.get("dominant_supplier_count") or 0)
+                        t = int(matched_tmpl.get("dominant_supplier_total") or 0)
+                        graduated = c >= max(1, grad_window) and c * 10 >= t * 9
+                    except (TypeError, ValueError):
+                        graduated = False
+                val_is_issuer = bool(_cmp_norm(val)) and _cmp_norm(val) == _cmp_norm(sup)
+                if _corrob_licensed(rec) and graduated and val_is_issuer:
+                    results[key] = {"value": data.get("value"), "confidence": 85,
+                                    "method": "template_identity_corroborated"}
+                    changed = True
+                    self.log(f"  Corrob shed (A): '{val}' inferred-company note cleared — "
+                             f"graduated single-issuer layout + independent page reads agree (conf 85)")
+                    if self._trace:
+                        self._t("corrob_note_resolve", field=key, cls="A", value=val)
+                continue
+
+            # ── B: 1/I rawwitness ref note whose committed prefix == scope dominant ──
+            # (P shares this branch: a rawwitness field is CONSUMED here by the unconditional
+            # `continue`, so the P adopt lane must live inside it — each side keeps its own gate.)
+            if (B_on or P_on) and "_rawwitness" in method and "one character differs" in note:
+                rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
+                ok = False
+                if B_on and rec_p and rec_p.get("dominant"):
+                    dom = rec_p.get("dominant"); counts = rec_p.get("counts") or {}
+                    dn = counts.get(dom, 0)
+                    # Share is over the EXTRACTABLE prefixes (sum(counts)), NOT every confirmed value
+                    # (rec['total']). A value whose leading-alpha prefix can't be read (e.g. 'P1/26/…',
+                    # the I→1 misread of 'PI') has NO code_prefix, so it sits in `total` but not `counts`
+                    # — it is the SAME prefix OCR-lost, never a COMPETING prefix, and must not dilute the
+                    # dominance. A genuine second prefix DOES appear in `counts` and correctly lowers the
+                    # share. (Without this, `learning_exclude_machine_confirms` shrinking the human-confirmed
+                    # sample let 3 unreadable-prefix misreads drop 18/21 below the 0.90 bar — the Pelican
+                    # I/1 class never demoted on the owner's real substrate.)
+                    ext_total = sum(counts.values())
+                    ok = (ext_total >= 5 and dn >= 5 and dn >= 0.90 * ext_total
+                          and ocr_corrector.code_prefix(val) == dom)
+                ct = str(data.get("corrected_to") or "")
+                vac_or_1conf = (not ct.strip()) or ct == val or _one_confusable_diff(ct, val)
+                if ok and vac_or_1conf:
+                    data.pop("validation_note", None)
+                    data.pop("corrected_to", None)
+                    data.pop("was_corrected", None)
+                    data["method"] = method.replace("_rawwitness", "")
+                    changed = True
+                    self.log(f"  Corrob demote (B): ref '{val}' matches the {sup} dominant prefix "
+                             f"'{rec_p.get('dominant')}' — 1/I note released")
+                    if self._trace:
+                        self._t("corrob_note_resolve", field=key, cls="B", value=val)
+                elif P_on:
+                    # P lane, rawwitness flavour (Oracle: MUST live before this branch's
+                    # unconditional `continue` — a later class never sees a rawwitness field).
+                    # A refused row keeps its note untouched (fail toward Review, pinned).
+                    if self._try_prefix_confusable_adopt(key, data, rec_p, rec, sup, slug, page):
+                        changed = True
+                continue
+
+            # ── P (outlier flavour): prefix-outlier note, page-witnessed confusable head ──
+            # The read's prefix IS extractable here (e.g. 'PL/26/…') so the rawwitness branch never
+            # saw it — the prefix-outlier guard capped it at 69 with the shared-tail note instead.
+            if P_on and note.endswith(_PREFIX_OUTLIER_NOTE_TAIL):
+                rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
+                if self._try_prefix_confusable_adopt(key, data, rec_p, rec, sup, slug, page):
+                    changed = True
+                continue
+
+            # ── P (wider-reading + page-absent flavours) — the 2026-08-19 widening ────────────
+            # MEASURED GAP: of six sampled Pelican I→1 misreads only THREE were the rawwitness
+            # class the lane originally inspected. The other three carried the mapper's
+            # wider-reading note or Gate C's "not printed here" note, and the right value was
+            # already in the database on every one of them. Same licensing, same bars, same
+            # fail-toward-Review refusal — this only widens WHICH note the lane will look at.
+            #
+            # Gate C is the interesting one, and it is answered on its own terms rather than
+            # bypassed: the note asserts "this value is not printed on the page", and the lane may
+            # only clear it by producing a DIFFERENT string that W3 finds printed there. The clip
+            # class Gate C exists for ('VXS986' where the page prints 'VXS98624') stays refused —
+            # a clip is not a one-glyph substitution, so it never yields a candidate at all.
+            if P_on and (template_mapper._PAD_CODE_DISAGREE_MARK in note
+                         or _FILING_SANITY_ABSENT_MARK in note):
+                rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
+                if self._try_prefix_confusable_adopt(key, data, rec_p, rec, sup, slug, page):
+                    changed = True
+                continue
+
+            # ── P (ref-LENGTH-guard flavour; Fix #1, Oracle 2026-08-28 SIGN-OFF-W/COND) ──
+            # The 08-19 note-widening never routed the ref-length outlier note to the adopt arm,
+            # so a P1->PI ref the length guard (correctly) flags — the witness form even carries
+            # corrected_to=PI (W1) — was never offered to it (invoice_0016-14: P1/26/1150 held at
+            # 69 with PI/26/1150 in corrected_to). Route BOTH note forms; the arm self-selects via
+            # W1/W2/W3 + dominance + both-forms refusal + learned shape (a two-convention scope,
+            # and the doubled-digit/rollover class with no confusable head, are still refused).
+            if P_len_on and (_REF_LENGTH_WITNESS_NOTE_MARK in note or _REF_LENGTH_NOTE_MARK in note):
+                rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
+                if self._try_prefix_confusable_adopt(key, data, rec_p, rec, sup, slug, page):
+                    changed = True
+                continue
+
+            # ── C: doubly-corroborated total; VAT arithmetic confirms it ──
+            if C_on and "was read the same way by two independent methods" in note:
+                total = _v.parse_amount(val)
+                vat_ok = False; matched = None
+                if _corrob_licensed(rec) and total is not None:
+                    operands = []
+                    for ok_key in ("subtotal", "vat_tax", "net", "tax"):
+                        od = results.get(ok_key)
+                        if isinstance(od, dict):
+                            amt = _v.parse_amount(str(od.get("value") or ""))
+                            if amt is not None:
+                                operands.append((ok_key, amt))
+                    for r in (0.20, 0.05):
+                        net = round(total / (1 + r), 2); vat = round(total - net, 2)
+                        for ok_key, amt in operands:
+                            if round(amt * 100) == round(net * 100) or round(amt * 100) == round(vat * 100):
+                                if _v._is_negative_value(str(results[ok_key].get("value"))) == _v._is_negative_value(val):
+                                    vat_ok = True; matched = (r, ok_key); break
+                        if vat_ok:
+                            break
+                if vat_ok:
+                    data.pop("validation_note", None)
+                    data.pop("was_corrected", None)
+                    data.pop("corrected_to", None)
+                    data["method"] = method + "+corrob_clear"   # value FIXED, no confidence change
+                    changed = True
+                    self.log(f"  Corrob demote (C): total '{val}' VAT-reconciles @{int(matched[0]*100)}% "
+                             f"via {matched[1]} — attribution note released (total unchanged)")
+                    if self._trace:
+                        self._t("corrob_note_resolve", field=key, cls="C", value=val)
+                continue
+
+            # ── D: charset note on a single-confusable of a single-canonical constant ──
+            if D_on and note.startswith("unexpected characters"):
+                rec_d = ocr_corrector.lookup_dominant(self.dominant_index, key, sup, slug)
+                if rec_d and rec_d.get("dominant"):
+                    dom = str(rec_d.get("dominant")); known = rec_d.get("known") or set()
+                    indep_hint = isinstance(rec, dict) and any(
+                        d.get("family") == "hint" and _cmp_norm(d.get("value")) == _cmp_norm(dom)
+                        for d in (rec.get("disagree") or []))
+                    if len(known) == 1 and _one_confusable_diff(val, dom) and indep_hint:
+                        data["value"] = dom
+                        data["raw_value"] = dom
+                        data.pop("validation_note", None)
+                        data.pop("corrected_to", None)
+                        data["was_corrected"] = True
+                        data["method"] = method + "+snap_corrob"
+                        changed = True
+                        self.log(f"  Corrob adopt (D): '{val}' → '{dom}' "
+                                 f"(single-canonical constant, hint agrees) — note cleared")
+                        if self._trace:
+                            self._t("corrob_note_resolve", field=key, cls="D", value=dom)
+                continue
+
+            # ── E: Stage-4.5 name suggestion adopted when it is the dominant confirmed literal ──
+            if E_on and note.startswith("Suggested name correction:") and key != "supplier_name":
+                repaired = str(data.get("corrected_to") or "").strip()
+                bucket = self.confirmed_counts_index.get(
+                    (sup.lower().strip(), slug.lower().strip(), key)) if repaired else None
+                p1 = False
+                if bucket:
+                    tot = sum(bucket.values()) or 0
+                    dom_norm, dom_n = max(bucket.items(), key=lambda kv: kv[1])
+                    p1 = bool(tot) and dom_n >= 5 and dom_n >= 0.9 * tot and _cmp_norm(repaired) == dom_norm
+                p2 = any(str(c.get("method") or "").startswith("keyword")
+                         and _cmp_norm(c.get("value")) == _cmp_norm(repaired)
+                         for c in (self._field_candidates.get(key) or []))
+                p3 = bool(repaired) and _cmp_norm(repaired) != _cmp_norm(val)
+                if p1 and p2 and p3:
+                    data["value"] = repaired
+                    data["raw_value"] = repaired
+                    data.pop("validation_note", None)
+                    data.pop("corrected_to", None)
+                    data["was_corrected"] = True
+                    data["method"] = method + "+name_corrob_adopt"
+                    changed = True
+                    self.log(f"  Corrob adopt (E): name '{val}' → '{repaired}' "
+                             f"(dominant confirmed literal + keyword agrees) — note cleared")
+                    if self._trace:
+                        self._t("corrob_note_resolve", field=key, cls="E", value=repaired)
+                continue
+
+            # ── F: a VERIFICATION-DOUBT note on a value TWO independent page families agree on ──
+            # Owner exhibit (SuperStore 31901, 2026-08-26): template_mapping_edgecut=31901 AND
+            # keyword=31901, yet the edge-cut "fuller reading could not be verified" note held the doc
+            # @78 / the field @70. gary's audit: five such notes each lacked a rule — ONE general class
+            # retires the whack-a-mole. Every leg is in _try_verification_doubt_clear; a refused row
+            # keeps its note untouched (fail toward Review, pinned).
+            if F_on and _is_verification_doubt_note(note):
+                if self._try_verification_doubt_clear(key, data, rec, sup, slug, field_defs):
+                    changed = True
+                continue
+        return changed
+
+    def _try_verification_doubt_clear(self, key, data, rec, sup, slug, field_defs=None):
+        """Class F licensing + apply (gary audit 2026-08-26 → the pendingfeatures.md:51 design).
+        Clear a VERIFICATION-DOUBT note ("the value is probably right but the fuller/other reading
+        could not be verified") and LIFT the field, iff ALL of:
+          (1) the note's mark ∈ _verification_doubt_note_marks() — the write-site constants (deny-by-
+              default: disagreement / invalid-date / identity / type / Fix-A "not printed here" /
+              reconciliation / shape-mismatch notes are never sweepable; a reword goes INERT);
+          (2) the record is _corrob_licensed AND >=2 DISTINCT PAGE families {mapping,crop,keyword}
+              agree on the committed value with NO dissent — memory/hint never make the pair (near-
+              circular), and the emit's same-family skip means a self-agreeing common-mode misread
+              can NEVER license (the owner's worry, answered structurally);
+          (3) an UN-NOTED ledger witness from a DIFFERENT page family, conf>=80, agrees (Oracle-B3:
+              a flagged @70 read never stands in as the second family) — read through the record's
+              own bucket (_corrob_record_bucket);
+          (4) the value passes the scope's LEARNED shape (no shape entry -> refuse; a scope that
+              can't state its shape doesn't get clears);
+          (5) any corrected_to is vacuous (== value): a pending alternative reading is doubt still
+              open, not resolved;
+          never the identity, never a name-like field (no shape rail), never a human/override method.
+        Apply: note + vacuous corrected_to + was_corrected popped; field confidence LIFTED to
+        _CROSSCHECK_CORROB_CONF — clearing the note alone is COSMETIC here because the edge-cut caps
+        the FIELD at 70 and trust.js weak-critical-field reads the field directly (70<88 → still
+        held); method "+corrob_verified"; provenance recorded additively on the record. Licensed on
+        FAMILY AGREEMENT alone, never value==dominant (a reference is unique per document)."""
+        try:
+            from extraction.value_quality import is_name_like_field
+            val = str(data.get("value") or "")
+            method = str(data.get("method") or "")
+            note = str(data.get("validation_note") or "").strip()
+            if not val or key == "supplier_name" or is_name_like_field(key):
+                return False
+            if any(m in method for m in ("override", "manual", "template_fixed")):
+                return False
+            # Oracle C2 (2026-08-26): TOTALS/money never — the edge-cut note is written for the
+            # currency leg too (template_mapper _EDGE_GUARD_VAL_TYPES includes 'currency'), and a
+            # taught total box drifted onto the NET row can be "agreed" by the keyword `Total` regex
+            # reading the same wrong line (a common-mode ROLE error the net-misread check would have
+            # caught had the note not made it abstain). Money stays with the validator + `_d2`.
+            if key == "total_amount" or key in (keyword.ROLE_KEY_ALIASES.get("total_amount") or ()):
+                return False
+            for fd in (field_defs or []):
+                if isinstance(fd, dict) and str(fd.get("key") or "") == key \
+                        and str(fd.get("type") or "").lower() in ("currency", "money", "amount"):
+                    return False
+            if not isinstance(rec, dict) or not _corrob_licensed(rec):
+                return False
+            fams = set(rec.get("agree") or [])
+            win_family = str(rec.get("winner_family") or "")
+            if win_family:
+                fams.add(win_family)
+            if len(fams & _CORROB_PAGE_FAMILIES) < 2:
+                return False
+            # Oracle C3: the Stage-4.5 RE-READ mark adopted a CROP re-read of the winner's region
+            # while the winner kept its original (page-text) method — a crop-family "witness" is
+            # then the same recipe on the same pixels. For that mark only a KEYWORD-family witness
+            # (the one pass the re-read did not use) counts.
+            reread_mark = note.startswith(_REREAD_NOTE_HEAD)
+            # (3) an un-noted, confident, DIFFERENT-page-family ledger witness
+            witness = None
+            for c in (self._field_candidates.get(key) or []):
+                b = _corrob_record_bucket(c.get("stage"), c.get("method"))
+                if not b:
+                    continue
+                fam = b[0]
+                if fam == win_family or fam not in _CORROB_PAGE_FAMILIES:
+                    continue
+                if reread_mark and fam != "keyword":
+                    continue
+                if c.get("noted"):
+                    continue
+                try:
+                    if int(c.get("confidence") or 0) < 80:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                cv = c.get("value")
+                if cv in (None, "") or not _corrob_values_agree(cv, val):
+                    continue
+                witness = c
+                wit_fam = fam
+                break
+            if witness is None:
+                return False
+            # (5) a pending alternative reading keeps the doubt open
+            ct = str(data.get("corrected_to") or "").strip()
+            if ct and ct != val:
+                return False
+            # (4) learned shape — Oracle C1: the COARSE class (check_value) is not enough — a clip
+            # '3190' passes a digits_only entry whose learned skeleton is '#####', and an edge-cut
+            # field never met the Stage-4.5 skeleton rail (noted fields are skipped there). Require
+            # the EXACT learned skeleton (shape_match_score == 1.0; 0.8 = column-bleed substring →
+            # refuse; 0.0 / no `shapes` → refuse) on a NON-freetext class. Fail-closed on no entry.
+            fmt_entry = self.format_class_index.get(
+                (sup.lower().strip(), slug.lower().strip(), key)) if sup else None
+            if not fmt_entry or format_anomaly_checker.check_value(val, fmt_entry) is not None:
+                return False
+            if str(fmt_entry.get("class") or "") in (format_anomaly_checker.FREETEXT,
+                                                     format_anomaly_checker.CURRENCY_LIKE):
+                return False
+            if format_anomaly_checker.shape_match_score(val, fmt_entry) != 1.0:
+                return False
+            # C1 LENGTH leg (found by the C1 pin itself): the fold behind `shapes` collapses EVERY
+            # pure-digit skeleton to '#' — length-blind — so '3190' scores 1.0 against a '#####'
+            # history. Require the value's RAW skeleton (group lengths + separator positions) to be
+            # a learned shape-FAMILY variant (built from the scope's value_counts). A scope with no
+            # families cannot state its lengths → refuse (fail-closed).
+            _variants = set()
+            for _fam in (fmt_entry.get("shape_families") or []):
+                _variants.update(_fam.get("variants") or [])
+                if _fam.get("shape"):
+                    _variants.add(_fam.get("shape"))
+            if not _variants or format_anomaly_checker.shape_signature(val) not in _variants:
+                return False
+            # apply
+            data.pop("validation_note", None)
+            data.pop("corrected_to", None)
+            data.pop("was_corrected", None)
+            try:
+                conf0 = int(data.get("confidence") or 0)
+            except (TypeError, ValueError):
+                conf0 = 0
+            data["confidence"] = max(conf0, _CROSSCHECK_CORROB_CONF)
+            data["method"] = method + "+corrob_verified"
+            rec["verification_note_cleared"] = {
+                "note":           note,
+                "witness_family": wit_fam,
+                "witness_method": witness.get("method"),
+                "witness_value":  witness.get("value"),
+                "lifted_from":    conf0,
+            }
+            self.log(f"  Corrob verify (F): {key} '{val}' — doubt note released, "
+                     f"{witness.get('method')} independently agrees (field {conf0}→{data['confidence']})")
+            if self._trace:
+                self._t("corrob_note_resolve", field=key, cls="F", value=val,
+                        witness=str(witness.get("method")))
+            return True
+        except Exception:
+            return False   # a lane failure must never break extraction (fail toward Review)
+
+    def _try_prefix_confusable_adopt(self, key, data, rec_p, rec, sup, slug, page=""):
+        """The P adopt lane's licensing + apply (reggie design → Oracle SIGN-OFF-W/COND 2026-08-16).
+        Adopt the scope's dominant prefix over a single-confusable read head. Returns True iff the
+        value was adopted; EVERY refusal returns False with the row untouched (note survives — fail
+        toward Review, pinned). Licensing, ALL required:
+          • ref-role code field only; never the identity; never name-like; never a human-set method;
+          • dominance: counts[dom]>=5 AND >=0.90 of the EXTRACTABLE prefixes (B's own bars — the
+            prefixless-dilution lesson at the B lane applies here identically);
+          • the head is a single-confusable neighbour (see _prefix_confusable_adopt);
+          • BOTH-FORMS refusal: the read's own prefix confirmed in-scope (prefix_confirmed — an
+            established second convention is data, not a misread), or >= the same weight-aware bar
+            of confirmed values sharing the read's HEAD (non-extractable heads like 'P1' can never
+            appear in prefix counts — this is their twin; a poisoned-by-misconfirms scope stands
+            the arm DOWN, the remedy is Learning Repair, never a looser bar);
+          • REQUIRED page witness: W1 corrected_to == adopted byte-equal (the raw-crop wider
+            reading — the page's own second reading), or W2 a keyword-family candidate that
+            normalises to the adopted value, or W3 the adopted string is PRINTED on the page
+            (`_page_carries_sepless`, leg 1 only — see that docstring for why leg 2 would be
+            circular here). History alone NEVER rewrites (the 08-03 rule: a poisoned corpus
+            cannot invent a page reading);
+          • the adopted value passes the scope's learned shape (no shape entry -> refuse: a scope
+            that can't state its shape doesn't get rewrites).
+        NO confidence change — the ≤84/≤69 cap stays, so the 88 critical floor remains a live
+        second gate over the rewritten value (confidence restoration is a separate, census-
+        justified follow-up)."""
+        try:
+            if not rec_p or not rec_p.get("dominant"):
+                return False
+            from extraction.value_quality import is_name_like_field
+            val = str(data.get("value") or "")
+            method = str(data.get("method") or "")
+            if not val or key == "supplier_name" or not _is_ref_field(key) or is_name_like_field(key):
+                return False
+            if any(m in method for m in ("override", "manual", "template_fixed")):
+                return False
+            dom = str(rec_p.get("dominant"))
+            counts = rec_p.get("counts") or {}
+            dn = counts.get(dom, 0)
+            ext_total = sum(counts.values())
+            if not (ext_total >= 5 and dn >= 5 and dn >= 0.90 * ext_total):
+                return False
+            adopted = _prefix_confusable_adopt(val, dom)
+            if not adopted or adopted == val:
+                return False
+            # BOTH-FORMS refusal, prefix twin
+            read_p = ocr_corrector.code_prefix(val)
+            if read_p and read_p != dom and ocr_corrector.prefix_confirmed(read_p, rec_p):
+                return False
+            # BOTH-FORMS refusal, value-head twin (non-extractable heads never reach counts).
+            # The arithmetic moved into the SHARED predicate `ocr_corrector.both_forms_established`
+            # (Oracle 2026-08-19) so this lane and the confirm-path class fix can never diverge on
+            # what "established" means — they are the same question asked by two callers.
+            bucket = self.confirmed_counts_index.get(
+                (sup.lower().strip(), slug.lower().strip(), key)) or {}
+            if bucket and ocr_corrector.both_forms_established(bucket, val[:len(dom)]):
+                return False
+            # REQUIRED page witness
+            ct = str(data.get("corrected_to") or "")
+            w1 = bool(ct) and ct == adopted
+            w2 = any(str(c.get("method") or "").startswith("keyword")
+                     and _cmp_norm(c.get("value")) == _cmp_norm(adopted)
+                     for c in (self._field_candidates.get(key) or []))
+            # W3 (2026-08-19 widening): the FULL-PAGE pass carries the adopted string. This is a
+            # genuinely independent witness and arguably the strongest of the three — W1 is a wider
+            # re-read of the SAME crop pixels, where W3 is a different segmentation over the whole
+            # frame. It is what makes the two new note classes answerable at all: the Gate-C class
+            # says "this value isn't printed here", and W3 answers with the value that IS.
+            w3 = bool(page) and _page_carries_sepless(page, adopted)
+            if not (w1 or w2 or w3):
+                return False
+            # post-adopt learned shape (check_value: None == consistent, anomaly dict == violation)
+            fmt_entry = self.format_class_index.get(
+                (sup.lower().strip(), slug.lower().strip(), key)) if sup else None
+            if not fmt_entry or format_anomaly_checker.check_value(adopted, fmt_entry) is not None:
+                return False
+            # apply — value + provenance; note popped; confidence untouched
+            data["value"] = adopted
+            data["raw_value"] = adopted
+            data["corrected_to"] = adopted          # equal pair -> the calm applied badge
+            data.pop("validation_note", None)
+            data["was_corrected"] = True
+            data["method"] = method.replace("_rawwitness", "") + "+prefix_confusable_adopt"
+            _wit = "wider-read" if w1 else ("keyword" if w2 else "page")
+            if isinstance(rec, dict):               # additive provenance; independent_agree untouched
+                rec.setdefault("note_demoted", []).append(
+                    {"cls": "P", "adopted_from": val, "witness": _wit})
+            self.log(f"  Corrob adopt (P): ref '{val}' → '{adopted}' (dominant prefix '{dom}', "
+                     f"{_wit} witness agrees) — note cleared")
+            if self._trace:
+                self._t("corrob_note_resolve", field=key, cls="P", value=adopted, witness=_wit)
+            return True
+        except Exception:
+            return False   # a lane failure must never break extraction (fail toward Review)
+
+    def _demote_recon_total_corroborated_note(self, results, corrob):
+        """RECON_TOTAL_NOTE_DEMOTE (owner corroboration STEP 3, slice 2 — MONEY; gary design →
+        Oracle SIGN-OFF-W/COND C1-C5, 2026-08-13; DEFAULT OFF).
+
+        The exhibit (live Nordwind quote 0021-4): anchor_inline misread the total 3,864.72; the
+        reconciliation pick adjusted to 3,564.72 — the value the TAUGHT MAPPING independently read
+        (crop @90) AND the line arithmetic proves (2,970.60 + 594.12) — yet the pick's "please
+        verify" note stands and blocks auto-file on a doubly-verified value.
+
+        BOUNDARY (Oracle-ruled): (1) eligibility = EXACT equality with RECON_TOTAL_ADJUSTED_NOTE
+        (write-site opt-in; the PASS-2 subtotal note is DELIBERATELY excluded — in PASS 2 the pair
+        elected each other, so the subtotal has no independent per-field witness; a PASS-2 doc with
+        its total demoted stays held by the surviving subtotal note, pinned). No method gate is
+        possible — the pick commits the CANDIDATE's method — the constant IS the gate. (2) Witness
+        = BOTH legs: a CROP-SIDE ledger read (the independence load: mapping/crop family, un-noted,
+        conf ≥80, mapping exempt from `located` — set by construction, never by the mapper — the
+        slice-1 carve-out) whose value is PENNY-EXACT (round(x*100), NO tolerance — the 2% tolerance
+        belongs to the arithmetic leg only) AND SIGN-AGREEING (validator._is_negative_value both
+        sides, raw-string based — Oracle C1: parse_amount is structurally sign-blind, the fourth
+        member of the 08-07 sign-blind-comparator family; without this a credit -3,564.72 and an
+        unsigned crop 3,564.72 would "agree"); AND the arithmetic re-verifies: total_reconciles(...)
+        `is True` — None (no subtotal) and False both keep the note. The arithmetic leg is honestly
+        a STABILITY/PRECISION RE-CHECK, not independence — it is the same computation that caused
+        the note; the crop leg carries the entire independence load, and it MAY be the very
+        candidate the pick swapped to (the founding exhibit: it is) — the corroborating PAIR is
+        (crop pixels, component arithmetic), two evidence families. (3) NO CONFIDENCE CHANGE AT ALL
+        — deliberately below slice 1's E2 posture: money has no shape rail (currency is
+        self-validating), and the pick commits max(inc, cand), so the swapped value can INHERIT the
+        displaced wrong incumbent's confidence — minting on top would let the demoter itself carry
+        a value over the floors. (4) The dissent (the displaced pre-swap read, stashed per-doc in
+        _recon_displaced) survives in the corroboration record's note_demoted; independent_agree is
+        NEVER read or written (C4 — the floor back door stays shut).
+
+        Remaining rails on a wrong-but-balancing swap after this demote: the 2% component-balance
+        precondition + the penny-exact sign-agreeing crop common-mode required ON TOP + credit_sign_
+        coherence + the trust floors. NOT rails: net-misread (no-ops when reconciling), shape
+        (self-validating), Stage-4 arithmetic (it elected the value). This removes the last
+        value-specific reviewer signal on the total — the census flip bar (demoted-and-wrong = 0)
+        is the evidence it is safe.
+
+        Census: XCHECK_DEMOTE_CENSUS_DIR (shared env, OWN file recon_demote_census.jsonl — records
+        DECLINED demotes too, the silent-decline instrument, plus committed/witness conf for the
+        max()-inheritance visibility Oracle C5 requires). Returns True when demoted (the caller
+        feeds the shared B1 recompute — never `or` the demoter calls inline: short-circuit would
+        skip this one)."""
+        if os.environ.get("RECON_TOTAL_NOTE_DEMOTE", "0") == "0":
+            return False
+        from extraction import validator as _v
+        total_key = None
+        for k in ('total_amount', *keyword.ROLE_KEY_ALIASES.get('total_amount', ())):
+            d = results.get(k)
+            if isinstance(d, dict) and d.get('value'):
+                total_key = k
+                break                                      # the WRITER's own alias walk (Oracle C4)
+        if not total_key:
+            return False
+        data = results[total_key]
+        if str(data.get('validation_note') or '') != RECON_TOTAL_ADJUSTED_NOTE:
+            return False                                   # exact equality ONLY (C3 posture)
+        committed = str(data.get('value') or '')
+        c_amt = _v.parse_amount(committed)
+        if c_amt is None:
+            return False
+        witness = fam = None
+        for c in (self._field_candidates.get(total_key) or []):
+            f = _crosscheck_witness_bucket(c.get('stage'), c.get('method'))
+            if not f or not f[1]:
+                continue                                   # crop-side family only
+            if f[0] != 'mapping' and not c.get('located'):
+                continue                                   # slice-1 mapping carve-out
+            if c.get('noted'):
+                continue                                   # B3: a flagged read never licenses
+            if int(c.get('confidence') or 0) < 80:
+                continue
+            cv = str(c.get('value') or '')
+            w_amt = _v.parse_amount(cv)
+            if w_amt is None:
+                continue
+            if round(w_amt * 100) != round(c_amt * 100):
+                continue                                   # penny-exact, NO tolerance
+            if _v._is_negative_value(cv) != _v._is_negative_value(committed):
+                continue                                   # Oracle C1: sign agreement
+            witness, fam = c, f
+            break
+        arith = _v.total_reconciles(committed, results) is True   # None/False ⇒ keep the note
+        _cdir = os.environ.get("XCHECK_DEMOTE_CENSUS_DIR")
+        if _cdir:
+            try:
+                import json as _json
+                with open(os.path.join(_cdir, "recon_demote_census.jsonl"), "a",
+                          encoding="utf-8") as _f:
+                    _f.write(_json.dumps({
+                        "field": total_key, "committed": committed,
+                        "demoted": bool(witness is not None and arith),
+                        "witness": (witness or {}).get("method"),
+                        "witness_conf": (witness or {}).get("confidence"),
+                        "committed_conf": data.get("confidence"),
+                        "arith": arith,
+                        "rejected": str(self._recon_displaced.get(total_key) or "")}) + "\n")
+            except Exception:
+                pass
+        if witness is None or not arith:
+            return False
+        data.pop('validation_note', None)
+        data.pop('was_corrected', None)
+        data.pop('corrected_to', None)
+        # NO confidence change — pinned (test_recon_note_demote.py §2); see the docstring.
+        data['method'] = str(data.get('method') or '') + '+corrob_clear'
+        rec = dict(corrob.get(total_key) or {})
+        rec['note_demoted'] = {
+            'note':           RECON_TOTAL_ADJUSTED_NOTE,
+            'witness_family': fam[0],
+            'witness_method': witness.get('method'),
+            'witness_value':  witness.get('value'),
+            'arithmetic':     True,
+            'rejected_read':  self._recon_displaced.get(total_key),
+        }
+        corrob[total_key] = rec                            # additive; independent_agree untouched (C4)
+        if self._trace:
+            self._t('recon_note_demote', field=total_key, value=committed,
+                    witness=str(witness.get('method')),
+                    rejected=str(self._recon_displaced.get(total_key) or ''))
+        self.log(f"  Reconcile note demoted: {total_key} '{committed}' corroborated by "
+                 f"{witness.get('method')} + arithmetic — adjustment note released "
+                 f"(dissent recorded)")
+        return True
+
+    def _demote_name_guard_corroborated_note(self, results, field_defs, corrob):
+        """NAME_CORROB_NOTE_DEMOTE (owner corroboration STEP 3, slice 3 — NAMES; gary design →
+        Oracle SIGN-OFF-W/COND B1-B3, 2026-08-13; DEFAULT OFF).
+
+        The exhibit (live Nordwind quote 0021-4 customer_name): mapping@90 + keyword_override@78
+        + anchor_crop@70 ALL read 'Bramblewood Joinery Ltd'; the two dissenting reads were
+        guard-REJECTED ('DELIVERY ADDRESS' → inline_off_taught_position, 'scone' →
+        name_guard_junk_candidate) — yet the Layer-A caption-disagreement note stands and caps
+        the field to 70. The shipped clear for this exact note (NAME_GUARD_KEYWORD_CLEAR, dark)
+        tests the instantaneous INCUMBENT — structurally blind to the ledger's triple agreement.
+
+        BOUNDARY (Oracle-ruled, deliberately STRICTER than slices 1/2 — names have no
+        calendar-parse/penny-exact content gate and the name-repair machinery itself rewrites
+        values): (1) eligibility = EXACT equality with anchor.NAME_GUARD_DISAGREE_NOTE; the five
+        OTHER relocate-guard texts warn about the KEPT value itself and are structurally
+        ineligible; name-like NON-IDENTITY fields only — supplier_name NEVER demotes (pinned;
+        the identity machinery — logo/hint/fusion/frozen-issuer — is memory-heavy and gets its
+        own slice or never); method == 'anchor_crop' exactly. (2) Equality is
+        _values_normalise_equal(..., False) — alnum-core EXACT, NO fuzzy tier: a flush-clipped
+        'Bramblewood Joinery Lt' never licenses the full value nor vice versa (pinned both
+        directions). (3) Witness = BOTH legs: W1 a crop-side ledger read (slice-1 bars: un-noted,
+        ≥80, mapping located-by-construction carve-out) that is NOT memory masquerading as
+        pixels — method startswith 'template_fixed' refused (F8: template* buckets as mapping;
+        a frozen name is the Quillstone poison channel), '+corrected'/'+confirmed_adopt' refused
+        (learned-corrector/adopt rewrites); the ledger being pre-Stage-4.5 (:7357 charter)
+        structurally excludes lexicon-repair/NAME_UNCLIP influence. AND W2 a keyword-family read
+        (keyword/keyword_override, un-noted, ≥70, equal) — the content-gate substitute, and the
+        leg that breaks the flush-clip crop↔crop common mode (two taught boxes can clip the same
+        right edge; the full-page text cannot — the committed value here is CROP-side, so
+        full-page agreement IS pixel-independent: the INVERSE of slice 1's Gate-C geometry).
+        (4) Dissent legs: D1 a rejection was RECORDED for this field (self._rejected_reads, the
+        always-on B1 recorder — positive evidence the dissent was DISQUALIFIED, not outvoted);
+        D2 ledger unanimity — NO un-noted ≥60 candidate of ANY family normalise-UNEQUAL to the
+        committed value. (5) NO confidence change at all (the money posture; the dark keyword
+        clear MINTS at its site — this is deliberately safer); the 70 stays visible and the
+        release may not un-park on its own. (6) note_demoted carries the full rejected_reads
+        list (census retro-audit — the unanimous-wrong-printed-name residual is census-only
+        observable); independent_agree never read or written (C4).
+
+        Census: XCHECK_DEMOTE_CENSUS_DIR own file name_demote_census.jsonl — records DECLINED
+        demotes with which leg refused (W1/W2/D1/D2), the silent-decline instrument. Returns
+        True when any field demoted (caller feeds the shared B1 recompute)."""
+        if os.environ.get("NAME_CORROB_NOTE_DEMOTE", "0") == "0":
+            return False
+        _types = {}
+        for f in (field_defs or []):
+            if f.get("key"):
+                _types[f["key"]] = str(f.get("type") or "").lower() or None
+        demoted = False
+        for key, data in results.items():
+            if str(key).startswith("_") or not isinstance(data, dict):
+                continue
+            if key == "supplier_name":
+                continue                                   # identity NEVER demotes (pinned)
+            if not value_quality.is_name_like_field(key):
+                continue
+            if _types.get(key, None) not in (None, "text", "multiline_text"):
+                continue                                   # free-text name fields only
+            if str(data.get("method") or "") != "anchor_crop":
+                continue                                   # the note's own cap site (:1432) exactly
+            if str(data.get("validation_note") or "") != anchor.NAME_GUARD_DISAGREE_NOTE:
+                continue                                   # exact equality ONLY
+            committed = str(data.get("value") or "")
+            if not committed or anchor._name_junk_shaped(committed, key):
+                continue                                   # re-assert Layer A's own guarantee
+            rejected = self._rejected_reads.get(key) or []
+            cands = self._field_candidates.get(key) or []
+            w1 = w2 = None
+            dissent = False
+            for c in cands:
+                cv = str(c.get("value") or "")
+                if not cv:
+                    continue
+                eq = _values_normalise_equal(cv, committed, False)
+                if (not eq and not c.get("noted")
+                        and int(c.get("confidence") or 0) >= 60):
+                    dissent = True                         # D2: a surviving disagreeing read
+                    break
+                if not eq or c.get("noted"):
+                    continue
+                m = str(c.get("method") or "")
+                fam = _crosscheck_witness_bucket(c.get("stage"), m)
+                if (w1 is None and fam and fam[1]
+                        and (fam[0] == "mapping" or c.get("located"))
+                        and not m.startswith("template_fixed")
+                        and "+corrected" not in m and "+confirmed_adopt" not in m
+                        and int(c.get("confidence") or 0) >= 80):
+                    w1 = c
+                if (w2 is None and m.startswith("keyword")
+                        and int(c.get("confidence") or 0) >= 70):
+                    w2 = c
+            ok = bool(w1 is not None and w2 is not None and rejected and not dissent)
+            _cdir = os.environ.get("XCHECK_DEMOTE_CENSUS_DIR")
+            if _cdir:
+                try:
+                    import json as _json
+                    with open(os.path.join(_cdir, "name_demote_census.jsonl"), "a",
+                              encoding="utf-8") as _f:
+                        _f.write(_json.dumps({
+                            "field": key, "committed": committed, "demoted": ok,
+                            "w1": (w1 or {}).get("method"), "w2": (w2 or {}).get("method"),
+                            "d1_rejections": len(rejected), "d2_dissent": dissent,
+                            "rejected": rejected}) + "\n")
+                except Exception:
+                    pass
+            if not ok:
+                continue
+            data.pop("validation_note", None)
+            data.pop("was_corrected", None)
+            data.pop("corrected_to", None)
+            # NO confidence change — pinned (test_name_corrob_demote.py); see the docstring.
+            data["method"] = str(data.get("method") or "") + "+corrob_clear"
+            rec = dict(corrob.get(key) or {})
+            rec["note_demoted"] = {
+                "note":           anchor.NAME_GUARD_DISAGREE_NOTE,
+                "witness_family": "crop+keyword",
+                "witness_method": w1.get("method"),
+                "witness_value":  w1.get("value"),
+                "keyword_method": w2.get("method"),
+                "rejected_reads": rejected,
+            }
+            corrob[key] = rec                              # additive; independent_agree untouched (C4)
+            if self._trace:
+                self._t("name_note_demote", field=key, value=committed,
+                        w1=str(w1.get("method")), w2=str(w2.get("method")),
+                        rejections=len(rejected))
+            self.log(f"  Name-guard note demoted: {key} '{committed}' corroborated by "
+                     f"{w1.get('method')} + {w2.get('method')} (dissenters guard-rejected; "
+                     f"dissent recorded)")
+            demoted = True
+        return demoted
+
+    def _build_corroboration_emit(self, results):
+        """OWNER PRINCIPLE (2026-08-11): "the rungs should CORROBORATE, not merely compete."
+        Per committed field, which INDEPENDENT method families read the same value — a derived,
+        record-only read of the per-run candidate ledger. Commits nothing, vetoes nothing.
+
+        INDEPENDENCE IS METHOD FAMILY, NEVER A WITNESS COUNT. Same-pixel agreement is worthless
+        (Oracle 2026-08-03: 5:1 false:true; re-proved 2026-08-11 when two preps agreed on the wrong
+        P1), so buckets come from `_crosscheck_witness_bucket` — the Oracle-ratified grouping that
+        excludes the located-by-fiat fraud (anchor_registration) and the crosscheck flip. Caveat,
+        stated: `template_fixed` buckets into the mapping family, so its record reads as memory-vs-page
+        rather than crop-vs-page — for a RECORD that is the honest framing (the Oakhaven leak's stamped
+        VAT vs the page's own printed VAT is exactly this row).
+        BARE `anchor` (gary → Oracle SIGN-OFF-W/COND 2026-08-23): the shared bucket EXCLUDES it, which
+        for the LIVE reconcile is right, but in the RECORD that discarded a genuine crop/mapping winner's
+        corroboration by a different-recipe read (the Pelican 565 hold — mapping box + full-page line
+        both read PI/25/5450, recorded as `agree:[]`). Bare `anchor` is the full-page TEXT-LINE reader
+        (anchor.py:1309 — a raw line slice from the SAME page-text pass the keyword regex reads), never a
+        crop, so it belongs to the KEYWORD family. Folded there HERE ONLY (record-only): anchor+keyword
+        collapse to one family (same pixels → no false independence — the fraud stays closed by same-
+        family skip, not by exclusion), while anchor+mapping/crop correctly counts as two recipes.
+
+        Kill: FIELD_CORROBORATION_EMIT=0 (metadata only, default on)."""
+        if os.environ.get('FIELD_CORROBORATION_EMIT', '1') == '0':
+            return {}
+
+        # ORACLE C1 (2026-08-11): `template_fixed` is a MEMORY stamp — no pixels at all — and the
+        # shared bucket folds every template* into the mapping family, which would suppress BOTH the
+        # most valuable agreement (this page's own taught-box read corroborates the memory) AND the
+        # most valuable disagreement (the frozen stamp contradicted by the page — the Oakhaven VAT
+        # class) as "same family". Special-cased HERE ONLY: `_crosscheck_witness_bucket` itself is
+        # shared with the LIVE crosscheck-outlier reconcile and must not be re-tuned by a record.
+        # Bare `anchor` → the KEYWORD family (record-only; see the docstring). Isolated kill so the A/B
+        # census can measure just this reclassification: CORROB_ANCHOR_AS_KEYWORD=0 restores the old
+        # (excluded) record. The SHARED _crosscheck_witness_bucket is NOT touched (it must keep excluding
+        # bare `anchor` for the live crosscheck-outlier reconcile — pinned). The bucket itself is the
+        # module-level _corrob_record_bucket (hoisted 2026-08-26 so class F reads the ledger through
+        # the same lens; logic unchanged).
+        _anchor_as_kw = os.environ.get('CORROB_ANCHOR_AS_KEYWORD', '1') != '0'
+        _corrob_bucket = _corrob_record_bucket
+
+        out = {}
+        for key, data in results.items():
+            if key.startswith('_') or not isinstance(data, dict):
+                continue
+            val = data.get('value')
+            if val in (None, ''):
+                continue
+            win_norm = _cmp_norm(val)
+            method = str(data.get('method') or '')
+            win_bucket = _corrob_bucket(None, method)
+            win_family = win_bucket[0] if win_bucket else _method_family(method)
+            # agree_strong = agreeing families whose agreement comes from a candidate OTHER than a
+            # reclassified bare `anchor`. Oracle 2026-08-23 (the r19-unmask seam): a bare-anchor LINE
+            # read is the same pixels as the keyword REGEX, so a bare-anchor agreement must NOT SUPPRESS a
+            # genuine keyword-regex DISAGREEMENT (mask a correct-Y regex dissent behind a common-mode
+            # box+line misread of X, then auto-file X with no shape gate). Bare anchor still counts toward
+            # `agree` (it genuinely corroborates a DIFFERENT-family mapping/crop winner — the 565 heal),
+            # but only a NON-anchor agreement collapses a family's disagreement (the existing agree-wins
+            # rule). With CORROB_ANCHOR_AS_KEYWORD off this is inert (anchor is excluded, never in agree).
+            agree, agree_strong, disagree = set(), set(), {}
+            for c in (self._field_candidates.get(key) or []):
+                b = _corrob_bucket(c.get('stage'), c.get('method'))
+                if not b:
+                    continue
+                fam = b[0]
+                if fam == win_family:
+                    continue          # same family = same pixels/recipe — counts for NOTHING
+                cv = c.get('value')
+                if cv in (None, ''):
+                    continue
+                if _corrob_values_agree(cv, val):
+                    if win_bucket is not None:
+                        agree.add(fam)
+                        if not (_anchor_as_kw and str(c.get('method') or '') == 'anchor'):
+                            agree_strong.add(fam)   # a genuine (non-bare-anchor) read agrees
+                else:
+                    disagree.setdefault(fam, str(cv))
+            out[key] = {
+                'winner_family': win_family,
+                'agree': sorted(agree),
+                # a family with two candidates, one agreeing and one not, counts as agreement — its
+                # differing read stays out of `disagree` so the record never contradicts itself. BUT a
+                # bare-anchor-only agreement does NOT collapse a genuine keyword-regex dissent (Oracle
+                # 2026-08-23 r19-unmask seam): suppress by agree_STRONG, not agree.
+                'disagree': [{'family': f, 'value': v}
+                             for f, v in sorted(disagree.items()) if f not in agree_strong],
+                'independent_agree': bool(agree),
+            }
+        return out
 
     def _resolve_candidates(self, results, field_defs, supplier_name, document_slug):
         """Stage 4.6 — gated, deterministic, suggestion-first override. Runs only when
@@ -715,15 +4518,46 @@ class ExtractionEngine:
         self._trace(ev)
 
     @staticmethod
-    def _brief(d):
+    def _brief(d, field_key=None):
         if not isinstance(d, dict):
             return None
-        return {"method": d.get("method"), "value": d.get("value"),
-                "confidence": d.get("confidence")}
+        out = {"method": d.get("method"), "value": d.get("value"),
+               "confidence": d.get("confidence")}
+        # The matched caption rides along ONLY when the caller knows the field key, because
+        # that is what lets `_caption` suppress Stage 0.5's field-key fallback. `_t` briefs the
+        # `vs` dict WITHOUT a key, so that payload keeps its exact three-key shape.
+        if field_key is not None:
+            cap = ExtractionEngine._caption(d, field_key)
+            if cap:
+                out["caption"] = cap
+        return out
+
+    @staticmethod
+    def _caption(d, field_key=None):
+        """The PRINTED CAPTION a rung matched, for the dev trace only (owner request
+        2026-08-09: "I would like to see the winning keyword so I know what the app
+        used to derive the value"). Read from the rung's OWN result key — Stage 1
+        records it as `label` (keyword.py:1204), Stage 0.5 and Stage 2 as `anchor`
+        (`_mapping_result`, anchor.py:1571) — never re-derived here, so the trace can
+        only ever show what the rung itself recorded.
+
+        Stage 0.5 passes `mapping.get("anchor_text") or field_key`, so a mapping with
+        NO taught label carries the FIELD KEY in that slot. That is not a caption and
+        is suppressed: showing `matched 'po_ref'` would invent a printed line that is
+        not on the page. Returns None when there is nothing honest to show."""
+        if not isinstance(d, dict):
+            return None
+        cap = d.get("label") or d.get("anchor")
+        cap = str(cap).strip() if cap is not None else ""
+        if not cap:
+            return None
+        if field_key and cap.lower() == str(field_key).strip().lower():
+            return None
+        return cap
 
     def _snap(self, results: dict) -> dict:
         """Shallow per-field snapshot (method/value/confidence) of resolved fields."""
-        return {k: self._brief(v) for k, v in results.items()
+        return {k: self._brief(v, k) for k, v in results.items()
                 if not k.startswith("_") and isinstance(v, dict)}
 
     def _trace_stage(self, stage: str, stage_results: dict, pre: dict, results: dict):
@@ -736,24 +4570,120 @@ class ExtractionEngine:
         for key, cand in (stage_results or {}).items():
             if key.startswith("_") or not isinstance(cand, dict):
                 continue
+            # target_geom (dev-trace only) is the box the WINNING rung actually READ — a
+            # relocate/registration/edge rung carries its OWN box here, not the abs box. Emit it
+            # so the SFDEV console can show the exact crop this candidate was read from (matched by
+            # bbox) instead of the first same-stage capture (the abs box), which mislabels a
+            # relocated/footer read. Absent off-trace ⇒ inert.
+            _geom = cand.get("target_geom")
+            _cap = self._caption(cand, key)
             self._t("candidate", stage=stage, field=key, method=cand.get("method"),
-                    value=cand.get("value"), confidence=cand.get("confidence"))
+                    value=cand.get("value"), confidence=cand.get("confidence"), geom=_geom,
+                    caption=_cap)
             after = results.get(key)
-            won = bool(after and after.get("value") == cand.get("value")
-                       and after.get("method") == cand.get("method"))
+            won = (self._merge_outcome(cand, after) == "won")
             self._t("merge", stage=stage, field=key,
                     decision=("win" if won else "lose"),
                     method=cand.get("method"), value=cand.get("value"),
-                    confidence=cand.get("confidence"),
+                    confidence=cand.get("confidence"), geom=_geom,
+                    caption=_cap,
                     vs=(pre.get(key) if won else after))
         self._t("stage_end", stage=stage)
 
-    def _capture_slice(self, field, stage, page, bbox, pil_img, kind="target"):
+    # ── Static merge-outcome predicate (SHARED by _trace_stage + _trace_steps) ──
+    # SINGLE source of the win/lose decision so the every-step ladder can NEVER
+    # disagree with the per-stage `merge` event. Caller MUST test cand truthiness
+    # FIRST: Stage 0 copies template seeds BY REFERENCE (results[key] IS the seed),
+    # so for a {value:None} seed `after IS cand` and this returns 'won' trivially —
+    # the None value must be filtered by the caller before this is consulted.
+    @staticmethod
+    def _merge_outcome(cand, after):
+        won = bool(after and after.get("value") == cand.get("value")
+                   and after.get("method") == cand.get("method"))
+        return "won" if won else "lost"
+
+    # Per-stage no-candidate / skip reason strings — constants, not f-strings built
+    # at the call site. The SKIP reason is the diagnostic datum the owner asked for
+    # ("show the RESULT OF EVERY STEP so an error can be read without re-running").
+    _STEP_SKIP_NO_TEMPLATE   = "no template matched this document"
+    _STEP_SKIP_NO_MAPPINGS   = "this template has no field mappings"
+    _STEP_SKIP_NO_PAGE_IMAGE = "no page image available to crop"
+    _STEP_SKIP_NO_ANCHORS    = "no anchors learned for this supplier + type"
+    _STEP_NO_CAND_REASON = {
+        "0_template":  "template matched but produced no value for this field",
+        "0.5_mapping": "no anchor→target mapping for this field",
+        "1_keyword":   "no keyword pattern matched this field",
+        "2_anchor":    "no anchor produced a value for this field",
+    }
+
+    def _trace_steps(self, stage, ran, skip_reason, stage_results, pre, results, field_keys):
+        """Dev-only every-step ladder: emit ONE `step` event per CONFIGURED field
+        for a read stage, so the inspector can render the outcome of EVERY stage —
+        not just the winners. outcome in
+        won | lost | no_candidate | already_resolved | skipped.
+
+        Pure observation — NEVER writes results/pre/stage_results. No-op unless
+        tracing (byte-identical off path). Discriminator is value-TRUTHINESS FIRST
+        (a {value:None} seed is `no_candidate`, never a false `won`), then the
+        shared `_merge_outcome`. `ran=False` emits a `skipped` row for every field
+        with the gate's reason — call it from OUTSIDE the stage gate so a gated-OFF
+        stage is visible on the ladder instead of silently absent. `already_resolved`
+        states STATE ("already held a value from X before this stage"), never a
+        DECISION this vantage cannot see ("skipped because credible")."""
+        if not self._trace:
+            return
+        for f in field_keys:
+            if not ran:
+                self._t("step", stage=stage, field=f, outcome="skipped", reason=skip_reason)
+                continue
+            cand = stage_results.get(f)
+            cand_v = (cand or {}).get("value")
+            if cand_v:                                   # value-truthiness FIRST (SEAM 3b)
+                _out = self._merge_outcome(cand, results.get(f))
+                _kw = {}
+                if _out == "lost":
+                    # STATE, not a CAUSE (Oracle no-overclaim 2026-08-03): name what currently
+                    # HOLDS the field so the ladder shows why this rung didn't win — the owner's
+                    # "the taught anchor read PO-17039 but lost" case — without asserting a reason
+                    # (higher confidence / authority) this vantage can't verify.
+                    _held = results.get(f) or {}
+                    _hv = _held.get("value")
+                    if _hv:
+                        # The HOLDER's caption is the payoff of the whole feature: a lost rung
+                        # is usually lost to a rung that answered a DIFFERENT printed line, and
+                        # "kept 'X' from keyword (matched 'Account No')" is the diagnosis.
+                        _hcap = self._caption(_held, f)
+                        _kw["reason"] = (f"kept '{_hv}' from {_held.get('method') or 'an earlier stage'}"
+                                         + (f" (matched '{_hcap}')" if _hcap else ""))
+                self._t("step", stage=stage, field=f, outcome=_out,
+                        value=cand_v, method=cand.get("method"),
+                        confidence=cand.get("confidence"),
+                        caption=self._caption(cand, f), **_kw)
+                continue
+            pre_f = pre.get(f) or {}
+            pre_v = pre_f.get("value")
+            if pre_v:
+                by = pre_f.get("method") or "an earlier stage"
+                self._t("step", stage=stage, field=f, outcome="already_resolved",
+                        # `pre` is a BRIEFED snapshot (`_snap`), which already carries the
+                        # suppressed caption under its own key — the raw `label`/`anchor` keys
+                        # `_caption` reads are not in it. Fall back for callers that pass raw
+                        # result dicts (the unit harnesses do).
+                        value=pre_v, by=pre_f.get("method"),
+                        caption=(pre_f.get("caption") or self._caption(pre_f, f)),
+                        reason=f"already held a value from {by} before this stage")
+            else:
+                self._t("step", stage=stage, field=f, outcome="no_candidate",
+                        reason=self._STEP_NO_CAND_REASON.get(stage, "no candidate produced"))
+
+    def _capture_slice(self, field, stage, page, bbox, pil_img, kind="target", tag=None):
         """Dev-only: save the exact crop used for an OCR attempt to the session
         temp dir and emit a typed `slice` trace event pointing at it. `kind` is
         'anchor' (the region used to find/verify the anchor) or 'target' (the
-        region OCR'd for the field value). No-op unless a trace callback AND a
-        slice dir are set. Never raises into extraction."""
+        region OCR'd for the field value); `tag` names WHICH read produced the
+        crop (e.g. 'absolute box' vs 'derived offset') so two same-kind crops of
+        one field are distinguishable in the trace console. No-op unless a trace
+        callback AND a slice dir are set. Never raises into extraction."""
         if not (self._trace and self._slice_dir):
             return
         try:
@@ -762,7 +4692,7 @@ class ExtractionEngine:
             path = os.path.join(self._slice_dir, f"slice_{self._slice_n}_{kind}.png")
             pil_img.save(path)
             self._t("slice", field=field, stage=stage, kind=kind, page=page,
-                    bbox=(list(bbox) if bbox else None), path=path)
+                    bbox=(list(bbox) if bbox else None), path=path, tag=tag)
         except Exception:
             pass  # diagnostics must never disrupt extraction
 
@@ -803,6 +4733,22 @@ class ExtractionEngine:
         def lookup(fk):
             return (self.format_class_index.get((s, d, fk)) if s else None) \
                    or self.format_class_index.get(('', d, fk))
+        return lookup
+
+    def _make_provisional_lookup(self, supplier_name, document_slug):
+        """CONSENT-ONLY provisional-skeleton lookup (Oracle NIGHT 2026-08-03, S2): closure
+        (field_key, value) -> bool, True iff the value's canonical skeleton matches a
+        provisionally-taught (sub-≥3-confirm) skeleton for the scope. Consumed EXCLUSIVELY
+        by template_mapper._shape_consents' ladder — never by any veto/flag path."""
+        if not self.provisional_shape_index or not document_slug:
+            return None
+        s = (supplier_name or '').lower().strip()
+        d = document_slug.lower().strip()
+
+        def lookup(fk, value):
+            sks = (self.provisional_shape_index.get((s, d, fk)) if s else None) \
+                  or self.provisional_shape_index.get(('', d, fk))
+            return format_anomaly_checker.provisional_shape_accepts(value, sks)
         return lookup
 
     def set_field_rules(self, rules: list):
@@ -896,12 +4842,39 @@ class ExtractionEngine:
 
     def set_formats(self, formats_data: list):
         """Pre-build all format indexes from confirmed value data."""
-        self.format_index        = ocr_corrector.build_format_index(formats_data)
-        self.noise_profile_index = ocr_corrector.build_noise_profile_index(formats_data)
-        self.dominant_index      = ocr_corrector.build_dominant_index(formats_data)
-        self.known_index         = ocr_corrector.build_known_index(formats_data)
-        self.prefix_index        = ocr_corrector.build_prefix_index(formats_data)
-        self.format_class_index  = format_anomaly_checker.build_format_class_index(formats_data)
+        # PROVISIONAL rows (below the ≥3-confirm bar, tagged by learning.js — Oracle NIGHT
+        # 2026-08-03 S2) are stripped BEFORE any established builder sees them: every veto/
+        # correct/snap index keeps its exact pre-provisional input. They feed ONLY the
+        # separate consent-only skeleton index (provisional_shape_index), consumed solely by
+        # the mapper's clean-commit consent ladder. Pinned in test_template_frag_clip.py.
+        _solid = [e for e in (formats_data or [])
+                  if not (isinstance(e, dict) and e.get('provisional'))]
+        self.format_index        = ocr_corrector.build_format_index(_solid)
+        self.noise_profile_index = ocr_corrector.build_noise_profile_index(_solid)
+        self.dominant_index      = ocr_corrector.build_dominant_index(_solid)
+        self.known_index         = ocr_corrector.build_known_index(_solid)
+        self.prefix_index        = ocr_corrector.build_prefix_index(_solid)
+        self.length_index        = ocr_corrector.build_length_index(_solid)   # S-B ref digit-run profiles
+        self.format_class_index  = format_anomaly_checker.build_format_class_index(_solid)
+        self.provisional_shape_index = format_anomaly_checker.build_provisional_shape_index(formats_data)
+        # Confirmed-value COUNTS per (supplier, doctype, field), keyed by _cmp_norm — the
+        # disambiguation picker's history discriminator ("you've confirmed this N times").
+        # Built from the provisional-stripped rows like every other index. A one-glyph garble
+        # ('Ltc') and the real value ('Ltd') are both well-formed, so shape can never separate
+        # them; confirmed frequency is the only evidence that can (owner exhibit ×3, 2026-08-11).
+        self.confirmed_counts_index = {}
+        for e in _solid:
+            fk = e.get('field_key', '')
+            counts = e.get('value_counts') or {}
+            if not fk or not counts:
+                continue
+            sk = ((e.get('supplier_name') or '').lower().strip(),
+                  (e.get('document_type') or '').lower().strip(), fk)
+            bucket = self.confirmed_counts_index.setdefault(sk, {})
+            for v, n in counts.items():
+                nk = _cmp_norm(v)
+                if nk:
+                    bucket[nk] = bucket.get(nk, 0) + int(n or 0)
         n = len([k for k in self.format_index if k != '_fallback'])
         m = len(self.noise_profile_index)
         p = len(self.format_class_index)
@@ -938,7 +4911,7 @@ class ExtractionEngine:
             uncovered = [r for r in self._RECONCILE_COMPONENT_ROLES if r not in covered]
             if not uncovered:
                 return
-            shadow = keyword.extract_fields(ocr_text, uncovered, patterns) or {}
+            shadow = keyword.extract_fields(ocr_text, uncovered, patterns, trace=self._t) or {}
             for k, data in shadow.items():
                 if data and data.get('value') and not (results.get(k) or {}).get('value'):
                     d = dict(data)
@@ -1013,8 +4986,37 @@ class ExtractionEngine:
             f["validation_note"] = (
                 f"The issuer read “{frag}” looks like a clipped fragment of “{canon}” — "
                 f"using the letterhead name; please confirm.")
+            if _IDENTITY_SUGGEST_CANONICAL_ON:
+                # C2.2: the value IS the canonical now — a Stage-4.5 token repair of the old
+                # fragment ('ocument' → 'document') must not stand as a `Use “…”` offer.
+                f["corrected_to"] = None
             results["_supplier_name"] = canon
             results["_needs_review"] = True
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _suggest_identity_canonical(f, idv):
+        """Slice 2 (C2.1): on a FLAG-ONLY identity conflict whose resolved read is a GARBLE of the
+        letterhead canonical (`_identity_garble_of`), carry the canonical in `suggested_supplier`
+        and clear any Stage-4.5 token repair from `corrected_to`. Mutates `f` in place; returns True
+        when it acted. Inert (False, `f` untouched) when the switch is off, the verdict is not
+        garble-kind, or the field has no value. Pure otherwise; pinned in tests/test_identity_variant.py."""
+        try:
+            if not _IDENTITY_SUGGEST_CANONICAL_ON or not isinstance(f, dict) or not f.get("value"):
+                return False
+            canon = str((idv or {}).get("text_led") or "").strip()
+            if not canon:
+                return False
+            resolved = (idv or {}).get("resolved")
+            kind = 'garble' if _identity_garble_of(resolved, canon) else (
+                'junk' if (_IDENTITY_SUGGEST_JUNK_ON and _identity_junk_read(resolved, canon)) else None)
+            if not kind:
+                return False
+            f["suggested_supplier"] = canon
+            f["corrected_to"] = None
+            f["suggested_kind"] = kind
             return True
         except Exception:
             return False
@@ -1094,7 +5096,10 @@ class ExtractionEngine:
         printed branding is essentially ABSENT from the page — we resolved X (via logo / same-logo
         sibling template / fixed supplier), yet the letterhead words that identify X aren't there —
         cap the supplier field <=69, attach a review NOTE (naming the branding-detected alternative
-        if one is decisively present), and set needs_review. FLAG-ONLY: the value is never changed.
+        if one is decisively present), and set needs_review. FLAG-ONLY — the value is never changed
+        — with ONE carve-out (BRANDING_NAMED_BLANK, slice 4 2026-07-20): a NAMED rival on the
+        issuer-band fuzzy path against a plain 'template_fixed' frozen stamp BLANKS the value and
+        the _supplier_name scope (see the inline comment; locked/manual/un-named never blank).
         The NOTE is what actually blocks the wrong auto-file (trust.isAutoFileEligible refuses any
         non-empty validation_note; the cap alone does not block at overall==100). Covers the logo +
         template_fixed + fixed-supplier paths at one seam. Reuses template keyword-fingerprints +
@@ -1119,56 +5124,14 @@ class ExtractionEngine:
         if self._accept_norm(supplier_name) in self.accepted_issuers:
             return
         from extraction import template_matcher
-        # Branding bank per supplier identity: the template's DOMINANT confirmed issuer, else its name.
-        banks = {}
-        for t in templates:
-            iss = (t.get("dominant_supplier") or "").strip() or (t.get("name") or "").strip()
-            kf = t.get("keyword_fingerprint") or []
-            if not iss or not kf:
-                continue
-            b = banks.setdefault(self._accept_norm(iss), {"name": iss, "words": set()})
-            for w in kf:
-                wl = str(w or "").strip().lower()
-                if len(wl) >= 3 and wl not in _BRANDING_STOPWORDS:
-                    b["words"].add(wl)   # distinctive branding tokens only (doc-type words stripped)
-        K = 3
-        own = banks.get(self._accept_norm(supplier_name))
-        if not own or len(own["words"]) < K:
+        banks = _branding_banks(templates, self._accept_norm)
+        own_ratio = _branding_own_ratio(supplier_name, banks, ocr_text, self._accept_norm)
+        if own_ratio is None:
             return  # no >=K-word fingerprint for the resolved supplier -> can't judge (fail-safe)
-        ocr_lower = ocr_text.lower()
-        own_ratio = template_matcher._keyword_hit_ratio(
-            {"keyword_fingerprint": sorted(own["words"])}, ocr_lower)
-        if own_ratio > 0.25:
+        if own_ratio > _BRANDING_PRESENT_RATIO:
             return  # the resolved supplier's own branding IS on the page -> healthy, no flag
-        # X's branding is ABSENT. Name the decisively-present alternative supplier, if one stands out
-        # (>=0.75 present AND a clear margin over any third — Oracle: positive evidence, not weak agreement).
-        # The alt-scan is FUZZY (a garbled letterhead word "rthgate" still resolves "northgate") and runs
-        # on the ISSUER-BAND text ONLY (top letterhead, truncated at the first recipient marker), so a
-        # mid-page recipient/customer name can never be named as the issuer. own_ratio above stays EXACT +
-        # whole-page ON PURPOSE — fuzzing it could RAISE it and SUPPRESS the flag (fail-open to a silent
-        # wrong supplier); fuzzing only the alt-scan can never suppress, only ADD a name. Kill switch
-        # BRANDING_ALT_FUZZY (fuzzy is a superset of exact, so =0 restores the exact-name behaviour).
-        _fuzzy = os.environ.get("BRANDING_ALT_FUZZY", "1") != "0"
-        _issuer_tokens = None
-        if _fuzzy:
-            import re as _re
-            from extraction import chrome_band
-            _issuer_tokens = _re.findall(r"[a-z0-9]+", chrome_band.issuer_chrome(ocr_text).lower())
-        alt, alt_ratio, second = None, 0.0, 0.0
-        _own_norm = self._accept_norm(supplier_name)
-        for norm, b in banks.items():
-            if norm == _own_norm or len(b["words"]) < K:
-                continue
-            if _fuzzy:
-                r = template_matcher._keyword_hit_ratio_fuzzy(sorted(b["words"]), _issuer_tokens)
-            else:
-                r = template_matcher._keyword_hit_ratio(
-                    {"keyword_fingerprint": sorted(b["words"])}, ocr_lower)
-            if r > alt_ratio:
-                alt, second, alt_ratio = b["name"], alt_ratio, r
-            elif r > second:
-                second = r
-        named = alt if (alt and alt_ratio >= 0.75 and alt_ratio - second >= 0.25) else None
+        named, _fuzzy = _branding_alt_name(banks, ocr_text, self._accept_norm(supplier_name))
+        _blank = False
         if named:
             note = (f"The page branding reads '{named}', but this was filed under '{supplier_name}'. "
                     "Please confirm the correct company.")
@@ -1179,13 +5142,130 @@ class ExtractionEngine:
             # whole-page scan (which can name a recipient), so it must not feed an actionable button.
             if _fuzzy:
                 fld["suggested_supplier"] = named
+            # BRANDING_NAMED_BLANK (slice 4 of the template-misfile fix, Oracle-signed 2026-07-20):
+            # when the branding evidence POSITIVELY names a different supplier and the wrong value
+            # came from a FROZEN template stamp, don't leave the wrong name standing as the
+            # on-screen value / filing folder / learning scope — BLANK it (note + suggestion kept;
+            # the renderer's "Use '<name>'" button renders on a value-less row, the abstain-speak
+            # precedent). Scope is deliberately narrow, every leg load-bearing:
+            #   * _fuzzy only — the legacy exact whole-page scan can name a RECIPIENT; issuer-band
+            #     evidence only (the same standard as the actionable button).
+            #   * method 'template_fixed' EXACTLY — template_fixed_locked is deliberate admin
+            #     intent (stays flag-only, pinned) and 'manual' returned above; other methods have
+            #     their own text gates upstream.
+            #   * the UN-NAMED branch below NEVER blanks — on a degraded scan of a GENUINE
+            #     supplier, own-absence is the only evidence, and blanking there deletes correct
+            #     identities (the exact reason the C2 sufficiency floor exists).
+            # results['_supplier_name'] is blanked too — it was stamped BEFORE this check runs, and
+            # blanking the field alone would leave the wrong name as the filing/learning scope
+            # (precedent: _adopt_identity_variant). Kill switch BRANDING_NAMED_BLANK=0.
+            if (_fuzzy and fld.get("method") == "template_fixed"
+                    and os.environ.get("BRANDING_NAMED_BLANK", "1") != "0"):
+                _blank = True
+                # Customer-facing copy (owner 2026-07-31, same pass as the un-named veto note):
+                # no "template" jargon. "page branding reads" + "confirm the correct company"
+                # are LOAD-BEARING markers (test_logo_detail_sparse_guard, logo_identity_suite,
+                # test_suggested_supplier_persist, renderer isBrandingFlag) — keep both.
+                note = (f"The page branding reads '{named}', but this document looks similar to "
+                        f"paperwork from '{supplier_name}' — so the sender was left blank. "
+                        "Please confirm the correct company.")
         else:
             note = (f"This document's letterhead doesn't match '{supplier_name}'. "
                     "Please confirm the correct company.")
+            # TEMPLATE_FIXED_NAME_PRESENCE_VETO (2026-07-31; gary + Oracle SIGN-OFF-W/COND) — the
+            # UN-NAMED twin of BRANDING_NAMED_BLANK for the Ironbridge-as-Copperfield class: a
+            # phash/keyword collision seeds a FROZEN template_fixed supplier stamp on a stranger's
+            # page, the rival can't be NAMED (a new supplier has no template bank), and the wrong
+            # prefill stood at 69 — one confirm-keystroke from GT-poison. When the stamped supplier
+            # reliably PRINTS its own name (the learned per-supplier ratio threaded in via the
+            # templates payload's supplier_prints_name — database/modules/templates.js getAll,
+            # computed by namePresence.supplierNamePresenceRatio) but the name is ABSENT from THIS
+            # page (fuzzy: _template_identity_corroborated's >=60%-distinctive-tokens check), BLANK
+            # the stamp instead of keeping it. Destructive-gate prerequisites, fail-toward-keep at
+            # every doubt (mirrors namePresence.nameBearingButAbsent, Oracle 2026-07-24):
+            #   * method 'template_fixed' EXACTLY — template_fixed_locked is deliberate admin
+            #     intent, stays flag-only (same pinned rationale as BRANDING_NAMED_BLANK above);
+            #     covers BOTH stamp paths (template_matcher seed + _doctype_fixed_supplier).
+            #   * _identity_text_sufficient — the C2 floor: a failed/thin scan is UNJUDGEABLE,
+            #     never "name absent" (the flag above never needed the floor; the blank does).
+            #   * stats missing (old payload / no fixed-supplier template) → keep: byte-identical
+            #     backward compat. count/ratio floors shared with the JS twin via the SAME env keys.
+            #   * a corroborated name (>=60% distinctive tokens on page) keeps today's flag+69.
+            # PIN: this branch must NEVER emit fld['suggested_supplier'] — the un-named veto has no
+            # candidate, and arming the renderer's "Use '<name>'" button here would hand the user a
+            # one-click WRONG answer (Oracle condition 3).
+            if (fld.get("method") == "template_fixed"
+                    and os.environ.get("TEMPLATE_FIXED_NAME_PRESENCE_VETO", "1") != "0"
+                    and _identity_text_sufficient(ocr_text)):
+                _stats = _prints_name_stats(templates, self._accept_norm).get(
+                    self._accept_norm(supplier_name))
+                try:
+                    _min_n = int(os.environ.get("TEMPLATE_NAME_PRESENCE_MIN_SAMPLE", "3"))
+                    _min_r = float(os.environ.get("TEMPLATE_NAME_PRESENCE_RATIO", "0.80"))
+                except ValueError:
+                    _min_n, _min_r = 3, 0.80
+                if (_stats and _stats[1] >= _min_n and _stats[0] >= _min_r
+                        and not _template_identity_corroborated(supplier_name, ocr_text)):
+                    _blank = True
+                    # Customer-facing copy (owner + bob 2026-08-01, superseding the 07-31
+                    # lookalike wording): NO rejected-candidate name — printing "looks similar
+                    # to '<supplier>'" under the field ANCHORED the operator toward the very
+                    # name the veto had just refused (a wrong confirm then poisons that
+                    # supplier's learning scope), and read as a confession in the common
+                    # genuinely-new-sender case. Neutral, action-first instead. The NOTE OBJECT
+                    # itself is LOAD-BEARING and must never be dropped (its presence on the
+                    # empty row is the REPROCESS_ANNOTATED_EMPTY_WINS discriminator — a bare
+                    # empty resurrects the stale value on reprocess); "couldn't be confirmed"
+                    # + "confirm the correct company" are the pinned markers
+                    # (test_template_fixed_name_presence.py + the renderer's isBrandingFlag
+                    # regex) — keep both in any rewording.
+                    note = ("The sender's name couldn't be confirmed on this page. Please "
+                            "confirm the correct company — it's usually printed at the top "
+                            "of the document.")
         existing = str(fld.get("validation_note") or "").strip()
         fld["validation_note"] = (existing + " " + note).strip() if existing else note
         fld["confidence"] = min(int(fld.get("confidence") or 100), 69)
+        if _blank:
+            fld["value"] = None
+            fld["confidence"] = 0
+            results["_supplier_name"] = None
         results["_needs_review"] = True
+
+    def _refuse_caption_values(self, results, caption_vocab, field_defs):
+        """Withhold a committed value that IS one of the page's printed CAPTIONS.
+
+        Default OFF (CAPTION_VALUE_REFUSE=1 arms); OFF returns immediately and is byte-identical.
+
+        SCOPE, and every exclusion is load-bearing:
+          * the IDENTITY fields are excluded — a company name is judged by the branding guards, which
+            know about banks and letterheads; this rule knows only about captions, and 'Statement Ltd'
+            is a real company;
+          * a value the OPERATOR corrected is excluded — they typed it, it is not our guess;
+          * everything else is in scope regardless of HOW it was read. A taught box reading its own
+            caption arrives with the highest authority in the system and is exactly the defect.
+        """
+        if os.environ.get('CAPTION_VALUE_REFUSE', '0') == '0' or not caption_vocab:
+            return
+        for key, d in list(results.items()):
+            if key.startswith('_') or not isinstance(d, dict):
+                continue
+            if key in _IDENTITY_FIELD_KEYS:
+                continue
+            val = d.get('value')
+            if not val or d.get('was_corrected'):
+                continue
+            if not keyword.value_is_caption(val, caption_vocab):
+                continue
+            self.log(f"  Caption refused: {key} read the page's own wording '{val}'")
+            self._t('caption_value_refused', field=key, value=val,
+                    method=d.get('method'), confidence=d.get('confidence'))
+            d['value'] = None
+            d['confidence'] = 0
+            _note = ("This looks like the wording printed on the page rather than a value. "
+                     "Please check the document and fill it in if it is there.")
+            _existing = str(d.get('validation_note') or '').strip()
+            d['validation_note'] = (_existing + ' ' + _note).strip() if _existing else _note
+            results['_needs_review'] = True
 
     @staticmethod
     def _flag_cross_field_duplication(results):
@@ -1332,6 +5412,67 @@ class ExtractionEngine:
         except Exception:
             pass   # advisory guard — must never break extraction
 
+    def _drop_positional_identity_read(self, results, field_defs):
+        """IDENTITY POSITIONAL-READ DROP (cross-supplier issuer-bleed fix; gary+Oracle-signed,
+        narrowed by Oracle SEND-BACK 2026-07-15).
+
+        MECHANISM (verified in the live code — NOT the stale "cross-supplier sweep" narrative; the
+        authoritative saveAnchor sweep was scoped to one supplier on 2026-07-09, learning.js:523-529).
+        The bleed is READ-TIME: anchor._anchor_matches admits a DIFFERENT supplier's identity anchor
+        onto this doc-type by design (the identity branch — so a supplier's own caption can correct a
+        wrong template guess). anchor._is_blind_cross_supplier_anchor would drop such a foreign read,
+        but it runs only when `not located_ok` — and `anchor_registration` is flagged located_ok=True
+        by method fiat (anchor.py:1134-1136) despite placing its box by landmark GEOMETRY with no
+        caption verification. So a foreign position-only ISSUER teach reads THIS page at its landmark
+        position → a column header ("Item") or recipient caption ("Ship To:") → junk that, uncaught,
+        becomes results['supplier_name'] and thus the resolved filing/learning SCOPE. All 14 live
+        SuperStore cases are anchor_registration with no caption.
+
+        This drop is the COMPLEMENT that plugs exactly that located_ok=True bypass — it fires ONLY for
+        `anchor_registration` identity reads (see _is_positional_identity_read). A live audit found
+        ZERO confirmed docs whose issuer resolves via any positional read (wins are logo /
+        template_fixed / template_identity / hint_text_match / keyword / manual), so it removes NO
+        committed win. Content-located own-caption anchor reads (Greenfield's 'Supplier:'), blind
+        rigid anchor_crop (already dropped by the existing guard), and admin-curated Stage-0.5
+        template_mapping reads are all LEFT ALONE — the original broad predicate regressed those
+        (test_supplier_identity_stability / test_supplier_name_precedence) for no safety gain.
+
+        DROP (value=None + conf 0 + note), NOT a review-cap: a capped "Item" stays visible AND still
+        scopes downstream learning. Keep the dict (do NOT pop the key — the synthesised
+        type_ambiguity carrier and other readers expect supplier_name present). resolved_supplier
+        (read just after the call site) then falls to Stage 2.5a hint recovery / logo / keyword, or
+        empty→review — never a different WRONG supplier (Stage-2.5a only adopts a plausible, usage≥3,
+        on-page hint; the E2E resolves all 14 → the correct 'SuperStore').
+
+        Per-type identity key (_identity_key_for_type) so a RECIPIENT customer_name positional read
+        on a dual-key type (disambiguation picker / late rescue / taught recipient) is UNAFFECTED.
+        Kill switch env IDENTITY_POSITIONAL_DROP (default ON) → =0 is byte-identical. Best-effort:
+        never breaks extraction."""
+        if os.environ.get("IDENTITY_POSITIONAL_DROP", "1") == "0":
+            return
+        try:
+            id_key = _identity_key_for_type(field_defs)
+            if not id_key:
+                return
+            read = results.get(id_key)
+            if not isinstance(read, dict) or not read.get('value'):
+                return
+            if not _is_positional_identity_read(read.get('method')):
+                return
+            self.log(f"  Identity positional-read drop: {id_key} read '{read.get('value')}' via "
+                     f"'{read.get('method')}' (taught position, not this page's own content) — "
+                     f"dropped; issuer falls to hint/logo/keyword or review")
+            results[id_key] = {
+                "value":           None,
+                "confidence":      0,
+                "method":          read.get('method'),
+                "validation_note": ("The Document Issuer was read from a remembered position that "
+                                    "belongs to a different sender's layout, so it wasn't trusted on "
+                                    "this document. Please confirm who issued this."),
+            }
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
     def _flag_prefix_outlier(self, results, field_defs, supplier_name, document_slug):
         """PREFIX-OUTLIER GUARD (flag-only, never rewrites — reggie-designed, Oracle-vetted 2026-07-12).
         A VARIABLE reference/code field can have a dominant leading-alpha PREFIX (DN / INV / PO / SO) in
@@ -1372,13 +5513,975 @@ class ExtractionEngine:
                     continue
                 data['confidence'] = min(int(data.get('confidence') or 0), 69)
                 if not str(data.get('validation_note') or '').strip():
+                    # The tail is the shared module constant — the P adopt lane matches on it.
                     data['validation_note'] = (
                         f"This {key.replace('_', ' ')} starts '{p}', but this sender's usually start "
-                        f"'{rec['dominant']}' — likely a one-character misread. Please check.")
+                        f"'{rec['dominant']}' {_PREFIX_OUTLIER_NOTE_TAIL}")
                 self.log(f"  Prefix-outlier guard: {key} read prefix '{p}' vs dominant "
                          f"'{rec['dominant']}' — flagged for review")
         except Exception:
             pass   # advisory guard — must never break extraction
+
+    def _reconcile_clipped_suffix(self, results, field_defs, supplier_name, document_slug):
+        """CLIPPED-SUFFIX RECONCILIATION (Oracle amended verdict 2026-07-31; kill switch
+        CANDIDATE_SUFFIX_RECONCILE, default ON — flipped same day after the full gate set:
+        OFF byte-identical to baseline; ON heals #121/123/124/136/137, ref 91.8→94.5%,
+        M 8→7 with ZERO new members, flags unchanged). A label-confirmed anchor read
+        (anchor_registration / anchor_crop_relocated / anchor_inline — the shape-EXEMPT set,
+        see :4692 and anchor._LABEL_CONFIRMED_METHODS) can win a ref/code field with a value
+        whose LEADING glyphs a misplaced crop cut off ('V-69523', the #121 class: the
+        registration transform landed the box ~76px right of the value start), while the
+        DISCARDED Stage-1 keyword read of the SAME token held the full value ('INV-69523').
+        The shape exemption is deliberate (variable codes must not be shape-vetoed), so no
+        downstream gate can see the clip — it files silently at 90+. Reconcile from the
+        always-on candidate ledger instead of any new OCR:
+          winner fails its OWN-SUPPLIER learned shape
+          + a '1_keyword' candidate is the same token read more completely (strict alnum
+            suffix; alpha-only completion 1-3 chars; digit subsequence byte-identical)
+          + the debris-stripped candidate PASSES that shape
+          + the completed prefix is a CONFIRMED in-scope prefix (ocr_corrector.
+            prefix_confirmed — membership with real support, never similarity)
+          -> ADOPT the fuller value, keeping the winner's method/tier/confidence (no note:
+             this is two independent same-render mechanisms agreeing on the digits, the
+             corroboration bar Oracle set; the realdoc M gate arbitrates fileability).
+        Prefix unconfirmed / no prefix record -> FLAG-only (cap 69 + note, review-bound —
+        fail toward review). Runs BEFORE _flag_prefix_outlier so the healed value is what
+        that guard judges. Encroachment (audited 2026-07-31): the merge loop is untouched;
+        nothing is nulled/capped on shape opinion alone (the flag lane requires the fuller
+        agreeing read as EVIDENCE); one-note-per-field respected in both directions; NO
+        corrected_to is emitted (the reprocess merge treats corrected_to as operator-grade
+        — deliberately never entered). Pinned residual: '1V-69523' (digit-bearing
+        completion) is NOT healed — widening to digit completions would let a hallucinated
+        leading digit rewrite a real code (tests/test_suffix_reconcile.py). Best-effort:
+        never breaks extraction."""
+        if os.environ.get('CANDIDATE_SUFFIX_RECONCILE', '1') == '0':   # default ON (flipped 2026-07-31 after gates); =0 kills
+            return
+        try:
+            from extraction import suffix_reconcile
+            from extraction.value_quality import is_name_like_field
+            _skip_types = {'date', 'currency', 'number', 'percentage', 'email', 'iban', 'vat_gb',
+                           'postcode_uk', 'ip_address', 'mac_address', 'currency_code', 'website'}
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            s_lower  = (supplier_name or '').lower().strip()
+            dt_lower = (document_slug or '').lower().strip()
+            if not s_lower:
+                return                  # own-supplier shapes only — never a ('') cross-supplier verdict
+            for key, data in results.items():
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                val = data.get('value')
+                if not val or is_name_like_field(key) or type_by_key.get(key) in _skip_types:
+                    continue
+                if str(data.get('method') or '') not in anchor._LABEL_CONFIRMED_METHODS:
+                    continue            # v1 scope = exactly the shape-exempt stage-2 set
+                if str(data.get('validation_note') or '').strip() or data.get('corrected_to'):
+                    continue            # one note per field — another stage already spoke
+                fmt_entry = self.format_class_index.get((s_lower, dt_lower, key))
+                if not fmt_entry or not fmt_entry.get('shapes'):
+                    continue
+                if not format_anomaly_checker.check_value(str(val), fmt_entry):
+                    continue            # winner passes its own shape — nothing to reconcile
+                rec = ocr_corrector.lookup_prefix(self.prefix_index, key, supplier_name, document_slug)
+                lane = None
+                fuller = None
+                for cand in (self._field_candidates.get(key) or []):
+                    if cand.get('stage') != '1_keyword':
+                        continue        # independent full-page read only (same-eye anchor stages excluded)
+                    cv = str(cand.get('value') or '')
+                    if suffix_reconcile.clip_completion(val, cv) is None:
+                        continue
+                    # Debris-strip the candidate's EDGES only ('. INV-69523' -> 'INV-69523'):
+                    # the shape check and code_prefix both reject on leading page junk.
+                    clean = suffix_reconcile.edge_strip(cv)
+                    if not clean or format_anomaly_checker.check_value(clean, fmt_entry):
+                        continue        # candidate itself fails the shape — no corroboration
+                    verdict = suffix_reconcile.classify(val, cv, clean, rec,
+                                                        ocr_corrector.prefix_confirmed,
+                                                        ocr_corrector.code_prefix)
+                    if verdict and verdict[0] == 'adopt':
+                        lane, fuller = 'adopt', verdict[1]
+                        break           # adopt beats flag
+                    if verdict and lane is None:
+                        lane, fuller = 'flag', clean
+                if lane == 'adopt':
+                    self._t('suffix_reconcile', field=key, was=str(val), now=fuller,
+                            method=data.get('method'))
+                    self.log(f"  Clip reconcile: {key} '{val}' -> '{fuller}' "
+                             f"(fuller keyword read of the same number)")
+                    results[key] = {**data, 'value': fuller, 'display_value': fuller,
+                                    'suffix_reconciled': True}
+                elif lane == 'flag':
+                    self._t('suffix_reconcile_flag', field=key, value=str(val), fuller=fuller)
+                    results[key] = {**data,
+                                    'confidence': min(int(data.get('confidence') or 0), 69),
+                                    'validation_note': 'this may be missing its first letters — '
+                                                       'a fuller read of the same number was also '
+                                                       'seen; please verify'}
+        except Exception:
+            pass   # advisory reconciliation — must never break extraction
+
+    # ── S-C: BLIND-GEOMETRY DISAGREEMENT RECONCILIATION (Oracle SIGN-OFF-W/COND 2026-08-01;
+    # kill BLIND_GEOM_DISAGREE_RECONCILE, ships DARK =0 — flip is the OWNER's call after gates).
+    # The #141 class: an operator-taught anchor resolved via the REGISTRATION rung wins Tier-A
+    # by fiat (`located` by method membership, confidence never consulted, ocr_min_conf None for
+    # structured fields) even though the label evidence contradicted the geometry — '21/07/2026'
+    # @83 beat keyword_override '. DN-24408'@93 AND template_mapping 'DN-24408'@90. This pass is
+    # the symmetric completion of two signed doctrines: KEYWORD_ANCHOR_CORROB already rules
+    # anchor_registration INADMISSIBLE as a corroboration witness ("blind geometry — an
+    # independence fraud"), and the prefix guard already refuses taught-anchor exemption ("the
+    # teach fixed the position, not the value"). A method inadmissible as a witness cannot
+    # silently OVERRULE two admissible witnesses.
+    #   ADOPT: >=2 DISTINCT-stage-family witnesses (0_template / 0.5_mapping / 1_keyword —
+    #   pinned: two same-family candidates never count) agree normalise-equal on one
+    #   shape-PASSING value -> restore that value NON-authoritatively (witness method +
+    #   blind_geom_reconciled marker, confidence <= max witness conf, never boosted).
+    #   FLAG: exactly one witness -> keep the winner's value, cap 69 + a note naming BOTH
+    #   values (fail toward review with a reason; untouched would preserve a silent wrong file).
+    # v1 scope: winner method == 'anchor_registration' EXACTLY. PINNED EXCLUSIONS: anchor_inline
+    # / anchor_crop_relocated winners are untouched (their label was genuinely found on-page —
+    # the 2026-07-26 Tier-A re-teach fix depends on it); rigid anchor_crop is already
+    # shape-gated. Fill-empty stays intact (no disagreeing candidate -> inert). ORDER (pinned in
+    # tests): suffix-reconcile -> S-C -> S-A date flag -> prefix-outlier -> S-B length guard —
+    # S-C before S-A so a reconciled value is judged, not the stale date.
+    def _reconcile_blind_geometry(self, results, field_defs, supplier_name, document_slug):
+        # Default ON (owner-flipped 2026-08-01 after the full gate ladder: #141/#142 healed on
+        # real pixels, M pinned set zero new members, flags-delta 0). =0 kills.
+        if os.environ.get('BLIND_GEOM_DISAGREE_RECONCILE', '1') == '0':
+            return
+        try:
+            from extraction import suffix_reconcile
+            from extraction import text_normalise as _tn
+            from extraction.value_quality import is_name_like_field
+            _skip_types = {'date', 'currency', 'number', 'percentage', 'email', 'iban', 'vat_gb',
+                           'postcode_uk', 'ip_address', 'mac_address', 'currency_code', 'website'}
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            s_lower  = (supplier_name or '').lower().strip()
+            dt_lower = (document_slug or '').lower().strip()
+            if not s_lower:
+                return                  # own-supplier shapes only
+            _WITNESS_STAGES = {'0_template', '0.5_mapping', '1_keyword'}
+            for key, data in results.items():
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                val = data.get('value')
+                if not val or is_name_like_field(key) or type_by_key.get(key) in _skip_types:
+                    continue
+                if str(data.get('method') or '') != 'anchor_registration':
+                    continue            # v1: the fiat-located method EXACTLY (pinned)
+                if str(data.get('validation_note') or '').strip() or data.get('corrected_to'):
+                    continue            # one note per field
+                fmt_entry = self.format_class_index.get((s_lower, dt_lower, key))
+                if not fmt_entry or not fmt_entry.get('shapes'):
+                    continue
+                if not format_anomaly_checker.check_value(str(val), fmt_entry):
+                    continue            # winner passes its own scope shape — nothing to arbitrate
+                win_norm = _tn.normalise_for_tokens(str(val))
+                # Gather shape-PASSING, normalise-DIFFERING witnesses by normalised value.
+                by_value = {}
+                for cand in (self._field_candidates.get(key) or []):
+                    stage = str(cand.get('stage') or '')
+                    if stage not in _WITNESS_STAGES:
+                        continue
+                    cv = suffix_reconcile.edge_strip(str(cand.get('value') or ''))
+                    if not cv:
+                        continue
+                    cn = _tn.normalise_for_tokens(cv)
+                    if not cn or cn == win_norm:
+                        continue
+                    if format_anomaly_checker.check_value(cv, fmt_entry):
+                        continue        # witness must itself pass the scope shape
+                    ent = by_value.setdefault(cn, {'families': set(), 'best': None})
+                    ent['families'].add(stage)
+                    c = int(cand.get('confidence') or 0)
+                    if ent['best'] is None or c > int(ent['best'].get('confidence') or 0):
+                        ent['best'] = {'value': cv, 'method': cand.get('method'), 'confidence': c}
+                if not by_value:
+                    continue
+                # Prefer the value with the MOST distinct families, then highest witness conf.
+                cn, ent = max(by_value.items(),
+                              key=lambda kv: (len(kv[1]['families']),
+                                              int(kv[1]['best'].get('confidence') or 0)))
+                w = ent['best']
+                if len(ent['families']) >= 2:
+                    self._t('blind_geom_reconcile', field=key, was=str(val), now=w['value'],
+                            families=sorted(ent['families']))
+                    self.log(f"  Blind-geometry reconcile: {key} '{val}' -> '{w['value']}' "
+                             f"({len(ent['families'])} independent reads agree)")
+                    results[key] = {
+                        **data,
+                        'value':         w['value'],
+                        'display_value': w['value'],
+                        'method':        w.get('method') or data.get('method'),
+                        # Oracle tightening: the adopted confidence is the best WITNESS's own —
+                        # never synthetically boosted above what any witness actually scored.
+                        'confidence':    int(w.get('confidence') or 0),
+                        'authoritative': False,
+                        'blind_geom_reconciled': True,
+                    }
+                else:
+                    self._t('blind_geom_flag', field=key, value=str(val), witness=w['value'])
+                    results[key] = {
+                        **data,
+                        'confidence':      min(int(data.get('confidence') or 0), 69),
+                        'validation_note': (f"this read '{val}', but another check read "
+                                            f"'{w['value']}' — please pick the right value"),
+                    }
+        except Exception:
+            pass   # advisory reconciliation — must never break extraction
+
+    # ── S-A: DATE-SHAPED VALUE IN A REFERENCE FIELD (Oracle SIGN-OFF-W/COND 2026-08-01;
+    # kill DATE_IN_REF_FLAG — default ON after its gate). Deterministic content-nature check,
+    # the #141/#142 backstop for ANY source: a ref-role/code field whose committed value FULLY
+    # parses as a calendar date is evidence the read landed on the wrong row. Flag-only (cap 69
+    # + note — the validation_note is the ONLY floor-independent auto-file block, incl. at 100),
+    # NEVER null. Belt: parse_date alone is too permissive an anchor for a guard, so the value
+    # must ALSO be a full-string numeric 3-component date (SAME separator repeated) or a
+    # month-name date — '20260731', '21/07' and 'DN-24/07/26' stay safe (pinned).
+    # Exempt: manual/template_fixed methods (human-set literals) and a scope whose OWN learned
+    # shape accepts the value (a supplier whose refs genuinely look like dates self-disarms as
+    # history accrues — the '12.05.11' pinned trade-off flags only until confirmed).
+    # DELIBERATE ASYMMETRY (Oracle-ruled, pinned): keyword_override is NOT exempt — unlike
+    # _flag_prefix_outlier's exemption set, because the override is authority over the LABEL
+    # position; the VALUE is still an OCR read. Do not "harmonise" the two exemption sets.
+    def _flag_date_shaped_ref(self, results, field_defs, supplier_name, document_slug):
+        # Default ON (flipped 2026-08-01 after its realdoc gate: EXACTLY #141/#142 silent→flagged,
+        # zero other deltas, accuracy identical). =0 kills.
+        if os.environ.get('DATE_IN_REF_FLAG', '1') == '0':
+            return
+        try:
+            from extraction.value_quality import is_name_like_field
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            s_lower  = (supplier_name or '').lower().strip()
+            dt_lower = (document_slug or '').lower().strip()
+            for key, data in results.items():
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                val = str(data.get('value') or '').strip()
+                if not val or is_name_like_field(key):
+                    continue
+                ftype = type_by_key.get(key)
+                if ftype == 'date' or key.endswith('_date') or key == 'date':
+                    continue            # date roles/fields are exactly where dates belong
+                if not (_is_ref_field(key) or ftype in ('reference_code', 'reference')):
+                    continue
+                method = str(data.get('method') or '')
+                if 'manual' in method or 'template_fixed' in method:
+                    continue            # human-set literal — not an OCR read
+                if str(data.get('validation_note') or '').strip():
+                    continue            # one note per field (S-C spoke first if it fired)
+                if not (_NUM_DATE_RE.match(val) or _NAME_DATE_RE.match(val)):
+                    continue
+                if validator.parse_date(val) is None:
+                    continue            # belt AND parser must both agree it is a real date
+                fmt_entry = self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None
+                if fmt_entry and not format_anomaly_checker.check_value(val, fmt_entry):
+                    continue            # the scope's OWN learned class/shape accepts this — a
+                                        # supplier whose refs genuinely look like dates self-disarms
+                data['confidence'] = min(int(data.get('confidence') or 0), 69)
+                data['validation_note'] = ('this looks like a date, but this field expects a '
+                                           'reference — please check which value belongs here')
+                self._t('date_in_ref_flag', field=key, value=val, method=method)
+                self.log(f"  Date-in-ref guard: {key} read {val!r} ({method}) — flagged for review")
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
+    # ── S-B: REF DIGIT-RUN LENGTH PROFILE GUARD (Oracle SIGN-OFF-W/COND 2026-08-01; kill
+    # REF_LENGTH_OUTLIER_GUARD, default ON since the flood-audit gate passed same day). The
+    # length-folded learned shape is BLIND to digit accretion ('INV-121' -> 'INV-12110') and
+    # duplication ('PO-64334' -> 'PO-643224') BY DESIGN (the fold cured the rollover withhold —
+    # untouched, pinned). The per-scope digit-run PROFILE model (ocr_corrector.build_length_index
+    # — dominance + the same weight-aware self-heal bars as the prefix guard) sees exactly that
+    # axis. Flag-only, cap 69 + note; value NEVER touched. A genuine rollover ('INV-999' ->
+    # 'INV-1000') flags its first ~3 docs then self-heals as confirms accrue — the accepted,
+    # PINNED trade-off (exempting +1-length would reopen the accretion hole). Skip set + method
+    # exemptions mirror _flag_prefix_outlier (taught anchors deliberately NOT exempt). Runs LAST
+    # in the note chain (S-A > prefix-outlier > S-B): note-if-empty only.
+    def _flag_ref_length_outlier(self, results, field_defs, supplier_name, document_slug):
+        # Default ON (flipped 2026-08-01 after its flood-audit gate: ZERO corpus flags — no live
+        # accretion/dup at 300 today; the guard exists for the class the fold can't see). =0 kills.
+        if os.environ.get('REF_LENGTH_OUTLIER_GUARD', '1') == '0' or not self.length_index:
+            return
+        try:
+            from extraction.value_quality import is_name_like_field
+            _skip_types = {'date', 'currency', 'number', 'percentage', 'email', 'iban', 'vat_gb',
+                           'postcode_uk', 'ip_address', 'mac_address', 'currency_code', 'website'}
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            for key, data in results.items():
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                val = data.get('value')
+                if not val or is_name_like_field(key) or type_by_key.get(key) in _skip_types:
+                    continue
+                method = str(data.get('method') or '')
+                if any(m in method for m in ('override', 'manual', 'template_fixed')):
+                    continue
+                if str(data.get('validation_note') or '').strip():
+                    continue            # S-A / prefix-outlier spoke first — one note per field
+                rec = ocr_corrector.lookup_length(self.length_index, key, supplier_name, document_slug)
+                if not rec:
+                    continue
+                p = ocr_corrector.digit_run_profile(val)
+                if not p or not ocr_corrector.is_length_outlier(p, rec):
+                    continue
+                dom = rec.get('dominant') or ()
+                # ── LENGTH-WITNESS RECONCILIATION (owner + Oracle W/COND 2026-08-01; kill
+                # REF_LENGTH_WITNESS_RECONCILE=0; structurally inert unless THIS guard fired).
+                # Before writing the flag, consult the always-on candidate ledger: the pipeline
+                # may already hold the correct read it discarded on tier (doc 297: inline read
+                # 'WS-1904' won the @85 tie over keyword's correct 'WS-11904'; the slice reads
+                # correctly at EVERY dpi — the defect is the inline band's thin crop, not the
+                # pixels). ADOPT only on the artifact's mechanical FINGERPRINT (witness = winner
+                # + ONE digit inserted adjacent to an identical digit — the merged-doubled-glyph
+                # signature) AND a PASSIVE winner AND the witness passing the length profile,
+                # the scope shape, prefix membership (where a record exists) and not parsing as
+                # a date; adopted at the WITNESS'S OWN confidence, non-authoritative. NOTE
+                # (Oracle C3 2026-08-03): a strong DIRECTLY-LABELLED witness is NOT capped (the 85
+                # cap is only the seeded/override/late-rescue paths) — a keyword read like
+                # 'PO-17039'@93 commits at 93 and CAN auto-file. So this arm DOES remove a working
+                # human checkpoint on adopt; the justification is corroboration strength (a
+                # distinct-stage witness matching the confirmed dominant length/prefix while the
+                # winner fails its own shape), NOT a confidence cap. Two adopt fingerprints:
+                # doubled_digit (the merged-glyph artifact, always) and — only when PREFIX_GARBLE_
+                # ADOPT is on AND _strong_single_prefix holds (all_prefixed) — prefix_garble (a
+                # confirmed leading code-prefix mis-read into a short non-alpha garble). An
+                # AUTHORITATIVE winner (⊕ re-teach) or a non-fingerprint
+                # disagreement gets FLAG-WITH-SUGGESTION: the S-B cap 69 + corrected_to =
+                # witness + a note naming both readings — the 07-26 Tier-A pin stays unpierced
+                # for silent replacement; the right answer is one click away. Rollover-drift
+                # PIN (never "generalise" the fingerprint to profile-only): a stale profile-
+                # passing witness against a correct length-novel read NEVER adopts.
+                _witness = None
+                if os.environ.get('REF_LENGTH_WITNESS_RECONCILE', '1') != '0':
+                    try:
+                        from extraction import suffix_reconcile as _sr
+                        from extraction import text_normalise as _tn
+                        _fmt = self.format_class_index.get(
+                            ((supplier_name or '').lower().strip(),
+                             (document_slug or '').lower().strip(), key))
+                        _prec = ocr_corrector.lookup_prefix(self.prefix_index, key,
+                                                            supplier_name, document_slug)
+                        _wnorm = _tn.normalise_for_tokens(str(val))
+                        for _cand in (self._field_candidates.get(key) or []):
+                            if str(_cand.get('stage') or '') not in ('0_template', '0.5_mapping', '1_keyword'):
+                                continue
+                            _cv = _sr.edge_strip(str(_cand.get('value') or ''))
+                            if not _cv or _tn.normalise_for_tokens(_cv) == _wnorm:
+                                continue
+                            _cp = ocr_corrector.digit_run_profile(_cv)
+                            if not _cp or ocr_corrector.is_length_outlier(_cp, rec):
+                                continue        # witness must PASS the profile the winner failed
+                            if _fmt and format_anomaly_checker.check_value(_cv, _fmt):
+                                continue        # …and the scope shape (when learned)
+                            if _prec:
+                                _pfx = ocr_corrector.code_prefix(_cv)
+                                if not _pfx or not ocr_corrector.prefix_confirmed(_pfx, _prec):
+                                    continue    # …and prefix membership where a record exists
+                            if (_NUM_DATE_RE.match(_cv) or _NAME_DATE_RE.match(_cv)) \
+                                    and validator.parse_date(_cv) is not None:
+                                continue        # a date-shaped witness is never a ref repair
+                            _dd_fp = _sr.doubled_digit_fingerprint(val, _cv)
+                            # PREFIX-GARBLE adopt lane (Oracle SIGN-OFF-W/COND 2026-08-03; kill
+                            # PREFIX_GARBLE_ADOPT, default OFF -> byte-identical). Only when the
+                            # scope is strongly single-prefixed (all_prefixed + >=0.90 + >=5) does a
+                            # confirmed-prefix mis-read into a short non-alpha garble license the
+                            # single-witness adopt — the caller-side dominance guard is what keeps a
+                            # keyword peer matching a DIFFERENT PO-#### on the page from being adopted.
+                            _pg_fp = False
+                            if (not _dd_fp
+                                    and os.environ.get('PREFIX_GARBLE_ADOPT', '0') != '0'
+                                    and _prec and _strong_single_prefix(_prec)):
+                                _pg_fp = _sr.prefix_garble_fingerprint(val, _cv, _prec.get('dominant'))
+                            _witness = {'value': _cv,
+                                        'confidence': int(_cand.get('confidence') or 0),
+                                        'method': _cand.get('method'),
+                                        'fingerprint': _dd_fp or _pg_fp,
+                                        'kind': ('doubled_digit' if _dd_fp else 'prefix_garble' if _pg_fp else None)}
+                            if _witness['fingerprint']:
+                                break           # the artifact signature — best possible witness
+                    except Exception:
+                        _witness = None
+                if _witness and _witness['fingerprint'] and not data.get('authoritative'):
+                    self._t('ref_length_adopt', field=key, was=str(val), now=_witness['value'],
+                            method=_witness.get('method'), kind=_witness.get('kind'))
+                    self.log(f"  Ref-length reconcile: {key} '{val}' -> '{_witness['value']}' "
+                             f"({_witness.get('kind') or 'artifact'}; independent read had it whole)")
+                    results[key] = {
+                        **data,
+                        'value':         _witness['value'],
+                        'display_value': _witness['value'],
+                        'method':        _witness.get('method') or data.get('method'),
+                        'confidence':    _witness['confidence'],
+                        'authoritative': False,
+                        'length_reconciled': True,
+                    }
+                    continue
+                data['confidence'] = min(int(data.get('confidence') or 0), 69)
+                data['validation_note'] = (
+                    f"this has {'+'.join(str(n) for n in p)} digits where this sender's usually "
+                    f"have {'+'.join(str(n) for n in dom)} — {_REF_LENGTH_NOTE_MARK}. "
+                    f"Please check.")
+                if _witness:
+                    data['corrected_to'] = _witness['value']
+                    data['validation_note'] = (
+                        f"read '{val}' here, but another check read '{_witness['value']}' — "
+                        f"this sender's {_REF_LENGTH_WITNESS_NOTE_MARK} "
+                        f"{'+'.join(str(n) for n in dom)} digits. Please pick the right value.")
+                self._t('ref_length_flag', field=key, value=str(val), profile=list(p),
+                        dominant=list(dom), suggestion=(_witness or {}).get('value'))
+                self.log(f"  Ref-length guard: {key} profile {p} vs dominant {dom} — flagged")
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
+    # ── D1: IN-BAND DIGIT-DISAGREEMENT FLAG (Oracle SIGN-OFF-W/COND 2026-08-01; kill
+    # DIGIT_DISAGREE_FLAG, default ON — census gate passed same day: 300 docs, 1 fire,
+    # the #291 true catch, 0.00% false fires vs the ≤3% bar). The interior-digit-
+    # substitution class (WS-95390 read WS-95990) is same-length + shape-valid +
+    # prefix-valid — invisible BY CONSTRUCTION to S-A/S-B/prefix-outlier/learned shape.
+    # But the pipeline sometimes already READ the true value and discarded it on tier
+    # (#291: wrong anchor_inline@85 beat keyword's correct WS-95390@85 — Tier-A outranks):
+    # when a distinct-stage candidate-ledger read differs from the winner ONLY by 1-2
+    # substituted digits on an identical non-digit skeleton, FLAG for review (cap 69 +
+    # both readings named + corrected_to suggestion). FLAG-ONLY — a digit substitution
+    # may NEVER silently adopt (the XRES C3 pin: unlike segmentation drops, substitutions
+    # are only semi-decorrelated across chains, and both readings can be wrong — #65@400).
+    # REF-ROLE field only (census predicate; date fields are a structural false-fire
+    # hazard: two dates on one page legitimately differ only in digits). Runs LAST in the
+    # pinned note chain (after S-B): note-if-empty only. Comparator SHARED with the future
+    # D2 second-render witness: suffix_reconcile.digit_substitution_diff (one impl, one pin).
+    def _flag_digit_disagreement(self, results, field_defs, supplier_name,
+                                 document_slug, ref_field_key):
+        if os.environ.get('DIGIT_DISAGREE_FLAG', '1') == '0' or not ref_field_key:
+            return
+        try:
+            from extraction import suffix_reconcile as _sr
+            data = results.get(ref_field_key)
+            if not isinstance(data, dict):
+                return
+            val = data.get('value')
+            if not val:
+                return
+            method = str(data.get('method') or '')
+            if any(m in method for m in ('override', 'manual', 'template_fixed')):
+                return                  # human-set literal / label-authority — S-B parity
+            if str(data.get('validation_note') or '').strip():
+                return                  # one note per field — every earlier guard outranks
+            _norm = lambda s: re.sub(r'\s+', '', str(s or '').upper())
+            w_norm = _norm(val)
+            cands = self._field_candidates.get(ref_field_key) or []
+            # the winner's own producing stage: the ledger entry matching value+method
+            win_stage = next((c.get('stage') for c in cands
+                              if _norm(c.get('value')) == w_norm
+                              and c.get('method') == data.get('method')), None)
+            best = None
+            for c in cands:
+                if win_stage and c.get('stage') == win_stage:
+                    continue            # witness must come from a DISTINCT stage
+                if int(c.get('confidence') or 0) < 60:
+                    continue            # credibility floor (census witness read @85)
+                cv = str(c.get('value') or '').strip()
+                if not cv or _norm(cv) == w_norm:
+                    continue
+                diff = _sr.digit_substitution_diff(val, cv)
+                if diff < 1 or diff > 2:
+                    continue            # 1-2 substituted digits, identical skeleton only
+                rank = (int(c.get('confidence') or 0), -diff)
+                if best is None or rank > best[0]:
+                    best = (rank, cv, c, diff)
+            if not best:
+                return
+            _, wit_val, wit, diff = best
+            data['confidence'] = min(int(data.get('confidence') or 0), 69)
+            data['corrected_to'] = wit_val
+            data['validation_note'] = (
+                f"read '{val}' here, but another check read '{wit_val}' — the two "
+                f"disagree on {diff} digit{'s' if diff > 1 else ''}. Please check the "
+                f"document for the right value.")
+            self._t('digit_disagree_flag', field=ref_field_key, value=str(val),
+                    method=method, witness=wit_val, witness_stage=wit.get('stage'),
+                    witness_conf=int(wit.get('confidence') or 0), diff=diff)
+            self.log(f"  Digit-disagreement guard: {ref_field_key} '{val}' ({method}) vs "
+                     f"'{wit_val}' ({wit.get('stage')}) — flagged for review")
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
+    def _page_match_v2(self, page, rv, key, sup, slug):
+        """Gate-C membership v2 (FILING_SANITY_PAGE_MATCH_V2; gary → Oracle S-O-W/C 2026-08-16).
+        True when the page DOES carry the value once the page-pass's OWN error classes are allowed
+        for — called only after the v1 exact-token test said absent. Two legs, in order:
+
+        1. SEPLESS-JOIN membership (no backing needed): strip-all-non-alnum casefold equality of
+           the value against single page tokens AND joins of 2-3 CONSECUTIVE tokens ON THE SAME
+           PAGE LINE (a cross-line join is manufactured adjacency — refused; heals the
+           'SB-ORD7 4238' mid-token split and hyphen/slash retokenisation). EXACT equality only —
+           a clipped 'VXS986' vs printed 'VXS98624' still flags (the clip-catch Gate C ships for).
+           NOTE (Oracle A2): the visual-row rebuild can place separate COLUMNS on one line and no
+           word geometry reaches this site, so a cross-COLUMN join is a residual accepted risk —
+           every join-based suppression is trace-counted ('filing_sanity_v2', leg='join') so the
+           class stays observable.
+        2. BACKED-CONFUSABLE tolerance, PREFIX REGION ONLY: a same-length projection differing by
+           EXACTLY ONE in-class glyph (the casefolded class table; projection KEEPS class symbols
+           — Oracle A1: stripping '$' before the compare made the doc-204 heal impossible), where
+           the diff position sits INSIDE the dominant-prefix region and the SUFFIX region is
+           byte-equal, and the VALUE is independently backed (dominance bars + code_prefix ==
+           dominant). The dominance evidence licenses only the HEAD — a crop suffix misread
+           against a clean page must keep the flag (pinned trade-off). Un-backed values (the
+           PL-class true positives) always keep the flag."""
+        try:
+            _strip_all = _strip_all_alnum
+            _keep = lambda s: ''.join(ch for ch in str(s).casefold()
+                                      if ch.isalnum() or ch in _PREFIX_CLASS_SYMBOLS)
+            sv = _strip_all(rv)
+            if len(sv) < 4:
+                return False                        # too short to judge — keep the v1 verdict
+            kv = _keep(rv)
+            # Per-line token windows, built ONCE and walked by both legs. Shared with the pure
+            # `_page_carries_sepless` (W3) so leg 1 and that witness can never drift apart —
+            # W3 must keep answering exactly the question this leg answers, and no more.
+            windows = _sepless_line_windows(page)   # (joined_string, n_tokens)
+            for joined, n in windows:
+                if _strip_all(joined) == sv:
+                    if self._trace:
+                        self._t('filing_sanity_v2', field=key, value=rv,
+                                leg=('join' if n > 1 else 'token'))
+                    self.log(f"  Filing sanity v2: '{rv}' found on the page as a "
+                             f"{'same-line join' if n > 1 else 'token'} — flag withheld")
+                    return True
+            # leg 2 — backed-confusable, prefix region only
+            rec_p = ocr_corrector.lookup_prefix(self.prefix_index, key, sup, slug)
+            if not _prefix_dominant_backed(rec_p):
+                if self._trace:       # observability (2026-08-27, the Pelican PI/P1 exhibit): name the exit
+                    self._t('filing_sanity_v2', field=key, value=rv, leg='exit', why='unbacked',
+                            dominant=(rec_p or {}).get('dominant'), counts=(rec_p or {}).get('counts'))
+                return False
+            dom = str(rec_p.get('dominant'))
+            if ocr_corrector.code_prefix(rv) != dom:
+                if self._trace:
+                    self._t('filing_sanity_v2', field=key, value=rv, leg='exit', why='prefix-mismatch',
+                            dominant=dom, read_prefix=ocr_corrector.code_prefix(rv))
+                return False
+            plen = len(_strip_all(dom))             # dominant is pure alpha — projections agree
+            for joined, n in windows:
+                kt = _keep(joined)
+                if len(kt) != len(kv) or kt == kv:
+                    continue
+                diffs = [(idx, a, b) for idx, (a, b) in enumerate(zip(kv, kt)) if a != b]
+                if len(diffs) != 1:
+                    continue
+                idx, a, b = diffs[0]
+                if idx >= plen:
+                    continue                        # suffix region must be byte-equal — pinned
+                if not _prefix_confusable_class_cf(a, b):
+                    continue
+                if self._trace:
+                    self._t('filing_sanity_v2', field=key, value=rv, leg='confusable',
+                            page_form=joined, dominant=dom)
+                self.log(f"  Filing sanity v2: page carries '{joined}' — a backed one-glyph "
+                         f"({a}/{b}) form of '{rv}' (dominant '{dom}') — flag withheld")
+                return True
+            if self._trace:
+                self._t('filing_sanity_v2', field=key, value=rv, leg='exit', why='no-one-glyph-window', dominant=dom)
+            return False
+        except Exception as _e:
+            if self._trace:       # a judgment failure keeps the v1 verdict — but it must be SEEN, not silent
+                try: self._t('filing_sanity_v2', field=key, value=rv, leg='exit', why='error', error=str(_e)[:160])
+                except Exception: pass
+            return False   # judgment failure keeps the v1 verdict — fail toward the flag
+
+    def _flag_filing_value_sanity(self, results, ref_field_key, date_field_keys, ocr_text,
+                                  supplier_name=None, document_slug=None):
+        """FILING_VALUE_SANITY_FLAGS (kill switch, DEFAULT OFF — Chris round 3, 2026-08-09).
+
+        THE DEFECT, verified on disk: of 18 auto-filed documents, four carried a value that is
+        visibly wrong on the page and NONE was flagged — the reference `VyYoa1niRe` where the page
+        prints `VXS10186`, `VXS986` where the page prints `VXS98624`, and two documents filed into a
+        `2020/` folder whose pages print 2026. All read "High · 90%". The reference and the date are
+        exactly the two values that become the FILENAME and the FOLDER, so a wrong one does not just
+        sit in a field — it decides where the paper lives. Chris kept his auto-file bar at 100 purely
+        because of this, which is most of the product's value withheld.
+
+        FLAG ONLY. Neither gate edits a value or picks a different one — they attach a note, and a
+        noted field is ineligible for auto-file (trust.js), so the document routes to review with the
+        reason on screen. That is the fail-toward-review direction, and it means a false positive
+        costs one glance rather than a wrong file.
+
+        Gate A — a reference that is not a reference SHAPE. Precision-first: it fires only on the
+        conjunction of "mixed case INSIDE a token" AND "no run of 3+ digits", which is the shape of
+        OCR noise ('VyYoa1niRe') and not the shape of a real code. 'VXS986', 'HTS-SO-12013',
+        'CJB-9791', 'PD/25/1197' all pass untouched; so does a genuinely mixed-case code that
+        carries digits ('InvNo123').
+
+        Gate B — a date whose YEAR is not printed on the page. If a 4-digit year was read but that
+        year appears nowhere in the page text, the reader invented it (a 6->0 misread does exactly
+        this). Requires the read itself to carry a 4-digit year, so a page that prints 2-digit years
+        is never judged.
+        """
+        if os.environ.get('FILING_VALUE_SANITY_FLAGS', '0') == '0':
+            return
+        try:
+            page = str(ocr_text or '')
+            date_keys = set(date_field_keys or [])
+
+            def _note(key, text):
+                d = results.get(key)
+                if not isinstance(d, dict) or str(d.get('validation_note') or '').strip():
+                    return False        # one voice per field — never argue with an existing note
+                d['validation_note'] = text
+                return True
+
+            # ── Gate A ────────────────────────────────────────────────────────────────────
+            if ref_field_key and isinstance(results.get(ref_field_key), dict):
+                val = str(results[ref_field_key].get('value') or '').strip()
+                if val:
+                    mixed = any(re.search(r'[a-z][A-Z]', t) for t in re.split(r'[^A-Za-z0-9]+', val) if t)
+                    if mixed and not re.search(r'\d{3}', val):
+                        if _note(ref_field_key,
+                                 f"'{val}' doesn't look like a reference number — please check it "
+                                 f"against the document before filing."):
+                            self._t('filing_sanity_ref', field=ref_field_key, value=val)
+                            self.log(f"  Filing sanity: {ref_field_key} '{val}' is not a reference "
+                                     f"shape — flagged for review")
+
+            # ── Gate C — the reference must be PRINTED ON THE PAGE, as a whole token ──────
+            # Gates A/B cannot catch a wrong value that still LOOKS like a code: 'VXS986' where the
+            # page prints 'VXS98624' (a clip), or 'C.JB-7957' where it prints 'CJB-7957' (a stray
+            # dot). Both filed silently. A whole-TOKEN test catches both, where a substring test
+            # would not — 'VXS986' IS a substring of 'VXS98624', which is exactly how the clip hides.
+            # Whole-token only, and only when the page text is substantial enough to be trusted as a
+            # witness; a crop read and the full-page pass can legitimately disagree on a noisy scan,
+            # so this is measured for false-flag rate before it is recommended, and it stays
+            # FLAG-ONLY either way.
+            if (ref_field_key and isinstance(results.get(ref_field_key), dict)
+                    and len(page) > 200 and not results[ref_field_key].get('validation_note')):
+                rv = str(results[ref_field_key].get('value') or '').strip()
+                if rv and len(rv) >= 4:
+                    toks = {t.strip('.,;:()[]{}"\'').casefold() for t in re.split(r'\s+', page)}
+                    _absent = rv.casefold() not in toks
+                    # PAGE-MATCH V2 (FILING_SANITY_PAGE_MATCH_V2, DEFAULT OFF, mig-72 seed; gary →
+                    # Oracle S-O-W/C 2026-08-16, blocking condition A1 applied). The v1 exact-token
+                    # test treats the full-page pass as ground truth, but the page pass carries its
+                    # OWN two error classes — a confusable glyph ('P1/26/9910' printed PI…,
+                    # 'VX$22033' printed VXS…) and a mid-token split ('SB-ORD7 4238') — so it
+                    # flagged the CORRECTED, history-backed crop value ~7 times in Chris round 7.
+                    # v2 re-tests absence with (1) sepless same-line joins and (2) a prefix-region
+                    # backed-confusable tolerance; see _page_match_v2. FLAG-ONLY either way.
+                    if _absent and os.environ.get('FILING_SANITY_PAGE_MATCH_V2', '0') != '0':
+                        # THE SCOPE KEY (2026-08-27, the Pelican 'PI/26/9687' exhibit): this gate runs BEFORE
+                        # extract() writes results['_supplier_name'] (line ~9896), so reading it here handed
+                        # leg 2 an EMPTY supplier — the index lookup missed and the backed one-glyph tolerance
+                        # never fired in production (trace: leg=exit why=unbacked dominant=null on a scope
+                        # with 139/140 'PI/…' confirms). Take the caller's resolved scope like the other
+                        # prefix readers do, then the supplier FIELD's value, then the late mirror.
+                        _sup_v = results.get('supplier_name')
+                        _sup = (supplier_name or results.get('_supplier_name')
+                                or (_sup_v.get('value') if isinstance(_sup_v, dict) else None) or '')
+                        _slug = document_slug or results.get('_document_slug') or ''
+                        _absent = not self._page_match_v2(page, rv, ref_field_key, str(_sup), str(_slug))
+                    if _absent:
+                        # Say what the page DID read (owner 2026-08-27: "the text is literally there on the page —
+                        # how can the software claim it isn't?"): the page pass had 'P1/26/9687' where the box read
+                        # 'PI/26/9687'. Naming the page form turns a contradiction into a one-glance I/1 question.
+                        # The MARK stays intact (three consumers match it as a substring).
+                        _near = _nearest_confusable_page_token(page, rv)
+                        _txt = (f"'{rv}' {_FILING_SANITY_ABSENT_MARK} — the page reads it as '{_near}' — "
+                                f"please check the reference before filing.") if _near \
+                            else _FILING_SANITY_ABSENT_NOTE.format(rv)
+                        if _note(ref_field_key, _txt):
+                            self._t('filing_sanity_ref_absent', field=ref_field_key, value=rv, page_form=_near or None)
+                            self.log(f"  Filing sanity: {ref_field_key} '{rv}' not printed on the "
+                                     f"page as a whole token — flagged for review")
+
+            # ── Gate B ────────────────────────────────────────────────────────────────────
+            for key in date_keys:
+                d = results.get(key)
+                if not isinstance(d, dict):
+                    continue
+                val = str(d.get('value') or '').strip()
+                m = re.search(r'(19|20)\d{2}', val)
+                if not m:
+                    continue                      # no 4-digit year read -> nothing to check
+                year = m.group(0)
+                if year in page:
+                    continue                      # the page prints it -> believe it
+                if _note(key, f"the year {year} isn't printed anywhere on this page — please check "
+                              f"the date before filing."):
+                    self._t('filing_sanity_date', field=key, value=val, year=year)
+                    self.log(f"  Filing sanity: {key} '{val}' — year {year} absent from the page, "
+                             f"flagged for review")
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
+    def _reconcile_name_truncation(self, results, field_defs, ocr_text):
+        """NAME-UNCLIP reconcile (see the NAME_UNCLIP_RECONCILE const block for the full design +
+        Oracle conditions). Post-merge, ledger-based, the free-text complement of
+        _reconcile_clipped_suffix. Adopts the fuller value KEEPING the winner's method/confidence
+        (the suffix-reconcile mold — the drawn box IS the suspect); silent (owner rule) — every
+        decline leaves today's behaviour byte-identical."""
+        if not NAME_UNCLIP_RECONCILE:
+            return
+        try:
+            from extraction import text_normalise as _tn
+            from extraction import name_match as _nm
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            for key, data in list(results.items()):
+                if key.startswith('_') or not isinstance(data, dict) or key == 'supplier_name':
+                    continue                                   # identity lane owns supplier_name
+                if not value_quality.is_name_like_field(key):
+                    continue
+                if type_by_key.get(key) not in (None, '', 'text', 'multiline_text'):
+                    continue
+                m = str(data.get('method') or '')
+                if not _is_stage05_located(m):
+                    continue                                   # the drawn-box lane EXACTLY
+                if str(data.get('validation_note') or '').strip() or data.get('was_corrected') \
+                        or data.get('corrected_to') or '+corrected' in m or '+snapped' in m:
+                    continue    # one voice per field: a 4.5 wordness/repair note starves the heal
+                wv = str(data.get('value') or '').strip()
+                if not wv or '\n' in wv:
+                    continue                                   # single-line scope (v1)
+                wtoks = [t for t in _tn.tokenise(wv) if _nm._is_content(t)]
+                if not wtoks:
+                    continue
+                # C1 — >=2 single-line ledger witnesses, token-IDENTICAL to each other (EXACT — no
+                # Levenshtein anywhere in this pass), covering BOTH the keyword AND crop families;
+                # the mapping FAMILY is excluded outright (Oracle cond. 3).
+                wit = []
+                for c in ((self._field_candidates or {}).get(key) or []):
+                    fam_t = _crosscheck_witness_bucket((c or {}).get('stage'), (c or {}).get('method'))
+                    if fam_t is None or fam_t[0] == 'mapping':
+                        continue
+                    v = str((c or {}).get('value') or '').strip()
+                    if not v or '\n' in v:
+                        continue
+                    toks = [t for t in _tn.tokenise(v) if _nm._is_content(t)]
+                    if toks:
+                        wit.append((fam_t[0], v, toks, int((c or {}).get('confidence') or 0)))
+                if len(wit) < 2 or any(w[2] != wit[0][2] for w in wit[1:]):
+                    continue
+                if not ({'keyword', 'crop'} <= {w[0] for w in wit}):
+                    continue
+                F = wit[0][2]
+                # C2 — the cut fingerprint: same token count, all but the last equal, last token a
+                # mid-token cut with remnant >=4. Oracle cond. 1 (the cut-glyph rule): a box that
+                # slices a glyph mid-stroke MISREADS it ('Stuc' — the sliced 'd' left-bowl reads
+                # 'c'; 'Studio'.startswith('Stuc') is False), so ONE edge-glyph substitution is
+                # tolerated AT THE CUT POSITION ONLY (clean prefix >=3 chars + fuller witness).
+                if len(wtoks) != len(F) or wtoks[:-1] != F[:-1]:
+                    continue
+                wl, fl = wtoks[-1], F[-1]
+                if wl == fl or len(wl) < 4:
+                    continue
+                if fl.startswith(wl):
+                    agree = wl
+                elif fl.startswith(wl[:-1]) and len(fl) > len(wl):
+                    agree = wl[:-1]                            # len(wl)>=4 => >=3 clean chars
+                else:
+                    continue
+                completion = fl[len(agree):]
+                if not completion or not completion.isalpha():
+                    continue                                   # digit completions refused
+                # C3 — the load-bearing genuine-shorter-name guard: a REAL short name is printed
+                # word-bounded on the page and defends itself; a cut remnant ('Stuc') never is.
+                if _uv_text_page_present(wv, ocr_text):
+                    continue
+                wit.sort(key=lambda w: (-w[3], w[1]))          # conf desc, value asc — deterministic
+                adopt = wit[0][1]
+                # C4 + C5 — the adopted value is page-present and no worse a name.
+                if not _uv_text_page_present(adopt, ocr_text):
+                    continue
+                if value_quality.name_quality(adopt) < value_quality.name_quality(wv):
+                    continue
+                healed = {**data, 'value': adopt, 'name_unclip_reconciled': True}
+                if 'display_value' in healed:
+                    healed['display_value'] = adopt
+                results[key] = healed
+                self._t('name_unclip', field=key, method=m,
+                        witness_fams=sorted({w[0] for w in wit}), **{'from': wv, 'to': adopt})
+                self.log(f"  Name-unclip reconcile: {key} '{wv}' (cut mapping box) -> '{adopt}' "
+                         f"(keyword+crop token-identical, remnant page-absent)")
+        except Exception:
+            pass   # advisory — must never break extraction
+
+    def _uv_restore_demotion(self, key, tier, winner_val, alt_val, supplier_name,
+                             document_slug, field_patterns, validation_patterns):
+        """Oracle S-2/D-2 restore-DEMOTION checks (Slice-2). The content-nature flag chain (S-A
+        date-in-ref, prefix-outlier, S-B length, D1 digit-disagree) runs at Stage 4.5 — BEFORE the
+        post-merge tail — so a restored value would receive ZERO content-nature vetting. Rather than
+        re-run those side-effectful passes, apply their deterministic predicates to the ALTERNATIVE:
+        any hit means the restore is demoted to a FLAG (fail-toward-review; never a silent value
+        change). Returns the demotion reason or None.
+          digit_substitution — identical skeleton, 1-2 differing digit positions (D1's SHARED
+            comparator): exactly the confusable-garble class where two OCR reads of the same glyph
+            are CORRELATED, not independent — never restore on it (Oracle C2 pin).
+          date_shaped_ref   — a ref-tier alternative that is a full-string calendar date (S-A's belt:
+            regex AND parser must both agree).
+          prefix_outlier / length_outlier — the alternative fails the scope's confirmed prefix/
+            digit-run profile (S-B mirrors).
+          decimal_tail      — numeric restores are WHOLE-NUMBER only (Oracle D-2: keeps qty/count,
+            excludes money-shaped values typed `number`).
+          not_credible      — the alternative fails the field's seeded credibility pattern."""
+        try:
+            from extraction import suffix_reconcile as _sr
+            d = _sr.digit_substitution_diff(winner_val, alt_val)
+            if 1 <= d <= 2:
+                return 'digit_substitution'
+        except Exception:
+            pass
+        if tier == 'ref':
+            try:
+                if (_NUM_DATE_RE.match(str(alt_val)) or _NAME_DATE_RE.match(str(alt_val))) \
+                        and validator.parse_date(str(alt_val)) is not None:
+                    return 'date_shaped_ref'
+            except Exception:
+                pass
+            try:
+                if self.prefix_index:
+                    rec = ocr_corrector.lookup_prefix(self.prefix_index, key, supplier_name, document_slug)
+                    p = ocr_corrector.code_prefix(str(alt_val)) if rec else None
+                    if p and ocr_corrector.is_prefix_outlier(p, rec):
+                        return 'prefix_outlier'
+            except Exception:
+                pass
+            try:
+                if self.length_index:
+                    rec = ocr_corrector.lookup_length(self.length_index, key, supplier_name, document_slug)
+                    prof = ocr_corrector.digit_run_profile(str(alt_val)) if rec else None
+                    if prof and ocr_corrector.is_length_outlier(prof, rec):
+                        return 'length_outlier'
+            except Exception:
+                pass
+        if tier in ('numeric', 'percentage'):
+            c = _uv_numeric_canon(alt_val, pct=(tier == 'percentage'))
+            if not c or c[1]:
+                return 'decimal_tail'
+        try:
+            vk = (field_patterns.get(key) or {}).get('validation') if field_patterns else None
+            pats = (validation_patterns or {}).get(vk)
+            if pats and not keyword._validate(str(alt_val), pats):
+                return 'not_credible'
+        except Exception:
+            pass
+        return None
+
+    def _universal_postmerge_verify(self, results, field_defs, ref_field_key,
+                                    date_field_keys, ocr_text, supplier_name, document_slug):
+        """Slice-2 UNIVERSAL post-merge verify (gary+reggie+007 → Oracle SIGN-OFF-W/COND
+        2026-08-03; docs/oracle_log.md 2026-08-03 entry has the full condition set). Runs BESIDE
+        Slice-1 (immediately after it, before G1 — a restored value is then subject to G1/Fix-A
+        like any winner). For every ELIGIBLE field winner whose tier has a safe predicate:
+        when the winner is tier-UNcorroborated and a DISAGREEING alternative is agreed by >=2
+        independent witness families (RESTORE tiers: >=1 crop-family leg) AND tier-present on the
+        page, act — RESTORE (re-based anchor_inline@90, Oracle D-1: NEVER the witness's real
+        method, which would mint Stage-0.5 authority; the trace event carries the true witness
+        method + deposed value) or FLAG (cap 69 + a note NAMING the disagreeing value). Restores
+        are demoted to flags by _uv_restore_demotion (S-2). Lone absence NEVER acts.
+        INELIGIBLE (skipped): authoritative/Stage-0.5-located/keyword_override winners
+        (_override_eligible — no Slice-1-style exception: no Slice-2 class carries the
+        "winner method IS the suspect" justification), anchor_crop_crosscheck (Slice-1 owns it,
+        and its declined restore is a DECIDED fail-toward-review outcome), '+corrected'/'+snapped'
+        winners (Oracle S-1: Stage-2.5b sets neither was_corrected nor a note — the corrected
+        value is page-ABSENT by construction while the garble it fixed is page-present and
+        correlated-agreed; Slice-2 must never un-fix a correction), was_corrected winners,
+        manual/override/template_fixed literals, shadow components, and ANY winner already
+        carrying a validation_note (Slice-2 NEVER drops or composes a note — stricter than
+        Slice-1, whose dropped note was the flip's own flag). CENSUS mode logs would-fire
+        decisions; mutation is governed solely by the R/F switches (OFF = byte-identical)."""
+        if not (UNIVERSAL_VERIFY_RESTORE or UNIVERSAL_VERIFY_FLAG or UNIVERSAL_VERIFY_CENSUS):
+            return
+        try:
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            field_patterns = _seed_field_patterns(self.patterns.get('field_patterns') or {}, field_defs)
+            validation_patterns = self.patterns.get('validation_patterns') or {}
+            for key, data in list(results.items()):
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                wv = str(data.get('value') or '').strip()
+                if not wv:
+                    continue
+                ftype = type_by_key.get(key)
+                tier = _uv_tier(key, ftype, ref_field_key, date_field_keys)
+                if tier is None:
+                    continue
+                m = str(data.get('method') or '')
+                if not self._override_eligible(data):
+                    continue
+                if m == 'anchor_crop_crosscheck':
+                    continue
+                if '+corrected' in m or '+snapped' in m or data.get('was_corrected'):
+                    continue
+                if any(x in m for x in ('manual', 'override', 'template_fixed', 'shadow')):
+                    continue
+                if str(data.get('validation_note') or '').strip():
+                    continue
+                cands = (self._field_candidates or {}).get(key) or []
+                restore_tier = tier in _UV_RESTORE_TIERS
+                # Stage-2b sub-gate (Oracle C6): numeric/percentage act only under their own
+                # switch; census still measures them (its counts are the flip evidence).
+                _tier_armed = (tier not in ('numeric', 'percentage')) or UNIVERSAL_VERIFY_NUMERIC
+                if not _tier_armed and not UNIVERSAL_VERIFY_CENSUS:
+                    continue
+                if _uv_winner_corroborated(data, cands, ocr_text, tier, ftype):
+                    continue
+                slot = _uv_corroborated_alternative(data, cands, ocr_text, tier, ftype,
+                                                    require_crop=restore_tier)
+                if not slot:
+                    continue
+                alt = slot['raw']
+                demote = None
+                if restore_tier:
+                    demote = self._uv_restore_demotion(key, tier, wv, alt, supplier_name,
+                                                       document_slug, field_patterns,
+                                                       validation_patterns)
+                if UNIVERSAL_VERIFY_CENSUS:
+                    verb = ('would-flag(' + demote + ')' if demote
+                            else ('would-restore' if restore_tier else 'would-flag'))
+                    self.log(f"  UV census: {key} [{tier}] winner '{wv}' ({m}) vs "
+                             f"alt '{alt}' — {verb}")
+                    self._t('universal_verify_census', field=key, tier=tier, value=wv,
+                            method=m, alt=str(alt), action=verb)
+                    _cf = os.environ.get('UNIVERSAL_VERIFY_CENSUS_FILE')
+                    if _cf:                     # harness sink (log lines are dropped by the
+                        try:                    # realdoc harness — file is the census record)
+                            import json as _json
+                            with open(_cf, 'a', encoding='utf-8') as _fh:
+                                _fh.write(_json.dumps({'field': key, 'tier': tier, 'winner': wv,
+                                                       'method': m, 'alt': str(alt),
+                                                       'action': verb}) + '\n')
+                        except Exception:
+                            pass
+                if restore_tier and not demote:
+                    if not (UNIVERSAL_VERIFY_RESTORE and _tier_armed):
+                        continue
+                    restored = {**data,
+                                'value':      alt,
+                                'method':     'anchor_inline',
+                                'confidence': max(int(data.get('confidence') or 0),
+                                                  _CROSSCHECK_CORROB_CONF)}
+                    if 'display_value' in restored:
+                        restored['display_value'] = alt
+                    results[key] = restored
+                    self._t('transform', field=key, stage='uv_restore', method='anchor_inline',
+                            confidence=restored['confidence'],
+                            witness=str(slot.get('crop_method') or ''),
+                            **{'from': wv, 'to': alt})
+                    self.log(f"  Universal verify: {key} [{tier}] '{wv}' uncorroborated — "
+                             f"restored corroborated '{alt}'")
+                else:
+                    # FLAG lane: tier-F fields under the FLAG switch; a demoted restore under the
+                    # RESTORE switch (it is the R tier's own fail-toward-review arm — Oracle S-2).
+                    if not ((UNIVERSAL_VERIFY_FLAG if not restore_tier
+                             else UNIVERSAL_VERIFY_RESTORE) and _tier_armed):
+                        continue
+                    data['confidence'] = min(int(data.get('confidence') or 0), 69)
+                    data['validation_note'] = (
+                        f"this read '{wv}', but other checks on this page read '{alt}' — "
+                        f"please check which is right")
+                    results['_needs_review'] = True
+                    self._t('universal_verify_flag', field=key, tier=tier, value=wv,
+                            alt=str(alt), reason=(demote or 'uncorroborated_vs_alternative'))
+                    self.log(f"  Universal verify: {key} [{tier}] '{wv}' vs corroborated "
+                             f"'{alt}'{' (' + demote + ')' if demote else ''} — flagged for review")
+        except Exception:
+            pass   # advisory pass — must never break extraction
 
     def _flag_taught_field_ownership(self, results, field_defs, supplier_name,
                                      anchors, hints, document_slug, caption_vocab):
@@ -1472,6 +6575,30 @@ class ExtractionEngine:
                     return True
                 return False
 
+            def _anchor_corroborates(key, val):
+                # CORROBORATION EXEMPTION (gary+Oracle 2026-07-15): the taught position ITSELF confirmed
+                # this value if a same-field candidate TIED TO THAT POSITION — authoritative (the ⊕ teach),
+                # genuinely located, or a Stage-0.5 mapping — read the EXACT SAME value the keyword winner
+                # did. Then it's not a generic-caption stand-in; don't cap. Oracle C1: a BLIND non-
+                # authoritative anchor (passive / __global__ / Stage-2.6 late-rescue blind rigid read) may
+                # NOT vouch — it reads arbitrary fixed-position text, not the protected taught position.
+                # BOTH the committed value AND the candidate must be NON-caption (two methods both grabbing
+                # a caption is not corroboration). Sub-switch TAUGHT_OWNERSHIP_CORROBORATE.
+                if not TAUGHT_OWNERSHIP_CORROBORATE:
+                    return False
+                if keyword.value_is_caption(val, caption_vocab):
+                    return False
+                target = text_normalise.normalise_for_tokens(val)
+                if not target:
+                    return False
+                for c in (getattr(self, '_field_candidates', {}) or {}).get(key, ()):
+                    if not (c.get('authoritative') or c.get('located')
+                            or _is_stage05_located(c.get('method'))):
+                        continue   # Oracle C1: only an ownership-tied read may vouch
+                    if text_normalise.normalise_for_tokens(c.get('value')) == target:
+                        return True
+                return False
+
             for key in owned:
                 d = results.get(key)
                 if not isinstance(d, dict):
@@ -1482,6 +6609,24 @@ class ExtractionEngine:
                 if not val or not str(val).strip():            # skip empty/None (Stage-4.5 withhold)
                     continue
                 if _hint_exempt(key, val):
+                    continue
+                if _anchor_corroborates(key, val):
+                    continue
+                _owners = getattr(self, '_label_owners', {}) or {}
+                if (TAUGHT_OWNERSHIP_OWN_LABEL
+                        and keyword.label_is_own_discriminating(d.get('label'), key, _owners)):
+                    # matched via THIS field's OWN discriminating caption ("Invoice No", "PO
+                    # Date") — a precise labelled read, not a generic-caption stand-in. A shared
+                    # ("Date") or purely-generic ("#") label does NOT qualify (reggie 2026-07-24).
+                    continue
+                if (TAUGHT_OWNERSHIP_TYPE_SCOPED_LABEL
+                        and getattr(self, '_type_authoritative', False)
+                        and keyword.label_is_own_discriminating_in_type(
+                            d.get('label'), key, _owners, frozenset(k for k in fd if k))):
+                    # B' (2026-07-26): the caption is shared GLOBALLY but UNIQUE within this
+                    # AUTHORITATIVE type ("Order Date" on a purchase_order — order_date is not a
+                    # field here). Fires only on a trusted-heading type; bare "Date" and >1-date
+                    # types still hold; OFF/non-authoritative => byte-identical (Oracle-gated DARK).
                     continue
                 d['confidence'] = min(int(d.get('confidence') or 0), 69)
                 if not str(d.get('validation_note') or '').strip():
@@ -1606,9 +6751,11 @@ class ExtractionEngine:
         first check and is NEVER touched: the reconciliation check IS the protection, so no special
         authoritative carve-out is needed. Only a total that PROVABLY doesn't add up is reconsidered,
         and only replaced by a candidate that (a) actually balances and (b) is confident (>= floor),
-        so a weak/garbage read can't win. The swap is review-flagged. Runs AFTER shadow-reconcile
-        (all components present) and BEFORE the Stage-4 flag, so a swapped total validates clean.
-        Best-effort — never breaks extraction."""
+        so a weak/garbage read can't win. The swap is review-flagged — unless corroboration later
+        demotes the note (RECON_TOTAL_NOTE_DEMOTE, slice 2: a penny-exact sign-agreeing crop
+        witness + an arithmetic re-verify; see _demote_recon_total_corroborated_note). Runs AFTER
+        shadow-reconcile (all components present) and BEFORE the Stage-4 flag, so a swapped total
+        validates clean. Best-effort — never breaks extraction."""
         try:
             from extraction import validator as _v
             total_key = None
@@ -1631,13 +6778,16 @@ class ExtractionEngine:
                 if _v.total_reconciles(cv, results):
                     self._t('reconcile_pick', field=total_key, was=inc_v, now=str(cv),
                             method=c.get('method'), confidence=c.get('confidence'))
+                    # The displaced read feeds note_demoted.rejected_read + the demote census
+                    # (slice 2, Oracle C1 parity — the retro-audit key). Reset per doc.
+                    self._recon_displaced[total_key] = inc_v
                     results[total_key] = {
                         **inc,
                         'value':           cv,
                         'display_value':   cv,
                         'method':          c.get('method') or inc.get('method'),
                         'confidence':      max(inc.get('confidence') or 0, c.get('confidence') or 0),
-                        'validation_note': 'adjusted to the total that balances against the line amounts — please verify',
+                        'validation_note': RECON_TOTAL_ADJUSTED_NOTE,
                     }
                     return
 
@@ -1694,30 +6844,125 @@ class ExtractionEngine:
                     'confidence':      max(sub_inc.get('confidence') or 0, sc.get('confidence') or 0),
                     'validation_note': 'adjusted to the subtotal that balances against the total — please verify',
                 }
+                self._recon_displaced[total_key] = inc_v
                 results[total_key] = {
                     **inc, 'value': tv, 'display_value': tv,
                     'method':          tc.get('method') or inc.get('method'),
                     'confidence':      max(inc.get('confidence') or 0, tc.get('confidence') or 0),
-                    'validation_note': 'adjusted to the total that balances against the line amounts — please verify',
+                    'validation_note': RECON_TOTAL_ADJUSTED_NOTE,
                 }
         except Exception:
             pass  # reconciliation aid — must never break extraction
 
+    def _flag_net_misread_total(self, results, field_defs, credit_expected=None):
+        """FLAG (never swap) a `total_amount` that looks like the NET/subtotal line while a distinct
+        larger VAT-plausible total was ALSO read — cap confidence to review level + a note so it cannot
+        silently auto-file. DEFAULT OFF (NET_MISREAD_TOTAL_FLAG) → byte-identical. Runs AFTER
+        _reconciliation_pick_total (a valid balancing swap wins first → this no-ops) and BEFORE Stage-4.
+        Fail-toward-review; changes no VALUE, disables no safety, preserves the authoritative-anchor
+        invariant (arithmetic/role rail, not learned shape). gary+reggie+Oracle 2026-08-06. Best-effort."""
+        if not NET_MISREAD_TOTAL_FLAG:
+            return
+        try:
+            from extraction import validator as _v
+            total_key = None
+            for k in ('total_amount', *keyword.ROLE_KEY_ALIASES.get('total_amount', ())):
+                d = results.get(k)
+                if isinstance(d, dict) and d.get('value'):
+                    total_key = k
+                    break
+            if not total_key:
+                return
+            inc = results[total_key]
+            if inc.get('validation_note'):
+                return   # already flagged (e.g. a pick_total swap / garble note) — never double-cap
+            # ORACLE C1 (2026-08-07, BLOCKING) — a SIGN incoherence outranks a MAGNITUDE one.
+            # validator.py:727 refuses to overwrite an existing note, and this helper runs BEFORE
+            # Stage 4, so a net-misread note here would PRE-EMPT the credit-sign note entirely. That
+            # is not a cosmetic ordering issue: `_net_misread_verdict` is sign-BLIND (parse_amount's
+            # CURRENCY_RE drops the minus), and a credit note whose taught total box sits on the net
+            # row satisfies total≈subtotal with a larger candidate — exactly this helper's target
+            # layout. The note would then read "a larger total (£Y) was also found; please check
+            # which is the real total", say nothing about the sign, and quote a sign-stripped £Y —
+            # so the likeliest operator action files a credit note as a LARGER POSITIVE charge. That
+            # is the 2026-08-06 incident with the software recommending it.
+            # Abstain and let the credit-sign arm speak. The magnitude question survives: the value
+            # is unchanged and the doc is still routed to review by the sign note.
+            if credit_expected is not None:
+                try:
+                    from extraction import validator as _cv
+                    if _cv._CREDIT_SIGN_ON and _cv.credit_sign_note(
+                            inc.get('value'), inc.get('raw_value'), credit_expected):
+                        self._t('net_misread_flag', field=total_key, decision='skip',
+                                reason='credit-sign note takes precedence (Oracle C1)')
+                        return
+                except Exception:
+                    pass        # best-effort: never let the precedence check break extraction
+            total = _v.parse_amount(inc.get('value'))
+            sub = None
+            for k in ('subtotal', *keyword.ROLE_KEY_ALIASES.get('subtotal', ())):
+                d = results.get(k)
+                if isinstance(d, dict) and d.get('value'):
+                    sub = _v.parse_amount(d.get('value'))
+                    if sub:
+                        break
+            if total is None or sub is None:
+                self._t('net_misread_flag', field=total_key, decision='skip',
+                        reason='no total/subtotal witness')
+                return
+            tol = max(total * 0.02, 0.05)
+            # Candidate ledger for the total role + its aliases (amount_due/balance_due can be the
+            # true gross — Oracle: include, measure false-flags rather than hard-exclude).
+            cands = list(self._field_candidates.get(total_key) or [])
+            for ak in keyword.ROLE_KEY_ALIASES.get('total_amount', ()):
+                cands += (self._field_candidates.get(ak) or [])
+            verdict = _net_misread_verdict(total, sub, cands, tol)
+            if not verdict:
+                self._t('net_misread_flag', field=total_key, decision='skip',
+                        reason='total!=subtotal or no VAT-plausible larger total',
+                        total=total, subtotal=sub)
+                return
+            gross, gc = verdict
+            # Copy vetted by Chris (2026-08-06): drop the "net/subtotal" jargon, name BOTH the filed
+            # value AND the larger one so the operator can compare without hunting for the current read.
+            note = (f"we filed {inc.get('value')}, but it looks like a part-total — a larger total "
+                    f"({gc.get('value')}) was also found; please check which is the real total")
+            results[total_key] = {
+                **inc,
+                'confidence':      min(inc.get('confidence') or 0, _NET_MISREAD_CAP),
+                'validation_note': note,
+            }
+            self._t('net_misread_flag', field=total_key, decision='flag', was=inc.get('value'),
+                    gross=str(gc.get('value')), gross_conf=gc.get('confidence'),
+                    subtotal=sub, capped=_NET_MISREAD_CAP)
+        except Exception:
+            pass  # flag aid — must never break extraction
+
     def _maybe_gate_reread(self, garble, data, fmt_entry, val_type, label,
                            page_images, page_provenance, cache):
-        """Stage-4.5 gate-failure re-read (default OFF: GATE_REREAD_ENABLED). A structured value
+        """Stage-4.5 gate-failure re-read (DEFAULT ON: GATE_REREAD_ENABLED). A structured value
         was WITHHELD because its OCR read fails the field's learned format. Take ONE bounded
         second look at the page: relocate the garble, tight-crop re-read via the anchor crop
         ladder, and adopt ONLY a read that PASSES the exact gate the original failed AND is kin to
-        the garble (ocr.targeted_reread). Returns the adopted, REVIEW-BOUND field dict, or None
-        (caller keeps the byte-identical withhold). Never a silent value:
+        the garble (ocr.targeted_reread). Returns the adopted field dict, or None (caller keeps
+        the byte-identical withhold). A real-character repair (1-2 edits on the alnum core) is
+        REVIEW-BOUND — never a silent value:
           - conf capped at _REREAD_CAP (69) -> below the 70 review threshold and the 88 critical
             auto-file floor;
           - corrected_to + the note independently block auto-file at every trust floor;
           - the caller flags it for review (format_anomaly_flagged / n_flagged).
-        Abstains (returns None) on: the switch OFF, no page images, a born-digital located page
-        (page_provenance), an ambiguous locate, or any read failing is_adoptable. Frame invariant:
-        image_to_data and the crop both run on the SAME raw page image instance."""
+        EXEMPT from that rule (Oracle-signed 2026-07-23, kill GATE_REREAD_CLEAN_ACCEPT): a
+        NORMALISATION-ONLY recovery — the re-read agrees with the original on EVERY alphanumeric
+        character (0-edit kinship; calendar-equal for dates) and the result passes the learned
+        format — is two independent reads (full-page pass vs crop ladder) agreeing on the content,
+        so it returns CLEAN: no cap, no was_corrected/note, marked 'reread_clean' (the caller
+        skips its flag bump). Do NOT "restore" the flag on this branch as a supposed regression
+        fix — the review dressing on a whitespace-only change was the bug (a permanent
+        looks-like-no-correction hold; see the 2026-07-23 handover). Any PRE-EXISTING note/
+        corrected_to on the field survives via the **data spread — an unrelated flag stays
+        review-bound. Abstains (returns None) on: the switch OFF, no page images, a born-digital
+        located page (page_provenance), an ambiguous locate, or any read failing is_adoptable.
+        Frame invariant: image_to_data and the crop both run on the SAME raw page image instance."""
         if not GATE_REREAD_ENABLED or not page_images or not garble:
             return None
         try:
@@ -1756,6 +7001,19 @@ class ExtractionEngine:
             return None
         if not adopted:
             return None
+        if GATE_REREAD_CLEAN_ACCEPT and _reread_is_normalisation_only(garble, adopted, val_type):
+            # Normalisation-only (spacing/separator/case; calendar-equal for dates): the two reads
+            # agree on the content — a clean read, not a correction. Original confidence stands
+            # (nothing inflated — the 88 floor/thresholds apply normally); no cap/note/was_corrected;
+            # a pre-existing note from another stage survives the spread (fail-toward-review).
+            self.log(f"  Stage 4.5: re-read '{garble}' -> '{adopted}' (normalisation-only — accepted clean)")
+            return {
+                **data,
+                'value':         adopted,
+                'display_value': adopted,
+                'reread':        True,
+                'reread_clean':  True,
+            }
         self.log(f"  Stage 4.5: re-read '{garble}' -> '{adopted}' (review-bound)")
         return {
             **data,
@@ -1764,7 +7022,8 @@ class ExtractionEngine:
             'was_corrected':   True,
             'corrected_to':    adopted,
             'confidence':      min(data.get('confidence') or 0, _REREAD_CAP),
-            'validation_note': f're-read from the page (was "{garble}") — please verify',
+            # _REREAD_NOTE_HEAD is the class-F allowlist mark (write-site constant — keep in sync)
+            'validation_note': f'{_REREAD_NOTE_HEAD}{garble}") — please verify',
             'reread':          True,
         }
 
@@ -1783,14 +7042,22 @@ class ExtractionEngine:
                 title_trusted: bool = False,
                 ref_field_key: str | None = None,
                 supplier_name: str | None = None,
+                pinned_supplier: str | None = None,   # operator "Resolve" pin — overrides logo/template (Part B)
                 known_template_id: int | None = None,
                 pinned_template_id: int | None = None,
+                credit_expected: bool | None = None,   # tri-state: does this doc TYPE expect a negative total?
                 trace = None,
                 slice_dir = None,
                 page_text_lines: list | None = None,
                 page_provenance: list | None = None,
                 identity_shadow: bool = False,
-                raw_page0 = None) -> dict:
+                raw_page0 = None,
+                page0_geometry: dict | None = None,
+                cached_text: str | None = None,
+                date_field_key: str | None = None,
+                raw_pages: list | None = None,
+                deskew_angles: list | None = None,
+                barcodes: list | None = None) -> dict:   # ocr/barcodes.decode_pages rows (None ⇒ no decode ran)
         """
         Run extraction pipeline according to current mode.
         Returns dict with field values + metadata keys prefixed with _.
@@ -1802,9 +7069,22 @@ class ExtractionEngine:
         self._trace     = trace
         self._slice_dir = slice_dir   # dev-only crop capture dir (set only with --trace)
         self._slice_n   = 0
-        self._field_candidates = {}   # Phase 3 ledger (built only when candidate_override on)
+        self._field_candidates = {}   # per-run candidate ledger — ALWAYS built (_remember_candidates is
+                                      # unconditional); safety-load-bearing for G1 arm (i), do not re-gate
+        self._recon_displaced = {}    # per-run: total_key -> the read the reconciliation pick displaced
+                                      # (slice-2 note_demoted.rejected_read + census retro-audit key;
+                                      # Oracle C3 — without this reset, doc N's displaced value would
+                                      # land in doc N+1's record and corrupt the only instrument that
+                                      # can observe the balancing-garbage disaster class)
+        self._rejected_reads = {}     # per-run: field -> [{method, value, reason}] — the ALWAYS-ON
+                                      # anchor rejection recorder (slice-3 B1); D1 evidence + census
+        self._list_field_keys = set()  # per-run; filled at Stage 1 when LIST_FIELD_SCAN is armed
+        self._barcode_field_keys = set()  # per-run; filled at Stage 1.5 when BARCODE_FIELD is armed
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
+        # Straighten-arc frame election (C1: computed ONCE, the SAME list feeds every crop
+        # site below — mapper, registration fit, anchors, late rescue, corroboration).
+        crop_pages = _elect_crop_pages(page_images, raw_pages, deskew_angles)
         # Seed field_patterns from each field's configured TYPE (+ the ref-role
         # coercion) so CUSTOM doc-type fields and the structural REFERENCE role are
         # gated by their real type instead of loose free-text. The keyword config
@@ -1857,15 +7137,39 @@ class ExtractionEngine:
 
         # ── Stage 0: Template matching ────────────────────────────────────────
         self._type_ambiguous = False   # Fix A: set True below when the match is an ambiguous same-logo pick
+        self._type_match     = None    # A2: the Stage-0 match dict (rival support rides on it)
+        self._type_refused   = False   # C1: set True below when the trusted-title refuse discards a template
+        self._veto_fallthrough = False # G1/G2: set True below when the match arrived via the identity-veto
+                                       # fall-through (TEMPLATE_VETO_FALLTHROUGH) — arms the corroboration guards
         if templates:
-            match = template_matcher.identify_template(
-                _id_img,
-                ocr_text,
-                templates,
-                detected_slug=detected_slug,
-                title_trusted=title_trusted,
-                query_detail_hash=logo_detail_hash,   # Slice C: isolated-mark veto on a ≥2-supplier logo collision
-            )
+            # Imageless fast re-extract (--reextract, text-only from cached OCR): the LIVE Stage-0
+            # identify consumes the page image AND, run imageless, would fall to its TEXT arms WITHOUT
+            # the logo-arm guards (trusted-title refuse / TYPE_PRESENCE_VETO / detail-mark veto) — a
+            # text-arm match could then stamp a supplier/type the full image pipeline would have vetoed.
+            # So SKIP the live call when there is no image and let the known-id honour path below apply
+            # the caller-supplied known_template_id text-only (Oracle C1 — guard the CALL, never the
+            # `if templates:` block, which also holds the honour path + extract_with_template). Byte-
+            # identical when an image is present (every non-reextract caller: _id_img is always set).
+            match = None
+            if _id_img is not None:
+                match = template_matcher.identify_template(
+                    _id_img,
+                    ocr_text,
+                    templates,
+                    detected_slug=detected_slug,
+                    title_trusted=title_trusted,
+                    query_detail_hash=logo_detail_hash,   # Slice C: isolated-mark veto on a ≥2-supplier logo collision
+                )
+            # C1 (TYPE-heading authority): identify_template returns a REFUSE sentinel (template
+            # None + type_refused) when a TRUSTED heading declares a type the matched template does
+            # NOT carry. Collapse it to "no template" so every branch below is byte-identical to the
+            # old None return, but REMEMBER it so the doc is HELD for review at the type-ambiguity
+            # seam — a falsely-trusted heading must fail toward review, never auto-file a wrong type
+            # at 100. (Kill switch TYPE_REFUSE_HOLD lives in template_matcher._type_refuse → None,
+            # which makes this branch dead and the whole flow byte-identical.)
+            if match and match.get('type_refused'):
+                self._type_refused = True
+                match = None
             # Reprocess honour: a document already linked to a template (passed
             # as known_template_id) should still run that template's stage 0/0.5
             # — including its admin-drawn field mappings — even when live
@@ -1873,12 +7177,76 @@ class ExtractionEngine:
             # logo/keyword score that dipped below threshold for this scan). Only
             # used as a fallback when live matching fails, so it never overrides
             # a positive live match with a stale link.
+            # ⚠ SEAM-1 PIN (Oracle 2026-07-26; REWRITTEN 2026-08-22, Oracle Q3 C3.1): this fallback
+            # RE-IMPOSES a STORED template id whenever live identification returns None — including a
+            # None produced by the detail veto / distinctive gate refusing a wrong pick. The original
+            # pin said "review-safe only because _maybeAutoFile has EXACTLY ONE call site" — that is
+            # no longer true and the claim must not be relied on: reprocess output now reaches filing
+            # through VETTED doors — the scope sweep / scope-local auto-accept (08-21), F2b (auto-
+            # accept after a sender reprocess), and the quiet lane → sweep (08-21/22, incl. the Q3
+            # 'layout' arm that re-reads TEMPLATE-CARRYING siblings). Every one of those doors
+            # re-checks the document through the ONE predicate (trust.isAutoFileEligible + the
+            # sweep's type-flip / contradiction / changed re-checks), and the binding re-imposed HERE
+            # is tested by _identity_refuses below — a layout may only claim a page that NAMES its
+            # company (TEMPLATE_IDENTITY_ON_PAGE, a precondition of the Q3 arm), else
+            # `sticky_binding_declined`. When the scope name is all-generic `_identity_refuses`
+            # ABSTAINS; the Q3 arm skips such scopes for exactly that reason. Any NEW door must name
+            # which of these checks it relies on (memory: project_slice1d_donothing "the known-id
+            # fallback re-imposes the poison").
             if not match and (known_template_id is not None or pinned_template_id is not None):
                 # A B1 PIN also acts as this fallback (Oracle C2, match=None corner): if this engine
                 # call's own match failed, still honour the pinned sibling so Stage 0 runs against it
                 # AND the doc is held below. Pin wins over a stale known link.
                 _fb_id = pinned_template_id if pinned_template_id is not None else known_template_id
                 known  = next((t for t in templates if t.get('id') == _fb_id), None)
+                # THE STICKY BINDING (TEMPLATE_IDENTITY_ON_PAGE, 2026-08-10). A remembered binding is
+                # honoured WITHOUT re-identifying — deliberately, because that is what makes a teach
+                # stick across reprocesses. The cost, found while gating the wrong-company misfile:
+                # a WRONG binding is equally permanent. 18 delivery notes stamped with another
+                # company's name could not be healed by "Reprocess all in queue", which is precisely
+                # the button a user reaches for when they notice something is wrong — and the
+                # comment six lines above already warned that this fallback "re-imposes the poison".
+                #
+                # So the MEMORY must pass the same test a fresh match does: is this template's
+                # company named anywhere on this page? If not, the memory is wrong — drop it and let
+                # identification decide (which, with the guard armed, yields the right template or
+                # none, and none routes to review).
+                #
+                # NOT "always re-identify on reprocess": that would discard the deliberate binding a
+                # teach created, which is the whole point of honouring it. This only declines a
+                # binding the page itself contradicts.
+                # Inert unless the identity guard is armed, and it abstains on exactly the same
+                # conditions (no judgeable identity, or a supplier that does not print its name), so
+                # it can never drop a binding on evidence the guard would not act on.
+                if known and template_matcher._identity_refuses(known, ocr_text):
+                    self.log(f"  Stage 0: NOT honouring {_fb_id} — "
+                             f"'{template_matcher._template_identity(known)}' is not named on this "
+                             f"page; re-identifying instead of re-imposing a stale binding")
+                    self._t('sticky_binding_declined', template_id=_fb_id,
+                            identity=template_matcher._template_identity(known))
+                    known = None
+                # BUYER-ISSUED LETTERHEAD SCOPE — the go-forward HEAL (Oracle SEND BACK → redesign,
+                # 2026-08-27; Chris round 6 card 1). A stale binding to a `buyer_issued` layout (the
+                # owner's own PO template, claimed onto three other suppliers' papers through the
+                # whole-page text arm) must be declined on reprocess by the SAME evidence the
+                # recognition lever now uses — the template's fingerprint hits over the LETTERHEAD
+                # BAND — never by band-scoping the identity guard above (config B: a PO taught with the
+                # counterparty as issuer prints that identity below the band and would be refused on its
+                # own paper). Config-B-safe (the letterhead words hit the band of every such PO),
+                # wordmark-safe (no dependence on the guard's abstain), heals docs 2/4/6. Abstains when
+                # the template has no fingerprint to judge by. Inert while the switch is off.
+                if (known and template_matcher._BUYER_ISSUED_LETTERHEAD_SCOPE and known.get('buyer_issued')
+                        and (known.get('keyword_fingerprint') or [])):
+                    _band_ratio = template_matcher._keyword_hit_ratio(
+                        known, template_matcher.header_band_text(ocr_text).lower())
+                    if _band_ratio < template_matcher.KEYWORD_THRESHOLD:
+                        self.log(f"  Stage 0: NOT honouring {_fb_id} — a buyer-issued layout whose words "
+                                 f"are not in this page's letterhead band ({_band_ratio:.2f} < "
+                                 f"{template_matcher.KEYWORD_THRESHOLD}); re-identifying instead")
+                        self._t('sticky_binding_declined', template_id=_fb_id,
+                                identity=template_matcher._template_identity(known),
+                                reason='letterhead', band_ratio=round(_band_ratio, 2))
+                        known = None
                 if known:
                     _fb_method = 'pinned_id' if pinned_template_id is not None else 'known_id'
                     match = {'template': known, 'confidence': 0, 'method': _fb_method}
@@ -1889,6 +7257,12 @@ class ExtractionEngine:
                 # HOLD even if THIS engine call's own (raw-image) match resolved non-ambiguously — a
                 # raw-vs-processed split-brain must never let a pinned doc auto-file.
                 self._type_ambiguous = bool(match.get('ambiguous_type')) or (pinned_template_id is not None)
+                self._type_match     = match
+                # G1/G2 guard arming: TRUE only when identify_template matched via the identity-veto
+                # fall-through (the additive tag). The known_id/pinned fallback dicts above never carry
+                # the key → guards stay dark on the reprocess-honour path (review-safe per the SEAM-1
+                # pin). OFF ⇒ the veto sites return None ⇒ the tag never exists ⇒ structurally dead.
+                self._veto_fallthrough = bool(match.get('veto_fallthrough'))
                 matched_tmpl = match['template']
                 # FIX B1 (suggest-only): process_docs resolved the ambiguous same-letterhead type from
                 # the doc's ref-prefix and PINNED the correct sibling's template. Force it as
@@ -1926,6 +7300,11 @@ class ExtractionEngine:
                 for key, data in tmpl_results.items():
                     results[key] = data
                 self._trace_stage('0_template', tmpl_results, _pre_s0, results)
+                # Stage 0 RAN — every-step ladder outcome per configured field,
+                # computed against results AS OF right after the Stage-0 merge
+                # (before Stage 0.5 refines anything).
+                self._trace_steps('0_template', True, None, tmpl_results,
+                                  _pre_s0, results, field_keys)
                 # Promote supplier from the template's own resolved supplier_name
                 # field (a fixed_value learned from confirmed documents) — NOT
                 # from the template's auto-generated display name. Templates
@@ -1936,7 +7315,7 @@ class ExtractionEngine:
                 # where it then won out over the real "Polychemtex Inc." hints).
                 if not supplier_name:
                     supplier_name = (results.get('supplier_name') or {}).get('value') or None
-                found = len([v for v in results.values() if v.get('value')])
+                found = _count_valued_fields(results)
                 self.log(f"  Stage 0: {found}/{len(field_keys)} fields from template")
 
                 # ── Stage 0.5: admin-drawn anchor → target zone mappings ──────
@@ -1972,11 +7351,55 @@ class ExtractionEngine:
                     # registers this page against). Inert unless that template has
                     # landmarks AND registration is enabled.
                     _landmarks = (mapping_src or matched_tmpl).get("landmarks") or []
+                    # TEACH_ANGLE_COMPOSE (see the flag block): compose the SOURCE template's
+                    # teach-frame boxes to the LEVEL frame this deskewed doc is in. Angle comes
+                    # from mapping_src (the borrowed sibling's sample tilt, Oracle C2), never
+                    # blindly the matched template's. C3: the raw-crop election wins if both on.
+                    if (TEACH_ANGLE_COMPOSE and not DESKEW_RAW_CROPS
+                            and raw_pages and tmpl_mappings):
+                        _src_t = (mapping_src or matched_tmpl) or {}
+                        _theta = _src_t.get("sample_deskew_angle")
+                        try:
+                            _theta = float(_theta) if _theta is not None else None
+                        except (TypeError, ValueError):
+                            _theta = None
+                        if _theta is not None and abs(_theta) >= 0.2:
+                            _W, _H = crop_pages[0].size
+                            tmpl_mappings = _compose_mappings_to_level(tmpl_mappings, _theta, _W, _H)
+                            _landmarks = _compose_landmarks_to_level(_landmarks, _theta, _W, _H)
+                            self.log(f"  Stage 0.5: composed {len(tmpl_mappings)} mapping(s) "
+                                     f"teach-frame -> level (sample tilt {_theta:.2f} deg)")
+                    # PLACEMENT-ONLY sibling (see the TEACH_ANGLE_COMPOSE_SCAN flag block): the page
+                    # was NOT deskewed, so compose the taught boxes into THIS page's own raw frame
+                    # by (θ_t − θ_s). Mutually exclusive with the branch above by construction —
+                    # that one requires raw_pages (deskewed), this one requires their absence.
+                    elif (TEACH_ANGLE_COMPOSE_SCAN and not raw_pages
+                          and tmpl_mappings and crop_pages):
+                        try:
+                            _src_t = (mapping_src or matched_tmpl) or {}
+                            _tt = _src_t.get("sample_deskew_angle")
+                            _tt = float(_tt) if _tt is not None else 0.0
+                            from ocr.tesseract import detect_skew_angle as _dsa
+                            _ts = float(_dsa(crop_pages[0], _COMPOSE_SCAN_MIN_NET) or 0.0)
+                            _net = _tt - _ts
+                            if _COMPOSE_SCAN_MIN_NET <= abs(_net) <= _COMPOSE_SCAN_MAX_NET:
+                                _W, _H = crop_pages[0].size
+                                tmpl_mappings = _compose_mappings_to_level(tmpl_mappings, _net, _W, _H)
+                                _landmarks = _compose_landmarks_to_level(_landmarks, _net, _W, _H)
+                                self.log(f"  Stage 0.5: composed {len(tmpl_mappings)} mapping(s) "
+                                         f"teach-frame -> this page (teach {_tt:.2f} deg, "
+                                         f"scan {_ts:.2f} deg, net {_net:.2f} deg) — no pixels rotated")
+                                self._t('compose_scan', theta_teach=round(_tt, 2),
+                                        theta_scan=round(_ts, 2), net=round(_net, 2),
+                                        mappings=len(tmpl_mappings))
+                        except Exception:
+                            pass   # measurement/compose failure -> stored geometry, unchanged
                     mapping_results = template_mapper.extract_with_mappings(
-                        page_images, tmpl_mappings,
+                        crop_pages, tmpl_mappings,
                         field_patterns=field_patterns,
                         validation_patterns=self.patterns.get("validation_patterns", {}),
                         format_lookup=_fmt_lookup,
+                        provisional_lookup=self._make_provisional_lookup(supplier_name, document_slug),
                         slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
                         template_landmarks=_landmarks,
                         registration_enabled=self.registration_enabled,
@@ -1985,6 +7408,18 @@ class ExtractionEngine:
                     _pre_s05 = self._snap(results)
                     self._remember_candidates('0.5_mapping', mapping_results)
                     for key, data in mapping_results.items():
+                        # MAPPER-HEAL CENSUS (2026-08-05, the every-step-trace arc): each
+                        # reconcile-family heal stamps a private `_heal` marker; the Slice-C
+                        # edge guard stamps its method suffix. ONE log line per fire makes
+                        # every heal countable from the process log (the scorer's HEAL_RE
+                        # census + SFDEV) — previously these healed silently (diag markers
+                        # only) and every arm's fire count read as zero. Marker popped so
+                        # the persisted result dict stays byte-identical.
+                        _heal = data.pop("_heal", None) if isinstance(data, dict) else None
+                        _meth = (data or {}).get("method", "")
+                        if _heal or _meth.endswith(("_edgegrow", "_edgecut")):
+                            self.log(f"  Stage 0.5 heal: {key} "
+                                     f"{_heal or _meth.rsplit('_', 1)[-1]} ({_meth})")
                         existing = results.get(key)
                         # An admin-drawn mapping (Settings → Templates → "Map a
                         # Field") is a deliberate, per-template correction —
@@ -2011,6 +7446,46 @@ class ExtractionEngine:
                         # Threshold 75: a clean free-text mapping caps at >=78 (Stage A base 78
                         # no-label / 90 with-label); only a garbled one (~70) is demoted. Structured
                         # mappings (regex-validated, never capped, not in text_field_keys) are unaffected.
+                        # TEMPLATE_FIXED SEED GUARD (see the _FIXED_SEED_KEYS flag block). A mapping
+                        # read that is the SAME curated company name merely misread, or debris
+                        # against it, must not displace the seed on authority. Declines only on
+                        # DISAGREEMENT; a genuinely different company still wins. Inert unless armed.
+                        _fixed_decline = _fixed_seed_declines_mapping(key, existing, data)
+                        # REGION-SCOPED PRESENCE CONFIRM (see the flag block). Asked ONLY when the
+                        # string-shaped branches above have already declined to act, so it can add
+                        # a decline but never remove one. Positive evidence only: the curated name
+                        # is printed in the taught region on THIS page, so the read that disagrees
+                        # with it is looking at the wrong place — keep the seed.
+                        if not _fixed_decline and _ISSUER_REGION_PRESENCE_ON:
+                            _rp = _region_confirms_curated_seed(key, existing, data,
+                                                                tmpl_mappings, crop_pages)
+                            self._t('region_presence', field=key, verdict=_rp,
+                                    kept=existing.get('value') if isinstance(existing, dict) else None,
+                                    read=(data or {}).get('value'))
+                            if _rp:
+                                _fixed_decline = 'region_presence'
+                        # FRAGMENT AGREEMENT (P4, see the flag block): the read is part of the
+                        # curated name and the issuer band prints the whole of it as a stack.
+                        if not _fixed_decline and _FIXED_SEED_FRAGMENT_KEEP_ON:
+                            # Garble arm (slice 1, 2026-08-22): the other templates' identity
+                            # tokens feed the C1.2 sister exclusion; branch name distinguishes a
+                            # fuzzed keep from P4's exact keep in the log/trace.
+                            _other_toks = (_other_identity_tokens(templates, matched_tmpl)
+                                           if _FIXED_SEED_FRAGMENT_GARBLE_ON else None)
+                            if _fragment_agreement_keeps_seed(key, existing, data, ocr_text,
+                                                              _other_toks):
+                                _fixed_decline = ('fragment_agreement'
+                                                  if _is_exact_token_subrun(data.get('value'),
+                                                                            existing.get('value'))
+                                                  else 'fragment_agreement_garble')
+                        if _fixed_decline:
+                            self.log(f"  Stage 0.5: kept curated supplier "
+                                     f"'{existing.get('value')}' — declined mapping read "
+                                     f"'{data.get('value')}' ({_fixed_decline})")
+                            self._t('fixed_seed_decline', field=key, branch=_fixed_decline,
+                                    kept=existing.get('value'), declined=data.get('value'),
+                                    declined_conf=data.get('confidence'))
+                            continue
                         _ft_mapping_weak = (key in text_field_keys
                                             and data.get("confidence", 0) < 75)
                         is_curated_refinement = ((not _ft_mapping_weak)
@@ -2027,8 +7502,61 @@ class ExtractionEngine:
                             results[key] = data
                             applied += 1
                     self._trace_stage('0.5_mapping', mapping_results, _pre_s05, results)
+                    self._trace_steps('0.5_mapping', True, None, mapping_results,
+                                      _pre_s05, results, field_keys)
                     if applied:
                         self.log(f"  Stage 0.5: {applied} field(s) refined via anchor/target mapping")
+                else:
+                    # SEAM 3a: template matched but Stage 0.5 was skipped — emit skip
+                    # rows from OUTSIDE the gate (distinct reason: no-mappings vs no-page-image)
+                    # so the ladder shows Stage 0.5 as skipped rather than silently absent.
+                    self._trace_steps('0.5_mapping', False,
+                                      (self._STEP_SKIP_NO_MAPPINGS if not tmpl_mappings
+                                       else self._STEP_SKIP_NO_PAGE_IMAGE),
+                                      {}, {}, results, field_keys)
+
+        # SEAM 3a: Stage 0 (and 0.5, when no template) never ran — emit their skip
+        # rows from OUTSIDE the `if templates:` gate, covering BOTH no-templates and
+        # no-match (matched_tmpl stays None in both). This is the exhibit-A class:
+        # fields greened by keyword/anchor with no template/mapping rows. (A matched-
+        # but-no-mappings Stage 0.5 skip is emitted inline above with its own reason.)
+        if matched_tmpl is None:
+            self._trace_steps('0_template',  False, self._STEP_SKIP_NO_TEMPLATE,
+                              {}, {}, results, field_keys)
+            self._trace_steps('0.5_mapping', False, self._STEP_SKIP_NO_TEMPLATE,
+                              {}, {}, results, field_keys)
+
+        # ── OPERATOR SUPPLIER PIN (Resolve button, Part B) — highest precedence ──
+        # The operator RESOLVED the issuer (the branding cross-check detected the true name and they
+        # clicked "Use '<name>'"). On reprocess it arrives as pinned_supplier and OVERRIDES the
+        # logo/template supplier UNCONDITIONALLY: set the local supplier_name so the three fill blocks
+        # below all skip (each is gated `if not supplier_name`), AND so the Stage-1/2 reads re-scope to
+        # the pinned supplier's own anchors/hints. REVIEW-BOUND by construction — method 'operator_pin'
+        # + a validation_note keep the doc below EVERY auto-file lock (isAutoFileEligible refuses a noted
+        # field at every floor incl. 100), so a pin can never silently auto-file. Writes NO logo/hint
+        # learning (local to this doc); future docs learn the normal way on Confirm. The pin also joins
+        # accepted_issuers so the branding cross-check doesn't re-flag the pinned name (Oracle C5).
+        # Kill switch env SUPPLIER_PIN (default on); off -> ignored -> byte-identical.
+        if pinned_supplier and os.environ.get('SUPPLIER_PIN', '1') != '0':
+            # SELF-DISCHARGE capture (SUPPLIER_PIN_SELF_DISCHARGE, gary → Oracle W/COND 2026-08-12):
+            # whatever Stage 0 seeded BEFORE the pin overwrites it (template_fixed/template_identity)
+            # is a natural witness the final re-assert may compare against. The first assert itself
+            # is DELIBERATELY untouched (Oracle upheld): the pin re-scopes WHERE TO LOOK; a
+            # pin-scoped anchor reading the pinned name off the PAPER is genuine corroboration, and
+            # discharging here would re-run the un-scoped extraction the operator already judged
+            # wrong. accepted_issuers (below) only SUPPRESSES flags — it mints no values (all seven
+            # consumers verified), so no echo path exists from the pin string to a "natural" read.
+            self._pre_pin_supplier = results.get("supplier_name")
+            supplier_name = pinned_supplier
+            results["supplier_name"] = {
+                "value":           pinned_supplier,
+                "confidence":      75,
+                "method":          "operator_pin",
+                "validation_note": "Supplier set by you — confirm to file.",
+            }
+            try: self.accepted_issuers.add(self._accept_norm(pinned_supplier))
+            except Exception: pass
+            self.log(f"  Operator supplier pin: {pinned_supplier} — logo/template supplier skipped")
 
         # ── Fixed Supplier Name is IMMUNE to the logo fallback ────────────────
         # A doc type whose Supplier Name is an admin-fixed template field has a
@@ -2053,6 +7581,67 @@ class ExtractionEngine:
         # phash drifts out of range and the supplier fails to resolve on a straighten-reprocess.
         if not supplier_name and logos and _id_img is not None:
             logo_match = anchor.try_logo_supplier_match(_id_img, logos, query_detail_hash=logo_detail_hash)
+            # SPARSE-GUARD SUGGESTION INTERCEPT (Oracle C2, 2026-07-23): a coarse-miss detail pick
+            # is a SUGGESTION, not an identity. Stash it and take the STARVED path exactly — no
+            # text gate here (it could stash a mid-pipeline _logo_abstained and diverge from the
+            # starved baseline), no fill (a fill here re-creates the throughput collapse: it makes
+            # the supplier non-empty, which SKIPS the un-noted Stage-2.5a hint resolution the same
+            # docs used before enrolment), and it must never reach the :fill block below (its dict
+            # has no confidence/match_count — pinned). Consumed at finalisation AFTER the last
+            # supplier writer (see the consumption block near _flag_branding_conflict).
+            if isinstance(logo_match, dict) and logo_match.get("suggest_only"):
+                results["_logo_detail_suggest"] = {"supplier_name": logo_match.get("supplier_name"),
+                                                   "detail_band":   logo_match.get("detail_band")}
+                self.log(f"  Logo detail mark suggests '{logo_match.get('supplier_name')}' "
+                         "— deferred to finalisation")
+                # Oracle C1 (re-adjudication): re-assert the COARSE WINNER so the text gate judges
+                # it exactly as in the starved baseline — None on the miss arm (byte-identical to
+                # the old null), the winner dict on the disagree arm (the gate abstains a
+                # text-contradicted rival; a winner that STANDS to finalisation meets the
+                # suggestion's disagree note there). NEVER a bare null on disagree — that
+                # discards the winner unjudged and every anchor-level pin stays green (the
+                # dead-guard-greens-every-test trap this comment exists to prevent).
+                logo_match = logo_match.get("coarse_winner")
+            # ── TEXT-AGREEMENT GATE (identity text-first, slice 1b; kill LOGO_TEXT_GATE=0) ──────
+            # MEASURED 2026-07-19: the 64-bit logo phash has ZERO separating power on scans
+            # (cross-supplier MIN hamming 2 vs same-supplier min 6) — it cannot carry identity
+            # alone, while the printed branding separates cleanly (worst cross overlap 0.22) and
+            # named the true supplier on every doc of the Larkspur misassignment. So a logo match
+            # must now AGREE with the page text to assert; it may SUGGEST when the text can't
+            # judge; and it is DROPPED when the text positively contradicts it.
+            # docs/designs/IDENTITY_TEXT_FIRST_2026-07-19.md
+            _gate = 'accept'
+            if logo_match and os.environ.get("LOGO_TEXT_GATE", "1") != "0":
+                # Geometry name-presence WITNESS (Oracle C1; kill LOGO_NAME_PRESENCE_ACCEPT=0 restores
+                # byte-identical). Recompute the issuer GEOMETRICALLY — page0_geometry on a scan, or the
+                # born-digital line bridge (geometry_from_lines) on a generated PDF — and let it CONFIRM
+                # the logo ONLY where the branding-fingerprint arms are unjudgeable. Geometry-ONLY pick,
+                # NO text-arm fallback, so a marker-less recipient can never confirm itself as the issuer.
+                # DEFAULT ON (corpus-gated 2026-07-28: +14 correct auto-files, 0 new wrong, M_type 0;
+                # real born-digital SuperStore replay flips suggest→accept 8/8, OFF byte-identical).
+                _geom_issuer_norm = None
+                if os.environ.get("LOGO_NAME_PRESENCE_ACCEPT", "1") != "0":
+                    from extraction import letterhead as _lh
+                    _geom = page0_geometry or _lh.geometry_from_lines(page_text_lines)
+                    if _geom and _geom.get("rows"):
+                        _gp = _lh.pick_issuer_geometry(
+                            ocr_text, _geom, detected_title=document_type,
+                            type_phrases=_letterhead_type_phrases(self.patterns))     # C2 parity
+                        _geom_issuer_norm = self._accept_norm(_gp) if _gp else None    # C3 same norm
+                _gate = decide_logo_text_gate(
+                    logo_match["supplier_name"],
+                    _branding_banks(templates, self._accept_norm),
+                    ocr_text, self._accept_norm, self.accepted_issuers,
+                    geom_issuer_norm=_geom_issuer_norm)
+            if logo_match and _gate == 'abstain':
+                # The page says someone else. Drop the identity rather than scope every
+                # per-supplier learning corpus to the wrong company — but NEVER go mute
+                # (Oracle C1): stash the suppressed name + the branding-detected alternative so
+                # finalisation can surface the "Use '<name>'" button, which is also the ONLY
+                # trigger for the correction-ripple slice.
+                self.log(f"  Logo match '{logo_match['supplier_name']}' DROPPED — the page branding contradicts it")
+                results["_logo_abstained"] = {"suppressed": logo_match["supplier_name"]}
+                logo_match = None
             if logo_match:
                 supplier_name = logo_match["supplier_name"]
                 self.log(
@@ -2065,6 +7654,51 @@ class ExtractionEngine:
                     "confidence": logo_match["confidence"],
                     "method":     "logo",
                 }
+                if _gate == 'suggest':
+                    # UNJUDGEABLE: keep what the logo saw, but review-bound — the note is the
+                    # auto-file lock (isAutoFileEligible refuses any noted field at EVERY floor),
+                    # and text_agree marks the read for the confirm-time learning gate.
+                    results["supplier_name"]["confidence"] = min(
+                        int(results["supplier_name"]["confidence"] or 100), 69)
+                    results["supplier_name"]["text_agree"] = False
+                    results["supplier_name"]["validation_note"] = (
+                        "Matched by logo only — the page text doesn't confirm this company. Please check.")
+                    results["_needs_review"] = True
+                # C2 (Slice D): a PRIMARY detail-hash OVERRIDE that RE-ROUTES the supplier carries a
+                # validation_note — propagate it so the re-route is REVIEW-BOUND. supplier_name is
+                # text-typed, so the trust.js 88 critical-field floor does NOT guard it; the NOTE is the
+                # only reliable auto-file block (isAutoFileEligible refuses any noted field at EVERY
+                # floor). Absent on a coarse/agree match (LOGO_DETAIL_PRIMARY off) → byte-identical.
+                if logo_match.get("validation_note"):
+                    results["supplier_name"]["validation_note"] = logo_match["validation_note"]
+
+        # ── Template-identity supplier FILL (logo miss) ──────────────────────
+        # A template matched but nothing resolved WHO the supplier is (logo drifted
+        # out of range) → every supplier-scoped taught anchor is dropped and the doc
+        # reads EMPTY (user re-teaches every field). Fill from the template's DOMINANT
+        # CONFIRMED issuer so its anchors admit in Stage 2 proper. Fires ONLY when the
+        # supplier is still empty AND a template matched AND the template's DISTINCTIVE
+        # fingerprint words are ON THIS PAGE (corroboration) — the corroboration gate is
+        # what prevents a colliding-logo template (Cascade<->Northgate) from imposing the
+        # WRONG supplier. REVIEW-BOUND at fill time (persisted note) — an INFERRED identity
+        # must never silently drive the filing folder (Oracle 2026-07-14; pin REWRITTEN
+        # 2026-07-31, not weakened: a fill later WITNESSED by the independent geometry
+        # letterhead read is no longer merely inferred — the page prints it as its own
+        # letterhead — and the dark G arm at Stage 2.5a may then shed the note,
+        # gary→Oracle-signed). Kill switch env TEMPLATE_IDENTITY_FILL (default on) → =0 is
+        # byte-identical.
+        if (not supplier_name and matched_tmpl
+                and os.environ.get("TEMPLATE_IDENTITY_FILL", "1") != "0"):
+            _fill = _template_identity_for_fill(matched_tmpl)
+            if _fill and _template_identity_corroborated(_fill["value"], ocr_text):
+                supplier_name = _fill["value"]
+                results["supplier_name"] = {
+                    "value":           supplier_name,
+                    "confidence":      70,
+                    "method":          "template_identity",
+                    "validation_note": _fill["note"],
+                }
+                self.log(f"  Template-identity supplier fill ({_fill['tier']}, corroborated): {supplier_name}")
 
         # Dev-only: expose the RESOLVED doc identity so a diagnostic log can show
         # why the learned-format / qualification gates did or didn't engage (they
@@ -2086,7 +7720,12 @@ class ExtractionEngine:
         # so it becomes keyword-extractable). Returns self.patterns unchanged when
         # there's nothing to merge — no per-run copy in the common case.
         patterns_for_run = keyword.merge_label_overrides(
-            self.patterns, self.label_overrides, document_slug)
+            self.patterns, self.label_overrides, document_slug,
+            # TEMPLATE SCOPE (migration 62): a teach-written override applies only when the
+            # template it was taught on matched THIS document. Stage 0 settled matched_tmpl
+            # before this line, so the scope needs no re-identification. None -> 0 -> only
+            # doc-type-wide (admin/preset) rows apply.
+            template_id=(matched_tmpl or {}).get('id'))
         # RC1 (2026-07-10): seed a Stage-1 keyword entry for a CUSTOM ref/date field from its own DB
         # label (+ role short-forms), so a custom-type field with no shipped pattern and no admin
         # override is still attempted here instead of depending on a learned anchor. Runs AFTER the
@@ -2097,14 +7736,102 @@ class ExtractionEngine:
         # = name-like/party fields, CUSTOMER-SIDE only — supplier_name EXCLUDED explicitly (NOT via
         # _IDENTITY_FIELD_KEYS, which still lists customer_name and would silently neuter the fix).
         _caption_vocab = keyword.build_caption_vocab(patterns_for_run.get('field_patterns'), field_defs)
+        # OWN-LABEL exemption index for the taught-ownership guard (reggie 2026-07-24): {label ->
+        # {field_keys}} from the SAME post-merge bank, so the guard can tell a field's own
+        # discriminating caption ("Invoice No") from a shared/generic one ("Date"/"#").
+        self._label_owners = keyword.build_label_owner_index(patterns_for_run.get('field_patterns'))
+        # TYPE-AUTHORITY signal for the B' type-scoped own-label exemption (Oracle C1/C3 2026-07-26):
+        # the resolved type is trustworthy enough to scope label-ownership to it ONLY when a trusted
+        # standalone heading named it (title_trusted) AND Stage 0 did not flag the type ambiguous or
+        # refused. Template signals are DELIBERATELY excluded (same-logo siblings are the SOURCE of type
+        # ambiguity — and they set _type_ambiguous/_type_refused, which disqualify here). type_confirmed
+        # (an operator-confirmed/retyped reprocess) is NOT wired in this slice (Oracle C3: it would need a
+        # new extract() kwarg + an uncaught-NameError risk here, outside the guard's try/except); unwired
+        # it is simply False, so B' leans on title_trusted only for now. getattr keeps it crash-safe.
+        self._type_authoritative = (bool(title_trusted)
+                                    and not getattr(self, '_type_ambiguous', False)
+                                    and not getattr(self, '_type_refused', False))
         _caption_guard_keys = {
             f.get('key') for f in (field_defs or [])
             if f.get('key') and f.get('key') != 'supplier_name'
             and (value_quality.is_name_like_field(f.get('key'))
                  or (patterns_for_run.get('field_patterns', {}).get(f.get('key')) or {}).get('role_caption') == 'party')}
-        kw_results = keyword.extract_fields(ocr_text, field_keys, patterns_for_run,
+        # LIST fields (2026-08-11, kill switch LIST_FIELD_SCAN — env default OFF; the app bridges the
+        # `list_field_scan` setting, which is ON for NEW installs via the ON_BY_DEFAULT migration
+        # list in database/index.js and was flipped ON on the owner's live DB 2026-08-27): fields the
+        # type declares as 'list' are collected by the label scan — every occurrence, deduped, joined
+        # '; '. The set also drives the ownership skips at the mapping/anchor/hint/field-rule stages
+        # (a list is caption-collected; one taught box structurally cannot hold N occurrences — the
+        # live serials teach committed its own caption 23 times proving it). Empty when the flag is
+        # off -> byte-identical.
+        _list_field_keys = set()
+        if os.environ.get('LIST_FIELD_SCAN', '0') != '0':
+            _list_field_keys = {f.get('key') for f in (field_defs or [])
+                                if f.get('key') and str(f.get('type') or '').lower() == 'list'}
+        self._list_field_keys = _list_field_keys        # read by the Stage-2/hint ownership skips
+        # RECLAIM a list field a scalar rung already filled (Stage 0 template seed / Stage 0.5
+        # mapping run before this point): their single value is at best element 1 of N and at
+        # worst the caption itself. The collect scan below is the only writer for these keys.
+        for _lk in _list_field_keys:
+            if isinstance(results.get(_lk), dict):
+                _old = results.pop(_lk)
+                self.log(f"  List field '{_lk}': reclaimed scalar {_old.get('method')} read "
+                         f"for the collect scan")
+        # BARCODE fields (2026-08-26, kill switch BARCODE_FIELD, DEFAULT OFF; barry → gary design):
+        # a field the type declares as 'barcode' has exactly ONE writer — the page's decoded
+        # symbols (ocr/barcodes.decode_pages, threaded in by process_docs as `barcodes`) — never
+        # OCR. Exactly one distinct code-like decode -> the value @100 with a confirm-once note (a
+        # checksummed decode is right or absent; with NO learning yet the note holds every doc —
+        # correctness first, the auto-file licence is a later slice); several -> EMPTY + a note
+        # listing them (never first-wins); none -> empty. The key set drives the SAME ownership
+        # skips LIST fields use (mapping seed reclaim here, Stage 2 / 2.6 / 2.5b / 4.5 / hints
+        # below) so no OCR rung can overwrite or "repair" a decode. These keys are also kept OUT
+        # of the Stage-1 keyword scan: the human-readable digits under a bar must not become a
+        # keyword "read" that later disagrees with the decode. Empty when the flag is off or no
+        # decode ran (`barcodes is None`, e.g. --reextract renders no pages) -> byte-identical.
+        _barcode_field_keys = set()
+        if os.environ.get('BARCODE_FIELD', '0') != '0' and barcodes is not None:
+            _barcode_field_keys = {f.get('key') for f in (field_defs or [])
+                                   if f.get('key') and str(f.get('type') or '').lower() == 'barcode'}
+        self._barcode_field_keys = _barcode_field_keys
+        if _barcode_field_keys:
+            try:
+                from ocr.barcodes import candidates_for_field as _bc_cands
+                _bc_vals = _bc_cands(barcodes)
+            except Exception:
+                _bc_vals = []
+            for _bk in sorted(_barcode_field_keys):
+                if isinstance(results.get(_bk), dict):
+                    _old = results.pop(_bk)
+                    self.log(f"  Barcode field '{_bk}': reclaimed scalar {_old.get('method')} read")
+                if len(_bc_vals) == 1:
+                    results[_bk] = {"value": _bc_vals[0], "confidence": 100, "method": "barcode",
+                                    "validation_note": _BARCODE_CONFIRM_NOTE}
+                    self.log(f"  Stage 1.5: barcode field '{_bk}' <- '{_bc_vals[0]}' (decoded; confirm once)")
+                elif len(_bc_vals) > 1:
+                    results[_bk] = {"value": "", "confidence": 0, "method": "barcode_ambiguous",
+                                    "validation_note": _BARCODE_SEVERAL_NOTE.format(" · ".join(_bc_vals[:6]))}
+                    self.log(f"  Stage 1.5: barcode field '{_bk}' left EMPTY — {len(_bc_vals)} candidates")
+                elif barcodes:
+                    results[_bk] = {"value": "", "confidence": 0, "method": "barcode_unsupported",
+                                    "validation_note": _BARCODE_UNSUPPORTED_NOTE}
+                else:
+                    # The decode RAN and found no symbol: write an EMPTY row (no note — an absent
+                    # barcode must not hold the doc) so the field still renders and says so, instead
+                    # of vanishing (Chris r6 card 4: "no Barcode row, nothing said whether it looked").
+                    results[_bk] = {"value": "", "confidence": 0, "method": "barcode_none"}
+                if isinstance(results.get(_bk), dict):
+                    self._remember_candidates('1.5_barcode', {_bk: results[_bk]})
+                    if self._trace:
+                        self._t("barcode_field", field=_bk, value=results[_bk].get("value"),
+                                candidates=len(_bc_vals))
+        kw_results = keyword.extract_fields(ocr_text,
+                                            [k for k in field_keys if k not in _barcode_field_keys],
+                                            patterns_for_run,
                                             caption_vocab=_caption_vocab,
-                                            caption_guard_keys=_caption_guard_keys)
+                                            caption_guard_keys=_caption_guard_keys,
+                                            trace=self._t,
+                                            list_keys=_list_field_keys or None)
         # ── INPUT HYGIENE for name-like free-text keyword reads ── a keyword/label
         # capture has NO crop-path cleaning, so OCR edge junk ("--« Beaumont Care
         # Homes Ltd -") enters verbatim and — being the highest-authority source
@@ -2131,6 +7858,9 @@ class ExtractionEngine:
                             _kd['display_value'] = _kclean
         _pre_s1 = self._snap(results)
         self._remember_candidates('1_keyword', kw_results)
+        # Validation patterns for the taught-format-fail yield (the redesign judges by the HARD
+        # reference_code / strict-currency check — no per-supplier learned-format query needed).
+        _ff_vpats = self.patterns.get("validation_patterns") or {}
         # BUYER-ISSUED ISSUER GUARD (Oracle 2026-07-12) — drop a "Supplier/Vendor/Seller"-caption
         # supplier_name keyword read on a Purchase Order BEFORE it can become the resolved issuer
         # scope (see _suppress_buyer_seller_issuer). Runs AFTER _remember_candidates (C3) so the
@@ -2178,6 +7908,29 @@ class ExtractionEngine:
                 _blind_reg = (existing.get("method") or "").startswith("template_registration")
                 _kw_ok = (data.get("method") in ("keyword", "keyword_override")
                           and data.get("value") and (data.get("confidence") or 0) >= _KEYWORD_TRUST_FLOOR)
+                # A located taught DATE that OCR-misread into an IMPOSSIBLE calendar value must not win
+                # on authority over a valid, confident keyword date (see the TEMPLATE_DATE_INVALID_YIELD
+                # flag block). Yields to the keyword read but FLAGGED to Review (the note is the safety;
+                # Stage 4's clean-date floor makes the cap cosmetic). Own continue; method stays keyword
+                # (do NOT re-grant the taught shape-gate exemption). Env is the first conjunct so OFF is
+                # byte-identical and salvage_date runs only on the rare invalid-taught case.
+                if ((TEMPLATE_DATE_INVALID_YIELD or TEMPLATE_DATE_FUTURE_YIELD)
+                        and key in date_field_keys and _kw_ok):
+                    _reason = _invalid_taught_date_yields(existing.get("value"), data.get("value"))
+                    if ((_reason == 'impossible' and TEMPLATE_DATE_INVALID_YIELD)
+                            or (_reason == 'future' and TEMPLATE_DATE_FUTURE_YIELD)):
+                        # Reason-keyed note: accurate per case (an impossible date is NOT "far in the
+                        # future" and vice-versa) + NAMES the dropped taught value so a correct-but-far-
+                        # future taught date stays operator-recoverable.
+                        _why = ("isn't a valid calendar date" if _reason == 'impossible'
+                                else "is far in the future (likely a mis-scanned year)")
+                        results[key] = {**data,
+                                        "confidence": min((data.get("confidence") or 0), _CONFLICT_CAP),
+                                        "validation_note": (
+                                            f"Kept the read value “{data.get('value')}” — the taught "
+                                            f"date box read “{existing.get('value')}”, which {_why}. "
+                                            f"Please check.")}
+                        continue
                 if (_blind_reg and _kw_ok
                         and _cmp_norm(data.get("value")) != _cmp_norm(existing.get("value"))
                         and (data.get("confidence") or 0) > (existing.get("confidence") or 0)):
@@ -2187,6 +7940,35 @@ class ExtractionEngine:
                                         f"Kept the read value “{data.get('value')}” — a taught "
                                         f"mapping read “{existing.get('value')}” at a registered "
                                         f"position that couldn't be confirmed by its label. Please check.")}
+                # TEMPLATE_FORMAT_FAIL_YIELD (gary REDESIGN 2026-08-09, DEFAULT OFF): a taught
+                # template_mapping read that FAILS this field's FORMAT (landed on the wrong row /
+                # adjacent field / clipped-to-junk / garbled — po_ref "Account", total "L922.14") must
+                # not keep authoritative precedence over a confident, format-PASSING, DISAGREEING keyword
+                # read. Yields to keyword + cap + review note (never silent). Scoped to STRUCTURED keys:
+                # dates own the flag above; name-like free-text is excluded (names vary legitimately). A
+                # format-VALID taught read passes _stage05_format_fails → never fires → teaching gains
+                # untouched. A clipped-but-code-shaped value ('19979') is format-VALID → NOT swapped
+                # (read-layer residual, out of scope). The helper judges by the HARD reference_code /
+                # strict-currency pattern — the challenger side is re-checked so garbage keyword reads
+                # ('The'/'Tel 01632…') can't be adopted (the old ref regression).
+                if (TEMPLATE_FORMAT_FAIL_YIELD
+                        and (existing.get("method") or "").startswith("template_mapping")
+                        and key not in date_field_keys
+                        and not value_quality.is_name_like_field(key)
+                        and data.get("method") in ("keyword", "keyword_override")
+                        and data.get("value")
+                        and (data.get("confidence") or 0) >= _FORMAT_FAIL_KW_FLOOR
+                        and _cmp_norm(data.get("value")) != _cmp_norm(existing.get("value"))):
+                    _ff_vt = _kw_types.get(key)
+                    if (_stage05_format_fails(existing.get("value"), key, _ff_vt, field_patterns, _ff_vpats)
+                            and not _stage05_format_fails(data.get("value"), key, _ff_vt, field_patterns, _ff_vpats)):
+                        results[key] = {**data,
+                                        "confidence": min((data.get("confidence") or 0), _CONFLICT_CAP),
+                                        "validation_note": (
+                                            f"Kept the read value “{data.get('value')}” — a taught "
+                                            f"mapping read “{existing.get('value')}”, which doesn't match "
+                                            f"this field's expected format. Please check.")}
+                        continue
                 continue
             if (key in date_field_keys and existing
                     and validator.parse_date(existing.get("value")) is not None
@@ -2211,7 +7993,9 @@ class ExtractionEngine:
                     or data.get("confidence", 0) > existing.get("confidence", 0)):
                 results[key] = data
         self._trace_stage('1_keyword', kw_results, _pre_s1, results)
-        found = len([v for v in results.values() if v.get("value")])
+        # Stage 1 always runs — every-step ladder outcome per configured field.
+        self._trace_steps('1_keyword', True, None, kw_results, _pre_s1, results, field_keys)
+        found = _count_valued_fields(results)
         self.log(f"  Stage 1: {found}/{len(field_keys)} fields found")
 
         # Snapshot the supplier identity AS OF Stage-2 time: the Stage-2.6 late-anchor
@@ -2220,7 +8004,14 @@ class ExtractionEngine:
         # identity is a different, riskier class and stays deliberately out of scope.
         _s2_supplier = supplier_name
 
-        # ── Stage 2: Anchor extraction (always runs) ──────────────────────────
+        # SEAM 3a: no anchors in scope → the whole Stage-2 block below is skipped;
+        # emit its skip rows FROM OUTSIDE the gate so Stage 2 is visible on the
+        # ladder (the exhibit-A "green dots, no anchor rows" case). _trace_steps
+        # self-guards on --trace, so this is a no-op off the trace path.
+        if not anchors:
+            self._trace_steps('2_anchor', False, self._STEP_SKIP_NO_ANCHORS,
+                              {}, {}, results, field_keys)
+        # ── Stage 2: Anchor extraction ────────────────────────────────────────
         if anchors:
             self.log("  Stage 2: anchor extraction…")
             # "Register, then read" for Stage 2: fit ONE page-0 transform from the
@@ -2241,9 +8032,30 @@ class ExtractionEngine:
                 else:
                     try:
                         anchor_page_transform = template_mapper._fit_page_transform(
-                            page_images[0], _alm, template_mapper._ocr_lines)
+                            crop_pages[0], _alm, template_mapper._ocr_lines)
                     except Exception as e:
                         self.log(f"  Stage 2: landmark fit skipped ({e})", "warn")
+                    # S-D VACUOUS-FIT GATE (Oracle-authorized cheap gate, evidence-met 2026-08-01;
+                    # kill REG_MIN_INLIERS_GATE=0). A similarity fit surviving on n_inliers <= 2 is
+                    # EXACTLY DETERMINED — residual 0.0000 BY CONSTRUCTION (registration.py: at
+                    # n <= sample the fit is scored on the points that produced it), so it carries
+                    # ZERO verification. The S-D audit measured the class live: ~43% of the docket
+                    # fits collapsed to 2 inliers (5 landmarks LOCATED, 2-3 surviving = the located
+                    # correspondences DISAGREE — a landmark matched a wrong instance of a repeated
+                    # word — and RANSAC kept an arbitrary self-consistent pair). Refuse the
+                    # transform -> the rung falls through exactly as a failed fit always has
+                    # (keyword/review — fail toward review, never a blind mapped crop).
+                    # 2026-08-06: the condition was INLINED here and nowhere else, so the sibling
+                    # Stage-0.5 call site consumed exactly the fits this refused (the Castellan
+                    # incident). It now lives ONCE in registration.is_unfalsifiable — same env var,
+                    # same default, same semantics — and both call sites consume that. Do not
+                    # re-inline it. NOTE: _fit_page_transform now applies the same predicate
+                    # internally, so this is a redundant second net rather than the only guard;
+                    # it is kept for the log line and as belt-and-braces.
+                    if registration.is_unfalsifiable(anchor_page_transform):
+                        self.log(f"  Stage 2: registration REFUSED — {anchor_page_transform.n_inliers} "
+                                 f"inlier(s) is an unverified exact fit (vacuous-fit gate)")
+                        anchor_page_transform = None
                     if anchor_page_transform is not None:
                         self.log(f"  Stage 2: page registered "
                                  f"({anchor_page_transform.n_inliers}/{len(_alm)} landmarks, "
@@ -2251,12 +8063,19 @@ class ExtractionEngine:
                     else:
                         self.log(f"  Stage 2: registration fit failed "
                                  f"({len(_alm)} landmarks, too few/poor matches)")
-            # Dev-trace only: record what each crop rung READ and which gate
-            # dropped it, so a "field not pulled in" can be diagnosed (the winners-
-            # only candidate trace can't show a rejected read). No-op without --trace.
-            _on_reject = ((lambda fk, st, v, r: self._t(
-                "anchor_reject", field=fk, method=st, value=v, reason=r))
-                if self._trace else None)
+            # ALWAYS-ON rejection recorder (slice-3 Oracle B1, 2026-08-13): production keeps the
+            # per-field rejected reads in self._rejected_reads — the name-note demoter's D1 leg
+            # (positive evidence the dissent was DISQUALIFIED, not outvoted) and the census
+            # retro-audit both read it. The trace EVENT still fires only under --trace (unchanged
+            # dev behaviour). Thread-safe under Stage-2b pooling: list.append is GIL-atomic and
+            # field-key groups are disjoint. The Stage-2b parallel predicate must NOT key on this
+            # closure being set — it takes force_serial below instead (anchor.py Stage 2b).
+            def _on_reject(fk, st, v, r, cap=None):
+                self._rejected_reads.setdefault(fk, []).append(
+                    {"method": st, "value": v, "reason": r})
+                if self._trace:
+                    self._t("anchor_reject", field=fk, method=st, value=v,
+                            reason=r, caption=cap)
             # Display labels of the IDENTITY fields ("Document Issuer") — an identity anchor whose
             # CAPTURED label IS one of these is a teaching artifact (the field's own display name,
             # never a printed caption), so it can only be a blind cross-supplier positional SWEEP,
@@ -2266,7 +8085,7 @@ class ExtractionEngine:
             _identity_labels.discard('')
             anchor_results = anchor.extract_with_anchors(
                 ocr_text, anchors, supplier_name, document_slug,
-                page_images=page_images,
+                page_images=crop_pages,
                 field_patterns=field_patterns,
                 validation_patterns=self.patterns.get("validation_patterns", {}),
                 slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
@@ -2277,10 +8096,19 @@ class ExtractionEngine:
                 text_field_keys=text_field_keys,
                 multiline_lookup=self._make_multiline_lookup(supplier_name, document_slug),
                 identity_labels=_identity_labels,
+                force_serial=bool(self._trace),
             )
             _pre_s2 = self._snap(results)
             self._remember_candidates('2_anchor', anchor_results)
             for key, data in anchor_results.items():
+                # LIST ownership (2026-08-11): a list-typed field belongs to the caption collect
+                # scan alone — one anchor box structurally cannot hold N occurrences, and the
+                # live serials teach committed its own caption 23 times proving what a scalar
+                # writer does to a list field. Empty stays empty -> review (fail-toward-review).
+                if key in getattr(self, '_list_field_keys', ()):
+                    continue
+                if key in getattr(self, '_barcode_field_keys', ()):
+                    continue                      # BARCODE ownership: the decode alone writes these
                 existing = results.get(key)
                 # Protect an admin-LOCKED fixed value from any NON-authoritative anchor
                 # read (incl. the supplier-identity rescue + credibility-gate paths
@@ -2301,6 +8129,53 @@ class ExtractionEngine:
                     if decision == "take":
                         results[key] = data
                         continue
+                # ── CROSS-CHECK KEYWORD CORROBORATION CLEAR (E2; kill CROSSCHECK_KEYWORD_CLEAR) ──
+                # anchor.py's authoritative-crop cross-check flips a crop-vs-fullpage DISAGREEMENT to
+                # the full-page/inline value, caps it 70 + notes "please verify" (a review event) —
+                # and via Tier-A that FLAGGED read wins over the clean keyword incumbent, so the doc
+                # holds even though the value is right (a taught 2x crop that spanned two rows on a
+                # skewed scan is a framing artifact, not a real second read of the field). When an
+                # INDEPENDENT Stage-1 keyword/override read normalises-equal to the flipped value,
+                # oscar's "two independent reads agree" bar IS met: restore the field to a
+                # corroborated confidence (>=88 clears the critical-field floor; the keyword's own
+                # 85 would itself still be held) and drop the note, so the correct value files
+                # instead of being permanently held. Value UNCHANGED (still the located inline read)
+                # -> accuracy byte-identical; only the flag/confidence move. No peer, or a
+                # DISAGREEING peer -> unchanged -> today's flag stands (fail-toward-review).
+                if (os.environ.get("CROSSCHECK_KEYWORD_CLEAR", "1") != "0"
+                        and _crosscheck_keyword_corroborated(data, existing, key in date_field_keys)):
+                    # Represent the surviving read HONESTLY as the located inline harvest it is
+                    # (method 'anchor_inline'), which ALSO unhooks the 70-cap + "please verify" note
+                    # that key off 'anchor_crop_crosscheck' so nothing downstream re-derives them.
+                    data = {**data,
+                            "method": "anchor_inline",
+                            "confidence": max(int(data.get("confidence") or 0), _CROSSCHECK_CORROB_CONF)}
+                    for _k in ("validation_note", "was_corrected", "corrected_to"):
+                        data.pop(_k, None)
+                    results[key] = data
+                    continue
+                # ── NAME-GUARD KEYWORD CLEAR (Oracle SEND-BACK redirect 2026-07-24; kill
+                # NAME_GUARD_KEYWORD_CLEAR) ── anchor.py's :586 name-guard note KEEPS a clean rigid
+                # name but flags it "caption disagreed with the taught position" when the RELOCATE
+                # landed on off-page junk (e.g. "wines"). That note is the ONLY backstop for a STALE-
+                # but-clean rigid name, so it CANNOT be dropped on a raw-OCR witness (Oracle: a same-
+                # supplier drift would then file silently wrong). But when an INDEPENDENT Stage-1
+                # keyword read AGREES with the KEPT value, the stale residual is excluded BY
+                # CONSTRUCTION (a stale name => the keyword disagrees) and the two-independent-reads bar
+                # is met: drop the phantom note + take the higher confidence. No keyword / a disagreeing
+                # keyword => note stands (fail-toward-review). VALUE UNCHANGED. The marker is set ONLY at
+                # the :586 site (anchor.py), so the other _relocate_guard_note sites keep flagging.
+                if isinstance(data, dict) and data.get("_name_guard_clearable"):
+                    _ng_clears = _name_guard_keyword_clears(data, existing, key)
+                    data = {k: v for k, v in data.items() if k != "_name_guard_clearable"}  # strip marker always
+                    if _ng_clears:
+                        for _k in ("validation_note", "was_corrected", "corrected_to"):
+                            data.pop(_k, None)
+                        data["confidence"] = max(int(data.get("confidence") or 0),
+                                                 int(existing.get("confidence") or 0))
+                        results[key] = data
+                        continue
+                    # not corroborated: marker stripped, note kept -> falls through; Tier-A holds it
                 # ── Stage 2 credibility gate (before any override) ───────────
                 # A Stage 2 candidate must not DISPLACE an existing incumbent
                 # unless it is credible for the field's class. Reusable, shape/
@@ -2385,8 +8260,62 @@ class ExtractionEngine:
                     _cpats = (self.patterns.get("validation_patterns") or {}).get(_vt)
                     if _cpats:
                         _cov_ok = anchor._pattern_coverage(data.get("value"), _cpats) >= 0.8
-                if data.get("authoritative") and data.get("value") and data.get("located", True) and _ocr_clean and _cov_ok:
-                    results[key] = data
+                # Fix #2 (Oracle 2026-08-28 SIGN-OFF-W/COND): an AUTHORITATIVE date anchor whose
+                # value is IMPLAUSIBLE against a valid located competitor (a date-shaped confusable
+                # reference read as the date) must NOT win Tier-A outright — fall through to the
+                # contest below, where the credible mapping wins. Reuses the competitor-coupled
+                # _invalid_taught_date_yields (keeps Lever Z's coupling); scoped to the STRUCTURAL
+                # date role so a custom warranty/contract-end date that legitimately reads years
+                # out is untouched. DARK (TIER_A_DATE_PLAUSIBILITY); the Tier-A condition line below
+                # stays byte-identical (pinned by test_taught_date_invalid_yield.py).
+                _tier_a_date_block = (TIER_A_DATE_PLAUSIBILITY and key in date_field_keys
+                                      and data.get("authoritative") and data.get("value")
+                                      and existing and existing.get("value")
+                                      and _invalid_taught_date_yields(data.get("value"), existing.get("value")))
+                if not _tier_a_date_block:
+                    if data.get("authoritative") and data.get("value") and data.get("located", True) and _ocr_clean and _cov_ok:
+                        results[key] = data
+                        continue
+                # ── KEYWORD-ANCHOR CORROBORATION LIFT (fork A; Oracle SIGN-OFF-W/CONDITIONS
+                # 2026-07-23; kill KEYWORD_ANCHOR_CORROB) ── The merge used to DISCARD agreement:
+                # an anchor-family read that normalises-equal to the keyword incumbent but loses
+                # the contest vanished, so the surviving read carried only its SOLO confidence —
+                # and the seeded/override keyword path is capped at 85 BY DESIGN (keyword.py:344,
+                # below the 88 critical floor, fail-toward-review), a one-way valve whose only
+                # escape (the Stage-4.5 support boost) is structurally unavailable at first
+                # contact (formats load at spawn — a new supplier's first batch can't corroborate
+                # itself) and lands 1 short at support 3-4 (+2 → 87). When TWO differently-located
+                # reads of a FILING-CRITICAL field agree, the E2 bar ("two independent reads
+                # agree") is met: lift the surviving keyword read to the SAME corroborated
+                # confidence E2 uses (>= the 88 floor). Value and method are KEPT (the keyword
+                # value is the cleaned/suffix-stripped one; method ripples through every
+                # method=='keyword' consumer); no note is added or removed (a noted incumbent
+                # never reaches here — the flagged gate owns it). Witnesses: located, un-noted
+                # anchor_inline / anchor_crop / anchor_crop_relocated only — anchor_registration
+                # is blind geometry (located-by-fiat, an independence fraud), the bare 'anchor'
+                # text-fallback is the SAME full-page line read the keyword pass makes (same
+                # caption, same line — no independence), and anchor_crop_crosscheck is a
+                # DISAGREEMENT event (E2 owns it). The peer already passed the Stage-2
+                # credibility gates above. Placement (Oracle C5): AFTER Tier-A — an AUTHORITATIVE
+                # agreeing peer wins outright above and never reaches this lift; if it sits <88
+                # itself the doc still holds, by design (the recovered/capped classes' escapes
+                # are born-digital exact-text + the support boost, anchor.py:1247-1275 — do NOT
+                # extend this lift to them, pinned). Lone/uncorroborated reads keep holding.
+                if (os.environ.get("KEYWORD_ANCHOR_CORROB", "1") != "0"
+                        and existing
+                        and existing.get("method") in ("keyword", "keyword_override")
+                        and int(existing.get("confidence") or 0) < 88
+                        and not existing.get("validation_note")
+                        and (key in date_field_keys or _is_ref_field(key))
+                        and data.get("method") in ("anchor_inline", "anchor_crop", "anchor_crop_relocated")
+                        and data.get("located", True)
+                        and not data.get("validation_note")
+                        and data.get("value")
+                        and _values_normalise_equal(data.get("value"), existing.get("value"),
+                                                    key in date_field_keys)):
+                    results[key] = {**existing,
+                                    "confidence": max(int(existing.get("confidence") or 0),
+                                                      _CROSSCHECK_CORROB_CONF)}
                     continue
                 # Precedence: a deliberately DRAWN source outranks an AUTO-LEARNED
                 # anchor. A hand-drawn Stage 0.5 mapping (_STAGE05_LOCATED_METHODS)
@@ -2399,6 +8328,41 @@ class ExtractionEngine:
                 # shadows a freshly drawn mapping / override on every reprocess.
                 # Two DELIBERATE sources (a drawn mapping and an authoritative
                 # anchor) still contend on confidence below, as before.
+                # ── Z: ANCHOR-LOOP DATE-YIELD (Lever Z, 2026-08-20, gary → Oracle SIGN-OFF-W/COND).
+                # SIBLING of the Stage-1 kw leg (~:7225): a LOCATED taught DATE that OCR-misread into an
+                # IMPOSSIBLE (or, under the FUTURE flag, far-future) unsalvageable value must not keep
+                # authority over a confident, INDEPENDENT, format-VALID anchor read of the same field.
+                # The kw leg covers the keyword challenger; THIS covers the anchor path, which otherwise
+                # discards the correct anchor unconditionally at the drawn-source guard just below (the
+                # despatch_date case: mapping 'July 10, 202' beat anchor 'July 10, 2026'@90). Fires
+                # AFTER Tier-A (an authoritative ⊕ anchor already won outright above) and BEFORE that
+                # guard. Witness set = the SAME genuinely-located independent readers KEYWORD_ANCHOR_CORROB
+                # trusts (anchor_registration EXCLUDED — blind geometry). Yields flagged + capped to
+                # Review, never silent; value FIXED to the anchor read (the predicate guarantees a valid
+                # date, so a format-failing challenger is never adopted). REUSES the kw leg's flag(s) —
+                # one flip arms BOTH loops (Oracle Z-2, pinned in test_taught_date_invalid_yield.py).
+                # OFF (default) is byte-identical: the env is the first conjunct.
+                if ((TEMPLATE_DATE_INVALID_YIELD or TEMPLATE_DATE_FUTURE_YIELD)
+                        and key in date_field_keys
+                        and existing and _is_stage05_located(existing.get("method"))
+                        and not data.get("authoritative")
+                        and data.get("method") in ("anchor_inline", "anchor_crop", "anchor_crop_relocated")
+                        and data.get("located", True)
+                        and data.get("value")
+                        and int(data.get("confidence") or 0) >= _KEYWORD_TRUST_FLOOR
+                        and _cmp_norm(data.get("value")) != _cmp_norm(existing.get("value"))):
+                    _reason_z = _invalid_taught_date_yields(existing.get("value"), data.get("value"))
+                    if ((_reason_z == 'impossible' and TEMPLATE_DATE_INVALID_YIELD)
+                            or (_reason_z == 'future' and TEMPLATE_DATE_FUTURE_YIELD)):
+                        _why_z = ("isn't a valid calendar date" if _reason_z == 'impossible'
+                                  else "is far in the future (likely a mis-scanned year)")
+                        results[key] = {**data,
+                                        "confidence": min(int(data.get("confidence") or 0), _CONFLICT_CAP),
+                                        "validation_note": (
+                                            f"Kept the read value “{data.get('value')}” — the taught "
+                                            f"date box read “{existing.get('value')}”, which {_why_z}. "
+                                            f"Please check.")}
+                        continue
                 if (existing and not data.get("authoritative")
                         and (existing.get("method") == "keyword_override"
                              or _is_stage05_located(existing.get("method")))):
@@ -2435,10 +8399,43 @@ class ExtractionEngine:
                                       and existing
                                       and existing.get("method") != "anchor_crop"
                                       and not _is_stage05_located(existing.get("method")))
+                # G2 (VETO-FALLTHROUGH corroboration guard — gary design + Oracle SIGN-OFF-W/COND
+                # 2026-07-26). is_taught_override has NO confidence comparison BY DESIGN (a fresh ~85
+                # taught anchor must correct a wrong 88-93 keyword hit) — but on a FALL-THROUGH-matched
+                # doc that doctrine's asymmetry vanishes: OFF-baseline these docs had no template ⇒ no
+                # anchors ⇒ the keyword stood, so a lower-confidence AUTO-tier crop displacing a
+                # higher-confidence keyword is a measured regression (#456: crop '4/10/2026'@85
+                # silently displaced the CORRECT keyword '14/10/2026'@93). Scope: fall-through docs
+                # ONLY (global G2 = doctrine inversion, ruled out); authoritative (⊕-taught) reads
+                # still displace (F8); keyword_override/Stage-0.5 already protected above. Mirror of
+                # the KEYWORD_ANCHOR_CORROB lift: agree → lift; disagree at inverted confidence → keep
+                # the keyword + note (review). C6 (agree-displace-degrade): an AGREEING crop at
+                # inverted confidence keeps the incumbent too — pure value/method/conf retention, NO
+                # note (else agreement produces a WORSE outcome than disagreement: conf 93→85 dropped
+                # a clean doc below the 88 critical floor). NEVER sets _needs_review here (mid-Stage-2
+                # `_` injection is the 2026-07-22 crash class); the persisted note alone holds.
+                if (is_taught_override
+                        and getattr(self, '_veto_fallthrough', False)
+                        and not data.get("authoritative")
+                        and existing.get("method") == "keyword"
+                        and (key in date_field_keys or _is_ref_field(key))
+                        and int(existing.get("confidence") or 0) >= int(data.get("confidence") or 0)
+                        and data.get("value") and existing.get("value")):
+                    if _values_normalise_equal(data.get("value"), existing.get("value"),
+                                               key in date_field_keys):
+                        continue                      # C6: identical value — keep the stronger incumbent
+                    _g2n = (f"Another read of this field disagreed ('{data.get('value')}' vs "
+                            f"'{existing.get('value')}') — please check it against the document "
+                            f"before filing.")
+                    _old = str(existing.get("validation_note") or "").strip()
+                    existing["validation_note"] = (_old + " " + _g2n) if _old else _g2n
+                    continue                          # keep the higher-confidence keyword read
                 if not existing or is_taught_override or data["confidence"] > existing["confidence"]:
                     results[key] = data
             self._trace_stage('2_anchor', anchor_results, _pre_s2, results)
-            new_found = len([v for v in results.values() if v.get("value")])
+            self._trace_steps('2_anchor', True, None, anchor_results,
+                              _pre_s2, results, field_keys)
+            new_found = _count_valued_fields(results)
             self.log(f"  Stage 2: +{new_found - found} fields from anchors")
             found = new_found
 
@@ -2476,6 +8473,16 @@ class ExtractionEngine:
         # artifact anchor contradicts a confirmed template identity.
         _sn = results.get('supplier_name')
         _tmpl_sup = _genuine_template_supplier(matched_tmpl)
+        # POISON GUARD (Oracle 2026-07-14): the same dominant_supplier this override trusts can be
+        # POISONED — templates 4/5/7 are NAMED 'Cascade Water Systems' but learned 'Northgate Textiles'
+        # (Northgate docs confirmed under Cascade-named templates via the logo collision). Without this,
+        # a Cascade docket's CORRECT 'Cascade' read would be overridden to the poisoned 'Northgate'@90
+        # UN-NOTED (auto-fileable → silent wrong folder), and the branding backstop is itself poisoned.
+        # Require the template identity's own NAME to appear on THIS page (value-corroboration) before it
+        # may override — the SAME gate the fill uses. Kill switch TEMPLATE_PRECEDENCE_CORROBORATE (on).
+        if (_tmpl_sup and os.environ.get("TEMPLATE_PRECEDENCE_CORROBORATE", "1") != "0"
+                and not _template_identity_corroborated(_tmpl_sup, ocr_text)):
+            _tmpl_sup = None
         if _sn and _sn.get('value') and _tmpl_sup:
             def _ns(v):
                 return keyword.normalize_supplier_name(v or '').strip().lower()
@@ -2494,6 +8501,74 @@ class ExtractionEngine:
                         "confidence": 90,
                         "method":     "template_identity",
                     }
+
+        # IDENTITY POSITIONAL-READ DROP (the cross-supplier issuer-bleed fix) — see the method. Fires
+        # AFTER the template-supplier-precedence override above (a corroborated template identity has
+        # already replaced the artifact read) and BEFORE resolved_supplier is read below, so a blanked
+        # issuer falls to Stage 2.5a hint recovery / logo / keyword, or empty→review.
+        self._drop_positional_identity_read(results, field_defs)
+
+        # OPERATOR PIN is authoritative through the FINAL re-resolve (Oracle C4): a later stage may have
+        # overwritten results['supplier_name'] (a keyword/anchor read), but the operator DECIDED the
+        # issuer — re-assert the pin as the final identity (review-bound by the operator_pin note).
+        # Kill switch SUPPLIER_PIN; off -> byte-identical.
+        if pinned_supplier and os.environ.get('SUPPLIER_PIN', '1') != '0':
+            # ── SELF-DISCHARGE (SUPPLIER_PIN_SELF_DISCHARGE, DEFAULT OFF; gary → Oracle
+            # SIGN-OFF-W/COND 2026-08-12). A pin whose value the pipeline now reads INDEPENDENTLY
+            # is redundant: the operator said X, the scope has since learned X, and holding the doc
+            # for a human to re-say X serves nobody (the batch-applied ripple obligation is
+            # batch-released). Discharge ⇒ keep the NATURAL row — earned confidence, natural
+            # method, its OWN notes never stripped — and signal JS to clear documents.supplier_pin.
+            # Disagree / no qualifying witness ⇒ today's overwrite verbatim (the case pins exist
+            # for). What still holds a discharged doc: reprocess NEVER auto-files (_maybeAutoFile
+            # is import-path only), natural-read notes survive, and every exit channel runs the
+            # full trust gates. Witness ALLOWLIST is page/layout-evidence method families;
+            # keyword_override is EXCLUDED pending a page-hit proof (it can consult the hint bank —
+            # memory echoing memory is not corroboration, the 08-11 corroborated-auto-file rule);
+            # 'fixed'/doctype-fixed is EXCLUDED (config, not page evidence) — both PINNED in
+            # tests/test_supplier_pin.py. logo/hint families are listed for the overwrite path but
+            # are structurally unreachable under a pin (their fill blocks gate on empty) — kept
+            # for honesty, do not "make them work". HONESTY (Oracle): the natural row's notes were
+            # computed with the pin already in accepted_issuers, so a branding-conflict note a
+            # pin-free run would carry can be absent — acceptable because discharge requires the
+            # natural read to EQUAL the operator-approved name. Comparator: _accept_norm ∘
+            # normalize_supplier_name both sides, EXACT — no fuzzy/subset tier ("Harrowgate
+            # Timber" must never discharge a "Harrowgate Timber Supplies Ltd" pin; pinned).
+            _discharged = False
+            if os.environ.get('SUPPLIER_PIN_SELF_DISCHARGE', '0') != '0':
+                _nat = results.get("supplier_name")
+                if isinstance(_nat, dict) and str(_nat.get("method") or "") == "operator_pin":
+                    _nat = getattr(self, '_pre_pin_supplier', None)
+                _ALLOW = ("template_fixed", "template_identity", "template", "logo",
+                          "keyword", "anchor", "letterhead", "hint_text_match")
+                _m = str((_nat or {}).get("method") or "") if isinstance(_nat, dict) else ""
+                _ok_m = (_m != "keyword_override"
+                         and any(_m == a or _m.startswith(a + "_") or
+                                 (a in ("template", "anchor", "letterhead") and _m.startswith(a))
+                                 for a in _ALLOW))
+                if isinstance(_nat, dict) and _nat.get("value") and _ok_m:
+                    try:
+                        _norm = lambda v: self._accept_norm(keyword.normalize_supplier_name(str(v)))
+                        if _norm(_nat["value"]) == _norm(pinned_supplier):
+                            results["supplier_name"] = dict(_nat)
+                            results["_supplier_pin_discharged"] = {
+                                "pin": pinned_supplier,
+                                "value": str(_nat.get("value")),
+                                "method": _m,
+                            }
+                            _discharged = True
+                            self.log(f"  Operator pin DISCHARGED: natural read '{_nat.get('value')}' "
+                                     f"({_m}) independently equals the pin — pin cleared, earned "
+                                     f"confidence kept")
+                    except Exception:
+                        _discharged = False
+            if not _discharged:
+                results["supplier_name"] = {
+                    "value":           pinned_supplier,
+                    "confidence":      75,
+                    "method":          "operator_pin",
+                    "validation_note": "Supplier set by you — confirm to file.",
+                }
 
         resolved_supplier = (results.get('supplier_name') or {}).get('value') or None
         if resolved_supplier and resolved_supplier != supplier_name:
@@ -2528,40 +8603,246 @@ class ExtractionEngine:
         # a supplier" and skipped this recovery entirely — letting the fragment
         # win. Now an implausible incumbent is treated like no incumbent, so the
         # scan can recover the real, plausible name from confirmed hints.
-        if not keyword._is_plausible_supplier_name(supplier_name) and hints:
-            ocr_top = ocr_text[:600].lower()
+        # TEXT-FIRST ISSUER GRADUATION (gary-designed, Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-15):
+        # a review-bound template_identity FILL (@70 + "inferred from previously filed documents"
+        # note) is graduated to the confident, un-noted hint_text_match resolution 2.5a would ITSELF
+        # produce for a plain-text-wordmark supplier — when the SAME value is corroborated by a
+        # usage>=3 confirmed hint present in the issuer band.
+        # ⚠ THAT SENTENCE WAS NOT TRUE UNTIL 2026-07-20 (Oracle C2). The corroboration window was a
+        # raw ocr_text[:600] slice, which on a real invoice contains the RECIPIENT block — so a
+        # template-inferred supplier that is actually the CUSTOMER on this page could corroborate
+        # itself from under "Bill To" and SHED ITS REVIEW NOTE. That matters more than a wrong
+        # value: graduation replaces a noted fill with an UN-noted one, and trust.js refuses
+        # auto-file on any non-empty note BEFORE the floor comparison — so shedding the note is
+        # what removes the human checkpoint. `_issuer_hint_band` is what finally makes the sentence
+        # above describe the code. NOTE the honest limit: it truncates at a RECIPIENT MARKER, so a
+        # marker-free page (a "To:"-first or uncaptioned-address layout) still gets the legacy
+        # window — the hardest layouts are NOT closed by this.
+        # The logo misses on these (its region
+        # crop encodes the variable Bill-To block — Phillip), so the fill fires and BLOCKS this
+        # stricter path (the fill's value is plausible, so the gate below skipped it). The graduated
+        # set is a STRICT SUBSET of 2.5a's already-trusted un-noted set (2.5a's bar PLUS whole-page
+        # template corroboration PLUS value==V no-swap), so it drops no safety the un-noted path
+        # doesn't already accept; the post-2.5a guard suite (branding/identity/type-ambiguity/
+        # wordness/recipient-caption) re-runs on the un-noted value. Value is FIXED to V — it can
+        # NEVER graduate a DIFFERENT supplier. Kill switch env TEMPLATE_IDENTITY_GRADUATE (default
+        # ON). See tests/test_template_identity_graduate.py.
+        # Eligible incumbent for text-first graduation: a review-bound template_identity fill, ONLY
+        # when the kill switch is on. None on the original implausible-incumbent path (unchanged).
+        _incumbent = None
+        if os.environ.get("TEMPLATE_IDENTITY_GRADUATE", "1") != "0":
+            _incumbent = self._noted_template_fill_value(results.get("supplier_name"))
+        if hints and (not keyword._is_plausible_supplier_name(supplier_name) or _incumbent is not None):
+            ocr_top = self._issuer_hint_band(ocr_text)
             # C1 (Oracle): if the buyer-issued guard just dropped a vendor caption, Stage 2.5a must
             # not silently re-adopt that same value from a stored hint (an install that both ORDERS
             # FROM and is INVOICED BY "Sandpiper" would have it as a supplier_name hint, and a
-            # "Supplier:" caption sits near the top) — that would fill the issuer with the vendor and
-            # flip the doc out of review. A DIFFERENT true-issuer hint is still recoverable.
+            # "Supplier:" caption sits near the top). A DIFFERENT true-issuer hint is still recoverable.
             _suppressed_norm = self._accept_norm(_suppressed_issuer or "")
-            best_hint = None
-            best_usage = 0
-            for h in hints:
-                if h.get("field_key") != "supplier_name":
-                    continue
-                if (h.get("usage_count") or 0) < 3:
-                    continue
-                val = (h.get("hint_value") or "").strip()
-                # Only a PLAUSIBLE hint may replace the incumbent — never swap one
-                # implausible fragment for another.
-                if not keyword._is_plausible_supplier_name(val):
-                    continue
-                if _suppressed_norm and self._accept_norm(val) == _suppressed_norm:
-                    continue   # C1: never re-adopt the just-suppressed vendor caption
-                if val and val.lower() in ocr_top:
-                    if (h.get("usage_count") or 0) > best_usage:
-                        best_hint  = val
-                        best_usage = h.get("usage_count") or 0
-            if best_hint:
+            # GRADUATION no-swap: when firing off a noted fill (_incumbent set), ONLY a hint confirming
+            # that value V may qualify — a different-supplier hint, even higher-usage, can never win.
+            _pick = self._supplier_hint_upgrade(_incumbent, hints, ocr_top, _suppressed_norm)
+            if _pick:
+                best_hint, best_usage = _pick
                 supplier_name = best_hint
                 results["supplier_name"] = {
                     "value":      best_hint,
                     "confidence": min(85, 60 + best_usage * 2),
                     "method":     "hint_text_match",
                 }
-                self.log(f"  Stage 2.5: supplier '{best_hint}' identified from text scan")
+                self.log(f"  Stage 2.5: supplier '{best_hint}' identified from text scan"
+                         f"{' (graduated from a review-bound template_identity fill)' if _incumbent else ''}")
+            elif _incumbent is None and os.environ.get("ISSUER_HINT_BAND", "1") != "0":
+                # FAIL TOWARD REVIEW (Oracle C1, 2026-07-20). This branch exists ONLY because the
+                # band narrowing above can now suppress a match the legacy window would have made.
+                #
+                # Without it the narrowing fails toward a SILENT WRONG VALUE, not toward review:
+                # there is no else here, so `results['supplier_name']` keeps whatever it had — and
+                # on THIS arm (`_incumbent is None`) the incumbent is by definition IMPLAUSIBLE,
+                # the "stale template/anchor seed of an implausible short fragment ('IN')" this
+                # stage exists to rescue. Suppressing the rescue would leave 'IN' standing as the
+                # filing folder and the learning scope, unnoted. Nothing downstream blanks it.
+                #
+                # DELTA-SCOPED on purpose: it fires only where the legacy slice WOULD have matched
+                # and the band did not, so a document where 2.5a declines today for any other
+                # reason is completely unaffected.
+                _legacy = (ocr_text or "")[:600].lower()
+                if _legacy != ocr_top and self._supplier_hint_upgrade(None, hints, _legacy, _suppressed_norm):
+                    results["supplier_name"] = {
+                        "value":           None,
+                        "confidence":      0,
+                        "method":          "issuer_band_withheld",
+                        "validation_note": "A known supplier's name appears on this page, but not in "
+                                           "the letterhead area, so it wasn't trusted as the issuer. "
+                                           "Please confirm who issued this document.",
+                    }
+                    supplier_name = None
+                    self.log("  Stage 2.5: a known supplier name matched OUTSIDE the issuer band "
+                             "— withheld and routed to review rather than adopted")
+
+        # ── S1: TEMPLATE-IDENTITY BAND GRADUATE (2026-07-28, DEFAULT OFF) ─────────
+        # Shed the review note from a MAJORITY-tier template-identity FILL when the filled issuer
+        # name is INDEPENDENTLY printed in this page's issuer band. The note is the human checkpoint
+        # for an INFERRED identity; when the page itself corroborates the value, the checkpoint is
+        # pure friction (Profile-Construction class: 'BILL FROM: Profile Construction' is on the page,
+        # yet the fill @70+note wins the read because the issuer caption's own base_confidence is 40).
+        # Value is FIXED to the incumbent V — S1 ONLY sheds the note, it NEVER swaps supplier.
+        # Fires AFTER the text-first graduation above, so if a hint already resolved the supplier
+        # (method 'hint_text_match') this is skipped; idempotent (its own method skips a re-run).
+        # C2 (Oracle): gated on ISSUER_HINT_BAND!='0' so the band is the TRUNCATED issuer window,
+        # never the raw ocr_text[:600] fallback (which re-opens recipient self-corroboration).
+        # C1 (Oracle): _identity_corroborated_strict (ALL distinctive tokens, not the FILL's >=60%)
+        # so a same-trade descriptor subset can't shed the note on a logo-collision sibling.
+        # Confidence 85 = parity with the hint_text_match ceiling; supplier_name is required=1, so 85
+        # only clears the 95 graduated floor when ref+date are ~100 (true for born-digital) — NOT a
+        # blanket auto-file. Kill switch TEMPLATE_IDENTITY_BAND_GRADUATE (default '0' = byte-identical).
+        if os.environ.get("TEMPLATE_IDENTITY_BAND_GRADUATE", "0") != "0":
+            _sn_cur = results.get("supplier_name")
+            # Cheap preconditions keep the issuer-band computation off all but a majority-noted
+            # fill; the full decision (incl. the ISSUER_HINT_BAND kill + strict corroboration)
+            # lives in the pure _should_shed_template_identity_note helper so every gate branch is
+            # unit-testable without a full extract().
+            if (isinstance(_sn_cur, dict)
+                    and _sn_cur.get("method") == "template_identity"
+                    and _sn_cur.get("validation_note") == _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY
+                    and _sn_cur.get("value")
+                    and self._should_shed_template_identity_note(
+                        _sn_cur, self._issuer_hint_band(ocr_text))):
+                results["supplier_name"] = {
+                    "value":      _sn_cur["value"],
+                    "confidence": 85,
+                    "method":     "template_identity_corroborated",
+                }
+                self.log(f"  S1: template-identity note shed — '{_sn_cur['value']}' corroborated "
+                         f"in the issuer band (confidence 85, no note)")
+
+        # ── G: GEOMETRY-WITNESS shed for the template-identity fill note ─────────────────────
+        # (2026-07-31; gary→Oracle SIGN-OFF-W/COND; kill TEMPLATE_IDENTITY_GEOM_WITNESS, default
+        # OFF = dark — a SIBLING of the band arm above, NEVER nested under its switch: Oracle G1.)
+        # The band arm is majority-only + band-substring-fragile (proven INERT on its target class
+        # — the S1 memory's DO-NOT-FLIP). This arm re-derives the issuer GEOMETRICALLY
+        # (pick_issuer_geometry: the largest top-of-page name, recipient excluded by size+position,
+        # two-candidate abstain — the SAME independent evidence LOGO_NAME_PRESENCE_ACCEPT already
+        # trusts to let a logo assert un-noted at full confidence) and, when it AGREES with the
+        # filled value, replaces the hedged fill with a normal read: conf 85 (hint parity —
+        # do-NOT-raise pin: stays below the 95/100 floors until normal graduation), method
+        # 'template_identity_corroborated', NO note. Tier-INDEPENDENT (the owner's doc-170 class:
+        # a single-confirm supplier whose page prints its own letterhead heals immediately).
+        # Geometry expression VERBATIM from the accept arm (Oracle G2) so born-digital docs heal
+        # too; a cached-text reprocess has no page0 geometry → no witness → note kept (honest).
+        # _flag_branding_conflict still re-judges the un-noted value at finalisation.
+        if os.environ.get("TEMPLATE_IDENTITY_GEOM_WITNESS", "1") != "0":
+            _sn_g = results.get("supplier_name")
+            if (isinstance(_sn_g, dict) and _sn_g.get("method") == "template_identity"
+                    and _sn_g.get("value")
+                    and _sn_g.get("validation_note") in (_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE,
+                                                         _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY)):
+                _geom_issuer_norm_g = None
+                try:
+                    from extraction import letterhead as _lh
+                    _geom_g = page0_geometry or _lh.geometry_from_lines(page_text_lines)
+                    if _geom_g and _geom_g.get("rows"):
+                        _gp_g = _lh.pick_issuer_geometry(
+                            ocr_text, _geom_g, detected_title=document_type,
+                            type_phrases=_letterhead_type_phrases(self.patterns))
+                        _geom_issuer_norm_g = self._accept_norm(_gp_g) if _gp_g else None
+                except Exception:
+                    _geom_issuer_norm_g = None   # any witness failure → keep the note (fail-safe)
+                if self._should_shed_fill_note_geom(_sn_g, _geom_issuer_norm_g,
+                                                    self._accept_norm(_sn_g.get("value"))):
+                    results["supplier_name"] = {
+                        "value":      _sn_g["value"],
+                        "confidence": 85,
+                        "method":     "template_identity_corroborated",
+                    }
+                    self.log(f"  G: template-identity note shed — the letterhead geometry reads "
+                             f"'{_sn_g['value']}' (confidence 85, no note)")
+
+        # ── G-FRAGMENT: fragmented-letterhead geometry shed (Lever D, 2026-08-20, gary → Oracle
+        # SIGN-OFF-W/COND, ships DARK). The owner's Silverbeck class: the letterhead name reads CLEAN
+        # at 200 DPI, but reconstruct_page_text renders its wide letter-spaced heading with 4-space
+        # COLUMN BREAKS, so the strict G arm's pick_issuer_geometry splits it into single-word segments
+        # and returns 'Cleaning' — never 'Silverbeck Cleaning Supplies' — so the note never sheds over
+        # a clean, on-page issuer. This arm re-joins the MAXIMAL contiguous run of letterhead-sized,
+        # name-shaped segments (letterhead.fragmented_issuer_confirms) and sheds when it norm-equals the
+        # filled value. VERIFY-not-assert + FIXED-TARGET no-swap: the helper returns a BOOLEAN, so this
+        # can ONLY confirm the fill's own value, never adopt a different name. NOT in the shared
+        # pick_issuer_geometry (Oracle: a free re-join in the ASSERT path would let a marker-less
+        # recipient self-confirm). INDEPENDENT switch (Oracle G1 — never nested under GEOM_WITNESS); its
+        # OWN try-wrapped geometry (never references _geom_g/_gp_g). conf 85 / method
+        # template_identity_corroborated / no note — identical shape to the strict G arm. Kill switch
+        # TEMPLATE_IDENTITY_GEOM_FRAGMENT_SHED default '0' = byte-identical.
+        if os.environ.get("TEMPLATE_IDENTITY_GEOM_FRAGMENT_SHED", "0") != "0":
+            _sn_x = results.get("supplier_name")
+            if (isinstance(_sn_x, dict) and _sn_x.get("method") == "template_identity"
+                    and _sn_x.get("value")
+                    and _sn_x.get("validation_note") in (_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE,
+                                                         _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY)):
+                _confirmed_x = False
+                try:
+                    from extraction import letterhead as _lhx
+                    _geom_x = page0_geometry or _lhx.geometry_from_lines(page_text_lines)
+                    if _geom_x and _geom_x.get("rows"):
+                        _confirmed_x = _lhx.fragmented_issuer_confirms(
+                            ocr_text, _geom_x, _sn_x.get("value"), self._accept_norm,
+                            detected_title=document_type,
+                            type_phrases=_letterhead_type_phrases(self.patterns))
+                except Exception:
+                    _confirmed_x = False   # any witness failure → keep the note (fail-safe)
+                if _confirmed_x:
+                    results["supplier_name"] = {
+                        "value":      _sn_x["value"],
+                        "confidence": 85,
+                        "method":     "template_identity_corroborated",
+                    }
+                    self.log(f"  G-FRAGMENT: template-identity note shed — the letterhead geometry "
+                             f"prints '{_sn_x['value']}' as a column-broken name (confidence 85, no note)")
+
+        # ── G-FUZZY: graduation-licensed fuzzy geometry shed (gary → Oracle SIGN-OFF-W/COND
+        # 2026-08-14). The owner's Silverbeck class: a layout confirmed 91×/91 to ONE issuer whose
+        # SCANNED letterhead reads garbled ('siiverbeck Cleaning Supplie'), so the strict G arm above
+        # can't match it exactly and the "Company inferred… please confirm" note persists on every
+        # sibling. This sheds it when the SAME recipient-excluded geometry pick reads the graduated
+        # issuer FUZZILY — short tokens still exact (Oracle C2). INDEPENDENT of the strict switch:
+        # its OWN try-wrapped geometry pick (Oracle C1 — must never reference _gp_g, which is scoped
+        # inside the GEOM_WITNESS block above). Kill switch TEMPLATE_IDENTITY_GEOM_FUZZY_GRADUATE,
+        # default '0' = byte-identical. Recipient exclusion (the buyer-issued safety) is the SAME
+        # pick_issuer_geometry the strict arm already trusts — no new trust, only a fuzz budget
+        # licensed by >=window/>=0.9-share human graduation.
+        if os.environ.get("TEMPLATE_IDENTITY_GEOM_FUZZY_GRADUATE", "0") != "0":
+            _sn_f = results.get("supplier_name")
+            if (isinstance(_sn_f, dict) and _sn_f.get("method") == "template_identity"
+                    and _sn_f.get("value") and matched_tmpl
+                    and _sn_f.get("validation_note") in (_TEMPLATE_IDENTITY_FILL_NOTE_SINGLE,
+                                                         _TEMPLATE_IDENTITY_FILL_NOTE_MAJORITY)):
+                _geom_issuer_raw_f = None
+                try:
+                    from extraction import letterhead as _lhf
+                    _geom_f = page0_geometry or _lhf.geometry_from_lines(page_text_lines)
+                    if _geom_f and _geom_f.get("rows"):
+                        _gp_f = _lhf.pick_issuer_geometry(
+                            ocr_text, _geom_f, detected_title=document_type,
+                            type_phrases=_letterhead_type_phrases(self.patterns))
+                        _geom_issuer_raw_f = _gp_f if _gp_f else None
+                except Exception:
+                    _geom_issuer_raw_f = None   # any witness failure → keep the note (fail-safe)
+                try:
+                    _grad_window = int(os.environ.get("GRADUATION_WINDOW") or 10)
+                except (TypeError, ValueError):
+                    _grad_window = 10
+                if _should_shed_fill_note_geom_fuzzy(
+                        _sn_f, _geom_issuer_raw_f,
+                        matched_tmpl.get("dominant_supplier_count"),
+                        matched_tmpl.get("dominant_supplier_total"),
+                        _grad_window):
+                    results["supplier_name"] = {
+                        "value":      _sn_f["value"],
+                        "confidence": 85,
+                        "method":     "template_identity_corroborated",
+                    }
+                    self.log(f"  G-fuzzy: template-identity note shed on a graduated layout "
+                             f"({matched_tmpl.get('dominant_supplier_count')}× confirmed) — the "
+                             f"letterhead geometry fuzzily reads '{_sn_f['value']}' (confidence 85, no note)")
 
         # ── Stage 2.6: LATE-ANCHOR RESCUE (2026-07-10) ───────────────────────────
         # On a doc whose supplier was UNKNOWN at Stage-2 time (no template/logo hit — exactly
@@ -2604,13 +8885,18 @@ class ExtractionEngine:
                 _r_identity_labels = {(f.get('label') or '').strip().lower()
                                       for f in field_defs if f.get('key') in _IDENTITY_FIELD_KEYS}
                 _r_identity_labels.discard('')
-                _r_on_reject = ((lambda fk, st, v, r: self._t(
-                    "anchor_reject", field=fk, method=st, value=v, reason=r))
-                    if self._trace else None)
+                # Same always-on recorder as the Stage-2 site (slice-3 B1) — the late-rescue
+                # twin must record too or a rescue-path rejection is invisible to D1.
+                def _r_on_reject(fk, st, v, r, cap=None):
+                    self._rejected_reads.setdefault(fk, []).append(
+                        {"method": st, "value": v, "reason": r})
+                    if self._trace:
+                        self._t("anchor_reject", field=fk, method=st, value=v,
+                                reason=r, caption=cap)
                 try:
                     rescue_results = anchor.extract_with_anchors(
                         ocr_text, rescue_set, supplier_name, document_slug,
-                        page_images=page_images,
+                        page_images=crop_pages,
                         field_patterns=field_patterns,
                         validation_patterns=self.patterns.get("validation_patterns", {}),
                         slice_capture=(self._capture_slice if (self._trace and self._slice_dir) else None),
@@ -2621,6 +8907,7 @@ class ExtractionEngine:
                         text_field_keys=text_field_keys,
                         multiline_lookup=self._make_multiline_lookup(supplier_name, document_slug),
                         identity_labels=_r_identity_labels,
+                        force_serial=bool(self._trace),
                     ) or {}
                 except Exception as e:
                     rescue_results = {}
@@ -2630,6 +8917,10 @@ class ExtractionEngine:
                 for key, data in rescue_results.items():
                     if (results.get(key) or {}).get("value"):
                         continue                      # fill-empty-only — never displace
+                    if key in getattr(self, '_list_field_keys', ()):
+                        continue                      # LIST ownership: the collect scan alone writes these
+                    if key in getattr(self, '_barcode_field_keys', ()):
+                        continue                      # BARCODE ownership: the decode alone writes these
                     data = dict(data)
                     data["confidence"] = min(int(data.get("confidence") or 0), _LATE_RESCUE_CAP)
                     data["late_rescue"] = True        # provenance for trace; method string untouched
@@ -2640,6 +8931,51 @@ class ExtractionEngine:
                 if rescued:
                     self.log(f"  Stage 2.6: {rescued} field(s) rescued from this supplier's "
                              f"anchors (supplier resolved after Stage 2)")
+
+        # ── Stage 2.6b: LATE LOCATED CROP-CORROBORATION (Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-24) ──
+        # See the module note at LATE_RESCUE_LOCATED_CORROB. When the supplier resolved late, the
+        # keyword-filled critical ref/date whose taught anchor never ran gets capped by the taught-
+        # ownership guard. Re-run ONLY those anchors, remember a genuinely-LOCATED read, and let the
+        # UNCHANGED _anchor_corroborates suppress the cap. Corroborate-only — never writes results.
+        if (LATE_RESCUE_LOCATED_CORROB and LATE_ANCHOR_RESCUE_ENABLED and anchors and page_images
+                and _late_rescue_applicable(_s2_supplier, supplier_name)):
+            _crit_keys = (({ref_field_key} if ref_field_key else set()) | set(date_field_keys or ()))
+            # The guard-capped class: an OWNED (authoritative), same-type, resolved-supplier-only
+            # (the late-rescue delta) CRITICAL anchor whose field currently holds a plain KEYWORD read.
+            corrob_set = [a for a in anchors
+                          if a.get("field_key") in _crit_keys
+                          and (a.get("document_type") or "") == (document_slug or "")
+                          and str(a.get("last_authoritative_at") or "").strip()
+                          and anchor.anchor_admissible(a, supplier_name, document_slug)
+                          and not anchor.anchor_admissible(a, None, document_slug)
+                          and str((results.get(a.get("field_key")) or {}).get("method") or "") == "keyword"]
+            if corrob_set:
+                try:
+                    corrob_results = anchor.extract_with_anchors(
+                        ocr_text, corrob_set, supplier_name, document_slug,
+                        page_images=crop_pages,
+                        field_patterns=field_patterns,
+                        validation_patterns=self.patterns.get("validation_patterns", {}),
+                        format_lookup=self._make_format_lookup(supplier_name, document_slug),
+                        page_transform=None,
+                        page_text_lines=page_text_lines,
+                        text_field_keys=text_field_keys,
+                        multiline_lookup=self._make_multiline_lookup(supplier_name, document_slug),
+                    ) or {}
+                except Exception as e:
+                    corrob_results = {}
+                    self.log(f"  Stage 2.6b: located crop-corroboration failed ({e})", "warn")
+                from extraction import validator as _validator
+                _corrob_filtered = _filter_located_corrob(
+                    corrob_results, {a.get("field_key"): a for a in corrob_set},
+                    date_field_keys, anchor._SAME_LAYOUT_TOL_X, anchor._SAME_LAYOUT_TOL_Y,
+                    _validator.normalise_date)
+                if _corrob_filtered:
+                    # Remember the FILTERED subset ONLY (Oracle C1 — do NOT mirror the unfiltered
+                    # remember above); corroborate-only, results untouched.
+                    self._remember_candidates('2.6_late_corrob', _corrob_filtered)
+                    self._t("late_located_corrob", fields=list(_corrob_filtered.keys()),
+                            values=[str(v.get("value"))[:24] for v in _corrob_filtered.values()])
 
         # ── Stage 2.5b: Apply supplier hints (fill missing fields only) ──────────
         # Hints only fill fields that keyword/anchor found NOTHING for.
@@ -2685,12 +9021,60 @@ class ExtractionEngine:
             if n_denoised:
                 self.log(f"  Stage 2.5: {n_denoised} value(s) denoised via learned template")
 
+        # ── Stage 2.5-witness: RAW-FRAME re-read of a deskew-corrupted taught crop ────────────
+        # On a --deskew-pages reprocess ONLY (raw_page0 present), a taught crop read off the DESKEWED
+        # page can carry a valid-SHAPED glyph flip from the rotation resample (PO-98370 → PO-98270)
+        # that no regex catches and that then files silently at ref/date confidence. Re-read the RAW
+        # page at the taught box and, on a TWO-READ consensus (raw crop + raw page text agree on a
+        # DIFFERENT value), flip to it + flag (recover-and-flag; conf capped below the 88 floor so it
+        # never auto-files — trust.js also refuses on the note). BYTE-IDENTICAL off the deskew path
+        # (raw_page0 None → skipped) and under the kill switch DESKEW_RAW_WITNESS=0. Runs BEFORE Stage
+        # 2.5d snap (Oracle §2: a witness after the snap would undo a legitimate dominant-snap). See
+        # anchor.raw_crop_recheck for the fail-toward-review rules + the documented snap residual.
+        if raw_page0 is not None and os.environ.get('DESKEW_RAW_WITNESS', '1') != '0':
+            _witness_text = cached_text if cached_text else ocr_text   # raw cached text preferred
+            _fmt_lookup = self._make_format_lookup(supplier_name, document_slug)
+            _vpats = self.patterns.get("validation_patterns", {})
+            _val_by_key = {f.get('key'): (f.get('type') or None) for f in field_defs}
+            _lbl_by_key = {f.get('key'): (f.get('label') or None) for f in field_defs}
+            _witness_keys = ({ref_field_key} if ref_field_key else set()) | set(date_field_keys or ())
+            for _wk in _witness_keys:
+                _d = results.get(_wk)
+                if (not isinstance(_d, dict) or not _d.get('value')
+                        or _d.get('validation_note')                    # already flagged → no double-flip
+                        or _d.get('method') not in anchor._CROP_FAMILY_METHODS):
+                    continue
+                _res = anchor.raw_crop_recheck(
+                    _d['value'], _d.get('taught_box'), raw_page0, _witness_text,
+                    _val_by_key.get(_wk), _wk, _lbl_by_key.get(_wk),
+                    _fmt_lookup, text_field_keys, _vpats)
+                if _res:
+                    _new_val, _note = _res
+                    results[_wk] = {**_d, 'value': _new_val, 'display_value': _new_val,
+                                    # cap at 70 (matches the existing :661 anchor_crop_crosscheck) —
+                                    # well below the 88 critical floor even after any Stage-4.5 re-weight;
+                                    # the validation_note is the primary auto-file guard (trust.js).
+                                    'confidence': min(int(_d.get('confidence') or 0), 70),
+                                    'method': 'anchor_crop_crosscheck',
+                                    'was_corrected': True, 'corrected_to': _new_val,
+                                    'validation_note': _note}
+                    self.log(f"  Deskew raw-witness: {_wk} '{_d['value']}' → '{_new_val}' — the "
+                             f"straightened read disagreed with the original scan; flagged for review")
+
         # ── Stage 2.5b: OCR format correction ────────────────────────────────
         if self.format_index:
             n_corrected = 0
             for key, data in list(results.items()):
                 if not isinstance(data, dict) or not data.get("value"):
                     continue
+                # LIST fields excluded from learned-format correction (gary 2026-08-11): a learned
+                # "template" over varying-length delimited values is nonsense, and value_to_template
+                # keeps separators as literals while try_correct rewrites at min(95,+20) with no
+                # note (the separator-guard finding). Do not rely on length-mismatch masking.
+                if key in getattr(self, '_list_field_keys', ()):
+                    continue
+                if key in getattr(self, '_barcode_field_keys', ()):
+                    continue                      # BARCODE ownership: never "repair" a checksummed decode
                 # Never rewrite a value the corpus has actually CONFIRMED (reggie): the count-weighted
                 # derive_template can force a position to a category, and try_correct would then
                 # SILENTLY (no flag) coerce a legitimate minority variant that OCR read correctly. If
@@ -2713,9 +9097,14 @@ class ExtractionEngine:
                     }
                     if was_changed:
                         n_corrected += 1
-                        self._t("transform", field=key, stage="2.5_correct",
-                                method=results[key]["method"], confidence=new_conf,
-                                **{"from": data["value"], "to": corrected_val})
+                    # Trace on ANY boost, not only a value change (Oracle C6): a CONFORMANCE-only
+                    # lift (boost_table{0:8} — +8 for zero fixes, value unchanged) was previously
+                    # INVISIBLE in the trace, which is precisely why the late-rescue cap leak
+                    # (85 -> 93 -> 98) took a full day to find. Emitting it whenever boost>0 makes
+                    # the dev-inspector's per-field lineage show why a rescued field gained conf.
+                    self._t("transform", field=key, stage="2.5_correct",
+                            method=results[key]["method"], confidence=new_conf, boost=boost,
+                            changed=was_changed, **{"from": data["value"], "to": corrected_val})
             if n_corrected:
                 self.log(f"  Stage 2.5: {n_corrected} OCR correction(s) applied")
 
@@ -2776,12 +9165,65 @@ class ExtractionEngine:
         # doesn't — objective maths, never over an explicit ⊕ teach. Before the Stage-4 flag.
         self._reconciliation_pick_total(results, field_defs)
 
+        # A taught total that landed on the NET row (variable line-count credit note) can commit the
+        # net silently when VAT didn't read (both reconcile safeties above starve). FLAG it — never
+        # swap — when total≈subtotal AND a larger VAT-plausible total was also read. DEFAULT OFF.
+        self._flag_net_misread_total(results, field_defs, credit_expected)
+
+        # ── DECLARED-ABSENT FIELD DROP (TEMPLATE_HIDDEN_FIELD_DROP, DEFAULT OFF) ──────────────
+        # gary design 2026-08-11 (owner: "unneeded fields incorrectly filled … when I remove them
+        # and reprocess, they return again"). The operator's `template_hidden_fields` declaration
+        # means "this supplier's layout does not print this field" — so a VALUE in that field is,
+        # by definition, a read of something else on the page. ONE choke point, before Stage 4, so
+        # no writer needs per-stage awareness and Stage 4/4.5 never see the ghost value (no
+        # cross-field maths poisoning, no minted note, no score drag). SAME resolver + SAME
+        # protected-keys strip as the scoring consumer below — one semantics, never two.
+        # Human data is sacred: the drop is engine-values-only here; the JS reprocess merge keeps
+        # any row the operator corrected (corrected_to). Unknown supplier ⇒ resolver returns empty
+        # ⇒ no drop ⇒ fills flow to review (fail toward display, never a silent wrong drop).
+        # Un-hide later ⇒ this block no-ops ⇒ the next reprocess fills again.
+        if (os.environ.get("TEMPLATE_HIDDEN_FIELD_DROP", "0") != "0"
+                and templates and supplier_name and document_slug):
+            try:
+                _hprot = {"supplier_name", "customer_name"}
+                if ref_field_key:
+                    _hprot.add(ref_field_key)
+                if date_field_key:
+                    _hprot.add(date_field_key)
+                _hdrop = template_matcher.hidden_fields_for_scope(
+                    templates, supplier_name, document_slug, protected_keys=_hprot)
+                for _hk in sorted((_hdrop or {}).get("keys") or ()):
+                    _hd = results.get(_hk)
+                    if isinstance(_hd, dict) and _hd.get("value"):
+                        self._t("hidden_field_drop", field=_hk,
+                                value=str(_hd.get("value"))[:40], method=_hd.get("method"))
+                        self.log(f"  Hidden-field drop: {_hk} '{str(_hd.get('value'))[:40]}' — "
+                                 f"declared absent for this layout; cleared")
+                        results[_hk] = {"value": None, "confidence": 0, "method": "unknown"}
+            except Exception:
+                pass   # resolver failure ⇒ no drop ⇒ today's behaviour
+
         # ── Stage 4: Validation ───────────────────────────────────────────────
         self.log("  Stage 4: validating…")
         self._t('stage_start', stage='4_validate')
         _pre_val = self._snap(results)
+        # SHADOW-ATTRIBUTION feed (Oracle C1, 2026-08-12): the corroboration kwarg is passed ONLY
+        # when the flag (or its census instrument) is on — 2-arg harness stubs and the OFF path
+        # keep today's exact call. Frame note (Oracle Q1): Stage 4 never appends to
+        # _field_candidates (sole writer is _remember_candidates, last call pre-4.5), so this
+        # pre-Stage-4 snapshot reads the same ledger as the persisted post-validation emit;
+        # winners differ only by Stage-4's own rewrites — exactly the frame the reconcile judges.
+        _corrob_pre = None
+        if (os.environ.get('RECONCILE_SHADOW_ATTRIBUTION', '0') != '0'
+                or os.environ.get('RECONCILE_ATTRIB_CENSUS_DIR')):
+            try:
+                _corrob_pre = self._build_corroboration_emit(results)
+            except Exception:
+                _corrob_pre = None
         results = validator.validate_and_adjust(
-            results, field_defs, trace=(self._t if self._trace else None))
+            results, field_defs, trace=(self._t if self._trace else None),
+            credit_expected=credit_expected,
+            **({'corroboration': _corrob_pre} if _corrob_pre is not None else {}))
 
         # ── Field cleanup rules (operator-taught, Review right-click toolkit) ──
         # Strip a learned leaked heading/column from a field's WINNER value
@@ -2796,6 +9238,12 @@ class ExtractionEngine:
             _val_pats = self.patterns.get("validation_patterns") or {}
             for key, data in list(results.items()):
                 if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                # LIST ownership (Oracle cond 5, 2026-08-27): a field rule on a LIST key is a poison —
+                # `remove_text` on one serial truncates every future list at that serial and after it,
+                # `keep_block` collapses the whole list to one token. The scan owns the field; the
+                # renderer menu + the save door refuse list keys too (three layers, one classifier).
+                if key in getattr(self, '_list_field_keys', ()):
                     continue
                 val = data.get('value')
                 if not isinstance(val, str) or not val:
@@ -2853,6 +9301,16 @@ class ExtractionEngine:
                 val = data.get('value')
                 if not val:
                     continue
+                # LIST fields skip the whole learned-shape/charset/wordness rail (gary 2026-08-11):
+                # varying element counts make the learned skeletons incoherent (false flags after
+                # 2-3 confirms), the charset would flag the '; ' separators, and per-element
+                # validation already ran inside the collect scan. ACCEPTED COST: no shape rail on
+                # a wrong list — the residual guard is element validation + review. Per-element
+                # shape learning is a later slice, deliberately.
+                if key in getattr(self, '_list_field_keys', ()):
+                    continue
+                if key in getattr(self, '_barcode_field_keys', ()):
+                    continue                      # BARCODE ownership: a decode is checksummed or absent — no shape/charset rail
                 # ── EDGE-JUNK CLEANUP (name-like free-text) ── a real name never
                 # STARTS with "--«" / a stray symbol; strip OCR edge artefacts BEFORE
                 # the charset/format checks below so a cleaned value isn't needlessly
@@ -2986,11 +9444,18 @@ class ExtractionEngine:
                 # bypassed for identity at the shape-check below (see _IDENTITY_FIELD_KEYS there),
                 # NOT by starving it of the lexicon. (Cf. 0cbafb8, which killed the veto by dropping
                 # the whole fallback and silently lost identity's repair + truncation with it — R2.)
-                fmt_entry = self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None
-                if not fmt_entry:
-                    fmt_entry = self.format_class_index.get(('', dt_lower, key))
+                _sup_fmt = self.format_class_index.get((s_lower, dt_lower, key)) if s_lower else None
+                fmt_entry = _sup_fmt if _sup_fmt else self.format_class_index.get(('', dt_lower, key))
                 if not fmt_entry:
                     continue
+                # Cross-contamination fix (kill SHAPE_WITHHOLD_SUPPLIER_SCOPED): _xsupplier means the shape
+                # verdict rests ONLY on the cross-supplier ('') aggregate — this (supplier,field) has NO
+                # confirmed history of its own. On a single-supplier install that ('') aggregate is one
+                # supplier's ref convention wearing a doc-type-wide costume, so it may FLAG a cleanly-read
+                # stranger's ref for review but must NOT hard-null it (one supplier's shape can't veto
+                # another's). Consumed only by the terminal shape-withhold below; a supplier-scoped format
+                # (_xsupplier False) keeps the byte-unchanged hard null. DEFAULT ON; kill switch =0 = legacy.
+                _xsupplier = _sup_fmt is None
                 # ── Canonical token repair for NAME-LIKE fields ── runs INDEPENDENT of
                 # the anomaly verdict: a garbled company name is coarse-class FREETEXT
                 # and may not trip check_value at all, so gating it behind `anomaly`
@@ -3010,6 +9475,47 @@ class ExtractionEngine:
                 if name_lex and key in text_field_keys:
                     from extraction import name_match
                     repaired, strong = name_match.repair_name_value(str(val), name_lex, details=True)
+                    # B5 (2026-08-13): a lexicon built from a LOW-DISTINCT scope may never reach the
+                    # STRONG auto-apply tier. In a scope whose confirmed history is one distinct
+                    # value, EVERY position has doc_freq == 1.0 by construction, so `_STRONG_FREQ`
+                    # is satisfied automatically and guards nothing — measured as the whole
+                    # population, not a corner: Census E, 33 of 36 name scopes (Oracle O2). All that
+                    # would then stand between a garble and a SILENT whole-value rewrite is
+                    # `_close`, and `Southgate` vs `Northgate` is 2 edits at ratio 0.778, which
+                    # `_close` accepts. So: suggestion + review, never a silent rewrite.
+                    if strong and fmt_entry.get('low_distinct'):
+                        strong = False
+                        # NAME SUFFIX-SNAP (2026-08-24, Oracle SIGN-OFF-W/COND, DARK NAME_DOMINANT_SNAP):
+                        # re-admit a CLEAN silent adopt for the identity-preserving subset ONLY — a
+                        # <=1-edit legal-suffix repair with an EXACT-match core, on a SOLID single-value
+                        # scope (>= _NAME_SNAP_MIN_CONFIRMS confirms), for the two identity name fields.
+                        # `repaired` IS the scope's confirmed dominant surface (every position is stable
+                        # in a low_distinct scope), so name_snap_adopt(val, repaired) adopts ONLY when the
+                        # sole content token the lexicon changed is the trailing legal suffix; a CORE
+                        # `_close` repair shows as a core diff and stays in Review (the Cars/Care, Cox/Fox
+                        # cases). Clean row (no validation_note / no corrected_to / not review-forced) so
+                        # trust.js auto-files it under this ONE switch alone. Env is the FIRST conjunct =>
+                        # OFF is byte-identical. Mutually exclusive with _adopt_confirmed_dominant (its
+                        # +confirmed_adopt marker is skipped). RATIFIED docs/oracle_log.md 2026-08-25
+                        # (SIGN-OFF-W/COND: the valid-form suffix-swap LLP<->LLC hole closed in name_snap_adopt).
+                        if (os.environ.get('NAME_DOMINANT_SNAP') == '1'
+                                and repaired and repaired != str(val)
+                                and key in ('supplier_name', 'customer_name')
+                                and int((name_lex or {}).get('n_docs') or 0) >= _NAME_SNAP_MIN_CONFIRMS):
+                            _m_snap = str(data.get('method') or '')
+                            _snap_curated = any(x in _m_snap for x in
+                                                ('template_fixed', 'override', 'fixed', 'manual', '+confirmed_adopt', '+name_snap'))
+                            if not _snap_curated:
+                                _snap_val = name_match.name_snap_adopt(str(val), repaired)
+                                if _snap_val:
+                                    results[key] = {
+                                        **data,
+                                        'value':         _snap_val,
+                                        'display_value': _snap_val,
+                                        'was_corrected': True,
+                                        'method':        f"{data.get('method') or 'unknown'}+name_snap",
+                                    }
+                                    continue
                     if repaired and repaired != str(val):
                         if strong:
                             results[key] = {
@@ -3018,6 +9524,22 @@ class ExtractionEngine:
                                 'display_value':   repaired,
                                 'was_corrected':   True,
                                 'corrected_to':    repaired,
+                                # B7, UNCONDITIONAL and deliberately not behind a flag: mark the
+                                # METHOD so this value can never count as evidence FOR the repair
+                                # that produced it. Without it the route manufactures the history
+                                # it consumes — confirm 20 auto-corrected documents and the
+                                # correction becomes its own proof. The method suffix is the
+                                # carrier because it SURVIVES CONFIRM: reviewService clears
+                                # validation_note and corrected_to on confirm, so a note-based
+                                # marker would be gone exactly when learning reads the row.
+                                # Same shape as the shipped '+confirmed_adopt' exclusion, for the
+                                # same reason (Oracle B3, 2026-08-12).
+                                # The key is `method`, NOT `extraction_method`: the JS side persists
+                                # `data.method` (processing/handler.js:2265, :4312), so a suffix put
+                                # on the wrong key would never reach the column that filters it.
+                                # `_method_family` matches by PREFIX, so the suffix cannot disturb
+                                # the corroboration families.
+                                'method': f"{data.get('method') or 'unknown'}+name_repair",
                                 # Note carries the ORIGINAL read so the UI can show what
                                 # was auto-fixed (the input already holds the correction).
                                 'validation_note': f"Auto-corrected to match learned data (was: {val})",
@@ -3147,7 +9669,7 @@ class ExtractionEngine:
                         results[key] = {
                             **data,
                             'value':           extracted,
-                            'validation_note': 'trimmed to the expected format — please verify',
+                            'validation_note': _SHAPE_TRIM_NOTE,   # class-F allowlist mark (write-site constant)
                         }
                         n_flagged += 1
                         format_anomaly_flagged = True
@@ -3181,18 +9703,47 @@ class ExtractionEngine:
                         # for manual entry rather than populate an inconsistent
                         # value. A genuinely new-but-correct shape is accepted once
                         # it has been confirmed enough times (count-gated shapes).
-                        # GATE-FAILURE RE-READ (default OFF): before withholding, take ONE bounded
+                        # GATE-FAILURE RE-READ (default ON): before withholding, take ONE bounded
                         # second look at the page for a clean, kin re-read (see _maybe_gate_reread).
-                        # Frame invariant: it OCRs + crops the SAME raw page_images the engine holds.
+                        # Frame invariant: it self-locates — image_to_data and the crop run on the
+                        # SAME page-image instance, whichever frame that is (it is NOT coupled to
+                        # taught coordinates; deliberately OUTSIDE the DESKEW_RAW_CROPS election —
+                        # Oracle 2026-08-05 delta-2; a later slice may move it, minding _reread_cache
+                        # frame keying).
                         _reread = self._maybe_gate_reread(
                             str(val), data, fmt_entry, field_types.get(key), field_labels.get(key),
                             page_images, page_provenance, _reread_cache)
-                        results[key] = _reread if _reread is not None else {
-                            **data,
-                            'value':           None,
-                            'confidence':      0,
-                            'validation_note': "doesn't match the expected format — please enter manually",
-                        }
+                        if _reread is not None and _reread.pop('reread_clean', False):
+                            # Normalisation-only recovery (spacing/separator/case; calendar-equal
+                            # for dates): the crop re-read agreed with the original on every
+                            # alphanumeric character and the result passes the learned format —
+                            # a clean read, not an anomaly. No n_flagged/format_anomaly_flagged
+                            # bump (an unrelated note on ANOTHER field still holds the doc, and a
+                            # pre-existing note on THIS field survived the spread → trust gate).
+                            results[key] = _reread
+                            continue
+                        results[key] = _reread if _reread is not None else (
+                            {
+                                # Cross-contamination fix (SHAPE_WITHHOLD_SUPPLIER_SCOPED, DEFAULT ON since the
+                                # flip; kill switch =0 restores the legacy null): a ('')-only shape verdict
+                                # must not BLANK a cleanly-read stranger ref — keep
+                                # the value + FLAG for review. conf<=70 + the note triple-lock it out of
+                                # auto-file (the note alone blocks at every floor via trust.isAutoFileEligible;
+                                # the cap is belt-and-braces). Value-kept means the operator verifies a value
+                                # instead of an empty field. Only fires for _xsupplier (no supplier-scoped
+                                # format); a supplier's OWN shape-violating ref still hits the hard null below.
+                                **data,
+                                'confidence':      min(data.get('confidence') or 0, 70),
+                                'validation_note': 'format differs from the usual — please verify',
+                            }
+                            if (_xsupplier and os.environ.get('SHAPE_WITHHOLD_SUPPLIER_SCOPED', '1') != '0')
+                            else {
+                                **data,
+                                'value':           None,
+                                'confidence':      0,
+                                'validation_note': "doesn't match the expected format — please enter manually",
+                            }
+                        )
                     else:
                         # In-class difference with no learned shape to enforce —
                         # keep it but flag for a human to verify.
@@ -3229,10 +9780,55 @@ class ExtractionEngine:
         # generic caption stand-in). Beside the recipient guard, BEFORE identity rescue + the boost.
         self._flag_taught_field_ownership(
             results, field_defs, supplier_name, anchors, hints, document_slug, _caption_vocab)
+        # CLIPPED-SUFFIX RECONCILIATION (2026-07-31, ON — kill CANDIDATE_SUFFIX_RECONCILE=0): a
+        # label-confirmed anchor read whose misplaced crop cut the value's leading glyphs
+        # ('V-69523') is shape-EXEMPT, so only the discarded keyword read of the same token can
+        # expose it. Adopt-or-flag from the candidate ledger, no new OCR. BEFORE the
+        # prefix-outlier guard so that guard judges the healed value.
+        self._reconcile_clipped_suffix(results, field_defs, supplier_name, document_slug)
+        # NAME-UNCLIP (Oracle 2026-08-04): the free-text complement, immediately after its code
+        # sibling and before the S-C..D1 chain + the universal verify (which then judges the
+        # HEALED value — order load-bearing, pinned in test_name_unclip_reconcile.py).
+        self._reconcile_name_truncation(results, field_defs, ocr_text)
+        # FILING-VALUE SANITY (Chris round 3, 2026-08-09 — default OFF). LAST of the value-changing
+        # passes on purpose: it judges the value that will actually become the filename and the
+        # folder, so it must see whatever the reconciles above finally settled on. Flag-only — it
+        # never edits or replaces a value, it just refuses to let a non-reference-shaped reference
+        # or a year that is not printed on the page file itself silently.
+        self._flag_filing_value_sanity(results, ref_field_key, date_field_keys, ocr_text,
+                                       supplier_name=supplier_name, document_slug=document_slug)
+        # THE PAGE'S OWN WORDING IS NOT A VALUE (CAPTION_VALUE_REFUSE, default OFF — 2026-08-09 NIGHT).
+        # Measured against what is actually PRINTED on 200 documents: `account_no` is committed on 40
+        # pages that carry no account number at all (the job reference next to it wins), and `serials`
+        # commits the literal string 'Serial No:' on 19. Those are the worst kind of wrong value —
+        # not a misread of the right thing, but a confident value with NO SOURCE on the page, so a
+        # human checking it has nothing to compare against. The same shape put the caption 'VAT' into
+        # a VAT number and 'Delivery' into a delivery number.
+        # The vocabulary is the run's own: every field's printed label bank plus each field's display
+        # label, the same `value_is_caption` this file already uses to deny a poisoned hint. Equality
+        # only — never containment — so a company genuinely called 'Total Office Supplies' survives.
+        # WITHHELD, NOT REWRITTEN: the field goes empty WITH a note, which is the pattern the rest of
+        # the pipeline uses to route to review (a bare empty would let a stale value return on the
+        # next reprocess; the note is the discriminator).
+        # AUTHORITY IS DELIBERATELY NOT AN EXEMPTION: a taught box that reads its own caption is
+        # precisely the defect, and it arrives with the highest authority in the system.
+        self._refuse_caption_values(results, _caption_vocab, field_defs)
+        # ORDER PINNED (Oracle 2026-08-01, tests/test_validation_pass_order.py): suffix-reconcile
+        # -> S-C blind-geometry -> S-A date-in-ref -> prefix-outlier -> S-B length guard.
+        # S-C before S-A is load-bearing: on the #141 class S-C adopts the witnesses' 'DN-24408'
+        # and S-A then sees a non-date (no stale date-flag on a healed value).
+        self._reconcile_blind_geometry(results, field_defs, supplier_name, document_slug)
+        self._flag_date_shaped_ref(results, field_defs, supplier_name, document_slug)
         # PREFIX-OUTLIER GUARD (2026-07-12): a shape-valid single-glyph misread of a ref field's
         # dominant code prefix (DN->IN) evades every format gate + auto-files at 95%+ on import; flag
         # it (cap 69 + note) so it can't silently file + poison learning. Flag-only, before the boost.
         self._flag_prefix_outlier(results, field_defs, supplier_name, document_slug)
+        self._flag_ref_length_outlier(results, field_defs, supplier_name, document_slug)
+        # D1 digit-disagreement flag — LAST in the note chain (Oracle 2026-08-01): it must
+        # see every earlier arm's adoption/note (a suffix-adopted winner now EQUALS its
+        # keyword ancestor -> structurally can't fire; an S-B-noted field is skipped).
+        self._flag_digit_disagreement(results, field_defs, supplier_name,
+                                      document_slug, ref_field_key)
         # ── Identity rescue (slice 1; Oracle-signed 2026-07-10) ── AFTER the guard
         # (it overwrites the guard's note with its own provenance note when the
         # corroboration holds; no corroboration => the guard's behaviour survives
@@ -3271,8 +9867,62 @@ class ExtractionEngine:
         except Exception:
             pass
 
+        # ── LATE-RESCUE STICKY CAP (kill LATE_RESCUE_CAP_STICKY; 2026-07-24) ──────────────────────
+        # engine.py:3572-3576 DOCUMENTS the invariant "a rescued ref/date can never auto-file at any
+        # threshold" and enforces it at :3628 with min(conf, _LATE_RESCUE_CAP=85). Two later boosts
+        # SILENTLY defeat it: Stage-2.5b conformance (ocr_corrector boost_table{0:8} — +8 merely for
+        # MATCHING the learned shape, which a valid-shaped misread does BY CONSTRUCTION) then the
+        # Stage-4.5 learned-agreement boost (+5), so 85 -> 93 -> 98 and a BLIND late-rescue crop
+        # misread (supplier resolved late, no context) auto-files SILENTLY — the worst class, and the
+        # real-world cold-start / new-supplier case, not a synthetic artefact. This TERMINAL re-cap
+        # restores the invariant ONCE, after EVERY boost and before overall_confidence, keying on the
+        # `late_rescue` provenance the rescue already stamps at :3629. It runs after all boosts and
+        # there is no later max() on per-field confidence (engine.py:3182's max() is upstream, in
+        # Stage-2 merge), so no boost can defeat it (Oracle C1: terminal, not per-site skips).
+        # FAIL-TOWARD-REVIEW: the VALUE is untouched — only confidence returns to the cap, so a wrong
+        # blind read is HELD (sub-88 critical floor / general threshold) instead of filed. Covers both
+        # lifts by construction (Oracle C2: +8 alone -> 93, +5 alone -> 90, both > the 88 floor).
+        # OFF (=0) skips the loop => byte-identical. Steady-state cost is low: rescue only fires when
+        # the supplier resolved LATE (cold DB / unlearned / weak fingerprint), rare once suppliers are
+        # learned. Pin: tests/test_late_anchor_rescue.py (post-extract cap survives the boosts).
+        if os.environ.get("LATE_RESCUE_CAP_STICKY", "1") != "0":
+            _recapped = _apply_late_rescue_sticky_cap(results)
+            if _recapped:
+                self.log(f"  Late-rescue sticky cap: {_recapped} field(s) returned to "
+                         f"{_LATE_RESCUE_CAP} (a boost had re-inflated a blind-rescue read)")
+        # ⚠ FORWARD SEAM (Oracle C5): if the "let a located rescue displace a keyword incumbent"
+        # follow-up at :3577-3585 is ever built, a rescue could OVERWRITE a good keyword value and
+        # this cap would then hold a value that WAS trustworthy — re-scope the marker there first.
+
         # ── Metadata ──────────────────────────────────────────────────────────
-        overall_conf  = validator.overall_confidence(results, field_defs)
+        # HIDDEN_FIELD_SCORING (Oracle-signed 2026-07-27): the operator's per-(supplier,type)
+        # "this layout lacks this field" declarations (template_hidden_fields, riding the
+        # templates JSON as hidden_fields) stop a declared-absent EMPTY field counting as an
+        # expected-but-missing 0 in the document score — the "held at 72% with nothing flagged"
+        # cap. EMPTY-ONLY: a valued hidden field scores exactly as before (its drag keeps a
+        # ghost read out of the gate-free at-100 auto-file arm). protected strips the identity
+        # keys + the type's CURRENT ref/date roles at consumption (stale-row seam: a role
+        # re-pointed onto an already-hidden key after setHiddenField validated the hide).
+        # Any failure ⇒ no exclusion ⇒ today's zero-scoring ⇒ held. =0 restores byte-identical.
+        _hidden_excl = None
+        if (os.environ.get("HIDDEN_FIELD_SCORING", "1") != "0"
+                and templates and supplier_name and document_slug):
+            try:
+                _protected = {"supplier_name", "customer_name"}
+                if ref_field_key:
+                    _protected.add(ref_field_key)
+                if date_field_key:
+                    _protected.add(date_field_key)
+                _hx = template_matcher.hidden_fields_for_scope(
+                    templates, supplier_name, document_slug, protected_keys=_protected)
+            except Exception:
+                _hx = None
+            if _hx and _hx.get("keys"):
+                _hidden_excl = _hx["keys"]
+                self.log(f"  Hidden-field scoring: {sorted(_hidden_excl)} declared absent for this "
+                         f"layout (templates {_hx['template_ids']}, via {_hx['arm']}) — empty reads "
+                         f"excluded from the document score")
+        overall_conf  = validator.overall_confidence(results, field_defs, exclude_keys=_hidden_excl)
         # Document-level format-consistency weighting: penalise the document when
         # any field failed its expected format, and reward it when several well-
         # supported fields all match. "Supported" = fields with a learned format
@@ -3331,6 +9981,27 @@ class ExtractionEngine:
                                 f"Letterhead may read “{_idv.get('text_led')}” — "
                                 f"detected “{_idv.get('resolved')}”. Please confirm the issuer.")
                             _f["confidence"] = min(int(_f.get("confidence") or 100), 70)
+                            # SUGGESTION = CANONICAL (slice 2 of the garbled-issuer arc,
+                            # 2026-08-22 evening; Oracle SEND-BACK → rebuilt, C2.1). The Stage-4.5
+                            # WEAK name repair ran BEFORE this verdict existed and may have left a
+                            # TOKEN repair in `corrected_to` ('NOCUMENT' → 'DOCUMENT'); the Review
+                            # window renders that as `Use “DOCUMENT”` beside a note that names the
+                            # real company — one click mints a THIRD wrong sender scope. When the
+                            # resolved value is a GARBLE of the letterhead canonical (the Oracle C2
+                            # per-token rule: every distinctive token of the read within one edit
+                            # of a canonical token), carry the canonical in the PERSISTED
+                            # `suggested_supplier` column (the branding-resolve button: fills the
+                            # value, pins the doc, offers the sibling ripple) and CLEAR the token
+                            # repair. A whole-token DISAGREEMENT (a buyer-issued PO on another
+                            # letterhead) is NOT garble-kind → byte-identical: no suggestion, no
+                            # ripple of the wrong company. Note / 70 / needs_review unchanged —
+                            # the human checkpoint survives. Default OFF; OFF is byte-identical.
+                            # Pins: tests/test_identity_variant.py (suggest-canonical block).
+                            if _idk == "supplier_name" and \
+                                    ExtractionEngine._suggest_identity_canonical(_f, _idv):
+                                self._t('identity_suggest_canonical', field=_idk,
+                                        resolved=_idv.get('resolved'),
+                                        suggested=_f.get("suggested_supplier"))
                             break
         # BRANDING-CONFLICT cross-check (Oracle 2026-07-12) — the dependency-free backstop for the
         # logo-collision wrong-supplier class, and the ONLY identity text-check live in packaged
@@ -3340,6 +10011,219 @@ class ExtractionEngine:
         # changed results['supplier_name'] while the local supplier_name var is stale → false-flag).
         if not _identity_acted:
             self._flag_branding_conflict(results, supplier_name, templates, ocr_text)
+
+        # ── SPARSE-GUARD SUGGESTION CONSUMPTION (LOGO_DETAIL_MISS_SUGGEST; Oracle C1 PLACEMENT
+        # IS LOAD-BEARING, 2026-07-23) ── The coarse-miss detail pick stashed at the pre-stage is
+        # judged HERE — after _flag_branding_conflict, after the Stage-2.5a hint scan and
+        # _adopt_identity_variant (the last supplier_name WRITERS), and before the _logo_abstained
+        # consumer below (so the fill arm's text-gate abstain rides its existing value-less-row +
+        # "Use '<name>'" affordance). The Oracle traced BOTH failure modes of the earlier
+        # (:re-resolve) placement: a fill there made the supplier non-empty and SKIPPED the
+        # un-noted Stage-2.5a resolution (re-creating the 268→131 collapse for that subset), and a
+        # disagree note there was DESTROYED when 2.5a replaced the field dict — and that note is
+        # the ONLY auto-file block on a text-typed field. Do not move this earlier.
+        # The disagree copy deliberately does NOT match the renderer's isBrandingFlag regex
+        # (/page branding reads|confirm the correct company/i) — the row HAS a value, so a bare
+        # note without the Use-button is the intended shape (pinned).
+        _sug = results.pop("_logo_detail_suggest", None)
+        if isinstance(_sug, dict) and str(_sug.get("supplier_name") or "").strip():
+            _sname = str(_sug["supplier_name"]).strip()
+            _out = _resolve_detail_suggestion(results.get("supplier_name"), _sname, self._accept_norm)
+            if _out == "note":
+                _fld = results["supplier_name"]
+                _fld["validation_note"] = (
+                    f"The letterhead mark matches '{_sname}' — please confirm the company.")
+                results["_needs_review"] = True
+                self.log(f"  Logo detail mark DISAGREES with resolved supplier — noted for review ('{_sname}')")
+            elif _out == "fill":
+                _tg = decide_logo_text_gate(_sname, _branding_banks(templates, self._accept_norm),
+                                            ocr_text, self._accept_norm, self.accepted_issuers)
+                if _tg == 'abstain':
+                    # Text positively contradicts — assert nothing; the ABSTAIN-MUST-SPEAK consumer
+                    # just below emits the value-less row + affordance.
+                    results.setdefault("_logo_abstained", {"suppressed": _sname})
+                    self.log(f"  Logo detail suggestion '{_sname}' dropped — page branding contradicts it")
+                else:
+                    results["supplier_name"] = {
+                        "value":           _sname,
+                        "confidence":      69,   # < 70 review threshold; the note is the auto-file block
+                        "method":          "logo",
+                        "validation_note": "Company identified from the letterhead logo mark; "
+                                           "please confirm it's correct.",
+                    }
+                    results["_supplier_name"] = _sname   # scope mirror — _supplier_name was baked above
+                    results["_needs_review"] = True      # review_needed was computed above — mirror it
+                    self.log(f"  Logo detail mark FILLED the empty supplier: '{_sname}' (review-bound)")
+            # 'clean' → nothing: downstream resolved the same name un-noted (the measured 137-doc
+            # arm) or the field is pinned/already-noted — byte-identical to the starved baseline.
+
+        # ── ABSTAIN MUST STILL SPEAK (identity text-first, Oracle C1) ───────────────────────
+        # The text-agreement gate dropped a contradicted logo identity. If NOTHING else resolved
+        # the issuer, the doc would otherwise reach Review mute — no name, no explanation, and no
+        # "Use '<name>'" button, which is ALSO the only trigger for the correction-ripple slice.
+        # So emit a VALUE-LESS supplier_name row carrying the branding-detected alternative (same
+        # alt-scan rule as the flag above: issuer-band, fuzzy, decisively-present only) plus a
+        # plain-English note. Value stays None on purpose — the logo was contradicted, so the app
+        # asserts nothing; the human clicks to accept, exactly as in the branding-conflict flow.
+        _abst = results.get("_logo_abstained")
+        if _abst and not (isinstance(results.get("supplier_name"), dict)
+                          and results["supplier_name"].get("value")):
+            _alt, _alt_fuzzy = _branding_alt_name(
+                _branding_banks(templates, self._accept_norm), ocr_text,
+                self._accept_norm(_abst.get("suppressed") or ""))
+            _fld = results.get("supplier_name")
+            if not isinstance(_fld, dict):
+                _fld = {"value": None, "confidence": 0, "method": "logo_abstained"}
+                results["supplier_name"] = _fld
+            if _alt:
+                _fld["validation_note"] = (
+                    f"The page branding reads '{_alt}'. The logo looked like a different company, "
+                    "so nothing was assumed — please confirm the correct company.")
+                if _alt_fuzzy:                      # actionable button only on the safe issuer-band path
+                    _fld["suggested_supplier"] = _alt
+            else:
+                _fld["validation_note"] = (
+                    "Couldn't confirm which company sent this — the logo matched another company "
+                    "but the page text doesn't agree. Please set the correct company.")
+            results["_needs_review"] = True
+
+        # ── IDENTIFIER-REGISTRY ISSUER SUGGESTION (slice 1b, DARK — no map unless armed) ───────────
+        # When the issuer is BLANK and the learned registry is loaded, read this page's issuer-region
+        # VATs and reverse-look-up the registry: a checksum-valid HEADER VAT that maps to EXACTLY ONE
+        # learned supplier SUGGESTS that sender. SUGGEST-ONLY (fill-empty, no value, review-bound), so
+        # an empty issuer stays held for the human — it NEVER writes a value, never enters the
+        # corroboration/auto-file math (Oracle C1). company_no/phone/footer never suggest alone (C4).
+        # The note carries "confirm the correct company" so the renderer's isBrandingFlag already arms
+        # the "Use 'X'" button, WITHOUT a false letterhead-read claim (Oracle C3). Placed BEFORE the
+        # cold letterhead read below so a warm hard-identifier hit is preferred; both stay fill-empty.
+        if getattr(self, "_id_registry", None) \
+                and not (isinstance(results.get("supplier_name"), dict) and results["supplier_name"].get("value")):
+            try:
+                from extraction import identifier_extract as _idx
+                _idsup = _idx.match_issuer(self._id_registry, ocr_text)
+                if _idsup:
+                    _ifld = results.get("supplier_name")
+                    if not isinstance(_ifld, dict):
+                        _ifld = {"value": None, "confidence": 0, "method": "identifier_suggest"}
+                        results["supplier_name"] = _ifld
+                    if not _ifld.get("suggested_supplier"):
+                        _ifld["suggested_supplier"] = _idsup
+                        _ifld["validation_note"] = (
+                            f"A VAT number on this page is registered to '{_idsup}' — "
+                            "please confirm the correct company.")
+                        results["_needs_review"] = True
+                        self.log(f"  Identifier-registry issuer suggestion: '{_idsup}' (VAT match)")
+            except Exception as _e:                        # a suggestion must never break an extraction
+                self.log(f"  Identifier issuer suggest skipped: {_e}")
+
+        # ── LETTERHEAD ISSUER SUGGESTION (2026-07-20, DEFAULT OFF: LETTERHEAD_ISSUER=1 to arm) ───
+        # THE COLD-START HOLE. field_patterns.supplier_name finds the issuer only by a CAPTION
+        # ("Bill From"/"Supplier"/"Vendor"/…), and real letterheads carry none — the company name
+        # just sits at the top. Every other issuer path (template/logo/hint-scan/branding) needs a
+        # prior confirm. So on FIRST CONTACT the issuer is unreadable: measured 0 of 270 documents
+        # identified cold, including one whose OCR line 1 is literally its own company name.
+        #
+        # SUGGESTS, NEVER ASSERTS, and the reason is not timidity: this reader only has to carry
+        # DOCUMENT #1. After one confirm the supplier has a hint, a logo and a template and every
+        # later document resolves at full confidence — so it never needs authority to assert, while
+        # a wrong assert would plant a poisoned learning SCOPE that then attracts future documents.
+        # It therefore rides the SAME value-less-row + "Use '<name>'" affordance the branding
+        # abstain above already uses — which the renderer arms by MATCHING THE NOTE TEXT, so the
+        # wording below is part of the contract, not decoration (see the note comment).
+        #
+        # FILL-EMPTY-ONLY and placed LAST, deliberately: several upstream guards are written
+        # `if not supplier_name`, so producing a value earlier would SKIP the logo match and the
+        # Stage-2.5a hint scan. A fresh geometric guess must never outrank a learned identity.
+        if (os.environ.get("LETTERHEAD_ISSUER", "0") == "1"
+                and not (isinstance(results.get("supplier_name"), dict)
+                         and results["supplier_name"].get("value"))):
+            try:
+                from extraction import letterhead
+                _lh = letterhead.pick_issuer(
+                    ocr_text,
+                    # Exclude the document's OWN detected type name and the shipped type
+                    # vocabulary, so a printed type heading can never be read as a company.
+                    # BOTH the bucket KEYS and the PHRASES inside them: keys alone left
+                    # "TAX INVOICE" / "VAT INVOICE" / "ORDER CONFIRMATION" eligible, and those
+                    # sail past GENERIC_SINGLES (multi-word) and past the chrome-fragment guard
+                    # (which only judges 2-5 char cores) — a logo-only letterhead would then have
+                    # suggested "TAX INVOICE" as the company name.
+                    detected_title=results.get("_document_type"),
+                    type_phrases=_letterhead_type_phrases(self.patterns),
+                    # PAGE-0 GEOMETRY (the geometry slice, 2026-07-20): word boxes + med_h from the
+                    # fresh page-0 OCR read. None on a cached reprocess / born-digital page 0 —
+                    # pick_issuer falls back to its text-only path. Height RANKS, text filters GATE.
+                    geometry=page0_geometry,
+                )
+            except Exception as _e:                  # a suggestion must never break an extraction
+                _lh = None
+                self.log(f"  Letterhead issuer scan skipped: {_e}")
+            if _lh:
+                _lfld = results.get("supplier_name")
+                if not isinstance(_lfld, dict):
+                    _lfld = {"value": None, "confidence": 0, "method": "letterhead_suggest"}
+                    results["supplier_name"] = _lfld
+                # ── PREFILL (Chris round-11 card #4; gary→Oracle SIGN-OFF-WITH-CONDITIONS
+                # 2026-08-21, DEFAULT OFF via LETTERHEAD_PREFILL) ──────────────────────────────
+                # Land the SAME name pick_issuer already suggests INTO the box, so one Confirm files
+                # it instead of a per-document "Use 'X'" click. Held in Review TWO independent ways —
+                # confidence 69 (< the 70 needs_review threshold at the validator, engine.py ~4809)
+                # AND the note — so a cold geometric guess can NEVER auto-file and the human still
+                # makes the sender-vs-customer call. The method token is DISTINCT (`letterhead_prefill`):
+                # it matches NO note-demoter (no _resolve_corroborated_notes class keys off it, it is
+                # not in classFixService CLEARABLE_NOTE_MARKS), so a reprocess cannot shed the note and
+                # let the read slip through. It plants NO learning: the row persists as status
+                # 'needs_review', invisible to every confirmed-gated learning reader — only a human
+                # CONFIRM writes a scope (the SAME plant path as clicking "Use 'X'" today). NO
+                # suggested_supplier is set and the note deliberately does NOT match the renderer's
+                # isBrandingFlag regex, so a filled box shows a plain note, not a redundant "Use 'X'"
+                # button (the value-present convention, engine.py:9253-9255). GUARD: only when the row
+                # is wholly UNOWNED — no prior value, suggestion OR note (a contradicted-logo abstain
+                # at :9296 can leave a note without a suggestion; that stays a human decision, never a
+                # prefill). LETTERHEAD_PREFILL=0 → the value-less suggest below runs unchanged
+                # (byte-identical to pre-2026-08-21).
+                if (os.environ.get("LETTERHEAD_PREFILL", "0") == "1"
+                        and not _lfld.get("value")
+                        and not _lfld.get("suggested_supplier")
+                        and not _lfld.get("validation_note")):
+                    _lfld["value"]           = _lh
+                    _lfld["confidence"]      = 69
+                    _lfld["method"]          = "letterhead_prefill"
+                    _lfld["validation_note"] = (
+                        f"The letterhead reads '{_lh}' — filled in for you, but please confirm "
+                        "it's the sender, not the customer, before filing.")
+                    results["_needs_review"] = True
+                    self.log(f"  Letterhead issuer PREFILLED: '{_lh}' (review-bound, conf 69)")
+                elif not _lfld.get("suggested_supplier"):   # never displace a stronger suggestion
+                    _lfld["suggested_supplier"] = _lh
+                    # ⚠ THE WORDING IS LOAD-BEARING, not cosmetic. The Review renderer decides
+                    # whether to draw the "Use '<name>'" button by REGEX-MATCHING this note
+                    # (renderer.js isBrandingFlag: /page branding reads|confirm the correct
+                    # company/i). An earlier draft ended "…confirm the company", which does not
+                    # match — the suggestion was computed, stored, passed to the renderer and
+                    # silently dropped, leaving the operator prose and an empty box. Two languages
+                    # coupled by a sentence: test_letterhead_note_contract.js pins BOTH sides, so a
+                    # copy edit here trips red instead of quietly removing the only affordance.
+                    #
+                    # The copy also has a job: this fires on FIRST CONTACT, where the corroboration
+                    # gate cannot protect anything (the name was read verbatim out of the page, so
+                    # "is it corroborated by the page text" is true by construction). The operator's
+                    # reading of this sentence is the whole remaining safety budget, so it names the
+                    # one mistake only a human can catch here: sender versus customer.
+                    # Chris round-10 card #2: this fires whenever the issuer is UNRESOLVED and a
+                    # letterhead name was read — which includes a KNOWN sender whose LAYOUT changed
+                    # (logo moved corner) on, say, the 40th document. "Never seen this sender before"
+                    # was FALSE there (39 already filed). The neutral wording is true in BOTH cases —
+                    # the issuer wasn't confirmed for THIS page — and still carries the load-bearing
+                    # "confirm the correct company" the renderer button regex matches + the sender-vs-
+                    # customer safety budget. (Distinguishing new-sender from new-layout would need a
+                    # known-supplier lookup threaded here — a separate enrichment.)
+                    _lfld.setdefault(
+                        "validation_note",
+                        f"Couldn't confirm who issued this page — the top of the page reads '{_lh}'. "
+                        "Please confirm the correct company (check it's the sender, not the customer).")
+                    results["_needs_review"] = True
+                    self.log(f"  Letterhead issuer SUGGESTED: '{_lh}' (not assigned)")
 
         # TYPE-AMBIGUITY guard (Fix A, Oracle 2026-07-13) — the fail-toward-review backstop for the
         # same-letterhead type-flip: a supplier issuing several doc types on ONE logo lets a skew-
@@ -3351,7 +10235,204 @@ class ExtractionEngine:
         # after the branding block so their notes compose rather than clobber. HOLD-ONLY: never changes a
         # value -> per-field accuracy byte-identical. Kill switch TYPE_AMBIGUITY_GUARD.
         if getattr(self, '_type_ambiguous', False) and os.environ.get('TYPE_AMBIGUITY_GUARD', '1') != '0':
-            self._flag_type_ambiguity(results, ref_field_key)
+            # A2 (type-split arc, 2026-08-22; Oracle S2-py-2): decided HERE, late — `_type_ambiguous`
+            # itself stays untouched (B' label-ownership scoping at Stage 2 reads it). The hold is
+            # WAIVED only when process_docs named THIS matched template (after the B1 pin) as the
+            # waiver candidate AND the document's OWN reference, read by a located method, carries
+            # the pick scope's dominant prefix. Trade-off (pinned): this delays Fix A's hold on a
+            # genuine rare-type doc from the rival's 1st to its 2nd confirm — before the 1st, a
+            # single-slug cohort never fired Fix A at all, so the class is not widened.
+            _waiver = self._type_waiver_ok(results, getattr(self, '_type_match', None), matched_tmpl,
+                                           ref_field_key, supplier_name, document_slug)
+            if _waiver:
+                self.log(f"  Type-ambiguity hold WAIVED: rival type unsupported and the document's own "
+                         f"reference '{_waiver}' carries this sender's usual prefix")
+                self._t('type_ambiguity_waived', field=ref_field_key, value=_waiver,
+                        template_id=(matched_tmpl or {}).get('id'))
+            else:
+                self._flag_type_ambiguity(results, ref_field_key)
+        # C1 (TYPE-heading authority): a trusted-title REFUSE (identify_template discarded the matched
+        # template because the trusted heading names a DIFFERENT type) leaves the doc with NO template
+        # — it must not silently auto-file a detection-only type at overall==100. HOLD it for review.
+        # Fires whenever the refuse ran; its kill switch (TYPE_REFUSE_HOLD) gates the sentinel upstream
+        # so _type_refused is already False when disabled → byte-identical. `elif`: a refuse yields
+        # match=None so _type_ambiguous is normally False, but a ref-prefix PIN can re-populate the
+        # match and set _type_ambiguous — either way the doc is HELD, so the ambiguity note winning
+        # the tie is fine (both compose after the branding/prefix notes applied above).
+        elif getattr(self, '_type_refused', False):
+            # Reworded (owner + herald + Oracle 2026-08-01, shipped WITH the R1 link-on-confirm cure —
+            # the promise "confirming will teach it" is only TRUE now that a plain confirm resolves the
+            # template link and warms the young template). On the refuse path the COMMITTED type equals
+            # the trusted heading's type by construction, so the old copy ("heading … doesn't match
+            # this supplier's saved layout") read as a contradiction on a correctly-typed doc; say what
+            # actually happened + what fixes it. The type NAME is threaded when known.
+            _tn = str(document_type or '').strip()
+            self._flag_type_ambiguity(
+                results, ref_field_key,
+                note=((f"Couldn't match this document to the supplier's saved {_tn} layout"
+                       if _tn else "Couldn't match this document to a saved layout for the supplier")
+                      + " — please check the document type; confirming will teach this layout."))
+
+        # Crosscheck-outlier reconcile (Slice-1 — gary + Oracle SIGN-OFF-W/COND 2026-08-03). Owns the
+        # flip-REFUTED direction of anchor.py's authoritative-crop cross-check (E2 at :4180 owns flip-
+        # corroborated). Placed BEFORE G1/Fix-A so a restored value is then subject to their holds like
+        # any other winner. Iterates EVERY field the crosscheck fired on (method=='anchor_crop_crosscheck'
+        # — the current crosscheck scope: *_number/*_no/*reference*/date, custom included) and, when the
+        # flip is an uncorroborated outlier vs a >=2-independent-family (>=1 crop-family) + page-present
+        # alternative, restores that alternative (re-base anchor_inline@90, drop the flag — mirrors E2).
+        # ALWAYS pops the transient _crosscheck_original stash so it never persists. Kill switch OFF =
+        # byte-identical (anchor.py never stashes the key; this whole block is skipped).
+        _xcheck_rejected = {}   # field -> the REJECTED taught-crop read (Oracle C1, note-demote slice):
+        # captured here because Slice-1 below unconditionally pops the transient; the demote's
+        # note_demoted audit record keeps it so the census can retro-audit "was any demoted
+        # dissent later proven right" — the only instrument that can observe the disaster class.
+        if CROSSCHECK_OUTLIER_RECONCILE:
+            for _xk, _xd in results.items():
+                if _xk.startswith("_") or not isinstance(_xd, dict):
+                    continue
+                if _xd.get("method") != "anchor_crop_crosscheck":
+                    _xd.pop("_crosscheck_original", None)      # not a live flip here — just housekeep
+                    continue
+                _xis_d = _xk in (date_field_keys or ())
+                _alt = _crosscheck_corroborated_alternative(
+                    _xd, (self._field_candidates or {}).get(_xk) or [], ocr_text, _xis_d)
+                _xorig = _xd.pop("_crosscheck_original", None)  # consumed — never persist the stash
+                if _xorig is not None:
+                    _xcheck_rejected[_xk] = _xorig
+                if not _alt:
+                    continue
+                _restored = {**_xd,
+                             "value":      _alt,
+                             "method":     "anchor_inline",
+                             "confidence": max(int(_xd.get("confidence") or 0), _CROSSCHECK_CORROB_CONF)}
+                for _k in ("validation_note", "was_corrected", "corrected_to"):
+                    _restored.pop(_k, None)
+                results[_xk] = _restored
+                self.log(f"  Crosscheck-outlier reconcile: {_xk} flip '{_xd.get('value')}' refuted by "
+                         f"corroborated '{_alt}' — restored + flag dropped")
+
+        # Slice-2 universal post-merge verify (gary+reggie+007 → Oracle SIGN-OFF-W/COND 2026-08-03).
+        # Runs AFTER Slice-1 (an anchor_crop_crosscheck winner is Slice-1's decided territory —
+        # skipped inside) and BEFORE G1/Fix-A so a restored value is subject to their holds like any
+        # other winner. Gated UNIVERSAL_VERIFY_RESTORE / UNIVERSAL_VERIFY_FLAG (+ CENSUS log-only);
+        # all three unset = byte-identical (the method returns immediately).
+        self._universal_postmerge_verify(results, field_defs, ref_field_key,
+                                         date_field_keys, ocr_text, supplier_name, document_slug)
+
+        # G1 (VETO-FALLTHROUGH corroboration guard — gary design + Oracle SIGN-OFF-W/COND 2026-07-26).
+        # On a doc whose template match arrived via the identity-veto FALL-THROUGH, the anchor family
+        # newly activates on docs that previously ran anchor-less — and a LONE, page-absent critical
+        # read can ride the conformance boost into a silent wrong file (#472: lone anchor_inline
+        # 'PO-38093' @85→98 while the page prints 'PO-98093'; the exact #183 harvest-synthesis tell).
+        # Hold-only: each critical winner must be corroborated (_fallthrough_critical_corroborated) or
+        # it gains a validation_note — the note alone blocks auto-file via trust.js's flagged gate
+        # (the DB-side gate honours a persisted note, NOT a bare _needs_review). No value/confidence/
+        # method change; NO authoritative exemption (Oracle Q2 — the founding class is ⊕-taught);
+        # snap/hint winners get the uniform hold (Oracle Q4). Fields already noted are SKIPPED
+        # (one-note-per-field convention — a hold is already in force). Placement (C7): after the
+        # type-refuse guard, BEFORE the final trace (so the note is visible there) and BEFORE
+        # _build_candidate_emit. NOTE (Oracle C1): the candidate picker never arms on ref/date fields
+        # (_build_candidate_emit is name-like-only), so this note text is the operator's ONLY
+        # affordance — field-kind-aware and self-sufficient by design.
+        if getattr(self, '_veto_fallthrough', False):
+            _g1_crit = ({ref_field_key} if ref_field_key else set()) | set(date_field_keys or ())
+            for _ck in sorted(_g1_crit):
+                _cd = results.get(_ck)
+                if not (isinstance(_cd, dict) and str(_cd.get("value") or "").strip()):
+                    continue                                      # empty → other gates' concern
+                if str(_cd.get("validation_note") or "").strip():
+                    continue                                      # already held (skip, don't compose)
+                _is_d = _ck in date_field_keys
+                if _fallthrough_critical_corroborated(_cd, (self._field_candidates or {}).get(_ck) or [],
+                                                      ocr_text, _is_d):
+                    continue
+                _kind = "date" if _is_d else ("reference" if _ck == ref_field_key else "value")
+                _cd["validation_note"] = (f"This {_kind} couldn't be confirmed anywhere else on the "
+                                          f"page — please check it against the document before filing.")
+                results["_needs_review"] = True
+                self.log(f"  Veto-fallthrough hold: {_ck} '{_cd.get('value')}' uncorroborated — held for review")
+
+        # Fix A (#183 harvest-absence hold — gary design + Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-26).
+        # The general-doc sibling of the G1 veto-fallthrough guard above: a CRITICAL anchor_inline winner
+        # that _fallthrough_critical_corroborated can't confirm (no cross-family rail agrees, value absent
+        # from the page) is the #183 skew-synthesis — HOLD it. Runs AFTER G1 so a fall-through doc that G1
+        # already noted is SKIPPED (the validation_note check; one note per field, no double-note). Fix A's
+        # condition is a strict SUBSET of G1's (same predicate + an anchor_inline filter), so on a veto-
+        # fallthrough doc it adds nothing G1 didn't. Note-only, no value/method/confidence change. Kill
+        # INLINE_HARVEST_ABSENCE_HOLD=0 (byte-identical off).
+        if INLINE_HARVEST_ABSENCE_HOLD:
+            _ia_crit = ({ref_field_key} if ref_field_key else set()) | set(date_field_keys or ())
+            for _ck in sorted(_ia_crit):
+                _cd = results.get(_ck)
+                if not (isinstance(_cd, dict) and str(_cd.get("value") or "").strip()):
+                    continue
+                if str(_cd.get("validation_note") or "").strip():
+                    continue                                      # G1/type-guard already held → skip
+                _is_d = _ck in date_field_keys
+                if _inline_absence_should_hold(_cd, (self._field_candidates or {}).get(_ck) or [],
+                                               ocr_text, _is_d):
+                    _kind = "date" if _is_d else ("reference" if _ck == ref_field_key else "value")
+                    _cd["validation_note"] = (f"This {_kind} was read from the page layout but couldn't "
+                                              f"be confirmed anywhere else on the document — please check "
+                                              f"it before filing.")
+                    results["_needs_review"] = True
+                    self.log(f"  Inline-absence hold: {_ck} '{_cd.get('value')}' anchor_inline "
+                             f"uncorroborated + page-absent — held for review")
+
+        # ── CORROBORATION RECORD (owner principle 2026-08-11) ─────────────────
+        # "It is more about corroboration than merely getting it right." Which INDEPENDENT method
+        # families read the committed value — derived from the per-run candidate ledger, computed
+        # AFTER every guard. RECORD-ONLY by design: it moves no value, no confidence, no gate —
+        # the ordered plan is record → surface → only then decide. ONE later mutation exists:
+        # _adopt_confirmed_dominant (below, Oracle B2/B5 2026-08-12) may REPLACE a junk-flagged
+        # name value and rewrites this record for that field in the same step (memory family,
+        # independent_agree False, dead value retained) — the final trace + persisted emit then
+        # describe the ADOPTED state truthfully.
+        _corrob = self._build_corroboration_emit(results)
+
+        # CONFIRMED_DOMINANT_ADOPT (Oracle B5 placement: AFTER the corrob build — so the record's
+        # pre-adoption disagreement is captured — and BEFORE the final trace, so the inspector's
+        # `final` row carries the adopted value, never the dead junk).
+        self._adopt_confirmed_dominant(results, ocr_text, _corrob)
+
+        # XCHECK_CORROB_NOTE_DEMOTE (owner corroboration STEP 3, slice 1 — gary → Oracle
+        # SIGN-OFF-W/COND 2026-08-12 NIGHT; DEFAULT OFF). The three crosscheck mechanisms now
+        # partition cleanly: E2 (:6302) = flip corroborated by the keyword INCUMBENT · Slice-1
+        # (above) = flip REFUTED by the ledger · this step = flip corroborated by a CROP-SIDE
+        # ledger witness the incumbent test couldn't see. Runs AFTER CONFADOPT (adopted rows are
+        # note-less + memory-family — inert here by ordering).
+        _d1 = self._demote_xcheck_corroborated_note(results, field_defs, date_field_keys,
+                                                    _xcheck_rejected, _corrob)
+        _d2 = self._demote_recon_total_corroborated_note(results, _corrob)
+        _d3 = self._demote_name_guard_corroborated_note(results, field_defs, _corrob)
+        # 2026-08-15 held-queue arc: the corroboration-driven note resolver (A/B/C/D/E), each gated
+        # by its own default-OFF env. Placed in the SAME recompute guard so a cleared note also loses
+        # its confidence penalty and the doc clears the trust floor on import/reprocess.
+        # `ocr_text` reaches the resolver for the P lane's W3 witness only (is the adopted string
+        # printed on the page?). Defaulted in the signature so a direct unit call stays valid.
+        _d4 = self._resolve_corroborated_notes(results, field_defs, _corrob, matched_tmpl, ocr_text)
+        if _d1 or _d2 or _d3 or _d4:   # all pre-evaluated; inline `or` would short-circuit
+            # Oracle B1: overall/_needs_review were computed upstream — recompute or a demoted
+            # doc parks with no visible reason. Same exclusion + format delta; needs_review
+            # drops ONLY when the demoted note was the doc's LAST (the any-note guard keeps
+            # every direct writer's hold — all 13 cap + note).
+            _oc2 = validator.overall_confidence(results, field_defs, exclude_keys=_hidden_excl)
+            # A demoted note is NO LONGER a format MISMATCH, so its -12 format-consistency penalty must
+            # be released — otherwise every note-demoter is cosmetic (the note clears but the penalty
+            # stays baked, so overall never rises above the floor and the doc keeps parking below-floor).
+            # CORROB_NOTE_RECOMPUTE_FC (2026-08-15, default OFF): recompute the delta from the POST-demote
+            # results instead of reusing the pre-demote `fc_delta`. OFF ⇒ reuse the stale delta,
+            # byte-identical. `supported_keys` is the same set the original delta used (computed at :8736).
+            _fc2 = (validator.format_consistency_delta(results, field_defs, supported_keys)
+                    if os.environ.get("CORROB_NOTE_RECOMPUTE_FC", "0") != "0" else fc_delta)
+            if _fc2:
+                _oc2 = max(0, min(100, _oc2 + _fc2))
+            results["_overall_confidence"] = _oc2
+            _any_note = any(isinstance(v, dict) and str(v.get("validation_note") or "").strip()
+                            for k, v in results.items() if not str(k).startswith("_"))
+            if results.get("_needs_review") and not _any_note \
+                    and not (validator.needs_review(results, field_defs) or format_anomaly_flagged):
+                results["_needs_review"] = False
 
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.
@@ -3361,17 +10442,140 @@ class ExtractionEngine:
                     continue
                 self._t("final", field=key, value=data.get("value"),
                         method=data.get("method"), confidence=data.get("confidence"),
-                        note=data.get("validation_note"))
+                        note=data.get("validation_note"), corrob=_corrob.get(key))
 
         # ── Disambiguation picker: candidate map for flagged name fields ──────
         # Built LAST, after every flag guard, so a note applied late (identity /
         # caption-demotion) still arms the picker. Additive `_` metadata (popped +
         # woven into the per-field emit by process_docs); commits no value.
-        results["_field_candidate_emit"] = self._build_candidate_emit(results)
+        results["_field_candidate_emit"] = self._build_candidate_emit(results, ocr_text)
+        results["_corroboration_emit"] = _corrob
+
+        # ── FILING-IDENTITY COHERENCE (IDENTITY_SCOPE_POST_REPAIR, DEFAULT OFF) ──────────────
+        # `_supplier_name` is not just telemetry: process_docs.py:956 pops it, emits it at
+        # :1065, and processing/handler.js writes it to `documents.supplier_name` — which is
+        # THE FILING FOLDER and THE UNIVERSAL LEARNING SCOPE KEY (learning.js:1803).
+        #
+        # It is assigned at :8332 from the LOCAL `supplier_name`, whose last write is :7220.
+        # Everything that can HEAL the issuer runs after that: Stage 4.5's name-lexicon repair
+        # (:7917+), `_adopt_identity_variant` (:8361), and the writers at :8411/:8441/:8500.
+        # So the engine can repair `results['supplier_name']` — the value the operator sees and
+        # that becomes the extraction row — while the document still files under, and learns
+        # under, the unrepaired string. The extraction row says one company and the folder says
+        # another. The staleness is already documented one guard over, at :8373-8375, where
+        # `_flag_branding_conflict` is SKIPPED precisely because `_adopt_identity_variant` may
+        # have moved the field while this local went stale; that fix was scoped to one caller.
+        #
+        # Placed LAST, deliberately: this ADDS a late re-derivation rather than moving the
+        # :8332 assignment, so every existing consumer of the local — `supported_keys`
+        # (:8318-8322) and `_flag_branding_conflict` (:8377) — sees exactly what it sees today
+        # and is byte-identical. Whether the branding cross-check should instead judge the
+        # POST-repair name is a separate, deliberately unmade decision (Oracle: do not decide
+        # it silently); this slice only stops the folder and the scope key disagreeing with the
+        # value.
+        #
+        # v1 is deliberately MINIMAL — adopt any non-empty final value that differs — because
+        # the flip gate is a corpus arm that counts which documents move and in which
+        # direction. Narrowing to "reliable" finals (note-free? confidence floor?) is exactly
+        # what that measurement is for, and `_adopt_identity_variant` sets a note WHILE
+        # correcting the value, so a note-based guard would exclude a case we want.
+        _moved = ExtractionEngine._rederive_filing_identity(results)
+        if _moved:
+            _was, _now, _meth = _moved
+            # Counted by the corpus arm; also the only operator-visible trace that the filing
+            # identity moved after the resolve.
+            self.log(f"  Filing identity re-derived after repair: {_was!r} -> {_now!r} (method={_meth})")
+            self._t("identity_scope_post_repair", field="supplier_name",
+                    value=_now, method=_meth, note=_was)
 
         return results
 
-    def _flag_type_ambiguity(self, results, ref_field_key):
+    @staticmethod
+    def _rederive_filing_identity(results):
+        """Make the FILING/SCOPE identity agree with the final supplier field value.
+
+        Returns (was, now, method) when it moved the value, else None. Pure apart from the
+        env read and the mutation of `results['_supplier_name']` — pinned behaviourally in
+        tests/test_identity_scope_post_repair.py.
+
+        DEFAULT OFF: with the flag unset this returns None before touching anything, so the
+        whole slice is byte-identical.
+        """
+        if os.environ.get("IDENTITY_SCOPE_POST_REPAIR", "0") == "0":
+            return None
+        fld = results.get("supplier_name")
+        if not isinstance(fld, dict):
+            return None
+        final = str(fld.get("value") or "").strip()
+        stale = str(results.get("_supplier_name") or "").strip()
+        # An EMPTY final value never wins. `_supplier_name` can be resolved from a logo, a
+        # hint or a template when no supplier FIELD was read at all, and blanking it would
+        # send the document to "Unknown Company" and destroy its learning scope — strictly
+        # worse than a stale-but-real name.
+        if not final or final == stale:
+            return None
+        results["_supplier_name"] = final
+        return (stale, final, fld.get("method"))
+
+    # A2: methods whose read of the ref is LOCATED on the page. Never a memory/hint fill, never a
+    # dominant-value snap or a class fix (both manufacture the dominant prefix — circular), never a
+    # name repair.
+    _WAIVER_LOCATED_PREFIXES = ('template_mapping', 'anchor', 'keyword')
+    _WAIVER_EXCLUDED_MARKS   = ('hint', 'memory', 'snap', 'class_fix', 'name_repair', 'corrected_adopt')
+
+    def _type_waiver_ok(self, results, match, matched_tmpl, ref_field_key, supplier_name, document_slug):
+        """A2 (type-split arc). Returns the ref VALUE when the Fix A hold may be waived, else None.
+        Decided entirely in the engine — process_docs' pre-extract identify + B1 block are SKIPPED on a
+        reprocess of a typed doc (`_ks`), which is exactly the "Reprocess N" path the owner uses.
+        LEG 1 (the rival is unsupported): the Stage-0 `match` is ambiguous and carries `rival_slugs` ⊆
+        `unsupported_rival_slugs` (every rival type has <2 confirmed docs; counts LIVE — the matcher
+        abstains with None otherwise); the matched template AFTER the B1 pin is the PICK itself (the
+        same id as match['template'] — a pin onto a rival never waives) and the pick has
+        ≥ DOMINANT_MIN_COUNT confirmed docs. LEG 2 (the doc's OWN ref): the ref-role field holds a
+        non-empty value read by a LOCATED method and `code_prefix(value)` equals the pick scope's
+        learned dominant prefix (`lookup_prefix` over self.prefix_index — the same poison-barred model
+        the prefix-outlier guard uses); page-anywhere prefix presence is B1's signal and common-mode,
+        so it is NOT a leg. Kill switch TYPE_AMBIG_UNSUPPORTED_WAIVER (default OFF ⇒ None ⇒ hold).
+        Fails toward HOLD on anything missing. Pinned in tests/test_type_ambiguity_unsupported.py."""
+        try:
+            if os.environ.get('TYPE_AMBIG_UNSUPPORTED_WAIVER', '0') == '0':
+                return None
+            if not isinstance(match, dict) or not match.get('ambiguous_type'):
+                return None
+            if not isinstance(matched_tmpl, dict):
+                return None
+            pick = match.get('template') or {}
+            if not pick or pick.get('id') is None or matched_tmpl.get('id') != pick.get('id'):
+                return None                                   # the B1 pin moved us onto a rival
+            rivals = match.get('rival_slugs'); unsup = match.get('unsupported_rival_slugs')
+            if not rivals or unsup is None or not set(rivals) <= set(unsup):
+                return None                                   # a supported rival, or counts not live
+            if int(pick.get('confirmed_count') or 0) < ocr_corrector.DOMINANT_MIN_COUNT:
+                return None
+            if not ref_field_key:
+                return None
+            fld = results.get(ref_field_key)
+            if not isinstance(fld, dict):
+                return None
+            val = str(fld.get('value') or '').strip()
+            if not val:
+                return None
+            meth = str(fld.get('method') or '').lower()
+            if not meth.startswith(self._WAIVER_LOCATED_PREFIXES):
+                return None
+            if any(m in meth for m in self._WAIVER_EXCLUDED_MARKS):
+                return None
+            rec = ocr_corrector.lookup_prefix(self.prefix_index, ref_field_key, supplier_name, document_slug)
+            dom = (rec or {}).get('dominant')
+            if not dom:
+                return None
+            if ocr_corrector.code_prefix(val) != str(dom).upper():
+                return None
+            return val
+        except Exception:
+            return None
+
+    def _flag_type_ambiguity(self, results, ref_field_key, note=None):
         """Fix A: HOLD an ambiguous same-letterhead TYPE resolution for review. Lands a persisted
         validation_note on a GUARANTEED-PRESENT field so trust.isAutoFileEligible's `flagged` check
         blocks the auto-file (Oracle/gary's load-bearing catch: the DB-side gate honours a persisted
@@ -3379,9 +10583,11 @@ class ExtractionEngine:
         extracted) -> the ref-role field -> any valued field -> a synthetic supplier_name row (so the
         note persists even for a worksheet whose ref_field_key is null — Oracle C3). APPENDS to any
         existing note (composes with _flag_prefix_outlier / branding — Oracle C2). HOLD-ONLY: never
-        changes a value. Guarded by tests/test_type_ambiguity_flag.py."""
-        note = ("This letterhead is used for several document types and the type could not be confirmed "
-                "on this scan — please check the document type is correct before filing.")
+        changes a value. `note` overrides the default message (C1 passes a trusted-title-refuse note).
+        Guarded by tests/test_type_ambiguity_flag.py."""
+        if note is None:
+            note = ("This letterhead is used for several document types and the type could not be confirmed "
+                    "on this scan — please check the document type is correct before filing.")
         carrier = None
         for k in ('supplier_name', ref_field_key):
             if k and isinstance(results.get(k), dict):
@@ -3421,6 +10627,23 @@ class ExtractionEngine:
         results    = {}
         s_lower    = supplier_name.lower().strip()
         field_meta = {f["key"]: f for f in field_defs}
+
+        # Oracle C3 (Generic Document design): a title is PER-DOCUMENT by nature — never
+        # hint-filled. The evidence-based variability guard below needs >=2 DISTINCT
+        # confirmed values to disarm, so the FIRST stale title would otherwise fill an
+        # empty title on a same-supplier reprocess (a wrong value wearing 60-90 conf).
+        hints = [h for h in hints if str((h or {}).get("field_key") or "").lower() != "title"]
+        # LIST ownership (2026-08-11): a list is per-document by nature too — replaying one
+        # document's serial set onto another is the hint-fill failure mode with N values at once.
+        # The variability guard can't protect a cold scope (needs >=2 distinct confirms).
+        _lk = getattr(self, '_list_field_keys', None)
+        if _lk:
+            hints = [h for h in hints if (h or {}).get("field_key") not in _lk]
+        # BARCODE ownership (2026-08-26): a decode is per-document by nature — a hint would replay
+        # one document's barcode onto another.
+        _bk = getattr(self, '_barcode_field_keys', None)
+        if _bk:
+            hints = [h for h in hints if (h or {}).get("field_key") not in _bk]
 
         # Evidence-based variability: a field with >=2 DISTINCT confirmed values for
         # this supplier+type is variable IN FACT (e.g. a per-document customer name),

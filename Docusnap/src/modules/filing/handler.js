@@ -20,6 +20,7 @@ const MONTH_NAMES = [
 const {
   DEFAULT_PATTERN, DEFAULT_FOLDER_PATTERN, SUPPORTED_TOKENS, FIELD_TOKENS,
   buildFilename, buildFolderSegments, buildFilenameStem, resolveDuplicateFilename,
+  resolveDuplicate, previewDuplicateName,
 } = require('./filename_pattern');
 
 // ── Register IPC ──────────────────────────────────────────────────────────────
@@ -76,6 +77,13 @@ function register(ctx) {
     const fn = buildFilename({ pattern: filenamePattern, values: sample, ext: '.pdf' });
     return { segments, filename: fn.filename, warning: fn.fellBack ? fn.reason : null };
   });
+
+  // Live example of the label a duplicate would get (Settings → Files & filing). Uses the SAME
+  // resolver logic as filing so the preview can't drift from what actually happens on disk.
+  ipcMain.handle('preview-duplicate-name', (_e, suffix) => {
+    requireRole('admin');
+    return { example: previewDuplicateName('Invoice.15-12-2025.INV-2025-0142.pdf', '.pdf', suffix) };
+  });
 }
 
 // ── Main filing function ──────────────────────────────────────────────────────
@@ -103,7 +111,13 @@ async function commitDocument({
   // runs the same buildFilenameStem per level) and fall back to a neutral name when
   // it comes up empty.
   const supplierStem = buildFilenameStem(String(allValues['supplier_name'] || ''), {});
-  const supplierName = supplierStem || 'Unknown Company';
+  // Generic Document (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §6): a blank issuer is
+  // DESIGNED for that type — it files under a calm 'General/' folder. Every OTHER type
+  // keeps the 'Unknown Company' failure signal byte-identical (PIN 6). supplier_name on
+  // the doc row stays NULL either way — folder substitution only, no phantom learning scope.
+  const fallbackCompany = (dtInfo && dtInfo.slug === require('../../../database/modules/document_types').GENERIC_SLUG)
+    ? 'General' : 'Unknown Company';
+  const supplierName = supplierStem || fallbackCompany;
 
   const dateObj = parseDate(rawDate);
   const ext     = path.extname(originalFilename).toLowerCase();
@@ -123,6 +137,7 @@ async function commitDocument({
     year:         dateObj ? String(dateObj.getFullYear())   : '',
     month:        dateObj ? MONTH_NAMES[dateObj.getMonth()] : '',
     originalName: path.basename(originalFilename, ext),
+    title:        allValues['title'] || '',   // Auto-Title / typed at review; empty collapses
   };
 
   const built = buildFilename({ pattern, values: tokenValues, ext });
@@ -168,10 +183,18 @@ async function commitDocument({
   // update, not a collision — exclude the doc's own current copy so it isn't suffixed
   // "-DUPLICATE". A genuine collision with a DIFFERENT doc's file still suffixes.
   const efpResolved = existingFiledPath ? path.resolve(existingFiledPath) : null;
-  const finalFilename = resolveDuplicateFilename(
+  // The duplicate LABEL is user-configurable (Settings → Files & filing). Default 'DUPLICATE'
+  // is byte-identical to the legacy resolveDuplicateFilename path. Tokens: DUPLICATE | COPY |
+  // number (bare -2/-3) | date (import date) | any custom word (Windows-safed). Policy stays
+  // 'suffix' (same folder) — the 'subfolder' policy is supported by resolveDuplicate but not yet
+  // surfaced, so `subfolder` here is always ''.
+  const duplicateSuffix = learning.getSetting(db, 'duplicate_suffix', 'DUPLICATE');
+  const dup = resolveDuplicate(
     baseFilename, ext,
-    (name) => { const p = path.join(targetDir, name); return fs.existsSync(p) && path.resolve(p) !== efpResolved; }
+    (name, sub) => { const p = path.join(targetDir, sub || '', name); return fs.existsSync(p) && path.resolve(p) !== efpResolved; },
+    { policy: 'suffix', suffix: duplicateSuffix }
   );
+  const finalFilename = dup.filename;
 
   const targetPath = path.join(targetDir, finalFilename);
   const srcPath    = path.join(folderPath, originalFilename);
@@ -225,7 +248,7 @@ async function commitDocument({
     filename:     finalFilename,
     filePath:     targetPath,
     metadataPath,
-    isDuplicate:  finalFilename.includes('-DUPLICATE'),
+    isDuplicate:  dup.filename !== baseFilename,   // any label/policy, not just '-DUPLICATE'
     srcPath,      // caller schedules removal once the original is no longer in use
   };
 }
@@ -273,7 +296,12 @@ async function removeSourceFile(fs, srcPath, logger) {
 // ── XML builder ───────────────────────────────────────────────────────────────
 function buildXml({ allValues, documentType, originalFilename,
                     storedAs, processedAt }) {
-  const esc = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+  // Strip XML-1.0-illegal control chars (0x00–08, 0B, 0C, 0E–1F) from a crafted-doc value BEFORE
+  // entity-escaping (Sammy L-5) — otherwise they land verbatim in element content and produce a
+  // malformed sidecar that a strict external / /v1 consumer rejects. Tag/entity injection was
+  // already fully blocked by the & < > escaping; this only removes the never-valid bytes.
+  const esc = s => String(s || '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+                                  .replace(/&/g,'&amp;').replace(/</g,'&lt;')
                                   .replace(/>/g,'&gt;');
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -327,9 +355,23 @@ const MONTHS = {
   jul:6, aug:7, sep:8, oct:9, nov:10, dec:11,
 };
 
+// OCR date pre-clean — TWIN of validator._date_preclean + renderer._datePreclean; keep aligned.
+// Rejoin an OCR-split number ("1 5" -> "15") + collapse whitespace around date separators, so a
+// value that extraction normalised also normalises at confirm/filename. No-op on an already-clean
+// DD-MM-YYYY (no intra-digit spaces, no spaced separators) → the normal path is byte-identical.
+function _datePreclean(raw) {
+  let s = String(raw == null ? '' : raw);
+  if (!/jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(s)) {
+    s = s.replace(/(?<=\d)\s+(?=\d)/g, '');   // gate the digit-join on the ABSENCE of a month name ("Aug 3 2024")
+  }
+  return s
+    .replace(/\s*([/.\-])\s*/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
 function parseDate(raw) {
   if (!raw) return null;
-  const s = String(raw).trim();
+  const s = _datePreclean(raw);
   // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
   let m = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
   if (m) return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));

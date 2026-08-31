@@ -169,10 +169,10 @@ input, textarea,
 }
 /* Summer — bright sunshine yellow/gold, warm and open (needs dark on-accent) */
 :root[data-theme="summer"] {
-  --bg:#fdf8e6; --surface:#fffdf4; --surface2:#f8f0d4; --surface3:#f0e5bf;
-  --border:#f1e7c6; --border2:#e4d29a;
-  --accent:#f5b300; --accent2:#dd9c00; --accent-bg:#fdf0c2; --accent-border:#f0d98f; --on-accent:#3a2c00;
-  --text:#3a3218; --muted:#7f7038; --muted2:#b3a266; --doc-bg:#f8f0d4;
+  --bg:#fdf6df; --surface:#fffdf4; --surface2:#f7edcf; --surface3:#efe1bd;
+  --border:#f0e6c4; --border2:#e2cf95;
+  --accent:#eda30f; --accent2:#cf8c00; --accent-bg:#fbeecb; --accent-border:#f0d98f; --on-accent:#3a2c00;
+  --text:#3a3016; --muted:#7f7038; --muted2:#b3a266; --doc-bg:#f7edcf;
   --shadow:0 1px 2px rgba(120,90,10,.07), 0 20px 44px -26px rgba(120,90,10,.22);
 }
 /* Autumn — warm amber & pumpkin, toasty cream surfaces */
@@ -200,6 +200,32 @@ input, textarea,
   --warn:#f0c04a; --warn-bg:#2e2400; --warn-border:#4a3a1a;   /* festive gold */
   --err:#ff6b6b; --err-bg:#2e0d0d; --err-border:#4a1f1f;
   --text:#edeadf; --muted:#93a894; --muted2:#5f7566; --doc-bg:#081209;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 18px 40px -24px rgba(0,0,0,.75);
+  color-scheme:dark;
+}
+
+/* ── Festive Light (light family) — bright snowy counterpart to Festive: warm snow shell,
+      holly-RED accent, evergreen "filed" + gold, so it stays unmistakably festive but light ── */
+:root[data-theme="festivelight"] {
+  --bg:#f7f2ec; --surface:#fffdfa; --surface2:#f2e7dd; --surface3:#e9d9c8;
+  --border:#ecdccb; --border2:#dcc4a9;
+  --accent:#c62d2d; --accent2:#a82424; --accent-bg:#f9e6e1; --accent-border:#f0c6bd; --on-accent:#fff;
+  --ok:#1f7a48; --ok-bg:#e4f2ea; --ok-border:#bfe0cd;                 /* evergreen */
+  --err:#b02a37; --err-bg:#f7e3e6; --err-border:#e6bcc4;             /* berry — distinct from the holly-red primary */
+  --text:#33241d; --muted:#7c6a5b; --muted2:#ad9a86; --doc-bg:#f2e7dd;
+  --shadow:0 1px 2px rgba(90,40,30,.07), 0 20px 44px -26px rgba(90,40,30,.22);
+}
+
+/* ── Spooky (dark family) — Halloween: aubergine-black shell, pumpkin-orange accent
+      (near-black --on-accent — white fails AA on orange), moonlight-lilac text ── */
+:root[data-theme="spooky"] {
+  --bg:#141019; --surface:#1c1626; --surface2:#251d33; --surface3:#2f2540;
+  --border:#2c2338; --border2:#3d3150;
+  --accent:#ff7a1a; --accent2:#ff9440; --accent-bg:#2c1605; --accent-border:#5a2f0f; --on-accent:#1a0d02;
+  --ok:#8bc34a; --ok-bg:#182310; --ok-border:#2f4a1a;                /* toxic lime */
+  --warn:#f4c430; --warn-bg:#2a2205; --warn-border:#4a3a12;         /* candy gold */
+  --err:#ff5470; --err-bg:#2c0f18; --err-border:#4a1f2c;
+  --text:#ece7f2; --muted:#9a8db3; --muted2:#655a7d; --doc-bg:#0d0a12;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 18px 40px -24px rgba(0,0,0,.75);
   color-scheme:dark;
 }
@@ -236,6 +262,26 @@ input, textarea,
   background-image:
     radial-gradient(120% 90% at 50% -10%, color-mix(in srgb, #e6c34a 12%, transparent) 0%, transparent 55%),
     url('patterns/festive.svg');
+  background-repeat:no-repeat, repeat;
+  background-size:cover, 150px 150px;
+  background-attachment:fixed, fixed;
+}
+/* Festive Light — a faint warm-gold hearth glow OVER the holly tile, tuned for a light shell. */
+:root[data-theme="festivelight"] body {
+  background-color:var(--bg);
+  background-image:
+    radial-gradient(120% 90% at 50% -8%, color-mix(in srgb, #d0a24a 9%, transparent) 0%, transparent 55%),
+    url('patterns/festive-light.svg');
+  background-repeat:no-repeat, repeat;
+  background-size:cover, 150px 150px;
+  background-attachment:fixed, fixed;
+}
+/* Spooky — a pumpkin glow from the upper-right OVER the bats-and-moon tile. */
+:root[data-theme="spooky"] body {
+  background-color:var(--bg);
+  background-image:
+    radial-gradient(120% 90% at 82% -10%, color-mix(in srgb, var(--accent) 12%, transparent) 0%, transparent 55%),
+    url('patterns/spooky.svg');
   background-repeat:no-repeat, repeat;
   background-size:cover, 150px 150px;
   background-attachment:fixed, fixed;

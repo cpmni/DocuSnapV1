@@ -1,7 +1,44 @@
-# Map the clean /v1/* contract paths onto the PHP files. Apache (WAMP and IONOS)
-# both honor this, so client URLs stay contract-shaped and host-portable.
-RewriteEngine On
+# licensing-backend/public/.htaccess — the COMMITTED baseline (Apache).
+#
+# This file used to carry the URL rewrites ONLY, while the hardened rules lived exclusively in
+# Build-IonosDeploy.ps1's generated copy — so any deploy path that used the committed file
+# (a manual upload, the WAMP dev host) silently ran without them (SEC-15). The hardening below
+# is now the committed baseline; the deploy script may still overwrite it with a superset.
+# Apache-only by nature — on nginx/LiteSpeed the equivalents live in lib/harden.php (headers,
+# display_errors, fatal handler), which is server-independent and always applies.
 
+# (1) Force HTTPS — the admin console posts a password + TOTP and its session cookie is
+#     Secure-only. Loopback is EXEMPT so the WAMP dev flow over http://localhost still works.
+RewriteEngine On
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1)(:[0-9]+)?$ [NC]
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+# (2) No directory listing.
+Options -Indexes
+
+# (3) Deny dotfiles outright (SEC-19): .user.ini leaks the relative path to set-env.php, and
+#     .ht* / .git* must never be served. Belt-and-braces with Apache's own <Files ".ht*">.
+<FilesMatch "^\.">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# (4) Baseline security headers (no-op without mod_headers; lib/harden.php sets the same set
+#     in PHP so they survive a server swap).
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "DENY"
+  Header always set Referrer-Policy "no-referrer"
+</IfModule>
+
+# (5) API path contract — map the clean /v1/* paths onto the PHP files. Apache (WAMP and IONOS)
+#     both honour this, so client URLs stay contract-shaped and host-portable.
 RewriteRule ^v1/trial/start/?$  v1/trial_start.php  [L]
 RewriteRule ^v1/activate/?$     v1/activate.php     [L]
 RewriteRule ^v1/validate/?$     v1/validate.php     [L]

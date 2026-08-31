@@ -52,6 +52,16 @@ function auditTableExists(db) {
   catch { return false; }
 }
 
+// Stage 5b: the append-only trigger (`audit_log_nodel`) blocks a naked DELETE FROM audit_log
+// (the H5 tail-erase) but LETS THE SANCTIONED ARCHIVER THROUGH when audit_ctl.archiving = 1.
+// The window is held only around the archiver's own delete loop, and migration 55 resets the
+// flag unconditionally on every startup so a crash mid-archive can't leave the door open.
+// No-op (and harmless) on a pre-mig-55 DB where audit_ctl / the trigger don't exist.
+function _setArchiving(db, on) {
+  try { db.prepare("UPDATE audit_ctl SET v = ? WHERE k = 'archiving'").run(on ? 1 : 0); }
+  catch { /* audit_ctl absent (pre-mig-55) — the delete trigger is absent too, nothing to gate */ }
+}
+
 // Live audit_log columns (names + PRAGMA info), so the archive schema and the
 // INSERT stay in lockstep with whatever migration state the live table is at.
 function liveColumns(db) {
@@ -101,14 +111,20 @@ function archiveMonth(liveDb, Database, archiveDir, ym, cutoff, cols) {
   }
 
   // Only now remove from live (all-or-nothing). Dedup by id is unnecessary — the
-  // copy succeeded — but delete the exact id set we archived.
-  const hasId = cols.names.includes('id');
-  if (hasId) {
-    const del = liveDb.prepare('DELETE FROM audit_log WHERE id = ?');
-    liveDb.transaction((ids) => { for (const id of ids) del.run(id); })(rows.map(r => r.id));
-  } else {
-    // No id column (legacy 5-col schema): delete by the month+cutoff predicate.
-    liveDb.prepare('DELETE FROM audit_log WHERE created_at < ? AND substr(created_at,1,7) = ?').run(cutoff, ym);
+  // copy succeeded — but delete the exact id set we archived. Open the append-only
+  // gate (Stage 5b) only for this delete, and always close it in the finally.
+  _setArchiving(liveDb, true);
+  try {
+    const hasId = cols.names.includes('id');
+    if (hasId) {
+      const del = liveDb.prepare('DELETE FROM audit_log WHERE id = ?');
+      liveDb.transaction((ids) => { for (const id of ids) del.run(id); })(rows.map(r => r.id));
+    } else {
+      // No id column (legacy 5-col schema): delete by the month+cutoff predicate.
+      liveDb.prepare('DELETE FROM audit_log WHERE created_at < ? AND substr(created_at,1,7) = ?').run(cutoff, ym);
+    }
+  } finally {
+    _setArchiving(liveDb, false);
   }
   return rows.length;
 }

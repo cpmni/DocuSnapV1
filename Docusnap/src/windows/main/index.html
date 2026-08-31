@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
   <title>ScanFinder</title>
   <link rel="stylesheet" href="../shared/theme.css" />
   <style>
@@ -207,6 +207,7 @@
     .dash-attn-row { font-size: 13px; color: var(--text); }
     .dash-attn-num { font-family: var(--mono); font-size: 17px; font-weight: 700; color: var(--accent2); margin-right: 4px; }
     .dash-attn-num.err { color: var(--err); }
+    .dash-attn-sub { display: block; font-size: 12px; color: var(--muted); margin: 2px 0 0 2px; }
     .dash-allclear { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ok); font-weight: 600; }
     .dash-allclear .ico-sm { width: 15px; height: 15px; }
     .dash-import-folder { font-family: var(--mono); font-size: 11.5px; color: var(--muted); word-break: break-all; line-height: 1.5; }
@@ -310,7 +311,9 @@
       flex-shrink: 0; display: grid; grid-template-columns: minmax(220px, 1.4fr) auto auto; gap: 20px;
       align-items: start; padding: 18px 24px; border-bottom: 1px solid var(--border); background: var(--surface);
     }
-    .import-actions { display: flex; flex-direction: column; gap: 8px; min-width: 200px; align-self: stretch; justify-content: center; }
+    /* Top-aligned (owner 2026-07-18): the action buttons sit at the top of the header row,
+       level with the source-folder label and the stats card — not floating mid-height. */
+    .import-actions { display: flex; flex-direction: column; gap: 8px; min-width: 200px; align-self: start; justify-content: flex-start; }
     .import-stats { display: flex; flex-direction: column; gap: 0; min-width: 220px; }
     .results-empty { padding: 22px 16px; font-size: 12.5px; color: var(--muted); text-align: center; }
     .sidebar-label { display: flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
@@ -374,11 +377,13 @@
 
     /* "Stuck docs" surface — documents that failed extraction (status='error') */
     .stuck-chip {
-      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      display: flex; flex-direction: column; gap: 6px;
       margin-top: 6px; padding: 8px 10px; border-radius: 7px; font-size: 11px;
       background: var(--warn-bg); border: 1px solid var(--warn); color: var(--warn);
     }
+    .stuck-chip .stuck-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .stuck-chip .stuck-msg { line-height: 1.35; }
+    .stuck-chip .stuck-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
     .stuck-retry {
       flex-shrink: 0; padding: 3px 10px; border-radius: 6px; cursor: pointer;
       border: 1px solid var(--warn); background: transparent; color: var(--warn);
@@ -386,6 +391,26 @@
     }
     .stuck-retry:hover    { background: var(--warn); color: #fff; }
     .stuck-retry:disabled { opacity: .5; cursor: default; }
+    /* Details toggle (text link) + dismiss (×) — same warm palette as the chip */
+    .stuck-link {
+      flex-shrink: 0; padding: 3px 6px; border: none; background: transparent;
+      color: var(--warn); font-family: var(--sans); font-size: 11px; font-weight: 600;
+      text-decoration: underline; cursor: pointer;
+    }
+    .stuck-link:hover { color: var(--err); }
+    .stuck-dismiss {
+      flex-shrink: 0; width: 20px; height: 20px; line-height: 1; padding: 0;
+      border: 1px solid transparent; border-radius: 5px; background: transparent;
+      color: var(--warn); font-size: 15px; font-weight: 700; cursor: pointer;
+    }
+    .stuck-dismiss:hover { border-color: var(--warn); color: var(--err); }
+    .stuck-list {
+      list-style: none; margin: 0; padding: 6px 2px 2px; border-top: 1px solid var(--warn);
+      max-height: 132px; overflow-y: auto; display: flex; flex-direction: column; gap: 3px;
+    }
+    .stuck-list li { line-height: 1.3; word-break: break-word; }
+    .stuck-list .stuck-name { font-weight: 600; }
+    .stuck-list .stuck-why  { opacity: .85; }
 
     /* Stats: one prominent "processed of found" headline, OK/Errors as quiet
        semantic chips (Bob's hierarchy fix — not four equal competing tiles). */
@@ -633,6 +658,41 @@
       font-family: var(--sans); font-size: 12px; border-radius: var(--r-sm); cursor: pointer;
     }
     .about-close:hover { border-color: var(--accent); color: var(--accent2); }
+
+    /* ── Child-window dock ──────────────────────────────────────────────────
+       Owner 2026-08-02: minimised child windows used to go to "a tiny stub at the
+       desktop's bottom-left that vanished into the background". These chips are the
+       replacement — one labelled chip per minimised window, stacked, newest at the
+       bottom. BOTTOM-RIGHT since 2026-08-11 (owner screenshot): bottom-left collided
+       with the rail foot (clock / Local-only badge / theme toggle) AND with the OS
+       stub the minimised window itself used to leave there — the stub is gone too
+       (main.js hides the window on minimise), so the chip is the one representation. */
+    .child-dock {
+      position: fixed; right: 16px; bottom: 16px; z-index: 4000;
+      display: flex; flex-direction: column-reverse; align-items: flex-end; gap: 8px;
+      pointer-events: none;                 /* the chips take the clicks, not the strip */
+    }
+    .child-dock[hidden] { display: none; }
+    .dock-chip {
+      pointer-events: auto;
+      display: inline-flex; align-items: center; gap: 9px;
+      padding: 9px 15px 9px 12px;
+      background: var(--surface); color: var(--text);
+      border: 1px solid var(--border2); border-left: 3px solid var(--accent);
+      border-radius: var(--r-sm);
+      box-shadow: 0 6px 18px rgba(0,0,0,.20);
+      font-family: var(--sans); font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: transform .12s, box-shadow .12s, border-color .12s;
+      animation: dock-in .18s ease-out;
+    }
+    .dock-chip:hover {
+      transform: translateY(-2px); box-shadow: 0 10px 24px rgba(0,0,0,.26);
+      border-color: var(--accent);
+    }
+    .dock-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .dock-chip .dock-ico { width: 15px; height: 15px; flex-shrink: 0; color: var(--accent2); }
+    .dock-chip .dock-hint { font-weight: 500; font-size: 11px; color: var(--muted); }
+    @keyframes dock-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   </style>
 </head>
 <body>
@@ -655,6 +715,7 @@
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
   <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 14l.8 2 .2.8.8.2 2 .8-2 .8-.8.2-.2.8-.8 2-.8-2-.2-.8-2-.8 2-.8.8-.2.2-.8z"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></symbol>
 </svg>
 
 <div id="app">
@@ -666,7 +727,6 @@
       <span class="tb-title">ScanFinder</span>
     </div>
     <div class="tb-controls">
-      <button class="tb-nav-btn help-guide-btn" id="btn-help-guide" data-help-key="user-guide" title="Open the user guide"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Help</button>
       <button class="tb-btn" id="help-mode-toggle" data-help-key="help-mode" title="Help mode — click, then click any control to learn what it does">?</button>
       <div class="user-chip-wrap" id="user-chip-wrap">
         <button class="user-chip" id="user-chip" data-help-key="account" title="Account">
@@ -677,6 +737,7 @@
         <div class="user-menu" id="user-menu">
           <button class="user-menu-item" id="menu-change-password">Change password&hellip;</button>
           <button class="user-menu-item" id="menu-theme">Switch theme</button>
+          <button class="user-menu-item" id="menu-user-guide" data-help-key="user-guide">User Guide&hellip;</button>
           <button class="user-menu-item" id="menu-welcome">Show welcome tour</button>
           <button class="user-menu-item" id="menu-tutorial">Try a practice run</button>
           <button class="user-menu-item" id="menu-about">About ScanFinder&hellip;</button>
@@ -707,6 +768,9 @@
       </button>
       <button class="rail-item" id="btn-teach" data-help-key="teach">
         <svg class="ico" aria-hidden="true"><use href="#i-teach"/></svg><span>Teach</span>
+      </button>
+      <button class="rail-item" id="btn-export" data-help-key="export">
+        <svg class="ico" aria-hidden="true"><use href="#i-export"/></svg><span>Export</span>
       </button>
       <button class="rail-item" id="btn-settings" data-help-key="settings">
         <svg class="ico" aria-hidden="true"><use href="#i-settings"/></svg><span>Settings</span>
@@ -795,7 +859,7 @@
                 <span>Needs your attention</span>
               </div>
               <div class="dash-attn-body" id="dash-attn-body">
-                <div class="dash-attn-row"><span class="dash-attn-num" id="dash-review-count">0</span> waiting in the review queue</div>
+                <div class="dash-attn-row"><span class="dash-attn-num" id="dash-review-count">0</span> waiting in the review queue<span class="dash-attn-sub" id="dash-review-split" style="display:none;"></span></div>
                 <div class="dash-attn-row" id="dash-deferred-row" style="display:none;"><span class="dash-attn-num" id="dash-deferred-count">0</span> deferred for later</div>
                 <div class="dash-attn-row" id="dash-stuck-row" style="display:none;"><span class="dash-attn-num err" id="dash-stuck-count">0</span> couldn&rsquo;t be read</div>
               </div>
@@ -807,6 +871,18 @@
               </button>
             </div>
 
+            <!-- Waiting on you (approval workflow — shown only when the add-on is licensed) -->
+            <div class="dash-card" id="dash-workflow" data-help-key="workflow" style="display:none;">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-check"/></svg>
+                <span>Waiting on you</span>
+              </div>
+              <div class="dash-attn-body" id="dash-workflow-body">&hellip;</div>
+              <button class="dash-btn primary" id="dash-workflow-open">
+                Open Mailbox <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+              </button>
+            </div>
+
             <!-- Today's pulse (stats) -->
             <div class="dash-card" id="dash-pulse" data-help-key="pulse">
               <div class="dash-card-head">
@@ -815,7 +891,7 @@
               </div>
               <div class="pulse-grid">
                 <div class="pulse-stat"><span class="pulse-val" id="stat-today">0</span><span class="pulse-lbl">filed today</span></div>
-                <div class="pulse-stat"><span class="pulse-val" id="stat-week">0</span><span class="pulse-lbl">this week</span></div>
+                <div class="pulse-stat"><span class="pulse-val" id="stat-week">0</span><span class="pulse-lbl">last 7 days</span></div>
                 <div class="pulse-stat"><span class="pulse-val" id="stat-month">0</span><span class="pulse-lbl">this month</span></div>
               </div>
             </div>
@@ -928,6 +1004,18 @@
               </button>
             </div>
 
+            <!-- Export data (admin only) -->
+            <div class="dash-card" id="dash-export" data-help-key="export" style="display:none;">
+              <div class="dash-card-head">
+                <svg class="ico ico-sm" aria-hidden="true"><use href="#i-export"/></svg>
+                <span>Export data</span>
+              </div>
+              <div class="dash-export-body" id="dash-export-body">Pull your filed documents into a spreadsheet — pick suppliers, types and fields, then save as a CSV (for Excel, accounts software or a database) or JSON.</div>
+              <button class="dash-btn primary" id="dash-export-now">
+                Export data <svg class="ico ico-sm" aria-hidden="true"><use href="#i-arrow-right"/></svg>
+              </button>
+            </div>
+
             <!-- Search clients (LAN add-on; hidden unless licensed) -->
             <div class="dash-card" id="dash-clients" data-help-key="clients" style="display:none;">
               <div class="dash-card-head">
@@ -976,9 +1064,18 @@
               <svg class="ico" aria-hidden="true"><use href="#i-stop"/></svg><span class="btn-label">Stop Processing</span>
             </button>
             <div class="stuck-chip" id="stuck-chip" data-help-key="stuck" style="display:none;">
-              <span class="stuck-msg" id="stuck-msg"></span>
-              <button class="stuck-retry" id="btn-stuck-retry">Try again</button>
+              <div class="stuck-row">
+                <span class="stuck-msg" id="stuck-msg"></span>
+                <div class="stuck-actions">
+                  <button class="stuck-link" id="btn-stuck-details" type="button">Details</button>
+                  <button class="stuck-retry" id="btn-stuck-retry">Try again</button>
+                  <button class="stuck-dismiss" id="btn-stuck-dismiss" type="button" title="Hide until more documents fail" aria-label="Dismiss">×</button>
+                </div>
+              </div>
+              <ul class="stuck-list" id="stuck-list" hidden></ul>
             </div>
+            <button class="btn" id="btn-print-slips" title="Print numbered separator sheets to slot between documents in your scan pile — the batch splits at each sheet">Print separator sheets</button>
+            <span id="print-slips-msg" style="display:none; font-size:12px; color: var(--muted);"></span>
           </div>
           <div class="import-stats">
             <div class="stats-block" data-help-key="stats">
@@ -1014,7 +1111,7 @@
             </thead>
             <tbody id="table-body"></tbody>
           </table>
-          <div class="results-empty" id="results-empty">No documents processed yet. Pick a source folder above and press Process.</div>
+          <div class="results-empty" id="results-empty">No documents processed yet. Pick a source folder above and press Process Documents.</div>
         </div>
       </div>
 
@@ -1054,9 +1151,17 @@
     </div>
   </div>
 
+  <!-- Child-window dock: minimised Review/Settings/Search/Teach windows land here as
+       pronounced, labelled chips instead of an unlabelled desktop stub (they carry
+       skipTaskbar, so there is no taskbar entry to click). Empty and display:none
+       until main pushes a list. -->
+  <div id="child-dock" class="child-dock" aria-label="Minimised windows" hidden></div>
+
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
 <script src="../shared/modalFocus.js"></script>
+<script src="../shared/dialogFocus.js"></script>   <!-- arm native confirm()/alert() focus repair + focusField -->
+
 <script src="renderer.js"></script>
 </body>
 </html>

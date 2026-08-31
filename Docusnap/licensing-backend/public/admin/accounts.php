@@ -51,8 +51,23 @@ $accounts = $st->fetchAll();
 admin_page_open('Accounts');
 admin_nav('accounts');
 ?>
-<h1>Accounts</h1>
-<form method="get" action="accounts.php" class="row" style="margin-bottom:6px;">
+<?php
+$acc_shown  = count($accounts);
+$acc_active = 0; $acc_lapsed = 0; $acc_trial = 0;
+foreach ($accounts as $a) {
+    if ((int) $a['from_trial'] > 0) $acc_trial++;
+    if ($a['status'] === 'active' && (int) $a['ent_inforce'] > 0) $acc_active++;
+    elseif ($a['status'] === 'active' && (int) $a['ent_total'] > 0) $acc_lapsed++;
+}
+admin_page_head('accounts', 'Accounts', 'Everyone with a licence or trial on file. Click a row to open the account.');
+admin_chips([
+    ['n' => $acc_shown,  'l' => 'shown'],
+    ['n' => $acc_active, 'l' => 'active',     'tone' => 'ok'],
+    ['n' => $acc_lapsed, 'l' => 'lapsed',     'tone' => 'warn'],
+    ['n' => $acc_trial,  'l' => 'from trial', 'tone' => 'accent'],
+]);
+?>
+<form method="get" action="accounts.php" class="toolbar">
   <div class="field">
     <label for="aq">Account ID</label>
     <input type="text" id="aq" name="aq" value="<?= h($aq) ?>" placeholder="e.g. 1" inputmode="numeric">

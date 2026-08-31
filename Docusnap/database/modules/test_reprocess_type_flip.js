@@ -154,7 +154,14 @@ section('Authority polarity — the never-confirmed predicate exists at both han
 {
   const fs = require('fs');
   const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'modules', 'processing', 'handler.js'), 'utf8');
-  const singleDoc = /dtRow\.status\s*!==\s*'confirmed'\s*&&\s*!dtRow\.confirmed_at/.test(src);
+  // The single-doc predicate moved into resolveReprocessTypeArgs (reprocessTypeArgs.js) when the
+  // type-args decision was factored pure — pin it THERE (status !== 'confirmed' && !confirmedAt)
+  // plus the handler actually threading status/confirmed_at into it, so flipping either side back
+  // to always-machine still goes red. (The old dtRow regex was stale against the refactor — this
+  // check was silently failing while the predicate itself remained correct; repaired 2026-07-31.)
+  const argsSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'modules', 'processing', 'reprocessTypeArgs.js'), 'utf8');
+  const singleDoc = /status\s*!==\s*'confirmed'\s*&&\s*!confirmedAt/.test(argsSrc)
+    && /confirmedAt:\s*_dtRow\s*\?\s*_dtRow\.confirmed_at/.test(src);
   const manifest  = /row\.status\s*!==\s*'confirmed'\s*&&\s*!row\.confirmed_at/.test(src);
   check('single-doc reprocess gates machine authority on never-confirmed', singleDoc);
   check('batch manifest gates machine authority on never-confirmed', manifest);

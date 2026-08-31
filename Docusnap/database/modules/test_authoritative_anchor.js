@@ -25,6 +25,7 @@ function freshDb() {
       anchor_label TEXT NOT NULL, direction TEXT NOT NULL,
       page_zone TEXT NOT NULL, x_norm REAL, y_norm REAL,
       w_norm REAL NOT NULL DEFAULT 0, h_norm REAL NOT NULL DEFAULT 0,
+      max_w_norm REAL NOT NULL DEFAULT 0,
       usage_count INTEGER NOT NULL DEFAULT 1,
       confidence REAL NOT NULL DEFAULT 1.0,
       last_seen TEXT NOT NULL DEFAULT (datetime('now')),

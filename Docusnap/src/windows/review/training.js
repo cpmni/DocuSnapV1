@@ -33,8 +33,13 @@
       body: 'Don’t need it? Delete removes the document from the queue — it goes to the recycle bin, so it can be restored later if needed.' },
     { id: 'confirm', sel: '#btn-confirm', title: 'File the document', advance: 'click', alsoEnter: true,
       body: 'When everything looks right, click Confirm & File — or press <b>Ctrl + Enter</b> — to file a tidy copy and jump to the next document. Scan Finder learns from your corrections each time.' },
-    { id: 'reproc', sel: '#btn-reprocess-all', title: 'Reprocess all — it gets smarter', advance: 'next',
-      body: 'Once you’ve confirmed a few documents, Reprocess all re-reads every document still in the queue using what Scan Finder just learned from your corrections — often filling in fields it missed the first time.' },
+    // The tour used to sell "Reprocess all — it gets smarter" as the way to get more documents
+    // filed, and the finale called it part of "the whole loop". Customers followed that advice
+    // literally: confirm one, re-read 200 pages, discover it wasn't enough, re-read them again
+    // (Chris, 2026-08-18: "the app teaches the laborious loop"). Re-reading is REPAIR — Scan
+    // Finder re-checks what it already read for free — so the card now says what it is for.
+    { id: 'reproc', sel: '#btn-reprocess-all', title: 'Read the pages again — only if they came out badly', advance: 'next',
+      body: 'You don’t need this to get more documents filed — Scan Finder re-checks what it has already read on its own. Use it when a batch came out wrong: pages scanned crooked, or the wrong scanner settings. It reads every page from scratch and takes a few minutes.' },
     { id: 'fileall', sel: '#btn-file-all-review', title: 'File all ready', advance: 'next',
       body: 'When several documents look right, File All Ready files them all at once — they’re tidied away and become searchable later from Search. Anything still missing details is left for you to check.' },
   ];
@@ -74,7 +79,7 @@
   function finish() {
     callout.classList.add('done');
     callout.innerHTML = `<div class="tc-title">You’re all set 🎉</div>
-      <div class="tc-body">That’s the whole loop — open a document, check the details, pick the type, Confirm & File, then use Reprocess all / File all ready for the rest. You can re-run this any time from “Take a tour”.</div>
+      <div class="tc-body">That’s it — open a document, check the details, pick the type, Confirm &amp; File. For the rest, File All Ready files everything that already looks right in one go. You can re-run this any time from “Take a tour”.</div>
       <div class="tc-foot"><span class="tc-step"></span><span class="tc-actions"><button class="tc-skip">Done</button><button class="tc-next">Do another →</button></span></div>`;
     hole.style.opacity = '0'; arrow.style.display = 'none';
     callout.style.left = '50%'; callout.style.top = '50%'; callout.style.transform = 'translate(-50%,-50%)';

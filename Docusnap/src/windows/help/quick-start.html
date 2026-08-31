@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Scan Finder — Quick start</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="quick-start">
+            <p class="use-when">Use this page on your first day with Scan Finder.</p>
+            <h1>Quick start</h1>
+
+            <p class="lead">This page takes you from a pile of scanned documents to a set of neatly filed,
+              correctly named files. There are seven steps. You can read it in a few minutes, and you may
+              find it easiest to follow with Scan Finder open beside you.</p>
+
+            <div class="callout note">
+              <div class="callout-title">You will use two folders</div>
+              <p>It helps to decide these before you begin, and to keep them separate.</p>
+              <ul>
+                <li><b>Folder A — your filing cabinet.</b> This is where Scan Finder places finished, filed
+                  documents. You choose it during setup, in step&nbsp;1.</li>
+                <li><b>Folder B — your in-tray.</b> This is where fresh scans wait until you bring them in.
+                  You create it yourself, in step&nbsp;2.</li>
+              </ul>
+              <p>Keep them apart, and never scan directly into Folder A. Scanning into your filing cabinet
+                would mix unread scans in with documents that are already filed.</p>
+            </div>
+
+            <ol class="qs-steps">
+              <li>
+                <b>Create your login and complete the setup questions.</b>
+                <p>The first time you open Scan Finder, you create an administrator login and answer a few
+                  setup questions. The most important asks where your filed documents should be kept: this is
+                  Folder&nbsp;A. Choose an empty folder, or create a new one for the purpose, rather than a
+                  folder that already contains scans. When you finish, the Home screen opens.</p>
+              </li>
+              <li>
+                <b>Scan one example of each document into Folder&nbsp;B.</b>
+                <p>Away from the computer, gather one clean, flat, typical copy of each kind of document you
+                  receive regularly. Begin with your five largest suppliers rather than trying to cover
+                  everyone at once. Scan each example into Folder&nbsp;B, saving one document to each file.
+                  These examples are what you will teach Scan Finder in the next step.</p>
+              </li>
+              <li>
+                <b>Teach each example.</b>
+                <p>On the Home screen, open <b>Teach</b> from the buttons on the left. Choose one of the scans
+                  in Folder&nbsp;B and tell Scan Finder what kind of document it is. It then asks you to point
+                  out each important detail in turn. For each one, you draw a box around the value on the
+                  page — the invoice number, the date, the total — and Scan Finder reads it back so you can
+                  check it. It finds the printed label beside each value for you (such as
+                  &ldquo;Invoice No:&rdquo;) and uses that label to locate the same detail on the supplier's
+                  future documents. When you click <b>Done</b>, Scan Finder files that document and remembers
+                  the layout, so it can read the rest of that supplier's documents by itself. Repeat for each
+                  example you scanned.</p>
+              </li>
+              <li>
+                <b>Import the remaining scans.</b>
+                <p>Open <b>Import</b>, choose Folder&nbsp;B, and click <b>Process Documents</b>. Scan Finder
+                  makes its own working copy of every scan and reads it; your original files stay in
+                  Folder&nbsp;B until you file them. A large batch may take several minutes. When it finishes,
+                  a results table lists each document as either <b>Ready to file</b> or
+                  <b>Confirm to file</b>.</p>
+              </li>
+              <li>
+                <b>Check the documents it wasn't certain about.</b>
+                <p>Open <b>Review</b>; the number beside it is how many documents are waiting. For any
+                  supplier you have taught, the details are already filled in — check them, and correct
+                  anything wrong by clicking the detail and typing over it. <b>Confirm &amp; File</b> files
+                  the document you are looking at, and <b>File All Ready</b> files only the documents already
+                  marked Ready, leaving the rest for you. Nothing here is permanent: a filed document can
+                  always be sent back from Search.</p>
+              </li>
+              <li>
+                <b>Let Scan Finder take over the routine filing.</b>
+                <p>As you confirm correct documents from a supplier, Scan Finder grows more confident about
+                  it. After enough correct confirmations, it begins filing that supplier's documents without
+                  asking, and the Home screen shows how many it has filed on its own. Click that figure at any
+                  time to review them. If one is wrong, open it and click <b>Put back</b> to return it to
+                  Review.</p>
+              </li>
+              <li>
+                <b>Find any document later.</b>
+                <p>Open <b>Search</b> and type anything you remember — a company name, a reference number,
+                  part of a date. Open the document from the results, or click <b>Show in folder</b> to see
+                  where it was filed. If a document is still waiting in Review rather than filed, tick
+                  <b>Include unconfirmed</b> to include it in the results.</p>
+              </li>
+            </ol>
+
+            <div class="callout tip">
+              <div class="callout-title">Seeing the result</div>
+              <p>To see everything Scan Finder has done, open Folder&nbsp;A in Windows Explorer. Your
+                documents are sorted into folders by <b>Company</b>, then <b>Year</b>, then <b>Month</b>, and
+                each file is clearly named with its type, date and reference number.</p>
+            </div>
+
+            <p>Each part of this process has its own page with fuller detail:
+              <a href="teach.html">Teach your documents</a>, <a href="import.html">Import a batch</a> and
+              <a href="review.html">Check what it wasn't sure about</a>.</p>
+          </section>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

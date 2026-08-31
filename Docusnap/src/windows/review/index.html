@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'; object-src 'none'">
   <title>ScanFinder — Review</title>
   <link rel="stylesheet" href="../shared/theme.css" />
   <style>
@@ -61,10 +61,44 @@
     #auto-committed-bar:hover { filter: brightness(1.04); }
     #auto-committed-bar b { color: var(--ok); }
     #auto-committed-bar .acb-back { color: var(--accent2); font-weight: 600; }
+    #auto-committed-bar .acb-putback { color: var(--warn); font-weight: 600; cursor: pointer; text-decoration: underline; }
+    /* Slice 3: the quiet re-read hint — informational, never blocks, never a button lock. */
+    #quiet-reread-hint { padding: 6px 14px; font-size: 12px; color: var(--muted); background: var(--surface2);
+      border-bottom: 1px solid var(--border); }
+    #quiet-reread-hint b { color: var(--text); }
+    #quiet-reread-hint .qrh-cancel { float: right; cursor: pointer; color: var(--accent2); font-weight: 600; }
     #auto-committed-bar .acb-dismiss { float: right; margin-left: 12px; cursor: pointer;
       color: var(--muted); font-weight: 700; font-size: 15px; line-height: 1.2; padding: 0 4px;
       border-radius: 4px; }
     #auto-committed-bar .acb-dismiss:hover { color: var(--err); background: var(--surface2); }
+    /* Post-reprocess consent bar — auto-committed-bar family, consent-green accent. */
+    #reprocess-autofile-bar { padding: 8px 12px; font-size: 12px; line-height: 1.8;
+      background: var(--accent-bg); border-bottom: 1px solid var(--border); }
+    #reprocess-autofile-bar b { color: var(--ok); }
+    #reprocess-autofile-bar .btn { font-size: 12px; padding: 2px 10px; margin-left: 6px; }
+    /* Catch-up Filing consent bar — auto-committed-bar family, consent-green accent.
+       The class-fix bar (2026-08-19) shares every one of these rules: it is the same
+       kind of object — an after-the-fact statement of something the app did, with a way
+       back — so it must not look like a different feature. */
+    #sweep-consent-bar, #class-fix-bar { padding: 8px 12px; font-size: 12px; line-height: 1.5; position: relative;
+      background: color-mix(in srgb, var(--ok) 8%, var(--surface)); border-bottom: 1px solid var(--border); }
+    #sweep-consent-bar b, #class-fix-bar b { color: var(--ok); }
+    /* Dismiss X on the class-fix RECEIPT (bug fix 2026-08-23) — the result bar had no close and lingered. */
+    #class-fix-bar .scb-x { position: absolute; top: 4px; right: 8px; cursor: pointer; color: var(--muted);
+      font-size: 16px; line-height: 1; padding: 2px 4px; }
+    #class-fix-bar .scb-x:hover { color: var(--text); }
+    #sweep-consent-bar .scb-actions, #class-fix-bar .scb-actions { margin-top: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    #sweep-consent-bar .scb-btn, #class-fix-bar .scb-btn { border: 1px solid var(--border2); border-radius: var(--r-pill);
+      padding: 3px 12px; cursor: pointer; background: var(--surface); color: var(--text); font-size: 12px; }
+    #sweep-consent-bar .scb-btn.primary, #class-fix-bar .scb-btn.primary { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
+    #sweep-consent-bar .scb-btn:hover, #class-fix-bar .scb-btn:hover { filter: brightness(1.08); }
+    #sweep-consent-bar .scb-btn:disabled, #class-fix-bar .scb-btn:disabled { opacity: .55; cursor: default; }
+    #sweep-consent-bar .scb-toggle, #class-fix-bar .scb-toggle { color: var(--accent2); cursor: pointer; font-weight: 600; }
+    #sweep-consent-bar .scb-list, #class-fix-bar .scb-list { margin: 6px 0 0; max-height: 140px; overflow-y: auto; }
+    #sweep-consent-bar .scb-row, #class-fix-bar .scb-row { display: flex; gap: 6px; align-items: center; padding: 2px 0; }
+    #sweep-consent-bar .scb-row label, #class-fix-bar .scb-row label { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #sweep-consent-bar .scb-muted, #class-fix-bar .scb-muted { color: var(--muted); }
+    #sweep-consent-bar .scb-undo, #class-fix-bar .scb-undo { color: var(--accent2); cursor: pointer; font-weight: 600; }
     /* Sender-grouping toggle bar + group headers (review queue) */
     #queue-view-bar { padding: 6px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
     .qview-toggle { display: flex; align-items: center; gap: 6px; width: 100%;
@@ -83,11 +117,28 @@
       border-left: 5px solid var(--muted); border-top: 4px solid transparent;
       border-bottom: 4px solid transparent; transition: transform .15s; }
     .queue-group-head.open .qgh-caret { transform: rotate(90deg); }
+    /* SENDER NAME ON ITS OWN LINE (Chris round 3, 2026-08-09 — his finding 3, and his fix).
+       These used to sit side by side, and the name was the ONLY shrinkable item: .qgh-meta is
+       flex-shrink:0 + nowrap, so "18 documents · 5 need a look" always won and the sender
+       collapsed to a single character — Chris saw groups titled `'` and `V`. Widening the panel
+       did not help him, so a stacked layout is the fix rather than a bigger flex-basis: the name
+       now gets the panel's full width and only ellipsises when it genuinely cannot fit.
+       This matters more than it looks — the per-sender "N need a look" split is the ONE screen
+       that answers "did my teaching work", and it was unattributable. */
+    .queue-group-head .qgh-text { display: flex; flex-direction: column; gap: 2px;
+      min-width: 0; flex: 1 1 auto; }
     .queue-group-head .qgh-name { font-size: 12px; font-weight: 700; color: var(--text);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
     .queue-group-head .qgh-meta { font-size: 10px; color: var(--muted);
-      margin-left: auto; white-space: nowrap; flex-shrink: 0; }
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .queue-group-head .qgh-attn { color: var(--warn); font-weight: 600; }
+    /* Per-sender finish line (2026-08-18). Its own line UNDER the counts, quieter than the
+       attention count — it is a fact about the app's state, not a demand on the operator, and it
+       must never out-shout "N need a look". */
+    .queue-group-head .qgh-ready { display: block; font-size: 10px; margin-top: 1px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .queue-group-head .qgh-ready.done { color: var(--ok); }
+    .queue-group-head .qgh-ready.near { color: var(--muted); }
     #queue-scroll-rail {
       flex-shrink: 0; width: 42px; display: flex; flex-direction: column;
       align-items: center; justify-content: flex-start; gap: 10px;
@@ -190,6 +241,12 @@
 
     .qi-name     { font-family: var(--mono); font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
     .qi-supplier { font-size: 11px; color: var(--muted); margin-top: 2px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* Put-back marker (mig 87): a put-back doc is a visible class in the queue. "will re-file" = File All
+       will file it again (accent); plain = held for the user's own confirm (muted). */
+    .qi-putback { flex-shrink: 0; font-size: 10px; padding: 1px 6px; border-radius: 10px; background: var(--surface3); color: var(--muted); white-space: nowrap; }
+    .qi-putback.refiling { background: var(--accent-bg); color: var(--accent2); }
+    /* slice 3 of the garbled-issuer arc: a garbled issuer grouped under its letterhead company */
+    .qi-check-sender { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: var(--r-pill); font-size: 10px; line-height: 16px; color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); vertical-align: middle; }
     .qi-actions  { display: flex; gap: 5px; margin-top: 6px; }
     .qi-btn {
       padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border2);
@@ -200,30 +257,149 @@
     .qi-btn.danger:hover { border-color: var(--err); color: var(--err); }
 
     /* ── Document viewer (centre) ── */
-    #doc-panel { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--doc-bg); min-width: 0; position: relative; }
+    #doc-panel { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--doc-bg); min-width: 0; position: relative;
+      /* B2 (activity strip, Oracle C8): the four absolute children below anchor to the toolbar's bottom
+         through ONE variable; the strip (28 px, first child when armed) bumps it. OFF = 46 px, byte-identical. */
+      --doc-head-h: 46px; }
+    #doc-panel.has-activity-strip { --doc-head-h: 92px; }
+    /* ── B2: the ACTIVITY STRIP — a 46 px row of TWO-LINE chips, newest on the left, above the toolbar.
+       Line 1 = the action (bold, kind-coloured icon); line 2 = WHEN + a short detail. Always in flow while
+       armed (never display:none → the preview never jumps, no ResizeObserver churn). THE STRIP HEIGHT (46)
+       AND THE --doc-head-h BUMP MOVE TOGETHER (toolbar 46 + strip 46 = 92) — the overlays below anchor to that
+       ONE variable (Oracle C8); a height change to one that forgets the other misaligns every overlay. ── */
+    #activity-strip { display: none; flex: 0 0 46px; height: 46px; align-items: center; gap: 7px; padding: 0 8px;
+      background: var(--surface); border-bottom: 1px solid var(--border2); font-size: 12px; color: var(--text); min-width: 0; }
+    #doc-panel.has-activity-strip #activity-strip { display: flex; }
+    .as-nav { flex: 0 0 auto; width: 20px; height: 38px; line-height: 36px; text-align: center; border: 1px solid var(--border2); border-radius: var(--r-sm);
+      background: var(--surface2); color: var(--muted); cursor: pointer; font-size: 12px; user-select: none; }
+    .as-nav[hidden] { display: none; }
+    .as-track { flex: 1; display: flex; align-items: center; gap: 7px; overflow-x: auto; scrollbar-width: none; min-width: 0; scroll-behavior: smooth; }
+    .as-track::-webkit-scrollbar { display: none; }
+    /* two-line chip = a flex COLUMN. text-overflow:ellipsis does nothing on a flex container, so the clip
+       lives on each line span (as-l1/as-l2), never on .as-chip itself (Oracle C8 pin). */
+    .as-chip { flex: 0 0 auto; display: inline-flex; flex-direction: column; justify-content: center; gap: 0; max-width: 320px; padding: 4px 11px; height: 40px;
+      border: 1px solid var(--border2); border-radius: var(--r); background: var(--surface2); color: var(--text); cursor: pointer; min-width: 0; }
+    .as-chip .as-l1, .as-chip .as-l2 { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 296px; }
+    .as-chip .as-l1 { font-size: 12.5px; line-height: 16px; }
+    .as-chip .as-l2 { font-size: 11px; line-height: 15px; color: var(--muted); }
+    .as-chip .as-act { font-weight: 600; color: var(--text); }
+    .as-chip .as-ico { margin-right: 4px; font-weight: 700; }
+    .as-chip .as-ico.filed { color: var(--ok); }
+    .as-chip .as-ico.putback { color: var(--warn); }
+    .as-chip .as-ico.fix { color: var(--accent); }
+    .as-chip:hover, .as-chip.open { border-color: var(--accent); background: var(--accent-bg); }
+    .as-chip.unseen { box-shadow: inset 0 0 0 1px var(--accent); border-color: var(--accent); }
+    .as-chip .as-when { color: var(--muted); }
+    .as-chip .as-caret { color: var(--muted); font-size: 9px; margin-left: 3px; }
+    .as-chip.as-recent { flex-direction: row; align-items: center; color: var(--muted); font-style: italic; }
+    /* ACTIVITY PANEL LAYOUT (design pass 2026-08-27, owner: "it still looks a little unbalanced"): ONE 20 px line
+       unit for everything on a row's first line (time, icon, headline, buttons); TWO vertical rails — an icon rail
+       and a text rail the headline, pills and kept-back share; the time a right-aligned sans margin note; ONE
+       tinted primary (the strip's own open-chip look) instead of a column of saturated blocks; borderless chips;
+       a sticky titled header; the panel capped at 1120 px; below ~780 px of panel width the actions drop under
+       the body and still end flush right. Theme tokens only. */
+    #activity-panel { display: none; position: absolute; top: var(--doc-head-h); left: 8px; right: 8px; max-width: 1120px; box-sizing: border-box;
+      z-index: 8; max-height: 46%; overflow: auto; container-type: inline-size;
+      background: var(--surface); border: 1px solid var(--border2); border-radius: var(--r); box-shadow: 0 6px 22px rgba(0,0,0,.25);
+      padding: 0 14px 6px; font-size: 12.5px; }
+    #activity-panel.open { display: block; }
+    /* HEADER BAND — the X gets a companion and a job; sticky so it never scrolls away with the rows. C5-safe: the
+       X + a click on the panel body both close via the ONE delegated #activity-panel listener (data-ap); the
+       capture-phase outside-click closer and Esc handler are untouched. */
+    .ap-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 0 6px; margin-bottom: 2px; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .ap-title { font-size: 11.5px; font-weight: 600; letter-spacing: .01em; color: var(--muted); }
+    .ap-close { position: static; width: 22px; height: 22px; line-height: 20px; padding: 0; text-align: center; font-size: 13px;
+      border: 1px solid transparent; border-radius: var(--r-sm); background: transparent; color: var(--muted); cursor: pointer; }
+    .ap-close:hover { background: var(--surface2); border-color: var(--border2); color: var(--text); }
+    /* DISTINCT SECTIONS (owner 2026-08-27: "there is no real formatting on the text — make each section distinctive"):
+       a row is [time | headline + sender chips + kept-back note | actions]. Time = small mono column; headline =
+       WHAT happened in bold with the WHY after the dash in muted; senders = pills with a bold count; kept-back =
+       an amber-barred note. Every colour is a theme token. */
+    /* ROW — [time 92 | body | actions]; every element on the first line is one 20 px band */
+    .ap-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; column-gap: 14px; row-gap: 0; align-items: start;
+      padding: 10px 0; border-top: 1px solid var(--border); }
+    .ap-head + .ap-row { border-top: 0; }
+    .ap-when { color: var(--muted); font-size: 11px; font-family: inherit; font-variant-numeric: tabular-nums; line-height: 20px;
+      text-align: right; white-space: nowrap; padding-top: 0; }
+    .ap-body { min-width: 0; position: relative; padding-left: 18px; }          /* 18px = the icon rail */
+    .ap-line { font-size: 13.5px; line-height: 20px; color: var(--text); }
+    .ap-line .ap-ico { position: absolute; left: 0; top: 0; width: 14px; line-height: 20px; text-align: center; font-size: 13px; font-weight: 700; margin: 0; }
+    .ap-line .ap-ico.filed { color: var(--ok); }
+    .ap-line .ap-ico.putback { color: var(--warn); }
+    .ap-line .ap-ico.fix { color: var(--accent); }
+    .ap-what { font-weight: 600; }
+    .ap-why { color: var(--muted); font-weight: 400; font-size: 12px; }
+    .ap-chip { display: inline-block; padding: 0 8px; font-size: 11.5px; line-height: 20px; color: var(--muted); background: var(--surface2);
+      border: 0; border-radius: var(--r-pill); white-space: nowrap; }
+    .ap-chip b { color: var(--text); font-weight: 600; margin-left: 2px; font-variant-numeric: tabular-nums; }
+    /* THREE FIXED SLOTS (owner 2026-08-27: "give each button its own column with the permanent ones to the right"):
+       [Put back | See them | Quick check]. A row that lacks a button renders an INVISIBLE placeholder of the same
+       element and label in that slot, so the permanent two never slide and every row's columns line up. */
+    /* ACTIONS — three fixed slots + ghost unchanged; quiet outlines and ONE tinted primary (the strip's .as-chip.open
+       look). Primary text is --text, not --accent: --accent on --accent-bg is ~3.9:1 in the Light theme, under AA at 11.5px. */
+    .ap-actions { display: grid; grid-template-columns: repeat(3, max-content); gap: 6px; align-items: center; justify-content: end; }
+    .ap-btn { height: 20px; line-height: 18px; padding: 0 9px; font-size: 11.5px; white-space: nowrap; border: 1px solid var(--border2);
+      border-radius: var(--r-sm); background: transparent; color: var(--text); cursor: pointer; }
+    .ap-btn:hover { background: var(--surface2); }
+    .ap-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .ap-btn.ap-ghost { visibility: hidden; pointer-events: none; }
+    .ap-btn.primary { background: var(--accent-bg); border-color: var(--accent); color: var(--text); font-weight: 600; }
+    .ap-btn.primary:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+    .ap-btn[disabled] { opacity: .5; cursor: default; }
+    .ap-sub { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 6px; }
+    .ap-kept { margin-top: 6px; font-size: 11.5px; line-height: 1.45; color: var(--warn); border-left: 2px solid var(--warn); padding-left: 8px; }
+    /* NARROW (~700px pane): actions drop under the body — still three slots, still ending flush right */
+    @container (max-width: 780px) {
+      .ap-row { grid-template-columns: 92px minmax(0, 1fr); }
+      .ap-actions { grid-column: 2; margin-top: 8px; }
+    }
     /* Mark Reviewed floats at the top-left of the preview pane. Anchored to
        #doc-panel (which does NOT scroll — only #doc-viewer does), so it stays
        put while the document image scrolls beneath it. Shown only for flagged
        docs via renderer.js updateAcknowledgeButton(); colour/label set there. */
     #btn-acknowledge {
-      position: absolute; top: 46px; left: 12px; z-index: 6;
+      position: absolute; top: var(--doc-head-h); left: 12px; z-index: 6;
       padding: 9px 16px; font-size: 13px; font-weight: 600;
       box-shadow: 0 2px 8px rgba(0,0,0,.35);
     }
+    /* While a drag-to-select pick is active (#select-hint visible — "Drag to select the …
+       value" + Cancel, an IN-FLOW bar at the same height the floating button occupies), hide
+       Mark Reviewed + its Space hint: the pill was sitting ON TOP of the instruction text
+       (2026-08-01 screenshot), and mid-pick the operator can't act on it anyway — its Space
+       shortcut mid-drag-select would be a misfire. Pure CSS; restores itself on Cancel/done. */
+    #doc-panel:has(#select-hint.visible) #btn-acknowledge,
+    #doc-panel:has(#select-hint.visible) #ack-hint { display: none !important; }
     /* Small hint under Mark Reviewed — shown only while it's actionable (flagged, not yet
        acknowledged). Tells the operator the Space-bar shortcut. */
     #ack-hint {
-      position: absolute; top: 86px; left: 12px; z-index: 6; box-sizing: border-box;
+      position: absolute; top: calc(var(--doc-head-h) + 40px); left: 12px; z-index: 6; box-sizing: border-box;
       font-size: 11px; line-height: 1.35; color: var(--muted); background: var(--surface);
       border: 1px solid var(--border2); border-radius: var(--r-sm);
       padding: 5px 10px; box-shadow: 0 1px 4px rgba(0,0,0,.2); pointer-events: none;
       text-align: center; white-space: normal; display: none;
     }
+    /* NARROW WINDOW (owner 2026-08-27: "the review window buttons float over each other when the window size is
+       reduced"): the toolbar row must stay ONE line (the activity strip / readout / hint bars anchor to its 46 px
+       bottom through --doc-head-h) and must never paint past its own panel — so it CLIPS (overflow hidden), the
+       filename gives way first (flex-basis 40px), and below ~700 px of panel width the button WORDS collapse to their
+       glyphs (container query on #doc-panel; the labels are <span class="lbl">, kept by renderer.js when it rewrites
+       the Straighten button). */
+    #doc-panel { container-type: inline-size; }
     #doc-toolbar {
       display: flex; align-items: center; gap: 8px; padding: 7px 12px;
       border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0;
+      flex-wrap: nowrap; overflow: hidden; min-width: 0;
     }
-    .doc-name { font-family: var(--mono); font-size: 11px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .doc-name { font-family: var(--mono); font-size: 11px; color: var(--muted); flex: 1 1 40px; min-width: 24px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    @container (max-width: 700px) {
+      #doc-toolbar { gap: 5px; padding: 6px 8px; }
+      #doc-toolbar .doc-nav-btn { padding: 4px 7px; }
+      #doc-toolbar .doc-nav-btn .lbl, #zoom-level, #btn-zoom-reset, #deskew-angle { display: none; }
+    }
+    @container (max-width: 480px) {
+      #doc-toolbar .doc-name { display: none; }
+    }
     .doc-nav-btn {
       padding: 4px 10px; border-radius: 5px; border: 1px solid var(--border2);
       background: transparent; color: var(--muted); font-size: 11px; cursor: pointer; flex-shrink: 0;
@@ -231,13 +407,19 @@
     .doc-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
     .doc-nav-btn.active { border-color: var(--accent); color: var(--on-accent); background: var(--accent); }
 
-    /* Per-field "position taught" dot, scoped to this supplier + DOCUMENT TYPE: green = a learned
-       position is saved for this field on this type; red = not taught for this type yet (the
-       actionable state — e.g. a look-alike doc that's actually a different type you haven't taught). */
+    /* Per-field "position taught" dot, scoped to this supplier + DOCUMENT TYPE: filled green = a
+       learned position is saved for this field on this type; hollow/muted = not taught yet.
+       COLOUR CHANGED 2026-08-13 (Chris rounds 3 + 4, verify-list item 7, reported twice):
+       "red dot = not taught, green = taught; the tooltip copy is now excellent, the colour is
+       still the error red on 5 of 6 correct fields." Not-taught is not an ERROR — it is the
+       ordinary state of a field the app read correctly by keyword on a layout nobody has taught
+       yet, and painting it in the same red as a validation failure spends the customer's alarm on
+       nothing. It is now a quiet hollow dot: visibly different from taught, not alarming. The
+       tooltip (_taughtDotTitle) still carries the meaning and is unchanged. */
     .taught-dot {
       display: inline-block; width: 8px; height: 8px; border-radius: 50%;
       margin-right: 7px; vertical-align: middle; flex-shrink: 0; box-sizing: border-box;
-      background: var(--err); border: 1.5px solid var(--err);
+      background: transparent; border: 1.5px solid var(--border2);
     }
     .taught-dot.on { background: var(--ok); border-color: var(--ok); }
 
@@ -264,12 +446,20 @@
     #sel-canvas.active { display: block; cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Cline x1='16' y1='0' x2='16' y2='13' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Cline x1='16' y1='19' x2='16' y2='32' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Cline x1='0' y1='16' x2='13' y2='16' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Cline x1='19' y1='16' x2='32' y2='16' stroke='%23000' stroke-width='4' stroke-opacity='0.5'/%3E%3Ccircle cx='16' cy='16' r='4' fill='none' stroke='%23000' stroke-width='3' stroke-opacity='0.5'/%3E%3Cline x1='16' y1='0' x2='16' y2='13' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Cline x1='16' y1='19' x2='16' y2='32' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Cline x1='0' y1='16' x2='13' y2='16' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Cline x1='19' y1='16' x2='32' y2='16' stroke='%234f8ef7' stroke-width='1.5'/%3E%3Ccircle cx='16' cy='16' r='4' fill='none' stroke='%234f8ef7' stroke-width='1.5'/%3E%3C/svg%3E") 16 16, crosshair; }
 
     #ocr-overlay {
-      display: none; position: absolute; inset: 0;
+      display: flex; position: absolute; inset: 0;
       background: rgba(8,10,15,.65); border-radius: 4px;
       align-items: center; justify-content: center;
       font-size: 12px; color: var(--accent2); flex-direction: column; gap: 8px;
+      /* Fade gently back to the page when the read finishes (not a hard flick). Always
+         display:flex so it can transition; opacity does the fade, visibility gates clicks. */
+      opacity: 0; visibility: hidden; pointer-events: none;
+      transition: opacity .22s ease, visibility 0s linear .22s;
     }
-    #ocr-overlay.visible { display: flex; }
+    #ocr-overlay.visible {
+      opacity: 1; visibility: visible; pointer-events: auto;
+      transition: opacity .1s ease, visibility 0s;   /* appear quickly, fade out gently */
+    }
+    #ocr-overlay:not(.visible) .spinner { animation-play-state: paused; }
     .spinner { width: 22px; height: 22px; border: 2px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -288,7 +478,7 @@
     #zoom-level { font-size: 11px; color: var(--muted); font-family: var(--mono); min-width: 40px; text-align: center; }
 
     #wizard-panel {
-      display: none; position: absolute; top: 46px; right: 12px; z-index: 7; width: 248px;
+      display: none; position: absolute; top: var(--doc-head-h); right: 12px; z-index: 7; width: 248px;
       flex-direction: column; gap: 9px; padding: 12px;
       background: var(--surface2); border: 1px solid var(--border2);
       border-radius: 9px; box-shadow: 0 8px 24px rgba(0,0,0,.45);
@@ -312,7 +502,9 @@
       padding: 5px 8px; color: var(--text); font-family: var(--sans); font-size: 11px; outline: none;
     }
     #wizard-panel select:focus, #wizard-panel input[type="text"]:focus { border-color: var(--accent); }
-    .anchor-readout { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 20;
+    /* top offset clears #doc-toolbar (the readout's offset parent is #doc-panel, which the toolbar
+       sits at the top of) so the read-back never covers the zoom/page/Straighten controls — card 7. */
+    .anchor-readout { position: absolute; top: var(--doc-head-h); left: 50%; transform: translateX(-50%); z-index: 20;
       max-width: 92%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
       background: var(--surface); border: 1px solid var(--accent); border-left: 4px solid var(--accent);
       border-radius: 10px; padding: 9px 13px 9px 12px; box-shadow: 0 10px 30px rgba(0,0,0,.30);
@@ -363,6 +555,12 @@
     .wiz-note { font-size: 9px; color: var(--muted); font-style: italic; }
 
     #doc-placeholder { color: var(--muted); font-size: 14px; margin: auto; }
+    /* Empty-pane "start reviewing" CTA — centred in the (flex) #doc-viewer like the placeholder. */
+    #preview-cta { margin: auto; max-width: 340px; padding: 24px; display: flex; flex-direction: column;
+                   align-items: center; gap: 10px; text-align: center; }
+    #preview-cta .pcta-title { font-size: 16px; font-weight: 700; color: var(--text); }
+    #preview-cta .pcta-sub { font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+    #preview-cta .btn.primary { margin-top: 6px; }
 
     /* "Teach this document" CTA — a slim centred card banner above the preview. */
     .teach-cta { display: flex; flex-direction: column; align-items: center; gap: 5px;
@@ -439,7 +637,7 @@
     .add-template-lbl { display: block; }
     #extraction-status { display: flex; flex-direction: column; gap: 4px; }
     .ext-status-row { display: flex; align-items: flex-start; gap: 6px; flex-wrap: nowrap; }
-    .ext-status-lbl { font-size: 10px; color: var(--muted); white-space: nowrap; width: 74px; flex-shrink: 0; padding-top: 3px; }
+    .ext-status-lbl { font-size: 10px; color: var(--muted); white-space: nowrap; width: 90px; flex-shrink: 0; padding-top: 3px; }
     .ext-status-pills { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
     .method-pill {
       font-size: 10px; font-family: var(--mono); padding: 1px 7px;
@@ -461,7 +659,11 @@
     #fields-scroll { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 
     .field-row { display: flex; flex-direction: column; gap: 4px; }
-    .field-row-header { display: flex; align-items: center; justify-content: space-between; }
+    /* Left-aligned label (owner 2026-07-23): the header is [taught-dot][label][badge?] — the old
+       space-between pushed a badge-less label to the FAR RIGHT, reading as misalignment. The dot's
+       own margin-right spaces the pair; only the confidence badge floats right. */
+    .field-row-header { display: flex; align-items: center; }
+    .field-row-header .conf-badge { margin-left: auto; }
     .field-row-label { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
     .field-row-label.required-missing { color: var(--err); }
     .conf-badge { font-size: 10px; font-family: var(--mono); padding: 1px 6px; border-radius: 10px; }
@@ -487,6 +689,11 @@
     .field-note.corrected { color: var(--muted); }
     /* Total reconciled against subtotal + tax/shipping/discount — a positive, green note. */
     .field-note.verified { color: var(--ok); }
+    /* Chris r6 card 5: neither the read nor the offered value is printed on the page — a plain
+       hint in place of the Use/Keep pair (no button for a value the page never vouched for). */
+    .field-note-hint { display: block; color: var(--muted); font-family: var(--sans); margin-top: 2px; }
+    /* Two independent method families read the same value (owner principle 2026-08-11). */
+    .field-note.corroborated { color: var(--ok); }
     .corrected-badge { display: inline-block; font-family: var(--sans); font-size: 9px;
       font-weight: 600; line-height: 1; padding: 2px 6px; margin-right: 4px; border-radius: var(--r-pill);
       background: rgba(31,157,99,.16); color: var(--ok); vertical-align: baseline; }
@@ -499,15 +706,22 @@
       display: flex; flex-direction: column; gap: 6px;
     }
     #review-reason[hidden] { display: none; }
+    /* A CLEAN document that is simply waiting (nothing flagged — it just didn't reach the
+       auto-file threshold) is not a warning: same panel, calm accent, so "needs attention"
+       stays visually distinct from "nothing wrong, just waiting for you". */
+    #review-reason.rr-calm { border-left-color: var(--accent); }
     .rr-lead { font-size: 11.5px; color: var(--text); line-height: 1.45; }
     .rr-cues { display: flex; flex-wrap: wrap; gap: 6px; }
     .rr-cue { font-size: 10px; font-weight: 600; padding: 1px 8px; border-radius: var(--r-pill); cursor: default; }
     .rr-cue.low  { background: var(--err-bg);  color: var(--err); }
     .rr-cue.flag { background: var(--warn-bg); color: var(--warn); }
+    .rr-cue.info { background: var(--accent-bg); color: var(--accent2); }
+    .rr-hint { font-size: 10.5px; color: var(--muted); line-height: 1.4; }
     .rr-notes { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 2px; }
     .rr-notes li { font-size: 10.5px; color: var(--muted); line-height: 1.4; }
     .rr-notes li strong { color: var(--text); font-weight: 600; }
     .rr-notes li.rr-more { list-style: none; margin-left: -16px; font-style: italic; }
+    /* "Accept" a suggested correction — small inline-pill in the accent key. */
     .accept-btn {
       font-size: 10px; font-family: var(--sans); line-height: 1;
       padding: 1px 6px; margin-left: 6px; vertical-align: baseline;
@@ -516,6 +730,37 @@
     }
     .accept-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-bg); }
     .accept-btn:disabled { color: var(--muted); cursor: default; border-color: var(--border); }
+    /* "Keep <current>" — the explicit no-change twin of .accept-btn, in the muted key. */
+    .keep-btn {
+      font-size: 10px; font-family: var(--sans); line-height: 1;
+      padding: 1px 6px; margin-left: 4px; vertical-align: baseline;
+      border: 1px solid var(--border2); border-radius: 4px;
+      background: transparent; color: var(--muted); cursor: pointer;
+    }
+    .keep-btn:hover { border-color: var(--border2); background: var(--surface2); color: var(--text); }
+    /* "Resolve" opens the disambiguation picker — the PRIMARY action on a flagged name field, so it's
+       slightly larger + FILLED (accent-tinted) to stand out from the other note actions, with a crisp
+       stroke "route into two arrows" icon (not the old fork glyph). Fills solid accent on hover. */
+    /* .branding-resolve-btn ("Use '<name>'" — accept the branding-detected issuer) shares the
+       look: it is the PRIMARY action on a branding-conflict flag, exactly as Resolve is on an
+       ambiguous name. It renders on its own wrapped line under the note, hence the top margin. */
+    .resolve-btn, .branding-resolve-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; font-family: var(--sans); font-weight: 600; line-height: 1;
+      padding: 3px 9px; margin-left: 8px; vertical-align: middle;
+      border: 1px solid var(--accent); border-radius: 6px;
+      background: var(--accent-bg); color: var(--accent2); cursor: pointer;
+    }
+    .branding-resolve-btn { margin-left: 0; margin-top: 5px; }
+    .resolve-btn:hover, .branding-resolve-btn:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+    .resolve-ico { width: 15px; height: 15px; flex-shrink: 0; }
+    /* "Straighten"/deskew icon: a tilted line with a curved correcting arrow rotating it down to the
+       horizontal baseline (the correct position) — replaces the generic infinity glyph. */
+    .straighten-ico { width: 18px; height: 18px; vertical-align: middle; }
+    /* In the top doc-toolbar the icon sits next to 11px text; keep it small so the Straighten
+       button is the SAME HEIGHT as the other doc-nav-btns (the 18px icon otherwise makes it taller).
+       Scoped to #doc-toolbar so the icon-only rail button (#btn-deskew-all) keeps its 18px size. */
+    #doc-toolbar .straighten-ico { width: 13px; height: 13px; margin-right: 1px; }
     /* "This name is correct" — same shape as .accept-btn but in the OK/green key, since it
        affirms a value rather than applying a suggested change. */
     .name-accept-btn, .issuer-accept-btn {
@@ -540,7 +785,52 @@
       display: flex; align-items: center; justify-content: center; transition: all .15s;
     }
     .pick-btn:hover   { border-color: var(--accent); color: var(--accent); }
-    .pick-btn.picking { border-color: var(--accent); background: var(--accent-bg); color: var(--accent2); }
+    .pick-btn.picking { border-color: var(--accent); background: var(--accent2); color: var(--on-accent, #fff); }
+
+    /* ── LIST field pills (2026-08-27, panel + Oracle) ──
+       The <input class="field-input list-store"> stays the ONE store confirm reads (allValues) and the
+       ONE `corrections` writer (its input listener); the pills are a VIEW over it. State classes on
+       the store (corrected / required-missing / invalid / low-conf / zone-active) reach the pills via
+       the sibling combinator — no JS sync. "Edit as text" flips the wrap into .list-text-mode. */
+    .field-input-wrap.list-mode .field-input.list-store { display: none; }
+    .field-input-wrap.list-mode.list-text-mode .field-input.list-store { display: block; }
+    .field-input-wrap.list-mode.list-text-mode .list-chips { display: none; }
+    .list-chips {
+      flex: 1; min-width: 0; min-height: 28px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+      padding: 3px 6px; border: 1px solid var(--border2); border-radius: 6px; background: var(--surface);
+    }
+    .field-input.corrected ~ .list-chips { border-color: var(--warn); }
+    .field-input.low-conf ~ .list-chips,
+    .field-input.required-missing ~ .list-chips,
+    .field-input.invalid ~ .list-chips { border-color: var(--err); background: var(--err-bg); }
+    .field-input.zone-active ~ .list-chips { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(79,142,247,.25); background: var(--accent-bg); }
+    .list-chip {
+      display: inline-flex; align-items: center; gap: 2px; max-width: 100%;
+      padding: 1px 3px 1px 7px; border-radius: 999px; border: 1px solid var(--border2);
+      background: var(--surface2); color: var(--text); font-family: var(--mono); font-size: 11px; line-height: 1.5;
+    }
+    .list-chip-val { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; }
+    .list-chip-val:hover { text-decoration: underline dotted; }
+    .list-chip.edited  { border-color: var(--warn); }
+    .list-chip.removed { opacity: .6; border-style: dashed; }
+    .list-chip.removed .list-chip-val { text-decoration: line-through; cursor: default; }
+    .list-chip-x, .list-chip-back {
+      border: none; background: none; padding: 0 3px; line-height: 1; font-size: 11px; color: var(--muted); cursor: pointer;
+    }
+    .list-chip-x:hover    { color: var(--err); }
+    .list-chip-back:hover { color: var(--ok); }
+    .list-chip-edit {
+      font-family: var(--mono); font-size: 11px; min-width: 110px; padding: 1px 6px;
+      border: 1px solid var(--accent); border-radius: 999px; background: var(--surface); color: var(--text);
+    }
+    .list-empty { font-size: 11px; color: var(--muted); font-style: italic; }
+    .list-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 3px; font-size: 10.5px; color: var(--muted); }
+    .list-tool-btn {
+      background: none; border: none; padding: 0; font-family: var(--sans); font-size: 10.5px;
+      color: var(--accent2); text-decoration: underline; cursor: pointer;
+    }
+    .list-tool-btn:hover { color: var(--accent); }
+    .list-tool-btn[hidden] { display: none; }
 
     /* ── Action bar ── */
     #action-bar { display: flex; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
@@ -690,6 +980,15 @@
       </div>
       <!-- "N auto-committed — click to review" bar (recently auto-filed docs, re-surfaced for checking). -->
       <div id="auto-committed-bar" style="display:none;"></div>
+      <div id="quiet-reread-hint" style="display:none;"></div>
+      <!-- Post-reprocess consent bar (Oracle 2026-08-12): batch-scoped auto-file OFFER — nothing
+           files until "File N" is clicked; the accept IPC is payload-less (server-owned ids). -->
+      <div id="reprocess-autofile-bar" style="display:none;"></div>
+      <!-- Catch-up Filing consent bar (design 2026-07-31; dark unless scope_sweep_enabled):
+           "N more from SENDER match what you've confirmed" — File N · Review them · Not now,
+           with an expandable per-doc untick list. NON-modal, auto-committed-bar family. -->
+      <div id="sweep-consent-bar" style="display:none;"></div>
+      <div id="class-fix-bar" style="display:none;"></div>
       <!-- Review-queue view toggle: group the list by sender (default) or show newest-first. -->
       <div id="queue-view-bar" style="display:none;">
         <button id="btn-group-toggle" class="qview-toggle"
@@ -720,6 +1019,12 @@
           <div class="rail-divider rail-divider-clear"></div>
           <!-- Document tools (compact icon triggers; wide controls open as rail-anchored flyouts) -->
           <div class="rail-group rail-tools-group">
+            <!-- Ask the app to re-check what is already read (Oracle C11 — the way back after a
+                 "Not now", and what makes the free re-check discoverable rather than unbidden).
+                 It re-asks the filing gate against values already in the database: no page is
+                 re-read, which is what separates it from Reprocess. Hidden unless the sweep is on. -->
+            <button class="queue-tool-btn" id="btn-sweep-check" style="display:none;"
+                    title="Check what's ready to file — re-checks documents already read, without re-reading any pages">&#10227;</button>
             <button class="queue-tool-btn" id="btn-split-pdf" style="display:none;" title="Split PDF…" data-help-key="split">&#9986;</button>
             <button class="queue-tool-btn" id="btn-anchor-wizard" style="display:none;" title="Template Wizard — fine-tune a layout, pin fields precisely (admin)" data-help-key="anchor-wizard">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:17px;height:17px;">
@@ -729,7 +1034,7 @@
                 <path d="M5 15a7 7 0 0 0 14 0"/>
               </svg>
             </button>
-            <button class="queue-tool-btn" id="btn-enhance-toggle" title="OCR Enhancement" data-help-key="enhance">
+            <button class="queue-tool-btn" id="btn-enhance-toggle" title="Clean up a hard-to-read scan (brightness, contrast, noise) and read it again — affects reads only; the filed file is unchanged." data-help-key="enhance">
               <svg class="enhance-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
                 <line x1="3" y1="7" x2="21" y2="7"/>
                 <line x1="3" y1="12" x2="21" y2="12"/>
@@ -739,11 +1044,12 @@
                 <circle cx="8"  cy="17" r="2.6" fill="currentColor" stroke="none"/>
               </svg>
             </button>
-            <button class="queue-tool-btn" id="btn-deskew-all" title="Straighten every document this session — auto-straightens each doc you open and forces straightened reads on Reprocess All (display + reads only; filed files unchanged)" data-help-key="deskew">&#8734;</button>
-            <button class="queue-tool-btn" id="btn-advanced" title="Advanced — view & prune a field's learning history (admin)" data-help-key="advanced">
+            <button class="queue-tool-btn" id="btn-deskew-all" title="Straighten every document this session — auto-straightens each doc you open and forces straightened reads on Reprocess All (display + reads only; filed files unchanged)" data-help-key="deskew"><svg class="straighten-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 17l9-4"/><path d="M4 11a8 8 0 0 1 15.5-1"/><path d="M19.5 10l.8-4M19.5 10l-3.6-1.6"/></svg></button>
+            <button class="queue-tool-btn" id="btn-advanced" title="Learning history — see &amp; tidy the values learned for a field (admin)" data-help-key="advanced">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width:17px;height:17px;">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                <path d="M3 3v5h5"/>
+                <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/>
+                <path d="M12 7v5l4 2"/>
               </svg>
             </button>
             <div id="advanced-bar" class="rail-flyout" style="display:none;">
@@ -767,6 +1073,7 @@
             <!-- Flyouts anchored to the rail (shown by the existing handlers; IDs preserved) -->
             <div id="split-bar" class="rail-flyout" style="display:none;">
               <div class="rail-flyout-title">Split PDF</div>
+              <div style="font-size:10px; color:var(--muted); line-height:1.35;">Splitting replaces this document: the parts go to Review as separate documents, and the original PDF is permanently removed (not to the recycle bin) once the parts are safely created.</div>
               <select id="split-mode" style="font-size:11px; padding:4px 8px; background:var(--surface2); border:1px solid var(--border2); color:var(--text); border-radius:4px; width:100%; min-width:0;">
                 <option value="ranges">By page range</option>
                 <option value="each">Every page (1 file per page)</option>
@@ -785,7 +1092,7 @@
             </div>
 
             <div id="enhance-controls" class="rail-flyout">
-              <div class="rail-flyout-title">OCR Enhancement</div>
+              <div class="rail-flyout-title">Scan clean-up (OCR Enhancement)</div>
               <div class="enh-row">
                 <label class="enh-opt"><input type="checkbox" id="enh-grayscale"> Grayscale</label>
                 <label class="enh-opt"><input type="checkbox" id="enh-autocontrast"> Auto-contrast</label>
@@ -805,7 +1112,7 @@
                   <span id="enh-noise-value" class="enh-num">Off</span>
                 </label>
               </div>
-              <button id="btn-preview-ocr" data-help-key="preview-ocr" class="btn preview-ocr">&#9658; Preview OCR</button>
+              <button id="btn-preview-ocr" data-help-key="preview-ocr" class="btn preview-ocr" title="Try the clean-up on this document and preview what Scan Finder would read — nothing is saved or changed.">&#9658; Preview the read</button>
             </div>
           </div>
         </div>
@@ -823,19 +1130,28 @@
       <div id="review-actions">
         <div class="ra-row">
           <button class="btn skip" id="btn-skip" data-help-key="skip">Skip</button>
-          <button class="btn skip" id="btn-defer" style="color:var(--warn)" data-help-key="defer">&#8635; Defer</button>
+          <button class="btn skip" id="btn-defer" style="color:var(--warn)" data-help-key="defer" title="Set this one aside for later — it moves to the Deferred tab. Nothing is filed or deleted.">&#8635; Defer</button>
         </div>
         <button id="btn-file-all-review" data-help-key="file-all" title="File every document whose type and required fields are filled in. Documents still missing details are left for manual review.">&#10003; File All Ready</button>
-        <button id="btn-delete-all-review" data-help-key="delete-all">&#128465; Delete All Review</button>
+        <button id="btn-delete-all-review" data-help-key="delete-all" title="Deletes every document in this list — they go to the recycle bin, restorable from Search.">&#128465; Delete All Review</button>
       </div>
       <div id="deferred-footer">
-        <button id="btn-delete-all">&#128465; Delete All Deferred</button>
+        <button id="btn-delete-all" title="Deletes every document in this list — they go to the recycle bin, restorable from Search.">&#128465; Delete All Deferred</button>
       </div>
     </div>
 
     <div id="queue-resizer" title="Drag to resize the file list"></div>
 
     <div id="doc-panel">
+      <!-- B2 (activity strip, 2026-08-22; barry + eric → Oracle): what the app just did, newest on the left. Armed by the
+           `review_activity_strip` setting; hidden (and the head variable unchanged) otherwise. data-help-ignore: help-mode
+           must not swallow the expand / undo clicks. -->
+      <div id="activity-strip" data-help-ignore aria-label="Recent activity">
+        <button type="button" class="as-nav" id="as-prev" title="Earlier" hidden>&#8249;</button>
+        <div class="as-track" id="as-track"></div>
+        <button type="button" class="as-nav" id="as-next" title="Later" hidden>&#8250;</button>
+      </div>
+      <div id="activity-panel" data-help-ignore role="dialog" aria-label="Recent activity"></div>
       <div id="doc-toolbar">
         <span class="doc-name" id="doc-name">No document selected</span>
         <div class="zoom-group" data-help-key="zoom">
@@ -844,11 +1160,12 @@
           <button class="doc-nav-btn" id="btn-zoom-in" title="Zoom in">&#43;</button>
           <button class="doc-nav-btn" id="btn-zoom-reset" title="Reset zoom &amp; pan">Reset</button>
         </div>
-        <button class="doc-nav-btn" id="btn-page-prev" data-help-key="pages">&#8249; Prev</button>
-        <span id="page-indicator" style="font-size:11px; color:var(--muted);">—</span>
-        <button class="doc-nav-btn" id="btn-page-next" data-help-key="pages">Next &#8250;</button>
-        <button class="doc-nav-btn" id="btn-deskew" data-help-key="deskew" title="Straighten a tilted scan so drawn boxes line up with the text (display only — the filed file is unchanged)">&#8734; Straighten</button>
+        <button class="doc-nav-btn" id="btn-page-prev" data-help-key="pages">&#8249; <span class="lbl">Prev</span></button>
+        <span id="page-indicator" style="font-size:11px; color:var(--muted); white-space:nowrap;">—</span>
+        <button class="doc-nav-btn" id="btn-page-next" data-help-key="pages"><span class="lbl">Next</span> &#8250;</button>
+        <button class="doc-nav-btn" id="btn-deskew" data-help-key="deskew" title="Straighten a tilted scan so drawn boxes line up with the text (display only — the filed file is unchanged)"><svg class="straighten-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 17l9-4"/><path d="M4 11a8 8 0 0 1 15.5-1"/><path d="M19.5 10l.8-4M19.5 10l-3.6-1.6"/></svg> <span class="lbl">Straighten</span></button>
         <span id="deskew-angle" style="font-size:11px; color:var(--muted);"></span>
+        <button class="doc-nav-btn" id="btn-print-doc" style="display:none" title="Print this document on your printer — your printer's own dialog opens so you pick tray, sides and copies"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg> <span class="lbl">Print</span></button>
       </div>
 
       <button class="btn" id="btn-acknowledge" data-help-key="acknowledge" style="display:none" title="This document was flagged for review. Mark it reviewed so File All Ready can include it.">&#10003; Mark Reviewed</button>
@@ -869,6 +1186,14 @@
 
       <div id="doc-viewer">
         <span id="doc-placeholder">Select a document from the queue</span>
+        <!-- Empty-pane call-to-action: shown when the queue has documents but none is auto-selected
+             (returning user with 2+ sender piles). Cold-start single-pile imports auto-land on a
+             document instead, so a first-timer never sees a dead pane. Wired in renderer.js. -->
+        <div id="preview-cta" style="display:none">
+          <div class="pcta-title">Ready when you are</div>
+          <div class="pcta-sub">Pick a document on the left to check its details, then Confirm to file it — Scan Finder takes you to the next one.</div>
+          <button class="btn primary" id="btn-start-reviewing">Start reviewing &#8594;</button>
+        </div>
         <div id="anchor-readout" class="anchor-readout" style="display:none"></div>
         <div id="doc-img-wrap" style="display:none">
           <img id="doc-img" alt="Document preview" draggable="false">
@@ -906,12 +1231,11 @@
         <div class="wiz-row" id="wiz-anchor-block">
           <span class="wiz-label">Anchor label</span>
           <input type="text" id="wiz-anchor-text" placeholder="e.g. Invoice Number">
-          <select id="wiz-ocr-type" style="margin-top:2px;">
-            <option value="text">Text</option>
-            <option value="number">Number</option>
-            <option value="date">Date</option>
-            <option value="currency">Currency</option>
-          </select>
+          <!-- The "OCR type" select was removed 2026-08-08 (owner decision). It wrote
+               template_field_mappings.ocr_type, which NO production code reads: the value format
+               used by extraction comes from engine._seed_field_patterns, keyed on the document
+               TYPE's field definitions. Three surfaces offered three different vocabularies for
+               this and none of them changed a single read. See templates.js / migration note. -->
           <div class="wiz-draw-row">
             <button class="btn" id="wiz-draw-anchor" data-help-key="draw-anchor">Draw anchor</button>
             <button class="btn" id="wiz-draw-target" data-help-key="draw-target">Draw target</button>
@@ -946,26 +1270,29 @@
           <div class="fields-header-title">Extracted Fields</div>
           <button class="fh-train" id="btn-training" title="A step-by-step walkthrough of reviewing a document">★ Take a tour</button>
           <button class="btn fh-new-type" id="btn-new-doctype" data-help-key="new-doctype" style="display:none;" title="Create a new document type without leaving Review">+ New type</button>
-          <button class="btn fh-new-type" id="btn-edit-doctype" style="display:none;" title="Edit this document type's fields and roles in Settings (admin) — e.g. to set up a missing Reference/Date field">&#9998; Edit type</button>
         </div>
         <select id="doctype-select" data-help-key="doctype-select"><option value="">— Select document type —</option></select>
+        <button id="generic-chip" style="display:none; margin-top:6px; font-size:11px; padding:4px 10px; border:1px solid var(--border2); border-radius:var(--r-pill); background:transparent; color:var(--accent2); cursor:pointer;"
+                title="File this unrecognised document as a General Document — found later by searching its text; no invoice-style fields required">File as General Document</button>
         <div class="fields-detect-row">
           <div id="extraction-status"></div>
           <div class="fields-detect-spacer" aria-hidden="true"></div>
-          <button class="btn add-template-btn" id="btn-add-template" data-help-key="template-manager" title="Save the current reviewed values as a managed template for this layout — for recurring suppliers/layouts that keep misdetecting">
-            <svg class="add-template-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/>
-              <rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/>
-              <rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/>
-              <line x1="17.25" y1="14.5" x2="17.25" y2="20"/>
-              <line x1="14.5" y1="17.25" x2="20" y2="17.25"/>
-            </svg>
-            <span class="add-template-lbl">Save as template</span>
+          <button class="btn add-template-btn" id="btn-sender-fields" style="display:none;" title="Choose which fields Scan Finder looks for on this sender's documents — e.g. switch off a field their paperwork never carries">
+            <span id="btn-sender-fields-lbl">Change what's read from this sender's documents</span>
           </button>
         </div>
-        <div class="fields-header-sub"><strong>Teach a field:</strong> click the <span class="repick-glyph">⊕</span> on it and draw a box round its value — Scan Finder learns where it lives and reads it on every future document from this supplier. Saved when you confirm.</div>
+        <!-- The quiet standing promise that per-sender memory exists (Chris card 6, 2026-08-12) —
+             replaces the retired "Save as template" button as the panel's only mention of it. -->
+        <div class="fields-memory-line" style="font-size:11px; color:var(--muted); padding:2px 0 0;">Scan Finder remembers where each sender keeps things — teach a field once and it applies to their future documents.</div>
+        <div class="fields-header-sub"><strong>Teach a field — only if it's showing the wrong value.</strong> Click the <span class="repick-glyph">⊕</span> and draw a box round the <em>correct</em> value — Scan Finder <strong>pins that spot</strong> and reads whatever sits there on every future document from this supplier. A field already showing the right value doesn't need teaching. Saved when you confirm.</div>
       </div>
       <div id="review-reason" hidden></div>
+      <!-- Generic Document glance aids: provenance strip + a two-line text snippet
+           (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §6). Client-side from doc.ocr_text. -->
+      <div id="doc-snippet" hidden style="padding:8px 14px 0;">
+        <div class="snippet-strip" hidden style="font-size:12px; color:var(--accent2); line-height:1.4; margin-bottom:6px;"></div>
+        <div class="snippet-text" style="font-size:11px; color:var(--muted); line-height:1.5; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;"></div>
+      </div>
       <div id="fields-scroll"></div>
 
       <div id="reprocess-progress" role="status" aria-live="polite"></div>
@@ -981,7 +1308,7 @@
       <div id="confirm-issuer-note" style="display:none;"></div>
       <div id="action-bar">
         <button class="btn danger" id="btn-delete" data-help-key="delete" title="Delete document">&#128465;</button>
-        <button class="btn confirm" id="btn-confirm" disabled data-help-key="confirm">&#10003; Confirm &amp; File</button>
+        <button class="btn confirm" id="btn-confirm" disabled data-help-key="confirm" title="File this document (Ctrl+Enter)">&#10003; Confirm &amp; File</button>
       </div>
       <!-- Actions for ALL documents in the review queue (batch reprocessing). -->
       <div id="reprocess-queue-bar">
@@ -1003,6 +1330,13 @@
     <span id="rdc-title">Extraction trace</span>
     <span id="rdc-doc"></span>
     <button id="rdc-reprocess" class="rdc-btn" title="Reprocess this document with tracing on">↻ Reprocess (trace)</button>
+    <button id="rdc-table" class="rdc-btn" title="Open the queue-wide debug table">▦ Table</button>
+    <!-- SHOW ALL BOXES (owner request, 2026-08-09). The per-row click already highlights ONE
+         field's value + anchor; this draws EVERY winning field at once so the whole taught
+         geometry can be seen against the page in a single look — which is what you actually need
+         while judging a teach. Dev-only (this console is SFDEV-gated), read-only, draw-only. -->
+    <button id="rdc-allboxes" class="rdc-btn" title="Draw every winning field's value box (amber) and anchor box (blue) on this page">▣ All boxes</button>
+    <span id="rdc-allboxes-note"></span>
     <button id="rdc-close" class="rdc-btn" title="Close (Esc)">&times;</button>
   </div>
   <div id="rdc-body">
@@ -1010,9 +1344,127 @@
     <div id="rdc-fields"></div>
   </div>
 </aside>
+
+<!-- SFDEV bulk debug-table (dev-only). Queue-wide field grid: click a cell to flag it
+     wrong, click again to type the correct value, then Submit → writes debug_values.json.
+     Reachable only once the trace console (#rdc) is unlocked. -->
+<div id="rdt" hidden>
+  <div id="rdt-head">
+    <span id="rdt-title">▦ Debug table</span>
+    <span id="rdt-sub">click a cell to mark it wrong · click a header to sort · drag a header edge to resize · click a filename to view that doc</span>
+    <span id="rdt-stats"></span>
+    <button id="rdt-submit" class="rdt-btn primary" title="Write debug_values.json + copy any winning-crop slices">Submit</button>
+    <button id="rdt-max" class="rdt-btn" title="Maximise / restore (F11)" aria-pressed="false">⛶</button>
+    <button id="rdt-close" class="rdt-btn" title="Close (Esc)">&times;</button>
+  </div>
+  <div id="rdt-body">
+    <div id="rdt-empty">Loading queue…</div>
+    <div id="rdt-scroll"><table id="rdt-table"></table></div>
+  </div>
+  <div id="rdt-toast"></div>
+</div>
+<style>
+  /* Floating, draggable + resizable panel — deliberately NOT full-screen so the
+     document preview stays visible behind it while you flag cells. */
+  #rdt { position: fixed; top: 52px; left: 16px; width: min(1100px, 92vw); height: 68vh;
+         min-width: 420px; min-height: 220px; z-index: 95000; background: var(--surface);
+         border: 1px solid var(--border2); border-radius: 10px; overflow: hidden; resize: both;
+         box-shadow: 0 16px 48px rgba(0,0,0,.5); display: flex; flex-direction: column;
+         font-family: var(--sans); color: var(--text); }
+  #rdt[hidden] { display: none; }
+  #rdt-head { display: flex; align-items: center; gap: 10px; padding: 9px 14px; flex-shrink: 0;
+              border-bottom: 1px solid var(--border2); background: var(--surface2);
+              cursor: move; user-select: none; border-radius: 10px 10px 0 0; }
+  #rdt-title { font-weight: 700; font-size: 13px; color: var(--accent2); flex-shrink: 0; }
+  #rdt-sub { font-size: 11px; color: var(--muted); flex: 1; overflow: hidden;
+             text-overflow: ellipsis; white-space: nowrap; }
+  #rdt-stats { font-family: var(--mono); font-size: 11px; color: var(--muted); flex-shrink: 0; }
+  .rdt-btn { border: 1px solid var(--border2); background: var(--surface); color: var(--muted);
+             border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; flex-shrink: 0; }
+  .rdt-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .rdt-btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .rdt-btn.primary:hover { background: var(--accent2); color: var(--on-accent); }
+  #rdt-body { flex: 1; min-height: 0; position: relative; }
+  #rdt-empty { padding: 20px; font-size: 12px; color: var(--muted); }
+  #rdt-scroll { position: absolute; inset: 0; overflow: auto; }
+  #rdt-table { border-collapse: separate; border-spacing: 0; font-size: 11px; font-family: var(--mono); }
+  #rdt-table th, #rdt-table td { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+              padding: 5px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
+  #rdt-table thead th { position: sticky; top: 0; z-index: 3; background: var(--surface3);
+              color: var(--text); font-weight: 600; }
+  /* ── Maximise / restore. The panel is drag-positioned and CSS-resized, so both land as INLINE
+     styles on #rdt — which would beat any class. The JS stashes and clears them on maximise and
+     puts them back on restore; these !important rules are the belt to that braces, so a stale
+     inline width can never leave a "maximised" panel the wrong size. ── */
+  #rdt.maxed { top: 8px !important; left: 8px !important;
+               width: calc(100vw - 16px) !important; height: calc(100vh - 16px) !important;
+               resize: none; }
+  #rdt-max.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+  /* ── Sortable headers ── */
+  #rdt-table thead th { cursor: pointer; user-select: none; }
+  #rdt-table thead th .rdt-sortmark { color: var(--accent); font-size: 9px; margin-left: 4px;
+              opacity: 0; }
+  #rdt-table thead th.sorted .rdt-sortmark { opacity: 1; }
+  #rdt-table thead th:hover { color: var(--accent); }
+
+  /* ── Column resize grips. Absolutely positioned in the header's right edge; the header is
+     position:sticky (an offset parent), so `right:0` lands correctly without extra wrapping. ── */
+  #rdt-table thead th { position: sticky; }          /* explicit: the grip anchors to this */
+  .rdt-colgrip { position: absolute; top: 0; right: 0; width: 7px; height: 100%;
+                 cursor: col-resize; z-index: 5; }
+  .rdt-colgrip:hover, .rdt-colgrip.dragging { background: var(--accent); opacity: .55; }
+  /* Once a drag starts the table switches to fixed layout (see the renderer): only then can a
+     column be made NARROWER than its content, and only then do these clips matter. */
+  #rdt-table.sized { table-layout: fixed; }
+  #rdt-table.sized th, #rdt-table.sized td { overflow: hidden; text-overflow: ellipsis; }
+  body.rdt-resizing { cursor: col-resize !important; user-select: none; }
+  /* Drag-select a rectangle of cells. The cells must not take a text selection while the pointer
+     is dragging across them, or the browser paints a blue text highlight over the flags. */
+  #rdt-table tbody .rdt-cell { user-select: none; cursor: pointer; }
+  #rdt-table .doc-col { position: sticky; left: 0; z-index: 2; background: var(--surface2);
+              max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  #rdt-table thead .doc-col { z-index: 4; }
+  #rdt-table tbody tr:hover td { background: var(--surface2); }
+  #rdt-table tbody tr:hover .doc-col { background: var(--surface3); }
+  #rdt-table .doc-col { cursor: pointer; }
+  .rdt-fname { color: var(--text); }
+  #rdt-table tbody tr:hover .rdt-fname { color: var(--accent); text-decoration: underline; }
+  #rdt-table tr.sel .doc-col { box-shadow: inset 3px 0 0 var(--accent); }
+  .rdt-dmeta { color: var(--muted); font-size: 10px; margin-top: 2px; }
+  .rdt-dmeta .type { color: var(--accent2); }
+  .rdt-cell { cursor: pointer; }
+  .rdt-cell.empty { color: var(--muted2); }
+  .rdt-cell .cv { color: var(--text); }
+  .rdt-cell .cm { color: var(--muted); font-size: 9.5px; }
+  /* The matched caption — its own line, tinted apart from the method, so a column can be
+     scanned for the odd one out. */
+  .rdt-cell .ccap { display: block; color: var(--accent); font-size: 9.5px; }
+  .rdt-cell.wrong { background: rgba(214,69,69,.14) !important; box-shadow: inset 2px 0 0 var(--err); }
+  .rdt-cell.wrong .cv { color: var(--err); text-decoration: line-through; }
+  .rdt-cell .correct { display: block; margin-top: 3px; color: var(--ok); }
+  .rdt-cell .correct::before { content: "✓ "; }
+  .rdt-cell input.correct-in { width: 130px; margin-top: 3px; font-family: var(--mono); font-size: 10.5px;
+              padding: 2px 5px; border: 1px solid var(--accent); border-radius: 4px;
+              background: var(--bg); color: var(--text); outline: none; }
+  #rdt-toast { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+               background: var(--surface3); border: 1px solid var(--border2); color: var(--text);
+               padding: 8px 16px; border-radius: 8px; font-size: 12px; opacity: 0;
+               transition: opacity .2s; pointer-events: none; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  #rdt-toast.show { opacity: 1; }
+</style>
 <style>
   #rdc {
-    position: fixed; top: 52px; right: 16px; width: 380px; height: 70vh; max-height: 84vh;
+    /* 380px could not hold the header row once Table + All-boxes + the regions note joined it
+       (owner, 2026-08-09: "the text and close button have floated outside the box"). Widened, and
+       bounded by the viewport so a narrow display can never push it off-screen. The header also
+       WRAPS now — widening alone just postpones the same overflow the next time a control is
+       added, and this panel accumulates them. */
+    /* TOP-LEFT (owner request 2026-08-12): the right edge covered the Extracted Fields panel —
+       the thing you are usually comparing the trace AGAINST; top-left sits over the queue list,
+       which SFDEV work doesn't need. */
+    position: fixed; top: 52px; left: 16px; width: 520px; max-width: calc(100vw - 32px);
+    height: 70vh; max-height: 84vh;
     z-index: 90000; background: var(--surface); border: 1px solid var(--border2);
     border-radius: 8px; box-shadow: 0 12px 34px rgba(0,0,0,.5); display: flex;
     flex-direction: column; font-family: var(--mono, monospace); color: var(--text);
@@ -1022,15 +1474,28 @@
     display: flex; align-items: center; gap: 8px; padding: 8px 10px;
     border-bottom: 1px solid var(--border2); background: var(--surface2); flex-shrink: 0;
     cursor: move; user-select: none; border-radius: 8px 8px 0 0;
+    /* Every .rdc-btn is flex-shrink:0, so without wrapping this row can only overflow — it cannot
+       compress. Wrap is what actually keeps the controls inside the border. */
+    flex-wrap: wrap; row-gap: 6px;
   }
-  #rdc-title { font-weight: 600; font-size: 12px; color: var(--accent2); }
-  #rdc-doc { flex: 1; font-size: 10px; color: var(--muted); overflow: hidden;
-             text-overflow: ellipsis; white-space: nowrap; }
+  #rdc-title { font-weight: 600; font-size: 12px; color: var(--accent2); flex-shrink: 0; }
+  #rdc-doc { flex: 1 1 60px; min-width: 0; font-size: 10px; color: var(--muted);
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Close stays hard against the right edge on whichever row it lands on. */
+  #rdc-close { margin-left: auto; }
   .rdc-btn {
     border: 1px solid var(--border2); background: var(--surface); color: var(--muted);
     border-radius: 5px; padding: 3px 8px; font-size: 11px; cursor: pointer; flex-shrink: 0;
   }
   .rdc-btn:hover { border-color: var(--accent); color: var(--accent); }
+  /* Pressed state for the All-boxes MODE toggle. Without this the class flipped and nothing on
+     screen changed, so the button read as dead (owner, 2026-08-09). */
+  .rdc-btn.open { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  /* Inline result note beside the toggle: says how many regions were drawn, or why none were —
+     a mode that silently does nothing is indistinguishable from a broken button. */
+  #rdc-allboxes-note { font-size: 10px; color: var(--muted); margin-left: 6px;
+                       min-width: 0; overflow: hidden; text-overflow: ellipsis;
+                       white-space: nowrap; }
   #rdc-body { flex: 1; overflow: auto; padding: 8px 10px; }
   #rdc-empty { color: var(--muted); font-size: 11px; line-height: 1.5; padding: 8px 2px; }
   .rdc-field { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; overflow: hidden; }
@@ -1051,12 +1516,30 @@
   .rdc-stage { color: var(--accent2); flex-shrink: 0; min-width: 64px; }
   .rdc-val { color: var(--text); flex: 1; min-width: 0; overflow-wrap: anywhere; }
   .rdc-conf { color: var(--muted); flex-shrink: 0; }
+  /* The printed caption a rung matched — evidence off the page, so it is tinted apart
+     from .rdc-conf, which carries internal method names. */
+  .rdc-cap { color: var(--accent); background: var(--accent-bg); border-radius: var(--r-pill);
+             padding: 0 6px; flex-shrink: 0; cursor: help; }
   .rdc-tag { flex-shrink: 0; font-size: 9px; padding: 0 4px; border-radius: 3px; }
   .rdc-tag.won  { background: rgba(62,207,142,.18); color: var(--ok); }
   .rdc-tag.lost { background: var(--surface2); color: var(--muted); }
   .rdc-tag.rej  { background: rgba(247,111,111,.16); color: var(--err); }
   .rdc-tag.auth { background: rgba(79,142,247,.18); color: var(--accent2); }
   .rdc-reason { color: var(--muted); font-size: 9px; flex-basis: 100%; padding-left: 70px; }
+  /* Crop strip: the exact image(s) OCR'd for this field (dev slice capture) — so you can
+     see WHAT was read to get the value, incl. a disagreeing taught crop vs full-page read. */
+  .rdc-slices { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding-top: 8px;
+                border-top: 1px dashed var(--border2); }
+  .rdc-slice { margin: 0; display: flex; flex-direction: column; gap: 3px; max-width: 170px; }
+  .rdc-slice img { max-width: 170px; max-height: 96px; border: 1px solid var(--border2);
+                   border-radius: 4px; background: var(--surface); object-fit: contain; }
+  .rdc-slice figcaption { font-size: 9px; color: var(--muted); overflow-wrap: anywhere; }
+  .rdc-slice.read img { border-color: var(--ok); border-width: 2px; }
+  .rdc-slice.read figcaption { color: var(--ok); font-weight: 600; }
+  .rdc-slice.missing img { display: none; }
+  .rdc-slice.missing::after { content: 'crop unavailable'; font-size: 9px; color: var(--err); }
+  /* A field the last trace run produced NO candidate for (union placeholder — it still shows). */
+  .rdc-field.noevents .rdc-fname { color: var(--warn); }
   /* Stage 2.5 transform + Stage 4/4.5 validation rows (the "why" behind a held/
      flagged/emptied value). */
   .rdc-note .rdc-stage { color: var(--muted); }
@@ -1183,15 +1666,83 @@
     </div>
   </div>
 </div>
+<!-- ── Print modal (option a, owner-directed 2026-07-18) ───────────────────────────
+     Custom preview + the options Electron's silent print genuinely honours (copies /
+     duplex / colour / range / pages-per-sheet). "Full printer dialog…" is the ONLY path
+     to booklet / trays / stapling / quality — those live in the driver and cannot be
+     round-tripped back into this modal (Electron exposes no driver-settings handle). The
+     real vector PDF is what spools; the preview images never print. ─────────────────── -->
+<div id="print-modal" style="display:none; position:fixed; inset:0; z-index:100000; background:rgba(12,16,24,.55); align-items:center; justify-content:center;" data-help-ignore>
+  <div style="background:var(--surface); border:1px solid var(--border2); border-radius:var(--r); width:min(920px,94vw); height:min(88vh,760px); display:flex; flex-direction:column; overflow:hidden; box-shadow:0 18px 60px rgba(0,0,0,.4);">
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border);">
+      <div style="font-weight:600; font-size:14px; color:var(--text);">Print</div>
+      <button id="print-modal-close" class="doc-nav-btn" title="Close" style="font-size:16px; line-height:1;">&#215;</button>
+    </div>
+    <div style="flex:1; display:flex; min-height:0;">
+      <!-- controls -->
+      <div style="width:280px; flex-shrink:0; border-right:1px solid var(--border); padding:14px 16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px;">
+        <label style="font-size:11px; color:var(--muted);">Printer
+          <select id="print-printer" style="width:100%; margin-top:4px;"></select>
+          <span style="display:block; margin-top:3px; font-size:10px; color:var(--muted); line-height:1.4;">Used for the <b>Print</b> button below. In the full printer dialog you pick the printer there.</span>
+        </label>
+        <label style="font-size:11px; color:var(--muted);">Copies
+          <input type="number" id="print-copies" min="1" max="99" value="1" style="width:100%; margin-top:4px;">
+        </label>
+        <div style="font-size:11px; color:var(--muted);">Pages
+          <div style="display:flex; gap:6px; align-items:center; margin-top:4px;">
+            <select id="print-pages-mode" style="flex:1;"><option value="all">All pages</option><option value="range">Range</option></select>
+          </div>
+          <input type="text" id="print-pages-range" placeholder="e.g. 1-3, 5" style="width:100%; margin-top:6px; display:none;">
+        </div>
+        <label style="font-size:11px; color:var(--muted);">Sides
+          <select id="print-duplex" style="width:100%; margin-top:4px;">
+            <option value="">Printer default</option>
+            <option value="simplex">Single-sided</option>
+            <option value="longEdge">Double-sided (long edge)</option>
+            <option value="shortEdge">Double-sided (short edge)</option>
+          </select>
+        </label>
+        <label style="font-size:11px; color:var(--muted);">Colour
+          <select id="print-color" style="width:100%; margin-top:4px;">
+            <option value="">Printer default</option>
+            <option value="true">Colour</option>
+            <option value="false">Black &amp; white</option>
+          </select>
+        </label>
+        <label style="font-size:11px; color:var(--muted);">Pages per sheet
+          <select id="print-nup" style="width:100%; margin-top:4px;">
+            <option value="1">1 (normal)</option>
+            <option value="2">2</option>
+            <option value="4">4</option>
+            <option value="6">6</option>
+            <option value="9">9</option>
+          </select>
+        </label>
+        <div style="flex:1;"></div>
+        <button class="btn primary" id="print-modal-go" style="width:100%;">Print</button>
+        <button class="btn" id="print-modal-dialog" title="Opens Windows' own printer dialog — choose the printer there, plus booklet, paper trays, stapling and quality. This preview closes when it opens." style="width:100%; font-size:11px;">Advanced printing</button>
+        <div style="font-size:10px; color:var(--muted); line-height:1.5;">Booklet, paper trays, stapling and quality live in your printer&rsquo;s own dialog &mdash; open it above and choose your printer there.</div>
+        <div id="print-modal-msg" style="font-size:11px; color:var(--muted); min-height:14px;"></div>
+      </div>
+      <!-- preview -->
+      <div id="print-preview-pane" style="flex:1; overflow-y:auto; background:var(--doc-bg); padding:16px; display:flex; flex-direction:column; align-items:center; gap:12px;"></div>
+    </div>
+  </div>
+</div>
+
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
 <script src="../shared/thumbs.js"></script>
 <script src="../shared/doctype-editor.js"></script>
 <script src="../shared/anchorLabel.js"></script>
+<script src="../shared/listCaption.js"></script>
 <script src="../shared/logoSource.js"></script>
 <script src="../shared/slipFix.js"></script>
 <script src="../shared/modalFocus.js"></script>
 <script src="../shared/pickBox.js"></script>
+<script src="../shared/reviewReadiness.js"></script>
+<script src="../shared/issuerBlankOffer.js"></script>
+<script src="../shared/offerPrune.js"></script>
 <script src="renderer.js"></script>
 <script src="training.js"></script>
 </body>

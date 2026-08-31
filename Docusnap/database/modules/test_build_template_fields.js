@@ -112,6 +112,74 @@ function main() {
   check('customer_name STILL variable even with uniform confirmed history (accepted fail-toward-review trade-off)',
         rows3.customer_name && rows3.customer_name.is_variable === true);
 
+  section('5. (E) a LIST-typed field NEVER freezes (2026-08-11 — the serials-defect pin)');
+  // The live DB carried template_fixed 'Serial No:' ×24 because a TEXT-typed code field froze from
+  // one taught document. A field typed 'list' is per-document by construction — unconditional, no
+  // kill switch; a future dev restoring the freeze "for recall" turns this red.
+  const dtList = { id: 1, ref_field_key: 'invoice_number', date_field_key: 'invoice_date',
+    fields: [{ key: 'serials', label: 'Serials', type: 'list', is_variable: 0 },
+             { key: 'payment_terms', label: 'Payment Terms', type: 'text', is_variable: 0 }] };
+  const rowsL = byKey(_buildTemplateFields(db, { serials: 'NW-1; NW-2', payment_terms: '30 days' }, dtList));
+  check('list-typed field is variable (never frozen), whatever its schema flag says',
+        rowsL.serials && rowsL.serials.is_variable === true && rowsL.serials.fixed_value === null);
+  check('CONTROL: a constant text sibling still freezes (the exclusion is type-scoped)',
+        rowsL.payment_terms && rowsL.payment_terms.is_variable === false
+        && rowsL.payment_terms.fixed_value === '30 days');
+
+  section('6. THE IDENTITY UNFREEZE CLASS (2026-08-22 night; Oracle C9.1/C9.2/C9.5) — company keys judged per TEMPLATE by dominance');
+  // The type-wide distinct count unfroze every second sender of a type (and a sender with ONE confirmed
+  // garble row). Now: supplier_name is multi-valued only when THIS template's own confirmed documents
+  // hold no strict-majority issuer. The fixture needs documents.template_id + supplier_name.
+  const db6 = makeDb();
+  db6.exec("ALTER TABLE documents ADD COLUMN template_id INTEGER; ALTER TABLE documents ADD COLUMN supplier_name TEXT");
+  const addDoc = (tpl, sup, vat) => {
+    const id = db6.prepare("INSERT INTO documents (document_type_id, status, template_id, supplier_name) VALUES (1,'confirmed',?,?)").run(tpl, sup).lastInsertRowid;
+    db6.prepare("INSERT INTO extractions (document_id, field_key, display_value) VALUES (?,?,?)").run(id, 'supplier_name', sup);
+    if (vat) db6.prepare("INSERT INTO extractions (document_id, field_key, display_value) VALUES (?,?,?)").run(id, 'payment_terms', vat);
+    return id;
+  };
+  // two senders of ONE type, each on its own template
+  for (let i = 0; i < 3; i++) addDoc(1, 'Veltrix Automotive Parts', '30 days');
+  for (let i = 0; i < 3; i++) addDoc(2, 'Silverbeck Cleaning Supplies', '14 days');
+  const vel = byKey(_buildTemplateFields(db6, { supplier_name: 'Veltrix Automotive Parts', payment_terms: '30 days' }, dtInfo, { templateId: 1 }));
+  const sil = byKey(_buildTemplateFields(db6, { supplier_name: 'Silverbeck Cleaning Supplies', payment_terms: '14 days' }, dtInfo, { templateId: 2 }));
+  check('two senders of one type on two templates → BOTH identities stay frozen (the type-wide count no longer unfreezes the second sender)',
+        vel.supplier_name.is_variable === false && vel.supplier_name.fixed_value === 'Veltrix Automotive Parts'
+        && sil.supplier_name.is_variable === false && sil.supplier_name.fixed_value === 'Silverbeck Cleaning Supplies');
+  check('POSITIVE CONTROL: a non-company key (payment_terms) is STILL judged type-wide → two suppliers\' terms differ → variable (the freeze_guard class)',
+        vel.payment_terms.is_variable === true && sil.payment_terms.is_variable === true);
+  // a garble row on the sender's OWN template: A×3 + 'rdwind…'×1 → dominant 3/4 → stays frozen
+  addDoc(1, 'eltrix Automotive Parts');
+  const velG = byKey(_buildTemplateFields(db6, { supplier_name: 'Veltrix Automotive Parts' }, dtInfo, { templateId: 1 }));
+  check('A×3 + one confirmed garble row on the same template → still frozen (dominance, not distinct-count)', velG.supplier_name.is_variable === false);
+  // a buyer-issued layout: A/B/C ×1 → no majority → variable
+  addDoc(3, 'Quillstone Print'); addDoc(3, 'Bramblewood Joinery Ltd'); addDoc(3, 'Oakhaven Electrical');
+  const buyer = byKey(_buildTemplateFields(db6, { supplier_name: 'Quillstone Print' }, dtInfo, { templateId: 3 }));
+  check('a buyer-issued layout (three issuers ×1) → variable (no majority)', buyer.supplier_name.is_variable === true && buyer.supplier_name.fixed_value === null);
+  // A×1 / B×1 → fail toward variable (pinned trade-off)
+  addDoc(4, 'Acme Ltd'); addDoc(4, 'Bolt Ltd');
+  const tie = byKey(_buildTemplateFields(db6, { supplier_name: 'Acme Ltd' }, dtInfo, { templateId: 4 }));
+  check('PINNED TRADE-OFF: A×1 / B×1 on one template → variable (fail toward variable)', tie.supplier_name.is_variable === true);
+  // CREATE (no template yet) → freeze at birth as today, even with many senders of the type
+  const born = byKey(_buildTemplateFields(db6, { supplier_name: 'Harrowgate Timber Supplies' }, dtInfo, { templateId: null }));
+  check('CREATE (templateId null) → the identity freezes at birth regardless of the type\'s other senders', born.supplier_name.is_variable === false);
+  // the document being confirmed is excluded from its own dominance (self-exclusion via documentId)
+  const selfId = addDoc(5, 'elican Office');                       // the doc being (re)confirmed carries the garble row
+  addDoc(5, 'Pelican Office Interiors'); addDoc(5, 'Pelican Office Interiors'); addDoc(5, 'elican Office');
+  const self = byKey(_buildTemplateFields(db6, { supplier_name: 'Pelican Office Interiors' }, dtInfo, { templateId: 5, documentId: selfId }));
+  check('the confirming document is excluded from its own template\'s dominance (without it 2 vs 1 → a majority → frozen)', self.supplier_name.is_variable === false);
+  const selfIn = byKey(_buildTemplateFields(db6, { supplier_name: 'Pelican Office Interiors' }, dtInfo, { templateId: 5 }));
+  check('…positive control: counted in, 2 vs 2 is no majority → variable', selfIn.supplier_name.is_variable === true);
+  // source pin: _upsertTemplate builds fields lazily after the template resolves, at both consumers
+  const src = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'src', 'modules', 'review', 'handler.js'), 'utf8');
+  check('source: _upsertTemplate builds fields AFTER template resolution (buildFields(templateId) on UPDATE, buildFields(null) on CREATE)',
+        /const buildFields = \(tid\) => _buildTemplateFields\(db, allValues, dtInfo, \{ templateId: tid \|\| null, documentId: document_id \}\);/.test(src)
+        && /const fields = buildFields\(templateId\);\s*\n\s*templates\.update\(db, templateId/.test(src.replace(/\r\n/g, '\n'))
+        && /const fields = buildFields\(null\);\s*\n\s*const newTemplateId = templates\.create/.test(src.replace(/\r\n/g, '\n')));
+  const tsrc = require('fs').readFileSync(require('path').join(__dirname, 'templates.js'), 'utf8');
+  check('source: the writer guard is LOUD on a NULL landing over a frozen identity (template_identity_unfrozen audit)',
+        /\[identity-guard\] UNFROZE template/.test(tsrc) && /action: 'template_identity_unfrozen'/.test(tsrc));
+
   console.log('\n' + (fails === 0 ? 'ALL PASS' : `${fails} FAILED`));
   process.exit(fails ? 1 : 0);
 }

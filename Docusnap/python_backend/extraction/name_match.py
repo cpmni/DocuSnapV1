@@ -109,6 +109,53 @@ def _ocr_equiv(a, b):
             and _levenshtein(a, b) == 1)
 
 
+# ── Suffix-canon SNAP (built 2026-08-24; RATIFIED docs/oracle_log.md 2026-08-25 SIGN-OFF-W/COND) ──
+# The owner's class: a solid single-spelling scope reads its issuer/customer with a one-glyph
+# legal-suffix slip ("Bramblewood Joinery Lid" for the confirmed "…Ltd"). The STRONG name-repair
+# already produces "…Ltd" but engine.py's low_distinct demotion routes it to a "Suggested … [Resolve]"
+# hold. This re-admits a SILENT adopt for the ONE subset that can never change WHICH company it is:
+# the sole differing content token is the TRAILING token AND its canonical is a legal suffix
+# (Ltd/Inc/Plc/LLC/LLP/Co) reached by a <=1-edit slip — every other content token matches EXACTLY.
+# So the entity is pinned by the exact-match core; only the legal-suffix spelling moves.
+# REJECTED by construction: "Highfield Cars Ltd" vs "Highfield Care Ltd" (core token differs),
+# "Cox Ltd" vs "Fox Ltd" (core, not trailing-suffix), any multi-token or core _close repair (stays
+# in Review). A pure surface/case difference on identical norms (same entity) also adopts the
+# confirmed surface. A short CORE (acronym like "BP Ltd") is refused by the core-length floor so a
+# 1-char slip on a tiny name — where one glyph is a large fraction — never silently snaps.
+_SNAP_MIN_CORE_LEN = 6   # min combined alnum length of the NON-suffix ("core") tokens
+
+def name_snap_adopt(read, dominant, min_core_len=_SNAP_MIN_CORE_LEN):
+    """Return the confirmed `dominant` value to SILENTLY adopt for `read`, or None.
+    Identity-preserving by construction (see the block comment above): adopt only when read and
+    dominant share exactly the same content tokens except (a) surface/case on identical norms, or
+    (b) a single TRAILING token that is a <=1-edit slip of a canonical legal suffix. Pure; no I/O."""
+    r_toks = [t for t in str(read).split() if _is_content(t)]
+    d_toks = [t for t in str(dominant).split() if _is_content(t)]
+    if not r_toks or not d_toks or len(r_toks) != len(d_toks):
+        return None                                   # structural change => not a clean per-token repair
+    r_norms = [normalise_for_tokens(t) for t in r_toks]
+    d_norms = [normalise_for_tokens(t) for t in d_toks]
+    diff = [i for i in range(len(r_norms)) if r_norms[i] != d_norms[i]]
+    # the CORE = every content token except a trailing legal-suffix token
+    core_norms = d_norms[:-1] if (d_norms and d_norms[-1] in _LEGAL_SUFFIX_CANON) else d_norms
+    if sum(len(n) for n in core_norms) < min_core_len:
+        return None                                   # acronym / tiny name => never silent-snap
+    if not diff:
+        # same entity, differs only in surface/case/punctuation => adopt the confirmed surface
+        return dominant if str(dominant) != str(read) else None
+    if diff == [len(r_norms) - 1]:
+        last_r, last_d = r_norms[-1], d_norms[-1]
+        # A VALID-FORM suffix SWAP is a DIFFERENT ENTITY, not a slip. If the read's own trailing token is
+        # itself a distinct canonical legal suffix (LLP vs LLC — both in canon and one edit apart), refuse:
+        # "Anderson LLP" (a real partnership) must never silently adopt the confirmed "Anderson LLC" (Oracle
+        # 2026-08-25 — the one name_snap hole the single-spelling confirmed-corpus A/B could not exercise).
+        if last_r in _LEGAL_SUFFIX_CANON and last_r != last_d:
+            return None
+        if last_d in _LEGAL_SUFFIX_CANON and _levenshtein(last_r, last_d) <= 1:
+            return dominant                           # trailing legal-suffix slip (e.g. Lid->Ltd), exact core
+    return None                                       # a CORE token changed => different company, stay in Review
+
+
 def build_token_lexicon(value_counts, confirmed_count=None):
     """Build the positional canonical lexicon for ONE field group from confirmed
     history. `value_counts` = {confirmed_value: doc_count}; `confirmed_count` = total
@@ -401,3 +448,150 @@ def should_continue_line(line1, pattern_chars=None, name_lex=None, fmt_entry=Non
     # No trailing char: fall back to the data-verified truncation signal (history-gated,
     # inert without confirmed history).
     return bool(name_lex) and is_truncated_name(s, name_lex)
+
+
+# ── TEMPLATE_FIXED near-match identity (2026-08-06; gary -> Oracle SIGN-OFF-W/COND C1..C7) ───────
+# Consumed by the Stage-0.5 merge in engine.py to decide whether a mapping READ of a company field
+# is the SAME NAME as the template's curated `fixed_value`, merely misread, or a genuinely different
+# string. Pure + side-effect free so it is unit-testable without OCR.
+#
+# THE CLASS (measured on the Castellan credit notes): a tight taught crop hugs the wordmark, so the
+# FIRST and LAST glyphs sit on the crop boundary and the LSTM force-fits them —
+#   'Castellan Security Systems' -> 'Castellan Security System:'  (terminal 's' -> ':')
+#                               -> 'Cas tellan Security System:'  (+ a segmenter space split)
+#                               -> 'tastellan Security Systems'   (leading 'C' -> 't')
+# After an alnum fold every one of these is edit distance 1, while the nearest genuinely different
+# string on the same page ('Bramblewood Joinery Ltd' — the recipient block) is ~20. The budget is
+# therefore DERIVED from the class, not tuned to it: a ~19x margin.
+#
+# Why plain Levenshtein and not ocr_corrector._is_confusion: 'C'->'t' is a letter->letter forced fit
+# at a crop edge, absent from the digit/letter confusion maps, so reusing those verbatim would reject
+# the real 'tastellan' case. name_match already uses plain Levenshtein for name tokens.
+#
+# ACCEPTED TRADE-OFF (Oracle C3): a `fixed_value` that is ITSELF one glyph wrong will no longer be
+# displaced by a correct page read through this path, so that poison stops self-healing on the
+# affected templates. The lever is Learning Repair / the template viewer. Do NOT widen the budget
+# past 1 and do NOT remove the containment carve-out. Pins: tests/test_template_fixed_near_match.py.
+_NEAR_MATCH_MIN_FIXED_LEN = 8   # below this a name carries too little signal — require exact
+_NEAR_MATCH_MAX_EDITS     = 1   # the codebase's existing minimum snap budget (ocr_corrector)
+_FRAGMENT_MAX_READ_LEN    = 3   # a <3-char fold against a real company name is debris, not a value
+
+# ── ISSUER REPAIR (2026-08-09, owner-reported) ──────────────────────────────────────────────────
+# Measured on 135 template-matched documents: 93 read the curated name exactly, 42 did not — 15 an
+# OCR garble of it ('lronciad Tool Hire', 'Iranclad Tool H', 'siiverbeck Cleaning Supplie') and 27
+# not a company name at all ('DATE 14-03-2026 Job Ref JB-8887', 'Reg No GB 821', 'SERVICE
+# WORKSHEET'). The existing guards miss both: near-match tolerates only ONE edit, and the fragment
+# rule only debris under 3 characters. Meanwhile the app already prints the answer — "Letterhead may
+# read 'Castellan Security Systems' — detected 'DATE 14-03-2026 Job Ref JB-8887'" — and asks the
+# operator to confirm what it has itself worked out.
+# A SIMILARITY floor rather than an edit budget: 'lronciad Tool Hire' vs 'Ironclad Tool Hire' is 2
+# edits over an 16-char fold = 0.88 similar, while a genuinely different company ('Bramblewood
+# Joinery Ltd' vs 'Castellan Security Systems') is ~0.2. The gap is enormous, so 0.75 sits in open
+# space — it is not a tuned constant.
+# THE INVARIANT THIS MUST NOT BREAK (stated in _fixed_seed_decline's own docstring): a genuinely
+# DIFFERENT company must still displace the curated seed, so that a stale fixed_value can always be
+# corrected by re-teaching. 0.75 preserves that by a wide margin.
+_NEAR_MATCH_MIN_SIMILARITY = 0.75
+_DATE_IN_READ   = __import__('re').compile(r'\d{1,4}[-/.]\d{1,2}[-/.]\d{2,4}')
+_LONG_DIGIT_RUN = __import__('re').compile(r'\d{4,}')
+
+
+def similar_identity(read, fixed):
+    """Similarity of two company names on the alnum fold, 0..1 (1 - editdist/longer)."""
+    fr, ff = fold_identity(read), fold_identity(fixed)
+    if not fr or not ff:
+        return 0.0
+    return 1.0 - (_levenshtein(fr, ff) / float(max(len(fr), len(ff))))
+
+
+def garbled_identity(read, fixed):
+    """True when the read is the SAME company name, misread beyond the one-edit budget.
+
+    Strictly wider than near_match_identity and deliberately bounded by a similarity floor, so it
+    can narrow a garble back to the curated literal but can never turn one company into another."""
+    ff = fold_identity(fixed)
+    if len(ff) < _NEAR_MATCH_MIN_FIXED_LEN or not fold_identity(read):
+        return False
+    return similar_identity(read, fixed) >= _NEAR_MATCH_MIN_SIMILARITY
+
+
+def is_not_an_issuer_read(read, fixed):
+    """True when the read is METADATA rather than a company name — a date line, a registration or
+    account code, a reference.
+
+    Mechanical and lexicon-free on purpose: a company name does not contain a printed DATE, and does
+    not carry a run of four or more digits. 'BP', '3M' and 'Bramblewood Joinery Ltd' are all safe by
+    construction, so a genuinely different company still displaces the seed. Requires the template's
+    OWN curated name to be substantial, so it can never fire for a template that knows nothing."""
+    r = str(read or '').strip()
+    if not r or len(fold_identity(fixed)) < _NEAR_MATCH_MIN_FIXED_LEN:
+        return False
+    return bool(_DATE_IN_READ.search(r) or _LONG_DIGIT_RUN.search(fold_identity(r)))
+
+
+def fold_identity(value):
+    """Alnum-only lowercase fold — separator/space/punctuation jitter must not decide identity."""
+    return ''.join(c.lower() for c in str(value or '') if c.isalnum())
+
+
+def near_match_identity(read, fixed, allow_edit=True):
+    """True when `read` is the SAME company name as `fixed`, merely misread.
+
+    IDENTITY-PRESERVING BY CONSTRUCTION: it can only ever accept a <=1-edit variant of the curated
+    literal, so it can never turn one company into another. Returns False for anything that is a
+    genuinely different string, however low its OCR confidence."""
+    fr, ff = fold_identity(read), fold_identity(fixed)
+    if len(ff) < _NEAR_MATCH_MIN_FIXED_LEN or not fr:
+        return False
+    if fr == ff:
+        return True                       # branch A — folds equal, zero characters guessed
+    # CONTAINMENT CARVE-OUT (load-bearing — do not delete as dead code). A mis-taught,
+    # leading-glyph-CLIPPED fixed_value ('astellan Security Systems'; cf. the 'altmarsh Seafoods'
+    # class) is ALSO exactly 1 edit from the CORRECT page read. Without this the rule would discard
+    # the correct read and freeze the clipped literal forever — the mirror of the bug it fixes.
+    # A read that CONTAINS the whole curated name is the fuller string: let the read win.
+    if len(fr) > len(ff) and ff in fr:
+        return False
+    if not allow_edit:
+        return False
+    return _levenshtein(fr, ff) <= _NEAR_MATCH_MAX_EDITS      # branch B — one edge-glyph slip
+
+
+_DEBRIS_MAX_FOLD = 4          # a fold of <=4 alnum chars against a curated name >=8 is debris ('Gay', 'ba)', 'Poo')
+_DEBRIS_MAX_SUBTOKEN_ALPHA = 5  # a single <=5-alpha token that is a piece OF the curated fold ('MENT', 'TIONS')
+
+
+def is_debris_read(read, fixed):
+    """Chris round 17 card 2(a) (2026-08-23; gary → Oracle SIGN-OFF-W/COND). True when `read` is DEBRIS
+    against a curated company name: the fixed fold is >= _NEAR_MATCH_MIN_FIXED_LEN (8) AND either the
+    read fold has <= 4 alnum chars ('Gay' — a word not on the page — beat the seed at 75 because the
+    shipped debris rule is `< 3`), OR the read is a SINGLE token of <= 5 alpha chars that is a proper
+    substring of the fixed fold ('MENT', 'TIONS' — a stamp-occluded piece of the stacked wordmark).
+    Lives beside is_fragment_read rather than changing its constant (its pins stand). The 08-06
+    "a genuinely different company still displaces" ruling survives ON the on-page condition: the
+    caller fires this only under TEMPLATE_IDENTITY_ON_PAGE, where the doc carries the seed only if the
+    page names that company — so a <=4-char read there is debris, not Asda (pinned as the trade-off:
+    'Asda' vs 'DOCUMENT SOLUTIONS' -> kept). A short FIXED name ('BP', '3M') never enters (the 8 floor).
+    Pinned in tests/test_fixed_seed_debris.py."""
+    fr, ff = fold_identity(read), fold_identity(fixed)
+    if not fr or len(ff) < _NEAR_MATCH_MIN_FIXED_LEN or fr == ff:
+        return False
+    if len(fr) <= _DEBRIS_MAX_FOLD:
+        return True
+    toks = [t for t in re.findall(r"[A-Za-z0-9]+", str(read or ''))]
+    if len(toks) == 1:
+        alpha = re.sub(r"[^a-z]", "", toks[0].lower())
+        if 0 < len(alpha) <= _DEBRIS_MAX_SUBTOKEN_ALPHA and toks[0].lower() in ff and toks[0].lower() != ff:
+            return True
+    return False
+
+
+def is_fragment_read(read, fixed):
+    """True when the read is a DEBRIS FRAGMENT ('ba)') against a real curated company name.
+
+    Deterministic length test on purpose. `value_quality.name_quality` was rejected for this job
+    (Oracle C2): it is length-biased — `name_quality('BP') == name_quality('3M') ==
+    name_quality('IBM') == 0.0` — so it would demote legitimate short company names. This rule can
+    only fire when the template's OWN curated name is long, so a genuine 'BP' is never at risk."""
+    fr, ff = fold_identity(read), fold_identity(fixed)
+    return bool(fr) and len(fr) < _FRAGMENT_MAX_READ_LEN and len(ff) >= _NEAR_MATCH_MIN_FIXED_LEN

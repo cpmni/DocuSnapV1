@@ -173,14 +173,21 @@ function createClient(opts = {}) {
 
   // ── Mailbox / approval workflow ───────────────────────────────────────────────
   const wfList    = (view) => request('GET', `/v1/workflow/${view}`, { withAuth: true });
+  const wfCounts  = () => request('GET', '/v1/workflow/counts', { withAuth: true });   // badge poll (COUNTs only)
   const recipients = () => request('GET', '/v1/workflow/recipients', { withAuth: true });
-  const assign = (documentId, toUserId, actionRequired, comment) =>
-    request('POST', '/v1/workflow/routes', { withAuth: true, body: { documentId, toUserId, actionRequired, comment } });
+  const assign = (documentId, toUserId, actionRequired, comment, resubmitOf) =>
+    request('POST', '/v1/workflow/routes', { withAuth: true, body: { documentId, toUserId, actionRequired, comment, resubmitOf } });
   const claim   = (id, version) => request('POST', `/v1/workflow/routes/${id}/claim`, { withAuth: true, body: { version } });
   const resolve = (id, decision, comment, version) =>
     request('POST', `/v1/workflow/routes/${id}/resolve`, { withAuth: true, body: { decision, comment, version } });
   const recall  = (id, version) => request('POST', `/v1/workflow/routes/${id}/recall`, { withAuth: true, body: { version } });
   const wfStamped = (id) => request('GET', `/v1/workflow/routes/${id}/stamped`, { withAuth: true });   // stamped-copy pages
+  // Stamping (Workflow+Stamping redesign 2026-08-28) — all under /v1/workflow/* (entitlement-gated server-side).
+  const stampTypes = () => request('GET', '/v1/workflow/stamp-types', { withAuth: true });
+  const stampCan   = () => request('GET', '/v1/workflow/can-stamp', { withAuth: true });
+  const stampList  = (documentId) => request('GET', `/v1/workflow/documents/${documentId}/stamps`, { withAuth: true });
+  const stampPlace = (documentId, body) => request('POST', `/v1/workflow/documents/${documentId}/stamps`, { withAuth: true, body });
+  const stampedDoc = (documentId) => request('GET', `/v1/workflow/documents/${documentId}/stamped`, { withAuth: true });
 
   // One-shot CA bootstrap over an UNTRUSTED connection (no CA pinned yet). The caller
   // MUST confirm the returned fingerprint out-of-band before pinning it.
@@ -231,7 +238,8 @@ function createClient(opts = {}) {
 
   return {
     connect, login, logout, changePassword, entitlement, search, getDocument, getPages, getThumbnail, ping, fetchCa, enroll,
-    workflow: { list: wfList, recipients, assign, claim, resolve, recall, stamped: wfStamped },
+    workflow: { list: wfList, counts: wfCounts, recipients, assign, claim, resolve, recall, stamped: wfStamped,
+                stampTypes, canStamp: stampCan, stampList, stampPlace, stampedDoc },
     recycle: { list: binList, delete: binDelete, restore: binRestore, purge: binPurge, purgeAll: binPurgeAll },
     review: { queue: revQueue, deferred: revDeferred, counts: revCounts, docTypes,
               confirm: revConfirm, defer: revDefer, undefer: revUndefer, viewing: revViewing, release: revRelease,

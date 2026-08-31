@@ -29,7 +29,12 @@ db.exec(`
     template_id INTEGER, logo_phash TEXT, keyword_fingerprint TEXT, ocr_text TEXT,
     error_message TEXT, stored_filename TEXT, stored_path TEXT, doc_date TEXT,
     reference_number TEXT, confirmed_at TEXT, working_path TEXT,
-    review_acknowledged_at TEXT, page_count INTEGER
+    review_acknowledged_at TEXT, page_count INTEGER,
+    -- documents.insert() names every column explicitly, so a fixture missing one fails the INSERT
+    -- outright and EVERY assertion downstream reads as a producer regression. logo_detail_hash
+    -- (mig 47) had already gone stale here; detected_type_name is mig 51. Keep in step with
+    -- database/modules/documents.js insert().
+    logo_detail_hash TEXT, detected_type_name TEXT
   );
 `);
 

@@ -42,6 +42,11 @@ function paintSelections() {
 
 function render() {
   panels.forEach(p => p.classList.toggle('show', Number(p.dataset.step) === state.step));
+  // Refresh the filing preview whenever its step shows — it must reflect a folder chosen
+  // one step earlier (setupOrganization only ran once at boot).
+  if (panels.some(p => Number(p.dataset.step) === state.step && p.querySelector('#ob-output-preview'))) {
+    try { obUpdatePreview(); } catch { /* preview is best-effort */ }
+  }
   $$('#steps .dot').forEach((d, i) => {
     d.classList.toggle('active', i === state.step);
     d.classList.toggle('done', i < state.step);
@@ -57,10 +62,20 @@ async function loadCurrent() {
   try {
     state.outputFolder = (await D.getSetting('output_folder')) || (await D.suggestedOutputFolder()) || '';
   } catch {}
-  // Default to a core-aware value (this PC's cores minus headroom) unless the user already
-  // chose one — a fresh multi-core PC shouldn't be stuck at a hardcoded 2.
-  try { const info = await D.getConcurrencyInfo(); if (info && info.recommended >= 1) state.threads = info.recommended; } catch {}
-  try { const c = parseInt(await D.getSetting('processing_concurrency'), 10); if (c >= 1) state.threads = c; } catch {}
+  // Map the three Speed cards to REAL concurrency for THIS PC: Gentle=1, Balanced≈half, Fast=the full
+  // recommended (cores minus headroom). A hardcoded Fast=4 both under-used a powerful PC AND matched
+  // NO card on a high-core box (recommended 14 != 1/2/4) so nothing highlighted — the "no blue
+  // suggestion" report. DEFAULT = Fast (the suggested speed); a previously-stored choice wins, snapped
+  // to the nearest tier so a card ALWAYS highlights. Click-handler + highlight both read data-threads,
+  // so updating it here is enough.
+  let _rec = 4;
+  try { const info = await D.getConcurrencyInfo(); if (info && info.recommended >= 1) _rec = info.recommended; } catch {}
+  const _fast = Math.max(4, _rec), _bal = Math.min(_fast - 1, Math.max(2, Math.round(_fast / 2)));
+  const _speedCards = $$('[data-threads]');                 // DOM order: Gentle, Balanced, Fast
+  if (_speedCards.length === 3) { _speedCards[1].dataset.threads = String(_bal); _speedCards[2].dataset.threads = String(_fast); }
+  state.threads = _fast;                                    // default: Fast (the blue suggestion)
+  try { const c = parseInt(await D.getSetting('processing_concurrency'), 10);
+        if (c >= 1) state.threads = [1, _bal, _fast].reduce((a, b) => Math.abs(b - c) <= Math.abs(a - c) ? b : a); } catch {}
   // The wizard only offers Thorough (smart) / Quick (fast); map any other stored
   // value (e.g. a legacy 'ai', or an unset/blank) to 'smart' so a card is always
   // selected — otherwise neither Accuracy card highlights and it looks unselectable.
@@ -102,9 +117,22 @@ async function obUpdatePreview() {
   const pEl = $('#ob-output-preview');
   if (!pEl || !folderEditor || !filenameEditor) return;
   try {
-    const root = (await D.getSetting('output_folder')) || state.outputFolder || 'Output folder';
-    const r = await D.previewOutputPath(folderEditor.getValue().trim(), filenameEditor.getValue().trim());
+    // The WIZARD'S chosen folder wins over the saved setting (which is only written at
+    // finish) — the old order kept showing the stale saved root after the user changed
+    // the folder on the previous step (Chris r5).
+    const root = state.outputFolder || (await D.getSetting('output_folder')) || 'Output folder';
+    const fnPattern = filenameEditor.getValue().trim();
+    const r = await D.previewOutputPath(folderEditor.getValue().trim(), fnPattern);
     pEl.textContent = [root, ...(r.segments || []), r.filename].join('  ›  ');
+    // The default pattern carries FOUR blocks but the sample shows three — {title} collapses
+    // on documents without one, which is most of them. Say so, or the example looks broken
+    // against the builder above it (Chris r2 2026-08-11, tea item).
+    const note = $('#ob-preview-note');
+    if (note) {
+      const usesTitle = (fnPattern || state.filenamePattern || '').includes('{title}');
+      note.style.display = usesTitle ? '' : 'none';
+      if (usesTitle) note.textContent = 'The Title part only appears on documents that carry a title — for most (like this invoice) it simply drops out.';
+    }
   } catch {}
 }
 async function obSaveAndPreview() {

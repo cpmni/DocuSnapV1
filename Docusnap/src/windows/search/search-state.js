@@ -9,6 +9,26 @@ window.SearchState = {
   myOpenRoutes: {},      // document_id -> open route addressed to me (workflow; set when entitled)
 };
 
+// PURGE DIALOG TRUTH (Q1, Chris round 14 card 1, 2026-08-22): "Permanently delete … including their
+// PDF files" must also say what is NOT deleted. Under `keep_processed_originals` (mig 83 ON) a filed
+// document's original scan stays in the Processed folder, so the purge removes only the app's
+// copies. With the switch OFF the original was already removed at filing — say nothing (the old
+// sentence stays exactly as it was). Cached per window; the sentence is a suffix for the three
+// purge confirms (Empty bin / Delete permanently / bulk purge).
+window.SearchState = window.SearchState || {};
+window.SearchState.keepOriginals = null;
+window.SearchState.purgeSuffix = async function purgeSuffix() {
+  try {
+    if (window.SearchState.keepOriginals === null) {
+      const v = await window.docusnap.getSetting('keep_processed_originals');
+      window.SearchState.keepOriginals = (v === 'true' || v === true);
+    }
+  } catch { window.SearchState.keepOriginals = false; }
+  return window.SearchState.keepOriginals
+    ? ' Your original scans in the Processed folder are not touched.' : '';
+};
+
+
 // Confidence level (shared by results + preview): '' = none, else ok/warn/err.
 // Mirrors the detached client's thresholds so the two surfaces read identically.
 function confLevel(c) { return c == null ? '' : c >= 85 ? 'ok' : c >= 60 ? 'warn' : 'err'; }

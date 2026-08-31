@@ -1,0 +1,11 @@
+const ROOT='C:/GIT Projects/Docusnap'; const Database=require(ROOT+'/node_modules/better-sqlite3');
+const { runMigrations } = require(ROOT+'/database/index');
+const fresh=new Database(':memory:'); runMigrations(fresh);
+const live=new Database(process.argv[2],{readonly:true});
+const f=new Map(fresh.prepare('SELECT key,value FROM settings').all().map(r=>[r.key,r.value]));
+const skip=/^(output_folder|watch_folder|theme|first_run|welcome|terms_accepted|recent_auto_filed|update_info|license|detached|client|cert|window|card_order|dashboard|last_|processing_concurrency|ocr_dpi|tesseract|auto_file_threshold|graduation_window)/;
+const rows=live.prepare("SELECT key,value FROM settings WHERE value IN ('true','false') ORDER BY key").all();
+console.log('LIVE true but FRESH not true:');
+for (const r of rows) if (r.value==='true' && f.get(r.key)!=='true' && !skip.test(r.key)) console.log('  '+r.key.padEnd(44)+' fresh='+(f.get(r.key)||'(unset)'));
+console.log('LIVE false but FRESH true:');
+for (const r of rows) if (r.value==='false' && f.get(r.key)==='true' && !skip.test(r.key)) console.log('  '+r.key);

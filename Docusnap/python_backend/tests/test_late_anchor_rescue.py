@@ -88,7 +88,13 @@ FIELD_DEFS = [
 ]
 HINTS = [{"field_key": "supplier_name", "hint_value": MER, "usage_count": 5,
           "supplier_name": MER, "document_type": "worksheet"}]
-OCR = "WORKSHEET\nSite / Customer\nFormby & Sons\n" + MER + "\n"
+# FIXTURE FIX (2026-07-24): the supplier (MER) must sit in the ISSUER BAND for the 2.5a hint
+# text-scan to resolve it. The old fixture put "Site / Customer" (a recipient marker) BEFORE MER,
+# so the 2026-07-20 ISSUER_HINT_BAND fix (e8f3a6c, chrome_band.py) correctly truncated the band
+# before MER → the hint never matched → the supplier never resolved late → the rescue never fired
+# → six downstream checks cascaded red. This is the "suspect the fixture first" trap: product was
+# CORRECT, fixture predated the issuer-band fix. MER now leads, before the recipient marker.
+OCR = "WORKSHEET\n" + MER + "\nSite / Customer\nFormby & Sons\n"
 PAGE = [Image.new("L", (80, 100), 255)]
 
 
@@ -132,8 +138,14 @@ check("rescue call ran under the RESOLVED supplier",
 check("rescued anchors = the delta only (the poisoned customer anchor)",
       any(s == MER and ks == ["customer"] for s, ks in calls))
 check("customer FILLED by the rescue", cust.get("value") == "Formby & Sons")
-check("rescued confidence capped at 85", (cust.get("confidence") or 0) <= 85)
+# DE-VACUUMED (2026-07-24): the old assertion `(cust.get("confidence") or 0) <= 85` passed even
+# when the field was EMPTY (0 <= 85) — the "dead guard greens every test" trap, and the reason the
+# post-boost cap LEAK went unseen. Now require the field to be FILLED before judging the cap.
+check("rescued confidence capped at 85 (field must be filled)",
+      cust.get("value") is not None and (cust.get("confidence") or 0) <= 85)
 check("rescued read keeps its normal method string", cust.get("method") == "anchor_crop")
+check("rescued read carries the late_rescue provenance (drives the sticky cap)",
+      cust.get("late_rescue") is True)
 
 # ── 3 · fill-empty-only: an incumbent is never displaced, rescue set excludes it ─────────
 res3, calls3 = run(
@@ -194,6 +206,41 @@ try:
           not (res6.get("customer") or {}).get("value"))
 finally:
     eng.LATE_ANCHOR_RESCUE_ENABLED = _old
+
+# ── 7 · STICKY CAP (2026-07-24, Oracle C1-C3): the pure terminal re-cap. The rescue caps at 85,
+# but Stage-2.5b conformance (+8) and the Stage-4.5 learned-agreement boost (+5) re-inflate it to
+# 98 AFTER the rescue, and the hermetic harness above has no format_index so it never exercised
+# that leak — which is exactly why the leak shipped. These pin the re-cap that closes it. ──
+_apply = eng._apply_late_rescue_sticky_cap
+
+# a boosted late-rescue field is returned to the cap; the VALUE is untouched
+_r = {"po_number": {"value": "PO-38093", "confidence": 98, "method": "anchor_inline",
+                    "late_rescue": True}}
+_n = _apply(_r)
+check("sticky cap: a re-inflated late-rescue field is returned to 85",
+      _r["po_number"]["confidence"] == 85 and _n == 1)
+check("sticky cap: the value is NEVER touched (fail-toward-review, not a correction)",
+      _r["po_number"]["value"] == "PO-38093")
+check("sticky cap: a re-capped critical field is BELOW the 88 floor -> held, not auto-filed",
+      _r["po_number"]["confidence"] < 88)
+
+# a NON-rescue field is left alone even at 98 (the cap is provenance-scoped, not a blanket ceiling)
+_r2 = {"po_number": {"value": "PO-1", "confidence": 98, "method": "keyword"}}
+check("sticky cap: a non-rescue field at 98 is untouched",
+      _apply(_r2) == 0 and _r2["po_number"]["confidence"] == 98)
+
+# a late-rescue field already at/below the cap is not disturbed; `_`-meta and non-dicts are skipped
+_r3 = {"date": {"value": "01-01-2026", "confidence": 85, "late_rescue": True},
+       "_overall_confidence": 90, "x": "str"}
+check("sticky cap: an at-cap rescue field is unchanged, meta/non-dict skipped",
+      _apply(_r3) == 0 and _r3["date"]["confidence"] == 85)
+
+# the FULL end-to-end guarantee: after a real extract() the rescued customer is <= 85 AND the gate
+# refuses. (In this hermetic harness no boost fires, so the sticky cap is a no-op here — the leak
+# itself is proven live on #472; this pins the invariant the corpus A/B must uphold: post-extract,
+# a late-rescued critical field never exceeds the cap regardless of any boost.)
+check("end-to-end: post-extract rescued field never exceeds the cap",
+      (res.get("customer") or {}).get("confidence", 0) <= 85)
 
 print("\n" + ("%d FAILED" % fails if fails else "All late-anchor-rescue checks passed"))
 sys.exit(1 if fails else 0)

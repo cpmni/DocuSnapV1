@@ -1,20 +1,30 @@
 'use strict';
 
 const path = require('path');
+// Learning Repair start-fresh predicate (mig 90) — carried ONLY by getFieldValueSuggestions (the Review
+// type-ahead is a learning surface). search / the recovery browse lists / the counters / the writers
+// deliberately do NOT carry it: a stamped document stays filed, searchable and repairable.
+const { learningExcludedSql } = require('./machine_vias');
+
+// Best-effort single-row query — returns null instead of throwing (used to probe optional
+// schema like template_hidden_fields, migration 54, so an older DB / test fixture is unaffected).
+function safeQ(db, sql) { try { return db.prepare(sql).get(); } catch { return null; } }
 
 function insert(db, { original_filename, folder_path, document_type_id,
                       supplier_name, overall_confidence, status,
                       template_id, logo_phash, logo_detail_hash, keyword_fingerprint,
-                      ocr_text, page_count }) {
+                      ocr_text, page_count, detected_type_name }) {
   return db.prepare(`
     INSERT INTO documents
       (original_filename, folder_path, document_type_id,
        supplier_name, overall_confidence, status,
-       template_id, logo_phash, logo_detail_hash, keyword_fingerprint, ocr_text, page_count)
+       template_id, logo_phash, logo_detail_hash, keyword_fingerprint, ocr_text, page_count,
+       detected_type_name)
     VALUES
       (@original_filename, @folder_path, @document_type_id,
        @supplier_name, @overall_confidence, @status,
-       @template_id, @logo_phash, @logo_detail_hash, @keyword_fingerprint, @ocr_text, @page_count)
+       @template_id, @logo_phash, @logo_detail_hash, @keyword_fingerprint, @ocr_text, @page_count,
+       @detected_type_name)
   `).run({
     original_filename, folder_path,
     document_type_id:    document_type_id    || null,
@@ -27,6 +37,7 @@ function insert(db, { original_filename, folder_path, document_type_id,
     keyword_fingerprint: keyword_fingerprint || null,
     ocr_text:            ocr_text            || null,
     page_count:          page_count          || null,
+    detected_type_name:  detected_type_name  || null,   // mig 51 — set ONLY when the detected type isn't installed
   });
 }
 
@@ -35,7 +46,10 @@ function update(db, id, changes) {
                    'status', 'overall_confidence', 'supplier_name',
                    'doc_date', 'reference_number', 'confirmed_at',
                    'error_message', 'template_id', 'working_path',
-                   'review_acknowledged_at', 'page_count', 'confirmed_by_username'];
+                   'review_acknowledged_at', 'page_count', 'confirmed_by_username', 'supplier_pin',
+                   // mig 51. This whitelist SILENTLY DROPS anything not listed, so a column added
+                   // to insert() but not here writes once and can never be cleared again.
+                   'detected_type_name'];
   const sets = Object.keys(changes)
     .filter(k => allowed.includes(k))
     .map(k => `${k} = @${k}`)
@@ -47,6 +61,37 @@ function update(db, id, changes) {
 
 function getById(db, id) {
   return db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
+}
+
+// The extracted total as a DISPLAY STRING ("£1,046.16"), or NULL when the doc has no total field
+// (delivery notes, acknowledge-only routes, any type without a total). NULL-safe by design — the
+// decision snapshot (Slice 2) must still record a row for a total-less doc. Uses the same total
+// field keys as the search total-filter (search() below).
+function getExtractedTotalDisplay(db, documentId) {
+  const row = db.prepare(
+    `SELECT COALESCE(display_value, raw_value) AS v FROM extractions
+      WHERE document_id = ? AND field_key IN ('total_amount','total','grand_total')
+        AND COALESCE(display_value, raw_value) IS NOT NULL
+      ORDER BY confidence DESC LIMIT 1`
+  ).get(documentId);
+  return row ? (row.v ?? null) : null;
+}
+
+// The full trust context of the extracted total, from the SAME highest-confidence total row: its
+// field_key, value (display), confidence, and validation_note. Used by Slice-3 amount routing, which
+// must read the note + confidence BEFORE reviewService.confirm clears the note. NULL when the doc has
+// no total field. (was_corrected-this-cycle is derived by the caller from the corrections payload, not
+// the sticky row flag.)
+function getExtractedTotalContext(db, documentId) {
+  const row = db.prepare(
+    `SELECT field_key, COALESCE(display_value, raw_value) AS value, confidence, validation_note
+       FROM extractions
+      WHERE document_id = ? AND field_key IN ('total_amount','total','grand_total')
+        AND COALESCE(display_value, raw_value) IS NOT NULL
+      ORDER BY confidence DESC LIMIT 1`
+  ).get(documentId);
+  if (!row) return null;
+  return { fieldKey: row.field_key, value: row.value, confidence: row.confidence, note: row.validation_note };
 }
 
 // Clear any FK reference into documents that has NO ON DELETE action, so the
@@ -90,8 +135,11 @@ function getWithExtractions(db, id) {
   ).all(id);
   // Disambiguation picker: parse the stored candidates JSON (migration 48) back to an array so the
   // renderer consumes it directly. Malformed/NULL → undefined (renderer shows today's behaviour).
+  // Same for the corroboration record (owner principle 2026-08-11 — independent method-family
+  // agreement; record-only).
   for (const ex of doc.extractions) {
     if (ex.candidates) { try { ex.candidates = JSON.parse(ex.candidates); } catch { ex.candidates = undefined; } }
+    if (ex.corroboration) { try { ex.corroboration = JSON.parse(ex.corroboration); } catch { ex.corroboration = undefined; } }
   }
   return doc;
 }
@@ -108,7 +156,7 @@ function getFieldValueSuggestions(db, documentId, fieldKey) {
     JOIN documents d ON d.id = e.document_id
     WHERE d.document_type_id = (SELECT document_type_id FROM documents WHERE id = @docId)
       AND e.field_key = @fieldKey
-      AND d.status = 'confirmed'
+      AND d.status = 'confirmed'${learningExcludedSql(db)}
       AND d.id != @docId
     ORDER BY v COLLATE NOCASE
     LIMIT 500
@@ -130,13 +178,43 @@ function getReviewQueue(db) {
   // correction candidate — lets the review list colour "corrected/flagged" rows
   // distinctly without loading every field. Read-only enrichment; no change to
   // confidence calculation.
-  return db.prepare(`
+  // Per-template field HIDING (migration 54): a field HIDDEN for the doc's matched template is not
+  // counted as a missing-required blocker. Conditional on the table existing so an older DB / a test
+  // fixture without it is byte-identical (empty fragment). Inert when nothing is hidden.
+  const _hasHidden = !!safeQ(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='template_hidden_fields'");
+  const _hiddenExcl = _hasHidden
+    ? `AND NOT EXISTS (SELECT 1 FROM template_hidden_fields h
+                        WHERE h.template_id = d.template_id AND h.field_key = f.key)`
+    : '';
+  // issuer_suggested (slice 3 of the garbled-issuer arc, 2026-08-22; Oracle C3.2): the letterhead
+  // canonical the engine carried beside a STILL-NOTED identity read (the persisted mig-49 column,
+  // never parsed out of prose). NULL once the note is shed, so a resolved row ungroups by itself. The
+  // Review list groups a garble under the company it is a garble OF. Same conditional shape as the
+  // hidden-fields fragment: a DB / test fixture without the column gets a NULL column, byte-identical.
+  const _hasSuggested = !!safeQ(db, "SELECT 1 FROM pragma_table_info('extractions') WHERE name = 'suggested_supplier'");
+  const _issuerSuggestedSel = _hasSuggested
+    ? `(SELECT e.suggested_supplier FROM extractions e
+         WHERE e.document_id = d.id AND e.field_key = 'supplier_name'
+           AND e.suggested_supplier IS NOT NULL AND TRIM(e.suggested_supplier) <> ''
+           AND e.validation_note IS NOT NULL AND e.validation_note <> ''
+         LIMIT 1) AS issuer_suggested,`
+    : `NULL AS issuer_suggested,`;
+  const _rows = db.prepare(`
     SELECT d.*, dt.name as type_name, dt.slug as type_slug,
       (SELECT COUNT(*) FROM extractions e
          WHERE e.document_id = d.id
            AND ( (e.validation_note IS NOT NULL AND e.validation_note <> '')
               OR (e.corrected_to   IS NOT NULL AND e.corrected_to   <> '') )
       ) AS review_flag_count,
+      ${_issuerSuggestedSel}
+      -- issuer_blank (Chris round 17 card 5b): the issuer is NOT counted by missing_required_labels
+      -- (warn-only in single review) but the File All loop REFUSES a blank issuer — two readiness
+      -- notions. The classifier reads this column so Home's "N ready" == File All's N. A suggestion
+      -- (corrected_to / suggested_supplier) is not a value.
+      (CASE WHEN EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id AND e.field_key = 'supplier_name'
+                           AND ( (e.display_value IS NOT NULL AND TRIM(e.display_value) <> '')
+                              OR (e.raw_value     IS NOT NULL AND TRIM(e.raw_value)     <> '') ))
+            THEN 0 ELSE 1 END) AS issuer_blank,
       (SELECT COUNT(*) FROM extractions e
          JOIN fields f ON f.document_type_id = d.document_type_id AND f.key = e.field_key
          WHERE e.document_id = d.id
@@ -144,6 +222,21 @@ function getReviewQueue(db) {
            AND (f.enabled IS NULL OR f.enabled = 1)
            AND e.confidence < COALESCE(f.confidence_threshold, 70)
       ) AS below_threshold_count,
+      -- below_threshold_valued_count: the SUBSET of the above whose row actually carries a
+      -- VALUE — a low-confidence VALUED read (risk: wrong value) vs an attempted-but-empty
+      -- field @0 (risk: a blank optional). The FAR two-tier rule (far_lowconf_valued_only,
+      -- gate-unify slice, Oracle option (i)) keys the flagged tier on THIS count so an
+      -- empty-optional doc reads clean everywhere (colouring, tab count, Mark Reviewed, File
+      -- All Ready, getReviewSplit) while a weak valued read still holds for a human glance.
+      (SELECT COUNT(*) FROM extractions e
+         JOIN fields f ON f.document_type_id = d.document_type_id AND f.key = e.field_key
+         WHERE e.document_id = d.id
+           AND e.confidence IS NOT NULL
+           AND (f.enabled IS NULL OR f.enabled = 1)
+           AND e.confidence < COALESCE(f.confidence_threshold, 70)
+           AND ( (e.display_value IS NOT NULL AND TRIM(e.display_value) <> '')
+              OR (e.raw_value     IS NOT NULL AND TRIM(e.raw_value)     <> '') )
+      ) AS below_threshold_valued_count,
       -- missing_required_labels: the labels of the fields that BLOCK confirm and are
       -- still EMPTY — the assigned Date/Reference roles + any custom field flagged
       -- Required, EXCLUDING the identity (Document-Issuer is warn-only, not a hard
@@ -158,6 +251,7 @@ function getReviewQueue(db) {
           AND ( f.key = dt.ref_field_key
                 OR f.key = dt.date_field_key
                 OR (f.required = 1 AND f.key NOT IN ('supplier_name','customer_name')) )
+          ${_hiddenExcl}
           AND NOT EXISTS (
                 SELECT 1 FROM extractions e
                  WHERE e.document_id = d.id AND e.field_key = f.key
@@ -169,6 +263,32 @@ function getReviewQueue(db) {
     WHERE d.status = 'needs_review'
     ORDER BY d.processed_at DESC
   `).all();
+  _stampPutBackRefileable(db, _rows);
+  return _rows;
+}
+
+// Put-back re-file (mig 87, Oracle W/COND, DARK `putback_refile_on_file_all`). Stamp putback_refileable=1
+// on the put-back rows that STILL clear the strict auto-file predicate today (bypassing ONLY the put-back
+// stamp), so THE ONE classifier can offer them to an explicit File All Ready. Computed once per batch via
+// the bypass predicate (a refile-declined doc is refused there → never stamped → stays hard-held). This is
+// a READ used only to widen the File-All population; every machine door omits bypassPutBack, so the sweep /
+// import / reprocess / class-fix keep refusing put-back docs. OFF (or no put-back rows) → no column →
+// classify() holds put-back exactly as mig 86 left it (byte-identical). Fail-closed on any error.
+function _putbackRefileEnabled(db) {
+  const env = process.env.PUTBACK_REFILE_ON_FILE_ALL;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return require('./learning').getSetting(db, 'putback_refile_on_file_all', 'false') === 'true'; }
+  catch { return false; }
+}
+function _stampPutBackRefileable(db, rows) {
+  try {
+    if (!_hasPutBackAt(db) || !_putbackRefileEnabled(db)) return;
+    const pb = (rows || []).filter(r => r && r.put_back_at);
+    if (!pb.length) return;
+    const ok = new Set(require('./trust').autoFileEligibleIds(db, pb, { bypassPutBack: true }));
+    for (const r of pb) if (ok.has(r.id)) r.putback_refileable = 1;
+  } catch { /* fail-closed: a put-back doc simply stays held */ }
 }
 
 function getDeferredQueue(db) {
@@ -242,9 +362,9 @@ function requeueConfirmedDocsForScope(db, { supplier_name, document_type_slug } 
   const sn = supplier_name || null;
   return db.prepare(`
     UPDATE documents
-       SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL
+       SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL${_hasPutBackAt(db) ? ", put_back_at = datetime('now')" : ''}
      WHERE status = 'confirmed'
-       AND (@sn IS NULL OR supplier_name = @sn)
+       AND (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE)
        AND document_type_id = (SELECT id FROM document_types WHERE slug = @slug)
   `).run({ sn, slug: document_type_slug });
 }
@@ -255,9 +375,54 @@ function requeueConfirmedDocsForScope(db, { supplier_name, document_type_slug } 
 // "previously filed" signal that lets reviewService re-file IN PLACE on re-confirm
 // (no -DUPLICATE). Status-guarded: only a currently-confirmed doc moves.
 function deconfirmDocument(db, id) {
+  // Also clears confirmed_via (when the column exists): a doc sent back to the queue is no
+  // longer "confirmed by" anything — a later human re-confirm stamps its own via at claim.
+  const viaClear = _hasConfirmedVia(db) ? ', confirmed_via = NULL' : '';
+  // Oracle 2026-08-23 (put-back W/COND): the stamp lives HERE, not at the callers — every door that
+  // returns a filed document to the queue (the chip's Put back, Search / Learning Repair send-back,
+  // the class-fix undo) is a human saying "look again", and the NOTE those doors write is shed by the
+  // next re-read (`used_new`), after which "it stays filed until you re-confirm it" would be false.
+  const pbStamp = _hasPutBackAt(db) ? ", put_back_at = datetime('now')" : '';
+  // Undo-loop closure (mig 87, Oracle BLOCKING cond 2): pulling a doc BACK that was re-filed OUT of a
+  // put-back (putback_refiled_at set) is the user reversing a File-All re-file → HARD-HELD (refile_declined
+  // _at), so File All can never re-bury it; only a per-doc human confirm clears it. Switch- + column-guarded
+  // (CASE reads the pre-update putback_refiled_at). OFF / pre-mig-87 → byte-identical to mig 86.
+  const declineStamp = (_hasRefileDeclined(db) && _putbackRefileEnabled(db))
+    ? ", refile_declined_at = CASE WHEN putback_refiled_at IS NOT NULL THEN datetime('now') ELSE refile_declined_at END"
+    : '';
   return db.prepare(
-    "UPDATE documents SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL WHERE id = ? AND status = 'confirmed'"
+    `UPDATE documents SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL${viaClear}${pbStamp}${declineStamp} WHERE id = ? AND status = 'confirmed'`
   ).run(id);
+}
+// Column-presence cache for documents.refile_declined_at / putback_refiled_at (mig 87) — WeakMap per DB
+// handle so a pre-migration fixture DB never throws (same pattern as _hasPutBackAt / _hasConfirmedVia).
+const _refileDeclinedPresence = new WeakMap();
+function _hasRefileDeclined(db) {
+  let has = _refileDeclinedPresence.get(db);
+  if (has === undefined) {
+    try { has = db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name='refile_declined_at'").get() != null; }
+    catch { has = false; }
+    _refileDeclinedPresence.set(db, has);
+  }
+  return has;
+}
+
+// Chris round 18 A3 (mig 86): a document the user PUT BACK carries put_back_at until a human confirms
+// it — THE ONE auto-file predicate refuses it ('put-back') so no machine door can re-file it. Column-
+// guarded for pre-mig-86 fixtures (the stamp is then simply absent → the old behaviour).
+const _putBackPresence = new WeakMap();
+function _hasPutBackAt(db) {
+  let has = _putBackPresence.get(db);
+  if (has === undefined) {
+    try { has = db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name='put_back_at'").get() != null; }
+    catch { has = false; }
+    _putBackPresence.set(db, has);
+  }
+  return has;
+}
+function markPutBack(db, id) {
+  if (!_hasPutBackAt(db)) return { changes: 0 };
+  return db.prepare("UPDATE documents SET put_back_at = datetime('now') WHERE id = ? AND status = 'needs_review'").run(id);
 }
 
 // List a scope's CONFIRMED documents (for the recovery preview / set-aside picker).
@@ -346,6 +511,36 @@ function getReviewCount(db) {
   ).get().n;
 }
 
+// Home-dashboard split of the review queue: how many docs genuinely NEED a look vs how many
+// are ready to file as-is. Derives from getReviewQueue's OWN rows and THE ONE classifier
+// (src/windows/shared/reviewReadiness.js — the same function Review's File All Ready dialog
+// partitions with), so the two numbers can never disagree. Q4b (Chris round 14: "20 ready to
+// file" over 20 untyped docs — this split had no "no type" leg and no acknowledged-flag
+// exemption while File All had both; Oracle C4b.1: one classifier, both sides, same commit).
+// Do not re-implement the flag logic in SQL here.
+function getReviewSplit(db) {
+  const rows = getReviewQueue(db);
+  // FAR two-tier rule (far_lowconf_valued_only, gate-unify slice): when ON, only a VALUED
+  // below-threshold read counts as "needs a look" — the renderer caches the same setting at
+  // queue load. OFF = byte-identical to today.
+  const valuedOnly = _farValuedOnlyEnabled(db);
+  const parts = require('../../src/windows/shared/reviewReadiness').partition(rows, { valuedOnly });
+  const ready = parts.ready.length;
+  return { total: rows.length, need: rows.length - ready, ready,
+           flagged: parts.flagged.length, noType: parts.noType.length, missing: parts.missing.length };
+}
+
+// C5 read pattern (see trust.js _shadowRowSkipEnabled): env wins both directions for harness
+// arms; the setting is the product truth; a fixture DB without a settings table defaults OFF.
+function _farValuedOnlyEnabled(db) {
+  const env = process.env.FAR_LOWCONF_VALUED_ONLY;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('./learning').getSetting(db, 'far_lowconf_valued_only', 'false') === 'true';
+  } catch { return false; }
+}
+
 function getDeferredCount(db) {
   return db.prepare(
     "SELECT COUNT(*) as n FROM documents WHERE status = 'deferred'"
@@ -391,6 +586,7 @@ function confirm(db, id, { stored_filename, stored_path, confirmed_by_username =
     stored_path,
     confirmed_at: new Date().toISOString(),
     confirmed_by_username,
+    supplier_pin: null,   // clear the operator "Resolve" pin — the name is now learned; a stale pin must not override later
   });
 }
 
@@ -407,14 +603,37 @@ function confirm(db, id, { stored_filename, stored_path, confirmed_by_username =
 // — for the desktop re-file path — already confirmed when allowRefile is set. stored_* may
 // be null when claiming BEFORE filing (the caller fills them in via update() afterwards).
 function confirmIfReviewable(db, id, { stored_filename = null, stored_path = null,
-                                       confirmed_by_username = null, allowRefile = false } = {}) {
+                                       confirmed_by_username = null, allowRefile = false,
+                                       confirmed_via = null } = {}) {
+  // confirmed_via (mig 57, Catch-up Filing): 'scope_sweep' for a machine batch-file, NULL for a
+  // human confirm. Written AT CLAIM time so every later reader in the same confirm (the
+  // learn-on-commit guard reads it back from the row) sees the truth. Guarded on column
+  // presence for pre-mig-57 fixture DBs (same pattern as trust.js).
+  const hasVia = _hasConfirmedVia(db);
+  // Put-back re-file (mig 87): a HUMAN confirm (no via) is the ONLY thing that clears the hard-held
+  // refile_declined marker, and it records putback_refiled_at when it confirms a doc OUT of a put-back
+  // state (so a later put-back is recognised as a REVERSAL). Switch- + column-guarded so OFF / pre-mig-87
+  // is byte-identical. The CASE reads the pre-update put_back_at (SQLite evaluates RHS from the old row).
+  const _refileClear = (_hasRefileDeclined(db) && !confirmed_via && _putbackRefileEnabled(db))
+    ? ",\n           refile_declined_at    = NULL,\n           putback_refiled_at    = CASE WHEN put_back_at IS NOT NULL THEN datetime('now') ELSE putback_refiled_at END"
+    : '';
+  // Learning Repair "start fresh" (Oracle C1, 2026-08-26): a HUMAN confirm is the one act that returns a
+  // document to teaching — it clears BOTH the retract marker (learning_retracted_at, mig 53) and the
+  // exclusion stamp (learning_excluded_at, mig 90). Without this a forgotten doc a person re-checks
+  // and re-files would stay excluded forever (silent dead learning) and its next delete would skip
+  // the retract (residue). Machine confirms (via) never clear them. Column-guarded.
+  const _learnClear = (!confirmed_via && _hasLearningStamps(db))
+    ? ",\n           learning_retracted_at = NULL,\n           learning_excluded_at  = NULL"
+    : '';
   return db.prepare(`
     UPDATE documents
        SET status                = 'confirmed',
            confirmed_at          = @confirmed_at,
            confirmed_by_username = @confirmed_by_username,
+           ${hasVia ? 'confirmed_via = @confirmed_via,' : ''}
            stored_filename       = @stored_filename,
-           stored_path           = @stored_path
+           stored_path           = @stored_path,
+           supplier_pin          = NULL${_hasPutBackAt(db) && !confirmed_via ? ',\n           put_back_at           = NULL' : ''}${_refileClear}${_learnClear}
      WHERE id = @id
        AND ( status IN ('needs_review','deferred')
           OR (status = 'confirmed' AND @allowRefile = 1) )
@@ -423,7 +642,36 @@ function confirmIfReviewable(db, id, { stored_filename = null, stored_path = nul
     stored_filename, stored_path, confirmed_by_username,
     confirmed_at: new Date().toISOString(),
     allowRefile: allowRefile ? 1 : 0,
+    ...(hasVia ? { confirmed_via } : {}),
   });
+}
+
+// Column-presence cache for the two learning stamps (learning_retracted_at mig 53 + learning_excluded_at
+// mig 90) — the human-confirm clear above is emitted only when BOTH exist (older fixtures: neither).
+const _learningStampsCache = new WeakMap();
+function _hasLearningStamps(db) {
+  let has = _learningStampsCache.get(db);
+  if (has === undefined) {
+    try {
+      const cols = new Set(db.prepare("SELECT name FROM pragma_table_info('documents')").all().map(r => r.name));
+      has = cols.has('learning_retracted_at') && cols.has('learning_excluded_at');
+    } catch { has = false; }
+    _learningStampsCache.set(db, has);
+  }
+  return has;
+}
+
+// Column-presence cache for documents.confirmed_via (mig 57) — WeakMap per DB handle so a
+// pre-migration fixture DB (tests ALTER it in manually or not at all) never throws here.
+const _viaPresence = new WeakMap();
+function _hasConfirmedVia(db) {
+  let has = _viaPresence.get(db);
+  if (has === undefined) {
+    try { has = db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name='confirmed_via'").get() != null; }
+    catch { has = false; }
+    _viaPresence.set(db, has);
+  }
+  return has;
 }
 
 // Move a document to deferred ONLY if it is currently needs_review.
@@ -509,7 +757,13 @@ function search(db, { company, reference, dateFrom, dateTo,
       OR EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id
                  AND REPLACE(COALESCE(e.display_value, e.raw_value, ''), ',', '') LIKE @fullText)
       OR EXISTS (SELECT 1 FROM corrections c WHERE c.document_id = d.id
-                 AND REPLACE(COALESCE(c.corrected_value,''), ',', '') LIKE @fullText)
+                 AND REPLACE(COALESCE(c.corrected_value,''), ',', '') LIKE @fullText)${
+      // BARCODE INVENTORY (mig 91, DARK `barcode_inventory`): a value printed only as bars is found
+      // through its decode. Table-guarded so a pre-mig-91 fixture keeps the exact old SQL.
+      (() => { try { return require('./barcodes').hasTable(db); } catch { return false; } })()
+        ? `
+      OR EXISTS (SELECT 1 FROM document_barcodes b WHERE b.document_id = d.id
+                 AND REPLACE(COALESCE(b.value,''), ',', '') LIKE @fullText)` : ''}
     )`;
     params.fullText = `%${fullText.trim().replace(/,/g, '')}%`;
   }
@@ -574,11 +828,12 @@ function getWorkingPaths(db) {
 }
 
 module.exports = {
-  insert, update, getById, getWithExtractions,
+  insert, update, getById, getExtractedTotalDisplay, getExtractedTotalContext, getWithExtractions,
   getReviewQueue, getDeferredQueue, getByIds,
-  getReviewCount, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
+  getReviewCount, getReviewSplit, getDeferredCount, getStuckCount, getStuckQueue, getFiledCounts,
+  _farValuedOnlyEnabled,           // single source of the FAR two-tier default (pins + renderer parity)
   softDelete, restoreDeleted, getDeletedQueue, getDeletedCount,
-  requeueConfirmedDocsForScope, getConfirmedDocsForScope, getConfirmedDocsByIds, getConfirmedFieldValues, deconfirmDocument,
+  requeueConfirmedDocsForScope, getConfirmedDocsForScope, getConfirmedDocsByIds, getConfirmedFieldValues, deconfirmDocument, markPutBack, _hasPutBackAt,
   getFieldValueSuggestions,
   confirm, confirmIfReviewable, deferIfReviewable, restoreIfDeferred,
   deleteDoc, deleteByStatus, search,

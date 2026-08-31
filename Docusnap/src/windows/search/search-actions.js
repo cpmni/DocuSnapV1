@@ -44,14 +44,32 @@ function renderActions(doc) {
   if (doc.status === 'deleted') {
     // Recycle-bin item: restore (Admin/Edit) or permanently remove (Admin).
     if (canEdit) _btn(docSection, 'Restore', () => _afterChange(window.docusnap.restoreDocument(doc.id)), true);
-    if (isAdmin) _btn(docSection, 'Delete permanently', () => {
-      if (confirm('Permanently delete this document and its file? This cannot be undone.')) _afterChange(window.docusnap.purgeDocument(doc.id));
+    if (isAdmin) _btn(docSection, 'Delete permanently', async () => {
+      const suffix = await window.SearchState.purgeSuffix();
+      if (confirm('Permanently delete this document and its file? This cannot be undone.' + suffix)) _afterChange(window.docusnap.purgeDocument(doc.id));
     });
   } else {
     if (doc.status === 'confirmed') {
-      if (doc.stored_path) {
-        _btn(docSection, 'Open in Explorer', () => window.docusnap.showInExplorer(doc.stored_path));
-        _btn(docSection, 'Open File',        () => window.docusnap.openFile(doc.stored_path));
+      // Send a filed doc back to the Review queue (Admin) — de-confirms it; the file stays put
+      // until re-confirmed (repair-deconfirm keeps stored_path). First action so it's prominent.
+      if (isAdmin) _btn(docSection, '↩ Send back to Review', () => {
+        if (confirm('Send this document back to the Review queue? It stays filed until you re-confirm it.'))
+          _afterChange(window.docusnap.repairDeconfirm(doc.id, { source: 'search' }));   // card 8: the note names Search, not Learning Repair
+      }, true);
+      // Escape hatches to the real file — deliberately kept (round-2 Chris fix restored
+      // them), EDIT/ADMIN only, and now DOC-ID-RESOLVED: the search ROW surface carries
+      // has_file, never a path; the main process resolves + audits + role-gates (the
+      // de-pathing slice; the single-doc detail IPC's projection is a named follow-up).
+      // The result is CONSUMED (Oracle C2): a refusal (file vanished since load, containment)
+      // shows its reason instead of being a dead click.
+      const _openVia = (fn) => async () => {
+        let r = null;
+        try { r = await fn(doc.id); } catch (e) { r = { success: false, error: e && e.message }; }
+        if (!r || !r.success) _flashNote(docSection, r && r.error ? r.error : 'Couldn’t open the file.');
+      };
+      if (doc.has_file && canEdit) {
+        _btn(docSection, 'Open in Explorer', _openVia(window.docusnap.showDocumentInExplorer));
+        _btn(docSection, 'Open File',        _openVia(window.docusnap.openDocumentFile));
       }
     } else {
       // Edit in Review: admin/edit only — enforced in main.js open-review-window-at handler.
@@ -67,41 +85,47 @@ function renderActions(doc) {
   // heading. The section starts with just its header child; buttons add more.
   if (docSection.children.length > 1) panel.appendChild(docSection);
 
-  // ── 3. Workflow / approval — ONLY when the workflow add-on is licensed, so an
-  //       unlicensed / search-only install shows no "Workflow" section or mention. ─────
-  if (window.SearchState && window.SearchState.workflowEntitled) {
-    const wfSection = _section('Workflow');
-    let hasWorkflowActions = false;
-    for (const provider of _providers) {
-      try {
-        const acts = provider(doc) || [];
-        for (const act of acts) {
-          if (act.node) wfSection.appendChild(act.node);            // rich panel (decision bar / assign form)
-          else _btn(wfSection, act.label, act.onClick, !!act.primary);
-          hasWorkflowActions = true;
-        }
-      } catch (err) {
-        console.error('SearchActions provider error:', err);
-      }
-    }
-    if (!hasWorkflowActions) {
-      const note = document.createElement('span');
-      note.className   = 'ap-future-note';
-      note.textContent = 'Approval and workflow features will appear here.';
-      wfSection.appendChild(note);
-    }
+  // ── 3. Send or stamp — ONE front door (fixes "is this 1 feature or 2?"). Standalone stamping is a
+  //       core capability; sending needs the workflow add-on. Show the button when EITHER is available;
+  //       the popup (search-stamp.js) shows only the panels the user can use. Deleted/error docs excluded.
+  const canStampNow = !!(window.SearchState && window.SearchState.canStamp);
+  const canSendNow  = !!(window.SearchState && window.SearchState.workflowEntitled) && canEdit;
+  if ((canStampNow || canSendNow) && doc.status !== 'deleted' && doc.status !== 'error') {
+    const wfSection = _section('Approvals & stamps');
+    const label = (canStampNow && canSendNow) ? '🏷 Send or stamp…' : (canStampNow ? '🏷 Stamp…' : '✉ Send…');
+    _btn(wfSection, label, () => { try { window.SearchStamp && window.SearchStamp.open(doc); } catch (e) { console.error('open stamp popup:', e); } }, true);
     panel.appendChild(wfSection);
   }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-// After a delete/restore/purge, refresh the result list so the document moves in/out
-// of view, and clear the now-stale preview.
+// After a delete/restore/purge, refresh the result list AND clear the preview — the acted-on
+// document must never linger in the panel with now-stale actions (Chris r5: a PURGED docket
+// still offered a live "Restore" button). Trade-off accepted: the preview also clears after
+// a Restore; the user just acted on it and the fresh list is one click away.
 function _afterChange(p) {
   Promise.resolve(p)
-    .then(() => { if (window.SearchQuery) window.SearchQuery.doSearch(); })
+    .then(() => {
+      if (window.SearchState) window.SearchState.selectedDoc = null;
+      const pe = document.getElementById('preview-empty'); if (pe) pe.style.display = '';
+      const pd = document.getElementById('preview-doc');  if (pd) pd.style.display = 'none';
+      if (window.SearchQuery) window.SearchQuery.doSearch();
+    })
     .catch((e) => console.error('document action failed:', e));
+}
+
+// Transient inline note inside an actions section (refusals from the doc-open IPCs).
+function _flashNote(section, msg) {
+  let n = section.querySelector('.ap-flash-note');
+  if (!n) {
+    n = document.createElement('span');
+    n.className = 'ap-flash-note';
+    n.style.cssText = 'font-size:11px;color:var(--err);';
+    section.appendChild(n);
+  }
+  n.textContent = msg;
+  setTimeout(() => { if (n.isConnected) n.remove(); }, 6000);
 }
 
 function _section(title) {

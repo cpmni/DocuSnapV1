@@ -36,7 +36,7 @@ function makeDb() {
                          label TEXT, type TEXT DEFAULT 'text', required INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1);
     CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, supplier_name TEXT, document_type_id INTEGER,
                             status TEXT, confirmed_at TEXT, template_id INTEGER, overall_confidence INTEGER,
-                            logo_phash TEXT, keyword_fingerprint TEXT, ocr_text TEXT);
+                            logo_phash TEXT, logo_detail_hash TEXT, keyword_fingerprint TEXT, ocr_text TEXT);
     CREATE TABLE extractions (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, field_key TEXT,
                               display_value TEXT, raw_value TEXT, confidence INTEGER, extraction_method TEXT,
                               validation_note TEXT, corrected_to TEXT);
@@ -70,14 +70,14 @@ function makeDb() {
 
 // Seed N clean confirmed invoices for a scope; set identity fields on the NEWEST (returned last).
 function seedScope(db, tid, { n = 10, supplier = 'Cascade Water Systems',
-                             logo = null, kf = null, ocr = 'cascade water systems' } = {}) {
+                             logo = null, detail = null, kf = null, ocr = 'cascade water systems' } = {}) {
   let last = null;
   for (let i = 1; i <= n; i++) {
     const isNewest = i === n;
     last = db.prepare(
-      'INSERT INTO documents (supplier_name, document_type_id, status, confirmed_at, overall_confidence, logo_phash, keyword_fingerprint, ocr_text) VALUES (?,?,?,?,?,?,?,?)'
+      'INSERT INTO documents (supplier_name, document_type_id, status, confirmed_at, overall_confidence, logo_phash, logo_detail_hash, keyword_fingerprint, ocr_text) VALUES (?,?,?,?,?,?,?,?,?)'
     ).run(supplier, tid, 'confirmed', `2026-06-01T10:00:${String(i).padStart(2, '0')}Z`, 98,
-          isNewest ? logo : null, isNewest ? JSON.stringify(kf || []) : null, isNewest ? ocr : null).lastInsertRowid;
+          isNewest ? logo : null, isNewest ? detail : null, isNewest ? JSON.stringify(kf || []) : null, isNewest ? ocr : null).lastInsertRowid;
     const ex = (k, v) => db.prepare('INSERT INTO extractions (document_id, field_key, display_value, confidence, extraction_method) VALUES (?,?,?,?,?)').run(last, k, v, 98, 'keyword');
     ex('supplier_name', supplier); ex('invoice_date', `0${(i % 9) + 1}-06-2026`); ex('invoice_number', `INV-${1000 + i}`);
   }
@@ -219,6 +219,93 @@ function main() {
     const linkedDoc = seedScope(db5, tid5, { logo: P_A, kf: KF, ocr: OCR });
     db5.prepare('UPDATE documents SET template_id = 99 WHERE id = ?').run(linkedDoc);
     check('already-linked (taught-confirm ran first) → skip', gt.decide(db5, linkedDoc, info).reason === 'already-linked');
+  }
+
+  section('7. DETAIL-HASH VETO (Oracle C3, 2026-07-23) — a contradicted impostor link + the collision composition');
+  {
+    // The incident shape at the graduation seam: an existing DIFFERENT-supplier same-type
+    // template whose 64-bit phash is IDENTICAL to the graduating doc's (measured cross-supplier
+    // separation is 2/64 — no threshold separates them) but whose 256-bit isolated-mark set
+    // CONTRADICTS the doc's (impostor band ~120 vs drift ≤56). 'link' WRITES documents.template_id
+    // and pollutes getDominantSupplier tallies, so a false link here poisons establishedIdentity.
+    const D_DOC        = '0'.repeat(64);
+    const D_AGREE      = 'f'.repeat(10) + '0'.repeat(54);   // dist 40 — genuine drift band
+    const D_CONTRADICT = 'f'.repeat(30) + '0'.repeat(34);   // dist 120 — impostor band
+    const MKF  = ['meadow', 'farm', 'equipment', 'silo'];
+    const MOCR = 'meadow farm equipment silo lane invoice';
+
+    const { db, tid } = makeDb();
+    templates.create(db, {
+      name: 'Rival Supplies', document_type_slug: 'invoice',
+      logo_phash: P_A, logo_detail_hash: D_CONTRADICT,
+      keyword_fingerprint: ['rival', 'supplies', 'harbour', 'quay'],
+    });
+    const docId = seedScope(db, tid, { supplier: 'Meadow Farm Equipment', logo: P_A,
+                                       detail: D_DOC, kf: MKF, ocr: MOCR });
+    const minfo = { document_type_slug: 'invoice', supplier_name: 'Meadow Farm Equipment',
+                    allValues: { supplier_name: 'Meadow Farm Equipment' }, dtInfo: null };
+    const d = gt.decide(db, docId, minfo);
+    check('contradicted impostor match (phash dist 0!) is NOT linked', d.action !== 'link');
+    check('falls through to CREATE (keyword arm scores the rival fingerprint ~0)', d.action === 'create');
+    // The composition seedLogoCollides now protects (its old "we only reach create() when the
+    // nearest logo is >6 away" precondition is GONE): the vetoed impostor sits at phash dist 0,
+    // well inside COLLISION_DIST → the new template must be KEYWORD-ONLY, no colliding logo planted.
+    check('composition: vetoed-impostor create is KEYWORD-ONLY (seedLogoCollides fires at dist 0)',
+      d.seed.logo_phash === null && d.seed.keywordOnly === true);
+
+    // AGREEING detail (same supplier re-graduating scope) → 'link' exactly as before.
+    const { db: db2, tid: tid2 } = makeDb();
+    const own = templates.create(db2, {
+      name: 'Meadow Farm Equipment', document_type_slug: 'invoice',
+      logo_phash: P_A, logo_detail_hash: D_AGREE,
+      keyword_fingerprint: ['meadow', 'farm', 'equipment', 'silo'],
+    });
+    const docId2 = seedScope(db2, tid2, { supplier: 'Meadow Farm Equipment', logo: P_A,
+                                          detail: D_DOC, kf: MKF, ocr: MOCR });
+    const d2 = gt.decide(db2, docId2, minfo);
+    check('agreeing detail (drift band) → link unchanged', d2.action === 'link' && d2.templateId === own);
+    // Null doc detail (isolate-fail / pre-mig-47) → veto unarmed → link works exactly as before.
+    const { db: db3, tid: tid3 } = makeDb();
+    const own3 = templates.create(db3, {
+      name: 'Meadow Farm Equipment', document_type_slug: 'invoice',
+      logo_phash: P_A, logo_detail_hash: D_CONTRADICT,
+      keyword_fingerprint: ['rival', 'supplies', 'harbour', 'quay'],
+    });
+    const docId3 = seedScope(db3, tid3, { supplier: 'Meadow Farm Equipment', logo: P_A,
+                                          detail: null, kf: MKF, ocr: MOCR });
+    const d3 = gt.decide(db3, docId3, minfo);
+    check('null doc detail → veto unarmed → link (fail-open, byte-identical legacy)',
+      d3.action === 'link' && d3.templateId === own3);
+  }
+
+  section('ISSUER FREEZE AT BIRTH (graduation_freeze_issuer — Oracle W/COND 2026-08-12, C6 narrowed)');
+  {
+    const { db, tid } = makeDb();
+    const docId = seedScope(db, tid, { logo: P_A, kf: KF, ocr: OCR });
+    // OFF (default): byte-identical — every seeded field variable, issuer included.
+    const off = gt.decide(db, docId, info);
+    check('OFF: every seed field variable (C6 verbatim — the dark pin)',
+      off.action === 'create' && off.seed.fields.every(f => f.is_variable === true && f.fixed_value == null));
+    // ON: the issuer row — and ONLY the issuer row — freezes.
+    const on = gt.decide(db, docId, info, { freezeIssuer: true });
+    const sup = on.seed.fields.find(f => f.field_key === 'supplier_name');
+    check('ON: supplier_name frozen to the SCOPE string', !!sup && sup.is_variable === false
+      && sup.fixed_value === 'Cascade Water Systems');
+    check('ON: every NON-issuer field stays variable (two-way C6-narrowing pin — a future dev can '
+      + 'neither extend the freeze to data fields nor re-mute the issuer)',
+      on.seed.fields.filter(f => f.field_key !== 'supplier_name')
+        .every(f => f.is_variable === true && f.fixed_value == null));
+    // allValues missing supplier_name → the frozen row is APPENDED (the scope key is authoritative).
+    const noSup = { ...info, allValues: Object.fromEntries(
+      Object.entries(info.allValues || {}).filter(([k]) => k !== 'supplier_name')) };
+    const on2 = gt.decide(db, docId, noSup, { freezeIssuer: true });
+    const sup2 = on2.seed.fields.find(f => f.field_key === 'supplier_name');
+    check('ON + allValues lacks the issuer: frozen row APPENDED from the scope string',
+      !!sup2 && sup2.is_variable === false && sup2.fixed_value === 'Cascade Water Systems');
+    // Setting leg: the flag reads settings.graduation_freeze_issuer when no override is given.
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('graduation_freeze_issuer','true')").run();
+    check('setting leg: graduation_freeze_issuer=true arms without the opts override',
+      gt._freezeIssuerEnabled(db, {}) === true);
   }
 
   console.log('\n' + (fails === 0 ? 'ALL PASS' : `${fails} FAILED`));

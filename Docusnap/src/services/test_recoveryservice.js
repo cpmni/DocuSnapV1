@@ -95,6 +95,18 @@ check('diagnosis leaves a normal doc unflagged', !(svc.overview(db, { document_t
 const rq = svc.apply(db, {}, { document_type_slug: 'sales_order', requeue: true });
 check('requeue de-confirms the sales_order docs', rq.summary.requeued === 4 && soBad.every(id => documents.getById(db, id).status === 'needs_review'), `(${rq.summary.requeued})`);
 
+// ── CASE-INSENSITIVE forget (COLLATE NOCASE) ──────────────────────────────────
+// The doc list populates case-insensitively (LIKE), so typing 'superstore' must forget the
+// learning stored under 'SuperStore' too — else the owner sees the docs but nothing clears.
+confirmedDoc({ supplier: 'SuperStore', typeId: invId, field: 'total_amount', value: '$7.00' });
+insHint.run('SuperStore', 'invoice', 'total_amount', '$7.00');
+insAnc.run('SuperStore', 'invoice', 'invoice_number', 'INVOICE', 'right', 'full');
+check('case: overview counts SuperStore learning when queried as "superstore"',
+  svc.overview(db, { document_type_slug: 'invoice', supplier_name: 'superstore' }).learned.anchors === 1);
+const ssRes = svc.apply(db, { username: 'admin' }, { document_type_slug: 'invoice', supplier_name: 'superstore', forgetLearning: true });
+check('case: forgetting as "superstore" clears the "SuperStore" learning',
+  ssRes.ok === true && cnt('supplier_hints','SuperStore','invoice') === 0 && cnt('field_anchors','SuperStore','invoice') === 0);
+
 db.close();
 console.log(`\n${fail ? fail + ' FAILED' : 'All recoveryService checks passed.'}`);
 process.exit(fail ? 1 : 0);

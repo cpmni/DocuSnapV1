@@ -99,7 +99,7 @@ def run(offset, label_xy):
             "Delivery Note No. Deliver To Larch Hollow", [_anchor(offset)],
             "Cascade Water Systems", "delivery_note",
             page_images=[_FakePage()], field_patterns=FP, validation_patterns=VP,
-            on_reject=lambda fk, m, v, why: rejects.append((fk, m, v, why)))
+            on_reject=lambda fk, m, v, why, cap=None: rejects.append((fk, m, v, why)))
     finally:
         anchor._crop_and_ocr, anchor._locate_for_relocation = o_cao, o_loc
     return r, rejects

@@ -23,6 +23,7 @@ function makeDb() {
     supplier_name TEXT, document_type TEXT, field_key TEXT,
     anchor_label TEXT, direction TEXT, page_zone TEXT,
     x_norm REAL, y_norm REAL, w_norm REAL DEFAULT 0, h_norm REAL DEFAULT 0,
+    max_w_norm REAL NOT NULL DEFAULT 0,
     usage_count INTEGER DEFAULT 1, confidence REAL DEFAULT 0.6,
     last_seen TEXT DEFAULT (datetime('now')), last_authoritative_at TEXT,
     offset_dx_norm REAL, offset_dy_norm REAL

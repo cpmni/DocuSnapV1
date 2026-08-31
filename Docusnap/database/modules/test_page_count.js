@@ -20,9 +20,11 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     original_filename TEXT, folder_path TEXT, document_type_id INTEGER,
     supplier_name TEXT, overall_confidence INTEGER, status TEXT,
-    template_id INTEGER, logo_phash TEXT, keyword_fingerprint TEXT, ocr_text TEXT,
+    -- logo_detail_hash (migration 47) + detected_type_name are written by documents.insert; a
+    -- fixture missing them fails at INSERT, which is what made this suite red from 2026-08-11.
+    template_id INTEGER, logo_phash TEXT, logo_detail_hash TEXT, keyword_fingerprint TEXT, ocr_text TEXT,
     error_message TEXT, stored_filename TEXT, stored_path TEXT, doc_date TEXT,
-    reference_number TEXT, confirmed_at TEXT, working_path TEXT,
+    reference_number TEXT, confirmed_at TEXT, working_path TEXT, detected_type_name TEXT,
     review_acknowledged_at TEXT, page_count INTEGER
   );
 `);

@@ -11,10 +11,58 @@ import os
 import re
 import json
 from pathlib import Path
+from difflib import SequenceMatcher   # Lever 1 fuzzy-to-closed-vocabulary title match (PSF licence)
 
 from extraction import number_format   # region-aware amount normaliser
 from ocr.text_layout import COLUMN_BREAK_MIN   # 4 = the reconstruct_page_text / born_digital column-break width
 from extraction import text_normalise   # shared token normaliser (caption vocab)
+
+
+def _apply_vat_eu(cfg: dict) -> dict:
+    """Merge the EU/EEA VAT structures into `vat_gb` when VAT_EU_FORMATS is armed.
+
+    `vat_no` gained a real format on 2026-08-09 (`92c7013`) and the shipped patterns are UK ONLY,
+    which was deliberate: the corpus and customer base are UK, and a generic "two letters plus 8-12
+    characters" arm would readmit six of the measured OCR garbles, because 'CO' and 'EE' are
+    themselves real country codes. The COST of that decision is a UK business receiving an Irish,
+    German or French invoice: `vat_no` reads empty, the document goes to review, and an operator who
+    types the correct 'IE1234567FA' by hand gets an on-blur warning saying their right value is
+    wrong. That is the same class as the `iban` defect fixed on 2026-08-08, where the backend
+    accepted a conventionally-printed value the renderer rejected.
+
+    The answer is not a looser rule but a MORE SPECIFIC one: per-country structures with exact
+    element counts, so 'EE' followed by eight digits is still refused (Estonia is nine) while a real
+    Estonian number passes. ONE merge point per side — here for every Python consumer (they all read
+    through `self.patterns`), and `get-validation-patterns` for the renderer — so the UI and the
+    pipeline widen together and cannot drift, which is the property the config comment promises.
+
+    THERE IS A THIRD CONSUMER AND IT DOES NOT WIDEN: `database/modules/trust.js`
+    (`_sharedValidationPatterns`) reads the same config file directly, feeding freeze_guard arm B
+    and the auto-file `vat_gb` checksum. That is deliberate — both of its consumers fail toward
+    review — and the reasoning is recorded at that function. "Both consumers widen" is true of the
+    READ path and the OPERATOR-WARNING path; it is not true of the FREEZE and AUTO-FILE paths.
+
+    DEVIATION FROM THE OFFICIAL SPEC, recorded because it is a judgement not a fact: Romania's VAT
+    body is officially 2-10 digits, which would accept a 2-digit garble. It ships floored at SIX.
+    A shorter real Romanian number is refused and falls to review — the failure this whole entry is
+    about — but it fails toward review rather than admitting junk into a filing field.
+
+    DEFAULT OFF; off returns the config untouched.
+    """
+    try:
+        if os.environ.get("VAT_EU_FORMATS", "0") == "0":
+            return cfg
+        vp = cfg.get("validation_patterns") or {}
+        eu = vp.get("vat_eu") or []
+        if eu and vp.get("vat_gb"):
+            # Copy, never mutate in place: the same dict object is threaded into every stage.
+            vp = dict(vp)
+            vp["vat_gb"] = list(vp["vat_gb"]) + list(eu)
+            cfg = dict(cfg)
+            cfg["validation_patterns"] = vp
+    except Exception:
+        return cfg
+    return cfg
 
 
 def load_patterns(config_path: str | None = None) -> dict:
@@ -33,7 +81,7 @@ def load_patterns(config_path: str | None = None) -> dict:
     if config_path and Path(config_path).exists():
         try:
             with open(config_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                return _apply_vat_eu(json.load(f))
         except (json.JSONDecodeError, OSError):
             # Never let a malformed/unreadable config crash extraction — degrade
             # to "no patterns" (Stage 1 simply finds nothing) rather than throw.
@@ -64,6 +112,23 @@ def _infer_validation(field_key: str) -> "str | None":
             or k in ("subtotal", "balance", "amount")):
         return "currency"
     return None
+
+
+_REF_HAS_DIGIT = re.compile(r'\d')
+
+
+def ref_value_is_codeless(value) -> bool:
+    """A reference-role value carrying NO digit at all is a caption or prose, never a code.
+
+    Lives here so the Stage-1 gate above and the Stage-0.5 gate in template_mapper share ONE notion
+    of "this is not a code" — the codebase already carries four ref predicates and a fifth spelling
+    would be certain to drift. DELIBERATELY WEAKER than the Stage-1 gate's `\\d\\S*\\d` (>=2 digits):
+    that one judges a candidate the caption hunt INVENTED, whereas Stage 0.5 judges a value the
+    operator physically pointed at, which earns the most permissive of the three tiers. Measured
+    recall: across all 713 confirmed ref-role values on the reference install, ZERO fail even the
+    stricter two-digit form, so the one-digit form throws away nothing real.
+    """
+    return not _REF_HAS_DIGIT.search(str(value or ''))
 
 
 # ── Shared CAPTION VOCABULARY (taught-field ownership guard c2 + known-caption guard G3b) ──
@@ -99,6 +164,79 @@ def build_caption_vocab(field_patterns: dict, field_defs=None) -> dict:
     return {'tuples': tuples, 'joined': joined}
 
 
+# ── Taught-ownership OWN-LABEL exemption (2026-07-24, reggie design) ───────────────────
+# Every keyword read records the exact caption it matched (results[key]['label'], see the
+# extract_fields read-dict). The taught-field ownership guard (engine._flag_taught_field_
+# ownership) caps a plain keyword read of an authoritatively-taught field that didn't confirm
+# on this page — but a value matched via a caption UNIQUE TO THIS FIELD ("Invoice No", "PO
+# Date") is a precise labelled read, not a generic-caption stand-in. This pair lets the guard
+# tell the two apart: a discriminating own-label declines the cap; a SHARED caption ("Date",
+# "Issue Date", "Order No" — carried by >=2 roles) or a purely-generic one ("#") stays held.
+# Precision-first — any doubt keeps the hold (a false exemption is a silent wrong auto-file).
+_GENERIC_LABEL_TOKENS = frozenset({
+    'date', 'dated', 'no', 'number', 'num', 'ref', 'reference', 'id', 'dt', 'of', 'the',
+})
+
+
+def _norm_label(text) -> str:
+    return ' '.join(str(text or '').lower().split())
+
+
+def build_label_owner_index(field_patterns: dict) -> dict:
+    """{normalised-label -> frozenset(field_keys carrying it)} from the POST-MERGE
+    field_patterns bank (patterns_for_run['field_patterns'] — the SAME source as
+    build_caption_vocab). A label carried by >=2 roles ('date', 'issue date', 'order no')
+    is thereby detectable as NON-discriminating. Reach grows automatically with the banks."""
+    owners: dict = {}
+    for key, entry in (field_patterns or {}).items():
+        for lab in (entry.get('labels') or []):
+            t = _norm_label(lab.get('text') if isinstance(lab, dict) else lab)
+            if t:
+                owners.setdefault(t, set()).add(key)
+    return {k: frozenset(v) for k, v in owners.items()}
+
+
+def label_is_own_discriminating(label, field_key, owners) -> bool:
+    """True iff the matched keyword `label` is UNIQUE to `field_key` across the run's
+    field_patterns AND carries >=1 field-identifying token (not purely generic role words).
+    Precision-first: any doubt -> False (keep the ownership hold). Used ONLY by the taught-
+    ownership guard to decline its cap for a precisely-labelled read.
+      "Invoice No"  -> owned by {invoice_number}, token 'invoice' non-generic -> True
+      "Date"        -> owned by {invoice_date, po_date, order_date}           -> False (shared)
+      "#"           -> owned by {invoice_number} but no alnum token           -> False (generic)"""
+    t = _norm_label(label)
+    if not t or owners.get(t) != frozenset({field_key}):
+        return False                                       # shared / unknown => not own
+    toks = re.findall(r'[a-z0-9]+', t)
+    return any(tok not in _GENERIC_LABEL_TOKENS for tok in toks)   # >=1 distinguishing token
+
+
+def label_is_own_discriminating_in_type(label, field_key, owners, type_keys) -> bool:
+    """TYPE-SCOPED sibling of label_is_own_discriminating (B', gary design + Oracle
+    SIGN-OFF-WITH-CONDITIONS 2026-07-26). Judges the matched caption's uniqueness against the
+    RESOLVED doc TYPE's field-key set instead of the GLOBAL bank: a label carried by >=2 fields
+    globally but by EXACTLY `field_key` WITHIN this type is own-discriminating FOR THIS TYPE
+    ("Order Date" -> {po_date, order_date} globally, but only po_date exists on a purchase_order).
+    The generic-token gate is RETAINED, so bare "Date" NEVER exempts, on any type. Precision-first:
+    any doubt -> False.
+
+    The CALLER MUST gate this on type-authority (self._type_authoritative) — unlike a globally-
+    unique label ("Invoice No"), a type-scoped-unique one is NOT self-identifying, so the exemption
+    leans on the type having resolved correctly. When `type_keys` is the UNION of all types' fields
+    (no type resolved) the intersection == the global owner set, so this DEGRADES to the global
+    test (held) — doubly safe."""
+    t = _norm_label(label)
+    if not t:
+        return False
+    gowners = owners.get(t)
+    if not gowners or field_key not in gowners:
+        return False                                       # unknown label, or field not even a global owner
+    if (gowners & frozenset(type_keys or ())) != frozenset({field_key}):
+        return False                                       # shared WITHIN this type, or field absent from it
+    toks = re.findall(r'[a-z0-9]+', t)
+    return any(tok not in _GENERIC_LABEL_TOKENS for tok in toks)   # retain the generic-token gate
+
+
 def value_is_caption(value, vocab) -> bool:
     """True when `value` IS a known caption (not a value). Rule 1: content-token-tuple equality
     ('SO #' == the 'SO #' label). Rule 2: alnum-joined equality, ONLY for a MULTI-TOKEN or
@@ -119,6 +257,45 @@ def value_is_caption(value, vocab) -> bool:
     return False
 
 
+# Val_types whose REAL value ALWAYS carries a digit — so a purely ALPHABETIC harvested continuation
+# ("Information", "Description") is a printed caption word, not a value. EXCLUDES currency_code
+# (GBP/USD are all-alpha and legitimate) and free text. (P2/label-relocation caption guard, reggie.)
+_DIGIT_BEARING_VAL_TYPES = frozenset({
+    "alphanumeric", "job_reference", "reference_code", "vat_gb", "iban",
+})
+# Generic column/header nouns that are NEVER a standalone free-text VALUE. Kept tight for precision
+# (a single-token real name must not collide). A SEPARATE frozenset from _CAPTION_NOUN_TAIL — do NOT
+# fold them; that one's consumer (_is_caption_fragment) must stay byte-identical. Extend on evidence.
+_CAPTION_CONTINUATION_WORDS = frozenset({
+    "information", "description", "details", "reference", "quantity", "qty", "number",
+})
+
+
+def is_caption_continuation(value, val_type=None, label=None, vocab=None) -> bool:
+    """Last-ditch anti-silent-commit guard for the anchor cross-read/inline harvest: True when a
+    harvested CONTINUATION word is a printed caption/column word, not a value (the "Item Information"
+    header stealing the "Item" label, reading 'information'). MUST be gated by the caller to the
+    RE-READ methods (a rigid crop of the taught box is not a caption pickup). val_type-aware and
+    precision-first — errs toward NOT firing on a plausible value:
+      ARM 0 (reuse): the word IS a configured field label (needs the run's caption vocab; inert when None).
+      ARM 1: a CODE/REFERENCE field's real value carries a digit, so a PURELY ALPHABETIC read is a caption.
+      ARM 2: NAME/FREE-TEXT/untyped — all-alpha is legitimate, so fire only when EVERY content token is a
+             known header noun (a real 2-word name like 'Sofa Bed' survives; 'Description Quantity' is caught).
+    """
+    v = (value or "").strip()
+    if not v:
+        return False
+    core = re.sub(r"^[^0-9A-Za-z]+|[^0-9A-Za-z]+$", "", v)   # drop OCR edge junk
+    if not core:
+        return False
+    if vocab and value_is_caption(v, vocab):                 # ARM 0 (optional; inert without vocab)
+        return True
+    if val_type in _DIGIT_BEARING_VAL_TYPES:                 # ARM 1 (code/ref: all-alpha => caption)
+        return bool(re.fullmatch(r"[A-Za-z]+", core))
+    toks = re.findall(r"[a-z0-9]+", core.lower())            # ARM 2 (name/free-text: every token a header noun)
+    return bool(toks) and all(t in _CAPTION_CONTINUATION_WORDS for t in toks)
+
+
 # G3b KNOWN-CAPTION VALUE GUARD kill switch (2026-07-11, DIRECTION_SUPREMACY): for a name-like /
 # party field (CUSTOMER-SIDE only — supplier_name excluded), a candidate VALUE that IS a known
 # caption ("SO #", "Customer") dies AT GENERATION (right/below), so a caption never fills the field
@@ -127,16 +304,26 @@ def value_is_caption(value, vocab) -> bool:
 KNOWN_CAPTION_GUARD_ENABLED = os.environ.get('KNOWN_CAPTION_GUARD', '1') != '0'
 
 
-def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None) -> dict:
+def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None,
+                          template_id=None) -> dict:
     """Merge admin keyword label overrides for `doc_slug` onto `patterns`.
 
-    Each override is {doc_type_slug, field_key, label}. Only those whose
-    doc_type_slug matches `doc_slug` (case-insensitive) apply. The merge is
-    ADDITIVE: a field's shipped labels are preserved and the override label is
-    appended; a field_key with NO shipped entry gets one created (so a CUSTOM
+    Each override is {doc_type_slug, field_key, label[, exclusive][, template_id]}. Only those
+    whose doc_type_slug matches `doc_slug` (case-insensitive) apply. The merge is
+    ADDITIVE BY DEFAULT: a field's shipped labels are preserved and the override label is
+    consulted first (see PRECEDENCE below). An override carrying `exclusive` truthy instead
+    REPLACES that field's shipped labels entirely (migration 61) — the taught caption becomes the
+    only keyword for that (doc type, field); a field_key with NO shipped entry gets one created (so a CUSTOM
     doc-type field — which keyword.extract_fields would otherwise skip — becomes
     keyword-extractable). Returns the ORIGINAL `patterns` object unchanged when
     there's nothing to merge, so the common (no-override) path costs nothing.
+
+    TEMPLATE SCOPE (migration 62; owner decision 2026-08-11 — "per doc type for each supplier,
+    set at the template level"): a row whose template_id is non-zero applies ONLY when that
+    template matched this document (`template_id` argument = the Stage-0 match, settled before
+    Stage 1 runs). template_id 0/absent on a row = doc-type-wide (admin/preset rows — unchanged).
+    A document that matched NO template therefore sees only the doc-type-wide rows, so one
+    supplier's taught caption can never hunt on another supplier's documents.
 
     Pure: never mutates the input patterns; builds shallow copies of only the
     field_patterns entries it touches.
@@ -144,13 +331,37 @@ def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None)
     if not overrides or not doc_slug:
         return patterns
     slug = str(doc_slug).strip().lower()
+    try:
+        tid = int(template_id) if template_id is not None else 0
+    except (TypeError, ValueError):
+        tid = 0
+
+    def _row_in_scope(o):
+        try:
+            row_tpl = int(o.get("template_id") or 0)
+        except (TypeError, ValueError):
+            row_tpl = 0
+        return row_tpl == 0 or row_tpl == tid
+
     relevant = [o for o in overrides
                 if str(o.get("doc_type_slug", "")).strip().lower() == slug
-                and o.get("field_key") and o.get("label")]
+                and o.get("field_key") and o.get("label")
+                and _row_in_scope(o)]
     if not relevant:
         return patterns
 
     field_patterns = {k: dict(v) for k, v in (patterns.get("field_patterns") or {}).items()}
+    # EXCLUSIVE overrides (migration 61; owner decision 2026-08-11). An override marked exclusive
+    # REPLACES the shipped caption bank for its (doc type, field) instead of being prepended to it:
+    # "when we draw an anchor and set the label, set that confirmed label as the ONLY keyword on
+    # that doc for that field." Without this, a taught `po_number` mapping coexists with a Stage 1
+    # keyword still hunting the generic 'ref', because the additive form falls THROUGH to the
+    # shipped labels whenever the taught one does not hit.
+    # Collected FIRST so the per-override loop below can clear the bank exactly once per field —
+    # clearing inside the loop would drop a second exclusive label for the same field.
+    exclusive_keys = {str(o["field_key"]).strip() for o in relevant
+                      if o.get("exclusive") and str(o.get("field_key") or "").strip()}
+    _cleared = set()
     for o in relevant:
         key = str(o["field_key"]).strip()
         lab = str(o["label"]).strip()
@@ -166,6 +377,13 @@ def merge_label_overrides(patterns: dict, overrides: list, doc_slug: str | None)
             inferred = _infer_validation(key)
             if inferred:
                 entry["validation"] = inferred
+        # An exclusive field starts from an EMPTY bank the first time it is touched, so only the
+        # taught label(s) remain. Deliberately NOT applied to a field with no shipped entry (the
+        # custom-field seed above already starts empty), and never to a field whose overrides are
+        # all additive.
+        if key in exclusive_keys and key not in _cleared:
+            entry["labels"] = []
+            _cleared.add(key)
         labels = list(entry.get("labels") or [])
         # PRECEDENCE: an admin override is a deliberate per-install instruction to
         # look for THIS label, so it is consulted BEFORE the shipped/auto labels —
@@ -202,6 +420,19 @@ _DATE_ROLE_CAPTIONS = ["Date"]
 # RC1 slice 2 kill switch: seed a custom FREE-TEXT field's own DB label at Stage 1
 # (see the party branch in seed_field_labels below).
 SEED_FREE_TEXT_ENABLED = True
+
+# LIST collect precision (Oracle SIGN-OFF-W/COND 2026-08-27, conds 2 + 3; brainstorm barry/gary/reggie/eric/
+# bob/Chris). Both live ONLY inside the list collect path, so a scalar field is byte-identical whatever they say.
+#   LIST_CAPTION_TAIL_BOUND (default ON): a taught caption gets a letter-only tail bound in collect mode —
+#     "Serial No" no longer fires on "Serial Nos: A" (which yielded the debris element "s: A"); "Serial No1234"
+#     still matches. Ships TOGETHER with the union across taught captions (extract_fields) — alone it would
+#     trade a visible debris pill for an invisible miss.
+#   LIST_ELEMENT_DIGIT_GATE (default ON): a list of CODES (inferred validation 'alphanumeric') refuses an
+#     element with fewer than two digits in one run — "Model" / "Qty" / a header word read to the right of a
+#     caption on a header row — and arms the known-caption vocab for list keys. Documented trade: a digitless
+#     serial in a *_number field. Own switch, deliberately NOT coupled to REF_ROLE_DIGIT_GATE.
+LIST_CAPTION_TAIL_BOUND  = os.environ.get('LIST_CAPTION_TAIL_BOUND', '1') != '0'
+LIST_ELEMENT_DIGIT_GATE  = os.environ.get('LIST_ELEMENT_DIGIT_GATE', '1') != '0'
 
 
 def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
@@ -249,6 +480,13 @@ def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
             if not (SEED_FREE_TEXT_ENABLED and role is None
                     and (str((f or {}).get("type") or "").lower() == "text")):
                 continue
+            # Oracle C2 (Generic Document design): the `title` field is NEVER seeded — its
+            # label "Title" is a genuinely printed caption ("Title: Mr/Mrs"), and a seeded
+            # keyword read would REPLACE the carried auto_title row on reprocess via the
+            # merge's new-wins rule (a silent title downgrade). Auto-Title
+            # (extraction/title_pick.py) owns this key; pinned by tests/test_title_pick.py.
+            if str((f or {}).get("key") or "").strip().lower() == "title":
+                continue
             label = str((f or {}).get("label") or "").strip()
             if len(label) < 3:                          # a "To"-style label is not a caption
                 continue
@@ -284,6 +522,13 @@ def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
             continue
         label = str((f or {}).get("label") or "").strip()
         forms = _DATE_ROLE_CAPTIONS if role == "date" else _REF_ROLE_CAPTIONS
+        # LIST-typed ref-role field (Oracle cond 6, 2026-08-27): seed its OWN label only. The generic ref
+        # bank ("Reference No" / "Ref") on a `serial_number` LIST would collect the page's JOB REFERENCE
+        # as an element before any caption is taught — the false-element source the digit gate cannot
+        # touch (a reference has digits). Gated on the list scan so OFF is byte-identical.
+        if (role == "alphanumeric" and str((f or {}).get("type") or "").lower() == "list"
+                and os.environ.get("LIST_FIELD_SCAN", "0") != "0"):
+            forms = []
         labels, seen = [], set()
         for lab in ([label] + list(forms) if label else list(forms)):
             low = lab.strip().lower()
@@ -300,6 +545,49 @@ def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
         if role == "alphanumeric":
             entry["role_caption"] = "ref"
         field_patterns[key] = entry
+
+    # ── DATE-ROLE GENERIC LABEL (owner report 2026-08-01; kill DATE_ROLE_GENERIC_LABEL=0) ──
+    # A SHIPPED date entry that lacks the bare caption "Date" can never read a page that
+    # prints just "Date 07/11/2026" without a taught anchor — the Vellum delivery-docket
+    # class: invoice_date/order_date/po_date all ship bare "Date", delivery_date shipped
+    # only its specific forms, so every COLD delivery scope (and any custom date field with
+    # the same gap) read nothing a human sees instantly. Append "Date" to any date-validated
+    # entry missing it — UNLESS a same-type sibling already hunts the caption (due_date on an
+    # invoice type: invoice_date owns bare "Date"; the established owner keeps it, no
+    # double-fill — the same dedupe doctrine as the RC1 seeding above). Additive + pure;
+    # confidence/directions untouched, so precedence and every downstream guard hold.
+    if os.environ.get("DATE_ROLE_GENERIC_LABEL", "1") != "0":
+        for f in (field_defs or []):
+            key = str((f or {}).get("key") or "").strip()
+            if not key:
+                continue
+            current = field_patterns if field_patterns is not None else shipped
+            entry = current.get(key)
+            if not entry or str(entry.get("validation") or "").lower() != "date":
+                continue
+            def _texts(e):
+                return [str((x.get("text") if isinstance(x, dict) else x) or "").strip().lower()
+                        for x in (e.get("labels") or [])]
+            if "date" in _texts(entry):
+                continue
+            _tid = (f or {}).get("document_type_id")
+            sib_has = False
+            for d in (field_defs or []):
+                sk = str((d or {}).get("key") or "").strip()
+                if not sk or sk == key or (d or {}).get("document_type_id") != _tid:
+                    continue
+                se = current.get(sk)
+                if se and "date" in _texts(se):
+                    sib_has = True
+                    break
+            if sib_has:
+                continue
+            if field_patterns is None:
+                field_patterns = {k: dict(v) for k, v in shipped.items()}
+            e2 = dict(field_patterns.get(key) or entry)
+            e2["labels"] = list(e2.get("labels") or []) + ["Date"]
+            field_patterns[key] = e2
+
     if field_patterns is None:
         return patterns
     return {**patterns, "field_patterns": field_patterns}
@@ -310,19 +598,53 @@ def seed_field_labels(patterns: dict, field_defs: "list | None") -> dict:
 # Heading-adjacent tokens a real title line may carry beside the type word — a
 # number/reference or a "No."/"#"/"Number" caption — none of which make it a body
 # mention. Any OTHER word on the line means it's prose, not a heading.
-_HEADING_ADJ = frozenset({"no", "no.", "#", "number", "num", "ref", "-", ":", "|"})
+# Split into PUNCTUATION (always tolerated) vs CAPTION WORDS (tolerated only by the
+# relaxed EXPOSED-flag test, caption_ok=True). The tighter SCORING variant (Part B,
+# caption_ok=False) excludes the caption words so a leftmost table column-header
+# segment reading "Purchase Order  No." cannot earn the strong 2.0 heading weight.
+_HEADING_PUNCT   = frozenset({"#", "-", ":", "|"})
+_HEADING_CAPTION = frozenset({"no", "no.", "number", "num", "ref"})
+_HEADING_ADJ     = _HEADING_PUNCT | _HEADING_CAPTION
+
+# ADDRESS-BLOCK captions (TYPE_CAPTION_MENTION_ONLY, herald design 2026-08-12 NIGHT): a caption
+# that introduces a PARTY's address describes who the document is addressed to, never what the
+# document IS — it can score a MENTION but must never be heading-eligible (never the 2.0× weight,
+# never the exposed trusted-`head` signal). The Meadowvale exhibit: a standalone 'BILL TO' line on
+# a tilted scan passed the strict whole-line test, minted a trusted Invoice heading, and the wrong
+# trusted heading pre-gated every heading re-read rung AND made identify_template refuse the right
+# template. SHIPPED CODE, not config (an invariant a config edit must not be able to re-break):
+# 'bill to'/'billed to' sit in the shipped Invoice bucket and 'order to' in Purchase Order; the
+# rest are defensive analogues (harmless while absent from buckets, they close the door on future
+# config edits and user aliases of the same class). Membership is by phrase TEXT regardless of
+# origin — accepted residual: a custom type literally NAMED "Bill To" could never be
+# heading-backed (absurd case, documented here deliberately).
+# ⚠ BOUNDARY IS LOAD-BEARING (Oracle C5, 2026-08-12): PARTY-ADDRESS captions ONLY. Never widen
+# this set to FIELD captions ('invoice no', 'statement date', 'opening balance', …) — those
+# genuinely print as banners on real paper and demoting them would un-title legitimate documents.
+_ADDRESS_CAPTIONS = frozenset({
+    "bill to", "billed to", "order to",
+    "ship to", "sold to", "deliver to", "invoice to", "remit to", "send to",
+})
 
 # A run of COLUMN_BREAK_MIN (4) or more spaces = a COLUMN break (reconstruct_page_text / born_digital
 # emit exactly the 4-space COLUMN_BREAK for a wide intra-row x-gap; adjacent columns compound). Derived
 # from the single-source constant so a producer width change propagates here — pinned by
-# test_column_break_contract.py. Matches the four shipped ` {4,}` column guards below (:766/:846/:904/:1070).
+# tests/test_type_election.py §0 (an earlier comment cited a test_column_break_contract.py that never
+# existed — Oracle C1 2026-08-12). Matches the four shipped ` {4,}` column guards below.
 _COL_BREAK_RE = re.compile(r' {%d,}' % COLUMN_BREAK_MIN)
 
 
-def _segment_is_heading(seg: str, p: str) -> bool:
+def _segment_is_heading(seg: str, p: str, caption_ok: bool = True) -> bool:
     """One reading-line COLUMN segment IS the matched type phrase plus at most heading-adjacent
     tokens — a reference/number CODE ("WORKSHEET 38", "WORKSHEET WS-38", "PURCHASE ORDER #PO-1234")
-    or a "No."/"#"/"Number" caption. A real extra word makes it a body mention."""
+    or a "No."/"#"/"Number" caption. A real extra word makes it a body mention.
+
+    caption_ok (default True) = the relaxed EXPOSED-flag behaviour: a "No."/"Number"/"Ref" CAPTION
+    word beside the title is tolerated (a real banner often prints one). caption_ok=False = the
+    tighter SCORING variant (Part B, column-aware heading scoring): only a numeric CODE + code
+    punctuation is allowed beside the title, so a leftmost table column-header segment that reads
+    "Purchase Order  No." (no wide column gap splitting them) can't earn the strong 2.0 heading
+    weight — the banner must stand ALONE (or with just a code) to score as a heading."""
     if not p or p not in seg:
         return False
     if seg == p:
@@ -333,7 +655,9 @@ def _segment_is_heading(seg: str, p: str) -> bool:
         # is only alphanumerics + code punctuation ("38", "ws-38", "inv-2024-001", "#po1234").
         if any(ch.isdigit() for ch in t) and all(ch.isalnum() or ch in "#:.-/|" for ch in t):
             continue
-        if t in _HEADING_ADJ:
+        # Punctuation is always heading-adjacent; caption WORDS only when caption_ok
+        # (caption_ok=True reproduces the old `t in _HEADING_ADJ` exactly).
+        if t in _HEADING_PUNCT or (caption_ok and t in _HEADING_CAPTION):
             continue
         return False                                        # a real extra word → a mention
     return True
@@ -353,6 +677,215 @@ def _line_is_heading_like(line: str, phrase: str) -> bool:
         return False
     s = (line or "").strip().lower()
     return any(_segment_is_heading(seg.strip(), p) for seg in _COL_BREAK_RE.split(s))
+
+
+# Field-caption / letterhead words that head a top-band line WITHOUT being the document's TYPE title.
+_HARVEST_STOP = frozenset({
+    'date', 'reference', 'ref', 'number', 'no', 'invoice', 'account', 'order', 'page', 'sheet',
+    'to', 'from', 'for', 'site', 'customer', 'supplier', 'client', 'total', 'subtotal', 'tel',
+    'fax', 'email', 'vat', 'reg', 'company', 'ltd', 'limited', 'address', 'phone', 'mobile',
+})
+
+
+def _tokens_covered(a, b):
+    """Every token of `a` has a match in `b` — equal, or an OCR-garble of it (both >= 5 chars and
+    difflib ratio >= 0.8: 'olutions' ~ 'solutions'). Used by the Q4a issuer exclusion so a garbled
+    sibling line ('DOCUMENT OLUTIONS' against the read 'DOCUMENT SOLUTIONS') is still recognised as
+    the issuer and never offered as a type. Subtractive only."""
+    if not a or not b:
+        return False
+    from difflib import SequenceMatcher
+    for t in a:
+        if t in b:
+            continue
+        if len(t) >= 5 and any(len(u) >= 5 and SequenceMatcher(None, t, u).ratio() >= 0.8 for u in b):
+            continue
+        return False
+    return True
+
+
+def _harvest_top_band_heading(lines, installed_type_names=None, exclude_texts=()):
+    """Best-effort dominant standalone TYPE heading — an UNINSTALLED type like 'Worksheet' — from the
+    top band, to seed the "Add <type>" nudge when the type-presence gate/veto leaves a doc UNTYPED.
+    CONSERVATIVE: returns None on any ambiguity (a wrong harvest = a confusing nudge; None = plain
+    untyped, safe). Skips line 0 (letterhead); a candidate is the leftmost column segment of a line
+    that is an ALL-CAPS standalone of 1-2 alpha words (each >=3 chars) — the shape a real type BANNER
+    takes ("WORKSHEET", "DELIVERY DOCKET") — that is neither a field caption nor an already-installed
+    type (an installed type would have been detected and typed the doc).
+
+    Q4a (Chris round 14 card 5, gary → Oracle SIGN-OFF-W/COND C4a.1–C4a.5, 2026-08-22): on the
+    owner's stacked-wordmark scans the nudge offered the ISSUER read as a TYPE ("This looks like a
+    Document Olutions…", siblings "Add “Document”"). Two arms, each its own env switch:
+      TYPE_NUDGE_ISSUER_EXCLUDE (default ON; =0 restores today) — SUBTRACTIVE: a candidate whose
+        tokens are a subset/superset of the issuer READ's tokens (`exclude_texts` — the read VALUE
+        only, NEVER the raw band lines: those are the first six lines verbatim and would kill every
+        top-band title, the dead-guard class), or whose EVERY word is a generic company token
+        (template_matcher._GENERIC_NAME_TOKENS — "DOCUMENT" dies, "SERVICE WORKSHEET" survives because
+        'worksheet' is not generic), is skipped and the scan continues. Only ever REMOVES a nudge →
+        fails toward "no nudge".
+      TYPE_NUDGE_L0 (default ON — census 2026-08-22 over the r14 sandbox, 221 docs: +16 correct, 0 new
+        wrong; =0 reverts) — ADDITIVE: on 17 of the owner's 22 scans
+        the real title "SERVICE WORKSHEET" IS line 0 (a title set ABOVE a graphic wordmark — Tesseract
+        emits it as row 0), which the positional letterhead skip throws away. Line 0 becomes
+        admissible ONLY when the issuer read is non-empty and line 0 is not it (with no issuer, a
+        letterhead and a title at line 0 are indistinguishable — keep skipping)."""
+    import os
+    import re as _re
+    installed_lc = {str(n).strip().lower() for n in (installed_type_names or [])}
+    issuer_excl = os.environ.get("TYPE_NUDGE_ISSUER_EXCLUDE", "1") != "0"
+    l0_on = os.environ.get("TYPE_NUDGE_L0", "1") != "0"      # default ON 2026-08-22 (census: +16 correct, 0 new wrong over 221 docs); =0 reverts
+    excl_toks = []
+    if issuer_excl:
+        for t in (exclude_texts or ()):
+            toks = set(_re.findall(r"[a-z0-9]+", str(t or "").lower()))
+            if toks:
+                excl_toks.append(toks)
+    generic = frozenset()
+    if issuer_excl:
+        try:
+            from extraction.template_matcher import _GENERIC_NAME_TOKENS as generic
+        except Exception:
+            generic = frozenset()
+    start = 0 if (l0_on and excl_toks) else 1                  # L0 admissible only with a known issuer
+    for idx, line in enumerate((lines or [])[:12]):            # top band only
+        if idx < start:
+            continue                                            # skip L0 (letterhead) — the default
+        seg = _COL_BREAK_RE.split((line or "").strip())[0].strip()
+        words = seg.split()
+        if not (1 <= len(words) <= 2):
+            continue
+        if not all(w.isalpha() and len(w) >= 3 for w in words):   # a code/address/number is not a title
+            continue
+        if not seg.isupper():                                     # a type BANNER is set in caps
+            continue
+        low = seg.lower()
+        if low in installed_lc or any(w.lower() in _HARVEST_STOP for w in words):
+            continue
+        if issuer_excl:
+            seg_toks = set(w.lower() for w in words)
+            if any(_tokens_covered(seg_toks, e) or _tokens_covered(e, seg_toks) for e in excl_toks):
+                continue                                        # the issuer read is not a type
+            if generic and all(w.lower() in generic for w in words):
+                continue                                        # "DOCUMENT" / "SERVICES" — company words
+        return seg.title()                                        # "WORKSHEET" -> "Worksheet"
+    return None
+
+
+# SLICE 1 (HEADING_LETTER_SPACING, Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-21): a document-TYPE
+# heading set in a TRACKED / letter-spaced display font ("PURCHASE ORDER") is fragmented by Tesseract
+# into pseudo-words ("PU RC HASE ORDER"); _type_keyword_pattern joins the phrase's words with \s* but
+# NOT within a word, so it can't match, the type never scores from its own title, and the doc
+# mis-types to a same-logo sibling. Top band the heading sits in (generous — a low-sitting title
+# under a tall letterhead still qualifies; body prose is excluded by BOTH this AND the exact-equality
+# test below).
+_HEADING_TOP_BAND_LINES = 15
+_HEADING_TOP_BAND_FRAC  = 0.28
+# Minimum collapsed phrase length to attempt letter-spacing recovery. A real letter-spaced TITLE is a
+# word ("invoice"=7, "quote"=5, "purchaseorder"=13); a SHORT abbreviation type name ("PO", "GRN")
+# would collision-match a spaced code label ("P O 12345" -> "po"), so it is never despace-recovered
+# (Oracle: the thinnest part of the false-positive surface).
+_MIN_DESPACE_LEN = 5
+
+
+def _despaced_heading(seg0: str, phrase_lc: str) -> bool:
+    """True when seg0's LEADING words — with ALL spacing removed — EXACTLY equal `phrase_lc` with its
+    spaces removed, recovering a letter-spaced title ("PU RC HASE ORDER" -> "purchaseorder" ==
+    "purchaseorder"). Trailing reference/number CODE tokens (a "PO-62560"/"38" beside the title) are
+    peeled first — the SAME code-token predicate _segment_is_heading uses. EXACT equality (never
+    substring) is load-bearing against false positives: "PO Box 12" peels "12" but the real word "box"
+    stays -> "pobox" != "po"; "please order online" -> "pleaseorderonline" != any phrase. Caller
+    scopes this to name/alias phrases + the top band + the regex-found-nothing case, so it is purely
+    ADDITIVE (byte-identical when it never fires)."""
+    # MULTI-WORD phrases only. Letter-spacing fragments a title's WORDS ("PURCHASE ORDER" ->
+    # "PU RC HASE ORDER"); collapsing there just rejoins the fragments. A SINGLE-word type name
+    # ("Worksheet") must NOT be matched by collapsing a legitimately-spaced segment ("Work Sheet"):
+    # that two-word spelling is the ALIAS mechanism's job, and auto-collapsing it would bypass the
+    # alias contract (test_detect_type_aliases: the null-alias path stays byte-identical). Every live
+    # letter-spacing case is a multi-word title (PURCHASE ORDER / SALES ORDER / DELIVERY NOTE). A
+    # single-word letter-spaced title ("IN VO ICE") is a deferred, thinner-precision extension.
+    if len((phrase_lc or "").split()) < 2:
+        return False
+    target = (phrase_lc or "").replace(" ", "")
+    if len(target) < _MIN_DESPACE_LEN:                      # short abbreviations are too collision-prone
+        return False
+    toks = seg0.split()
+    while toks and any(ch.isdigit() for ch in toks[-1]) \
+            and all(ch.isalnum() or ch in "#:.-/|" for ch in toks[-1]):
+        toks.pop()                                          # peel a trailing ref/code token
+    if not toks:
+        return False
+    return "".join(toks) == target
+
+
+def _collapse_title_tokens(seg0: str) -> list[str]:
+    """The leading TITLE tokens of a reading-line column segment, with trailing reference/number CODE
+    tokens peeled — the SAME peel _despaced_heading uses inline. Factored out so _fuzzy_heading can
+    reuse the exact peel WITHOUT touching the byte-frozen _despaced_heading on the hot exact path
+    (Oracle C4: leave the exact function untouched; the small duplication is deliberate)."""
+    toks = (seg0 or "").split()
+    while toks and any(ch.isdigit() for ch in toks[-1]) \
+            and all(ch.isalnum() or ch in "#:.-/|" for ch in toks[-1]):
+        toks.pop()                                          # peel a trailing ref/code token
+    return toks
+
+
+# Lever 1 (HEADING_FUZZY_VOCAB, Herald/Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-26): a title read that
+# is GARBLED (a skew/noise glyph corruption — "PU RC fa ASE ORDER") or SINGLE-WORD letter-spaced
+# ("I N V O I C E") fails _despaced_heading's EXACT equality, so the type never scores from its own
+# title and the doc falls to a same-logo sibling / generic fingerprint (the Northgate PO->Invoice
+# flip). The exact test is kept verbatim (its false-positive guarantee); this fuzzy arm is ADDED beside
+# it. Safe ONLY on the tiny CLOSED vocabulary (installed type names ∪ aliases) — measured vocab-to-vocab
+# block-ratio max 0.737 < the 0.82 accept floor, so no clean phrase can ever fuzzy-match a DIFFERENT
+# type. Threshold + margin are the Oracle C3 belt.
+_FUZZY_HEADING_RATIO  = 0.82   # SequenceMatcher.ratio accept floor (window: genuine-decoy 0.762 .. recovery 0.857)
+_FUZZY_HEADING_MARGIN = 0.08   # best must beat 2nd-best vocab phrase by this (C3 — a garble equidistant between two types HOLDs)
+
+
+def _fuzzy_heading(seg0: str, phrase_lc: str, vocab_lc) -> bool:
+    """ADDITIVE fuzzy fallback beside _despaced_heading (Lever 1). True when seg0's collapsed leading
+    title tokens match `phrase_lc` (spaces removed) by difflib block-ratio >= _FUZZY_HEADING_RATIO AND
+    `phrase_lc` is the clear ARGMAX over the whole closed vocabulary (beats the 2nd-best by
+    _FUZZY_HEADING_MARGIN). Recovers 'purcfaaseorder'~0.889 'purchaseorder' and 'invoice'==1.0 from
+    'I N V O I C E'. The argmax+margin over `vocab_lc` (the caller's name_alias_lc) is Oracle C3: a clean
+    DIFFERENT-type phrase scores < 0.74 to any other vocab entry, so it can never fuzzy-fire this one,
+    and a genuinely-ambiguous garble (no clear winner) HOLDs instead of guessing. Caller scopes this to
+    the top band + leftmost segment + the regex-found-nothing case + kw ∈ name_alias — identical to the
+    exact arm — so it is byte-identical when it never fires."""
+    target = (phrase_lc or "").replace(" ", "")
+    if len(target) < _MIN_DESPACE_LEN:                      # keep the short-abbreviation floor (PO/GRN collide)
+        return False
+    toks = _collapse_title_tokens(seg0)
+    if not toks:
+        return False
+    # The read must be MULTI-TOKEN — fuzzy recovers a SPACED / FRAGMENTED title (letter-spacing, or a
+    # skew garble that splits the word), NOT a single intact mis-spelled token ('Wksheet'). A compact
+    # misspelling of a clean word is the EXACT alias mechanism's domain; matching it here would loosen
+    # the alias-is-exact contract (test_detect_type_aliases) for any alias whose collapsed form is short.
+    if len(toks) < 2:
+        return False
+    # SINGLE-word target: admit ONLY a genuinely FRAGMENTED read (letter-spacing), never a word-spaced
+    # two-word spelling — 'WORK SHEET' -> worksheet is the ALIAS mechanism's job, not fuzzy collapse
+    # (preserves the test_detect_type_aliases contract). Multi-word targets are the proven
+    # letter-spacing class and take no fragmentation gate (so a lightly-garbled 2-word title still fuzzes).
+    if len((phrase_lc or "").split()) < 2:
+        fragmented = len(toks) >= 3 or sum(len(t) <= 2 for t in toks) * 2 > len(toks)
+        if not fragmented:
+            return False
+    collapsed = "".join(toks)
+    if not collapsed:
+        return False
+    r_self = SequenceMatcher(None, collapsed, target).ratio()
+    if r_self < _FUZZY_HEADING_RATIO:
+        return False
+    second = 0.0                                            # best ratio to any OTHER vocab phrase
+    for v in (vocab_lc or ()):
+        vt = (v or "").replace(" ", "")
+        if not vt or vt == target:
+            continue
+        rv = SequenceMatcher(None, collapsed, vt).ratio()
+        if rv > second:
+            second = rv
+    return (r_self - second) >= _FUZZY_HEADING_MARGIN
 
 
 def detect_document_type(ocr_text: str, patterns: dict,
@@ -383,8 +916,42 @@ def detect_document_type(ocr_text: str, patterns: dict,
     if not total:
         return None
 
+    # Part B kill switch (default ON): column-aware heading SCORING for name/alias banners.
+    _col_aware = os.environ.get("HEADING_SCORE_COLUMN_AWARE", "1") != "0"
+    # Slice 1 kill switch (default ON): letter-spacing heading recovery (see _despaced_heading).
+    _letter_spacing = os.environ.get("HEADING_LETTER_SPACING", "1") != "0"
+    # Lever 1 kill switch (default ON): fuzzy-to-closed-vocabulary title recovery (see _fuzzy_heading).
+    # OFF ⇒ the elif below short-circuits ⇒ detect_document_type is byte-identical (Oracle C4).
+    _fuzzy = os.environ.get("HEADING_FUZZY_VOCAB", "1") != "0"
+    # TITLE-GAP COLLAPSE (herald 2026-08-07, DARK — flip after the corpus gate). A wide-TRACKED
+    # multi-word title ('CREDIT    NOTE', 'DELIVERY    NOTE') reconstructs with a >=COLUMN_BREAK_MIN
+    # intra-title gap, so the column-aware heading test splits it into two columns and the title
+    # scores as a mere MENTION (Credit Note 4.7 vs 9.3) — the doc mis-types (Invoice). FIX: collapse
+    # whitespace ONLY inside the matched type-phrase SPAN before the column split, so an intra-title
+    # gap can't fuse (span-bounded) while genuine column breaks OUTSIDE the phrase are preserved (a
+    # caption row 'CREDIT NOTE NO ...    CREDIT DATE ...' still splits). Byte-identical OFF, and ON it
+    # only changes a line where a name/alias phrase carries a >=2-space internal gap.
+    _gap_collapse = os.environ.get("HEADING_TITLE_GAP_COLLAPSE", "0") != "0"
+    # TYPE-ELECTION TITLE-FIRST (herald design → Oracle gate, 2026-08-12 NIGHT; three independent
+    # kill switches bridged from ONE Settings toggle `type_election_title_first`, the
+    # heading_absent_reread precedent). All three DEFAULT OFF = byte-identical.
+    #  1 TYPE_CAPTION_MENTION_ONLY — _ADDRESS_CAPTIONS phrases score mentions only (see the set).
+    #  2 TYPE_HEADING_ANY_SEGMENT — the strong-heading SCORE test may match a TOP-BAND non-left
+    #    column segment (a genuine banner sharing its OCR line with the letterhead), caption_ok
+    #    stays False; mid-body table cells stay excluded by the top-band gate.
+    #  3 TYPE_TIE_HEADING_PREF — an exact score tie prefers the candidate whose evidence includes
+    #    a STRICT scoring heading (the 2.0× kind, never the relaxed exposed signal); both/neither
+    #    heading-backed keeps insertion order (deterministic, byte-identical to today).
+    _caption_mention_only = os.environ.get("TYPE_CAPTION_MENTION_ONLY", "0") != "0"
+    _any_segment          = os.environ.get("TYPE_HEADING_ANY_SEGMENT", "0") != "0"
+    _tie_heading_pref     = os.environ.get("TYPE_TIE_HEADING_PREF", "0") != "0"
+
     type_keywords = {k: list(v) for k, v in patterns.get("document_type_keywords", {}).items()}
     aliases_by_name = type_aliases or {}
+    # Part B: phrases that are a type NAME or a title ALIAS (lowercased). ONLY these get the
+    # column-aware heading SCORING below; the built-in document_type_keywords phrases keep the
+    # strict whole-line test (byte-identical). Mirrors the design's eligible = name ∪ aliases.
+    name_alias_lc: set[str] = set()
     for name in (known_types or []):
         name = (name or "").strip()
         if not name:
@@ -394,6 +961,7 @@ def detect_document_type(ocr_text: str, patterns: dict,
         # is byte-identical to the pre-feature engine (the harness 0-delta gate).
         if name not in bucket:
             bucket.append(name)
+        name_alias_lc.add(name.lower())
         # ALIASES — fold each of this type's title aliases into the SAME bucket (keyed by the
         # NAME, so result["type"] / detected_slug / heading-trust are unchanged; only more
         # phrases are searched). De-duped case-insensitively against the bucket. This branch is
@@ -405,26 +973,51 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 if a and a.lower() not in have:
                     bucket.append(a)
                     have.add(a.lower())
+                if a:
+                    name_alias_lc.add(a.lower())
 
     if not type_keywords:
         return None
 
     scores: dict[str, float] = {}
     headings: dict[str, bool] = {}
+    strong_heads: dict[str, bool] = {}   # STRICT scoring headings only (the 2.0× kind) — fix-3 key
     for doc_type, keywords in type_keywords.items():
         score = 0.0
         head  = False
+        strong = False
         for kw in keywords:
             kw = kw.strip()
             if not kw:
                 continue
+            # Fix 1 (TYPE_CAPTION_MENTION_ONLY): an address-block caption is demoted to
+            # mention-only for THIS phrase — no despace/fuzzy recovery (a "recovered" address
+            # caption is nonsense), no strict/column-aware heading, and no relaxed exposed-head
+            # signal either (suppressing only the strict test would leave head=True alive via
+            # _line_is_heading_like caption_ok=True — the load-bearing subtlety, pinned).
+            _addr_kw = _caption_mention_only and kw.lower() in _ADDRESS_CAPTIONS
             pattern = _type_keyword_pattern(kw)
             if pattern is None:
                 continue
             for i, line in enumerate(lines):
                 m = pattern.search(line.lower())
+                _despaced = False
                 if not m:
-                    continue
+                    # SLICE 1 — LETTER-SPACING recovery (HEADING_LETTER_SPACING). Only where the regex
+                    # matched NOTHING, only for a name/alias TITLE phrase, only on a TOP-BAND line, and
+                    # only on the leftmost column segment with all spacing collapsed to EXACT equality
+                    # (see _despaced_heading). ADDITIVE — a normal regex match never reaches here, so
+                    # the no-fire path is byte-identical.
+                    if ((_letter_spacing or _fuzzy) and _col_aware and not _addr_kw
+                            and kw.lower() in name_alias_lc
+                            and (i <= _HEADING_TOP_BAND_LINES or i / total <= _HEADING_TOP_BAND_FRAC)):
+                        _seg0 = _COL_BREAK_RE.split(line.strip().lower())[0].strip()
+                        if _letter_spacing and _despaced_heading(_seg0, kw.lower()):
+                            _despaced = True                # exact letter-spacing recovery (verbatim)
+                        elif _fuzzy and _fuzzy_heading(_seg0, kw.lower(), name_alias_lc):
+                            _despaced = True                # Lever 1 — fuzzy-to-vocabulary garble recovery
+                    if not _despaced:
+                        continue
                 # Headings near the top carry by far the strongest signal;
                 # weight decays smoothly with depth but never drops below 1 —
                 # nothing found later in the document is structurally ignored.
@@ -437,8 +1030,58 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 # OCR'd standalone headings (newline-delimited, not
                 # space-delimited) — comparing against the regex match span
                 # works for any current or future label shape.
-                is_heading = line.strip().lower() == m.group(0).strip()
+                # Part B — COLUMN-AWARE heading SCORING for a type-NAME/alias banner: a real
+                # banner ("WORKSHEET", "PURCHASE ORDER") that shares one OCR reading line with a
+                # far-right ref/date COLUMN ("WORKSHEET    Reference No. WS-65750") is still the
+                # leftmost-column heading and must earn the strong 2.0 weight — the strict whole-
+                # line test scored it 1.0 and let a body-mentioned type steal best_type (the
+                # worksheet-stuck-as-delivery-note class). ONLY name/alias phrases get this;
+                # built-in document_type_keywords phrases keep the strict, byte-identical test.
+                # SCORING uses the tighter caption_ok=False. Monotone: a line the strict test
+                # counted (line==phrase) still scores 2.0 (seg0==phrase); a mid-body table column
+                # relies on the low positional weight + the C1 refuse review-hold to stay safe.
+                # Kill switch HEADING_SCORE_COLUMN_AWARE.
+                # Exposed-signal inputs (the :826 _line_is_heading_like call); overridden ONLY by the
+                # gap-collapse branch so the other paths + OFF stay byte-identical.
+                _hl_line, _hl_phrase = line, (m.group(0) if m is not None else "")
+                if _addr_kw:
+                    is_heading = False                      # Fix 1 — an address caption is never a title
+                elif _despaced:
+                    is_heading = True                       # Seam B (Oracle): a letter-spacing
+                    # recovery MUST force BOTH the strong 2.0 SCORE and the exposed head signal below;
+                    # the :483/:496 recompute uses m.group(0)=collapsed vs the spaced seg -> False,
+                    # which would silently leave title_trusted off and NOT fix the cascade.
+                elif _col_aware and kw.lower() in name_alias_lc:
+                    _lo = line.strip().lower()
+                    _phrase = m.group(0).strip()
+                    _work = _lo
+                    if _gap_collapse:
+                        # Collapse whitespace ONLY inside the matched type-phrase span (re-match on the
+                        # STRIPPED line — m at :768 matched the UNSTRIPPED line, so its offsets are off
+                        # by the leading whitespace). Column breaks outside the span are preserved.
+                        _mm = pattern.search(_lo)
+                        if _mm is not None:
+                            _phrase = re.sub(r'\s+', ' ', _mm.group(0)).strip()
+                            _work = _lo[:_mm.start()] + _phrase + _lo[_mm.end():]
+                        _hl_line, _hl_phrase = _work, _phrase
+                    # Fix 2 (TYPE_HEADING_ANY_SEGMENT): a genuine banner that shares its OCR
+                    # reading line with the letterhead is NOT the leftmost segment ("Meadowvale
+                    # Dairy Wholesale    CREDIT NOTE") — armed, segments 1..n may also earn the
+                    # strong weight, but ONLY on a TOP-BAND line (a mid-body table cell keeps
+                    # mention weight; the widening is strictly tighter than the relaxed exposed
+                    # signal below, which is any-depth caption_ok=True). Splits _work, never the
+                    # raw line — the gap-collapse above must stay fused (08-07 fix).
+                    _segs = _COL_BREAK_RE.split(_work)
+                    is_heading = _segment_is_heading(_segs[0].strip(), _phrase, caption_ok=False)
+                    if (not is_heading and _any_segment
+                            and (i <= _HEADING_TOP_BAND_LINES or i / total <= _HEADING_TOP_BAND_FRAC)):
+                        is_heading = any(_segment_is_heading(s.strip(), _phrase, caption_ok=False)
+                                         for s in _segs[1:])
+                else:
+                    is_heading = line.strip().lower() == m.group(0).strip()
                 score += position_weight * (2.0 if is_heading else 1.0)
+                if is_heading:
+                    strong = True                           # fix-3 key: STRICT scoring heading only
                 # EXPOSED heading signal (`heading` in the result) — consumed ONLY by the
                 # template doc-type-precedence gate (a matched template must not override a
                 # doc whose own TITLE confidently declares a different type). It does NOT
@@ -446,17 +1089,72 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 # vs the strict scoring `is_heading` so a real title carrying a number or
                 # punctuation ("WORKSHEET 38", "Purchase Order:", "Invoice No. 10023")
                 # still counts as a heading, while an in-prose mention does not.
-                if is_heading or _line_is_heading_like(line, m.group(0)):
-                    head = True
+                if not _addr_kw and (is_heading or (m is not None and _line_is_heading_like(_hl_line, _hl_phrase))):
+                    head = True                             # _despaced -> is_heading True -> head True (Seam B)
                 break  # first occurrence of this phrase is enough
         if score > 0:
             scores[doc_type] = round(score, 1)
             headings[doc_type] = head
+            strong_heads[doc_type] = strong
 
     if not scores:
         return None
 
-    best_type  = max(scores, key=scores.get)
+    # Fix 3 (TYPE_TIE_HEADING_PREF): an EXACT score tie prefers the candidate backed by a STRICT
+    # scoring heading (the 2.0× kind — never the relaxed `headings` dict, whose contract is the
+    # template-precedence gate only). max() is stable on equal keys, so a tie where BOTH or
+    # NEITHER candidate is heading-backed keeps config insertion order — byte-identical to today
+    # and pinned as the deterministic answer. Runs BEFORE the TYPE_TITLE_OWNER_PRECEDENCE block
+    # below (which re-assigns best_type later and deliberately keeps the last word — same
+    # direction, never a fight; ordering pinned in test_type_election.py).
+    if _tie_heading_pref:
+        best_type = max(scores, key=lambda t: (scores[t], 1 if strong_heads.get(t) else 0))
+    else:
+        best_type = max(scores, key=scores.get)
+
+    # TYPE_TITLE_OWNER_PRECEDENCE (kill switch, DEFAULT OFF — gary design 2026-08-08).
+    # THE DEFECT: type election is a BUCKET SUM, and an install-created type owns exactly ONE
+    # phrase (its own name, folded in above) while a built-in owns its whole shipped caption
+    # vocabulary. 'ORDER CONFIRMATION' is itself a shipped *Sales Order* phrase, so a page titled
+    # ORDER CONFIRMATION scores Sales Order for the title PLUS every 'order number'/'your order'
+    # caption it prints, and the install's own 'Order Confirmation' type scores the title alone.
+    # Worse, `max` returns the FIRST maximal key, and config buckets are inserted before DB names,
+    # so the install type cannot win even a tie. MEASURED: a teach against such a type produced a
+    # template bound to a slug its own siblings can never detect as — 20 of 20 and 15 of 20
+    # documents matched NO template, every value fell back to Stage 1, and the issuer read 0%.
+    # THE FIX is a pure RE-RANKING of evidence already computed: if exactly ONE installed type owns
+    # the page by printing its own name/alias as a STANDALONE HEADING IN THE TOP BAND, that type
+    # takes precedence over the bucket sum. Zero owners, two owners (ambiguous), or an owner that
+    # scored nothing → untouched.
+    # THE TOP-BAND CONDITION IS LOAD-BEARING, NOT COSMETIC (gary's named seam): `confidence` is
+    # recomputed from the promoted type's score below, and if it fell under 70 then `title_trusted`
+    # would go False in process_docs and disarm the ENTIRE heading-authority net — the type refuse
+    # and the ambiguity guard both. Requiring a top-band heading forces position_weight >= ~1.9,
+    # hence score >= 3.8, hence confidence >= 79. Do not relax it to "anywhere on the page".
+    if os.environ.get('TYPE_TITLE_OWNER_PRECEDENCE', '0') != '0':
+        _owners = set()
+        for _name in (known_types or []):
+            _nm = (_name or '').strip()
+            if not _nm or _nm not in scores:
+                continue
+            _phrases = [_nm] + [str(a or '') for a in ((aliases_by_name or {}).get(_nm) or [])]
+            for _i, _line in enumerate(lines):
+                if not (_i <= _HEADING_TOP_BAND_LINES
+                        or (total and _i / total <= _HEADING_TOP_BAND_FRAC)):
+                    continue
+                _seg0 = _COL_BREAK_RE.split(_line.strip().lower())[0].strip()
+                if not _seg0:
+                    continue
+                if any(_p and _segment_is_heading(_seg0, _p.strip().lower(), caption_ok=False)
+                       for _p in _phrases):
+                    _owners.add(_nm)
+                    break
+        if len(_owners) == 1:
+            _owner = next(iter(_owners))
+            if scores.get(_owner, 0) > 0 and _owner != best_type:
+                best_type = _owner
+                headings[_owner] = True
+
     best_score = scores[best_type]
 
     # Convert score to confidence (a clear top-of-page heading alone scores
@@ -503,11 +1201,21 @@ ROLE_KEY_ALIASES = {
 
 def extract_fields(ocr_text: str, field_keys: list[str],
                    patterns: dict, caption_vocab: dict | None = None,
-                   caption_guard_keys: "set | None" = None) -> dict:
+                   caption_guard_keys: "set | None" = None,
+                   trace = None,
+                   list_keys: "set | None" = None) -> dict:
     """
     Extract field values using keyword patterns.
     Returns dict of {field_key: {"value": str, "confidence": int, "method": "keyword"}}
     Only includes fields that were found.
+
+    list_keys (2026-08-11, LIST field type — owner: "scans the whole doc for the label and pulls
+    all occurrences and puts the serials in a list"): field keys declared type 'list'. For those,
+    the label scan COLLECTS every accepted occurrence (collect=True — shared guards, one scan)
+    instead of stopping at the first; elements pass the SAME _post_label_value pipeline
+    per-element, dedupe exact-match first-seen (a page-2 summary repeat is one element), and join
+    as 'A; B; C'. Method 'keyword_list'. None/empty (the default, and whenever LIST_FIELD_SCAN
+    is off) -> byte-identical scalar behaviour.
 
     caption_vocab / caption_guard_keys (G3b KNOWN-CAPTION VALUE GUARD, 2026-07-11): the run's
     caption vocabulary (build_caption_vocab) + the set of field keys ARMED for it (name-like/party,
@@ -519,6 +1227,73 @@ def extract_fields(ocr_text: str, field_keys: list[str],
     validation     = patterns.get("validation_patterns", {})
     results        = {}
     lines          = ocr_text.split("\n")
+
+    def _post_label_value(value, field_key, fp, role_caption, pk):
+        """The per-value pipeline every accepted label hit passes through — caption-debris strip,
+        currency normalisation, format validation (+census), _clean_value, digit gate. ONE
+        implementation shared by the scalar path and the LIST collect path (2026-08-11) so the two
+        can never drift. Returns the cleaned value, or None to reject."""
+        if role_caption == 'ref' and value:
+            # A seeded ref caption "Reference No." / "Ref No" leaves the "No"/"Number" suffix
+            # (and its trailing dot) glued to a right-read value ("No.  WS111238") — strip a
+            # dangling ref-suffix token, then a stray leading dot the caption left behind. Only
+            # seeded ref fields hit this (role_caption='ref'); shipped patterns are byte-identical.
+            value = re.sub(r'^(?:(?:no|number|nº)\b\.?|#)\s*', '', value, flags=re.I)
+            value = re.sub(r'^[.\s:|\-–]+', '', value).strip()
+        elif value and fp.get("validation") in ('alphanumeric', 'reference_code', 'date'):
+            # CAPTION-PUNCTUATION debris on ANY structured read (owner live report
+            # 2026-08-05 — the Larkspur '. DN-98447' class): a label list carries both the
+            # dotless and dotted caption forms ('Delivery Note No' before 'Delivery Note
+            # No.'), the dotless form matches first against the printed 'Delivery Note No.
+            # DN-98447', and the caption's own '. ' rides into the committed value — on
+            # shipped, seeded AND override labels alike. No structured value can
+            # legitimately BEGIN with caption punctuation (each validator requires an
+            # alnum start), so strip the leading run. Deliberately NOT the seeded path's
+            # 'No/Number' token strip — that would mangle a genuine 'NO-1234' code; the
+            # punctuation-only strip cannot (it stops at the first alnum). Free-text and
+            # currency reads are byte-identical.
+            value = re.sub(r'^[.\s:|\-–]+', '', value).strip()
+        if not value or len(value.strip()) < 1:
+            return None
+
+        # Region-normalise a currency amount to canonical 1234.56 (no-op for anglo) so a
+        # Continental "1.234,56" / Swiss "1'234.56" passes the Anglo currency pattern below
+        # and is stored canonically.
+        if fp.get("validation") == "currency":
+            value = number_format.canonical(value)
+            # Rejoin an OCR-split thousands/decimal ("$15 707.84" → "$15,707.84") BEFORE
+            # the contiguous currency pattern below truncates it to "$15". Shared with
+            # anchor.py so the crop and keyword paths agree on OCR-split money.
+            value = number_format.normalise_currency_spacing(value)
+
+        # Validate value format if validator defined
+        val_type = fp.get("validation")
+        if val_type and val_type in validation:
+            val_census("keyword", val_type, value, _validate(value, validation[val_type]))
+            if not _validate(value, validation[val_type]):
+                return None  # doesn't match expected format
+
+        # Clean up the value
+        value = _clean_value(value, val_type, validation)
+
+        # reggie 2026-07-29 (PO_REF_DIGIT_GATE): an order-family reference is a CODE — a spaceless
+        # run bearing >=2 digits — never footer prose ("... on all correspondence and delivery
+        # notes") that the loose 'alphanumeric' re.search would otherwise accept as a value.
+        # Un-anchored + space-tolerant so a noisy real header (", p0-22954" / OCR-split "PO 22954")
+        # still reads (contrast the anchored reference_code — the 2026-07-24 null regression). Fail
+        # toward review: no code here -> reject, else the field stays empty for Review.
+        # REF_ROLE_DIGIT_GATE (reggie slice 1, 2026-08-07, DEFAULT OFF) — widen the ARMING, not
+        # the predicate; see the flag block comment in the git history for the measurements.
+        _digit_gate_armed = field_key in ('po_number', 'sales_order_number')
+        if (not _digit_gate_armed
+                and os.environ.get('REF_ROLE_DIGIT_GATE', '0') != '0'
+                and _infer_validation(field_key) == 'alphanumeric'):
+            _digit_gate_armed = True
+        if (os.environ.get('PO_REF_DIGIT_GATE', '1') != '0'
+                and _digit_gate_armed
+                and not re.search(r'\d\S*\d', value or '')):
+            return None
+        return value
 
     # Role aliases: a doc type may key its money fields "total"/"subtotal" while the shipped
     # config lives under "total_amount"/"subtotal". Without this a "total"-keyed field gets NO
@@ -544,14 +1319,156 @@ def extract_fields(ocr_text: str, field_keys: list[str],
 
         fp      = field_patterns[pk]
         labels  = fp.get("labels", [])
+        # PO_ORDER_NO_LABELS (reggie/Oracle 2026-07-27, default on): give po_number the bare
+        # "Order No."/"Order Number" reader it lacks — measured, without it po_number has NO Stage-1
+        # reader and depends solely on the skew-fragile anchor (007's 669 misread). Appended AFTER the
+        # shipped labels so the explicit "Purchase Order No" is tried first; the _qualified_order_caption
+        # guard in _search_for_label keeps a "Sales/Delivery/… Order No" from landing here. Injected in
+        # code (config unchanged) so OFF ⇒ byte-identical.
+        if pk == 'po_number' and os.environ.get('PO_ORDER_NO_LABELS', '1') != '0':
+            labels = labels + ["Order No.", "Order Number", "Order No"]
+        # CUSTOMER_PO_LABELS (reggie 2026-08-09, DEFAULT OFF → byte-identical): a seller's invoice /
+        # delivery note cross-references the BUYER's purchase order under captions the shipped list
+        # misses ("Your PO", "Customer PO", "Cust PO"), so out of the box po_number never reads it
+        # (systemic recall gap, same shape as TOTAL_GROSS_LABELS). Appended AFTER the shipped + bare
+        # labels so the doc's OWN explicit PO caption wins first; the …No/…Number form precedes the
+        # bare form (Larkspur ". DN-98447" rule — the caption's No/./: is consumed by the match, not
+        # ridden into the value). The value side is unchanged: PO_REF_DIGIT_GATE (needs \d\S*\d) +
+        # alphanumeric _validate still gate it, so a "your portal 24/7" / "your postcode BT1 1HE"
+        # prefix match is rejected (no 2-digit run). The "Your Order" family is DELIBERATELY EXCLUDED
+        # — it activates a pre-existing sales_order_number double-fill ("our" ⊂ "your", and
+        # "Our Order No" has no leading word-boundary); ship it only alongside that boundary fix.
+        # "Your Ref" excluded (too generic; _REF_PARTY_STOP already treats "your" as a foreign-party
+        # ref qualifier). Config unchanged so OFF ⇒ byte-identical (mirrors PO_ORDER_NO_LABELS).
+        if pk == 'po_number' and os.environ.get('CUSTOMER_PO_LABELS', '0') != '0':
+            labels = labels + ["Customer PO No", "Customer PO Number", "Customer PO",
+                               "Cust PO No", "Cust PO",
+                               "Your PO No", "Your PO Number", "Your PO"]
+        # TOTAL_GROSS_LABELS (reggie 2026-08-06, DEFAULT OFF → byte-identical): the shipped
+        # total_amount list misses common grand-total captions, so on those layouts keyword reads NO
+        # gross at all (measured: cold Customer-corpus total 40.6%→50.0%, M=0, scanned +16). This
+        # starves both the total lane AND the net-misread FLAG (no gross candidate to corroborate).
+        # Each addition is a payable/final caption reggie cleared of subtotal collision; the matcher
+        # normalises case+spacing but NOT parens/periods, so paren/'incl' literals are separate.
+        # Inserted BEFORE bare "Total" (specific-first); the "Charge(s)" residual (subtotal-section
+        # collision risk) is LAST. Does NOT touch subtotal / _total_role_collision / the bare-"Total"
+        # net-vs-gross guard. Config unchanged so OFF ⇒ byte-identical (mirrors PO_ORDER_NO_LABELS).
+        if pk == 'total_amount' and os.environ.get('TOTAL_GROSS_LABELS', '0') != '0':
+            _gross_extra = ["Total to Pay", "Net to Pay", "Balance to Pay", "Amount Now Due",
+                            "Total Incl VAT", "Total Incl. VAT",
+                            "Total (inc VAT)", "Total (incl VAT)", "Total (inc. VAT)",
+                            "Total Charges", "Total Charge"]
+            if "Total" in labels:
+                _i = labels.index("Total")
+                labels = labels[:_i] + _gross_extra + labels[_i:]
+            else:
+                labels = labels + _gross_extra
         dirs    = fp.get("directions", ["right"])
         base_conf = fp.get("base_confidence", 75)
         role_caption = fp.get("role_caption")   # 'ref' on a seeded custom-ref field (RC1/RC5)
         # G3b: arm the known-caption VALUE guard for this field (name-like/party, customer-side —
         # the engine already excluded supplier_name from caption_guard_keys). Pass the vocab so a
         # caption-valued candidate dies at generation; None (unarmed / kill switch off) = unchanged.
+        # LIST keys also arm the caption vocab (Oracle cond 3, 2026-08-27): a candidate element that IS a
+        # known caption ("Model", a run caption on a header row) dies at generation and falls through —
+        # the same G3b guard the name-like fields use; rides the LIST_ELEMENT_DIGIT_GATE switch.
         _cap_guard = (caption_vocab if (KNOWN_CAPTION_GUARD_ENABLED and caption_vocab
-                                        and field_key in (caption_guard_keys or ())) else None)
+                                        and (field_key in (caption_guard_keys or ())
+                                             or (LIST_ELEMENT_DIGIT_GATE and list_keys and field_key in list_keys))) else None)
+
+        # ── LIST fields: collect EVERY accepted occurrence of the label ──────────────────
+        if list_keys and field_key in list_keys:
+            # UNION ACROSS TAUGHT CAPTIONS (Oracle cond 1, 2026-08-27; owner: "every iteration of that
+            # keyword should allow the corresponding value to populate the list"). The taught (override)
+            # captions of a list field are ALL collected — a second caption taught on a missed occurrence
+            # is real, not a dead instruction — and their elements are ordered by PAGE LINE (the pills
+            # must match the paper, not the caption order). PLAIN labels keep the pinned first-wins
+            # (test_list_field_scan #8): once any override yielded, no plain/seeded/generic label appends;
+            # with no override yield, plain labels run first-wins as before. Dedupe stays exact casefold,
+            # first-seen (Oracle C5). `label` records EVERY contributing caption (the receipt must never
+            # invent provenance). LIST_ELEMENT_DIGIT_GATE (own switch, default ON): a list of codes whose
+            # inferred validation is 'alphanumeric' refuses an element with fewer than two digits in one run
+            # ("Model", "Qty", a header word) — the documented trade is a digitless serial in a *_number key.
+            elements, seen, _order = [], set(), []
+            _won_labels = []
+            _digit_gate = (LIST_ELEMENT_DIGIT_GATE and _infer_validation(field_key) == 'alphanumeric')
+            _cands, _label_seq, _hit_len = [], [], {}   # accepted (v, line, caption_len, caption) · caption order · longest caption that HIT a line
+
+            def _collect_label(label_text, label_dirs):
+                got = 0
+                _ln = len(label_text)
+                for raw_val, _dir, _li in _search_for_label(
+                        lines, label_text, label_dirs, role_caption=role_caption,
+                        caption_guard=_cap_guard, vat_role=(pk == 'vat_tax'),
+                        trace=trace, collect=True):
+                    if _li is not None and _ln > _hit_len.get(_li, -1):
+                        _hit_len[_li] = _ln           # recorded BEFORE the gates: a refused long read still owns its line
+                    v = _post_label_value(raw_val, field_key, fp, role_caption, pk)
+                    if v is None:
+                        continue                      # a bad occurrence never poisons the rest
+                    if _digit_gate and not re.search(r'\d\S*\d', v):
+                        if trace:
+                            try: trace('list_element_refused', field=field_key, value=v[:80], reason='digit_gate')
+                            except Exception: pass
+                        continue
+                    # SEPARATOR COLLISION (reggie 2026-08-26): the store joins elements with '; ', so an
+                    # element that itself carries ';' (or a control char) would split into two on every
+                    # reader. REFUSE it — never escape or split — and count it in the trace.
+                    if ';' in v or any(ord(ch) < 32 or ord(ch) == 127 for ch in v):
+                        if trace:
+                            try: trace('list_element_refused', field=field_key, value=v[:80], reason='separator')
+                            except Exception: pass
+                        continue
+                    _cands.append((v.strip(), _li, _ln, label_text))
+                    got += 1
+                if got and label_text not in _label_seq:
+                    _label_seq.append(label_text)
+                return got
+
+            _override_labels = [(l["text"], l.get("directions", dirs)) for l in labels
+                                if isinstance(l, dict) and l.get("override")]
+            _plain_labels = [((l["text"], l.get("directions", dirs)) if isinstance(l, dict) else (l, dirs))
+                             for l in labels if not (isinstance(l, dict) and l.get("override"))]
+            for label_text, label_dirs in _override_labels:
+                _collect_label(label_text, label_dirs)
+            if not _cands:
+                # Mirror the scalar break: the first PLAIN label that yields ANY element owns the
+                # field — a later generic label must not append strays onto a clean list.
+                for label_text, label_dirs in _plain_labels:
+                    if _collect_label(label_text, label_dirs):
+                        break
+            # LONGEST CAPTION WINS PER LINE (2026-08-27, found while pinning the union): when one taught
+            # caption is a word-prefix of another ("Model" / "Model No"), the shorter one ALSO fires on the
+            # longer one's line and reads the longer caption's tail as a value ("No: NW-2"). Per page line,
+            # only the elements of the LONGEST caption that HIT that line survive. Captions that never share
+            # a line are untouched, so a single-caption field is byte-identical.
+            _kept_labels = set()
+            for v, li, ln, lt in _cands:
+                if li is not None and ln < _hit_len.get(li, ln):
+                    if trace:
+                        try: trace('list_element_refused', field=field_key, value=v[:80], reason='shorter_caption_on_line')
+                        except Exception: pass
+                    continue
+                k = v.casefold()
+                if k in seen:
+                    continue                          # exact dedupe, first-seen order (Oracle C5)
+                seen.add(k)
+                elements.append(v)
+                _order.append(li)
+                _kept_labels.add(lt)
+            _won_labels = [lt for lt in _label_seq if lt in _kept_labels]
+            if elements:
+                if len(_won_labels) > 1:
+                    # page order across captions (stable: ties keep first-seen)
+                    _idx = sorted(range(len(elements)), key=lambda j: (_order[j], j))
+                    elements = [elements[j] for j in _idx]
+                results[field_key] = {
+                    "value":      "; ".join(elements),
+                    "confidence": min(95, base_conf + 5),
+                    "method":     "keyword_list",
+                    "label":      " | ".join(_won_labels) if len(_won_labels) > 1 else (_won_labels[0] if _won_labels else None),
+                }
+            continue                                  # a list field never runs the scalar loop
 
         for label in labels:
             # Support per-label direction override: {"text": "Bill From", "directions": ["below"]}
@@ -565,39 +1482,17 @@ def extract_fields(ocr_text: str, field_keys: list[str],
                 label_text = label
                 label_dirs = dirs
             found = _search_for_label(lines, label_text, label_dirs, role_caption=role_caption,
-                                      caption_guard=_cap_guard)
+                                      caption_guard=_cap_guard, vat_role=(pk == 'vat_tax'),
+                                      trace=trace)
             if not found:
                 continue
 
             value, direction = found
-            if role_caption == 'ref' and value:
-                # A seeded ref caption "Reference No." / "Ref No" leaves the "No"/"Number" suffix
-                # (and its trailing dot) glued to a right-read value ("No.  WS111238") — strip a
-                # dangling ref-suffix token, then a stray leading dot the caption left behind. Only
-                # seeded ref fields hit this (role_caption='ref'); shipped patterns are byte-identical.
-                value = re.sub(r'^(?:(?:no|number|nº)\b\.?|#)\s*', '', value, flags=re.I)
-                value = re.sub(r'^[.\s:|\-–]+', '', value).strip()
-            if not value or len(value.strip()) < 1:
-                continue
-
-            # Region-normalise a currency amount to canonical 1234.56 (no-op for anglo) so a
-            # Continental "1.234,56" / Swiss "1'234.56" passes the Anglo currency pattern below
-            # and is stored canonically.
-            if fp.get("validation") == "currency":
-                value = number_format.canonical(value)
-                # Rejoin an OCR-split thousands/decimal ("$15 707.84" → "$15,707.84") BEFORE
-                # the contiguous currency pattern below truncates it to "$15". Shared with
-                # anchor.py so the crop and keyword paths agree on OCR-split money.
-                value = number_format.normalise_currency_spacing(value)
-
-            # Validate value format if validator defined
-            val_type = fp.get("validation")
-            if val_type and val_type in validation:
-                if not _validate(value, validation[val_type]):
-                    continue  # doesn't match expected format — try next label
-
-            # Clean up the value
-            value = _clean_value(value, val_type, validation)
+            # The whole per-value pipeline lives in _post_label_value (shared with the LIST
+            # collect path, 2026-08-11) — strip/currency/validate/clean/digit-gate, unchanged.
+            value = _post_label_value(value, field_key, fp, role_caption, pk)
+            if value is None:
+                continue  # rejected — try next label
 
             # Confidence boost for exact label match
             conf = base_conf
@@ -615,7 +1510,50 @@ def extract_fields(ocr_text: str, field_keys: list[str],
             }
             break  # found for this field, move to next
 
-    return results
+    return _drop_generic_caption_steals(results)
+
+
+_GENERIC_REF_CAPTIONS = frozenset(c.strip().lower() for c in _REF_ROLE_CAPTIONS)
+
+
+def _drop_generic_caption_steals(results: dict) -> dict:
+    """KEYWORD_GENERIC_CAPTION_EXCLUSIVE (kill switch, DEFAULT OFF — reggie design 2026-08-08).
+
+    A field with no shipped pattern is seeded with the GENERIC ref caption bank
+    (`_REF_ROLE_CAPTIONS` — 'Reference No' / 'Reference' / 'Ref No' / 'Ref'), and every ref-role
+    field on the type receives that SAME bank: the free-text branch of seed_field_labels dedupes
+    same-type siblings, the ref branch does not. So one printed code can be captured by three
+    different fields at once. MEASURED on a 10-issuer teach test:
+        sales_order_number 88 'VXS79871'   (its own shipped label 'Order No')
+        account_no         85 'VXS79871'   (generic 'Ref')
+        vat_no             85 'VXS79871'   (generic 'Reference')
+    — where the true VAT number is 'GB 286 4471 90' and the true account number is different again.
+    The 85s are the seeded base 80 + 5 for a right-read, which is how the generic bank is identified
+    as the source rather than inferred.
+
+    A value committed through a GENERIC caption loses to the SAME value committed by another field
+    through its OWN label. Fires only when a specific owner exists, so an all-generic tie is left
+    exactly as it is today (precision-first: it can only ever REMOVE a duplicate, never re-assign
+    one). Ranked on the matched caption recorded in `results[k]['label']`, so it is independent of
+    field iteration order. Equality is casefolded exact — no fuzzy match, which could kill a
+    legitimately similar sibling reference.
+    """
+    if os.environ.get('KEYWORD_GENERIC_CAPTION_EXCLUSIVE', '0') == '0':
+        return results
+    by_val: dict = {}
+    for k, r in results.items():
+        if not isinstance(r, dict):
+            continue
+        by_val.setdefault(str(r.get('value') or '').strip().casefold(), []).append(k)
+    drop = set()
+    for val, keys in by_val.items():
+        if not val or len(keys) < 2:
+            continue
+        generic = [k for k in keys
+                   if str(results[k].get('label') or '').strip().lower() in _GENERIC_REF_CAPTIONS]
+        if generic and len(generic) < len(keys):      # a field matched its OWN label — it wins
+            drop.update(generic)
+    return {k: v for k, v in results.items() if k not in drop}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -669,6 +1607,14 @@ def _type_keyword_pattern(label: str) -> "re.Pattern | None":
         return None
     body = r'\s*'.join(re.escape(w) for w in words)
     if len(words) == 1 and words[0].isalpha():
+        return re.compile(r'(?<![a-z0-9])' + body + r'(?![a-z0-9])')
+    # MULTI-WORD phrases historically compiled UNBOUNDED, so a phrase whose last token is a prefix
+    # of a longer word bleeds into it — the live bug: the PO keyword "order to" -> `order\s*to`
+    # prefix-matched "order to(tal)" in a totals line and typed worksheets as Purchase Order. With
+    # TYPE_KEYWORD_BOUND on, apply the SAME alnum boundary guard as single-word phrases so the phrase
+    # must sit on its own word edges. Kill switch DEFAULT ON (flipped 2026-07-30, corpus-gated: realdoc
+    # byte-identical + the 20 Ridgeway worksheets untyped); =0 restores the historical unbounded compile.
+    if os.environ.get("TYPE_KEYWORD_BOUND", "1") != "0":
         return re.compile(r'(?<![a-z0-9])' + body + r'(?![a-z0-9])')
     return re.compile(body)
 
@@ -740,6 +1686,179 @@ def _ref_caption_party_conflict(line: str, start: int) -> bool:
     return bool(prec and prec.group(1) in _REF_PARTY_STOP)
 
 
+# ── VAT REGISTRATION NUMBER vs VAT AMOUNT (2026-08-07; reggie + gary consensus) ────────────────
+# A letterhead prints "… FB1 9AA · VAT Reg GB 651 0027 84". The bare "VAT" label matches it, the
+# scan is TOP-DOWN and returns the FIRST accepted occurrence, so the letterhead beats the real
+# "VAT @ 20%  £45.10" line further down. The value is then MINTED into money by
+# number_format.normalise_currency_spacing rule 3 ("trailing 2-digit decimal with the point
+# dropped", for "5,767 71" -> "5,767.71"): a UK VRN is grouped 3-4-2, so its last group is ALWAYS
+# exactly two digits at end-of-segment and "651 0027 84" becomes "651 0027.84". Only THEN does it
+# pass currency validation, and _clean_value returns just the match — destroying the "Reg GB 651"
+# context that would have condemned it. Measured: an identical 0027.84 on all 13 documents of one
+# supplier, conf 90, poisoning total reconciliation on ~12 correct documents.
+#
+# WHY THIS PREDICATE IS FORM-BASED, NOT KEYWORD-BASED: one shipped letterhead variant prints a
+# BARE "VAT GB 774 2093 55" with no Reg/No token at all, and a keyword-keyed guard would miss it
+# SILENTLY. The registration keyword is demoted to a corroborating leg.
+# It must run on the RAW post-label text, BEFORE normalise_currency_spacing mints the decimal.
+#
+# DELIBERATELY NOT FIXED HERE: number_format.py rule 3 itself. It is shared with anchor.py and is
+# load-bearing for genuinely OCR-split money, and there is no measured failure there — narrowing it
+# is a far wider blast radius. Pinned in tests/test_vat_reg_not_amount.py so a future dev "fixing"
+# the decimal fabrication instead of the label binding trips a test that explains why.
+#
+# A money witness VETOES the guard outright and outranks every other leg: this can only ever
+# SUPPRESS a read (fail toward review, never a substituted value), and the veto is what bounds it.
+_VAT_MONEY_WITNESS = re.compile(r"[£$€¥]|\b(?:GBP|USD|EUR|JPY)\b|\d[\d,]*\.\d{2}(?!\d)", re.I)
+# SYMBOL-CONFUSABLE CARVE-OUT (VAT_REG_SYMBOL_CONFUSABLE, DEFAULT OFF, mig-72 seed; gary → Oracle
+# S-O-W/C 2026-08-16). The Meadowvale live exhibit: the letterhead's "VAT Reg No GB 118 5540 63"
+# OCR'd its own '5' as '$' — the corrupting glyph IS the money witness, so the absolute veto
+# disarmed the very guard built for this class and '$540' minted as a tax amount. When armed, the
+# witness is CLASSIFIED: a cents group or currency CODE stays a HARD veto always; £/€/¥ (no digit
+# confusable target) stay a hard veto; a '$'-ONLY witness where EVERY occurrence is digit-flanked
+# mid-run (preceded by digit+space/hyphen, followed by a digit — never tail-leading, which is the
+# money position protecting OCR-split money like '$1 234 567 89') is FOLDED '$'→'5' (the class
+# 5Ss$'s only digit target) and the EXISTING leg ladder + walk judge the folded tail; a verdict is
+# suffixed '+symfold' (Oracle C5 trace discipline). The guard still only ever SUPPRESSES a read.
+_VAT_HARD_WITNESS = re.compile(r"\b(?:GBP|USD|EUR|JPY)\b|\d[\d,]*\.\d{2}(?!\d)", re.I)
+_VAT_SYMBOL_WITNESS = re.compile(r"[£$€¥]")
+_VAT_SYMFOLD_MIDRUN = re.compile(r"(?<=\d[ \-])\$(?=\d)")
+# An optional registration lead-in between the caption and the number: "Reg", "Reg No.", "No:", "#".
+_VAT_ID_LEADIN = re.compile(r"^[\s:.|\-–]*(?:reg(?:d|istered|istration)?\b\.?\s*)?"
+                            r"(?:(?:no|nr|num|number|id|ident)\b\.?\s*)?[:#]?\s*", re.I)
+# The identifier itself: an optional 2-letter country code, then space/hyphen-grouped digits.
+# `\d+` per group, NOT `\d{1,4}` — a spaceless 'GB651002784' must reach the digit floor as ONE
+# group, else the unbroken-run leg is dead code (caught by tests/test_vat_reg_not_amount.py).
+# The cc may repeat IDENTICALLY (backreference, live doc #1065: OCR echoed the code — 'VAT GB GB
+# 774 2093 55' made the regex meet letters where it demanded digits and the whole guard fell
+# silent). Identical-only: 'GB GB' binds, 'at on' can never chain two English words into a cc.
+_VAT_ID_RUN = re.compile(r"^(?P<cc>(?P<cc1>[A-Za-z]{2})(?:[\s\-]+(?P=cc1))*)?[\s\-]*(?P<digits>\d+(?:[ \-]\d+){0,6})")
+# Oracle C4: >=9 digits counted UNGROUPED. Every European VRN is 9-12 digits; a small-business VAT
+# AMOUNT is not. Counted ungrouped so a spaceless 'GB651002784' clears the floor too.
+_VAT_ID_MIN_DIGITS = 9
+# CC-FLOOR (reggie 2026-08-12, the doc-#1064 digit-dropped exhibit 'GB 774 206 55' = 8 digits):
+# when an UPPERCASE 2-letter country code leads the run AND it has >=2 groups, the floor relaxes
+# to 8 — no money print shape leads with a country code (3-letter currency codes are the veto's
+# job), and 8 is the true NATIVE minimum across the cc population (DK/FI/HU/LU/MT/SI VRNs are
+# 8 digits — not merely garble tolerance). 7 stays unearned (no exhibit); the cc-less floors are
+# UNCHANGED (the bare 'grouping' class is where the real money false-positive surface lives).
+_VAT_ID_CC_MIN_DIGITS = 8
+
+
+def _vat_identifier_tail(tail: str) -> str | None:
+    """The firing LEG when the text following a money caption is a VAT REGISTRATION NUMBER rather
+    than an amount (so the occurrence is skipped and the line scan continues), else None. The leg
+    name is returned rather than a bool so the `vat_reg_skip` trace can say WHICH signal fired when
+    this eventually misfires on a supplier we have not met (Oracle C5).
+
+    Legs, in priority order — a money witness always wins:
+      VETO      a currency symbol/code or a dd.dd cents group anywhere in the tail -> never fire
+      FLOOR     >= 9 digits in the leading numeric run, counted UNGROUPED
+      unbroken  a single unbroken run of >= 9 digits is never money ('GB651002784')
+      grouping  some NON-LEADING digit group has length != 3. Thousands groups are ALWAYS exactly
+                3; the UK 3-4-2 VAT grouping is not. This is the only leg that catches a bare
+                'VAT 651 0027 84' with no country code and no keyword, and it is the leg the
+                predicate cannot ship without.
+      country   a 2-letter country prefix (GB, IE, DE, …) — money never carries one. Carries the
+                non-UK forms that `grouping` cannot, since IE/EU numbers are not 3-4-2.
+      keyword   a registration lead-in (Reg / Reg No / Number / #). Demoted to LAST deliberately:
+                one shipped letterhead variant prints a bare 'VAT GB 774 2093 55' with no such
+                token, and a keyword-keyed guard would miss it SILENTLY.
+    Pure and side-effect free; input is the RAW line tail. Guarded by tests/test_vat_reg_not_amount.py."""
+    if not tail:
+        return None
+    if _VAT_SYMBOL_WITNESS.search(tail) or _VAT_HARD_WITNESS.search(tail):
+        # Money witness. Absolute veto (today's shipped behaviour) — UNLESS the symbol-confusable
+        # carve-out is armed AND the witness is exactly the '$'-mid-run misread class (see the
+        # constants above). Hard witnesses (cents / currency codes) and £/€/¥ never fold.
+        if _VAT_HARD_WITNESS.search(tail):
+            return None                               # cents group / currency code — always money
+        if os.environ.get('VAT_REG_SYMBOL_CONFUSABLE', '0') == '0':
+            return None                               # it is money — never fire (shipped veto)
+        syms = _VAT_SYMBOL_WITNESS.findall(tail)
+        if any(s != '$' for s in syms):
+            return None                               # £/€/¥ have no digit target — hard veto
+        if len(_VAT_SYMFOLD_MIDRUN.findall(tail)) != tail.count('$'):
+            return None                               # any non-mid-run '$' = money position — veto
+        verdict = _vat_identifier_tail_body(tail.replace('$', '5'))
+        return (verdict + '+symfold') if verdict else None
+    return _vat_identifier_tail_body(tail)
+
+
+def _vat_identifier_tail_body(tail: str) -> str | None:
+    """The leg ladder + garble walk over an (already witness-cleared) tail — see
+    _vat_identifier_tail for the legs' documentation."""
+    lead = _VAT_ID_LEADIN.match(tail)
+    had_keyword = bool(lead.group(0).strip(" :.#|-–\t")) if lead else False
+    m = _VAT_ID_RUN.match(tail[lead.end():] if lead else tail)
+    if not m:
+        return None
+    groups = [g for g in re.split(r'[ \-]', m.group('digits')) if g]
+
+    def _legs(gs):
+        """The shipped leg ladder over a group list; floors per reggie 2026-08-12."""
+        total = sum(len(g) for g in gs)
+        if total < _VAT_ID_MIN_DIGITS:
+            # CC-FLOOR leg (see _VAT_ID_CC_MIN_DIGITS): uppercase cc REQUIRED — the cc class is
+            # [A-Za-z]{2} on the ORIGINAL-case tail, so lowercase English words ('at', 'on', 'is')
+            # bind as cc and must never become the relaxation's witness; a lowercase-OCR'd 'gb'
+            # falls back to the 9 floor (fail toward abstain). >=2 groups: a spaceless 8-digit run
+            # can't be minted anyway (rule 3 needs a space-split trailing pair), so the unbroken
+            # leg keeps its 9. Distinct leg name so the vat_reg_skip trace attributes any misfire
+            # on an unmet supplier to the relaxation specifically (C5 discipline).
+            _cc = m.group('cc')
+            if (_cc and _cc.isupper() and len(gs) >= 2
+                    and total >= _VAT_ID_CC_MIN_DIGITS):
+                return 'cc_floor'
+            return None
+        if len(gs) == 1:
+            return 'unbroken'                         # one run, >= 9 digits — never an amount
+        if any(len(g) != 3 for g in gs[1:]):
+            return 'grouping'
+        if m.group('cc'):
+            return 'country'
+        return 'keyword' if had_keyword else None
+
+    first = _legs(groups)
+    if first:
+        return first
+    # GARBLE-TOLERANT SECOND PASS (2026-08-12 NIGHT — the Pelican live miss; reggie-vetted, his
+    # three narrowings applied). One OCR speckle inside the registration run ('VAT GB 774 20!
+    # 2093 55' — the '!' is noise on the page's own '2093') truncated the regex run at '774 20'
+    # = 5 digits, under the 9-digit floor, so the guard stayed SILENT and '2093 55' was minted
+    # into a 2093.55 tax amount downstream — the exact class this guard ships to stop.
+    # SECOND CHANCE, NEVER A REPLACEMENT (reggie BLOCKING): the shipped legs above ran first on
+    # the regex's own groups, so a verdict the shipped guard reaches can never be un-reached by
+    # the walk (his exhibit: 'VAT 651002784 ! 123' — extending would flip 'unbroken' to silent).
+    # The walk continues past the regex's stop point: in-token speckle is stripped ('20!' → 20,
+    # unlimited — the exhibit's own shape); ONE standalone pure-punctuation token may be stepped
+    # over (bounding table rules / dot leaders out); a COMMA-GROUPED token (\d,\d) BREAKS — comma
+    # grouping is the MONEY signature the separator class deliberately excluded, and the strip
+    # would otherwise erase that distinction ('VAT 123,456,789', a 9-digit whole-pound amount);
+    # any lettered token ends the run (confusable folding is ocr_corrector's job). A second-pass
+    # verdict is suffixed '+walk' so the vat_reg_skip trace stays diagnostic (Oracle C5).
+    _rest = (tail[lead.end():] if lead else tail)[m.end():]
+    ext = list(groups)
+    _skips = 0
+    for _tok in _rest.split():
+        if re.search(r'\d,\d', _tok):
+            break                         # comma-grouped digits = money, never an identifier
+        _core = re.sub(r'[^0-9A-Za-z]+', '', _tok)
+        if not _core:
+            _skips += 1
+            if _skips > 1:
+                break                     # one speckle token only — never stitch across a table
+            continue
+        if _core.isdigit() and len(ext) < 7:      # mirror the regex's own {0,6} group bound
+            ext.append(_core)
+            continue
+        break                             # a word / letter-garbled group ends the identifier run
+    if len(ext) == len(groups):
+        return None                       # walk added nothing — same abstain as shipped
+    second = _legs(ext)
+    return (second + '+walk') if second else None
+
+
 # RC1 SLICE 2 guards (2026-07-10) — a SEEDED custom FREE-TEXT field (role_caption='party')
 # hunts its own DB label ("Customer", "Site Contact"). All three guards are party-gated, so
 # shipped patterns stay byte-identical. reggie-designed; guarded by test_keyword_label_guard.py.
@@ -799,15 +1918,74 @@ def _is_caption_fragment(text: str) -> bool:
     return bool(ws) and len(ws) <= 3 and ws[-1] in _CAPTION_NOUN_TAIL
 
 
+# reggie/Oracle 2026-07-27 (PO_ORDER_NO_LABELS): a bare "Order …" caption ("Order No.") is stolen by a
+# QUALIFIED one ("Sales Order No. SO-…", "Delivery Order No", "Your Order No") — so a bare-"order" label
+# is rejected when the word immediately BEFORE it names a different KIND/PARTY of order. Mirrors
+# _ref_caption_party_conflict / _total_role_collision. "our" is deliberately EXCLUDED (Oracle) — "Our
+# Order No." is a legitimate own-ref. Bidirectional: also stops sales_order_number's pre-existing bare
+# "Order No" from grabbing a "Purchase Order No. PO-…" (a latent cross-grab).
+_ORDER_QUALIFIER_STOP = frozenset({
+    "sales", "purchase", "customer", "your", "client", "delivery",
+    "works", "work", "back", "change", "standing",
+})
+
+
+def _qualified_order_caption(line: str, start: int) -> bool:
+    """True when a bare 'Order …' caption starting at `start` is a QUALIFIED order caption — the word
+    immediately BEFORE it names a different KIND/PARTY of order. Pure; mirrors _ref_caption_party_conflict."""
+    prec = re.search(r'([a-z]+)\W*$', line[:start].lower())
+    return bool(prec and prec.group(1) in _ORDER_QUALIFIER_STOP)
+
+
+# reggie 2026-07-29 (PO_ORDER_INSTRUCTION_SKIP): a bare "Order No/Number" caption is also stolen by a
+# footer INSTRUCTION — "please quote our order number on all correspondence and delivery notes" — where
+# "order number" is prose, not a field caption. The discriminator is the token AFTER the caption: a real
+# caption is followed by a CODE ("Order No. PO-123"); the instruction by a prose lead-word ("... order
+# number ON all ..."). Cue 2 (the tail) is load-bearing; cue 1 (an instruction verb earlier on the line)
+# is a secondary catch. Complements _qualified_order_caption (which reads the word BEFORE) — "our"/"your"
+# stay legit own-refs there, so the tail is what separates the footer prose from a genuine own-ref.
+_ORDER_INSTRUCTION_VERB = frozenset({
+    "quote", "quoting", "cite", "citing", "state", "stating", "mention", "mentioning",
+})
+_ORDER_INSTRUCTION_TAIL = re.compile(r'^(?:on|in|with|when|upon|for|to|must|should|shall)\b', re.I)
+
+
+def _order_caption_is_instruction(line: str, start: int, end: int) -> bool:
+    """True when a bare 'order no/number' at [start,end) is a boilerplate INSTRUCTION
+    ('quote our order number on all correspondence and delivery notes'), not a real caption. Pure."""
+    # Cue 2 (LOAD-BEARING): the token right after the caption is a prose lead-word, never a code.
+    if _ORDER_INSTRUCTION_TAIL.match(re.sub(r'^[\s:.,\-–]+', '', line[end:].lower())):
+        return True
+    # Cue 1: an instruction verb earlier on the line ("please quote our order number …").
+    return any(w in _ORDER_INSTRUCTION_VERB for w in re.findall(r'[a-z]+', line[:start].lower()))
+
+
 def _search_for_label(lines: list[str], label: str,
                       directions: list[str],
                       role_caption: str | None = None,
-                      caption_guard: dict | None = None) -> tuple[str, str] | None:
+                      caption_guard: dict | None = None,
+                      vat_role: bool = False,
+                      trace = None,
+                      collect: bool = False) -> "tuple[str, str] | list | None":
     """
     Search lines for a label and return (value, direction) or None.
 
+    collect=True (LIST fields, 2026-08-11 — owner: "scans the whole doc for the label and pulls
+    all occurrences"): instead of returning the FIRST accepted occurrence, gather EVERY accepted
+    (value, direction) across all lines and return the list (possibly empty). The occurrence
+    skip-guards above each accept point are SHARED between the two modes by construction — this
+    is one scan with two exits, never a second scan function that could drift (gary's rule).
+    collect=False is byte-identical to the historical first-wins behaviour.
+
     role_caption (RC1/RC5): 'ref' for a SEEDED custom-ref field, so a buyer/seller party caption
     ("Customer Reference") can't cross-fill it. None for shipped patterns → behaviour unchanged.
+
+    vat_role (2026-08-07, reggie + gary -> Oracle SIGN-OFF-W/COND): True only for the vat_tax ROLE
+    (via _pattern_key, so a type keying its field 'vat'/'tax'/'gst' is covered). Arms the VAT
+    REGISTRATION NUMBER occurrence skip — see _vat_identifier_tail. Oracle C2 ruled the arming must
+    be the ROLE, NOT the validation class: `val_type == 'currency'` would also arm the TOTAL, where
+    a genuine OCR-split large amount ("Total  1 234 567 89") trips the grouping leg and the money
+    veto may not survive OCR. Under role arming that exposure needs a VAT AMOUNT of >= 1,234,567.89.
 
     caption_guard (G3b, 2026-07-11): when set (an armed name-like/party field's caption vocab), a
     candidate VALUE that IS a known caption dies at generation — blanked at 'right' so it falls
@@ -818,10 +1996,24 @@ def _search_for_label(lines: list[str], label: str,
     """
     pattern = _label_pattern(label)
     if pattern is None:
-        return None
+        return [] if collect else None
+    # LIST collect only (Oracle cond 2, 2026-08-27): a caption TAIL BOUNDARY. A multi-word caption
+    # pattern has no trailing bound, so "Serial No" also fires on "Serial Nos: A" and yields the
+    # debris element "s: A" (the colon guard needs 2+ letters). Letter-only lookahead: "Serial No1234"
+    # (digit-glued) still matches; "Serial Nos"/"Serial Number" do not — the accepted loss (a plural
+    # caption must be taught as printed). NEVER on the scalar path (shipped label precedence stays).
+    if collect and LIST_CAPTION_TAIL_BOUND:
+        pattern = re.compile(pattern.pattern + r'(?![a-z])')
 
+    _hits = [] if collect else None
     _is_bare_total = label.strip().lower() == 'total'
+    _is_bare_order = (os.environ.get('PO_ORDER_NO_LABELS', '1') != '0'
+                      and label.strip().lower().split()[:1] == ['order'])
+    _instr_skip = os.environ.get('PO_ORDER_INSTRUCTION_SKIP', '1') != '0'
     _is_identity_caption = label.strip().lower() in _IDENTITY_CAPTION_LABELS
+    # Inline env read (same idiom as PO_REF_DIGIT_GATE / CUSTOMER_PO_LABELS) so a test can flip it
+    # without a module reload. Default OFF -> the `if` below is never entered -> byte-identical.
+    _vat_reg_skip = vat_role and os.environ.get('VAT_REG_NOT_AMOUNT', '0') != '0'
     for i, line in enumerate(lines):
         line_lower = line.lower()
         m = pattern.search(line_lower)
@@ -830,6 +2022,11 @@ def _search_for_label(lines: list[str], label: str,
         # The generic "Total" must not poach a "Sub Total" (subtotal) or "Total VAT" (tax) line —
         # skip to the real grand-total line below. See _total_role_collision.
         if _is_bare_total and _total_role_collision(line, m.start(), m.end()):
+            continue
+        # A bare "Order No"/"Order Number" (PO_ORDER_NO_LABELS) must not poach a QUALIFIED order caption
+        # ("Sales/Delivery/Purchase/Your Order No") — skip so the qualified caption's own field reads it.
+        if _is_bare_order and (_qualified_order_caption(line, m.start())
+                               or (_instr_skip and _order_caption_is_instruction(line, m.start(), m.end()))):
             continue
         # A bare "Supplier"/"Vendor"/"Seller" must not read a "Supplier Ref/No/Account" reference
         # caption as the issuer name — skip; a real "Supplier: Acme" still matches. See above.
@@ -847,6 +2044,19 @@ def _search_for_label(lines: list[str], label: str,
         # fields pass role_caption='party', so shipped patterns are byte-identical. (RC1 slice 2)
         if role_caption == 'party' and _party_caption_conflict(line, m.end()):
             continue
+        # A money caption ("VAT") must not read a VAT REGISTRATION NUMBER out of the letterhead
+        # ("VAT Reg GB 651 0027 84") — skip the occurrence so the scan continues DOWN to the real
+        # "VAT @ 20%" amount line. Evaluated on the RAW tail (Oracle C3): before the 4-space column
+        # split, because that threshold is a scan-quality variable not a layout constant, and before
+        # number_format.normalise_currency_spacing, which is what mints "0027 84" into "0027.84" and
+        # makes the identifier look like money in the first place. See _vat_identifier_tail.
+        if _vat_reg_skip:
+            _leg = _vat_identifier_tail(line[m.end():])
+            if _leg:
+                if trace:
+                    trace('vat_reg_skip', label=label, line=line.strip()[:120],
+                          tail=line[m.end():].strip()[:60], leg=_leg)
+                continue
 
         # Try RIGHT direction — value is on the same line after the label
         if "right" in directions or "inline" in directions:
@@ -876,10 +2086,22 @@ def _search_for_label(lines: list[str], label: str,
             # (the AMOUNT is), so a discount/tax read grabbed it, failed currency validation, and
             # left reconciliation blind ("total < subtotal, no discount to explain it" false flag).
             # Tolerates wrapping parens and a trailing ":"/"." ("(10%):", "10%", "8.5 %").
+            # VAT_RATE_AT_SKIP (reggie 2026-08-12, DEFAULT OFF): '@'-decorated rate annotations —
+            # "VAT @ 20% | £77.55" columns as "@ 20%", which fails BOTH skip patterns, gets taken
+            # as the value, and dies at currency validation → MISSING(tax) (Silverbeck 0016).
+            # One char-class widening: the annotation may open with '(' OR '@'; '@' also joins the
+            # punctuation-residue class. Only ever consulted while a FOLLOWING segment exists, so
+            # the skip can never eat a last/only value column. Field-generic by design ("Discount
+            # @ 10% | £12.00" heals identically). Kill: settings 'vat_rate_at_skip' via
+            # _reconcileEnv. OFF ⇒ the shipped patterns verbatim.
+            _rate_at = os.environ.get('VAT_RATE_AT_SKIP', '0') != '0'
+            _resid_re = r'[.\-–:#|)*@]+' if _rate_at else r'[.\-–:#|)*]+'
+            _rate_re  = (r'[@(]?\s*\d+(?:\.\d+)?\s*%\s*\)?\s*[:.]?' if _rate_at
+                         else r'\(?\s*\d+(?:\.\d+)?\s*%\s*\)?\s*[:.]?')
             _si = 0
             while _si + 1 < len(_segs) and (
-                    re.fullmatch(r'[.\-–:#|)*]+', _segs[_si])
-                    or re.fullmatch(r'\(?\s*\d+(?:\.\d+)?\s*%\s*\)?\s*[:.]?', _segs[_si])):
+                    re.fullmatch(_resid_re, _segs[_si])
+                    or re.fullmatch(_rate_re, _segs[_si])):
                 _si += 1
             after = _segs[_si] if _segs else ''
             # A totals row often reads "Invoice Total | GBP | 118.83" — the column right after
@@ -911,10 +2133,14 @@ def _search_for_label(lines: list[str], label: str,
                     and not after.endswith(':')
                     and not _is_label_line(after)
                     and not re.search(r'[A-Za-z]{2,}\s*:', after)):
+                if collect:
+                    _hits.append((after, "right", i))   # i = the caption's line: page order for the union (Oracle 2026-08-27)
+                    continue          # next occurrence of the label — list mode wants them all
                 return after, "right"
 
         # Try BELOW direction — value is on the next non-empty line
         if "below" in directions:
+            _below_hit = False
             for j in range(i + 1, min(i + 4, len(lines))):
                 candidate = lines[j].strip()
                 if not candidate:
@@ -934,16 +2160,25 @@ def _search_for_label(lines: list[str], label: str,
                 if (candidate
                         and not _is_label_line(candidate)
                         and not re.search(r'[A-Za-z]{2,}\s*:', candidate)):
+                    if collect:
+                        _hits.append((candidate, "below", i))
+                        _below_hit = True
+                        break     # one value per occurrence; move on to the next occurrence
                     return candidate, "below"
+            if collect and _below_hit:
+                continue
 
         # Try ABOVE direction
         if "above" in directions:
             for j in range(i - 1, max(i - 4, -1), -1):
                 candidate = lines[j].strip()
                 if candidate and not _is_label_line(candidate):
+                    if collect:
+                        _hits.append((candidate, "above", i))
+                        break
                     return candidate, "above"
 
-    return None
+    return _hits if collect else None
 
 
 def _is_label_line(text: str) -> bool:
@@ -969,50 +2204,107 @@ def _is_label_line(text: str) -> bool:
     return False
 
 
-def _is_plausible_supplier_name(value: str | None) -> bool:
-    """Is `value` plausible as a SUPPLIER IDENTITY (not a generic field value)?
+# Document-chrome / TITLE words a large page heading garbles into. A closed,
+# generic, supplier-agnostic set (never a company name) — used ONLY to demote a
+# short OCR fragment of a title (the "INVOICE"→"INi"/"INGE" class) out of the
+# supplier field. Mirror of _DOC_CHROME_WORDS in database/modules/learning.js.
+_DOC_CHROME_WORDS = frozenset({
+    "invoice", "statement", "purchase", "order", "sales", "delivery", "docket",
+    "note", "receipt", "credit", "debit", "quote", "quotation", "remittance",
+    "worksheet", "bill", "advice", "proforma", "estimate", "ticket", "memo",
+    "packing", "slip",
+})
 
-    A real supplier/company name is essentially never a bare 2-3 character
-    all-caps token with no digits — those ("IN"/"INV" from "INVOICE", "BILL",
-    "PO") are document-structure fragments that label/zone cropping leaves
-    behind, and once one wins it poisons every supplier-keyed lookup. Anything
-    longer, multi-word, mixed-case, or containing a digit is treated as
-    plausible (so "SuperStore", "ACME LIMITED", "Polychemtex Inc." all pass).
 
-    This is deliberately a SHAPE test, not a stoplist — no supplier name is
-    hardcoded. Short all-caps brands ("IBM", "DHL") are flagged here as
-    not-uniquely-plausible BY SHAPE; callers must apply an "unless uniquely
-    supported" rule (override only when a plausible alternative exists; persist
-    only when the user explicitly confirmed it) so legitimate short names are
-    never hard-banned. Mirrored in database/modules/learning.js
-    (isPlausibleSupplierName) for the persistence side.
-    """
+def _bounded_levenshtein(a: str, b: str) -> int:
+    """Levenshtein edit distance (tiny strings only — supplier fragments ≤5 chars)."""
+    m, n = len(a), len(b)
+    d = list(range(n + 1))
+    for i in range(1, m + 1):
+        prev, d[0] = d[0], i
+        for j in range(1, n + 1):
+            tmp = d[j]
+            d[j] = min(d[j] + 1, d[j - 1] + 1, prev + (0 if a[i - 1] == b[j - 1] else 1))
+            prev = tmp
+    return d[n]
+
+
+def _is_doc_chrome_fragment(core: str) -> bool:
+    """True → `core` (an alnum-lowercased token) is a SHORT OCR near-form of the
+    PREFIX of a document-chrome/title word — the class a big page TITLE garbles
+    into ("INVOICE"→"ini"/"inge"/"in", "STATEMENT"→"stat"). Bounded edit distance
+    to each title word truncated to the candidate's length: ≤1 for ≤3 chars, ≤2
+    for 4–5 chars. Only 2–5 char cores are judged — a real company name is longer,
+    or does not near-match a title prefix, so 'Invoice Ninja'-style real names
+    (longer / multi-word) never reach here."""
+    if core in _DOC_CHROME_WORDS:        # a whole title word read as the supplier
+        return True
+    L = len(core)
+    if L < 2 or L > 5:
+        return False
+    budget = 1 if L <= 3 else 2
+    for w in _DOC_CHROME_WORDS:
+        if len(w) >= L and _bounded_levenshtein(core, w[:L]) <= budget:
+            return True
+    return False
+
+
+def _is_plausible_supplier_name_base(value: str | None) -> bool:
+    """SHAPE-only plausibility — the base rules WITHOUT the document-chrome layer.
+
+    Rejects a bare 2-3 char all-caps token ("IN"/"PO" from "INVOICE"/"PURCHASE"), a
+    digit-dominant reference misread ("36552", "t 38/07"), and a mostly-gibberish
+    MULTI-WORD read ("Fr eanehae Crane") — but NOT a chrome near-form. Used where a
+    chrome-SHAPED but genuine short name ("Dell"→'deli', "Sage"→'sale', edit-1 from a
+    title prefix) must NOT be demoted: notably the OVERRIDE arm of
+    engine._supplier_identity_decision, where an implausible incumbent is REPLACEABLE
+    regardless of confidence — the chrome demotion must never (on shape alone) license
+    overwriting a real short-named incumbent with a plausible WRONG challenger (Oracle
+    2026-07-14). Short all-caps brands ("IBM","DHL") are flagged not-uniquely-plausible
+    here BY SHAPE; callers apply the "unless uniquely supported" rule."""
     if not value or not str(value).strip():
         return False
     t = str(value).strip().rstrip(":")
     if (len(t) <= 3 and t.isupper() and " " not in t
             and not any(c.isdigit() for c in t)):
         return False
-    # A reference/number misread into the supplier field ("t 38/07", "36552",
-    # "12/345") is digit-dominant with almost no letters — a real company name
-    # always carries substantial alphabetic content. Shape test only: reject
-    # when there are 2+ digits AND fewer than 3 letters. This keeps legitimate
-    # letter-rich names that merely contain digits ("3M", "G2 Environmental",
-    # "24/7 Services") plausible.
+    # Digit-dominant reference misread: 2+ digits AND <3 letters. Keeps letter-rich
+    # names that merely contain digits ("3M", "G2 Environmental", "24/7 Services").
     n_alpha = sum(c.isalpha() for c in t)
     n_digit = sum(c.isdigit() for c in t)
     if n_alpha < 3 and n_digit >= 2:
         return False
-    # Word-quality gate (multi-word only): a MULTI-TOKEN read that is mostly OCR
-    # gibberish / address fragments ("Fr eanehae Crane", "67 Boucher Cre",
-    # "St OMe WM cenant") is not a real supplier identity — flagging it implausible
-    # is what lets the learned-hint recovery (engine Stage 2.5a) replace it with the
-    # confirmed name. Single-token values are NOT judged here so short real brands
-    # ("3M", "IBM", "DHL") are never demoted by this rule (the shape tests above
-    # already govern them). See extraction/value_quality.py.
+    # Word-quality gate (MULTI-word only): a mostly-gibberish multi-token read is not a
+    # supplier identity; single-token brands ("3M") are not judged here.
     if len(t.split()) >= 2:
         from extraction.value_quality import name_quality
         if name_quality(t) < 0.5:
+            return False
+    return True
+
+
+def _is_plausible_supplier_name(value: str | None) -> bool:
+    """SUPPLIER-identity plausibility = the shape BASE test PLUS a document-CHROME
+    near-form reject (kill switch SUPPLIER_CHROME_FRAGMENT_GUARD, default on). A large
+    document TITLE ("INVOICE"/"STATEMENT") OCR-garbles into a short token
+    ("INi","INGE","IN \") that slips the all-caps guard and WINS the supplier field,
+    filing a whole batch under a phantom sender. Demote such a title fragment so the
+    letterhead read / the implausibility-gated Stage-2.5a hint recovery takes over.
+    FAIL-TOWARD-REVIEW (demote-only — never rewrites a value).
+
+    ⚠ The chrome layer lives HERE, NOT in `_base` — and the OVERRIDE arm of
+    engine._supplier_identity_decision judges the INCUMBENT with `_base`, so the chrome
+    demotion can never license a confidence-blind 'take' that overwrites a real short
+    supplier ("Dell"/"Sage") — a chrome-shaped real name is edit-1 from a title prefix,
+    so shape alone cannot tell it from a garble; only the FILTERING seams use this full
+    form (persist a fresh read; the Stage-2.5a recovery gate + re-check), where rejecting
+    a garble is the whole point. Mirrored in database/modules/learning.js."""
+    if not _is_plausible_supplier_name_base(value):
+        return False
+    if os.environ.get("SUPPLIER_CHROME_FRAGMENT_GUARD", "1") != "0":
+        t = str(value).strip().rstrip(":")
+        core = "".join(c for c in t.lower() if c.isalnum())
+        if len(t.split()) <= 2 and _is_doc_chrome_fragment(core):
             return False
     return True
 
@@ -1042,6 +2334,32 @@ def normalize_supplier_name(name: str | None) -> str | None:
     return cleaned or s
 
 
+def val_census(site, val_type, value, accepted):
+    """MEASUREMENT ONLY (Oracle C2 on VAT_EU_FORMATS, 2026-08-10) — record the candidates a
+    validation gate REFUSES, which is the population every committed-value census is blind to.
+
+    The 56-value census that justified the widening enumerated values this install had COMMITTED.
+    A value the current gate rejects is never written anywhere, so that census sampled a population
+    from which the at-risk class had already been removed — which is precisely why it could not see
+    that the Norwegian pattern accepted a UK number carrying its own "No" caption tail. Widening a
+    format can only newly ACCEPT things; the only honest question is therefore "what does the gate
+    refuse today, and would the wider set take any of it?", and that needs the refusals.
+
+    Writes one JSON line per observation to `$VAL_CENSUS_DIR/val_<pid>.jsonl`. Per-PID because the
+    harness fans out across shard workers. Inert unless the env var is set.
+    """
+    d = os.environ.get("VAL_CENSUS_DIR")
+    if not d:
+        return
+    try:
+        import json as _json
+        with open(os.path.join(d, f"val_{os.getpid()}.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(_json.dumps({"site": site, "val_type": val_type,
+                                  "value": value, "accepted": bool(accepted)}) + "\n")
+    except Exception:
+        pass          # a measurement must never break an extraction
+
+
 def _validate(value: str, patterns: list[str]) -> bool:
     """Check if value matches any of the validation patterns."""
     for p in patterns:
@@ -1064,7 +2382,25 @@ def _clean_value(value: str, val_type: str | None,
         for p in validation[val_type]:
             m = re.search(p, value, re.IGNORECASE)
             if m:
-                return m.group(0).strip()
+                out = m.group(0).strip()
+                # MONEY_SIGN_CAPTURE (DEFAULT OFF, mig-72 seed; gary → Oracle S-O-W/C 2026-08-16).
+                # No shipped currency pattern admits a leading '-', so "£-428.58" matched bare
+                # "428.58" and a credit-note operand lost its sign at the mint — the shadow
+                # subtotal then falsely "disagreed" with a CORRECT signed total. When armed, a
+                # SINGLE '-' sitting IMMEDIATELY before the matched substring (no dash-run, and
+                # preceded by start / whitespace / a currency symbol) is re-attached. Spaced
+                # dashes ("Total - 160.32") and dash runs stay unsigned — fail toward today, with
+                # credit_sign_note arm 2 still flagging the uncommitted markers and arm 3 the
+                # mirror guard (validator.py — built in anticipation of exactly this fix).
+                # parse_amount stays magnitude-only by design (signing it flips total>0 gates
+                # validator-wide — wrong layer; pinned).
+                if (val_type == "currency" and not out.startswith('-')
+                        and os.environ.get('MONEY_SIGN_CAPTURE', '0') != '0'):
+                    pre = value[:m.start()]
+                    if (pre.endswith('-') and not pre.endswith('--')
+                            and (len(pre) == 1 or pre[-2] in ' \t£$€¥')):
+                        return ('-' + out)
+                return out
     # Reference numbers with a fixed group shape (e.g. job_no "2603-0670-1"):
     # extract the four-four-one digit shape from the captured text and normalise
     # whatever OCR separator noise (".", spaces, "_", "/", mixed) to a single "-".

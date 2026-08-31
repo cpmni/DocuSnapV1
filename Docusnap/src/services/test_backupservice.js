@@ -69,6 +69,103 @@ catch (e) { reThrew = true; console.log('   (restore-over-existing error: ' + e.
 check('restore over existing related rows (deferred FK) succeeds', !reThrew &&
   (db.prepare('SELECT key FROM fields WHERE id=10').get() || {}).key === 'invoice_number');
 
+// ── M5: an EMPTY-array learned table must NOT wipe the target (fresh-install backup case) ──
+db.exec(`CREATE TABLE supplier_hints(id INTEGER PRIMARY KEY, supplier_name TEXT, field_key TEXT, hint_value TEXT);`);
+db.prepare("INSERT INTO supplier_hints VALUES(1,'Acme','invoice_number','INV-1')").run();
+db.prepare("INSERT INTO supplier_hints VALUES(2,'Acme','po_number','PO-2')").run();
+// (a) empty array ⇒ "nothing to import", learned rows PRESERVED (was: silently wiped).
+applyBackup(db, { tables: { supplier_hints: [] } });
+check('M5: an empty-array learned table is NOT wiped', db.prepare('SELECT COUNT(*) c FROM supplier_hints').get().c === 2);
+// (b) absent table ⇒ left intact (the pre-existing baseline behaviour, must still hold).
+applyBackup(db, { tables: {} });
+check('M5: an absent learned table is left intact', db.prepare('SELECT COUNT(*) c FROM supplier_hints').get().c === 2);
+// (c) a NON-empty table still fully REPLACES — the guard must not disable a real restore.
+applyBackup(db, { tables: { supplier_hints: [{ id: 5, supplier_name: 'Beta', field_key: 'ref', hint_value: 'R-9' }] } });
+const shRows = db.prepare('SELECT supplier_name FROM supplier_hints').all();
+check('M5: a non-empty learned table still fully REPLACES', shRows.length === 1 && shRows[0].supplier_name === 'Beta');
+
+// ── ORACLE C2 (2026-08-11): field_label_overrides.template_id must REMAP through tmplMap ──
+// Template ids differ across machines (templates upsert by SLUG). An unmapped restore would
+// attach one supplier's exclusive taught caption to a DIFFERENT supplier's template — the exact
+// cross-supplier bleed migration 62 exists to prevent, resurrected through backup. An orphaned
+// scoped row (its template not in the backup) is DROPPED, never widened to doc-type-wide.
+db.exec(`
+  CREATE TABLE templates(id INTEGER PRIMARY KEY, name TEXT, slug TEXT, document_type_slug TEXT);
+  CREATE TABLE field_label_overrides(id INTEGER PRIMARY KEY, doc_type_slug TEXT, field_key TEXT,
+    label TEXT, created_at TEXT, exclusive INTEGER DEFAULT 0, template_id INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(doc_type_slug, field_key, label, template_id));
+`);
+// Target machine already has the SAME template slug at a DIFFERENT id (7 vs the backup's 5).
+db.prepare("INSERT INTO templates VALUES(7,'Castellan','castellan_ws','service_worksheet')").run();
+applyBackup(db, { tables: {
+  templates: [{ id: 5, name: 'Castellan', slug: 'castellan_ws', document_type_slug: 'service_worksheet' }],
+  field_label_overrides: [
+    { id: 1, doc_type_slug: 'service_worksheet', field_key: 'worksheet_number',
+      label: 'JOB SHEET NO', created_at: null, exclusive: 1, template_id: 5 },   // scoped → remap
+    { id: 2, doc_type_slug: 'service_worksheet', field_key: 'account_no',
+      label: 'Acct', created_at: null, exclusive: 0, template_id: 0 },           // global → kept as-is
+    { id: 3, doc_type_slug: 'invoice', field_key: 'po_number',
+      label: 'Orphan Cap', created_at: null, exclusive: 1, template_id: 99 },    // orphan → DROPPED
+  ],
+} });
+const lo = db.prepare('SELECT label, template_id, exclusive FROM field_label_overrides ORDER BY label').all();
+const localTplId = db.prepare("SELECT id FROM templates WHERE slug='castellan_ws'").get().id;
+check('C2: a template-scoped override remaps to the LOCAL template id',
+  (lo.find(x => x.label === 'JOB SHEET NO') || {}).template_id === localTplId);
+check('C2: a doc-type-wide row restores unchanged', (lo.find(x => x.label === 'Acct') || {}).template_id === 0);
+check('C2 PINNED: an orphaned scoped row is DROPPED, never widened to doc-type-wide',
+  !lo.some(x => x.label === 'Orphan Cap'));
+
 db.close();
+
+// ── STRUCTURAL ROLES ARE REQUIRED BY NATURE (mig 92, Oracle C2 2026-08-27): a backup taken BEFORE the
+//    heal carries required=0 on a wizard-made type's identity / ref-role / date-role fields. The restore
+//    hook (backupService → document_types.assertStructuralRequired) must flip them to 1, leave every
+//    optional field alone, and the M5 empty-array rule must still hold for `fields`. ──
+{
+  const doctypes = require('../../database/modules/document_types');
+  const db2 = new Database(':memory:');
+  db2.exec(`
+    CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT);
+    CREATE TABLE document_types(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, slug TEXT UNIQUE,
+      built_in INTEGER DEFAULT 0, ref_field_key TEXT, date_field_key TEXT, sort_order INTEGER DEFAULT 100, enabled INTEGER DEFAULT 1);
+    CREATE TABLE fields(id INTEGER PRIMARY KEY AUTOINCREMENT, document_type_id INTEGER NOT NULL REFERENCES document_types(id) ON DELETE CASCADE,
+      key TEXT, label TEXT, type TEXT DEFAULT 'text', required INTEGER DEFAULT 0, built_in INTEGER DEFAULT 0,
+      enabled INTEGER DEFAULT 1, confidence_threshold REAL, sort_order INTEGER DEFAULT 100, UNIQUE(document_type_id, key));
+  `);
+  db2.pragma('foreign_keys = ON');
+  applyBackup(db2, { tables: {
+    document_types: [
+      { id: 3, name: 'Service Worksheet', slug: 'service_worksheet', built_in: 0, ref_field_key: 'reference_number', date_field_key: 'date' },
+      { id: 4, name: 'Sales Order', slug: 'sales_order', built_in: 1, ref_field_key: 'sales_order_number', date_field_key: 'order_date' },
+    ],
+    fields: [
+      { id: 30, document_type_id: 3, key: 'supplier_name',    label: 'Document Issuer',  type: 'text',      required: 0 },
+      { id: 31, document_type_id: 3, key: 'reference_number', label: 'Reference number', type: 'reference', required: 0 },
+      { id: 32, document_type_id: 3, key: 'date',             label: 'Date',             type: 'date',      required: 0 },
+      { id: 33, document_type_id: 3, key: 'serial_number',    label: 'Serial Number',    type: 'list',      required: 0 },
+      { id: 40, document_type_id: 4, key: 'supplier_name',      label: 'Document Issuer',    type: 'text', required: 1 },
+      { id: 41, document_type_id: 4, key: 'order_date',         label: 'Order Date',         type: 'date', required: 1 },
+      { id: 42, document_type_id: 4, key: 'sales_order_number', label: 'Sales Order Number', type: 'text', required: 1 },
+      { id: 43, document_type_id: 4, key: 'customer_name',      label: 'Customer',           type: 'text', required: 0 },
+    ],
+  } });
+  const req = (slug, key) => {
+    const t = db2.prepare('SELECT id FROM document_types WHERE slug = ?').get(slug);
+    const f = t && db2.prepare('SELECT required FROM fields WHERE document_type_id = ? AND key = ?').get(t.id, key);
+    return f ? f.required : null;
+  };
+  check('mig-92 restore hook: identity of a pre-heal wizard type is required=1 after restore', req('service_worksheet', 'supplier_name') === 1);
+  check('mig-92 restore hook: ref role required=1 after restore', req('service_worksheet', 'reference_number') === 1);
+  check('mig-92 restore hook: date role required=1 after restore', req('service_worksheet', 'date') === 1);
+  check('mig-92 restore hook: the optional List field stays 0', req('service_worksheet', 'serial_number') === 0);
+  check('mig-92 restore hook: the sales-order optional customer_name stays 0', req('sales_order', 'customer_name') === 0);
+  check('mig-92 restore hook: the assert is the SAME predicate the migration runs (0 left to heal)', doctypes.assertStructuralRequired(db2) === 0);
+  // M5 for `fields`: an empty array is "nothing to import" — the restored rows survive, flags intact.
+  applyBackup(db2, { tables: { document_types: [{ id: 3, name: 'Service Worksheet', slug: 'service_worksheet', built_in: 0, ref_field_key: 'reference_number', date_field_key: 'date' }], fields: [] } });
+  check('M5 still holds for fields: an empty array wipes nothing', db2.prepare('SELECT COUNT(*) c FROM fields').get().c === 8 && req('service_worksheet', 'date') === 1);
+  db2.close();
+}
+
 console.log(fail ? `\n${fail} check(s) FAILED` : '\nAll backupService checks passed.');
 process.exit(fail ? 1 : 0);

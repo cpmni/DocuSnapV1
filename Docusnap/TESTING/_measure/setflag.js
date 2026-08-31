@@ -1,0 +1,2 @@
+const ROOT='C:/GIT Projects/Docusnap'; const Database=require(ROOT+'/node_modules/better-sqlite3');
+const db=new Database(process.argv[2]); db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(process.argv[3], process.argv[4]); console.log(process.argv[3],'=',db.prepare('SELECT value v FROM settings WHERE key=?').get(process.argv[3]).v);

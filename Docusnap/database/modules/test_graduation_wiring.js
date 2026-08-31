@@ -26,9 +26,15 @@ const idxGrad   = reviewSvc.indexOf('await onScopeGraduated(');
 check('graduation hook runs AFTER onTaughtConfirm (taught template wins → no double-create)',
       idxTaught > 0 && idxGrad > idxTaught);
 check('graduation hook is OUTSIDE the taught_fields guard (fires on plain confirms)',
-      // the taught_fields `if (...) { onTaughtConfirm }` block closes before the graduation call
+      // the taught_fields `if (...) { onTaughtConfirm }` block closes before the graduation call.
+      // LINE ENDINGS: this repo is core.autocrlf=true, so a fresh checkout hands Windows CRLF and
+      // the working copy can hold either. The original pattern required a bare `\n}` and so went
+      // red on any clean clone — it passed only while the file happened to sit in the tree with LF
+      // (found 2026-08-19 after a stash cycle re-checked the file out). Normalise before matching;
+      // the assertion is about STRUCTURE, and structure does not depend on how lines end.
       idxGrad > reviewSvc.indexOf('Array.isArray(taught_fields)') &&
-      /onTaughtConfirm[\s\S]*?\n\s*}\n[\s\S]*?await onScopeGraduated/.test(reviewSvc));
+      /onTaughtConfirm[\s\S]*?\n\s*}\n[\s\S]*?await onScopeGraduated/
+        .test(reviewSvc.replace(/\r\n/g, '\n')));
 check('graduation hook is inside the !bulk detached block', reviewSvc.includes('if (!bulk) {'));
 
 console.log('\nreview/handler.js — injection + Electron enrichment:');

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; form-action 'none'; base-uri 'none'; object-src 'none'">
+<title>Export data — Scan Finder</title>
+<script src="../shared/theme.js"></script>
+<link rel="stylesheet" href="../shared/theme.css" />
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",system-ui,Segoe UI,sans-serif;
+       display:flex;flex-direction:column;overflow:hidden}
+  .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+
+  header.exp-head{flex:0 0 auto;padding:18px 24px 12px;border-bottom:1px solid var(--border);background:var(--surface)}
+  header.exp-head h1{font-size:20px;font-weight:650;display:flex;align-items:center;gap:10px}
+  header.exp-head h1 svg{width:22px;height:22px;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  header.exp-head p{color:var(--muted);font-size:13px;margin-top:4px;max-width:70ch}
+
+  main.exp-body{flex:1 1 auto;overflow:auto;padding:20px 24px 24px}
+  .exp-cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:stretch}
+  @media (max-width:820px){.exp-cols{grid-template-columns:1fr}}
+  /* the two top cards are equal height; their checklists fill to a common bottom */
+  .exp-cols>.card{display:flex;flex-direction:column;height:300px;margin-bottom:18px}
+  .exp-cols>.card .checklist{flex:1 1 auto;max-height:none;min-height:0}
+
+  .card{border:1px solid var(--border);border-radius:var(--r);background:var(--surface);padding:14px 16px;margin-bottom:18px}
+  .card h2{font-size:13px;font-weight:650;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+           display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .card h2 .h2act{display:flex;gap:6px}
+  .mini{font-size:11px;padding:2px 8px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);
+        border-radius:var(--r-pill);cursor:pointer}
+  .mini:hover{background:var(--surface3)}
+  .filter-in{width:100%;padding:6px 10px;border:1px solid var(--border2);border-radius:var(--r-sm);
+             background:var(--surface2);color:var(--text);font-size:12px;margin-bottom:8px}
+
+  .checklist{max-height:230px;overflow:auto;padding:2px}
+  .checklist.short{max-height:180px}
+  .ck{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:13px}
+  .ck:hover{background:var(--surface2)}
+  .ck input{width:15px;height:15px;flex:0 0 auto;cursor:pointer}
+  .ck .lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ck .cnt{color:var(--muted);font-size:11px;flex:0 0 auto}
+  .grp-head{font-size:11px;font-weight:650;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;
+            padding:8px 8px 2px;border-top:1px solid var(--border);margin-top:4px}
+  .grp-head:first-child{border-top:0;margin-top:0}
+  .empty-note{color:var(--muted);font-size:12px;padding:14px 8px;text-align:center}
+
+  .opt-row{display:flex;align-items:center;gap:10px;font-size:13px;margin:8px 0;flex-wrap:wrap}
+  .opt-row label{cursor:pointer}
+  .opt-sub{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:2px 0 6px}
+  .opt-hr{border:0;border-top:1px solid var(--border);margin:16px 0}
+  .opt-lab{display:inline-block;min-width:112px;font-weight:550}
+  .opt-hint{color:var(--muted);font-size:11.5px}
+  .date-in{padding:5px 8px;border:1px solid var(--border2);border-radius:var(--r-sm);background:var(--surface2);
+           color:var(--text);font-size:12px}
+  .fmt-pills{display:flex;gap:8px}
+  .fmt-pill{display:flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--border2);border-radius:var(--r-pill);
+            cursor:pointer;font-size:13px;background:var(--surface2)}
+  .fmt-pill input{cursor:pointer}
+  .fmt-pill.on{border-color:var(--accent);background:var(--accent-bg)}
+
+  #preview-wrap{margin-top:6px}
+  #preview-table{width:100%;border-collapse:collapse;font-size:11px;font-family:"IBM Plex Mono",monospace}
+  #preview-table th,#preview-table td{border:1px solid var(--border);padding:3px 7px;text-align:left;
+        max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #preview-table th{background:var(--surface2);position:sticky;top:0}
+  .preview-scroll{max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:var(--r-sm)}
+
+  footer.exp-foot{flex:0 0 auto;padding:12px 24px;border-top:1px solid var(--border);background:var(--surface);
+                  display:flex;align-items:center;gap:14px}
+  #count-line{flex:1;font-size:13px}
+  #count-line b{font-size:15px}
+  #count-line .muted{color:var(--muted)}
+  #trunc-note{color:var(--warn);font-size:12px}
+  .btn{padding:8px 16px;border-radius:var(--r-sm);border:1px solid var(--border2);background:var(--surface2);
+       color:var(--text);font-size:13px;cursor:pointer;font-weight:550}
+  .btn:hover{background:var(--surface3)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+  .btn.primary:hover{background:var(--accent2)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  #run-msg{font-size:12px;color:var(--ok)}
+  #run-msg.err{color:var(--err)}
+</style>
+</head>
+<body>
+  <header class="exp-head">
+    <h1><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg> Export data</h1>
+    <p>Pull your filed documents into a table for Excel, accounts software or a database. Choose which
+       senders, document types and fields to include, then save as a CSV or JSON file.</p>
+  </header>
+
+  <main class="exp-body">
+    <div class="exp-cols">
+      <!-- Document types -->
+      <section class="card">
+        <h2>Document types
+          <span class="h2act"><button class="mini" data-all="types">All</button><button class="mini" data-none="types">None</button></span>
+        </h2>
+        <div id="type-list" class="checklist short"><div class="empty-note">Loading…</div></div>
+      </section>
+
+      <!-- Suppliers -->
+      <section class="card">
+        <h2>Senders
+          <span class="h2act"><button class="mini" data-all="sups">All</button><button class="mini" data-none="sups">None</button></span>
+        </h2>
+        <input id="sup-filter" class="filter-in" placeholder="Filter senders…" spellcheck="false">
+        <div id="sup-list" class="checklist short"><div class="empty-note">Loading…</div></div>
+      </section>
+    </div>
+
+    <!-- Columns -->
+    <section class="card">
+      <h2>Columns to export
+        <span class="h2act"><button class="mini" data-all="cols">All</button><button class="mini" data-none="cols">None</button></span>
+      </h2>
+      <div id="col-list" class="checklist"><div class="empty-note">Loading…</div></div>
+    </section>
+
+    <!-- Options -->
+    <section class="card">
+      <h2>Options</h2>
+
+      <div class="opt-sub">Which documents</div>
+      <div class="opt-row">
+        <input type="checkbox" id="opt-needsreview">
+        <label for="opt-needsreview">Include documents still in Review — not just confirmed ones</label>
+      </div>
+
+      <hr class="opt-hr">
+
+      <div class="opt-sub">Date ranges <span class="opt-hint" style="text-transform:none; letter-spacing:0; font-weight:400;">— optional; leave blank for all dates</span></div>
+      <div class="opt-row">
+        <span class="opt-lab">Document date</span>
+        <input type="date" id="opt-doc-from" class="date-in" aria-label="Document date from">
+        <span>to</span>
+        <input type="date" id="opt-doc-to" class="date-in" aria-label="Document date to">
+        <span class="opt-hint">the date printed on the document</span>
+      </div>
+      <div class="opt-row">
+        <span class="opt-lab">Date filed</span>
+        <input type="date" id="opt-from" class="date-in" aria-label="Date filed from">
+        <span>to</span>
+        <input type="date" id="opt-to" class="date-in" aria-label="Date filed to">
+        <span class="opt-hint">when it was confirmed &amp; filed in Scan Finder</span>
+      </div>
+      <div class="opt-row">
+        <button class="mini" id="opt-dates-clear">Clear dates</button>
+        <span class="opt-hint">Exported dates use your regional format (Settings → Processing → Date format).</span>
+      </div>
+
+      <hr class="opt-hr">
+
+      <div class="opt-sub">Save as</div>
+      <div class="opt-row">
+        <div class="fmt-pills" id="fmt-pills">
+          <label class="fmt-pill on"><input type="radio" name="fmt" value="csv" checked> CSV <span style="color:var(--muted)">(Excel / database)</span></label>
+          <label class="fmt-pill"><input type="radio" name="fmt" value="xlsx"> Excel <span style="color:var(--muted)">(.xlsx)</span></label>
+          <label class="fmt-pill"><input type="radio" name="fmt" value="json"> JSON</label>
+        </div>
+        <p class="section-desc" style="color:var(--muted);font-size:11.5px;margin-top:2px">Excel (.xlsx) keeps reference and account numbers exactly as written — CSV can drop leading zeros or turn long numbers into 1.2E+15.</p>
+      </div>
+    </section>
+
+    <!-- Preview -->
+    <section class="card" id="preview-card" style="display:none;">
+      <h2>Preview <span class="muted" style="color:var(--muted);text-transform:none;letter-spacing:0;font-weight:400" id="preview-sub"></span></h2>
+      <div id="preview-wrap"></div>
+    </section>
+  </main>
+
+  <footer class="exp-foot">
+    <div id="count-line"><span class="muted">Counting…</span></div>
+    <span id="run-msg"></span>
+    <span id="trunc-note"></span>
+    <button class="btn" id="btn-close">Close</button>
+    <button class="btn primary" id="btn-run" disabled>Export…</button>
+  </footer>
+
+  <script src="renderer.js" defer></script>
+</body>
+</html>

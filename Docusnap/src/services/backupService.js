@@ -40,9 +40,13 @@ const TABLES = [
   'field_anchors', 'supplier_hints', 'corrections', 'logo_fingerprints',
 ];
 
-// Settings keys NEVER backed up or restored — licensing/device-bound state.
+// Settings keys NEVER backed up or restored — licensing/device-bound + entitlement state.
+// SECURITY (Stage 2 — Oracle C1): use the SAME protected-key predicate set-setting refuses, so a
+// crafted/ restored backup can't write `detached_*_seats` / `update_info` (self-granting the paid
+// add-on) through this door — the seam that re-opened M1. Keep the legacy 'licens' substring too.
 function _settingExcluded(key) {
-  return String(key || '').toLowerCase().includes('licens');
+  const s = String(key || '').toLowerCase();
+  return s.includes('licens') || require('../lib/protectedSettings').isProtectedSettingKey(s);
 }
 
 // ── Crypto ──────────────────────────────────────────────────────────────────────
@@ -243,7 +247,9 @@ function applyBackup(db, payload) {
     //    keep their children untouched. ──
     const replaceChildren = (table, parentCol, parentMap) => {
       const rows = rowsFor(table), cols = colsOf(table);
-      if (!rows || !cols) return;
+      // M5 (same class as the learned-table loop): an empty child array is "nothing to
+      // import", not "delete this parent's children". Absent→skipped must equal empty→skipped.
+      if (!rows || !rows.length || !cols) return;
       const del = db.prepare(`DELETE FROM ${table} WHERE ${parentCol} = ?`);
       for (const localId of new Set(parentMap.values())) del.run(localId);
       let n = 0;
@@ -257,6 +263,11 @@ function applyBackup(db, payload) {
     };
 
     replaceChildren('fields', 'document_type_id', typeMap);
+    // Structural roles are required by nature (migration 92): a backup taken before that heal carries
+    // required=0 on a wizard-made type's identity / ref / date fields — assert the flag on every type
+    // after the restore so a restore can never re-plant the "score every field" state. Best-effort:
+    // a minimal fixture may lack the column.
+    try { require('../../database/modules/document_types').assertStructuralRequired(db); } catch {}
     for (const ct of ['template_fields', 'template_field_mappings', 'template_landmarks', 'template_logo_hashes']) {
       replaceChildren(ct, 'template_id', tmplMap);
     }
@@ -264,10 +275,32 @@ function applyBackup(db, payload) {
     // ── learned tables — full REPLACE (no inbound id FK; keyed by supplier/slug text) ──
     for (const t of ['field_label_overrides', 'field_anchors', 'supplier_hints', 'corrections', 'logo_fingerprints']) {
       const rows = rowsFor(t), cols = colsOf(t);
-      if (!rows || !cols) continue;
+      // M5: an EMPTY array means "nothing to import", the same as an ABSENT table — NOT
+      // "delete everything". Without the `!rows.length` guard a fresh-install backup (which
+      // serialises these learned tables as []) would `DELETE FROM` and wipe every anchor,
+      // hint, correction and logo on the TARGET machine. `createBackup` already skips an
+      // absent table, so absent→skipped must equal empty→skipped.
+      if (!rows || !rows.length || !cols) continue;
       db.prepare(`DELETE FROM ${t}`).run();
       let n = 0;
-      for (const raw of rows) { insertRow(t, cols, { ...raw }); n++; }
+      for (const raw of rows) {
+        const row = { ...raw };
+        // ORACLE C2 (2026-08-11): field_label_overrides.template_id (migration 62) is a TEMPLATE
+        // scope, and template ids differ across machines — restoring it unmapped would attach one
+        // supplier's exclusive taught caption to a DIFFERENT supplier's template, resurrecting the
+        // exact cross-supplier bleed the scope exists to prevent. Remap through tmplMap; an
+        // unmappable scoped row is DROPPED (never widened to 0 = doc-type-wide — an orphaned
+        // exclusive row falling back to global scope would be the same bleed, worse). Pinned in
+        // test_backupservice.js.
+        if (t === 'field_label_overrides') {
+          const tid = Number(row.template_id) || 0;
+          if (tid > 0) {
+            if (!tmplMap.has(tid)) continue;          // orphaned template scope → drop the row
+            row.template_id = tmplMap.get(tid);
+          }
+        }
+        insertRow(t, cols, row); n++;
+      }
       applied[t] = n;
     }
   })();

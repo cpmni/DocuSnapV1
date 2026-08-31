@@ -65,25 +65,45 @@ check("DN->XY (Hamming-2) no-fire", oc.is_prefix_outlier('XY', rec) is False)
 check("length-change (INV vs DN) no-fire", oc.is_prefix_outlier('INV', rec) is False)
 check("empty prefix no-fire", oc.is_prefix_outlier(None, rec) is False)
 
-# ── self-heal (Q5): a legit-new sibling flags ONCE, then joins known ────────────
-check("legit-new CN flags (not yet confirmed)", oc.is_prefix_outlier('CN', rec) is True)
-healed = {'dominant': 'DN', 'known': {'DN', 'CN'}}                 # after one confirm CN in known
-check("...then CN in known -> never flags (self-heal)", oc.is_prefix_outlier('CN', healed) is False)
-
-# ── Oracle's count-1 immunization pin (deliberate trade vs the self-heal story) ──
-# A prefix already in `known` does NOT flag EVEN AT count 1 — this is the poison-hole trade-off that
-# gives the clean confirm-once-self-heals behaviour. A future dev must not "fix" it into a support
-# floor (that would re-flag legit-new prefixes more than once). The scope that is poisoned ENOUGH to
-# matter drops below 0.80 and disarms entirely; the residual remedy is a Learning-Recovery purge.
-part_poison = {'dominant': 'DN', 'known': {'DN', 'IN'}}            # DN dominant but a stray IN confirmed
-check("PIN: an already-known prefix does NOT flag (count-1 immunization is deliberate)",
-      oc.is_prefix_outlier('IN', part_poison) is False)
+# ── WEIGHT-AWARE support gate (2026-07-19): a Hamming-1 sibling flags until its OWN confirmed ────
+# count clears the corpus-proportional bar (max(3, ceil(0.10*total)) OR abs-8), then self-heals
+# permanently. This REPLACES the old count-1 membership immunization (any single confirm exempted a
+# prefix forever — the DN->IN self-poison hole). INVARIANT for future devs: exemption is support-
+# PROPORTIONAL, not set-membership — do NOT restore an `read_prefix in known` short-circuit in
+# is_prefix_outlier (it re-opens the poison hole: `poison` below would flip back to False and fail).
+check("legit-new CN flags (count 0, not yet confirmed)", oc.is_prefix_outlier('CN', rec) is True)
+# THE RIDGEWAY BUG, now caught: IN confirmed only 2 of 15 (self-poisoned `known`) STILL flags.
+poison = {'dominant': 'DN', 'known': {'DN', 'IN'}, 'counts': {'DN': 12, 'IN': 2}, 'total': 15}
+check("PIN: sub-bar poison prefix (IN 2/15) STILL flags despite being confirmed",
+      oc.is_prefix_outlier('IN', poison) is True)
+# An ESTABLISHED second prefix self-heals — absolute escape (>=8) and proportional (>=ceil(0.10*T)).
+legit_abs  = {'dominant': 'DN', 'known': {'DN', 'CN'}, 'counts': {'DN': 50, 'CN': 8}, 'total': 58}
+check("established CN (8/58, >= ABS 8) is exempt (multi-prefix safe)",
+      oc.is_prefix_outlier('CN', legit_abs) is False)
+legit_prop = {'dominant': 'DN', 'known': {'DN', 'CN'}, 'counts': {'DN': 40, 'CN': 6}, 'total': 46}
+check("established CN (6/46, >= ceil(0.10*46)=5) is exempt (proportional self-heal)",
+      oc.is_prefix_outlier('CN', legit_prop) is False)
+# Boundary: thr = max(3, ceil(0.10*total)); at thr-1 flags, at thr exempt.
+boundary  = {'dominant': 'DN', 'counts': {'DN': 40, 'IN': 4}, 'total': 44}   # thr = max(3, ceil(4.4)=5) = 5
+check("boundary IN at 4 (< thr 5) flags", oc.is_prefix_outlier('IN', boundary) is True)
+boundary2 = {'dominant': 'DN', 'counts': {'DN': 40, 'IN': 5}, 'total': 44}
+check("boundary IN at 5 (== thr 5) exempt", oc.is_prefix_outlier('IN', boundary2) is False)
+# REGRESSION PIN: PREFIX_OUTLIER_SUPPORT_FLOOR=1 restores the old count-1 membership immunization
+# byte-for-byte (any confirmed prefix exempt, count>=1) — the OFF==baseline knob.
+os.environ['PREFIX_OUTLIER_SUPPORT_FLOOR'] = '1'
+check("floor=1 restores old count-1 immunization (poison IN 2/15 now exempt)",
+      oc.is_prefix_outlier('IN', poison) is False)
+check("floor=1 still flags a count-0 Hamming-1 neighbour", oc.is_prefix_outlier('YN', poison) is True)
+os.environ.pop('PREFIX_OUTLIER_SUPPORT_FLOOR', None)
+# Back-compat: a rec MISSING counts (hand-built) fails toward review — any Hamming-1 non-dominant flags.
+check("back-compat rec without counts flags a Hamming-1 (fail-toward-review)",
+      oc.is_prefix_outlier('IN', {'dominant': 'DN', 'known': {'DN'}}) is True)
 
 # ── engine._flag_prefix_outlier — cap 69 + note, exemptions ─────────────────────
 class _Stub:
     def __init__(self, idx): self.prefix_index = idx
     def log(self, *a): pass
-IDX = {('cascade', 'delivery_docket', 'reference_number'): {'dominant': 'DN', 'known': {'DN'}}}
+IDX = {('cascade', 'delivery_docket', 'reference_number'): {'dominant': 'DN', 'known': {'DN'}, 'counts': {'DN': 12}, 'total': 12}}
 FD = [{'key': 'reference_number', 'type': 'alphanumeric'}, {'key': 'supplier_name', 'type': 'text'}]
 
 def run_guard(results, supplier='Cascade', slug='delivery_docket', idx=IDX):

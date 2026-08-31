@@ -13,7 +13,11 @@
  * covered by a standalone unit test — see test_filename_pattern.js.
  */
 
-const DEFAULT_PATTERN = '{docType}.{date}.{ref}';
+// {title} joined the DEFAULT 2026-07-18 (Generic Document design slice 6, owner-confirmed):
+// byte-identical for every typed doc — in v1 only General Documents carry a title, and an
+// empty token collapses (no dangling separators). PINNED by test_filename_pattern.js; any
+// future typed-doc title extension MUST revisit this default before shipping (design §11 Q8).
+const DEFAULT_PATTERN = '{docType}.{date}.{ref}.{title}';
 
 // `short` = the compact caption shown ON the pill block in the visual pattern
 // editor (shared/pattern-editor.js); `label` is the fuller description kept for the
@@ -26,12 +30,18 @@ const SUPPORTED_TOKENS = [
   { token: '{year}',         label: 'Document year',                            short: 'Year',      example: '2025' },
   { token: '{month}',        label: 'Document month name',                      short: 'Month',     example: 'December' },
   { token: '{originalName}', label: 'Original scanned filename (no extension)', short: 'Filename',  example: 'scan0042' },
+  // Generic Document Auto-Title (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §6). Empty on
+  // docs without a title (v1: every typed doc), and an empty token collapses cleanly — so
+  // adding {title} to a pattern is byte-identical for typed docs. Registration MUST ship
+  // before any UI suggests the token (an unknown token makes the whole pattern fall back
+  // to default — TOKEN_NAMES below is the validator).
+  { token: '{title}',        label: 'Document title (Auto-Title / typed at review)', short: 'Title', example: 'Boiler-Service-Certificate' },
 ];
 
 // The curated, meaningful blocks offered in the builder UI (Settings + first-run
 // wizard) for BOTH folder structure and file name — click to insert, type custom
 // text between them. A superset ({originalName}) is still accepted if typed by hand.
-const FIELD_TOKENS = ['{supplier}', '{docType}', '{date}', '{ref}', '{year}', '{month}']
+const FIELD_TOKENS = ['{supplier}', '{docType}', '{date}', '{ref}', '{year}', '{month}', '{title}']
   .map(tok => SUPPORTED_TOKENS.find(t => t.token === tok));
 
 // Default subfolder pattern built UNDER the (separately configured) output root.
@@ -186,6 +196,68 @@ function resolveDuplicateFilename(baseFilename, ext, existsFn) {
   return candidate;
 }
 
+// The subfolder a duplicate is filed into under the 'subfolder' policy.
+const DUPLICATES_SUBFOLDER = 'Duplicates';
+
+// Resolve the SUFFIX token for the 'suffix' policy. Default 'DUPLICATE' (byte-identical to the old
+// behaviour). Reserved words: 'COPY' -> -COPY; 'number' -> pure counter (-2, -3); 'date' -> the
+// import date (-YYYY-MM-DD). Anything else is a CUSTOM suffix, run through the same Windows-safety
+// pass as a filename stem. `now` is injectable for testable 'date'.
+function _duplicateTag(suffix, now) {
+  const s = (suffix == null ? 'DUPLICATE' : String(suffix)).trim();
+  const up = s.toUpperCase();
+  if (!s || up === 'DUPLICATE') return 'DUPLICATE';
+  if (up === 'COPY') return 'COPY';
+  if (s.toLowerCase() === 'number') return '';            // pure counter, no word
+  if (s.toLowerCase() === 'date') {
+    const d = now instanceof Date ? now : new Date();
+    const p = (x) => String(x).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+  return sanitiseFilenameStem(s) || 'DUPLICATE';          // custom -> safe, never empty
+}
+
+// Policy-aware duplicate resolution. Returns { filename, subfolder }. `existsIn(name, subfolder)`
+// checks whether `name` already exists in targetDir/subfolder (subfolder '' = the target dir), with
+// the caller excluding the doc's OWN current copy (a re-file is not a collision). Policies:
+//   'suffix'   (default) — keep both files in the same folder with a suffix (see _duplicateTag).
+//   'subfolder'          — file the duplicate into a 'Duplicates' subfolder, same name (suffix only
+//                          if it ALSO collides there, i.e. a duplicate-of-a-duplicate).
+// The 'suffix'/'DUPLICATE' path is byte-identical to resolveDuplicateFilename.
+function resolveDuplicate(baseFilename, ext, existsIn, opts = {}) {
+  const policy = opts.policy === 'subfolder' ? 'subfolder' : 'suffix';
+  if (!existsIn(baseFilename, '')) return { filename: baseFilename, subfolder: '' };
+
+  const stem = baseFilename.slice(0, -ext.length);
+
+  if (policy === 'subfolder') {
+    const sub = DUPLICATES_SUBFOLDER;
+    if (!existsIn(baseFilename, sub)) return { filename: baseFilename, subfolder: sub };
+    let n = 2, cand = `${stem}-${n}${ext}`;
+    while (existsIn(cand, sub)) { n++; cand = `${stem}-${n}${ext}`; }
+    return { filename: cand, subfolder: sub };
+  }
+
+  const tag = _duplicateTag(opts.suffix, opts.now);
+  if (!tag) {                                             // 'number' style: -2, -3, …
+    let n = 2, cand = `${stem}-${n}${ext}`;
+    while (existsIn(cand, '')) { n++; cand = `${stem}-${n}${ext}`; }
+    return { filename: cand, subfolder: '' };
+  }
+  let cand = `${stem}-${tag}${ext}`, n = 2;
+  while (existsIn(cand, '')) { cand = `${stem}-${tag}-${n}${ext}`; n++; }
+  return { filename: cand, subfolder: '' };
+}
+
+// Preview (Settings → Files & filing): the name the FIRST duplicate of `baseFilename` receives
+// under `suffix`. PURE, no disk check — mirrors the 'suffix' branch of resolveDuplicate so the UI
+// preview can never drift from filing-time behaviour. `now` injectable for the 'date' token.
+function previewDuplicateName(baseFilename, ext, suffix, now) {
+  const stem = (ext && baseFilename.endsWith(ext)) ? baseFilename.slice(0, -ext.length) : baseFilename;
+  const tag = _duplicateTag(suffix, now);
+  return tag ? `${stem}-${tag}${ext}` : `${stem}-2${ext}`;   // '' tag = the 'number' style (-2, -3, …)
+}
+
 // Build the subfolder segments for one document from a folder PATTERN. "/" in the
 // pattern separates subfolder levels; each level is token-substituted and run
 // through the same Windows-safety pass as a filename stem (illegal chars stripped,
@@ -212,4 +284,7 @@ module.exports = {
   buildFilename,
   buildFolderSegments,
   resolveDuplicateFilename,
+  resolveDuplicate,
+  previewDuplicateName,
+  DUPLICATES_SUBFOLDER,
 };

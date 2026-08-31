@@ -17,11 +17,19 @@ on the JS side (getFieldFormats filters groups below that threshold), but
 also guarded here for belt-and-braces safety.
 """
 
+import os
 import re
 import sys
 import math
 from pathlib import Path
 from typing import Optional
+
+# NAME LEXICON FROM A LOW-DISTINCT SCOPE (B5 of the teach-poisoning arc, DEFAULT OFF). Admits a
+# name lexicon for a scope whose confirmed history is one or two DISTINCT values but >= 3 confirms
+# — the population learning.js already emits and this module has always discarded (see the block at
+# the `< 3` guard). WEAK-ONLY by construction: entries built this way carry `low_distinct` and
+# engine.py refuses the STRONG auto-apply tier for them.
+_LOW_DISTINCT_NAME_LEX = os.environ.get('NAME_LEXICON_LOW_DISTINCT', '0') != '0'
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from extraction.validator import parse_date, parse_amount
@@ -137,6 +145,18 @@ def shape_signature(value: str) -> str:
 
     All four are alphanum_sep, but only the first matches the learned shape.
     Pure and deterministic.
+
+    ⚠ INVARIANT — the letter→'@' fold is DELIBERATELY prefix-AGNOSTIC, and must stay so
+    HERE. `shape_signature('PO-1') == shape_signature('DN-1')` on purpose. A wrong-
+    document-type misfile that keeps the same digit/separator shape (a PO filed as a
+    delivery note: 'PO-21275' vs 'DN-70795') is therefore invisible to this signature —
+    that is intentional at EXTRACTION time: making this prefix-aware would FALSE-HOLD a
+    genuinely-new supplier with a legitimately different prefix against thin learned
+    history (a fail-toward-review violation at the wrong moment). The prefix mismatch is
+    caught POST-CONFIRM instead, where an 80+ doc pool makes it safe, by the JS detector
+    `src/services/repairSuspects.detectRefPrefixOutliers` (a suggestion-only Learning-
+    Repair rule). Do NOT port that rule into this function. Pinned by
+    tests/test_format_shape_consistency.py (section 8, the prefix-agnostic invariant).
     """
     out = []
     for c in (value or '').strip():
@@ -680,6 +700,34 @@ def propose_sep_fix(value: str, format_entry: dict) -> "str | None":
 
 # ── Index builder ─────────────────────────────────────────────────────────────
 
+def _derive_charset(values) -> dict | None:
+    """Character-class summary of a scope's confirmed values, by UNANIMITY (ANCHOR_CHARSET_DEBRIS):
+    {has_letter, has_digit, has_space, literals:set}. has_letter True means SOME confirmed value
+    carried a letter — so a letter can never be treated as impossible junk for this scope. Returns
+    None when no non-empty values (⇒ no descriptor ⇒ the debris arm abstains)."""
+    has_letter = has_digit = has_space = False
+    literals: set = set()
+    n = 0
+    for v in values:
+        s = str(v or '')
+        if not s:
+            continue
+        n += 1
+        for c in s:
+            if c.isalpha():
+                has_letter = True
+            elif c.isdigit():
+                has_digit = True
+            elif c.isspace():
+                has_space = True
+            else:
+                literals.add(c)
+    if not n:
+        return None
+    return {'has_letter': has_letter, 'has_digit': has_digit,
+            'has_space': has_space, 'literals': literals}
+
+
 def build_format_class_index(formats_data: list) -> dict:
     """
     Build a lookup dict keyed by (supplier_lower, doc_type_lower, field_key).
@@ -713,8 +761,47 @@ def build_format_class_index(formats_data: list) -> dict:
         # still looked fine). Keep supplier-scoped entries too.
         if not doc_type or not field_key:
             continue
-        if len(samples) < 3:
+        # PROVISIONAL entries (below the ≥3-confirm bar, tagged by learning.js) must NEVER
+        # enter the MAIN index (Oracle NIGHT 2026-08-03 S2: a 1-count taught skeleton must
+        # not veto legitimate sibling variation pipeline-wide). They feed ONLY the separate
+        # consent-only index below. The <3 length check would drop most of them anyway —
+        # this is the explicit, pinned guarantee.
+        if entry.get('provisional'):
             continue
+        # ── THE FOUR-LINE ROOT CAUSE, and the narrow admission that fixes it ────────────────────
+        # `samples` is the DISTINCT value set (learning.js:1408). Meanwhile learning.js goes out of
+        # its way to EMIT a group when `_values.size >= 3` **OR** `_count >= 3`, its comment naming
+        # constant fields explicitly — so this `< 3` discarded exactly the groups JavaScript was
+        # deliberately sending. A name scope whose confirmed history is ONE dominant literal —
+        # 38x 'Bramblewood Joinery Ltd', the strongest evidence this system can hold — got NO
+        # lexicon, in either the supplier-scoped or the doc-type fallback scope. That is why the
+        # 'Lid' -> 'Ltd' repair was silent, and MEASURED (Census E, 2026-08-13) it is not a corner
+        # case: 33 of 36 name-like scopes on the live install have exactly ONE distinct value.
+        #
+        # THE ADMISSION IS DELIBERATELY MINIMAL. A low-distinct group may contribute a NAME LEXICON
+        # and nothing else — no learned shape, no separator, no charset, no support boost. Those
+        # are the veto machinery the `< 3` bar exists to protect: a shape learned from one value
+        # would refuse every legitimate sibling variation pipeline-wide.
+        # AND IT CAN NEVER AUTO-APPLY. The entry is stamped `low_distinct`, and engine.py refuses
+        # the STRONG tier for such a lexicon — because in a single-distinct-value scope every
+        # position has doc_freq == 1.0 BY CONSTRUCTION, so `_STRONG_FREQ = 0.9` is satisfied
+        # automatically and would be guarding nothing (Oracle O2). What is left is `_close`, and
+        # `Southgate` vs `Northgate` is d=2 at ratio 0.778 — which `_close` accepts. Weak-only is
+        # therefore not caution, it is the only safe tier here.
+        _low_distinct = len(samples) < 3
+        if _low_distinct:
+            if not _LOW_DISTINCT_NAME_LEX:
+                continue
+            try:
+                from extraction import value_quality as _vq
+                if not _vq.is_name_like_field(field_key):
+                    continue
+            except Exception:
+                continue
+            # Still needs REAL weight behind it — the >= 3 CONFIRMS learning.js emitted on. One
+            # confirmed document is one operator glance, not a history.
+            if int(entry.get('confirmed_count') or 0) < 3:
+                continue
 
         fmt = classify_format(samples, vcounts)
 
@@ -746,6 +833,20 @@ def build_format_class_index(formats_data: list) -> dict:
         if fmt['class'] == FREETEXT and not name_lex:
             continue  # no usable constraint learned and no name lexicon
 
+        if _low_distinct:
+            # NAME LEXICON ONLY. Everything else classify_format derived from one or two values is
+            # dropped on the floor here — the shape, the separator, the charset, the support boost.
+            # Emitting them would hand the veto machinery a constraint learned from a single value,
+            # which is the failure the `< 3` bar was written to prevent and which is NOT what this
+            # admission is for.
+            if not name_lex:
+                continue
+            index[(supplier, doc_type, field_key)] = {
+                'class': FREETEXT, 'name_lexicon': name_lex, 'low_distinct': True,
+                **({'word_like': word_like} if word_like is not None else {}),
+            }
+            continue
+
         if name_lex:
             fmt = {**fmt, 'name_lexicon': name_lex}
         if word_like is not None:
@@ -769,6 +870,59 @@ def build_format_class_index(formats_data: list) -> dict:
         if not _support and vcounts:
             _support = sum(int(n or 0) for n in vcounts.values())
         fmt = {**fmt, 'support': int(_support) if _support else len(samples)}
+        # Learned CHARSET descriptor (ANCHOR_CHARSET_DEBRIS, Oracle C2 2026-07-27) — derived by
+        # UNANIMITY over ALL raw distinct confirmed values (value_counts keys ∪ samples), NOT the
+        # ratio-accepted shapes: one lettered confirm anywhere ⇒ has_letter True ⇒ the debris arm
+        # permanently refuses letter-stripping for the scope (fail-safe: a poisoned confirm can
+        # only DISABLE the arm, never widen it; a Learning-Repair purge re-enables with no code
+        # change). Additive key — non-freetext entries only; no existing consumer reads it.
+        if fmt.get('class') != FREETEXT:
+            _cs = _derive_charset(set((vcounts or {}).keys()) | set(samples))
+            if _cs:
+                fmt = {**fmt, 'charset': _cs}
         index[(supplier, doc_type, field_key)] = fmt
 
     return index
+
+
+# ── PROVISIONAL taught-skeleton index (Oracle NIGHT 2026-08-03, gary #3 + S2) ─────────────────
+# Day-one shape witness for a freshly-taught template: the taught/early-confirmed values' shape
+# skeletons, from the `provisional: true` groups learning.js now emits for BELOW-the-≥3-bar
+# scopes. CONSENT-ONLY by construction — a SEPARATE index consumed exclusively by the mapper's
+# clean-commit consent ladder (template_mapper._shape_consents). It must NEVER be visible to
+# _format_rejects / check_value / _gate_value (the ≥3-confirm VETO principle stays verbatim;
+# pinned in tests). Lone-skeleton corroboration can only LICENSE a heal that already carries an
+# independent witness — it can never reject or flag anything.
+
+def build_provisional_shape_index(formats_data: list) -> dict:
+    """(supplier_lower, doc_type_lower, field_key) -> set of canonical shape skeletons."""
+    idx: dict[tuple, set] = {}
+    for entry in (formats_data or []):
+        if not isinstance(entry, dict) or not entry.get('provisional'):
+            continue
+        supplier = (entry.get('supplier_name') or '').lower().strip()
+        doc_type = (entry.get('document_type') or '').lower().strip()
+        field_key = entry.get('field_key', '')
+        if not doc_type or not field_key:
+            continue
+        sks = set()
+        for v in (entry.get('sample_values') or []):
+            if v:
+                try:
+                    sks.add(_shape_canonical(shape_signature(str(v))))
+                except Exception:
+                    pass
+        if sks:
+            idx.setdefault((supplier, doc_type, field_key), set()).update(sks)
+    return idx
+
+
+def provisional_shape_accepts(value, skeleton_set) -> bool:
+    """Does `value`'s canonical skeleton match a provisionally-taught skeleton? Pure;
+    False on any doubt (consent-only — a False here only declines a heal)."""
+    if not value or not skeleton_set:
+        return False
+    try:
+        return _shape_canonical(shape_signature(str(value))) in skeleton_set
+    except Exception:
+        return False

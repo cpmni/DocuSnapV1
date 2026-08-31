@@ -51,6 +51,16 @@
     ['website', 'Website', 'A web address.  e.g. www.company.com · https://company.com'],
     ['mac_address', 'MAC address', 'A hardware (MAC) address — accepts colons.  e.g. D4:F0:C9:25:9B:64'],
     ['ip_address', 'IP address', 'An IP address (IPv4 or IPv6) — accepts dots/colons.  e.g. 192.168.1.200 · fe80::1'],
+    // LIST (2026-08-11, kill switch `list_field_scan` — hidden from the dropdown while OFF, but an
+    // EXISTING list-typed field still renders its label if the flag is later turned off).
+    // guessType must NEVER return 'list' (pinned): auto-selecting it would silently change how a
+    // field extracts; the operator chooses it deliberately.
+    ['list', 'List (several values)', 'Several values on one document sharing the same label — each occurrence is collected, e.g. serial numbers.  e.g. NW-123; NW-456; NW-789'],
+    // BARCODE (2026-08-26, kill switch `barcode_field` — hidden from the dropdown while OFF; an
+    // EXISTING barcode-typed field still renders its label). The value is READ FROM THE BARCODE
+    // printed on the page (1D or QR) — there is no position to teach and no format to check: a
+    // decode is right or absent. guessType must NEVER return 'barcode' (same pin as 'list').
+    ['barcode', 'Barcode / QR code', 'Read from a barcode or QR code printed on the page — no box to draw, no format to check.  e.g. a tracking number, an asset tag, a supplier document ID'],
   ];
   const TYPE_TIP = Object.fromEntries(TYPE_OPTS.map(([v, , t]) => [v, t || '']));
   const tipFor = (v) => TYPE_TIP[v] || '';
@@ -78,6 +88,32 @@
     : (/total|amount|price|cost|sum|net|gross|vat|tax/i.test(label) ? 'currency'
     : (/\b(ref|reference|number|no|invoice|order|po|account)\b/i.test(label) ? 'reference' : 'text'));
 
+  // First field row whose vertical midpoint is BELOW the pointer (the drop lands before it);
+  // null → drop at the end. Excludes the row being dragged. Pure DOM read (no re-render).
+  function rowAfterPointer(container, y, exclude) {
+    const rows = Array.prototype.slice.call(container.querySelectorAll('.dte-row')).filter(r => r !== exclude);
+    for (const r of rows) {
+      const box = r.getBoundingClientRect();
+      if (y < box.top + box.height / 2) return r;
+    }
+    return null;
+  }
+
+  // Pure: assign fresh gap-of-10 sort_orders to fields in their NEW order (sort_order is an
+  // INTEGER column — whole-number slots, never fractional midpoints), mutate each field's
+  // sort_order, and return ONLY the rows whose value CHANGED so edit-mode persists the minimum.
+  // Extracted + pin-tested (test_doctype_reorder.js).
+  function planReorder(reorderedFields, prevSortById) {
+    const writes = [];
+    reorderedFields.forEach((f, idx) => {
+      const next = (idx + 1) * 10;
+      f.sort_order = next;
+      if (prevSortById.get(f.id) !== next) writes.push({ id: f.id, sort_order: next });
+    });
+    return writes;
+  }
+  /* __PIN_END:planReorder__ */
+
   function injectStyles() {
     if (document.getElementById('dte-styles')) return;
     const st = document.createElement('style');
@@ -86,27 +122,74 @@
       .dte { display:flex; flex-direction:column; gap:16px; }
       .dte-lbl { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); display:block; margin-bottom:8px; }
       .dte-lbl .muted { text-transform:none; letter-spacing:0; font-weight:400; }
-      .dte-fields { display:flex; flex-direction:column; gap:6px; }
+      /* COLUMN-ALIGNED ROWS (2026-07-23, bob-reviewed): the list is ONE grid and every row
+         tracks it via subgrid, so the divider + Type/Required/Enabled/Keywords columns line
+         up EXACTLY across rows, auto-sized to the widest content — no magic widths to drift
+         when copy or theme changes. This DELIBERATELY REVERSES the earlier "controls wrap to
+         a second line on narrow panels" decision (the owner: wrapped rows read as misaligned
+         chaos); the name column is the flexible one and ellipsises instead. Create mode
+         renders fewer cells, so it gets its OWN template via the .dte--create mode class
+         (both modes can coexist in one document — Settings hosts add-type AND edit).
+         Columns (edit): handle | name+key | divider | type | required | enabled | keywords | ✕ */
+      .dte-fields { display:grid; grid-template-columns: auto minmax(0,1fr) 1px auto auto auto auto 20px; gap:6px 10px; }
+      .dte--create .dte-fields { grid-template-columns: auto minmax(0,1fr) 1px auto 20px; }
       .dte-row {
-        display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px;
+        grid-column: 1 / -1; display:grid; grid-template-columns: subgrid; align-items:center;
         padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:var(--surface);
       }
+      .dte-row .dte-handle { grid-column:1; }
+      .dte-row .idn { grid-column:2; }
+      .dte-row .col-div { grid-column:3; }
+      .dte-row .grp-type { grid-column:4; }
+      .dte-row .grp-req { grid-column:5; }
+      .dte-row .grp-en { grid-column:6; }
+      .dte-row .dte-kw { grid-column:7; }
+      .dte-row .x, .dte-row .x-slot { grid-column:8; }
+      .dte--create .dte-row .x, .dte--create .dte-row .x-slot { grid-column:5; }
       .dte-row.locked { background:var(--surface2); }
-      /* Name + key share ONE baseline so the label doesn't ride high above its key,
-         and the whole identity block centres on the same line as the right controls.
-         A min-width keeps the name legible and lets the TYPE/ENABLED controls wrap to a
-         second line (instead of overlapping the name) when the panel is narrow. */
-      .dte-row .idn { display:flex; align-items:baseline; gap:8px; min-width:140px; }
-      .dte-row .nm { font-weight:500; font-size:13px; line-height:1; }
-      .dte-row .key { font-family:var(--mono); font-size:10px; color:var(--muted); line-height:1; }
-      .dte-row .spacer { flex:1; min-width:8px; }
+      /* Drag-to-reorder handle. The row is draggable but a drag only starts from this handle
+         (gated in dragstart), so the Type select / toggles keep working. */
+      .dte-row .dte-handle { flex:0 0 auto; align-self:center; cursor:grab; color:var(--muted);
+        font-size:15px; line-height:1; user-select:none; padding:0 2px; }
+      .dte-row .dte-handle:active { cursor:grabbing; }
+      .dte-row.dragging { opacity:.45; }
+      .dte-row.dragging .dte-handle { cursor:grabbing; }
+      /* Per-field keyword-labels button + its inline editor panel. A LABELLED pill (not a
+         bare glyph — invisible to the non-technical operators this UI serves) and a real
+         <button> so it's keyboard-reachable with a focus state; the count doubles as a
+         "this field has custom words" badge. Matches the .dte-chip pill language. */
+      .dte-row .dte-kw { justify-self:start; cursor:pointer; user-select:none; white-space:nowrap;
+        font:inherit; font-size:11px; line-height:1.4; color:var(--muted); background:var(--surface);
+        border:1px solid var(--border2); border-radius:999px; padding:3px 10px; }
+      .dte-row .dte-kw:hover { color:var(--accent); border-color:var(--accent); background:var(--accent-bg); }
+      .dte-row .dte-kw:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+      .dte-row .dte-kw.open { color:var(--accent); border-color:var(--accent); background:var(--accent-bg); }
+      .dte-kwpanel { grid-column:1 / -1; margin:-2px 0 4px 26px; padding:10px 12px; border:1px solid var(--border);
+        border-radius:8px; background:var(--surface2); display:flex; flex-direction:column; gap:8px; }
+      /* An open keyword panel is the dragged row's SIBLING — hide every panel while a drag
+         gesture is live so it can't be left behind mid-gesture; the drop's re-render restores
+         it under its (moved) row. */
+      .dte-fields:has(.dte-row.dragging) .dte-kwpanel { display:none; }
+      .dte-kw-title { font-size:12px; color:var(--text); }
+      .dte-kw-builtins { font-size:11px; color:var(--muted); line-height:1.7; }
+      .dte-kw-cap { text-transform:uppercase; letter-spacing:.06em; font-size:9px; }
+      .dte-kw-bchip { display:inline-block; padding:1px 7px; border-radius:999px; border:1px dashed var(--border2);
+        color:var(--muted); font-size:11px; }
+      .dte-kw-note:empty { display:none; }
+      /* Name + key share ONE baseline so the label doesn't ride high above its key. The
+         lock lives INSIDE this cell (not its own column) so locked and unlocked rows'
+         names align. min-width:0 + ellipsis: the name column is the row's only flexible
+         track — a long name shortens here rather than wrapping the controls. */
+      .dte-row .idn { display:flex; align-items:baseline; gap:8px; min-width:0; }
+      .dte-row .nm { font-weight:500; font-size:13px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .dte-row .key { font-family:var(--mono); font-size:10px; color:var(--muted); line-height:1; white-space:nowrap; }
       .dte-row .lock { color:var(--muted); font-size:12px; cursor:default; align-self:center; }
       .dte-row select { min-width:128px; }
       /* Divider between a field's IDENTITY (lock+name+key) and its TYPE/behaviour
          controls, plus a tiny caption on each control so its purpose is clear at a
-         glance. Caption travels WITH its control, so it stays correct on ragged rows
-         (toggle present/absent) and in create mode (no toggle). */
-      .dte-row .col-div { width:1px; align-self:stretch; background:var(--border2); margin:-8px 2px -8px 0; flex:0 0 auto; }
+         glance. Caption travels WITH its control. The negative vertical margins run the
+         1px line through the row's padding, edge to edge. */
+      .dte-row .col-div { width:1px; align-self:stretch; background:var(--border2); margin:-8px 0; }
       .dte-row .grp { display:flex; align-items:center; gap:6px; }
       .dte-row .ctl-cap { font-size:9px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); user-select:none; white-space:nowrap; }
       /* Remove-button slot is RESERVED on every row (placeholder when not removable) so
@@ -136,8 +219,16 @@
   }
 
   function typeSelectHtml(current, disabled) {
-    const opts = TYPE_OPTS.map(([v, l, t]) =>
-      `<option value="${v}"${v === current ? ' selected' : ''} title="${esc(t || '')}">${l}</option>`).join('');
+    // 'list' is offered only while the list_field_scan flag is armed (window.__listFieldTypeOn,
+    // set by the hosting window from the setting) — but an EXISTING list-typed field always
+    // renders its own option, so turning the flag off never blanks a select.
+    const listOn = (typeof window !== 'undefined' && window.__listFieldTypeOn) || current === 'list';
+    // 'barcode' likewise rides its own flag (window.__barcodeFieldOn ← the barcode_field setting).
+    const barcodeOn = (typeof window !== 'undefined' && window.__barcodeFieldOn) || current === 'barcode';
+    const opts = TYPE_OPTS
+      .filter(([v]) => (v !== 'list' || listOn) && (v !== 'barcode' || barcodeOn))
+      .map(([v, l, t]) =>
+        `<option value="${v}"${v === current ? ' selected' : ''} title="${esc(t || '')}">${l}</option>`).join('');
     return `<select class="field-select dte-type"${disabled ? ' disabled' : ''} title="${esc(tipFor(current))}">${opts}</select>`;
   }
 
@@ -152,7 +243,11 @@
     let destroyed  = false;
 
     // create-mode draft state
-    let name = '';
+    // Seed the name from the caller when it opened the editor for a KNOWN type (Chris R5 card 5:
+    // "Add 'Quotation'" opened a blank form). The input stays fully editable via the sync listener;
+    // seeding here (before seedCreate, which doesn't touch name) also lets isReady()/Create enable
+    // immediately. Absent → '' exactly as before.
+    let name = (mode === 'create' && opts.initialName) ? String(opts.initialName) : '';
     let fields = [];                   // [{label, key?, type, locked?}]
     let refKey = '';
     let dateKey = '';
@@ -176,6 +271,23 @@
 
     const currentFields = () => (mode === 'create' ? fields : (type.fields || []));
 
+    // ── Per-field keyword labels (edit mode only) ────────────────────────────────
+    // Extra caption words that make the cheap Stage-1 keyword pass catch a field without
+    // per-document teaching — reuses the admin label-override store (field_label_overrides),
+    // scoped to THIS type's slug. Single-open inline panel; kwOpenFor + the loaded rows survive
+    // re-renders. A saved slug + field key are required, so this is edit-mode only.
+    let kwOpenFor = null, kwRows = null, kwPatterns = null, kwNoteMsg = '';
+    const kwCountFor = (key) => (kwRows || []).reduce((n, r) => n + (r.field_key === key ? 1 : 0), 0);
+    async function loadKeywords() {
+      if (mode !== 'edit' || !type || !type.slug) return;
+      try {
+        const [rows, pats] = await Promise.all([api.getLabelOverrides(), api.getFieldPatterns()]);
+        kwRows     = (rows || []).filter(r => r.doc_type_slug === type.slug);
+        kwPatterns = pats || {};
+      } catch { kwRows = kwRows || []; kwPatterns = kwPatterns || {}; }
+      if (!destroyed) render();
+    }
+
     function isReady() {
       if (mode !== 'create') return true;
       return !!name.trim() && fields.length >= 1;
@@ -191,31 +303,55 @@
       const key      = f.key || slugify(f.label);
       const enabled  = f.enabled !== 0;
       return `
-        <div class="dte-row${locked ? ' locked' : ''}" data-i="${i}"${editing ? ` data-fid="${f.id}"` : ''}>
-          ${locked ? '<span class="lock" title="Required field - cannot be removed or retyped">&#128274;</span>' : ''}
-          <span class="idn"><span class="nm">${esc(f.label)}</span>${editing ? `<span class="key">${esc(key)}</span>` : ''}</span>
-          <span class="spacer"></span>
+        <div class="dte-row${locked ? ' locked' : ''}" data-i="${i}"${editing ? ` data-fid="${f.id}"` : ''} draggable="true">
+          <span class="dte-handle" title="Drag to reorder this field" aria-hidden="true">&#10303;</span>
+          <span class="idn">${locked ? '<span class="lock" title="Required field - cannot be removed or retyped">&#128274;</span>' : ''}<span class="nm">${esc(f.label)}</span>${editing ? `<span class="key">${esc(key)}</span>` : ''}</span>
           <span class="col-div" aria-hidden="true"></span>
-          <span class="grp">
+          <span class="grp grp-type">
             <span class="ctl-cap" title="The kind of data this field holds">Type</span>
             ${typeSelectHtml(f.type || 'text', locked)}
           </span>
-          ${editing ? `<span class="grp">
+          ${editing ? `<span class="grp grp-req">
             <span class="ctl-cap" title="Whether a document must have this field filled before it can be filed">Required</span>
             <label class="toggle" title="${locked ? 'Structural field — always required' : 'Require this field before a document can be confirmed & filed'}">
               <input type="checkbox" class="dte-req"${f.required ? ' checked' : ''}${locked ? ' disabled' : ''}>
               <span class="toggle-slider"></span>
             </label>
           </span>` : ''}
-          ${editing ? `<span class="grp">
+          ${editing ? `<span class="grp grp-en">
             <span class="ctl-cap" title="${locked ? 'Required field - always on' : 'Whether this field is used when filing'}">Enabled</span>
             <label class="toggle" title="${locked ? 'Required field - always on' : 'Enable or disable this field'}">
               <input type="checkbox" class="dte-en"${enabled ? ' checked' : ''}${locked ? ' disabled' : ''}>
               <span class="toggle-slider"></span>
             </label>
           </span>` : ''}
+          ${editing ? `<button type="button" class="dte-kw${kwOpenFor === key ? ' open' : ''}" data-kw="${esc(key)}" title="Extra caption words this field is detected by">&#127991; Keywords${kwCountFor(key) ? ' &middot; ' + kwCountFor(key) : ''}</button>` : ''}
           ${removable ? '<span class="x" title="Remove field">&#10005;</span>' : '<span class="x-slot" aria-hidden="true"></span>'}
         </div>`;
+    }
+
+    // The inline keyword-labels editor shown under a field when its 🏷 is open (edit mode). Lists the
+    // shipped BUILT-IN words (read-only, always active) + any custom words this install added
+    // (removable), and an add box. Empty string unless this field is the open one.
+    function kwPanelHtml(f) {
+      if (mode !== 'edit') return '';
+      const key = f.key || slugify(f.label);
+      if (kwOpenFor !== key) return '';
+      const builtins = Array.isArray(kwPatterns && kwPatterns[key]) ? kwPatterns[key] : [];
+      const customs  = (kwRows || []).filter(r => r.field_key === key);
+      const bChips = builtins.length
+        ? `<span class="dte-kw-cap">Built-in words (always active):</span> ` + builtins.map(b => `<span class="dte-kw-bchip">${esc(b)}</span>`).join(' ')
+        : `<span class="dte-kw-cap">No built-in words ship for this field.</span>`;
+      const cChips = customs.length
+        ? `<div class="dte-chips">` + customs.map(r => `<span class="dte-chip" data-kwid="${r.id}">${esc(r.label)}<span class="cx" title="Remove">&#10005;</span></span>`).join('') + `</div>`
+        : '';
+      return `<div class="dte-kwpanel" data-kwfor="${esc(key)}">`
+        + `<div class="dte-kw-title">Extra label words for <b>${esc(f.label)}</b> <span class="muted">&mdash; captions your documents actually use that mean this field</span></div>`
+        + `<div class="dte-kw-builtins">${bChips}</div>`
+        + cChips
+        + `<div class="dte-addrow"><input type="text" class="field-select dte-kw-input" placeholder="e.g. Despatch Date, Delivered On" autocomplete="off"><button class="btn dte-kw-add">+ Add</button></div>`
+        + `<div class="dte-alias-note dte-kw-note">${esc(kwNoteMsg)}</div>`
+        + `</div>`;
     }
 
     function roleOptionsHtml() {
@@ -231,7 +367,7 @@
       const curDate = mode === 'create' ? dateKey : (type.date_field_key || '');
 
       host.innerHTML = `
-        <div class="dte">
+        <div class="dte dte--${mode}">
           ${showName ? `
             <div>
               <label class="dte-lbl">Document type name</label>
@@ -239,7 +375,7 @@
             </div>` : ''}
           <div>
             <label class="dte-lbl">Fields${mode === 'create' ? ' <span class="muted">&mdash; what details should Scan Finder pull out?</span>' : ''}</label>
-            <div class="dte-fields">${currentFields().map(fieldRowHtml).join('')}</div>
+            <div class="dte-fields">${currentFields().map((f, i) => fieldRowHtml(f, i) + kwPanelHtml(f)).join('')}</div>
             <div class="dte-addrow">
               <input type="text" class="field-select dte-add-input" placeholder="Add a field, e.g. Order Number" autocomplete="off">
               <button class="btn dte-add-btn">+ Add field</button>
@@ -293,6 +429,31 @@
         if (fresh) { type = fresh; aliases = Array.isArray(type.title_aliases) ? type.title_aliases.slice() : []; }
       } catch (e) { /* keep last-known state */ }
       render();
+      if (opts.onChange) opts.onChange();
+    }
+
+    // Apply a new field order. `perm` is the rows' ORIGINAL indices in their NEW visual order.
+    // create: permute the draft array + re-render (commit assigns sort_order by array index).
+    // edit: renumber sort_order (gap of 10), RE-RENDER FIRST to re-sync the per-row data-i/data-fid
+    // bindings, THEN persist only the changed rows — so no control can act on a stale index mid-await.
+    async function applyOrder(perm) {
+      if (!perm || !perm.length) return;
+      if (mode === 'create') {
+        fields = perm.map(i => fields[i]).filter(Boolean);
+        render();
+        return;
+      }
+      const cur = type.fields || [];
+      const prevSort = new Map(cur.map(f => [f.id, f.sort_order]));
+      const reordered = perm.map(i => cur[i]).filter(Boolean);
+      if (reordered.length !== cur.length) { render(); return; }   // guard: DOM/state mismatch → repaint, don't persist
+      const writes = planReorder(reordered, prevSort);   // mutates each f.sort_order; returns changed rows
+      type.fields = reordered;
+      render();                                           // re-sync indices before any await
+      for (const w of writes) {
+        try { await api.updateField(w.id, { sort_order: w.sort_order }); }
+        catch (e) { showErr('Could not save the new order: ' + e.message); await reload(); return; }
+      }
       if (opts.onChange) opts.onChange();
     }
 
@@ -409,6 +570,91 @@
           await persistAliases(before);
         });
       });
+
+      // ── Per-field keyword labels (toggle / add / remove) ─────────────────────
+      host.querySelectorAll('.dte-kw').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.kw;
+          kwOpenFor = (kwOpenFor === key) ? null : key;
+          kwNoteMsg = '';
+          if (kwOpenFor && kwRows === null) loadKeywords();   // first open → load (re-renders)
+          else render();
+        });
+      });
+      const kwPanel = host.querySelector('.dte-kwpanel');
+      if (kwPanel) {
+        const fieldKey = kwPanel.dataset.kwfor;
+        const kwInput  = kwPanel.querySelector('.dte-kw-input');
+        const kwAddBtn = kwPanel.querySelector('.dte-kw-add');
+        const addKw = async () => {
+          const val = (kwInput.value || '').trim();
+          if (!val || !type || !type.slug) { kwNoteMsg = val ? '' : 'Enter a word to add.'; render(); return; }
+          try {
+            const r = await api.addLabelOverrides({ doc_type_slug: type.slug, field_key: fieldKey, labels: val });
+            if (r && r.ok === false) { kwNoteMsg = 'Could not add those words.'; render(); return; }
+            const rejected = (r && r.rejected)  || [];
+            const warn     = (r && r.warnings)  || [];
+            kwNoteMsg = rejected.some(x => x.code === 'cap_reached') ? 'Reached the limit of words for this field.'
+              : rejected.length ? 'Some words were too long and were skipped.'
+              : warn.length      ? `Added — note: "${warn[0].label}" is also used by another field.`
+              : (r && r.inserted ? 'Added.' : (r && r.alreadyExisted ? 'Already added.' : ''));
+            await loadKeywords();   // reload rows + re-render; kwNoteMsg persists across it
+          } catch (e) { kwNoteMsg = 'Could not add: ' + (e.message || 'error'); render(); }
+        };
+        if (kwAddBtn) kwAddBtn.addEventListener('click', addKw);
+        if (kwInput)  kwInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addKw(); } });
+        kwPanel.querySelectorAll('.dte-chip .cx').forEach((x) => {
+          x.addEventListener('click', async () => {
+            const chip = x.closest('.dte-chip'); if (!chip) return;
+            try { await api.deleteLabelOverride(Number(chip.dataset.kwid)); kwNoteMsg = ''; await loadKeywords(); }
+            catch (e) { kwNoteMsg = 'Could not remove: ' + (e.message || 'error'); render(); }
+          });
+        });
+      }
+
+      // ── Drag-to-reorder fields (handle-armed native DnD) ─────────────────────
+      // The row is draggable, but a drag only STARTS from the ⠿ handle: we gate dragstart on
+      // whether the pointer press began on the handle, so a click on the Type <select>/toggles
+      // never starts a drag. Live feedback moves the SAME DOM node via insertBefore (its wired
+      // listeners survive, no re-render mid-gesture); on drop we read the final order and commit
+      // once via applyOrder (which re-renders to re-sync the row indices). All listeners are
+      // host-scoped, so the next render()'s innerHTML replace GCs them — no cross-render leak.
+      const fieldsWrap = host.querySelector('.dte-fields');
+      if (fieldsWrap) {
+        let pressedHandle = false;
+        let dragRow = null;
+        fieldsWrap.addEventListener('pointerdown', (e) => { pressedHandle = !!e.target.closest('.dte-handle'); });
+        fieldsWrap.addEventListener('pointerup',   () => { pressedHandle = false; });
+        fieldsWrap.addEventListener('dragstart', (e) => {
+          const row = e.target.closest('.dte-row');
+          if (!row || !pressedHandle) { e.preventDefault(); return; }   // only a handle-initiated gesture drags
+          dragRow = row;
+          row.classList.add('dragging');
+          try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', row.dataset.i || ''); } catch (_) {}
+        });
+        fieldsWrap.addEventListener('dragend', () => {
+          pressedHandle = false;
+          if (dragRow) dragRow.classList.remove('dragging');
+          dragRow = null;
+        });
+        fieldsWrap.addEventListener('dragover', (e) => {
+          if (!dragRow) return;
+          e.preventDefault();
+          try { e.dataTransfer.dropEffect = 'move'; } catch (_) {}
+          const after = rowAfterPointer(fieldsWrap, e.clientY, dragRow);
+          if (after == null) { if (dragRow !== fieldsWrap.lastElementChild) fieldsWrap.appendChild(dragRow); }
+          else if (after !== dragRow && after !== dragRow.nextSibling) fieldsWrap.insertBefore(dragRow, after);
+        });
+        fieldsWrap.addEventListener('drop', (e) => {
+          if (!dragRow) return;
+          e.preventDefault();
+          const perm = Array.prototype.slice.call(fieldsWrap.querySelectorAll('.dte-row')).map(r => Number(r.dataset.i));
+          dragRow.classList.remove('dragging');
+          dragRow = null; pressedHandle = false;
+          if (perm.some((v, idx) => v !== idx)) applyOrder(perm);
+          else render();   // no net change → repaint to clear any drag artefacts
+        });
+      }
     }
 
     function getDraft() {
@@ -442,6 +688,7 @@
     function destroy() { destroyed = true; if (host) host.innerHTML = ''; }
 
     render();
+    loadKeywords();   // edit mode only (no-op otherwise) → repaints with per-field word counts
 
     return {
       isReady,
@@ -452,5 +699,8 @@
     };
   }
 
-  window.DocTypeEditor = { create };
+  // planReorder is exported as the ONE shared reorder-commit math (eric's review):
+  // the Settings doc-type LIST drag-reorder uses the same renumbering + minimal-write
+  // plan as the field rows here, so the two affordances can't drift apart.
+  window.DocTypeEditor = { create, planReorder };
 })();

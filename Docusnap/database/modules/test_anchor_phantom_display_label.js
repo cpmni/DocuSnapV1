@@ -75,6 +75,7 @@ bare.exec(`CREATE TABLE field_anchors (
   usage_count INTEGER NOT NULL DEFAULT 1, confidence REAL NOT NULL DEFAULT 1.0,
   last_seen TEXT NOT NULL DEFAULT (datetime('now')), last_authoritative_at TEXT,
   offset_dx_norm REAL, offset_dy_norm REAL, w_norm REAL NOT NULL DEFAULT 0, h_norm REAL NOT NULL DEFAULT 0,
+  max_w_norm REAL NOT NULL DEFAULT 0,
   UNIQUE(supplier_name, document_type, field_key, anchor_label, direction))`);
 let ok = true;
 try { learning.saveAnchor(bare, { ...base, field_key: 'customer_name', anchor_label: 'Some Caption', label_detected: false }); }

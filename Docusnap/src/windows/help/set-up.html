@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Scan Finder — Set up</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="set-up">
+            <p class="use-when">Use this page the first time you open Scan Finder.</p>
+            <h1>Set up</h1>
+
+            <h2 id="login">Sign in</h2>
+            <p>The first time it opens, you create your own login — you become the <b>admin</b>. Keep the
+              password somewhere safe; you'll need it each time. Later you can add other people, each with
+              their own login and role, in <b>Settings</b>.</p>
+
+            <h2 id="first-run">The setup questions</h2>
+            <p>A short welcome, then a few quick questions. The one that matters:</p>
+            <div class="callout note">
+              <div class="callout-title">Where do filed documents go?</div>
+              <p>Choose the folder where Scan Finder should keep your tidy, filed copies — <b>folder A</b>.
+                Pick an empty folder, or make a new one. <b>Don't</b> point it at a folder that already holds
+                your scans.</p>
+            </div>
+            <p>You can skip the rest and change everything later in <b>Settings</b>. When you're done, the
+              Home screen appears.</p>
+            <figure class="shot-fig">
+              <img class="shot" src="img/setup-output-folder.png" alt="The first-time setup question that asks where filed documents should go">
+              <figcaption>Setup — choosing where filed documents go.</figcaption>
+            </figure>
+
+            <h2 id="tour">The tour and a practice run</h2>
+            <p>After setup, a short <b>welcome tour</b> points out the main parts of the screen. You can
+              reopen it any time from your account menu (top right) &rarr; <b>Show welcome tour</b>.</p>
+            <p>Next to it is <b>Try a practice run</b> — a safe sandbox that walks you through importing,
+              checking and filing a made-up document. Nothing you do there touches your real files or what
+              Scan Finder has learned. It's the best five minutes you can spend before your first real batch.</p>
+
+            <h2 id="console">The home screen</h2>
+            <p>This is where you start each time. Down the left is the <b>nav rail</b> — the buttons you'll
+              use most:</p>
+            <ul>
+              <li><b>Home</b> — this dashboard.</li>
+              <li><b>Import</b> — bring in a folder of scans.</li>
+              <li><b>Review</b> — check anything it wasn't sure about. The number is how many are waiting.</li>
+              <li><b>Teach</b> — show it a new document so it learns that sender.</li>
+              <li><b>Search</b> — find a filed document.</li>
+              <li><b>Settings</b> — every option (admin only).</li>
+            </ul>
+            <p>The middle of the screen shows <b>cards</b>: where your files go, storage, backup, recent
+              activity, and — once you're an admin with things to export — <b>Export data</b>. If a newer
+              version exists, a banner appears at the top; it installs the next time you restart.</p>
+            <p>Top right: the <b>?</b> button turns on help mode (click it, then click any control for a
+              one-line explanation), and your <b>account menu</b> holds Change password, Switch theme,
+              <b>User Guide…</b>, the welcome tour, the practice run, About and Sign out. The
+              <b>Local only</b> badge is a reminder: nothing leaves this PC.</p>
+            <figure class="shot-fig">
+              <img class="shot" src="img/home-dashboard-menu.png" alt="The Home screen with the account menu open, showing User Guide">
+              <figcaption>The Home screen, with the account menu open.</figcaption>
+            </figure>
+
+            <div class="callout tip">
+              <div class="callout-title">What's next</div>
+              <p>Before your first big batch, <a href="teach.html">teach one of each document</a> you get
+                regularly. It's what makes Scan Finder file the rest for you.</p>
+            </div>
+          </section>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

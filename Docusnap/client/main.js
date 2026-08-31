@@ -283,6 +283,12 @@ ipcMain.handle('client-wf-resolve',    guarded((_e, { id, decision, comment, ver
   client.workflow.resolve(id, decision, comment, version)));
 ipcMain.handle('client-wf-recall',     guarded((_e, { id, version }) => client.workflow.recall(id, version)));
 ipcMain.handle('client-wf-stamped',    guarded((_e, id) => client.workflow.stamped(id)));
+// Stamping (Workflow+Stamping redesign 2026-08-28) — thin pass-throughs to the /v1 stamp routes.
+ipcMain.handle('client-wf-stamp-types', guarded(() => client.workflow.stampTypes()));
+ipcMain.handle('client-wf-can-stamp',   guarded(() => client.workflow.canStamp()));
+ipcMain.handle('client-wf-stamp-list',  guarded((_e, id) => client.workflow.stampList(id)));
+ipcMain.handle('client-wf-stamp-place', guarded((_e, { id, body }) => client.workflow.stampPlace(id, body)));
+ipcMain.handle('client-wf-stamped-doc', guarded((_e, id) => client.workflow.stampedDoc(id)));
 
 // About box: version details + open the bundled third-party notice.
 ipcMain.handle('client-about', () => {

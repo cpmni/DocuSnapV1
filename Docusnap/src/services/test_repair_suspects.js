@@ -74,6 +74,29 @@ for (let i = 1; i <= 5; i++) b3.push({ document_id: i, field_key: 'total_amount'
 b3.push({ document_id: 6, field_key: 'total_amount', value: '$1OO.OO ABC', field_type: 'currency' });
 check('B3 flags letters in a currency field', R.detectAnomalousValues(b3).some(s => s.id === 6 && s.field === 'total_amount'));
 
+// B1-currency (owner ruling 2026-08-12): money is NEVER magnitude/shape-compared. A mixed-magnitude
+// pool ('1,357.92' recurring, '479.04' comma-less singleton) produces NO suspect — both are correct
+// on their own documents; the thousands comma is magnitude, not format. PIN: a future dev restoring
+// the shape comparison for currency breaks these.
+const bc = [];
+for (let i = 1; i <= 5; i++) bc.push({ document_id: i, field_key: 'total', value: `1,35${i}.92`, field_type: 'currency' });
+bc.push({ document_id: 6, field_key: 'total', value: '479.04', field_type: 'currency' });      // small, comma-less — CORRECT
+const fbc = R.detectAnomalousValues(bc);
+check('B1-currency: mixed-magnitude totals are NOT flagged (479.04 among 1,3xx.92)', !fbc.some(s => s.id === 6));
+// The true-positive class survives: a value that fails the money FORMAT still flags.
+const bg = bc.slice(0, 5).concat([{ document_id: 7, field_key: 'total', value: '2.205.60', field_type: 'currency' }]);
+check("B1-currency: the double-dot garble '2.205.60' STILL flags (format, not magnitude)",
+      R.detectAnomalousValues(bg).some(s => s.id === 7 && s.field === 'total'));
+// explainOutlierFields parity: outlier doc's small-but-valid total is not "part of why", garble is.
+const oc = [];
+for (let i = 1; i <= 5; i++) oc.push({ document_id: i, field_key: 'total', value: `1,35${i}.92`, field_type: 'currency' });
+oc.push({ document_id: 99, field_key: 'total', value: '479.04', field_type: 'currency' });
+check('explain: a valid small total on an outlier doc is NOT explained as anomalous',
+      !R.explainOutlierFields(oc, [99]).some(s => s.field === 'total'));
+const og = oc.slice(0, 5).concat([{ document_id: 99, field_key: 'total', value: '2.205.60', field_type: 'currency' }]);
+check('explain: a format-invalid total IS explained',
+      R.explainOutlierFields(og, [99]).some(s => s.id === 99 && s.field === 'total'));
+
 // Thin-evidence gate: a field with < 6 confirmed values → nothing flagged.
 const thin = b1.slice(0, 4);
 check('thin field (<6) → no flags', R.detectAnomalousValues(thin).length === 0);
@@ -103,6 +126,53 @@ for (let i = 1; i <= 6; i++) ovText.push({ document_id: i, field_key: 'invoice_n
 ovText.push({ document_id: 99, field_key: 'invoice_number', value: '152888', field_type: 'text' });
 check('explains a TEXT-typed ref field via key-role coercion', R.explainOutlierFields(ovText, [99]).some(s => s.id === 99 && s.field === 'invoice_number'));
 check('isRefLike matches invoice_number / po_number / reference', R.isRefLike('invoice_number') && R.isRefLike('po_number') && R.isRefLike('reference') && !R.isRefLike('customer_name'));
+
+// ── Detector B4: reference-PREFIX outlier (wrong-document-type misfile) ────────────
+// The motivating live case: one PO-21275 among 80 DN-##### delivery numbers (doc #190,
+// the poisoned GT). shapeSignature folds both to "@@-#####", so B1/explainOutlierFields
+// are structurally blind; B4 learns the dominant LITERAL prefix and flags the odd one.
+console.log('Detector B4 — ref-prefix outliers');
+// alphaPrefix contract (always runs, independent of the kill switch).
+check('alphaPrefix: >=2 letters uppercased; null on numeric-lead / single letter',
+  R.alphaPrefix('dn-1') === 'DN' && R.alphaPrefix('PO-2') === 'PO'
+  && R.alphaPrefix('2024-INV') === null && R.alphaPrefix('S-1') === null && R.alphaPrefix('123') === null);
+
+// Target pool: 12 DN + 1 PO singleton (models DN:80/PO:1 at unit scale).
+const p4 = [];
+for (let i = 1; i <= 12; i++) p4.push({ document_id: i, field_key: 'delivery_number', value: `DN-${70000 + i}`, field_type: 'text' });
+p4.push({ document_id: 99, field_key: 'delivery_number', value: 'PO-21275', field_type: 'text' });
+// Uniform SO pool — must never flag.
+const p4u = [];
+for (let i = 1; i <= 10; i++) p4u.push({ document_id: i, field_key: 'sales_order_number', value: `SO-${1000 + i}`, field_type: 'text' });
+// Gate-3 case: 17 bare numbers + 6 WS + 1 XY singleton (models service_worksheet/reference_number,
+// 29% prefixed). Without gate 3 the XY would flag (WS 6/7 dominant); gate 3 must skip the field.
+const p4m = [];
+for (let i = 1; i <= 17; i++) p4m.push({ document_id: i, field_key: 'reference_number', value: `${400000 + i}`, field_type: 'text' });
+for (let i = 1; i <= 6; i++) p4m.push({ document_id: 100 + i, field_key: 'reference_number', value: `WS-${i}`, field_type: 'text' });
+p4m.push({ document_id: 200, field_key: 'reference_number', value: 'XY-9', field_type: 'text' });
+// Recurrence exemption: a 2nd prefix used by >=2 docs is a learned rare format, not a singleton.
+const p4r = [];
+for (let i = 1; i <= 12; i++) p4r.push({ document_id: i, field_key: 'delivery_number', value: `DN-${70000 + i}`, field_type: 'text' });
+p4r.push({ document_id: 98, field_key: 'delivery_number', value: 'GRN-1', field_type: 'text' });
+p4r.push({ document_id: 99, field_key: 'delivery_number', value: 'GRN-2', field_type: 'text' });
+// Thin pool: 6 DN + 1 PO (n=7 < 8) → gate 1 skip.
+const p4t = [];
+for (let i = 1; i <= 6; i++) p4t.push({ document_id: i, field_key: 'delivery_number', value: `DN-${i}`, field_type: 'text' });
+p4t.push({ document_id: 99, field_key: 'delivery_number', value: 'PO-1', field_type: 'text' });
+
+if (process.env.REPAIR_PREFIX_MISMATCH === '0') {
+  // Kill switch = byte-identical: the detector must be a total no-op.
+  check('KILL SWITCH (REPAIR_PREFIX_MISMATCH=0): detectRefPrefixOutliers is a no-op',
+    R.detectRefPrefixOutliers(p4).length === 0 && R.detectRefPrefixOutliers(p4r).length === 0 && R.detectRefPrefixOutliers(p4m).length === 0);
+} else {
+  const f4 = R.detectRefPrefixOutliers(p4);
+  check('B4 flags a PO ref in a DN pool (the doc #190 class)', f4.some(s => s.id === 99 && s.field === 'delivery_number' && s.severity === 3));
+  check('B4 does NOT flag the dominant DN refs', !f4.some(s => s.id !== 99));
+  check('B4 silent on a uniform SO pool', R.detectRefPrefixOutliers(p4u).length === 0);
+  check('B4 gate-3: field with prefixes NOT the norm (29% prefixed) is skipped despite an off-prefix singleton', R.detectRefPrefixOutliers(p4m).length === 0);
+  check('B4 exempts a recurring 2nd prefix (>=2 docs = learned rare format)', R.detectRefPrefixOutliers(p4r).length === 0);
+  check('B4 thin pool (<8) → no flags', R.detectRefPrefixOutliers(p4t).length === 0);
+}
 
 console.log(`\n${fail ? fail + ' FAILED' : 'All repairSuspects detector checks passed.'}`);
 process.exit(fail ? 1 : 0);

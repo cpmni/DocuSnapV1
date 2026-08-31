@@ -13,6 +13,8 @@ const api = window.scanfinder;
 
 let role = null;
 let workflowEntitled = false; // workflow add-on (mailbox/approvals) — licensed separately from search
+let clientCanStamp = false;   // does this user hold the stamp permission (drives the Stamp UI)
+let clientStampTypes = [];    // the stamp catalog (fetched with the entitlement)
 let blocked = false;
 let currentBox = 'inbox';
 let recipientsCache = null;
@@ -25,8 +27,8 @@ let rvHeartbeat = null;    // presence "I'm viewing this" timer
 
 // ── Theme (mirrors the main app's six named themes; persisted on this device) ──
 const THEMES = ['light', 'warm', 'slate', 'dark', 'midnight', 'graphite',
-                'spring', 'summer', 'autumn', 'winter', 'festive'];
-const DARK_THEMES = new Set(['dark', 'midnight', 'graphite', 'festive']);
+                'spring', 'summer', 'autumn', 'winter', 'festive', 'festivelight', 'spooky'];
+const DARK_THEMES = new Set(['dark', 'midnight', 'graphite', 'festive', 'spooky']);
 const _ls = {
   get: (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
@@ -180,8 +182,13 @@ function showConnect(reason) { showOnly('connect'); $('connect-err').textContent
 function showConnLost() { $('conn-lost')?.classList.remove('hidden'); setConn('block', 'Connection lost'); }
 function hideConnLost() { $('conn-lost')?.classList.add('hidden'); }
 function wireConnLost() {
-  api.onConnectionLost?.(showConnLost);
-  api.onConnectionRestored?.(() => { hideConnLost(); setConn('ok', 'Reconnected'); });
+  api.onConnectionLost?.(() => { _connAlive = false; showConnLost(); });   // Slice 1: pause the badge poll too
+  api.onConnectionRestored?.(() => {
+    _connAlive = true; hideConnLost(); setConn('ok', 'Reconnected');
+    // One immediate FULL refresh on reconnect — fresh myOpenRoutes + badges after an outage.
+    if (role && workflowEntitled) refreshBadges();
+    if (role && canDecide()) refreshReviewCounts();
+  });
   const btn = $('conn-lost-retry');
   if (btn) btn.addEventListener('click', async () => {
     const orig = btn.innerHTML;
@@ -299,6 +306,13 @@ $('login-btn').addEventListener('click', async () => {
     // Workflow (mailbox/approvals) is its OWN add-on — only surface the Mailbox nav when
     // it is licensed, so a search-only client shows no mailbox/workflow mention.
     workflowEntitled = !!(ent.json.workflow && ent.json.workflow.entitled);
+    // Stamp permission + catalog (Workflow+Stamping redesign) — only when the workflow add-on is licensed
+    // (the /v1 stamp routes are add-on-gated). Feature-detect: an older core 404s → clientCanStamp stays
+    // false and the Stamp UI simply never appears.
+    if (workflowEntitled) {
+      try { const cs = await api.workflow.canStamp(); clientCanStamp = !!(cs.status === 200 && cs.json && cs.json.canStamp); } catch { clientCanStamp = false; }
+      try { const ct = await api.workflow.stampTypes(); clientStampTypes = (ct.status === 200 && ct.json && ct.json.stampTypes) || []; } catch { clientStampTypes = []; }
+    } else { clientCanStamp = false; clientStampTypes = []; }
     $('nav-mailbox').classList.toggle('hidden', !workflowEntitled);
     const nm = r.user.displayName || r.user.username;
     $('who').textContent = nm;
@@ -306,6 +320,7 @@ $('login-btn').addEventListener('click', async () => {
     $('unc-wrap').classList.toggle('hidden', !canDecide());
     $('login').classList.add('hidden');
     $('app').classList.remove('hidden');
+    startBadgePoll();  // Slice 1: gentle 60s badge refresh while signed in (entitlement-gated inside)
     setView('home');   // Home dashboard is the default landing view
     renderChips();
     return;
@@ -327,6 +342,7 @@ for (const id of ['u', 'p', 'totp']) {
 
 function doLogout() {
   rvLeave();   // release any review presence before the session ends
+  stopBadgePoll();   // Slice 1: no polling while signed out
   api.logout();
   role = null; recipientsCache = null;
   $('app').classList.add('hidden');
@@ -1037,10 +1053,10 @@ function confLevel(c) { return c == null ? '' : c >= 85 ? '' : c >= 60 ? 'warn' 
 // A context banner + decision bar shown when the open document is routed TO me.
 function decisionBar(route) {
   const wrap = document.createElement('div'); wrap.className = 'wf decision';
-  const kind = route.action_required === 'approve' ? 'Approval requested' : 'Acknowledgement requested';
+  const kind = route.action_required === 'approve' ? "they'd like your approval" : 'just for information';
   const canAct = route.action_required === 'approve' && canDecide();
   wrap.innerHTML = `
-    <div class="dec-banner">${ico('inbox')}<span>Routed to you by <strong>${esc(route.from_username)}</strong> — ${kind}${route.comment ? ': “' + esc(route.comment) + '”' : ''}</span></div>
+    <div class="dec-banner">${ico('inbox')}<span>Sent to you by <strong>${esc(route.from_username)}</strong> — ${kind}${route.comment ? ': “' + esc(route.comment) + '”' : ''}</span></div>
     ${canAct ? `<input class="dec-note" placeholder="Add a note (optional — required to reject)" />` : ''}
     <div class="dec-acts"></div>`;
   const acts = wrap.querySelector('.dec-acts');
@@ -1059,11 +1075,11 @@ function decisionBar(route) {
     run(api.workflow.resolve(route.id, decision, note || null, route.version));
   };
   if (route.action_required === 'acknowledge') {
-    acts.appendChild(mkBtn({ label: 'Acknowledge', icon: 'check', variant: 'primary', sm: false, onClick: () => run(api.workflow.resolve(route.id, 'acknowledge', null, route.version)) }));
+    // Display copy only — the resolve decision string stays 'acknowledge' (/v1 contract).
+    acts.appendChild(mkBtn({ label: 'Got it', icon: 'check', variant: 'primary', sm: false, onClick: () => run(api.workflow.resolve(route.id, 'acknowledge', null, route.version)) }));
   } else if (canDecide()) {
     acts.appendChild(mkBtn({ label: 'Approve',   icon: 'check',  variant: 'primary',   sm: false, onClick: () => decide('approve') }));
     acts.appendChild(mkBtn({ label: 'Reject',    icon: 'reject', variant: 'danger',    sm: false, onClick: () => decide('reject') }));
-    acts.appendChild(mkBtn({ label: 'Mark Paid', icon: 'check',  variant: 'secondary', sm: false, onClick: () => decide('paid') }));
   }
   // Disposition: route the document back to the sender or on to another user. Admin/edit
   // only (reuses the assign control, which lists the sender for a route-back).
@@ -1140,6 +1156,143 @@ async function openDocument(id, route) {
   if (!imgs.length) { pagesEl.innerHTML = `<div class="empty">No preview available.</div>`; return; }
   pagesEl.innerHTML = '';
   for (const src of imgs) { const im = document.createElement('img'); im.src = src; pagesEl.appendChild(im); }
+  initDocStamps(id, wrap);   // stamp button (if permitted) + stamped/original toggle + history
+}
+
+// ── Stamping (Workflow+Stamping redesign 2026-08-28) — detached-client parity ────
+// The /v1 stamp routes carry the real gates (permission + document access + entitlement); this UI only
+// sends coords + a stamp type. Mirrors the desktop Search popup, adapted to the client's stacked-page
+// preview (no zoom transform — placement measures straight off the clicked page image).
+function _stampCss() {
+  if (document.getElementById('stamp-css-c')) return;
+  const s = document.createElement('style'); s.id = 'stamp-css-c';
+  s.textContent = `
+    .stamp-toggle-bar{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px}
+    .stamp-toggle-bar .st-badge{background:var(--accent-bg,#e7f0ff);color:var(--accent2,#2f6fe0);border-radius:999px;padding:1px 8px;font-weight:600}
+    .stamp-toggle-bar select{background:var(--surface2,#eef1f7);border:1px solid var(--border2,#d2d8e4);color:var(--text,#1b1f2a);border-radius:6px;font-size:12px;padding:2px 4px}
+    .stamp-toggle-bar .st-help{color:var(--muted,#69728a);font-size:11px}
+    .stamp-hist{margin-top:12px;border-top:1px solid var(--border,#e4e7ef);padding-top:8px}
+    .stamp-hist .sh-head{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted,#69728a);margin-bottom:6px}
+    .stamp-hist .sh-row{font-size:12px;padding:3px 0;border-bottom:1px solid var(--border,#e4e7ef)}
+    .stamp-hist .sh-n{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;border-radius:50%;background:var(--surface2,#eef1f7);color:var(--muted,#69728a);font-size:10px;font-weight:700;margin-right:6px}
+    .stamp-ov{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}
+    .stamp-card{width:min(460px,92vw);background:var(--surface,#fff);border:1px solid var(--border2,#d2d8e4);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.5);padding:16px 18px}
+    .stamp-card .sc-head{display:flex;justify-content:space-between;align-items:center;font-size:15px;font-weight:600;color:var(--text,#1b1f2a)}
+    .stamp-card .sc-x{border:none;background:transparent;font-size:20px;color:var(--muted,#69728a);cursor:pointer}
+    .stamp-card .sc-lead{font-size:12.5px;color:var(--muted,#69728a);margin:6px 0 10px}
+    .stamp-card .sc-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+    .sc-chip{border:1.5px solid var(--c,#888);color:var(--c,#333);background:transparent;font-weight:700;font-size:12px;padding:6px 12px;border-radius:999px;cursor:pointer}
+    .sc-note{width:100%;background:var(--surface2,#eef1f7);border:1px solid var(--border2,#d2d8e4);color:var(--text,#1b1f2a);border-radius:8px;padding:8px 10px;font-size:12.5px}
+    body.stamp-placing .pages img{cursor:crosshair}
+    .stamp-ghost-c{position:fixed;z-index:9400;pointer-events:none;box-sizing:border-box;border:2px solid var(--c,#2E7D32);background:rgba(46,125,50,.14);border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--c,#2E7D32);font-size:13px}
+    .stamp-place-bar-c{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:9500;background:var(--surface,#fff);border:1px solid var(--border2,#d2d8e4);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.4);padding:10px 14px;display:flex;gap:12px;align-items:center;font-size:12.5px}
+    .stamp-place-bar-c .pb-cancel{border:none;background:var(--surface2,#eef1f7);border-radius:8px;padding:6px 12px;cursor:pointer}
+    .stamp-toast-c{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9600;background:var(--text,#1b1f2a);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  `;
+  document.head.appendChild(s);
+}
+function stampToast(msg) {
+  _stampCss();
+  const t = document.createElement('div'); t.className = 'stamp-toast-c'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(() => t.remove(), 3200);
+}
+async function initDocStamps(docId, wrap) {
+  if (!workflowEntitled) return;
+  _stampCss();
+  let stamps = [];
+  try { const r = await api.workflow.stampList(docId); if (r.status === 200) stamps = r.json.stamps || []; } catch { /* */ }
+  const acts = wrap.querySelector('#pv-actions');
+  if (clientCanStamp && acts) {
+    acts.appendChild(mkBtn({ label: 'Stamp', icon: 'check', variant: 'secondary', onClick: () => openStampPanel(docId, wrap) }));
+  }
+  if (stamps.length) {
+    const head = wrap.querySelector('.pv-head');
+    const bar = document.createElement('div'); bar.className = 'stamp-toggle-bar';
+    bar.innerHTML = `<span class="st-badge">🏷 ${stamps.length}</span>
+      <select id="st-view"><option value="stamped">Stamped</option><option value="original">Original</option></select>
+      <span class="st-help">The original is never changed.</span>`;
+    if (head) head.after(bar);
+    bar.querySelector('#st-view').addEventListener('change', (e) => setStampView(docId, wrap, e.target.value));
+    setStampView(docId, wrap, 'stamped');
+    const hist = document.createElement('div'); hist.className = 'stamp-hist';
+    hist.innerHTML = '<div class="sh-head">Stamp history</div>' + stamps.map((s, i) =>
+      `<div class="sh-row"><span class="sh-n">${i + 1}</span><b style="color:${esc(s.color)}">${esc(s.label)}</b> ${esc(s.placedBy || '')} · ${esc(String(s.placedAt || '').slice(0, 16).replace('T', ' '))}${s.note ? ' — “' + esc(s.note) + '”' : ''}</div>`).join('');
+    wrap.appendChild(hist);
+  }
+}
+async function setStampView(docId, wrap, which) {
+  const pagesEl = wrap.querySelector('.pages'); if (!pagesEl) return;
+  let imgs = [];
+  if (which === 'stamped') { try { const r = await api.workflow.stampedDoc(docId); if (r.status === 200 && r.json.pages) imgs = r.json.pages; } catch { /* */ } }
+  if (!imgs.length) { try { const r = await api.getPages(docId); imgs = (r.json && r.json.pages) || []; } catch { /* */ } }
+  pagesEl.innerHTML = '';
+  for (const src of imgs) { const im = document.createElement('img'); im.src = src; pagesEl.appendChild(im); }
+}
+function openStampPanel(docId, wrap) {
+  _stampCss();
+  const ov = document.createElement('div'); ov.className = 'stamp-ov';
+  ov.innerHTML = `<div class="stamp-card">
+    <div class="sc-head"><span>Add a stamp</span><button class="sc-x" title="Close">&times;</button></div>
+    <div class="sc-lead">Pick a stamp, then click a blank area on the document to drop it. A stamp is permanent and shows your name and the time.</div>
+    <div class="sc-chips">${clientStampTypes.map(t => `<button class="sc-chip" data-id="${t.id}" style="--c:${esc(t.color)}">${esc(t.label)}</button>`).join('')}</div>
+    <input class="sc-note" id="sc-note" placeholder="Note (optional)" maxlength="200">
+  </div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('.sc-x').addEventListener('click', () => ov.remove());
+  ov.addEventListener('mousedown', (e) => { if (e.target === ov) ov.remove(); });
+  ov.querySelectorAll('.sc-chip').forEach(c => c.addEventListener('click', () => {
+    const type = clientStampTypes.find(t => t.id === Number(c.dataset.id));
+    const note = ov.querySelector('#sc-note').value;
+    ov.remove();
+    if (type) beginClientPlacement(docId, wrap, type, note);
+  }));
+}
+function beginClientPlacement(docId, wrap, type, note) {
+  const imgs = Array.from(wrap.querySelectorAll('.pages img'));
+  if (!imgs.length) { stampToast('No preview to stamp.'); return; }
+  document.body.classList.add('stamp-placing');
+  const ghost = document.createElement('div'); ghost.className = 'stamp-ghost-c';
+  ghost.style.setProperty('--c', type.color || '#2E7D32'); ghost.textContent = type.label; ghost.style.display = 'none';
+  document.body.appendChild(ghost);
+  const bar = document.createElement('div'); bar.className = 'stamp-place-bar-c';
+  bar.innerHTML = `<span>Move onto a blank area, then click to drop <b>${esc(type.label)}</b>.</span><button class="pb-cancel">Cancel</button>`;
+  document.body.appendChild(bar);
+  const W = 0.28;
+  let hover = null;
+  function onMove(e) {
+    hover = null;
+    for (let i = 0; i < imgs.length; i++) {
+      const r = imgs[i].getBoundingClientRect();
+      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) { hover = { img: imgs[i], page: i, r }; break; }
+    }
+    if (!hover) { ghost.style.display = 'none'; return; }
+    const wpx = W * hover.r.width, hpx = Math.max(24, wpx * 0.3);
+    ghost.style.display = ''; ghost.style.left = (e.clientX - wpx / 2) + 'px'; ghost.style.top = (e.clientY - hpx / 2) + 'px';
+    ghost.style.width = wpx + 'px'; ghost.style.height = hpx + 'px';
+  }
+  async function onClick(e) {
+    if (!hover) return;   // click off a page (e.g. Cancel) → let that handler run
+    e.preventDefault(); e.stopPropagation();
+    const r = hover.img.getBoundingClientRect();
+    let x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+    x = Math.max(0, Math.min(1 - W, x - W / 2)); y = Math.max(0, Math.min(0.95, y - 0.02));
+    const page = hover.page;
+    cleanup();
+    try {
+      const res = await api.workflow.stampPlace(docId, { stampTypeId: type.id, box: { x, y, w: W }, page, note });
+      if (res.status === 200) { stampToast(`${type.label} stamped.`); openDocument(docId); }
+      else stampToast((res.json && res.json.error) || 'Could not stamp.');
+    } catch { stampToast('Could not stamp.'); }
+  }
+  function cleanup() {
+    document.body.classList.remove('stamp-placing');
+    window.removeEventListener('mousemove', onMove);
+    document.removeEventListener('click', onClick, true);
+    ghost.remove(); bar.remove();
+  }
+  window.addEventListener('mousemove', onMove);
+  document.addEventListener('click', onClick, true);
+  bar.querySelector('.pb-cancel').addEventListener('click', (e) => { e.stopPropagation(); cleanup(); });
 }
 
 // Delete (→ bin) / restore / purge a document over /v1, then refresh the active list.
@@ -1203,34 +1356,37 @@ function closeBinMenu() { document.getElementById('bin-menu')?.remove(); }
 document.addEventListener('click', closeBinMenu);
 document.addEventListener('scroll', closeBinMenu, true);
 
-async function assignControl(docId, senderUsername) {
+// Generalised prefill (Slice 1): `preselectUsername` marks + selects ANY recipient
+// (Forward… passes the original SENDER for a route-back; Send-again passes the original
+// RECIPIENT) — extra { tag, title, actionRequired, resubmitOf } label and prefill the rest.
+async function assignControl(docId, preselectUsername, extra = {}) {
   const wrap = document.createElement('div'); wrap.className = 'wf';
   if (!recipientsCache) {
     const rr = await api.workflow.recipients();
     recipientsCache = (rr.json && rr.json.recipients) || [];
   }
-  // When forwarding a routed doc, pre-select + mark the original sender for a "route back".
   const opts = recipientsCache.map((u) => {
-    const isSender = senderUsername && u.username === senderUsername;
-    return `<option value="${u.id}"${isSender ? ' selected' : ''}>${esc(u.displayName || u.username)} (${esc(u.role)})${isSender ? ' — sender' : ''}</option>`;
+    const pre = preselectUsername && u.username === preselectUsername;
+    return `<option value="${u.id}"${pre ? ' selected' : ''}>${esc(u.displayName || u.username)} (${esc(u.role)})${pre ? ` — ${esc(extra.tag || 'sender')}` : ''}</option>`;
   }).join('');
   wrap.innerHTML = `
-    <h3>${ico('assign')}${senderUsername ? 'Forward / route onward' : 'Route for approval / acknowledgement'}</h3>
+    <h3>${ico('assign')}${esc(extra.title || (preselectUsername ? 'Send on to someone else' : 'Send to a colleague'))}</h3>
     <div class="wf-row">
       <select class="a-to">${opts}</select>
-      <select class="a-action"><option value="approve">Approve</option><option value="acknowledge">Acknowledge</option></select>
+      <select class="a-action"><option value="approve">Needs their approval</option><option value="acknowledge">Just for information</option></select>
       <input class="a-comment" placeholder="Note (optional)" />
       <span class="msg"></span>
     </div>`;
-  const btn = mkBtn({ label: 'Assign', icon: 'assign', variant: 'primary', sm: false, onClick: async () => {
+  if (extra.actionRequired) wrap.querySelector('.a-action').value = extra.actionRequired;
+  const btn = mkBtn({ label: 'Send', icon: 'assign', variant: 'primary', sm: false, onClick: async () => {
     const toUserId = Number(wrap.querySelector('.a-to').value);
     const action = wrap.querySelector('.a-action').value;
     const comment = wrap.querySelector('.a-comment').value.trim() || undefined;
     const msg = wrap.querySelector('.msg');
     if (!toUserId) { msg.className = 'msg err'; msg.textContent = 'Pick a recipient.'; return; }
-    const res = await api.workflow.assign(docId, toUserId, action, comment);
-    if (res.status === 200) { msg.className = 'msg ok'; msg.textContent = 'Routed.'; refreshBadges(); }
-    else { msg.className = 'msg err'; msg.textContent = (res.json && res.json.error) || 'Could not route.'; }
+    const res = await api.workflow.assign(docId, toUserId, action, comment, extra.resubmitOf);
+    if (res.status === 200) { msg.className = 'msg ok'; msg.textContent = 'Sent.'; refreshBadges(); }
+    else { msg.className = 'msg err'; msg.textContent = (res.json && res.json.error) || 'Could not send.'; }
   } });
   wrap.querySelector('.wf-row').appendChild(btn);
   return wrap;
@@ -1263,10 +1419,12 @@ async function loadMailbox() {
 function mbRow(rt) {
   const el = document.createElement('div'); el.className = 'mb-row fade';
   const who = currentBox === 'sent' ? `to ${esc(rt.to_username)}` : `from ${esc(rt.from_username)}`;
-  const kind = rt.action_required === 'approve' ? 'Approval request' : 'Acknowledgement request';
+  const kind = rt.action_required === 'approve' ? 'Approval request' : 'For your information';
+  // Chip LABEL only — the CSS class keeps the raw state. 'seen' = resolved FYI (Barry, FYI slice).
+  const stateLabel = rt.state === 'acknowledged' ? 'seen' : rt.state;
   el.innerHTML = `
     <div class="t1"><span class="nm">${esc(rt.supplier_name || ('Document #' + rt.document_id))}</span>
-      <span class="chip ${esc(rt.state)}">${esc(rt.state)}</span></div>
+      <span class="chip ${esc(rt.state)}">${esc(stateLabel)}</span></div>
     <div class="t2">${ico(rt.action_required === 'approve' ? 'check' : 'inbox')}<span>${kind} · ${who} · ${esc(rt.doc_date || '')}</span></div>
     ${rt.comment ? `<div class="quote">“${esc(rt.comment)}”</div>` : ''}
     ${rt.resolution_comment ? `<div class="quote">Reason: ${esc(rt.resolution_comment)}</div>` : ''}
@@ -1288,21 +1446,29 @@ function mbRow(rt) {
 
   if (currentBox === 'sent') {
     if (rt.state === 'pending') acts.appendChild(mkBtn({ label: 'Recall', icon: 'recall', variant: 'ghost', onClick: () => act(api.workflow.recall(rt.id, rt.version)) }));
+    // Send again (Slice 1): a rejection is never a dead-end — inline prefilled re-route
+    // (original recipient + action) carrying the resubmit lineage for the audit trail.
+    if (rt.state === 'rejected' && canDecide()) acts.appendChild(mkBtn({ label: 'Send again', icon: 'assign', variant: 'secondary', onClick: async () => {
+      if (el.querySelector('.wf')) return;          // one inline control per row
+      el.appendChild(await assignControl(rt.document_id, rt.to_username, {
+        tag: 'previous recipient', title: 'Send again — the previous request was rejected',
+        actionRequired: rt.action_required, resubmitOf: rt.id }));
+    } }));
   } else if (currentBox === 'inbox' || currentBox === 'assigned') {
     if (open) {
       if (rt.action_required === 'acknowledge') {
-        acts.appendChild(mkBtn({ label: 'Acknowledge', icon: 'check', variant: 'primary', onClick: () => act(api.workflow.resolve(rt.id, 'acknowledge', null, rt.version)) }));
+        // Display copy only — the resolve decision string stays 'acknowledge' (/v1 contract).
+        acts.appendChild(mkBtn({ label: 'Got it', icon: 'check', variant: 'primary', onClick: () => act(api.workflow.resolve(rt.id, 'acknowledge', null, rt.version)) }));
       } else if (canDecide()) {
         acts.appendChild(mkBtn({ label: 'Approve',   icon: 'check',  variant: 'primary',   onClick: () => decide('approve') }));
         acts.appendChild(mkBtn({ label: 'Reject',    icon: 'reject', variant: 'danger',    onClick: () => decide('reject') }));
-        acts.appendChild(mkBtn({ label: 'Mark Paid', icon: 'check',  variant: 'secondary', onClick: () => decide('paid') }));
       }
       if (rt.state === 'pending') acts.appendChild(mkBtn({ label: 'Claim', icon: 'claim', variant: 'secondary', onClick: () => act(api.workflow.claim(rt.id, rt.version)) }));
     }
   }
   const actionable = (currentBox === 'inbox' || currentBox === 'assigned') && open;
   acts.appendChild(mkBtn({ label: 'View doc', icon: 'view', variant: 'ghost', onClick: () => { setView('search'); openDocument(rt.document_id, actionable ? rt : null); } }));
-  if (rt.has_stamp) {   // a stamped APPROVED/REJECTED/PAID copy was filed for this decision
+  if (rt.has_stamp) {   // a stamped APPROVED/REJECTED copy was filed (legacy PAID stamps still served)
     acts.appendChild(mkBtn({ label: 'View stamped copy', icon: 'doc', variant: 'ghost', onClick: () => viewStamped(rt.id) }));
   }
   return el;
@@ -1333,6 +1499,14 @@ async function viewStamped(routeId) {
   document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); } });
 }
 
+// Paint one box's badge (segmented tab count + the nav inbox badge). Shared by the full
+// refreshBadges (list lengths) and the 60s counts poll (COUNT queries) so they can't drift.
+function paintWfCount(box, n) {
+  const seg = document.querySelector(`.segmented .seg[data-box="${box}"] [data-count]`);
+  if (seg) { seg.textContent = String(n); seg.classList.toggle('hidden', n === 0); }
+  if (box === 'inbox') { const b = $('inbox-badge'); b.textContent = String(n); b.classList.toggle('hidden', n === 0); }
+}
+
 // Per-tab counts (inbox/sent/assigned/completed) + the nav inbox badge.
 async function refreshBadges() {
   const boxes = ['inbox', 'sent', 'assigned', 'completed'];
@@ -1342,9 +1516,7 @@ async function refreshBadges() {
       const r = await api.workflow.list(box);
       const routes = (r.json && r.json.routes) || [];
       const n = routes.length; counts[box] = n;
-      const seg = document.querySelector(`.segmented .seg[data-box="${box}"] [data-count]`);
-      if (seg) { seg.textContent = String(n); seg.classList.toggle('hidden', n === 0); }
-      if (box === 'inbox') { const b = $('inbox-badge'); b.textContent = String(n); b.classList.toggle('hidden', n === 0); }
+      paintWfCount(box, n);
       // Routes I can act on (addressed to me, still open) → drive the preview decision bar.
       if (box === 'inbox' || box === 'assigned') {
         for (const rt of routes) if (rt.state === 'pending' || rt.state === 'claimed') open[rt.document_id] = rt;
@@ -1354,6 +1526,31 @@ async function refreshBadges() {
   myOpenRoutes = open;
   return { counts, open };   // Home dashboard reuses these instead of re-fetching
 }
+
+// ── Badge poll (Slice 1) — gentle 60s counts refresh while signed in + entitled + the
+// connection is alive. Fetches /v1/workflow/counts (ONE cheap request, not four list
+// fetches) and paints badge numbers ONLY — it must NEVER write myOpenRoutes (that map
+// drives the decision bar and comes only from the full refreshBadges on view-load /
+// action / manual refresh). Cleared on logout; paused while disconnected (the 5s
+// heartbeat owns reachability); one immediate full refresh on reconnect.
+let _wfPollTimer = null;
+let _connAlive = true;
+async function pollWfCounts() {
+  if (!role || !_connAlive) return;
+  try {
+    if (workflowEntitled) {
+      const r = await api.workflow.counts();
+      if (r.status === 200 && r.json && r.json.counts) {
+        for (const box of ['inbox', 'sent', 'assigned', 'completed']) {
+          if (typeof r.json.counts[box] === 'number') paintWfCount(box, r.json.counts[box]);
+        }
+      }
+    }
+    if (canDecide()) refreshReviewCounts();
+  } catch { /* the heartbeat flips the connection state; nothing queues */ }
+}
+function startBadgePoll() { stopBadgePoll(); _wfPollTimer = setInterval(pollWfCounts, 60000); }
+function stopBadgePoll()  { if (_wfPollTimer) { clearInterval(_wfPollTimer); _wfPollTimer = null; } }
 
 // Draggable pane dividers — resize the search/review columns. `data-resize="prev"` widens the
 // pane to the LEFT of the grip (the list), `"next"` the pane to the RIGHT (the review fields);

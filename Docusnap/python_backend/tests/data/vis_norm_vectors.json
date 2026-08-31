@@ -1,0 +1,101 @@
+{
+  "_comment": "JS↔Python parity vectors for the hidden-field visibility/scoring resolvers (HIDDEN_FIELD_SCORING, 2026-07-27). 'norm' pins templates.js _normNameForVis == template_matcher._norm_name_for_vis byte-for-byte. 'resolution' pins the shared name+group resolution semantics: JS getHiddenFieldsForSupplierType (no keyword_fingerprint passed => name+group arms only) and Python hidden_fields_for_scope must both produce 'expect' (sorted). Consumed by database/modules/test_hidden_field_scoring.js AND python_backend/tests/test_hidden_field_scoring.py — edit one resolver and the other suite goes red.",
+  "norm": [
+    { "in": "Northgate Textiles", "out": "northgate textiles" },
+    { "in": "  Six   Mile  Software ", "out": "six mile software" },
+    { "in": "A&B Supplies Ltd.", "out": "a b supplies ltd" },
+    { "in": "Copperfield—Building (NI)", "out": "copperfield building ni" },
+    { "in": "O'Neill & Sons", "out": "o neill sons" },
+    { "in": "ÉCLAIR", "out": "clair" },
+    { "in": "Stonegate Property Mgmt", "out": "stonegate property mgmt" },
+    { "in": "X1", "out": "x1" },
+    { "in": "12-99", "out": "12 99" },
+    { "in": "", "out": "" },
+    { "in": null, "out": "" }
+  ],
+  "resolution": [
+    {
+      "name": "exact name match resolves that template's hidden fields",
+      "templates": [
+        { "id": 1, "name": "Northgate Textiles", "document_type_slug": "service_worksheet", "group_id": null, "hidden_fields": ["item", "serial_no"] }
+      ],
+      "supplier": "Northgate Textiles", "slug": "service_worksheet",
+      "expect": ["item", "serial_no"]
+    },
+    {
+      "name": "containment: query inside template name inherits",
+      "templates": [
+        { "id": 1, "name": "Northgate Textiles", "document_type_slug": "service_worksheet", "group_id": null, "hidden_fields": ["item"] }
+      ],
+      "supplier": "Northgate", "slug": "service_worksheet",
+      "expect": ["item"]
+    },
+    {
+      "name": "containment: template name inside query inherits (accepted residual — 'gate' in 'northgate textiles')",
+      "templates": [
+        { "id": 1, "name": "Gate", "document_type_slug": "service_worksheet", "group_id": null, "hidden_fields": ["serial_no"] }
+      ],
+      "supplier": "Northgate Textiles", "slug": "service_worksheet",
+      "expect": ["serial_no"]
+    },
+    {
+      "name": "supplier under 3 normalised chars abstains (fail toward no exclusion)",
+      "templates": [
+        { "id": 1, "name": "SS", "document_type_slug": "service_worksheet", "group_id": null, "hidden_fields": ["item"] }
+      ],
+      "supplier": "SS", "slug": "service_worksheet",
+      "expect": []
+    },
+    {
+      "name": "slug scoping: same name different type does not resolve",
+      "templates": [
+        { "id": 1, "name": "Northgate Textiles", "document_type_slug": "invoice", "group_id": null, "hidden_fields": ["item"] }
+      ],
+      "supplier": "Northgate Textiles", "slug": "service_worksheet",
+      "expect": []
+    },
+    {
+      "name": "UNION across duplicate same-name same-type siblings",
+      "templates": [
+        { "id": 1, "name": "Northgate Textiles", "document_type_slug": "service_worksheet", "group_id": null, "hidden_fields": ["item"] },
+        { "id": 2, "name": "Northgate Textiles", "document_type_slug": "service_worksheet", "group_id": null, "hidden_fields": ["serial_no"] }
+      ],
+      "supplier": "Northgate Textiles", "slug": "service_worksheet",
+      "expect": ["item", "serial_no"]
+    },
+    {
+      "name": "group arm: config on a differently-NAMED group sibling resolves via group_id",
+      "templates": [
+        { "id": 1, "name": "Northgate Textiles", "document_type_slug": "service_worksheet", "group_id": 7, "hidden_fields": [] },
+        { "id": 2, "name": "Stonegate Property Mgmt", "document_type_slug": "service_worksheet", "group_id": 7, "hidden_fields": ["item"] }
+      ],
+      "supplier": "Northgate Textiles", "slug": "service_worksheet",
+      "expect": ["item"]
+    },
+    {
+      "name": "group arm has no slug filter (mirror pin of the JS group clause)",
+      "templates": [
+        { "id": 1, "name": "Northgate Textiles", "document_type_slug": "service_worksheet", "group_id": 7, "hidden_fields": ["item"] },
+        { "id": 2, "name": "Northgate Textiles", "document_type_slug": "invoice", "group_id": 7, "hidden_fields": ["serial_no"] }
+      ],
+      "supplier": "Northgate Textiles", "slug": "service_worksheet",
+      "expect": ["item", "serial_no"]
+    },
+    {
+      "name": "template with no hidden config contributes nothing",
+      "templates": [
+        { "id": 1, "name": "Northgate Textiles", "document_type_slug": "service_worksheet", "group_id": null, "hidden_fields": [] }
+      ],
+      "supplier": "Northgate Textiles", "slug": "service_worksheet",
+      "expect": []
+    },
+    {
+      "name": "no name resolution at all: empty (Python additionally pins: NO branding backup arm)",
+      "templates": [
+        { "id": 1, "name": "Northgate Textiles", "document_type_slug": "service_worksheet", "group_id": null, "hidden_fields": ["item"] }
+      ],
+      "supplier": "Zebra Corp", "slug": "service_worksheet",
+      "expect": []
+    }
+  ]
+}

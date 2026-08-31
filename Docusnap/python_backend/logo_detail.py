@@ -201,6 +201,107 @@ def should_veto_logo(query_detail, stored_details, threshold=None):
     return d > (threshold if threshold is not None else _veto_dist())
 
 
+# ── Slice D: PRIMARY resolver ────────────────────────────────────────────────
+# Promote the isolated-mark hash from an abstain-VETO to a PRIMARY supplier picker: given the scanned
+# mark and every supplier's enrolled detail SET, POSITIVELY name the nearest supplier (min-over-set),
+# so a look-alike coarse collision (Cascade↔Northgate) resolves to the RIGHT company instead of a
+# coin-flip. Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-15 (Phillip/oscar/gary consensus). Kept fail-safe
+# and REVIEW-BOUND at the call site (conf 69 + note); this function only classifies. Env-tunable
+# thresholds (measured, not guessed): accept 80 sits ~16 above worst same-supplier drift (64) and ~28
+# below the closest different-supplier distance (108); confident 48 is above p95 intra (~20) and far
+# below inter; margin 24 abstains a genuine ≤margin near-tie (a collision the detail hash ALSO can't
+# split) to review rather than guessing.
+def _accept_dist():
+    try:
+        return int(os.environ.get('LOGO_DETAIL_ACCEPT_DIST', '80'))
+    except Exception:
+        return 80
+
+
+def _confident_dist():
+    try:
+        return int(os.environ.get('LOGO_DETAIL_CONFIDENT_DIST', '48'))
+    except Exception:
+        return 48
+
+
+def _accept_margin():
+    try:
+        return int(os.environ.get('LOGO_DETAIL_ACCEPT_MARGIN', '24'))
+    except Exception:
+        return 24
+
+
+def classify_supplier(query_detail, by_supplier_details,
+                      accept_thr=None, confident_thr=None, margin=None):
+    """PRIMARY supplier resolver by nearest isolated-mark detail hash.
+
+    query_detail:        the scanned doc's 256-bit detail hex, or None (no isolable mark).
+    by_supplier_details: {supplier_name: [enrolled detail hex, ...]} for DISTINCT suppliers.
+    Returns (supplier|None, dist|None, band) where band in {'confident','review',None}.
+
+    FAIL-SAFE — returns (None, None, None) (→ the caller keeps the coarse/text path, byte-identical)
+    whenever it cannot confidently PICK:
+      - query None / no supplier has any usable enrolled detail → cold-start, fall to coarse;
+      - nearest supplier > accept_thr → the mark matches NO known supplier well;
+      - NEAR-TIE: the two nearest DISTINCT suppliers are BOTH ≤ accept_thr AND within `margin` of each
+        other → a real ambiguity the detail hash can't split → abstain (never pick-nearest on a tie).
+    A returned pick's `band` is 'confident' only when dist ≤ confident_thr AND the winning supplier has
+    ≥ 2 enrolled marks (its drift envelope is proven); otherwise 'review'. The band is advisory — the
+    call site is REVIEW-BOUND on first ship regardless (a supplier re-route is highest blast radius).
+    Pure/deterministic; min-over-set within a supplier (absorbs per-scan drift; NOT mean/k-nearest,
+    which would dilute a genuine single-reference match)."""
+    accept_thr    = _accept_dist()    if accept_thr    is None else accept_thr
+    confident_thr = _confident_dist() if confident_thr is None else confident_thr
+    margin        = _accept_margin()  if margin         is None else margin
+    if not query_detail or not by_supplier_details:
+        return (None, None, None)
+    scored = []
+    for sup, dets in by_supplier_details.items():
+        d = min_over_set(query_detail, dets)
+        if d is not None:
+            n = sum(1 for x in (dets or []) if x)      # count of usable (non-null) marks
+            scored.append((sup, d, n))
+    if not scored:
+        return (None, None, None)                      # no enrolled detail anywhere → coarse
+    scored.sort(key=lambda t: t[1])
+    s1, d1, n1 = scored[0]
+    if d1 > accept_thr:
+        return (None, d1, None)                        # matches no supplier well → coarse
+    if len(scored) > 1:
+        _, d2, _ = scored[1]                            # nearest DIFFERENT supplier (keys are distinct)
+        if d2 <= accept_thr and (d2 - d1) < margin:
+            return (None, d1, None)                    # viable near-tie → abstain → coarse/review
+    band = 'confident' if (d1 <= confident_thr and n1 >= 2) else 'review'
+    return (s1, d1, band)
+
+
+def detail_cross_plant_closer(query_detail, own_details, other_details_by_supplier,
+                              accept_thr=None, margin=None):
+    """ENROLMENT guard (Oracle C1): is an incoming detail mark POSITIVELY a DIFFERENT supplier's — i.e.
+    it matches some rival's enrolled set within accept_thr AND is decisively closer to that rival than
+    to this supplier's own set (by > margin)? True → refuse to enrol/backfill it under this supplier
+    (it would poison the picker). Cold-start safe: when the supplier has no own detail yet (min-own =
+    ∞), a mark that is FAR from every rival (a genuine first mark, inter ~108) is NOT ≤ accept_thr, so
+    this returns False and the legit first mark is planted; only a mark that positively matches a rival
+    is refused. FAIL-SAFE: missing query → False (nothing to poison)."""
+    accept_thr = _accept_dist()   if accept_thr is None else accept_thr
+    margin     = _accept_margin() if margin     is None else margin
+    if not query_detail:
+        return False
+    min_own = min_over_set(query_detail, own_details)
+    if min_own is None:
+        min_own = float('inf')                         # no own detail yet → cold-start
+    best_other = None
+    for dets in (other_details_by_supplier or {}).values():
+        m = min_over_set(query_detail, dets)
+        if m is not None and (best_other is None or m < best_other):
+            best_other = m
+    if best_other is None:
+        return False                                   # no rival detail to be closer to
+    return best_other <= accept_thr and (best_other + margin) < min_own
+
+
 def veto_by_detail(query_detail, pick_details, other_details_by_supplier, threshold=None):
     """SLICE C (refined 2026-07-14). ABSTAIN the coarse logo pick when the scanned mark POSITIVELY
     belongs to a DIFFERENT supplier — its 256-bit detail hash is FAR from the picked supplier's enrolled
@@ -217,6 +318,14 @@ def veto_by_detail(query_detail, pick_details, other_details_by_supplier, thresh
     the NON-pick suppliers."""
     t = threshold if threshold is not None else _veto_dist()
     pm = min_over_set(query_detail, pick_details)
+    # pm is None ⇒ the PICK has no enrolled detail set (a detail-less template — "residual (a)" in the
+    # 2026-07-24 Slice-1d DO-NOTHING ledger, memory project_slice1d_donothing). It is UNJUDGEABLE here,
+    # so KEEP: the pick rests on the 64-bit phash + the Stage-0 text gate, and self-heals once that
+    # template accrues a detail hash on its next confirm. ACCEPTED TRADE-OFF, pinned in
+    # test_logo_detail_veto.py. Do NOT turn pm-None into an abstain-iff-a-rival-matches without: keeping
+    # the POSITIVE-RIVAL requirement (a bare far-from-pick veto is NON-SEPARABLE — same-supplier drift
+    # p90≈96/max162 overlaps the impostor floor 86), a fresh kill switch, AND re-gating BOTH consumers of
+    # this shared primitive (template_matcher._logo_detail_veto AND anchor.try_logo_supplier_match).
     if pm is None or pm <= t:
         return False                      # can't judge, or the pick's own mark agrees → keep
     for dets in (other_details_by_supplier or {}).values():

@@ -57,7 +57,7 @@ admin_nav('trials');
 ?>
 <p style="margin:0 0 10px;"><a href="trials.php">&larr; Trials</a></p>
 <?php if (!$trialId || !$trial): ?>
-  <h1>Trial <?= $trialId ? '#' . (int) $trialId : '' ?></h1>
+  <?php admin_page_head('trials', $trialId ? 'Trial #' . (int) $trialId : 'Trial', ''); ?>
   <div class="empty"><?= $trialId ? 'That trial does not exist.' : 'No trial selected.' ?></div>
 <?php else:
   $active = (int) $trial['is_active'] === 1;
@@ -65,9 +65,10 @@ admin_nav('trials');
   $searchOverride = $trial['trial_search_seats'];                           // NULL = default
   $searchEff      = $searchOverride !== null ? (int) $searchOverride : TRIAL_SEARCH_SEATS;
 ?>
-  <h1>Trial #<?= (int) $trial['id'] ?>
-    <?= $active ? '<span class="pill ok">active</span>' : '<span class="pill">expired</span>' ?>
-  </h1>
+  <?php
+  admin_page_head('trials', 'Trial #' . (int) $trial['id'], '');
+  admin_chips([['n' => $active ? 'Active' : 'Expired', 'l' => $active ? $left . ' days left' : 'ended', 'tone' => $active ? 'ok' : '']]);
+  ?>
 
   <div class="card" style="margin:6px 0 18px; max-width:720px;">
     <strong>Trial details</strong>

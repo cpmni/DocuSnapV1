@@ -162,10 +162,13 @@ STEP A — Bundle Python (3.12 — Windows EMBEDDABLE package, NOT a venv):
 
   4. Install the backend dependencies (pypdf is REQUIRED — process_docs / pdf_splitter /
      render all import it; it is easy to omit because it is not a top-level app file):
-       vendor\python\python.exe -m pip install pytesseract pillow pypdfium2 requests imagehash pypdf rapidfuzz
+       vendor\python\python.exe -m pip install pytesseract pillow pypdfium2 requests imagehash pypdf rapidfuzz segno zxing-cpp
        (rapidfuzz = MIT, no runtime deps — powers the text-led supplier-identity conflict flag,
         extraction/identity_fusion.py; the license gate auto-allows MIT. If absent the feature
-        silently no-ops. Regenerate THIRD-PARTY-LICENSES.txt after: node scripts/gen-third-party-notices.js)
+        silently no-ops. segno = BSD-3 QR encoder + zxing-cpp = Apache-2.0 QR decoder — the
+        Filing Slips separator sheets (docs/designs/FILING_SLIPS_2026-07-18.md); without
+        zxingcpp slip detection aborts to no-split (fail-safe, feature dead).
+        Regenerate THIRD-PARTY-LICENSES.txt after: node scripts/gen-third-party-notices.js)
 
   ⚠ Use the SAME Python version as §1.2 (3.12 is the tested, known-good series).
     Verify the bundled interpreter before continuing:

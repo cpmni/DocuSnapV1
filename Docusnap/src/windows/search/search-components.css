@@ -1,0 +1,268 @@
+/* ────────────────────────────────────────────────────────────────────────────
+   search-components.css — graphical component layer for the core Search window.
+
+   Ports the detached client's more modern, graphical component treatments
+   (tinted state CHIPS, a SEGMENTED mailbox control, a prominent lead search
+   input with an inline icon, pill filter buttons, softer rounded surfaces) onto
+   the EXISTING core-search class hooks. This is a RE-SKIN only: it changes no
+   ids, no class names the renderers emit, and no logic/IPC — every rule below
+   augments a selector search-*.js already produces. Loaded AFTER the window's
+   inline <style> so these treatments win on equal specificity.
+
+   Both apps already share theme.css tokens, so this is component styling, not a
+   palette. Where the client's affordance is richer (chips, segmented, meters)
+   core adopts it here; where core is ahead (cap notes, de-pathed rows, secure
+   viewer) it keeps its markup and only gains the client's look.
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/* ── Tinted state chips ──────────────────────────────────────────────────────
+   The client's signature: a pill with an rgba state tint + a matching border,
+   not a flat text badge. Applied to every status/type/role pill core renders. */
+.result-type-badge,
+.result-status-badge,
+.ap-chip,
+.wf-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
+  padding: 2px 9px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border2);
+  background: var(--surface2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* AGEING chip — how long an OPEN route has been waiting. Sits beside the state chip and borrows
+   its pill geometry, but stays QUIETER than the state at first (a neutral outline for the 3-6 day
+   band) and only warms to the warn family once it has been a week. It is a nudge, not an alarm:
+   nothing is late in a system with no due dates, so it reports elapsed time and lets the reader
+   judge. Only rendered past the threshold — see _wfAgeChip in search-mailbox.js. */
+.wf-age {
+  display: inline-flex; align-items: center;
+  font-size: 11px; font-weight: 500; line-height: 1.5;
+  padding: 2px 9px; margin-left: 6px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border2); background: var(--surface2); color: var(--muted);
+  white-space: nowrap;
+}
+.wf-age.overdue {
+  color: var(--warn); background: rgba(247,184,79,.12); border-color: rgba(247,184,79,.40);
+}
+
+/* Type badge = the accent "role" chip (client .rolechip). */
+.result-type-badge {
+  color: var(--accent2);
+  background: var(--accent-bg);
+  border-color: var(--accent-border, rgba(59,125,240,.28));
+  text-transform: capitalize;
+}
+
+/* State families — rgba tint + tinted border (client .chip.<state>). */
+.result-status-badge.review,
+.ap-chip.review,
+.wf-state.pending {
+  color: var(--warn); background: rgba(247,184,79,.12); border-color: rgba(247,184,79,.40);
+}
+.ap-chip.confirmed,
+.wf-state.approved, .wf-state.acknowledged {
+  color: var(--ok); background: rgba(62,207,142,.12); border-color: rgba(62,207,142,.40);
+}
+.wf-state.rejected {
+  color: var(--err); background: rgba(247,111,111,.12); border-color: rgba(247,111,111,.40);
+}
+.result-status-badge.deferred,
+.ap-chip.deferred,
+.wf-state.claimed {
+  color: var(--accent2); background: rgba(79,142,247,.12); border-color: rgba(79,142,247,.40);
+}
+.ap-chip.other,
+.wf-state.recalled {
+  color: var(--muted); background: var(--surface2); border-color: var(--border2);
+}
+
+/* ── Confidence meters — round pill fill (client .cmeter / .meter) ──────────── */
+.rc-meter, .cb-meter {
+  border-radius: var(--r-pill);
+  background: var(--surface2);
+}
+.rc-meter > i, .cb-meter > i { border-radius: var(--r-pill); }
+
+/* ── Lead search input — prominent, rounded, with the inline search glyph ───── */
+#search-bar { padding: 12px 16px; gap: 10px; }
+.lead-wrap { position: relative; display: inline-flex; align-items: center; flex: 0 1 340px; }
+.lead-wrap .lead-ic {
+  position: absolute; left: 13px; width: 16px; height: 16px;
+  color: var(--muted); pointer-events: none;
+}
+#inp-fulltext {
+  width: 100%;
+  padding: 9px 12px 9px 38px;
+  font-size: 13px;
+  border-radius: var(--r);
+}
+.search-input, #inp-type { border-radius: var(--r-sm); }
+.search-input:focus, #inp-type:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59,125,240,.12);
+}
+
+/* Primary search button — rounder, with a soft accent lift. */
+#btn-search {
+  border-radius: var(--r-pill);
+  padding: 8px 18px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(59,125,240,.20);
+  transition: filter .15s, box-shadow .15s;
+}
+#btn-search:hover { opacity: 1; filter: brightness(1.06); box-shadow: 0 3px 12px rgba(59,125,240,.28); }
+
+/* Mode buttons as pill "chip-btn" filters (client .chip-btn). */
+#btn-mailbox, #btn-recycle, #btn-empty-bin {
+  border-radius: var(--r-pill);
+  padding: 7px 14px;
+  font-weight: 500;
+}
+
+/* The lead search wrapper hides with its input in mailbox mode (the inline rule
+   hides #inp-fulltext; the wrapper + icon must go too). */
+body.mailbox-mode .lead-wrap { display: none !important; }
+
+/* ── Segmented mailbox control (client .segmented / .seg) ────────────────────
+   The renderer keeps emitting #mailbox-tabs > .mb-tab; this makes it read as one
+   rounded segmented control with a filled active segment. */
+#mailbox-tabs {
+  display: inline-flex;
+  gap: 2px;
+  align-self: flex-start;
+  margin: 10px;
+  padding: 3px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  width: auto;
+}
+.mb-tab {
+  flex: 0 0 auto;
+  padding: 6px 15px;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  transition: background .15s, color .15s;
+}
+.mb-tab:hover { color: var(--text); background: transparent; }
+.mb-tab.active {
+  background: var(--accent);
+  color: var(--on-accent, #fff);
+  border-color: transparent;
+}
+
+/* ── Result rows — a touch more air + a rounded active rail ──────────────────── */
+.result-item { padding: 10px 14px; }
+.result-item.active {
+  background: var(--accent-bg);
+  border-left: 3px solid var(--accent);
+  padding-left: 11px;
+}
+.result-header { margin-bottom: 2px; }
+.result-supplier { font-size: 13px; font-weight: 600; }
+
+/* Field-data detail line (reference · date · type) in MONOSPACE — replaces the raw
+   filename the row used to show (owner 2026-08-03: match the client's row). */
+.result-detail {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.result-status-badge.confirmed {
+  color: var(--ok); background: rgba(62,207,142,.12); border-color: rgba(62,207,142,.40);
+}
+
+/* ── Preview: TABULAR field panel (label left · value right · bordered card) ──── */
+.pf-fields {
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--surface);
+}
+.pf-fields .pf-row {              /* override the inline flex-column stack → a table row */
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--border);
+}
+.pf-fields .pf-row:last-child { border-bottom: none; }
+.pf-fields .pf-label {            /* sentence-case label on the left, like the client */
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+.pf-fields .pf-value {            /* monospace value, right-aligned */
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+.pf-fields .pf-note { flex-basis: 100%; text-align: left; margin-top: 2px; }
+.pf-fields .pf-tint { padding-left: 8px; }   /* keep the per-field confidence rail */
+
+/* ── Preview action buttons — rounder, primary gets an accent lift ───────────── */
+.action-btn { border-radius: var(--r-sm); }
+.action-btn.primary {
+  border-radius: var(--r-pill);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(59,125,240,.18);
+}
+.action-btn.primary:hover { opacity: 1; filter: brightness(1.06); }
+
+/* ── Workflow banner / decision — client's tinted card look ───────────────────── */
+.wf-banner {
+  border-radius: var(--r-sm);
+  background: rgba(59,125,240,.08);
+  border-color: rgba(59,125,240,.22);
+}
+
+/* ── Honest load / error state for the preview (rendered into the spinner host) ─
+   Replaces the eternal spinner when a document's detail/pages fetch fails — the
+   silent-failure class Chris keeps catching. */
+.pv-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 44ch;
+}
+.pv-load-error .pe-title { font-weight: 600; color: var(--text); font-size: 14px; }
+.pv-load-error .pe-detail { font-size: 11px; font-family: var(--mono); color: var(--muted); word-break: break-word; }
+.pv-load-error .pe-retry {
+  margin-top: 4px;
+  padding: 7px 16px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--border2);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pv-load-error .pe-retry:hover { border-color: var(--accent); color: var(--accent); }

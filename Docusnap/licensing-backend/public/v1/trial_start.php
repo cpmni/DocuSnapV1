@@ -85,11 +85,27 @@ try {
         $trialEnd   = $row['trial_end'];
         $resumed    = true;
     } else {
-        // Global new-trial guardrail (F-03): cap brand-new trials minted per day.
-        // A returning fingerprint RESUMES above and never reaches here, so legitimate
-        // devices are unaffected; only fresh fp_hashes (the farming vector) count.
-        $newCap = rate_hit($pdo, 'trial_new:' . gmdate('Y-m-d'), 500, 86400);
-        if (!$newCap['allowed']) { too_many_requests($newCap['retry_after']); return; }
+        // New-trial guardrail (F-03), PER NETWORK (was global — fixed 2026-08-09 NIGHT).
+        // A returning fingerprint RESUMES above and never reaches here, so legitimate devices are
+        // unaffected; only fresh fp_hashes (the farming vector) count.
+        //
+        // WHY THE GLOBAL COUNTER HAD TO GO: it was keyed on the DATE alone, so 500 requests with
+        // random fingerprints — about 50 hosts for an hour, or three hosts over a day — took
+        // BRAND-NEW CUSTOMER SIGNUPS OFFLINE WORLDWIDE until midnight UTC, while existing customers
+        // carried on working and nothing looked wrong. One person could switch off the funnel.
+        //
+        // The per-network cap is the one that actually targets farming (a farm runs from a handful
+        // of addresses), and it cannot take anyone else offline. The global counter is KEPT purely
+        // as a very high tripwire: it is now an alarm you would notice, not a gate a stranger can
+        // slam. If the global figure is ever reached something is badly wrong and refusing is right.
+        $ipCap = rate_hit($pdo, 'trial_new_ip:' . $ip . ':' . gmdate('Y-m-d'), 25, 86400);
+        if (!$ipCap['allowed']) { too_many_requests($ipCap['retry_after']); return; }
+        $newCap = rate_hit($pdo, 'trial_new:' . gmdate('Y-m-d'), 5000, 86400);
+        if (!$newCap['allowed']) {
+            error_log('trial_start: GLOBAL new-trial cap reached — investigate (possible farming)');
+            too_many_requests($newCap['retry_after']);
+            return;
+        }
         // CREATE — first time this fingerprint is seen for this product. Store the
         // captured identity. ON DUPLICATE handles a row that exists without a
         // trial window yet (e.g. a bare device record): it opens the window now

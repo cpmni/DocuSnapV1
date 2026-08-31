@@ -25,6 +25,8 @@ This module is geometry only: no OCR, no I/O, no image handling — so it is ful
 unit-testable without Tesseract (see tests/test_registration.py).
 """
 
+import os
+
 import numpy as np
 
 # Inlier threshold in NORMALISED page units (~2% of the page diagonal). A located
@@ -201,6 +203,38 @@ def fit_transform(src_pts, dst_pts, *, kind="similarity",
     res = _residuals(M, src[best_inl], dst[best_inl])
     rms = float(np.sqrt((res ** 2).mean())) if res.size else 0.0
     return Transform(M, rms, int(best_inl.sum()), n, kind)
+
+
+MIN_VERIFIABLE_INLIERS = 3      # one point MORE than the 2-point minimal similarity sample
+
+
+def is_unfalsifiable(transform, min_inliers=MIN_VERIFIABLE_INLIERS):
+    """True when a fit carries ZERO verification and must be refused.
+
+    A similarity fit surviving on `n_inliers <= _SAMPLE['similarity']` (=2) is EXACTLY DETERMINED:
+    `fit_transform` scores it on the very points that produced it, so its residual is 0.0 BY
+    CONSTRUCTION and `registration_confidence` returns a flat 78 no matter how wrong the fit is.
+    A single false correspondence is then indistinguishable from a perfect one.
+
+    THE PREDICATE IS ON INLIERS, NOT ON len(src): RANSAC over 5 landmarks can still collapse to a
+    2-inlier consensus and refit on it, producing the identical degenerate object (measured:
+    residual 1.1e-16, conf 78). Gating on the number of landmarks would miss that.
+
+    THIS IS THE ONE SHARED DEFINITION. It exists because the same gate was written inline at
+    `engine.py`'s Stage-2 call site on 2026-08-01 and NOT at `template_mapper._fit_page_transform`'s
+    Stage-0.5 call site — so `template_registration` kept consuming exactly the fits Stage 2 was
+    refusing, which is the 2026-08-06 Castellan incident (2 landmarks, one of them the 3-char table
+    header 'Qty' false-matched onto the supplier line; the resulting transform displaced the taught
+    supplier box by 0.277 of the page and overwrote a CORRECT read on 15 of 22 documents).
+    Both call sites MUST consume this helper — do not re-inline the condition.
+
+    Kill switch `REG_MIN_INLIERS_GATE=0` restores the pre-gate behaviour byte-for-byte (read at call
+    time, matching the 2026-08-01 precedent). Default ON."""
+    if transform is None:
+        return False
+    if os.environ.get('REG_MIN_INLIERS_GATE', '1') == '0':
+        return False
+    return int(getattr(transform, 'n_inliers', 0) or 0) < min_inliers
 
 
 def registration_confidence(transform, *, base=90, floor=55, cap=95):

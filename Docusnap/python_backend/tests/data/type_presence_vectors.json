@@ -1,0 +1,19 @@
+{
+  "_comment": "Shared JS<->Python parity vectors for TYPE_PRESENCE_VETO (Type Slice 1, 2026-07-28). Read by database/modules/test_type_presence.js AND python_backend/tests/test_type_presence_matcher.py so the learn side and the check side provably score the identical token set + top-band + >=0.6 whole-word match (Oracle C-a).",
+  "tokens": [
+    {"name": "Delivery Note", "aliases": ["Delivery Docket"], "expect": ["delivery", "docket"]},
+    {"name": "Purchase Order", "aliases": [], "expect": ["purchase", "order"]},
+    {"name": "Worksheet", "aliases": [], "expect": ["worksheet"]},
+    {"name": "Sales Order", "aliases": [], "expect": ["sales", "order"]},
+    {"name": "Document", "aliases": [], "expect": []},
+    {"name": "Credit Note", "aliases": [], "expect": ["credit"]}
+  ],
+  "present": [
+    {"tokens": ["delivery", "docket"], "band": "acme fabrication ltd\ndelivery docket\nno 123", "expect": true},
+    {"tokens": ["delivery", "docket"], "band": "acme fabrication ltd\nworksheet 38\nno 123", "expect": false},
+    {"tokens": ["purchase", "order"], "band": "purchase order\nfrom acme ltd", "expect": true},
+    {"tokens": ["purchase", "order"], "band": "sales order\nfrom acme ltd", "expect": false},
+    {"tokens": ["worksheet"], "band": "service worksheet 38\nacme", "expect": true},
+    {"tokens": ["worksheet"], "band": "delivery docket\nacme", "expect": false}
+  ]
+}

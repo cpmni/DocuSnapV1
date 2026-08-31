@@ -34,11 +34,12 @@ window.TUTORIAL_FIXTURES = [
     company: 'Practice Supplies Ltd',
     year: '2026', month: 'June',
     filedName: 'Invoice.15-06-2026.INV-1042',
-    coach: 'One field is uncertain — it’s outlined in amber. Correct it, then confirm. That correction is exactly how Scan Finder learns.',
+    coach: 'One field is uncertain — it’s the one with the low reading score. Press “Draw a box to fix it” and drag a box around the reference on the page — that’s exactly how Scan Finder learns.',
+    coachDone: 'Nicely done — the reference now reads from the box you drew. Press “Confirm and file” to file it.',
     fields: [
       { key: 'supplier_name',  label: 'Document Issuer', value: 'Practice Supplies Ltd', confidence: 98 },
       { key: 'invoice_number', label: 'Reference',       value: 'INV-1O42',              confidence: 54, low: true,
-        hint: 'The reader mistook a zero for the letter “O”. Fix it to INV-1042.', correct: 'INV-1042' },
+        hint: 'The reader mistook a zero for the letter “O”. Draw a box around the number on the page and Scan Finder will read it right — INV-1042.', correct: 'INV-1042' },
       { key: 'invoice_date',   label: 'Date',            value: '15-06-2026',            confidence: 95 },
       { key: 'total_amount',   label: 'Total',           value: '1,250.00',              confidence: 96 },
     ],
@@ -51,7 +52,7 @@ window.TUTORIAL_FIXTURES = [
     company: 'Meadowbank Trading',
     year: '2026', month: 'June',
     filedName: 'PurchaseOrder.03-06-2026.PO-5567',
-    coach: 'A different document type — a Purchase Order. Notice Scan Finder files it under its own folder and naming, keeping everything tidy by type.',
+    coach: 'A different document type — a Purchase Order. It files the same tidy way — into its sender’s folder — with “Purchase Order” leading the file name, so orders and invoices never mix.',
     fields: [
       { key: 'supplier_name', label: 'Document Issuer', value: 'Meadowbank Trading', confidence: 97 },
       { key: 'po_number',     label: 'Reference',       value: 'PO-5567',            confidence: 94 },

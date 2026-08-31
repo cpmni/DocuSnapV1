@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>ScanFinder — Stamped copy</title>
+  <script src="../shared/theme.js"></script>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body { display: flex; flex-direction: column; background: var(--doc-bg); color: var(--text); font-family: var(--sans, 'IBM Plex Sans', sans-serif); }
+    /* The secure viewer shows PAGE IMAGES only — the document never exists in this window
+       as a file or a path; Save a copy is the one audited egress (main-process dialog). */
+    #bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    #bar .title { font-weight: 600; font-size: 13px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #bar button { font-size: 12px; padding: 5px 12px; border-radius: var(--r-sm, 9px); border: 1px solid var(--border2); background: var(--surface2); color: var(--text); cursor: pointer; }
+    #bar button:hover { border-color: var(--accent); }
+    #bar button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); }
+    #zoom-label { font-size: 12px; color: var(--muted); min-width: 44px; text-align: center; }
+    #scroll { flex: 1; overflow: auto; padding: 18px; }
+    .page { display: block; margin: 0 auto 18px; max-width: 100%; box-shadow: 0 2px 10px rgba(0,0,0,.18); background: #fff; }
+    #state { padding: 40px; text-align: center; color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <span class="title" id="title">Stamped copy</span>
+    <button id="zoom-out" title="Zoom out">&#8722;</button>
+    <span id="zoom-label">100%</span>
+    <button id="zoom-in" title="Zoom in">&#43;</button>
+    <button id="save" class="primary" title="Save a copy of this stamped PDF — the export is recorded in the audit trail">Save a copy…</button>
+    <button id="close" title="Close">Close</button>
+  </div>
+  <div id="scroll">
+    <div id="state"><div class="spinner" style="margin:0 auto"></div></div>
+    <div id="pages"></div>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

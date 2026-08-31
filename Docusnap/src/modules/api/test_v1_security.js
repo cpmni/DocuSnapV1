@@ -56,7 +56,7 @@ async function main() {
   const reviewService = reviewServiceMod.createReviewService({
     documents, learning, doctypes: require('../../../database/modules/document_types'),
     filing: { commitDocument: async (args) => { lastCommitArgs = args; return { success: true, filename: 'F.pdf', filePath: '/out/F.pdf', srcPath: '/in/scan.pdf' }; }, removeSourceFile: async () => {} },
-    fs: { existsSync: () => false, unlinkSync: () => {} }, path: require('path'),
+    fs: { existsSync: () => true, unlinkSync: () => {} }, path: require('path'),  // existsSync true: the doc HAS a filable page (no-page guard, card 1)
     audit: () => {}, notifyCounts: () => {}, releaseDelayMs: 0,
   });
   const sessionStore = sessionService.createSessionStore();   // explicit, isolated store for this test

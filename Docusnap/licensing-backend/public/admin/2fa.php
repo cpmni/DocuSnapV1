@@ -21,6 +21,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = (string) ($_POST['action'] ?? '');
 
     if ($action === 'enable_confirm' && !$enabled) {
+        // Post-auth code guessing is throttled too (Oracle C4 — a stolen session
+        // cookie must not get an unthrottled TOTP/password oracle on this page).
+        $retry = admin_throttle('2fa');
+        if ($retry !== null) {
+            flash_set('err', 'Too many attempts. Try again shortly.');
+            header('Location: 2fa.php?setup=1');
+            exit;
+        }
         // Confirm setup: the candidate secret was generated server-side and held
         // in the session; a valid code proves the authenticator is configured.
         $candidate = (string) ($_SESSION['admin_2fa_candidate'] ?? '');
@@ -55,6 +63,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $enabled   = true;
         $showCodes = $codes;   // render once below; never stored in plaintext
     } elseif ($action === 'disable' && $enabled) {
+        // SEC-01: 2FA is MANDATORY by default — disabling it here would strand the
+        // admin at the next sign-in (login refuses password-only while 2FA is
+        // required). Refuse unless the break-glass env is set; the message carries
+        // the reset recipe. (Lost device ≠ this path: recovery codes sign you in.)
+        if (admin_2fa_required()) {
+            flash_set('err', 'Two-factor authentication is mandatory for this console and cannot be '
+                . 'disabled while LICENSING_ADMIN_ALLOW_NO_2FA is unset. To reset 2FA: set that '
+                . 'environment variable to 1, disable and re-enable 2FA here, then remove the variable.');
+            header('Location: 2fa.php');
+            exit;
+        }
+        // Post-auth password/TOTP oracle is throttled too (Oracle C4).
+        $retry = admin_throttle('2fa');
+        if ($retry !== null) {
+            flash_set('err', 'Too many attempts. Try again shortly.');
+            header('Location: 2fa.php');
+            exit;
+        }
         // Disable requires BOTH the current password and a valid current TOTP.
         $pw   = (string) ($_POST['password'] ?? '');
         $code = (string) ($_POST['code'] ?? '');
@@ -69,6 +95,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
         admin_2fa_disable();
+        if (admin_2fa_enabled()) {
+            // The unlink silently failed (Oracle C4) — never claim "disabled" while the
+            // state file still exists and will still gate the next login.
+            admin_audit('admin.2fa_disable_failed', 'state file not removed');
+            flash_set('err', 'Could not remove the 2FA state file (check keys/ permissions). 2FA is still on.');
+            header('Location: 2fa.php');
+            exit;
+        }
         admin_audit('admin.2fa_disabled', '');
         flash_set('ok', 'Two-factor authentication has been disabled.');
         header('Location: 2fa.php');
@@ -92,7 +126,7 @@ $hasQr  = is_file($qrFile);
 
 admin_page_open('Security');
 ?>
-<h1>Two-factor authentication</h1>
+<?php admin_page_head('security', 'Two-factor authentication', 'Protect this console with an authenticator app.'); ?>
 <p class="lead">An authenticator-app code (TOTP) is required on sign-in, in addition to the admin password.</p>
 
 <?php if ($showCodes !== null): ?>

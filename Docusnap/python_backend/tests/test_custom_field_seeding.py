@@ -153,5 +153,47 @@ fp6 = keyword.seed_field_labels(CFG, [
 check("a sibling on a DIFFERENT type does not block the seed",
       "customer" in (fp6.get("field_patterns") or {}))
 
+# ── DATE-ROLE GENERIC LABEL (2026-08-01; kill DATE_ROLE_GENERIC_LABEL) ─────────
+# A shipped date entry lacking bare "Date" gains it (the Vellum delivery-docket cold-scope
+# hole); a same-type sibling already owning bare "Date" blocks it (due_date on an invoice
+# type — no double-fill); kill OFF = untouched.
+print("\nDate-role generic label:")
+_DCFG = {"field_patterns": {
+    "delivery_date": {"labels": ["Delivery Date", "Dispatch Date"], "validation": "date",
+                      "directions": ["right"], "base_confidence": 82},
+    "invoice_date":  {"labels": ["Invoice Date", "Date"], "validation": "date",
+                      "directions": ["right"], "base_confidence": 85},
+    "due_date":      {"labels": ["Due Date", "Payment Due"], "validation": "date",
+                      "directions": ["right"], "base_confidence": 80},
+    "delivery_number": {"labels": ["Delivery Note No."], "validation": "alphanumeric",
+                        "directions": ["right"], "base_confidence": 85},
+}}
+fp7 = keyword.seed_field_labels(_DCFG, [
+    {"key": "delivery_date",   "label": "Delivery Date", "type": "date", "document_type_id": 4},
+    {"key": "delivery_number", "label": "Delivery No",   "type": "text", "document_type_id": 4},
+])
+_dd = (fp7.get("field_patterns") or {}).get("delivery_date") or {}
+check("delivery_date gains bare 'Date' (no same-type sibling owns it)",
+      "Date" in (_dd.get("labels") or []))
+check("…appended, specific labels first", (_dd.get("labels") or [])[0] == "Delivery Date")
+check("non-date sibling untouched",
+      (fp7["field_patterns"]["delivery_number"].get("labels") or []) == ["Delivery Note No."])
+fp8 = keyword.seed_field_labels(_DCFG, [
+    {"key": "invoice_date", "label": "Invoice Date", "type": "date", "document_type_id": 1},
+    {"key": "due_date",     "label": "Due Date",     "type": "date", "document_type_id": 1},
+])
+_due = (fp8.get("field_patterns") or {}).get("due_date") or {}
+check("due_date does NOT gain 'Date' (invoice_date owns it on the same type)",
+      "Date" not in (_due.get("labels") or []))
+os.environ["DATE_ROLE_GENERIC_LABEL"] = "0"
+try:
+    fp9 = keyword.seed_field_labels(_DCFG, [
+        {"key": "delivery_date", "label": "Delivery Date", "type": "date", "document_type_id": 4},
+    ])
+    check("kill OFF = shipped entry untouched",
+          "Date" not in ((fp9.get("field_patterns") or {}).get("delivery_date") or {}).get("labels", []))
+finally:
+    del os.environ["DATE_ROLE_GENERIC_LABEL"]
+
 print("\n" + ("%d FAILED" % fails if fails else "All custom-field seeding checks passed"))
 sys.exit(1 if fails else 0)

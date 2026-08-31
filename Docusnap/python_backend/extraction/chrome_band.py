@@ -44,6 +44,15 @@ def issuer_chrome(ocr_text: str, max_lines: int = 6) -> str:
     is defence-in-depth, not the sole guard. On a marker hit, any text BEFORE the marker on that
     same line is kept (salvages a two-column "Issuer …… Bill To:" letterhead). Empty band → "" →
     the caller abstains (the safe outcome)."""
+    return " ".join(issuer_chrome_lines(ocr_text, max_lines))
+
+
+def issuer_chrome_lines(ocr_text: str, max_lines: int = 6) -> list:
+    """The issuer band as its constituent LINES, in order. `issuer_chrome` is the joined form and
+    is byte-identical to `" ".join(...)` of this — the split exists so a caller that needs LINE
+    POSITION (extraction/letterhead.py, where "how far down the band" is a load-bearing guard) can
+    have it without re-implementing the truncation and drifting from `_RECIPIENT_MARKER`, which
+    must stay the single definition of what a recipient block looks like."""
     band = []
     lines = [l.strip() for l in (ocr_text or "").splitlines() if l.strip()]
     for ln in lines[:max_lines]:
@@ -54,4 +63,4 @@ def issuer_chrome(ocr_text: str, max_lines: int = 6) -> str:
                 band.append(head)
             break
         band.append(ln)
-    return " ".join(band)
+    return band

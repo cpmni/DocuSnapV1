@@ -74,7 +74,7 @@ admin_nav('accounts');
 ?>
 <p style="margin:0 0 10px;"><a href="accounts.php">&larr; Accounts</a></p>
 <?php if (!$account || !$selAccount): ?>
-  <h1>Account <?= $account ? '#' . (int) $account : '' ?></h1>
+  <?php admin_page_head('accounts', $account ? 'Account #' . (int) $account : 'Account', ''); ?>
   <div class="empty"><?= $account ? 'That account does not exist.' : 'No account selected.' ?></div>
 <?php else: ?>
   <?php $issued = $_SESSION['issued_key'] ?? null; unset($_SESSION['issued_key']); if ($issued): ?>
@@ -85,9 +85,10 @@ admin_nav('accounts');
   </div>
   <?php endif; ?>
 
-  <h1>Account #<?= (int) $selAccount['id'] ?>
-      <span class="pill <?= $statusPill[0] ?>"><?= h($statusPill[1]) ?></span>
-  </h1>
+  <?php
+  admin_page_head('accounts', 'Account #' . (int) $selAccount['id'], '');
+  admin_chips([['n' => ucfirst((string) $statusPill[1]), 'l' => '', 'tone' => in_array($statusPill[0], ['ok', 'warn'], true) ? $statusPill[0] : '']]);
+  ?>
   <div class="row" style="justify-content:space-between; align-items:center; margin:0 0 12px;">
     <div class="muted" style="font-size:12px; line-height:1.6;">
       <?php if (!empty($selAccount['name']) || !empty($selAccount['email'])): ?>

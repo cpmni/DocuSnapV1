@@ -81,8 +81,10 @@ def _run(field_defs, *, seed=None, mapping=None, kw=None, anchor=None,
     kwmod.extract_fields = lambda *a, **k: {kk: dict(vv) for kk, vv in (kw or {}).items()}
     anc.extract_with_anchors = lambda *a, **k: {kk: dict(vv) for kk, vv in (anchor or {}).items()}
     # Isolate the MERGE precedence: skip Stage 4 normalisation so asserted values
-    # are exactly what the stage competition produced.
-    val.validate_and_adjust = lambda results, field_defs: results
+    # are exactly what the stage competition produced. (**kw: the production signature
+    # gained a `trace` kwarg — a positional-only stub is the stale-fixture class that
+    # reads as an engine regression.)
+    val.validate_and_adjust = lambda results, field_defs, **kw: results
 
     events = []
     try:

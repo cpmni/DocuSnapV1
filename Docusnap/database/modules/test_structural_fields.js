@@ -163,6 +163,42 @@ function main() {
   doctypes.updateType(db, w, { ref_field_key: null });
   f += !check('updateType allows clearing a role to null', dtRow(db, w).ref_field_key === null);
 
+  // 14. STRUCTURAL ROLES ARE REQUIRED BY NATURE (2026-08-27). The shared doc-type editor's create
+  //     road writes required=0 on every field it supplies — the identity + the ref/date roles
+  //     included — and the edit-mode toggle is locked, so the flag could never become 1 by hand.
+  //     ensureStructuralRoles now asserts it; the scorer (required fields, else EVERY field) then
+  //     scores the roles instead of every optional field on the type (the Castellan 81 < 95 hold).
+  const w2 = doctypes.addType(db, { name: 'Wizard Made', ref_field_key: 'reference_number', date_field_key: 'date' }).lastInsertRowid;
+  doctypes.addField(db, { document_type_id: w2, key: 'supplier_name',    label: 'Document Issuer',  type: 'text',      required: 0, sort_order: 10 });
+  doctypes.addField(db, { document_type_id: w2, key: 'reference_number', label: 'Reference number', type: 'reference', required: 0, sort_order: 20 });
+  doctypes.addField(db, { document_type_id: w2, key: 'date',             label: 'Date',             type: 'date',      required: 0, sort_order: 30 });
+  doctypes.addField(db, { document_type_id: w2, key: 'serial_number',    label: 'Serial Number',    type: 'list',      required: 0, sort_order: 40 });
+  doctypes.addField(db, { document_type_id: w2, key: 'customer',         label: 'Customer',         type: 'text',      required: 0, sort_order: 50 });
+  f += !check('wizard-style: all five fields start required=0', fieldsOf(db, w2).every(x => x.required === 0));
+  doctypes.ensureStructuralRoles(db, w2);
+  f += !check('wizard-style: identity required=1 after ensureStructuralRoles', fkey(db, w2, 'supplier_name').required === 1);
+  f += !check('wizard-style: ref role required=1', fkey(db, w2, 'reference_number').required === 1);
+  f += !check('wizard-style: date role required=1', fkey(db, w2, 'date').required === 1);
+  f += !check('wizard-style: optional List field stays required=0 (its absence is never scored)', fkey(db, w2, 'serial_number').required === 0);
+  f += !check('wizard-style: optional custom field stays required=0', fkey(db, w2, 'customer').required === 0);
+  f += !check('wizard-style: no generic date/reference added (designated ones respected)', fieldsOf(db, w2).length === 5);
+  // Re-pointing a role makes the NEW field required; the old one is left as the operator had it.
+  doctypes.addField(db, { document_type_id: w2, key: 'ticket_no', label: 'Ticket No.', type: 'text', required: 0, sort_order: 60 });
+  doctypes.updateType(db, w2, { ref_field_key: 'ticket_no' });
+  f += !check('re-point: the new ref role field is required=1', fkey(db, w2, 'ticket_no').required === 1);
+  f += !check('re-point: the old ref field is left untouched', fkey(db, w2, 'reference_number').required === 1);
+  doctypes.updateType(db, w2, { ref_field_key: 'does_not_exist' });
+  f += !check('re-point: a dropped (dangling) role asserts nothing / changes nothing', dtRow(db, w2).ref_field_key === 'ticket_no');
+  // Whole-DB mode (migration 92 / backup restore): heals every type's role rows, touches nothing else.
+  db.prepare("UPDATE fields SET required = 0 WHERE document_type_id = ? AND key IN ('supplier_name', 'date')").run(w2);
+  const healedN = doctypes.assertStructuralRequired(db);
+  f += !check(`whole-DB assert heals exactly the demoted role rows (${healedN} == 2)`, healedN === 2);
+  f += !check('whole-DB assert: identity + date back to required=1', fkey(db, w2, 'supplier_name').required === 1 && fkey(db, w2, 'date').required === 1);
+  f += !check('whole-DB assert: unassigned ref role creates nothing on the no-ref type', !fkey(db, e5, 'reference_number') && !dtRow(db, e5).ref_field_key);
+  f += !check('whole-DB assert: idempotent (second pass heals 0)', doctypes.assertStructuralRequired(db) === 0);
+  f += !check('whole-DB assert: the sales-order optional customer_name is untouched', field(db, 'customer_name').required === 0);
+  f += !check('whole-DB assert: the optional List field is untouched', fkey(db, w2, 'serial_number').required === 0);
+
   db.close();
   console.log(f ? `\n${f} FAILED` : '\nAll structural-field checks passed');
   process.exit(f ? 1 : 0);

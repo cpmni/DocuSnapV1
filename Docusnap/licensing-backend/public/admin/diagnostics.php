@@ -31,7 +31,7 @@ if ($hasTable) {
 admin_page_open('Diagnostics');
 admin_nav('diagnostics');
 ?>
-<h1>Diagnostics</h1>
+<?php admin_page_head('diagnostics', 'Diagnostics', 'Opt-in health and processing feed from installed apps.'); ?>
 <p class="lead">Opt-in, anonymous app diagnostics — app/error events only, tied to an anonymous
   device id. Never document content, names, references, totals, dates or file paths.</p>
 

@@ -75,8 +75,43 @@ const fp = cs.readCaFingerprint({ caCrtPath: r.caCrtPath });
 check('readCaFingerprint is stable', fp === cs.readCaFingerprint({ caCrtPath: r.caCrtPath }));
 check('readCaFingerprint equals X509 fingerprint256', fp === new X509Certificate(caPem).fingerprint256);
 
+// ── 6. H1 — CA private key encrypt-at-rest (injected `secret`) ─────────────────
+// A fake, reversible secret standing in for lib/secretStore (safeStorage is unavailable
+// under ELECTRON_RUN_AS_NODE, so the real DPAPI path is proven separately in
+// test_secretstore.js against an injected fake — here we prove the certService WIRING).
+const isPem = (s) => /BEGIN (RSA )?PRIVATE KEY/.test(s);
+const fakeSecret = {
+  encrypt: (s) => 'ENC1:' + Buffer.from(String(s), 'utf8').toString('base64'),
+  decrypt: (s) => (String(s).startsWith('ENC1:') ? Buffer.from(String(s).slice(5), 'base64').toString('utf8') : String(s)),
+  isEncrypted: (s) => String(s).startsWith('ENC1:'),
+  available: () => true,
+};
+// (a) default = PASSTHROUGH: no `secret` ⇒ ca.key on disk is raw plaintext PEM (byte-identical).
+check('default (no secret) writes ca.key as plaintext PEM', isPem(fs.readFileSync(r.caKeyPath, 'utf8')));
+
+// (b) with a secret ⇒ ca.key is encrypted at rest, and a reuse still yields a valid, same-CA cert.
+const tmpEnc = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-certsvc-enc-'));
+const e1 = cs.generateServerCerts({ certsDir: tmpEnc, sans: ['192.168.9.9'], secret: fakeSecret });
+const encOnDisk = fs.readFileSync(e1.caKeyPath, 'utf8');
+check('with secret: ca.key on disk is ENC1-wrapped, not raw PEM', encOnDisk.startsWith('ENC1:') && !isPem(encOnDisk));
+const e2 = cs.generateServerCerts({ certsDir: tmpEnc, sans: ['192.168.9.9', '10.1.1.1'], reuseCa: true, secret: fakeSecret });
+check('encrypted CA reused (decrypt round-trips)', e2.caReused === true);
+check('reused CA fingerprint unchanged (clients stay trusted)', e2.caFingerprintSha256 === e1.caFingerprintSha256);
+const eSrv = new X509Certificate(fs.readFileSync(e2.serverCrtPath, 'utf8'));
+const eCa  = new X509Certificate(fs.readFileSync(e2.caCrtPath, 'utf8'));
+check('server cert from an encrypted CA verifies against that CA', eSrv.verify(eCa.publicKey) === true);
+
+// (c) legacy migration: a plaintext ca.key (written by the passthrough path) is re-encrypted
+//     on the next reuse WITH a secret — and the CA identity is preserved.
+const tmpMig = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-certsvc-mig-'));
+const m1 = cs.generateServerCerts({ certsDir: tmpMig, sans: ['192.168.8.8'] });                 // plaintext
+check('pre-migration ca.key is plaintext PEM', isPem(fs.readFileSync(m1.caKeyPath, 'utf8')));
+const m2 = cs.generateServerCerts({ certsDir: tmpMig, sans: ['192.168.8.8'], reuseCa: true, secret: fakeSecret });
+check('legacy plaintext ca.key migrated to encrypted on reuse', fs.readFileSync(m1.caKeyPath, 'utf8').startsWith('ENC1:'));
+check('CA fingerprint unchanged across migration', m2.caFingerprintSha256 === m1.caFingerprintSha256);
+
 // cleanup
-try { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(tmp2, { recursive: true, force: true }); } catch { /* ignore */ }
+try { fs.rmSync(tmp, { recursive: true, force: true }); fs.rmSync(tmp2, { recursive: true, force: true }); fs.rmSync(tmpEnc, { recursive: true, force: true }); fs.rmSync(tmpMig, { recursive: true, force: true }); } catch { /* ignore */ }
 
 console.log(`\ncertService: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -49,6 +49,12 @@ function render() {
 }
 
 let toastT;
+// Clear the readout toast IMMEDIATELY (text + pending auto-hide timer + class) — not just the .on
+// class. Chris R5 card 6: the "Read 'INV-1042' from your box" toast was still fading (its textContent
+// + live timer intact) over the START of the next sample, because renderReview only dropped .on.
+function hideToast() {
+  clearTimeout(toastT); toastEl.textContent = ''; toastEl.classList.remove('on');
+}
 function toast(msg) {
   toastEl.textContent = msg; toastEl.classList.add('on');
   clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('on'), 2600);
@@ -105,7 +111,7 @@ function renderFields(d) {
       <div class="frow-actions">
         <button class="teach-btn" data-teach="${f.key}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-          ${t ? 'Read from your box ✓' : 'Draw a box to read it'}
+          ${t ? 'Read from your box ✓' : 'Wrong? Draw a box to fix it'}
         </button>
       </div>
       ${t ? '<div class="cnote ok">✓ Read from the box you drew.</div>'
@@ -135,8 +141,12 @@ function renderReview() {
   document.getElementById('rv-type').textContent = d.docType;
   document.getElementById('rv-dots').innerHTML = DOCS.map((_, i) =>
     `<i class="${i < idx ? 'ok' : i === idx ? 'on' : ''}"></i>`).join('');
+  // A fixed field must not keep the "one field is uncertain" sentence beside a green tick
+  // (Chris r2 2026-08-11, tea item) — switch to the done-copy once nothing is low. Also drop
+  // any lingering per-action toast from the previous document (text + timer, not just the class).
+  hideToast();
   const hasLow = d.fields.some(f => f.low && !isTaught(d, f.key));
-  setBanner(hasLow ? 'warn' : 'good', d.coach);
+  setBanner(hasLow ? 'warn' : 'good', hasLow ? d.coach : (d.coachDone || d.coach));
   renderDoc(d);
   renderFields(d);
   primary.textContent = (idx === DOCS.length - 1) ? 'Confirm and finish' : 'Confirm and file';
@@ -219,6 +229,7 @@ async function confirm() {
     toast('Draw a box around the ' + lf.label + ' to correct it, then Confirm.');
     return;
   }
+  hideToast();   // card 6: drop the box-readout the instant we commit, before the file-copy await
   primary.disabled = true;
   try {
     const res = await D.tutorialFileSample?.({

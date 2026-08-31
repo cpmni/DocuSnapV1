@@ -6,6 +6,10 @@
  */
 
 const os = require('os');
+// Learning Repair start-fresh predicate (mig 90): the three confirmed-scope readers here (the hold-reason
+// counts + the template freeze judgement) must agree with getFieldFormats / scopeTrust, so a stamped
+// document leaves them too ('' until stamped; test_learning_excluded_readers.js).
+const { learningExcludedSql } = require('../../../database/modules/machine_vias');
 
 // ── Deferred source-file move (confirm/commit path) ──────────────────────────
 // commitDocument copies the original scan to its filed location immediately,
@@ -56,6 +60,9 @@ function _scheduleSourceMove(ctx, db, documents, { srcPath, originalFilename }) 
 function register(ctx) {
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
           notifyMainWindow, spawn, path, fs, logger } = ctx;
+  // Bin-changed signal (eric design + Oracle 2026-08-16): fired ONCE per bin-mutating op below —
+  // the Search window's recycle-bin view re-pulls on it. Optional in ctx (pure unit fixtures).
+  const notifyBinChanged = typeof ctx.notifyBinChanged === 'function' ? ctx.notifyBinChanged : () => {};
 
   const documents  = require('../../../database/modules/documents');
   const learning   = require('../../../database/modules/learning');
@@ -63,7 +70,16 @@ function register(ctx) {
   const templates  = require('../../../database/modules/templates');
   const previewService = require('../../services/previewService');
   const workflowService = require('../../services/workflowService');
+  const accessService = require('../../services/accessService');
   const { requireRole, requireLogin, hasRole, logAudit, getCurrentUser } = require('../auth/handler');
+  // Per-document read authz (Slice 0). Throws a FORBIDDEN error (crosses IPC as the
+  // rejection reason) when the gate is on and the actor may not read this document.
+  // not_found also denies (hide existence). Kill switch ACCESS_GATE_ENABLED (default ON).
+  const _assertDocAccess = (db, sess, docId) => {
+    if (!accessService.gateEnabled()) return;
+    const acc = accessService.canAccessDocument(db, sess, docId);
+    if (!acc.allow) throw Object.assign(new Error('You do not have permission to view this document.'), { code: 'FORBIDDEN' });
+  };
   // Shared in-process presence map (the "being reviewed by" signal) — the SAME instance the /v1
   // client API publishes to, so a desktop reviewer is visible to clients and vice-versa.
   const presence = require('../../services/presenceService').shared();
@@ -72,28 +88,137 @@ function register(ctx) {
   // Transport-agnostic review orchestration — the SAME confirm/defer/restore the detached-client
   // /v1 API will call (Phase 3). The desktop injects its Electron-only steps as hooks so this
   // path stays byte-identical; auth + the workflow lock are enforced at the edge (requireUnlocked).
-  const reviewService = require('../../services/reviewService').createReviewService({
+  const reviewService = _sharedReviewServiceInstance = require('../../services/reviewService').createReviewService({
     documents, learning, doctypes,
     filing: require('../filing/handler'),
     fs, path, logger,
     audit: (db, entry) => logAudit(db, entry),
     onScheduleSourceMove: (args) => _scheduleSourceMove(ctx, getDb(), documents, args),
+    // Q1 (2026-08-22): under keep_processed_originals an un-drained original is MOVED into Processed
+    // at confirm instead of unlinked (the same drain the import uses; retries on a transient lock).
+    drainOriginal: (srcPath, destDir, originalFilename) =>
+      require('../processing/handler').drainOriginalToFolder(fs, path, srcPath, destDir, originalFilename),
     onTaughtConfirm: (db, docId, info) => _upsertTemplate(ctx, db, docId, info),
     onScopeGraduated: (db, docId, info) => _maybeGraduationTemplate(ctx, db, docId, info),
+    // Slice 1 (learn-on-commit) — keep a matched/graduated template's identity converging on
+    // EVERY confirm, not only a taught one (kill switch template_learn_on_confirm, DEFAULT OFF).
+    learnTemplateOnCommit: (db, docId, info) => {
+      const tid = templates.learnTemplateOnCommit(db, docId, info);
+      // Chris round 15 card 2: the intersection above lives in the DB; the Python matcher reads the
+      // template FILE. Mirror it (the same write _upsertTemplate does on a taught confirm).
+      if (tid && process.env.TEMPLATE_FILE_SYNC_ON_COMMIT !== '0') {
+        try { _writeTemplateFile(db, tid, path, fs, templatesDir()); } catch (e) { logger?.warn?.(`template file sync (commit): ${e && e.message}`); }
+      }
+      return tid;
+    },
+    // Slice 1 (2026-08-21, scope-local auto-accept, DARK behind scope_sweep_auto_accept): a human
+    // confirm on (supplier, type) schedules the server-side pass for THAT scope. Lazy require —
+    // processing/handler requires this module for getReviewService, so a top-level require would
+    // be circular. A no-op while dark; never throws into the confirm.
+    onAfterConfirm: (db, info) => {
+      try { require('../processing/handler').scheduleScopeAutoAccept(db, { supplier: info.supplier_name, typeSlug: info.typeSlug, via: info.via }); }
+      catch (e) { logger?.warn?.('auto-accept schedule failed: ' + (e && e.message)); }
+      // Slice 3 (DARK behind quiet_reread_enabled): a TAUGHT confirm is the one moment the sender's
+      // other held documents can read differently — re-read the template-less ones quietly.
+      if (info.taught && !info.via) {
+        try { require('../processing/handler').scheduleQuietReread(db, { supplier: info.supplier_name, typeSlug: info.typeSlug, reason: 'teach', seedDocId: info.document_id }); }
+        catch (e) { logger?.warn?.('quiet re-read schedule failed: ' + (e && e.message)); }
+      }
+      // P2 (2026-08-22): the confirm that makes the scope READY re-reads its held siblings (dark).
+      try { require('../processing/handler').scheduleReadyReread(db, { supplier: info.supplier_name, typeSlug: info.typeSlug, readyBefore: info.readyBefore, seedDocId: info.document_id, via: info.via }); }
+      catch (e) { logger?.warn?.('ready re-read schedule failed: ' + (e && e.message)); }
+      // A6 (type-split arc, dark): confirming a doc that carried the "several document types" note
+      // re-reads its same-template, same-type, still-noted siblings (the confirm-once ripple).
+      if (info.typeSplitNoted && !info.via) {
+        try { require('../processing/handler').scheduleTypeSplitReread(db, { supplier: info.supplier_name, typeSlug: info.typeSlug, templateId: info.templateId, seedDocId: info.document_id, via: info.via }); }
+        catch (e) { logger?.warn?.('type-split ripple schedule failed: ' + (e && e.message)); }
+      }
+    },
+    readyProbe: (db, sup, slug) => { try { return require('../processing/handler').readyProbe(db, sup, slug); } catch { return null; } },
+    recordReviewEvent: (db, ev) => { try { return require('../processing/handler').recordReviewEvent(db, ev); } catch { return null; } },   // B1
     captureSample: async (tId, docId) => {
       if (ctx.captureSampleWords) {
         await ctx.captureSampleWords(tId, docId);
         if (ctx.generateLandmarks) await ctx.generateLandmarks(tId);
+        if (ctx.generateSampleAngle) await ctx.generateSampleAngle(tId);
       }
     },
     notifyCounts: (db) => {
       notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
       notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
     },
+    // Slice 3 (amount routing): capture the total's trust context before the note-clear, and — detached +
+    // fail-open — auto-create an approval route from it. Both no-op unless WORKFLOW_AMOUNT_ROUTING is armed
+    // AND the workflow feature is entitled (a const, false today), so this is byte-identical + un-strandable.
+    captureRouteContext: (db, docId, corrections) =>
+      require('../../services/amountRouting').captureTotalContext(db, docId, corrections,
+        { getExtractedTotalContext: documents.getExtractedTotalContext }),
+    startDefaultRoute: (db, docId, routeCtx, meta) =>
+      require('../../services/amountRouting').startDefaultRoute(db, docId, routeCtx, meta, {
+        entitled: (d) => { try { return !!require('../../services/entitlementService').checkClientEntitlement(d).workflow.entitled; } catch { return false; } },
+        hasActiveRoute: (d, id) => require('../../database/modules/workflow').hasActiveRoute(d, id),
+        currencyConsistent: (d, sup, slug, fk, v) => require('../../database/modules/trust').currencyConsistentForField(d, sup, slug, fk, v),
+        floor: (d) => parseInt(learning.getSetting(d, 'critical_field_conf_floor', '88'), 10) || 0,
+        listActiveRules: (d) => require('../../database/modules/workflow').listActiveRouteRules(d),
+        usersByRole: (d, role) => require('../../database/modules/auth').getAllUsers(d).filter(u => u.role === role),
+        assign: (actor, opts) => require('../../services/workflowService').createWorkflowService({ audit: (e) => logAudit(db, e) }).assign(db, actor, opts),
+        audit: (e) => logAudit(db, e),
+        summarizeRule: (rule) => require('../../database/modules/workflow').summarizeRule(db, rule),
+      }),
     // releaseDelayMs stays 0 (the default): the old 150ms "release the preview file handle" wait
     // before filing was vestigial — the preview is an in-memory data URL, not an OS handle, and the
     // source-file delete is already deferred + retry-guarded — so it only added confirm latency
     // (eric/Oracle-verified). The renderer's twin 150ms was removed too. See reviewService.confirm.
+  });
+
+  // ── Batch-audit / "Quick check" grid for auto-filed docs (2026-08-24) ─────────
+  // A post-filing confidence sweep: lay a just-filed BATCH out as a grid, correct any wrong reads, and
+  // re-file + re-learn each via the shared reviewService.confirm(allowRefile) — see
+  // src/services/batchAuditService.js and docs/oracle_log.md (SIGN-OFF-W/COND 2026-08-24). DARK by
+  // default (batch_audit_enabled); issuer + document_type edits are routed to full Review, value/date
+  // edits happen here. Anchor-preserve (value-not-position) is killable (BATCH_AUDIT_PRESERVE_ANCHORS).
+  let _valPatternsRawBA;
+  const _loadValPatternsRaw = () => {
+    if (_valPatternsRawBA === undefined) {
+      try { _valPatternsRawBA = JSON.parse(fs.readFileSync(ctx.resourcePath('config', 'keyword_patterns.json'), 'utf8')).validation_patterns || {}; }
+      catch (e) { logger?.warn?.('batch-audit validation patterns: ' + (e && e.message)); _valPatternsRawBA = {}; }
+    }
+    return _valPatternsRawBA;
+  };
+  const _batchAuditEnabled = () => process.env.BATCH_AUDIT_ENABLED === '1'
+    || (process.env.BATCH_AUDIT_ENABLED !== '0' && learning.getSetting(getDb(), 'batch_audit_enabled', 'false') === 'true');
+  const _batchAuditPreserveAnchors = () => process.env.BATCH_AUDIT_PRESERVE_ANCHORS !== '0'
+    && learning.getSetting(getDb(), 'batch_audit_preserve_anchors', 'true') !== 'false';
+  const batchAudit = require('../../services/batchAuditService').createBatchAuditService({
+    reviewService, documents, doctypes,
+    getEvent: (db, id) => { try { return require('../processing/handler').getReviewEvent(db, id); } catch { return null; } },
+    valPatterns: _loadValPatternsRaw,
+    preserveAnchors: _batchAuditPreserveAnchors,
+    // The canonical folder-date parser, so an invalid-date edit is refused on the SAME predicate as the
+    // confirm/filing gate (not the loose validation_patterns) — see batchAuditService.validateEdit.
+    normaliseDate: (v) => require('../filing/handler').normaliseDate(v),
+  });
+
+  // Grid read — event-id addressed (main resolves the ids; a renderer id-list is never trusted).
+  // PROJECTED values only (no on-disk paths / ocr_text). Admin/Edit. Preview is fetched separately
+  // via get-document-pages (which resolves stored_path server-side from the row).
+  ipcMain.handle('get-autofiled-grid', (_e, { eventId } = {}) => {
+    requireRole('admin', 'edit');
+    if (!_batchAuditEnabled()) return { ok: false, reason: 'disabled', rows: [] };
+    return batchAudit.buildGrid(getDb(), { eventId });
+  });
+
+  // Batch correct — loops reviewService.confirm(allowRefile,bulk) per CHANGED doc in main, cross-
+  // checking every docId against the event's ids, re-adding the confirm safety checkpoint the isRefile
+  // path bypasses (validate value / refuse issuer+type), and surfacing every non-success per doc.
+  ipcMain.handle('batch-audit-correct', async (_e, { eventId, edits } = {}) => {
+    const db = getDb();
+    if (!_batchAuditEnabled()) return { ok: false, reason: 'disabled', results: [], filed: 0 };
+    // Same high-value-write license recheck as confirm-review (F-01).
+    const licenseDenial = require('../licensing/handler').licenseDenied(db);
+    if (licenseDenial) return { ok: false, error: 'A valid license is required to file documents. Please re-activate ScanFinder.', ...licenseDenial };
+    const sess = requireRole('admin', 'edit');
+    return batchAudit.confirmBatch(db, { userId: sess.id, username: sess.username, role: sess.role }, { eventId, edits });
   });
 
   // ── Validation patterns (shared source of truth for UI field validation) ─────
@@ -101,22 +226,115 @@ function register(ctx) {
   // EXACT same `validation_patterns` the Python extraction qualification uses
   // (config/keyword_patterns.json), so UI and pipeline can never drift apart — the
   // renderer compiles these literal strings to RegExp rather than re-authoring
-  // them. Read once and cached; returns {} if the file is missing/unparseable so
-  // the UI degrades gracefully (no validation rather than a crash).
-  let _validationPatternsCache;
+  // them. The FILE is read once and cached; every SETTING-dependent widening is applied
+  // per call (see below). Returns {} if the file is missing/unparseable so the UI degrades
+  // gracefully (no validation rather than a crash).
+  //
+  // WHY THE CACHE HOLDS THE RAW CONFIG AND NOT THE MERGED RESULT (Oracle C4, 2026-08-10):
+  // Python re-reads `vat_eu_formats` at EVERY extraction spawn (processing/handler.js
+  // `_reconcileEnv`), so caching the merged patterns here meant that flipping the toggle
+  // widened extraction immediately while Review's on-blur check stayed narrow until the app
+  // was restarted. That transient window is a live reinstatement of the exact UI-vs-pipeline
+  // disagreement this widening exists to prevent (the `iban` defect of 2026-08-08) — and it
+  // is what an owner hits within a minute of flipping. The merge is cheap (one concat on a
+  // handful of strings); the file read is the expensive part, so that is what is cached.
+  let _validationPatternsRaw;
   ipcMain.handle('get-validation-patterns', () => {
     requireLogin();
-    if (_validationPatternsCache === undefined) {
+    if (_validationPatternsRaw === undefined) {
       try {
         const cfgFile = ctx.resourcePath('config', 'keyword_patterns.json');
         const cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8'));
-        _validationPatternsCache = cfg.validation_patterns || {};
+        _validationPatternsRaw = cfg.validation_patterns || {};
       } catch (e) {
         logger?.warn?.(`get-validation-patterns: ${e.message}`);
-        _validationPatternsCache = {};
+        _validationPatternsRaw = {};
       }
     }
-    return _validationPatternsCache;
+    // The renderer's twin of keyword._apply_vat_eu. The shipped `vat_gb` patterns are UK ONLY,
+    // so an operator typing a correct Irish or German VAT number by hand is told their value is
+    // wrong. The widening MUST happen on both sides or the UI and the pipeline disagree about the
+    // same value. Merged here, at the one place the renderer's patterns are built, rather than in
+    // the renderer, so the two consumers share one decision. Default OFF.
+    //
+    // NOT the only reader of these patterns: `database/modules/trust.js`
+    // (`_sharedValidationPatterns`) loads the same file directly and deliberately does NOT widen —
+    // see the note there. Three consumers, two of which widen from this setting.
+    let out = _validationPatternsRaw;
+    try {
+      if (learning.getSetting(getDb(), 'vat_eu_formats', 'false') === 'true') {
+        const eu = out.vat_eu || [];
+        if (eu.length && out.vat_gb) {
+          out = Object.assign({}, out, { vat_gb: out.vat_gb.concat(eu) });
+        }
+      }
+    } catch { /* a settings read must never break field validation */ }
+    return out;
+  });
+
+  // ── Taught-issuer plausibility (warning only) ────────────────────────────────
+  // Chris round 2, 2026-08-11: a ⊕ teach read '@a eens Ee' off the page, showed a green
+  // "Captured the Document Issuer position" toast, flagged nothing, and the value became two
+  // output folders. His line for it — every guard in this product is pointed at ABSENCE, none at
+  // CONFIDENT NONSENSE — is exactly right: the app warns plainly on an EMPTY issuer and says
+  // nothing on a gibberish one.
+  //
+  // Answers a renderer question with the ONE shared predicate (learning.issuerReadLooksImplausible)
+  // rather than letting the teach surfaces grow their own copy — this repo already carries four
+  // spellings of a ref predicate and a warning about the fifth.
+  //
+  // WARNING ONLY. It never blocks a confirm, rewrites a value or rejects a teach. Kill switch:
+  // setting `teach_issuer_plausibility_warn` = 'false'. DEFAULT ON, mirroring
+  // `teach_typed_value_locate` — nothing is persisted or changed by it, it only adds a sentence,
+  // and the defect it answers files documents into junk folders silently.
+  ipcMain.handle('check-issuer-read', (_e, value) => {
+    requireLogin();
+    try {
+      if (learning.getSetting(getDb(), 'teach_issuer_plausibility_warn', 'true') === 'false') {
+        return { implausible: false, off: true };
+      }
+      return { implausible: !!learning.issuerReadLooksImplausible(value) };
+    } catch (e) {
+      logger?.warn?.(`check-issuer-read: ${e.message}`);
+      return { implausible: false };          // a failed check must never block a teach
+    }
+  });
+
+  // ── "That name is one character off one you already use" (read-only, advisory) ─────────────
+  // The customer-facing half of the write guard in `dc4bf1d`. `templates._upsertFields` already
+  // KEEPS an incumbent frozen identity when a teach brings a near match; this lets the teach
+  // surfaces SAY so at the draw, in the operator's own moment, instead of the app appearing to
+  // ignore them. Chris round 4, card 2 — his own proposed sentence.
+  //
+  // Advisory only: no write, no block, no rewrite. A failure returns "not near", so a broken
+  // lookup can never stop a teach (the same posture as check-issuer-read).
+  // A3 (type-split arc): PURE pre-check — would confirming `document_type_slug` for this issuer split
+  // a 100 %-one-type history? The teach wizard asks BEFORE it promotes (it promotes before it
+  // confirms, so a gate fail at confirm would leave a half-born template); reviewService's gate is the
+  // pre-claim backstop. Advisory: a failure returns {split:false}.
+  ipcMain.handle('check-type-split', (_e, p) => {
+    requireLogin();
+    try {
+      if (learning.getSetting(getDb(), 'type_split_confirm_gate', 'true') === 'false' || process.env.TYPE_SPLIT_CONFIRM_GATE === '0') {
+        return { split: false, reason: 'off' };
+      }
+      return require('../../../database/modules/typeSplit').checkTypeSplit(getDb(), p && p.supplier_name, p && p.document_type_slug);
+    } catch (e) {
+      logger?.warn?.(`check-type-split: ${e.message}`);
+      return { split: false, reason: 'error' };
+    }
+  });
+  ipcMain.handle('check-identity-near-match', (_e, value) => {
+    requireLogin();
+    try {
+      // Chris r17 card 3: the wizard may pass { value, templateId } so a sub-run hit on the document's own
+      // layout reads as 'prefix-template'; a bare string still works (the ⊕ teach, older callers).
+      if (value && typeof value === 'object') return learning.findNearMatchIdentity(getDb(), value.value, { templateId: value.templateId || null });
+      return learning.findNearMatchIdentity(getDb(), value);
+    } catch (e) {
+      logger?.warn?.(`check-identity-near-match: ${e.message}`);
+      return { near: false, reason: 'error' };
+    }
   });
 
   // ── Built-in field label words (read-only, for the label-overrides UI) ───────
@@ -180,6 +398,7 @@ function register(ctx) {
   ipcMain.handle('get-review-queue',  () => { requireRole('admin', 'edit'); return documents.getReviewQueue(getDb()); });
   ipcMain.handle('get-deferred-queue',() => { requireRole('admin', 'edit'); return documents.getDeferredQueue(getDb()); });
   ipcMain.handle('get-review-count',  () => { requireRole('admin', 'edit'); return documents.getReviewCount(getDb()); });
+  ipcMain.handle('get-review-split',  () => { requireRole('admin', 'edit'); return documents.getReviewSplit(getDb()); });
   ipcMain.handle('get-deferred-count',() => { requireRole('admin', 'edit'); return documents.getDeferredCount(getDb()); });
 
   // Advanced → "View learning history": list the confirmed values learned for a
@@ -217,6 +436,18 @@ function register(ctx) {
     requireRole('admin', 'edit');
     try { return learning.getTaughtFieldKeys(getDb(), scope || {}); } catch { return []; }
   });
+  // How many CONFIRMED docs already exist for a (supplier, doc-type) scope. Drives the Review
+  // renderer's live suppression of the stale "heading names a type that doesn't match this
+  // supplier's saved layout" note: once ONE doc of that type is confirmed for the supplier, the
+  // type IS valid for them and the (already-stored) note is out of date. Forgiving supplier match
+  // (getConfirmedDocsForScope uses LIKE) so a slightly-garbled variant still counts.
+  ipcMain.handle('scope-confirmed-count', (_e, scope) => {
+    requireRole('admin', 'edit');
+    const { supplier_name, document_type_slug } = scope || {};
+    if (!document_type_slug) return 0;
+    try { return documents.getConfirmedDocsForScope(getDb(), { supplier_name, document_type_slug }).length; }
+    catch { return 0; }
+  });
   // Delete ONE mis-stored learned anchor (learning-history → 🗑). Admin/edit; audited.
   ipcMain.handle('delete-field-anchor', (_e, payload) => {
     requireRole('admin', 'edit');
@@ -242,13 +473,22 @@ function register(ctx) {
   ipcMain.handle('get-recent-auto-filed', () => {
     requireRole('admin', 'edit');
     const db = getDb();
-    let ids = [];
+    let ids = [], approved = [];
     try {
       const o = JSON.parse(learning.getSetting(db, 'recent_auto_filed', '') || 'null');
-      if (o && Array.isArray(o.ids) && (!o.at || (Date.now() - o.at) <= 7 * 864e5)) ids = o.ids;
+      if (o && Array.isArray(o.ids) && (!o.at || (Date.now() - o.at) <= 7 * 864e5)) {
+        ids = o.ids;
+        // operator-approved subset (the consent bar's File N) — counted separately by the banner
+        // (Chris r7 card 2). An old record without the array = everything counted automatic.
+        if (Array.isArray(o.approved)) approved = o.approved.filter(id => ids.includes(id));
+      }
     } catch {}
-    const docs = ids.length ? documents.getByIds(db, ids) : [];
-    return { count: docs.length, docs };
+    // Chris round 17 card 4: derive-don't-maintain — the rolling id SET never forgets a doc that was put
+    // back / sent back / re-filed by hand, so the tile counted 35 in-queue docs as "filed automatically".
+    // Only docs STILL confirmed by a machine door (a via, or the import's 'Auto-filed (…)' username) count.
+    const docs = (ids.length ? documents.getByIds(db, ids) : [])
+      .filter(d => d && d.status === 'confirmed' && (d.confirmed_via || /^Auto-filed/.test(String(d.confirmed_by_username || ''))));
+    return { count: docs.length, docs, approvedIds: approved };
   });
   ipcMain.handle('clear-recent-auto-filed', () => {
     requireRole('admin', 'edit');
@@ -256,15 +496,156 @@ function register(ctx) {
     return { ok: true };
   });
 
-  // Batch auto-file eligibility for the renderer Reprocess-All path — the SAME predicate the
-  // backend import path uses (scope graduation floor + structural safety gate), decided
-  // server-side with getFieldFormats scanned ONCE. Keeps the two auto-file sites from drifting.
-  ipcMain.handle('get-auto-file-eligible', (_e, docIds) => {
+  // RETIRED 2026-08-12 (Oracle C5): 'get-auto-file-eligible' fed the renderer's queue-wide
+  // autoCommitFullConfidence sweep — a renderer-supplied id list was the defect surface (it filed
+  // 101 docs across every supplier after a 14-doc group reprocess). The post-reprocess offer is now
+  // computed SERVER-side from the batch's own recorded docIds in consume-reprocess-completion
+  // (processing/handler.js) and accepted via the payload-less reprocess-autocommit-accept.
+  // No restore door: queue-wide bulk filing belongs to File All Ready (human) + the scope sweep.
+
+  // WHY is this one document not filing itself? Returns the SAME predicate's verdict verbatim, so
+  // Review can state the real reason instead of re-deriving one from the confidence threshold.
+  // It re-derived it before, and got it WRONG in two directions: a doc held by the structural gate
+  // was told "just below the X% you've set — lower the threshold" (the threshold cannot help; the
+  // gate refuses at any floor), and a graduated doc ABOVE its floor was told "Ready to file" —
+  // asserting readiness for a document this very predicate had refused.
+  ipcMain.handle('get-auto-file-reason', (_e, docId) => {
     requireRole('admin', 'edit');
     const db = getDb();
     const trust = require('../../../database/modules/trust');
-    const rows = (Array.isArray(docIds) ? docIds : []).map(id => documents.getById(db, id)).filter(Boolean);
-    return { ids: trust.autoFileEligibleIds(db, rows) };
+    const doc = documents.getById(db, Number(docId));
+    if (!doc) return null;
+    const r = trust.isAutoFileEligible(db, doc) || {};
+    // reason is 'kind:field_key' (e.g. unverifiable-value:customer_name) — split so the renderer
+    // never has to parse it, and can name the field in plain English.
+    const [kind, field] = String(r.reason || '').split(':');
+    const out = { eligible: !!r.eligible, kind: kind || null, field: field || null,
+                  floor: r.floor ?? null, trusted: !!r.trusted };
+    // COLD-START COUNTDOWN (2026-08-18, Oracle C2 + Chris "say the negative result out loud").
+    // `unverifiable-value` reads as a mystery — "couldn't be checked automatically" — when its
+    // commonest cause on a young install is simply that this sender has not been confirmed enough
+    // times yet for its learned format to leave the provisional channel the gate deliberately
+    // cannot see (learning.FORMAT_SOLID_MIN). Measured on the owner's own install: 34 of 53 held
+    // documents were exactly this, every one from a sender sitting on 2 confirms. Attach the two
+    // numbers so Review can state the real reason AND what clears it, instead of inviting another
+    // pointless Reprocess All. Advisory only — no gate reads this.
+    // STALE LAYOUT NOTE (owner-found 2026-08-18). The engine's "Couldn't match this document to
+    // the supplier's saved <Type> layout" note goes obsolete the moment the operator confirms one
+    // document of that type for that sender — and Review already strips it from the DISPLAY on
+    // exactly that condition (renderer.js ~1406). But the strip is cosmetic: the row keeps the
+    // note, so the summary still counts a flag the user cannot see, and the gate still refuses the
+    // document for good. Report the class distinctly so Review can say the truthful thing and
+    // point at the ONE-document re-read that actually clears it, instead of a mystery flag that
+    // sends the customer to Reprocess All. Read-only: the row is not touched here.
+    if (kind === 'flagged') {
+      try {
+        const STALE = /doesn't match this supplier's saved layout|match this document to (?:the supplier's|a) saved/i;
+        const noted = db.prepare(`SELECT field_key, validation_note FROM extractions
+                                   WHERE document_id = ? AND TRIM(COALESCE(validation_note,'')) <> ''`).all(doc.id);
+        const stale = noted.filter(e => STALE.test(e.validation_note));
+        if (stale.length && stale.length === noted.length && String(doc.supplier_name || '').trim()) {
+          const n = db.prepare(`SELECT COUNT(*) AS n FROM documents
+             WHERE status = 'confirmed' AND document_type_id = ?
+               AND LOWER(TRIM(supplier_name)) = LOWER(TRIM(?))${learningExcludedSql(db, '')}`).get(doc.document_type_id, doc.supplier_name).n;
+          if (n > 0) { out.kind = 'stale-layout-note'; out.field = stale[0].field_key; out.scopeConfirms = n; }
+        }
+      } catch { /* advisory — never break the reason panel */ }
+    }
+    if (kind === 'unverifiable-value' && field) {
+      try {
+        const dt = db.prepare('SELECT id FROM document_types WHERE id = ?').get(doc.document_type_id);
+        if (dt && String(doc.supplier_name || '').trim()) {
+          const n = db.prepare(`SELECT COUNT(*) AS n FROM documents
+             WHERE status = 'confirmed' AND document_type_id = ?
+               AND LOWER(TRIM(supplier_name)) = LOWER(TRIM(?))${learningExcludedSql(db, '')}`).get(dt.id, doc.supplier_name).n;
+          const need = require('../../../database/modules/learning').FORMAT_SOLID_MIN;
+          if (n < need) { out.scopeConfirms = n; out.confirmsNeeded = need; }
+        }
+      } catch { /* advisory — never break the reason panel */ }
+    }
+    return out;
+  });
+
+  // ── PER-SENDER READINESS (owner design, 2026-08-18) ────────────────────────────────────────
+  // "These senders are nearly ready to file themselves — clear these and you're good to go."
+  // The unit of progress in this app is the SENDER, not the document: what gates a queued
+  // document is almost always how many documents from that sender have been confirmed (a learned
+  // format stays provisional, and invisible to the filing gate, below learning.FORMAT_SOLID_MIN),
+  // yet the queue only ever counted documents. This returns, for every (sender, type) scope with
+  // documents still queued, how many confirms it has and how many it needs — so Review can put a
+  // finish line on each sender instead of leaving the customer to infer one.
+  //
+  // Read-only and advisory: nothing here gates filing (trust.js remains the sole predicate) and
+  // no value is written. Deliberately reports FACTS about the app's own state, never a task list
+  // — a visible "you owe 3 more confirms" meter invites careless confirming to hit the number,
+  // which poisons the very learning the number describes (barry + Chris, independently).
+  ipcMain.handle('get-scope-readiness', () => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const trust = require('../../../database/modules/trust');
+    const need = require('../../../database/modules/learning').FORMAT_SOLID_MIN;
+    const rows = db.prepare(`
+      SELECT d.supplier_name AS supplier, dt.slug AS slug, dt.name AS typeName, COUNT(*) AS queued
+        FROM documents d JOIN document_types dt ON dt.id = d.document_type_id
+       WHERE d.status = 'needs_review' AND TRIM(COALESCE(d.supplier_name, '')) <> ''
+       GROUP BY 1, 2`).all();
+    // COUNT WHAT THE GATE COUNTS, not what looks obvious. A raw confirmed-DOCUMENT count is the
+    // wrong number and produced a header that lied on the owner's own install: his Meadowvale
+    // scope had 3 confirmed documents but only 2 of them carry an issuer value, because a TAUGHT
+    // document is committed with few or no extraction rows (measured 2026-08-18: 9 of 10 taught
+    // documents have no supplier_name row at all). The gate verifies against the learned FORMAT
+    // group, whose `confirmed_count` is built from documents that actually carry a value — so
+    // that is the number both the promise and the countdown must use.
+    const learning = require('../../../database/modules/learning');
+    const counts = new Map((learning.getFieldFormats(db, { includeProvisional: true }) || [])
+      .filter(f => f.field_key === 'supplier_name' && String(f.supplier_name || '').trim())
+      .map(f => [`${String(f.supplier_name).toLowerCase().trim()}|${String(f.document_type || '').toLowerCase().trim()}`,
+                 Number(f.confirmed_count) || 0]));
+    // Chris r13 card 1: the badge read "✓ files by itself" for a sender with 4 confirms and NO
+    // taught layout — but a sub-100 document needs a TEMPLATE to pass docTrustGate ('no-template'),
+    // and an untaught sender only gets one when the scope GRADUATES (the graduation template, W
+    // confirms). So: ready = graduated, OR (formats solid AND a template exists for the scope); and
+    // an untaught scope's countdown runs to the graduation window, not the 3-confirm format bar.
+    const W = trust._configuredWindow(db);   // trust's own clamp — never a literal (Oracle F3)
+    // ONE readiness predicate (P2, Oracle C2.4 — "two readiness notions is the forbidden class"):
+    // the badge, the teach card and the quiet lane's 'ready' trigger all ask scopeReadiness.isReady.
+    // `hasFormat` is now ROLE-COMPLETE (supplier + the type's ref + date groups solid), not
+    // supplier-only — a supplier-only-solid scope lit "✓ files by itself" while the sweep still
+    // refused the reference (Chris 13b card 1, Nordwind).
+    const readiness = require('../../../database/modules/scopeReadiness');
+    const allFormats = learning.getFieldFormats(db);
+    return rows.map(r => {
+      const supN = String(r.supplier).toLowerCase().trim(), slugN = String(r.slug).toLowerCase().trim();
+      const key = `${supN}|${slugN}`;
+      const rd = readiness.isReady(db, r.supplier, r.slug, { formats: allFormats });
+      const graduated = !!rd.graduated;
+      const hasFormat = !!rd.rolesSolid || graduated;
+      const hasTemplate = !!rd.hasTemplate;
+      return { supplier: r.supplier, slug: r.slug, typeName: r.typeName, queued: r.queued,
+               confirms: counts.get(key) || 0, needed: hasTemplate ? need : Math.max(need, W), graduated, hasFormat, hasTemplate,
+               // Oracle F3 (SEND BACK → fixed): a template is REQUIRED for any sub-100 doc, so a
+               // graduated scope with no template is a distinct "needs a re-read/teach" state, never
+               // ready. ready = (graduated || formats solid) AND a template exists.
+               ready: (graduated || hasFormat) && hasTemplate,
+               needsTemplate: (graduated || hasFormat) && !hasTemplate };
+    });
+  });
+
+  // ── POST-TEACH FOLLOW-UP (the "check a few more and this sender files itself" card) ──────────
+  // After a teach, tell the operator the TRUTH about how close the taught sender is to auto-filing
+  // and whether confirming a few queued siblings now will get it there. Read-only + advisory; NOTHING
+  // here confirms or files — the card only ever navigates to Review, where every confirm passes the
+  // full guard set. gary+barry → Oracle SIGN-OFF-WITH-CONDITIONS 2026-08-21.
+  //   C1: `needed` is the MAX over the scope's role fields (issuer/ref/date) of (FORMAT_SOLID_MIN −
+  //       the format group's confirmed_count) — the number the GATE reads (getFieldFormats), never a
+  //       raw confirmed-document count (a taught doc carries few/no rows).
+  //   C2: we only PROMISE "and it files itself" when enough same-scope siblings are queued AND they
+  //       bring at least `needed` DISTINCT reference values — else the ref group stays 'constant' and
+  //       a genuinely-new invoice number would still be refused (the constant-ref lie). Conservative:
+  //       when in doubt we drop the promise to a plain reward, never over-promise.
+  ipcMain.handle('get-teach-followup', (_e, p) => {
+    requireRole('admin', 'edit');
+    return require('../../services/teachFollowup').computeTeachFollowup(getDb(), p && p.docId);
   });
 
   // Graduation roster + per-supplier opt-out (Slice 5 UX — the "Suppliers handled automatically"
@@ -338,6 +719,66 @@ function register(ctx) {
     } catch {}
     return { ok: true, accepted: list, cleared };
   });
+  // "Use '<name>'" resolve → the operator supplier PIN (Part B). Writes documents.supplier_pin so a
+  // REPROCESS forces this supplier (--known-supplier) instead of reverting to the coarse-logo pick. Local
+  // to the doc — writes NO logo/hint learning; the pin is cleared on confirm (documents.confirm). The
+  // engine keeps a pinned read REVIEW-BOUND (method 'operator_pin' + note). Admin/edit; audited.
+  ipcMain.handle('resolve-issuer', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const value = p && typeof p.value === 'string' ? p.value.trim() : '';
+    const docId = p && p.docId;
+    if (!value || !docId) return { ok: false, error: 'missing-value-or-doc' };
+    let changed = 0;
+    try { changed = db.prepare('UPDATE documents SET supplier_pin = ? WHERE id = ?').run(value, docId).changes; }
+    catch (e) { return { ok: false, error: e.message }; }
+    try {
+      logAudit(db, { action: 'supplier_resolved', action_category: 'learning',
+        outcome: 'success', metadata: { value, doc_id: docId } });
+    } catch {}
+    return { ok: true, changed };
+  });
+  // ── CORRECTION RIPPLE (identity text-first, slice 2) ─────────────────────────────────
+  // One correction should heal the batch. Siblings are found BY TEXT (the same distinctive
+  // branding tokens), never by the logo layer — nearest-neighbour would keep favouring the
+  // bigger WRONG pool, which is exactly why the owner's single correction didn't heal the
+  // other 19 Larkspur dockets. Read-only; the apply goes through the existing supplier-PIN
+  // rail, so everything stays review-bound and plants no learning.
+  // Kill switch SUPPLIER_RIPPLE=0 (additive feature; the IPCs simply report nothing).
+  ipcMain.handle('find-issuer-siblings', (_e, p) => {
+    requireRole('admin', 'edit');
+    if (process.env.SUPPLIER_RIPPLE === '0') return { ok: true, siblings: [] };
+    const docId = p && p.docId, value = p && p.value;
+    if (!docId || !value) return { ok: true, siblings: [] };
+    try {
+      const siblings = require('../../../database/modules/supplierSiblings')
+        .findSiblings(getDb(), docId, value);
+      return { ok: true, siblings };
+    } catch (e) {
+      logger?.warn?.(`find-issuer-siblings: ${e.message}`);
+      return { ok: true, siblings: [] };   // advisory — never break the resolve it follows
+    }
+  });
+  ipcMain.handle('apply-issuer-ripple', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const value = p && typeof p.value === 'string' ? p.value.trim() : '';
+    const ids = Array.isArray(p && p.docIds) ? p.docIds.map(Number).filter(Number.isInteger) : [];
+    if (!value || !ids.length) return { ok: false, error: 'missing-value-or-docs' };
+    let applied = 0;
+    // Same single-doc write as resolve-issuer, per document: a PIN only — no logo/hint learning,
+    // cleared on confirm, and the engine keeps a pinned read review-bound ('operator_pin' + note).
+    const stmt = db.prepare('UPDATE documents SET supplier_pin = ? WHERE id = ? AND status IN (\'needs_review\',\'deferred\')');
+    for (const id of ids.slice(0, 100)) {
+      try { applied += stmt.run(value, id).changes; } catch { /* skip the row, never abort the ripple */ }
+    }
+    try {
+      logAudit(db, { action: 'supplier_ripple_applied', action_category: 'learning',
+        outcome: 'success', metadata: { value, doc_ids: ids.slice(0, 100), applied } });
+    } catch {}
+    return { ok: true, applied, docIds: ids.slice(0, 100) };
+  });
+
   ipcMain.handle('rename-field-value', (_e, scope) => {
     requireRole('admin', 'edit');
     const db = getDb();
@@ -349,22 +790,57 @@ function register(ctx) {
     return { changed };
   });
 
-  // get-document-with-extractions / get-document-pages are shared with the
-  // Search window (Read Only previews filed documents there too) — gate to
-  // "any signed-in user", not a specific role.
+  // get-document-with-extractions is the FULL detail (paths + ocr_text ride along via
+  // getById SELECT *) — REVIEW-ONLY since the Document-detail DTO follow-up (owner
+  // 2026-08-02, Oracle C3): Review genuinely consumes doc.folder_path (page fetch) and
+  // doc.ocr_text (name-presence), and the Review window is admin/edit by construction.
+  // Every OTHER surface (Search preview, mailbox click, resubmit — incl. Read Only)
+  // uses the PROJECTED get-document-detail below. get-document-pages stays any-role
+  // (it returns page images, never fields or paths).
   ipcMain.handle('get-document-with-extractions', (_e, id) => {
-    const sess = requireLogin();
+    const sess = requireRole('admin', 'edit');
     const db  = getDb();
+    _assertDocAccess(db, sess, id);
     // Pure data assembly (doc + extractions + resolved slug + digit-only fields)
     // lives in the shared service so a detached client can reuse it; auth + audit
     // stay here at the transport edge.
     const doc = previewService.getDocumentDetail(db, id, { learning });
     if (doc) {
+      // Per-template field HIDING (migration 54): the fields hidden for THIS doc's matched template,
+      // so the renderer can skip their rows (a layout that lacks a field stops showing it empty).
+      // When the doc matched NO template (a Stage-0 miss — the "No template match" case), fall back to
+      // resolving the supplier's layout by the issuer name / branding, so the hidden-field config still
+      // applies (owner 2026-07-25). Kill switch FIELD_VIS_LIVE_RESOLVE=0 restores template_id-only.
+      // Empty [] ⇒ show all fields (fail-safe; byte-identical when nothing resolves).
+      try {
+        const _t = require('../../../database/modules/templates');
+        // Start with the MATCHED template's hidden fields (unchanged when the resolver is off).
+        let _hidden = doc.template_id ? _t.getHiddenFields(db, doc.template_id) : [];
+        // UNION the (supplier, type) config across ALL sibling templates — so a per-supplier hide applies
+        // regardless of WHICH duplicate template the logo matched, and EVEN when a template matched (the
+        // old code resolved by name+type only on a Stage-0 MISS, so a doc matching the empty duplicate
+        // sibling showed the fields the owner had hidden on the other sibling). Owner 2026-07-27:
+        // same-supplier same-type templates are treated as one AUTOMATICALLY, no manual merge. Display-
+        // only + fail-safe (show all when nothing resolves). FIELD_VIS_LIVE_RESOLVE=0 ⇒ matched-only ⇒
+        // byte-identical to before.
+        if (process.env.FIELD_VIS_LIVE_RESOLVE !== '0' && doc.type_slug) {
+          const _mode = String((db.prepare('SELECT value FROM settings WHERE key = ?').get('field_visibility_resolve_mode') || {}).value) === '2' ? 2 : 1;
+          let _fp = null; try { _fp = JSON.parse(doc.keyword_fingerprint || 'null'); } catch {}
+          const _res = _t.getHiddenFieldsForSupplierType(db, { supplier_name: doc.supplier_name,
+            document_type_slug: doc.type_slug, keyword_fingerprint: Array.isArray(_fp) ? _fp : null, mode: _mode });
+          _hidden = [...new Set([..._hidden, ..._res])];
+        }
+        doc.hidden_fields = _hidden;
+      } catch { doc.hidden_fields = []; }
       logAudit(db, { action: 'document_open', target_type: 'document', target_id: id,
         document_id: id, outcome: 'success', metadata: { type: doc.type_slug || null, status: doc.status || null } });
       // Publish desktop REVIEW presence so clients see "being reviewed by <name>" — only for a
       // review-able doc opened by a reviewer (NOT a read-only Search preview of a filed doc).
-      // A single heartbeat (TTL-expiring); the renderer refreshes it while the doc stays open.
+      // A single heartbeat with a 60s TTL. CORRECTED 2026-08-24 (was: "the renderer refreshes it while
+      // the doc stays open" — FALSE): the desktop renderer never calls review-heartbeat (no caller in
+      // src/), so after ~60s an open doc is no longer "being viewed" as far as the sweep is concerned.
+      // Presence is a LEAKY proxy for "being viewed" and carries NO unsaved-edit state — it must NOT be
+      // relied on as a mid-edit guarantee (Oracle 2026-08-24, the sweep-orphan review).
       if ((doc.status === 'needs_review' || doc.status === 'deferred') && (sess.role === 'admin' || sess.role === 'edit')) {
         presence.heartbeat(id, { key: _desktopKey(sess.id), username: sess.username, displayName: sess.displayName || sess.username });
       }
@@ -372,9 +848,30 @@ function register(ctx) {
     return doc;
   });
 
-  // Renderer-driven presence refresh: the open Review window beats every ~25s so a desktop
-  // reviewer stays visible to clients past the 60s TTL while they work. Cheap in-process call;
-  // any signed-in reviewer, review-able doc only.
+  // PROJECTED single-document detail (the Document-detail DTO follow-up, Oracle C3): what
+  // the Search/mailbox/resubmit surfaces actually render — display fields + extractions —
+  // through the /v1 trust-boundary shape (dto.projectDocumentDetail) REUSED VERBATIM, so
+  // the desktop and wire projections cannot drift. No paths, no ocr_text, no hashes cross
+  // to those renderers on the single-doc click any more (the row surface was de-pathed in
+  // the prior slice). Same access gate + document_open audit as the full read.
+  ipcMain.handle('get-document-detail', (_e, id) => {
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, id);
+    const doc = previewService.getDocumentDetail(db, id, { learning });
+    if (doc) {
+      logAudit(db, { action: 'document_open', target_type: 'document', target_id: id,
+        document_id: id, outcome: 'success',
+        metadata: { type: doc.type_slug || null, status: doc.status || null, via: 'detail' } });
+    }
+    return require('../../services/dto').projectDocumentDetail(doc);
+  });
+
+  // review-heartbeat IPC — exposed so a client (or a future desktop wiring) can keep a reviewer
+  // visible to others past the 60s TTL. CORRECTED 2026-08-24 (was: "the open Review window beats every
+  // ~25s"): the DESKTOP renderer does NOT call this (no caller in src/); desktop presence is a single
+  // beat at document_open + a 60s TTL. Wiring a real ~25s heartbeat here would also keep a doc excluded
+  // from the sweep for as long as it's open — pair it with the doc-close re-trigger (the A arc) if you do.
   ipcMain.handle('review-heartbeat', (_e, id) => {
     try {
       const sess = requireLogin();
@@ -398,14 +895,60 @@ function register(ctx) {
     try { const u = getCurrentUser(); if (u) presence.release(docId, _desktopKey(u.id)); } catch {}
   });
 
+  // LIVE field visibility by the ENTERED supplier + type (2026-07-25, owner request). Review calls this
+  // on issuer-blur and on load for a doc that matched NO template, so a supplier's hidden-field config
+  // still applies (the per-template config is keyed on template_id, which is null on a "No template match"
+  // doc). Read-only. FAIL-SAFE: returns hidden:[] (show ALL fields) whenever nothing resolves — the owner's
+  // stated rule. Kill switch FIELD_VIS_LIVE_RESOLVE=0 ⇒ {disabled:true}; the renderer then keeps the
+  // template_id-keyed set from get-document-with-extractions ⇒ byte-identical to before. Mode (setting
+  // `field_visibility_resolve_mode`): 1 = entered name, doc branding fingerprint as backup (default);
+  // 2 = entered name ONLY (the dev A/B switch — flip via set-setting to test).
+  ipcMain.handle('resolve-field-visibility', (_e, payload = {}) => {
+    try {
+      requireLogin();
+      if (process.env.FIELD_VIS_LIVE_RESOLVE === '0') return { disabled: true };
+      const db = getDb();
+      const templatesMod = require('../../../database/modules/templates');
+      const { supplier_name, document_type_slug, doc_id } = payload || {};
+      if (!document_type_slug) return { hidden: [], templateId: null };
+      const modeRow = db.prepare('SELECT value FROM settings WHERE key = ?').get('field_visibility_resolve_mode');
+      const mode = String(modeRow && modeRow.value) === '2' ? 2 : 1;
+      let fp = null;
+      if (mode === 1 && doc_id) {
+        try { fp = JSON.parse(db.prepare('SELECT keyword_fingerprint FROM documents WHERE id = ?').get(doc_id)?.keyword_fingerprint || 'null'); } catch {}
+      }
+      const tid = templatesMod.findForSupplierType(db, {
+        supplier_name, document_type_slug, keyword_fingerprint: Array.isArray(fp) ? fp : null, mode });
+      // UNION the hidden-field config across ALL (supplier, type) sibling templates (duplicate-proof),
+      // not just the single tie-broken pick — same automatic resolution as get-document-with-extractions.
+      const hidden = templatesMod.getHiddenFieldsForSupplierType(db, {
+        supplier_name, document_type_slug, keyword_fingerprint: Array.isArray(fp) ? fp : null, mode });
+      return { hidden, templateId: tid || null, mode };
+    } catch { return { hidden: [], templateId: null }; }
+  });
+
   // ── Document pages for preview ──────────────────────────────────────────────
   ipcMain.handle('get-document-pages', async (_e, docId, folderPath, filename, scale) => {
-    requireLogin();
-    if (!folderPath || !filename) {
-      console.log(`[pages] docId=${docId} missing path — folderPath=${folderPath} filename=${filename}`);
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    // SECURITY (mirror /v1 F-02): resolve the on-disk location SERVER-SIDE from the doc
+    // row ONLY — the client-supplied folderPath/filename are NOT read (a compromised/replaced
+    // renderer could otherwise path.join arbitrary host paths through the render pipeline).
+    // Precedence matches the in-process preview: working copy -> filed copy -> recorded source.
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    let rFolder = null, rFile = null;
+    if (row) {
+      const pick = row.working_path || row.stored_path
+        || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null);
+      if (pick) { rFolder = path.dirname(pick); rFile = path.basename(pick); }
+    }
+    if (!rFolder || !rFile) {
+      console.log(`[pages] docId=${docId} no resolvable file`);
       return [];
     }
-    const sourcePath = path.join(folderPath, filename);
+    const sourcePath = path.join(rFolder, rFile);
 
     // A new document loading is our signal that the previous one's preview
     // has moved on — fire any deferred source-file move now (unless, oddly,
@@ -417,7 +960,7 @@ function register(ctx) {
 
     // Transport-agnostic page render lives in the shared service so the detached
     // client can reuse it; Electron collaborators are injected via deps.
-    return previewService.getDocumentPages(getDb(), { docId, folderPath, filename, scale }, {
+    return previewService.getDocumentPages(db, { docId, folderPath: rFolder, filename: rFile, scale }, {
       fs, path, spawn, pythonExe, pythonArgs,
       renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
     });
@@ -425,21 +968,42 @@ function register(ctx) {
 
   // ── Small page-1 thumbnail for the document lists + add-template picker ──────
   ipcMain.handle('get-document-thumbnail', async (_e, docId, folderPath, filename) => {
-    requireLogin();
-    if (!folderPath || !filename) return null;
-    return previewService.getThumbnail(getDb(), { docId, folderPath, filename }, {
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    // Same server-side path resolution as get-document-pages (never trust client paths).
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    let rFolder = null, rFile = null;
+    if (row) {
+      const pick = row.working_path || row.stored_path
+        || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null);
+      if (pick) { rFolder = path.dirname(pick); rFile = path.basename(pick); }
+    }
+    if (!rFolder || !rFile) return null;
+    return previewService.getThumbnail(db, { docId, folderPath: rFolder, filename: rFile }, {
       fs, path, spawn, pythonExe, pythonArgs,
       renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
     });
   });
 
   // ── OCR preprocessing preview ────────────────────────────────────────────────
-  ipcMain.handle('get-enhanced-preview', async (_e, { folderPath, filename, page, enhanceParams }) => {
-    requireLogin();
-    if (!folderPath || !filename || !enhanceParams) return null;
-
-    const filePath = path.join(folderPath, filename);
-    if (!fs.existsSync(filePath)) return null;
+  ipcMain.handle('get-enhanced-preview', async (_e, { docId, page, enhanceParams }) => {
+    const sess = requireLogin();
+    if (docId == null || !enhanceParams) return null;
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    // SECURITY (Stage 1 — H3, mirror get-document-pages): resolve the on-disk file SERVER-SIDE from
+    // the doc row ONLY — the client-supplied folderPath/filename are NOT read. A compromised/replaced
+    // renderer could otherwise render (and read back as an image) any file on disk, or point a UNC
+    // path at an attacker host to trigger an outbound SMB/NTLM authentication.
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    const filePath = row
+      ? (row.working_path || row.stored_path
+         || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null))
+      : null;
+    if (!filePath || !fs.existsSync(filePath)) return null;
 
     const enhanceFile = path.join(os.tmpdir(), `ds_enh_preview_${Date.now()}.json`);
     fs.writeFileSync(enhanceFile, JSON.stringify(enhanceParams));
@@ -498,20 +1062,52 @@ function register(ctx) {
   // reprocess — but not permanent deletion of a scanned document).
   // Delete is now a SOFT delete → the document goes to the RECYCLE BIN (status='deleted',
   // recoverable; files are KEPT). Permanent removal is the separate purge below.
+  // Close any OPEN routes on a doc that was just soft-deleted (FYI slice, Oracle C1/C2):
+  // 'recalled' + "Document deleted by <name>" — an honest Completed-list tombstone instead of a
+  // silent vanish (ack, newly deletable) or a stranded-open inbox item (approve via admin
+  // override / the previously-unguarded bulk doors). Audits + notifies ONLY when something
+  // closed; ONE notify per call (a batch door passes many docs' worth through one call site).
+  // 'auto_closed' is deliberately UNKNOWN to workflowNotify.eventDirection ⇒ badge-ping only,
+  // no toast (the recipient finds the tombstone in Completed; a toast for a dead doc is noise).
+  function _closeRoutesForDeleted(db, docIds, deletedByName) {
+    let closed = 0;
+    for (const id of docIds) {
+      const res = workflowService.closeOpenRoutesForDeletedDoc(db, { documentId: id, deletedByName });
+      if (res.closed.length) {
+        closed += res.closed.length;
+        logAudit(db, { action: 'workflow_route_closed_on_delete', action_category: 'workflow',
+          target_type: 'document', target_id: id, document_id: id, outcome: 'success',
+          metadata: { routes: res.closed.map(r => r.id), deleted_by: deletedByName } });
+      }
+    }
+    if (closed > 0) { try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent({ event: 'auto_closed' }); } catch { /* best-effort */ } }
+    return closed;
+  }
+
   ipcMain.handle('delete-document', async (_e, docId /*, filePath */) => {
     requireRole('admin', 'edit');
     const db = getDb();
-    requireUnlocked(db, docId, 'delete'); // blocked while under an open approval route
+    // Blocked while under an open APPROVAL route (an open FYI route never blocks — FYI slice);
+    // admin override proceeds and the route-close below leaves the honest tombstone.
+    const sess = requireUnlocked(db, docId, 'delete');
     documents.softDelete(db, docId);
+    _closeRoutesForDeleted(db, [docId], sess.displayName || sess.username);
     logAudit(db, { action: 'document_deleted', action_category: 'document', target_type: 'document',
       target_id: docId, document_id: docId, outcome: 'success', metadata: { soft: true } });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    notifyBinChanged();
     return true;
   });
 
   // Recycle bin: list, restore, and permanently remove deleted documents.
-  ipcMain.handle('get-deleted-queue', () => { requireRole('admin', 'edit'); return documents.getDeletedQueue(getDb()); });
+  // Same de-pathing projection as the search rows — the bin renders in the SAME window
+  // (getDeletedQueue is SELECT d.*; the search renderer is its only consumer).
+  ipcMain.handle('get-deleted-queue', () => {
+    requireRole('admin', 'edit');
+    const { projectSearchRow } = require('../../services/searchService');
+    return documents.getDeletedQueue(getDb()).map(projectSearchRow);
+  });
 
   ipcMain.handle('restore-document', (_e, docId) => {
     requireRole('admin', 'edit');
@@ -521,15 +1117,57 @@ function register(ctx) {
       target_id: docId, document_id: docId, outcome: 'success' });
     notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    notifyBinChanged();
     return true;
+  });
+
+  // Bulk restore — the counterpart Empty bin always had and Restore didn't (Chris r2
+  // 2026-08-11, finding 8: "still no Restore all"). Same role gate as single restore.
+  ipcMain.handle('restore-all-deleted', () => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const ids = documents.getDeletedQueue(db).map(d => d.id);
+    for (const id of ids) documents.restoreDeleted(db, id);
+    logAudit(db, { action: 'recycle_bin_restored', action_category: 'document', target_type: 'document',
+      outcome: 'success', metadata: { count: ids.length } });
+    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
+    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    notifyBinChanged();   // once for the whole bulk restore, never per-row
+    return { restored: ids.length };
   });
 
   // Permanent removal (irreversible) — admin only. Unlinks the filed file + the app's
   // working copy, then deletes the row. `purge-all-deleted` empties the whole bin.
+  // THE PROMISE WAS NOT KEPT, and the reason is two independent defects (Chris round 4, card 4:
+  // "Empty bin says it deletes the PDF files. It didn't." — verified at source 2026-08-13).
+  //   1. This loop's first entry was `documents.resolveFilePath(doc)`, which returns `working_path`
+  //      FIRST when one exists (documents.js:675). A binned doc that was previously filed has BOTH,
+  //      so both loop entries resolved to the same working copy and `stored_path` — the filed PDF
+  //      the dialog names — was never unlinked.
+  //   2. resolveFilePath's `stored_path` branch requires `status === 'confirmed'`, and a binned doc
+  //      is `'deleted'`. So even with no working copy it fell through to
+  //      `folder_path + original_filename` — the CUSTOMER'S OWN SOURCE SCAN, which no dialog
+  //      promises to delete and which the app does not own.
+  // Now the set is explicit and app-owned only: the working copy and the filed copy, never the
+  // source. Deleting the filed copy is the documented intent of purge (this function's own header,
+  // and the admin-only dialog that says "including their PDF files"), so the promise becomes true
+  // rather than the copy becoming weaker.
   function _purgeOne(db, docId) {
     const doc = documents.getById(db, docId);
     if (!doc) return;
-    for (const p of [documents.resolveFilePath(doc), doc.working_path]) {
+    const targets = new Set();
+    if (doc.working_path) targets.add(doc.working_path);   // the app-managed inbox copy
+    if (doc.stored_path)  targets.add(doc.stored_path);    // the filed copy in the output tree
+    // The filed copy's XML sidecar lives in a `.metadata/` subfolder beside it (filing/handler.js
+    // writes `<basename>.xml` there). Purge deleted the PDF but LEFT the sidecar orphaned (Chris
+    // 2026-08-25 Card 7) — remove it too. App-owned (the filed output tree only, never the customer's
+    // source scan) and best-effort (existsSync-guarded below). The inbox working copy has no sidecar.
+    if (doc.stored_path) {
+      const ext = path.extname(doc.stored_path);
+      targets.add(path.join(path.dirname(doc.stored_path), '.metadata',
+        path.basename(doc.stored_path, ext) + '.xml'));
+    }
+    for (const p of targets) {
       if (p && fs.existsSync(p)) { try { fs.unlinkSync(p); } catch (e) { console.warn('purge unlink:', p, e.message); } }
     }
     documents.deleteDoc(db, docId);
@@ -540,6 +1178,7 @@ function register(ctx) {
     _purgeOne(db, docId);
     logAudit(db, { action: 'document_purged', action_category: 'document', target_type: 'document',
       target_id: docId, document_id: docId, outcome: 'success' });
+    notifyBinChanged();   // purge previously broadcast NOTHING — the stale-bin exhibit
     return true;
   });
   ipcMain.handle('purge-all-deleted', () => {
@@ -549,32 +1188,39 @@ function register(ctx) {
     for (const id of ids) _purgeOne(db, id);
     logAudit(db, { action: 'recycle_bin_emptied', action_category: 'document', target_type: 'document',
       outcome: 'success', metadata: { count: ids.length } });
+    notifyBinChanged();   // once for the whole empty-bin
     return { purged: ids.length };
   });
 
   // ── Bulk delete of a whole queue (Admin only) ───────────────────────────────
   // Permanent deletion of scanned documents is Admin-exclusive, like the
   // single-doc delete above. Each helper is scoped to exactly one status so it
-  // can never reach confirmed documents; source files are unlinked best-effort
-  // first, then the rows (and their cascaded extractions) are removed in one
-  // statement. Returning the deleted count lets the renderer report it.
-  function _deleteQueue(status, rows, countEvent) {
+  // can never reach confirmed documents. SOFT delete: every row goes to the recycle
+  // bin (status='deleted' + deleted_at; restorable from Search; files on disk KEPT) —
+  // the renderer's dialogs promise exactly that recoverability, so this must NEVER be
+  // "restored" to a hard delete without rewriting those dialogs in the same commit.
+  // Returning the deleted count lets the renderer report it.
+  function _deleteQueue(status, rows, countEvent, deletedByName) {
     const db = getDb();
     let n = 0;
     for (const r of rows) { documents.softDelete(db, r.id); n++; }   // → recycle bin (recoverable; files kept)
+    // Previously-unguarded door: open routes (approve included) were stranded pending-forever
+    // against the deleted docs. One notify for the whole batch (Oracle C2).
+    _closeRoutesForDeleted(db, rows.map(r => r.id), deletedByName);
     notifyMainWindow(countEvent, status === 'needs_review'
       ? documents.getReviewCount(db) : documents.getDeferredCount(db));
+    notifyBinChanged();   // once after the loop — a 45-doc Delete-All is ONE bin event
     return { success: true, deleted: n };
   }
 
   ipcMain.handle('delete-all-review', async () => {
-    requireRole('admin');
-    return _deleteQueue('needs_review', documents.getReviewQueue(getDb()), 'review-count-changed');
+    const sess = requireRole('admin');
+    return _deleteQueue('needs_review', documents.getReviewQueue(getDb()), 'review-count-changed', sess.displayName || sess.username);
   });
 
   ipcMain.handle('delete-all-deferred', async () => {
-    requireRole('admin');
-    return _deleteQueue('deferred', documents.getDeferredQueue(getDb()), 'deferred-count-changed');
+    const sess = requireRole('admin');
+    return _deleteQueue('deferred', documents.getDeferredQueue(getDb()), 'deferred-count-changed', sess.displayName || sess.username);
   });
 
   // ── Confirm review ──────────────────────────────────────────────────────────
@@ -591,13 +1237,65 @@ function register(ctx) {
     // the shared reviewService does the claim-before-file, filing, learning and cleanup so the
     // desktop and the /v1 client API file documents through ONE race-safe path.
     const sess = requireUnlocked(db, payload.document_id, 'confirm');
-    const r = await reviewService.confirm(db, { username: sess.username, role: sess.role }, payload);
+    const r = await reviewService.confirm(db, { userId: sess.id, username: sess.username, role: sess.role }, payload);
     if (!r.ok) {
       return { success: false, error: r.error,
                ...(r.code ? { code: r.code } : {}),
-               ...(r.confirmedBy ? { confirmedBy: r.confirmedBy } : {}) };
+               ...(r.confirmedBy ? { confirmedBy: r.confirmedBy } : {}),
+               ...(r.code === 'PREFIX_OUTLIER' ? { prefixOutlier: { field: r.field, dominant: r.dominant, prefix: r.prefix } } : {}),
+               // ISSUER_NEAR_MATCH's payload MUST ride along too (owner-found 2026-08-18): this
+               // whitelist dropped it, so the renderer's showIssuerNearMatchHold got `undefined`,
+               // skipped the inline note entirely and fell back to a toast reading the literal
+               // placeholder 'a company you already use'. That fallback carries NO buttons — so the
+               // hold became a DEAD END: the operator could neither adopt the known spelling nor
+               // keep their own, and a correct document could not be filed at all.
+               ...(r.code === 'ISSUER_NEAR_MATCH' ? { nearMatch: r.nearMatch } : {}),
+               // TYPE_SPLIT (Chris round 18 A4 — the SAME whitelist trap, one link further along):
+               // round 17's fix carried the payload through the RENDERER's refused-return, but this
+               // IPC edge still dropped it, so showTypeSplitHold fell to its toast every time.
+               ...(r.code === 'TYPE_SPLIT' ? { typeSplit: r.typeSplit } : {}) };
     }
-    return r;   // { ok:true, success:true, ...filingResult }
+    return r;   // { ok:true, success:true, ...filingResult, classFix? }
+  });
+
+  // ── The human-licensed class correction: undo, and the one-time ask ─────────
+  // Both are ordinary write paths and carry the same Admin/Edit gate as a confirm — the undo
+  // rewrites extraction values, and answering the ask APPLIES a batch. Neither may be reached by
+  // a read-only account just because the bar happens to be on screen.
+  ipcMain.handle('class-fix-undo', (_e, batchId) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    return require('../../services/classFixService')
+      .undoBatch(db, String(batchId || ''), {
+        audit: (d, entry) => logAudit(d, entry),
+        actorName: getCurrentUser()?.username || null, logger });
+  });
+
+  ipcMain.handle('class-fix-resolve-ask', (_e, payload) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const p = payload || {};
+    // Re-derive against LIVE rows rather than trusting the renderer's list: between the ask and
+    // the answer a sibling may have been filed, edited or opened by someone else. The renderer
+    // supplies only WHICH document was confirmed and WHAT was answered — never the target list.
+    const doc = db.prepare(
+      'SELECT d.id, d.supplier_name, t.slug FROM documents d '
+      + 'LEFT JOIN document_types t ON t.id = d.document_type_id WHERE d.id = ?').get(p.documentId);
+    if (!doc) return { ok: false, reason: 'gone' };
+    const corr = db.prepare(
+      'SELECT field_key, original_value, corrected_value FROM corrections '
+      + 'WHERE document_id = ? ORDER BY id DESC').all(doc.id);
+    const dtInfo = doc.slug ? doctypes.getWithFields(db, doc.slug) : null;
+    const refKey = dtInfo && dtInfo.ref_field_key;
+    const edit = refKey ? corr.find(c => c.field_key === refKey) : null;
+    if (!edit) return { ok: false, reason: 'gone' };
+    return require('../../services/classFixService').resolveAsk(db, {
+      askKey: p.askKey, yes: !!p.yes,
+      documentId: doc.id, corrections: { [refKey]: edit },
+      supplierName: doc.supplier_name, typeSlug: doc.slug, dtInfo,
+      actorName: getCurrentUser()?.username || null, learning,
+      audit: (d, entry) => logAudit(d, entry), presence, logger,
+    }) || { ok: true, applied: 0 };
   });
 
   // ── Lightweight current-template recheck ────────────────────────────────────
@@ -612,7 +1310,7 @@ function register(ctx) {
     requireRole('admin', 'edit');
     const db  = getDb();
     const doc = db.prepare(
-      `SELECT d.template_id, d.logo_phash, d.ocr_text, dt.slug AS document_type_slug
+      `SELECT d.template_id, d.logo_phash, d.logo_detail_hash, d.ocr_text, dt.slug AS document_type_slug
          FROM documents d
          LEFT JOIN document_types dt ON dt.id = d.document_type_id
         WHERE d.id = ?`
@@ -629,6 +1327,11 @@ function register(ctx) {
       logo_phash: doc.logo_phash,
       ocr_text:   doc.ocr_text,
       document_type_slug: doc.document_type_slug,
+      // 256-bit isolated-mark evidence (mig 47, populated at processing time): arms the
+      // detail-hash veto so this recheck — which also picks the Template Wizard's SAVE
+      // TARGET via resolveWizardTemplate — can never name a template whose enrolled mark
+      // positively contradicts this page's mark (the Thornbury-on-Copperfield pill).
+      logo_detail_hash: doc.logo_detail_hash,
     });
     if (!match) return { matched: false };
 
@@ -651,6 +1354,46 @@ function register(ctx) {
   // current document's reviewed values into a managed template (creating one,
   // or refreshing an existing one matched by logo), using the same field-
   // building logic confirm-review used to run unconditionally.
+  // TEACH A LIST FIELD = TEACH ITS CAPTION (owner 2026-08-27: "the teach feature should capture 1 value
+  // and the label should be drawn; when processing in future, every iteration of that keyword should
+  // allow the corresponding value to populate the list … the label should be, if it isn't already
+  // there, added to the keywords for the field of that doc type"). A List field is collected by its
+  // LABEL (keyword.py collect=True), so a taught box would be dead — but the caption beside the box is
+  // exactly the keyword the collector needs. This door writes that caption as a doc-type-wide,
+  // ADDITIVE label override (template_id 0, exclusive 0 — never replaces the bank, never scoped to one
+  // sender: the owner's "for the field of that doc type"). Server-side checks: the field must exist on
+  // the type AND be type 'list' (the renderer can't turn this into a general override writer); the
+  // caption must be a printed label, not a value (≤ 40 chars, ≥ 1 letter, no pure code). INSERT OR
+  // IGNORE inside addLabelOverride = "if it isn't already there". Teach-gated (admin OR edit), unlike the
+  // admin-only Settings door — the wizard is an Admin+Edit surface.
+  ipcMain.handle('teach-list-caption', (_e, payload) => {
+    requireRole('admin', 'edit');
+    const { document_type_slug, field_key, label } = payload || {};
+    const slug = String(document_type_slug || '').trim(), key = String(field_key || '').trim();
+    // ONE normaliser with the two windows (shared/listCaption.js) — the preview and the store agree.
+    const LC = require('../../windows/shared/listCaption.js');
+    const cap = LC.cleanCaption(label);
+    if (!slug || !key || !cap) return { success: false, error: 'Missing document type, field or caption.' };
+    if (cap.length > 40 || !/[A-Za-z]/.test(cap) || /^[A-Z0-9][A-Z0-9\-\/]{4,}$/.test(cap)) {
+      return { success: false, error: 'That does not look like a printed caption.' };
+    }
+    // Chris r8 card 1: a bare tail ("No", "Number", "Ref", "#") as a doc-type-wide keyword collects every
+    // "…No …" on every future page — the job sheet number became the serial. Refused server-side too, so
+    // no road (⊕, wizard, a future client) can mint one.
+    if (LC.isGenericCaption(cap)) {
+      return { success: false, error: `"${cap}" on its own would match every "${cap}" on a page — teach the full caption (e.g. "Serial ${cap}").`, generic: true };
+    }
+    const db = getDb();
+    const dtInfo = doctypes.getWithFields(db, slug);
+    const fld = dtInfo && (dtInfo.fields || []).find(f => f.key === key);
+    if (!fld) return { success: false, error: 'That field is not on this document type.' };
+    if (String(fld.type || '').toLowerCase() !== 'list') return { success: false, error: 'Only a List field takes a caption this way.' };
+    const labelOverrides = require('../../../database/modules/label_overrides');
+    const r = labelOverrides.addLabelOverride(db, { doc_type_slug: slug, field_key: key, label: cap, exclusive: 0, template_id: 0 });
+    if (!r || !r.ok) return { success: false, error: 'Could not save the caption.' };
+    return { success: true, inserted: !!r.inserted, label: cap };
+  });
+
   ipcMain.handle('promote-to-template', async (_e, payload) => {
     requireRole('admin', 'edit');
     const { document_id, allValues, document_type_slug, supplier_name } = payload || {};
@@ -671,6 +1414,9 @@ function register(ctx) {
       const result = await _upsertTemplate(ctx, db, document_id, {
         allValues, document_type_slug, supplier_name, dtInfo,
       });
+      if (result && result.skipped === 'generic-type') {
+        return { success: false, error: 'General Documents are filed without templates — there is nothing to add to the Template Manager.' };
+      }
       // Pin the promoted document as the template's sample so the template
       // editor, opened straight from here, has it loaded in the preview pane
       // (no second manual browse). This is the doc the admin just curated, so
@@ -685,6 +1431,10 @@ function register(ctx) {
         // resolves (never rejects) and the template still works via anchors meanwhile.
         try { if (ctx.generateLandmarks) await ctx.generateLandmarks(result.templateId); }
         catch (e) { console.error('promote-to-template landmarks:', e.message); }
+        // TEACH_ANGLE_COMPOSE enabler: record the sample's tilt NOW so the first process of a
+        // sibling composes the teach coords to level (else the lazy heal lands it one batch late).
+        try { if (ctx.generateSampleAngle) await ctx.generateSampleAngle(result.templateId); }
+        catch (e) { console.error('promote-to-template sample-angle:', e.message); }
         // Same for the keyword FINGERPRINT — a teach-promoted born-digital template
         // (whose sample doc may have an empty stored ocr_text) would otherwise be born
         // fingerprint-less and only matchable by an unreliable logo phash. Fills only
@@ -721,12 +1471,16 @@ function register(ctx) {
       const result = await _upsertTemplate(ctx, db, document_id, {
         allValues, document_type_slug, supplier_name, dtInfo,
       });
+      if (result && result.skipped === 'generic-type') {
+        return { success: false, error: 'General Documents are filed without templates — retype the document first if it belongs with this template.' };
+      }
       const newId = result.templateId;
       // Only pin/derive on a genuinely NEW template — never disturb an existing one's sample.
       if (newId && result.created) {
         templates.setSampleDocument(db, newId, document_id);
         try { if (ctx.generateLandmarks)  await ctx.generateLandmarks(newId); }  catch (e) { console.error('link landmarks:', e.message); }
         try { if (ctx.generateFingerprint) await ctx.generateFingerprint(newId); } catch (e) { console.error('link fingerprint:', e.message); }
+        try { if (ctx.generateSampleAngle) await ctx.generateSampleAngle(newId); } catch (e) { console.error('link sample-angle:', e.message); }
       }
       // 2) Put both templates in the SAME group (reuse the target's group, else make one).
       let groupId = target.group_id || null;
@@ -749,11 +1503,22 @@ function register(ctx) {
   });
 }
 
-module.exports = { register, _buildTemplateFields };   // _buildTemplateFields exported for test_build_template_fields.js
+// The ONE shared reviewService instance (set in register) — the Catch-up sweep accept files
+// through it so there is never a second confirm/filing implementation. Null until register runs.
+let _sharedReviewServiceInstance = null;
+module.exports = { _writeTemplateFileForSync, register, _buildTemplateFields, _upsertTemplate,   // _buildTemplateFields + _upsertTemplate exported for tests (test_build_template_fields.js, test_upsert_type_link.js)
+                   getReviewService: () => _sharedReviewServiceInstance };
 
 // ── Template create / update ──────────────────────────────────────────────────
 
 async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }) {
+  // Generic Document (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §3, pinned trade-off):
+  // the heterogeneous "General Document" pile must NEVER mint templates — a generic-born
+  // template could later Stage-0-match and stamp generic over a doc a real type fits.
+  // No template learning on the pile in v1; the Teach-Me Funnel is the later graduation path.
+  if (document_type_slug === require('../../../database/modules/document_types').GENERIC_SLUG) {
+    return { skipped: 'generic-type' };
+  }
   const { path, fs, templatesDir } = ctx;
   const templates = require('../../../database/modules/templates');
 
@@ -765,22 +1530,55 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
 
   const logo_phash           = doc.logo_phash || null;
   const logo_detail_hash     = doc.logo_detail_hash || null;   // Slice B: isolated-mark discriminator, enrolled into the template set
-  const keyword_fingerprint  = _parseJson(doc.keyword_fingerprint, []);
+  let keyword_fingerprint    = _parseJson(doc.keyword_fingerprint, []);
 
-  // Build template field rules from confirmed values
-  const fields = _buildTemplateFields(db, allValues, dtInfo);
+  // Build template field rules from confirmed values — LAZILY, once the template is resolved (C9.1):
+  // the company key's variability is judged against THAT template's own confirmed documents; a CREATE
+  // passes null (freeze at birth, as today). The reuse arms below only read the DB, so deferring the
+  // build past them changes nothing else.
+  const buildFields = (tid) => _buildTemplateFields(db, allValues, dtInfo, { templateId: tid || null, documentId: document_id });
 
-  // The Document-Issuer value the operator CONFIRMED for this doc. COLD extraction reads no
-  // supplier, so the `supplier_name` param is empty at a supplier's FIRST confirm even though the
-  // user just typed the issuer in Review — fall back to the confirmed field values (allValues,
-  // string-keyed by field_key), where the identity field carries it. This is what lets a template
-  // be NAMED after its issuer ("City Office NI") instead of the generic "<Type> Template".
+  // The Document-Issuer value the operator CONFIRMED for this doc. The CONFIRMED field value
+  // (allValues, string-keyed by field_key) comes FIRST; the `supplier_name` param is the fallback.
+  // PRECEDENCE FIX (A1 of the type-split arc, 2026-08-22; Oracle SIGN OFF, no switch — a bug): the
+  // Review renderer sends `supplier_name: currentDoc.supplier_name` = the MACHINE's pre-confirm read,
+  // so with the param first a template was born NAMED after a garble ('1 Refrigeration Ltd' on a
+  // Nordwind quote the operator had confirmed as 'Nordwind Refrigeration Ltd') — and that name also
+  // fed _supplierLinkOk, the established-name reuse, the fingerprint hygiene and the seed prune.
+  // reviewService.confirm already uses allValues-first for documents.supplier_name (:426); this
+  // mirrors it. COLD extraction reads no supplier, so the param is empty at a supplier's FIRST
+  // confirm anyway — the field value is what lets a template be NAMED after its issuer ("City
+  // Office NI") instead of the generic "<Type> Template". Pinned: test_upsert_issuer_precedence.js.
   const confirmedIssuer = String(
-    (supplier_name && supplier_name.trim())
-    || (allValues && allValues.supplier_name)
+    (allValues && allValues.supplier_name && String(allValues.supplier_name).trim())
+    || (supplier_name && supplier_name.trim())
     || (allValues && allValues.customer_name)
     || ''
   ).trim();
+
+  // FINGERPRINT_HYGIENE (slice 3 of the distinctive-token train, Oracle-signed 2026-07-20): the
+  // doc-side fingerprint can carry the RECIPIENT's name when the recipient marker OCR'd garbled
+  // ("Bill To" → "Bi Te" defeated the harvest truncation) — the live Vellum template froze its
+  // sample's customer ("Ashcombe Care Homes") into its permanent identity, diluting its own rival
+  // ratio below the naming bar exactly when it was the true supplier. At CONFIRM time the
+  // recipient is GROUND TRUTH (the operator just confirmed customer_name), so subtract those
+  // tokens — never fuzzy-match garbled markers (difflib on 5-7 char markers scores ~0.67, below
+  // any safe bar; both advisors rejected it). Oracle condition E: a token also present in the
+  // confirmed ISSUER is never subtracted (a company billing its own branch must not strip its own
+  // identity). On the UPDATE path stabiliseFingerprint INTERSECTS stored∩incoming, so a stored
+  // leak ('Ashcombe') heals on the very next confirm without a migration — pinned.
+  // Skipped entirely when the issuer identity CAME from the customer field (the confirmedIssuer
+  // fallback above) — subtracting there would strip the issuer's own identity.
+  if (process.env.FINGERPRINT_HYGIENE !== '0' && allValues && allValues.customer_name
+      && confirmedIssuer && confirmedIssuer !== String(allValues.customer_name).trim()) {
+    const toks = (s) => new Set((String(s || '').toLowerCase().match(/[a-z0-9]{2,}/g)) || []);
+    const custToks = toks(allValues.customer_name);
+    const issuerToks = toks(confirmedIssuer);
+    keyword_fingerprint = keyword_fingerprint.filter(w => {
+      const wl = String(w == null ? '' : w).toLowerCase();
+      return !(custToks.has(wl) && !issuerToks.has(wl));
+    });
+  }
 
   // `doc.template_id` reflects whatever Stage 0 matched DURING PROCESSING —
   // which, for a freshly-scanned batch, runs before any of that batch's own
@@ -809,6 +1607,64 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
   //      — instead of spawning a near-duplicate template. Same-slug + keyword floor
   //      keep this from merging two different suppliers with similar logos.
   let templateId = doc.template_id || null;
+  // Part D (TYPE-heading authority) — DETACH a WRONG-TYPE Stage-0 link before reuse. doc.template_id
+  // reflects whatever Stage 0 matched during processing, which for a same-logo supplier can be a
+  // SIBLING OF THE WRONG TYPE (a worksheet logo-matched to the delivery-note template). Confirming
+  // as-is runs templates.update() on that wrong-type template — reinforcing it — and NEVER borns the
+  // correct-type one, so the cluster never separates (root cause #3, self-reinforcing; it is why no
+  // worksheet template with a logo is ever created). If the linked template's slug is PRESENT and
+  // DIFFERS from the type the operator CONFIRMED, drop the link so the type-scoped reuse/create below
+  // re-points the doc to a RIGHT-type template carrying this doc's logo. Detach ONLY on a real slug
+  // mismatch — a legacy null-slug template stays attached (Oracle C4b). Kill switch TEMPLATE_TYPE_LINK_GUARD.
+  let retypedLink = false;
+  if (templateId && process.env.TEMPLATE_TYPE_LINK_GUARD !== '0') {
+    const linked = templates.getById(db, templateId);
+    const linkedSlug = linked && linked.document_type_slug;
+    if (linkedSlug && document_type_slug && linkedSlug !== document_type_slug) {
+      templateId = null;
+      retypedLink = true;
+    }
+  }
+  // Part E (TEMPLATE_SUPPLIER_LINK_GUARD — Oracle condition A, the confirm-time reinforcement
+  // loop, 2026-07-20): never REUSE a template whose established supplier identity is NAME-DISJOINT
+  // from the issuer the operator just confirmed. Without this, a foreign doc that Stage-0
+  // logo-matched another supplier's template (the misfiled docs sit at hamming 4-6 — INSIDE the
+  // logo append band) would, on its corrected taught-confirm/promote, bump that template's count,
+  // APPEND its phash into the wrong reference set (making the collision match BETTER next time),
+  // dilute its dominant issuer and rewrite its fields. Applied to the surviving doc link here AND
+  // to the logo/branding reuse acquisitions below (the same foreign template is re-acquirable by
+  // findByLogoHash at the same distance). Unjudgeable identity ⇒ reuse (fail toward today);
+  // detached ⇒ fall through to CREATE — a genuinely different sender gets its OWN template.
+  const _supplierLinkOk = (tid) => {
+    if (!tid || !confirmedIssuer || process.env.TEMPLATE_SUPPLIER_LINK_GUARD === '0') return true;
+    // SELF-INDEPENDENT identity (TEMPLATE_GUARD_SELF_INDEPENDENT, 2026-07-21): this runs from the
+    // detached onTaughtConfirm hook AFTER the doc is confirmed + supplier_name=confirmedIssuer, so —
+    // exactly like the reviewService arm — a plain establishedIdentity counts the doc against itself.
+    // Exclude document_id (in scope from the _upsertTemplate signature). OFF ⇒ null ⇒ byte-identical.
+    const _selfIndep = process.env.TEMPLATE_GUARD_SELF_INDEPENDENT !== '0';
+    const ident = templates.establishedIdentity(db, tid, _selfIndep ? document_id : null);
+    return !(ident && templates.supplierNamesDisjoint(confirmedIssuer, ident));
+  };
+  let supplierDetached = false;
+  if (templateId && !_supplierLinkOk(templateId)) {
+    templateId = null;
+    supplierDetached = true;
+  }
+  // NAME-PRIMARY REUSE (Lever 1, TEMPLATE_REUSE_BY_NAME default ON, Phillip/Oracle SIGN-OFF-WITH-CONDITIONS
+  // 2026-07-27): the CONFIRMED ISSUER is the one clean reuse signal — the 64-bit logo phash can't separate
+  // suppliers (it folds a FOREIGN nearest template) and branding overlap is polluted by per-doc OCR-garble /
+  // recipient tokens, so BOTH the logo + branding arms below can MISS the true same-supplier sibling and mint
+  // a DUPLICATE (the measured id33/id34 birth). Reuse a same-TYPE template whose established (dominant
+  // confirmed) identity EXACTLY matches this doc's confirmed issuer, BEFORE the unreliable logo/branding arms.
+  // Part-E-again (below) re-validates the acquisition (establishedIdentity == confirmedIssuer ⇒ non-disjoint ⇒
+  // kept). Reversible LINK; OFF ⇒ byte-identical (arm skipped). Precision (Oracle C1) lives in
+  // templates.reuseByEstablishedName: establishedIdentity not the cosmetic name, EXACT _normNameForVis
+  // equality (never containment), same slug, plausible + len>=3, canonical = richest sibling.
+  // TODO (same lever, follow-up): mirror this arm before graduationTemplate's create (a separate birth path).
+  if (!templateId && process.env.TEMPLATE_REUSE_BY_NAME !== '0' && confirmedIssuer && document_type_slug) {
+    const _nmReuse = templates.reuseByEstablishedName(db, confirmedIssuer, document_type_slug, document_id);
+    if (_nmReuse) { templateId = _nmReuse; supplierDetached = true; }   // supplierDetached => relink the doc to the reused canonical
+  }
   if (!templateId && logo_phash) {
     // TYPE-SCOPED reuse: a template is per (supplier, TYPE), and a supplier issuing several types on
     // one letterhead has same-logo siblings — so reusing the nearest logo BLINDLY would fold e.g. an
@@ -825,13 +1681,48 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     }
   }
 
+  // M2 — BRANDING-FINGERPRINT REUSE (docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md +
+  // TEMPLATE_DEFRAG_2026-07-25.md; kill switch TEMPLATE_REUSE_BY_BRANDING, DEFAULT ON since 2026-07-25 —
+  // set '0' to disable). On scans the coarse logo phash drifts past the accept band (measured up to 36
+  // Hamming for the SAME supplier), so the logo arms above miss a drifted doc's own template and the
+  // CREATE branch below spawns a DUPLICATE (the fragmentation birth path). Reuse the canonical SAME-TYPE
+  // template identified by DISTINCTIVE branding tokens instead. Placed under `!templateId` (NOT nested in
+  // the logo_phash guard) so it also converges logo-LESS suppliers (Oracle cond 3). The far-drifted logo
+  // is NOT folded into the reused template's set — update()'s append stays bounded at LOGO_APPEND_BAND=13.
+  // WHY DEFAULT ON IS SAFE (Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-25): this is a CONFIRM-TIME path the
+  // corpus harness never exercises, so its safety is a live REPLAY not a corpus run — 534 confirmed docs
+  // gave 482 same-supplier reuses and 0 cross-supplier false matches at 0.80. The real guard is NOT that
+  // number but the BLAST RADIUS: a mis-bind is a reversible `template_id` LINK, never a value write, and
+  // the Part-E `_supplierLinkOk` re-check below detaches a name-disjoint acquisition. TODO (Phillip's
+  // Slice-2 condition, follow-up): harden findByBrandingFingerprint against short/generic-token collisions
+  // (two "___ Services Ltd" sharing 3 boilerplate tokens) via a per-DB IDF/rarity weight — a synthetic
+  // corpus can't expose it. Real gate before wide rollout = one live owner batch that reuses cleanly.
+  if (!templateId && process.env.TEMPLATE_REUSE_BY_BRANDING !== '0') {
+    const bg = templates.findByBrandingFingerprint(db, keyword_fingerprint, document_type_slug, 0.80);
+    if (bg) templateId = bg.id;
+  }
+  // Part E again, on the reuse ACQUISITIONS: the same foreign template the doc-link check above
+  // detached is re-acquirable by findByLogoHash at the same hamming distance (the Vellum docs sit
+  // at dist 4 from the Copperfield set — inside the strict reuse gate).
+  if (templateId && !_supplierLinkOk(templateId)) {
+    templateId = null;
+    supplierDetached = true;
+  }
+
   if (templateId) {
     // Update existing (or now logo-matched) template. update() STABILISES the
     // stored identity across confirms (intersect-with-floor on the keyword
     // fingerprint; keep an established logo_phash) so one noisy sample's OCR
     // garble / per-document tokens can't poison Stage 0 matching and strand the
     // learned anchors — see templates.stabiliseFingerprint / chooseLogoPhash.
+    const fields = buildFields(templateId);
     templates.update(db, templateId, { logo_phash, logo_detail_hash, keyword_fingerprint, fields });
+    // BUYER-ISSUED MARK (migration 66): record that this layout came from a PO-shaped document —
+    // the class behind Chris's "40 documents from two other companies under MY company's name".
+    // Recorded on every confirm, so a template that predates the column earns its mark the next
+    // time it is confirmed rather than needing a backfill. Recording is unconditional and free;
+    // ACTING on it is Python's, behind TEMPLATE_BUYER_ISSUED_TYPE_SCOPE (DEFAULT OFF).
+    try { templates.markBuyerIssued(db, templateId, dtInfo); } catch {}
     // Heal a junk/generic auto-name (WIDENED 2026-07-10): a template created at a supplier's
     // FIRST confirm inherits whatever sat in the issuer field — a COLD confirm births
     // "<Type> Template", and a WRONG first detection births a postcode ("BT23 1BE") or a bare
@@ -847,7 +1738,10 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
         try { templates.rename(db, templateId, confirmedIssuer); } catch {}
       }
     }
-    if (!doc.template_id) {
+    // Relink when the doc had no template, OR when Part D detached a wrong-type link and the
+    // type-scoped reuse found a RIGHT-type template to converge onto (Oracle C4a), OR when Part E
+    // detached a wrong-SUPPLIER link and a different (same-supplier) template was legitimately reused.
+    if (!doc.template_id || retypedLink || supplierDetached) {
       db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(templateId, document_id);
     }
     _writeTemplateFile(db, templateId, path, fs, templatesDir());
@@ -864,14 +1758,32 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
       : 'Document';
     const name      = confirmedIssuer || `${typeName} Template`;
 
+    // Q2 (2026-08-22, Oracle C1/C5): the one-sample seed is support-pruned HERE — the value handed to
+    // create(), after the customer strip and after the reuse arms decided; documents.keyword_fingerprint
+    // stays raw. OFF (default) hands the seed through untouched.
+    let _seedFp = keyword_fingerprint;
+    try {
+      const _pr = templates.pruneSeedFingerprint(db, keyword_fingerprint, { docId: document_id, issuer: confirmedIssuer, typeId: dtInfo && dtInfo.id });
+      _seedFp = _pr.fingerprint;
+      if (_pr.dropped.length) {
+        ctx.logger?.log?.(`  Seed fingerprint support-prune: dropped ${JSON.stringify(_pr.dropped)} (recovered ${_pr.recovered} held siblings)`);
+        try { require('../auth/handler').logAudit(db, { action: 'fingerprint_seed_pruned', action_category: 'learning', target_type: 'document', target_id: document_id,
+          outcome: 'success', metadata: { issuer: confirmedIssuer, dropped: _pr.dropped, kept: _seedFp.length, recovered: _pr.recovered } }); } catch {}
+      } else if (_pr.reason !== 'off') {
+        ctx.logger?.log?.(`  Seed fingerprint support-prune: kept raw (${_pr.reason})`);
+      }
+    } catch { _seedFp = keyword_fingerprint; }
+    const fields = buildFields(null);
     const newTemplateId = templates.create(db, {
       name,
       document_type_slug: document_type_slug || null,
       logo_phash,
       logo_detail_hash,
-      keyword_fingerprint,
+      keyword_fingerprint: _seedFp,
       fields,
     });
+
+    try { templates.markBuyerIssued(db, newTemplateId, dtInfo); } catch {}   // migration 66, see above
 
     // Link document to its new template
     db.prepare('UPDATE documents SET template_id = ? WHERE id = ?').run(newTemplateId, document_id);
@@ -884,9 +1796,33 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
 // values for this doc-type (corrected value if the user edited, else the
 // extracted one — the same "final value" getFieldFormats uses). Evidence that a
 // field differs per document, regardless of the schema's variability guess.
-function _fieldsWithMultipleConfirmedValues(db, dtInfo) {
+function _fieldsWithMultipleConfirmedValues(db, dtInfo, opts = {}) {
   const out = new Set();
   if (!db || !dtInfo || !dtInfo.id) return out;
+  // ── THE IDENTITY UNFREEZE CLASS (found 2026-08-22 night; Oracle SIGN-OFF-W/COND C9.1/C9.2) ──
+  // The query below counts distinct confirmed values over the WHOLE DOCUMENT TYPE. For a COMPANY key
+  // the value IS the scope key, so with two senders of one type (or ONE confirmed garble row beside 23
+  // correct ones — the owner's live DB) supplier_name is always "multi-valued" and the next upsert
+  // UNFROZE the template's identity (fixed_value NULL). Verified on the owner's live backup: all three
+  // sales_order senders, Castellan and Nordwind had lost their frozen identity — and with no
+  // `template_fixed` seed every keep rule (near-match, fragment, garble, region-presence, P4, the
+  // letterhead text_led) has NOTHING to keep; identity falls to the box read alone (the 'Gay' /
+  // 'DOCUMENT' folders of Chris round 17). So company keys are now judged WITHIN THE TEMPLATE'S OWN
+  // confirmed documents by DOMINANCE (Oracle: distinct-count is not enough — the garble row sits on
+  // the template too): variable iff total ≥ 2 AND the dominant issuer does NOT hold a strict majority.
+  // A ×3 + one garble stays frozen; a buyer-issued layout (A/B/C ×1) stays variable; A×1/B×1 goes
+  // variable (fail toward variable — pinned trade-off). CREATE (no template yet) → not multi-valued →
+  // freeze at birth, as today. Non-company keys keep the type-wide query (per-template would freeze a
+  // per-supplier VAT / terms value — the freeze_guard class). Pinned in test_build_template_fields.js.
+  const { COMPANY_KEYS } = require('../../../database/modules/document_types');
+  const companyKeys = new Set(COMPANY_KEYS || ['supplier_name']);
+  if (opts.templateId) {
+    try {
+      const templates = require('../../../database/modules/templates');
+      const dom = templates.getDominantSupplier(db, opts.templateId, opts.documentId || null);
+      if (dom && dom.total >= 2 && !(dom.count * 2 > dom.total)) for (const k of companyKeys) out.add(k);
+    } catch { /* fall through: the company key stays freezable */ }
+  }
   try {
     const rows = db.prepare(`
       SELECT e.field_key AS k,
@@ -894,16 +1830,43 @@ function _fieldsWithMultipleConfirmedValues(db, dtInfo) {
       FROM extractions e
       JOIN documents d ON d.id = e.document_id
       LEFT JOIN corrections c ON c.document_id = e.document_id AND c.field_key = e.field_key
-      WHERE d.status = 'confirmed' AND d.document_type_id = ?
+      WHERE d.status = 'confirmed'${learningExcludedSql(db)} AND d.document_type_id = ?
         AND TRIM(COALESCE(c.corrected_value, e.display_value)) != ''
       GROUP BY e.field_key
     `).all(dtInfo.id);
-    for (const r of rows) if ((r.n || 0) >= 2) out.add(r.k);
+    for (const r of rows) if ((r.n || 0) >= 2 && !companyKeys.has(r.k)) out.add(r.k);   // company keys: per-template dominance above
   } catch { /* older schema -> fall back to the schema heuristic only */ }
   return out;
 }
 
-function _buildTemplateFields(db, allValues, dtInfo) {
+// TEMPLATE_FREEZE_ISSUER_ONLY (kill switch, DEFAULT OFF — eric design + measurement 2026-08-08).
+// Mirrors trust._shadowRowSkipEnabled exactly: env wins IN BOTH DIRECTIONS so an A/B arm is
+// unambiguous, else the setting, and try/catch defaults OFF because test_build_template_fields.js
+// builds a fixture DB with no `settings` table at all.
+function _freezeIssuerOnlyEnabled(db) {
+  const env = process.env.TEMPLATE_FREEZE_ISSUER_ONLY;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('../../../database/modules/learning')
+      .getSetting(db, 'template_freeze_issuer_only', 'false') === 'true';
+  } catch { return false; }
+}
+
+// TEMPLATE_FREEZE_QUALIFY — env wins in BOTH directions so an A/B arm is unambiguous, then the
+// setting. try/catch → OFF, because test_build_template_fields.js builds a fixture DB with no
+// settings table (the same shape as _freezeIssuerOnlyEnabled above, deliberately).
+function _freezeQualifyEnabled(db) {
+  const env = process.env.TEMPLATE_FREEZE_QUALIFY;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('../../../database/modules/learning')
+      .getSetting(db, 'template_freeze_qualify', 'false') === 'true';
+  } catch { return false; }
+}
+
+function _buildTemplateFields(db, allValues, dtInfo, opts = {}) {
   // A field is "variable" (differs per document — reference, date, and ALSO any
   // field the confirmed history shows taking multiple values) or "constant" for a
   // supplier (company name, address). The schema gives a first guess
@@ -913,15 +1876,21 @@ function _buildTemplateFields(db, allValues, dtInfo) {
   // (fixed_value) ONLY when the schema says constant AND confirmed history has NOT
   // shown it varying. The cost of a false "variable" is a harmless re-extract; a
   // false "fixed" commits a wrong value on every other document — so we bias to
-  // variable. This self-heals an already-frozen field on the next confirm.
+  // variable. ⚠ CORRECTED 2026-08-08: this block used to claim the bias "self-heals an already-
+  // frozen field on the next confirm". It does NOT. This builder is reached only via
+  // _upsertTemplate — from promote-to-template, link-document-to-template, and the onTaughtConfirm
+  // hook, which reviewService fires only when `taught_fields` is non-empty. An ordinary confirm and
+  // the whole auto-file path never rebuild, and even a rebuild skips keys that are blank on the
+  // healing document. See rule (C) below for why the freeze also manufactures its own evidence.
   // Variable fields get no anchor_label here — they are templated by the
   // user-taught ⊕ field-anchor tool (Stage 2) / drawn mappings (Stage 0.5),
   // which are coordinate-based and immune to text-substring collisions.
   const { isNameLikeField } = require('../../../database/modules/learning');
+  const { freezeDeclineReason } = require('../../../database/modules/freeze_guard');
   const { COMPANY_KEYS }    = require('../../../database/modules/document_types');
   const companyKeys = COMPANY_KEYS || ['supplier_name'];
   const fieldMeta   = new Map((dtInfo?.fields || []).map(f => [f.key, f]));
-  const multiValued = _fieldsWithMultipleConfirmedValues(db, dtInfo);
+  const multiValued = _fieldsWithMultipleConfirmedValues(db, dtInfo, opts);   // opts.templateId → company keys by per-template dominance
 
   // (A) OWN-TYPE FILTER (gary/Oracle): only build a field the template's OWN doc type actually has,
   // so a cross-type LEAK — a foreign field carried in allValues because a shared-logo wrong-type
@@ -929,8 +1898,26 @@ function _buildTemplateFields(db, allValues, dtInfo) {
   // can't pollute this template. Keep-all fallback when the type has no field metadata (mirrors
   // graduationTemplate._variableOnlyFields). Never drop the issuer or the type's ref/date role keys,
   // even if `fields` is malformed (defensive — those are load-bearing for filing).
-  const roleKeys = new Set([...companyKeys, dtInfo?.ref_field_key, dtInfo?.date_field_key].filter(Boolean));
-  const ownField = (key) => fieldMeta.size === 0 || fieldMeta.has(key) || roleKeys.has(key);
+  // Shared with the P2 foreign-row drop (reviewService.confirm + _autoFileDoc) via foreignFields.js,
+  // so the keep-predicate can't drift between the template builder and the storage-scope fix.
+  const ownField = require('../../lib/foreignFields').ownFieldPredicate(dtInfo);
+  // (C) FREEZE NOTHING BUT THE ISSUER (kill switch, default OFF). MEASURED 2026-08-08 on a 10-issuer
+  // teach test: `_annotateFieldVariability` marks only ref/date/date-typed/currency-typed fields
+  // variable (document_types.js:222-227), so a TEXT-typed code field — po_ref, serials, account_no —
+  // can never be schema-variable; `multiValued` needs >=2 distinct CONFIRMED values, which a single
+  // taught document cannot supply; and rule (B) covers NAME-like fields only. So those fields froze
+  // to the taught document's value and were stamped on every sibling as template_fixed @95 (above
+  // the 88 auto-file floor): expected 'PO-85510', got 'PO-78567'.
+  // It is SELF-REINFORCING, which is why the "self-heals on the next confirm" claim above is false:
+  // this builder is only reached from _upsertTemplate, and neither the auto-file path nor an
+  // ordinary human confirm rebuilds — so every stamped value is re-confirmed as evidence that the
+  // field is constant, and `multiValued` never fires. The freeze manufactures its own proof.
+  // Measured on the sandbox: every frozen field ALSO has a taught Stage-0.5 mapping, and the stamp
+  // only wins where that mapping produced nothing (po_ref: mapping x29 vs fixed x7) — so this
+  // removes a WRONG FALLBACK, not a reader. The genuine-constant case is served better by
+  // supplier_hints (>=2 usages, supplier-scoped, capped at 90, fill-empty-only) and by the admin's
+  // explicit fixed_locked. The issuer is untouched, in either direction.
+  const freezeIssuerOnly = _freezeIssuerOnlyEnabled(db);
 
   return Object.entries(allValues)
     .filter(([key, v]) => v && String(v).trim() && ownField(key))
@@ -946,7 +1933,27 @@ function _buildTemplateFields(db, allValues, dtInfo) {
       // genuinely-constant recipient name is re-extracted / may route to review rather than frozen —
       // fail-toward-review, never a silent stamped value; do NOT restore the freeze "for recall".
       const recipientName = isNameLikeField(key, meta && meta.label) && !companyKeys.includes(key);
-      const isVariable = schemaVariable || multiValued.has(key) || recipientName;
+      const nonIssuerBlocked = freezeIssuerOnly && !companyKeys.includes(key);
+      // (D) QUALIFY THE VALUE ITSELF (kill switch, default OFF). Rules A-C ask what KIND of field
+      // this is; none of them looks at what is about to be written. So the wizard's draw-box OCR
+      // read becomes a permanent value at conf 95 whatever it says — and on the live install that
+      // froze the literal string 'VAT' as a template's VAT number, stamped on 21 of 145 documents.
+      // Nothing downstream can catch it: `template_fixed` is on the exempt list of essentially
+      // every credibility rail in engine.py, deliberately, because it is meant to be a human-set
+      // literal. This is the last point of control. See database/modules/freeze_guard.js for the
+      // three arms and the two exclusions (the issuer is never governed; fixed_locked is never
+      // touched). A decline leaves the field VARIABLE — re-extracted per document, exactly as an
+      // unfrozen field always was — never a capped or noted stamp, which was ruled dominated.
+      const declineReason = _freezeQualifyEnabled(db)
+        ? freezeDeclineReason(key, value, meta, { companyKeys,
+            extraCaptions: (dtInfo?.fields || []).map(f => f && f.label) })
+        : null;
+      // (E) A LIST-typed field NEVER freezes (2026-08-11, gary + Oracle — the real lever for the
+      // serials defect class: template_fixed 'Serial No:' ×24 in the live DB). A list is
+      // per-document by construction; unconditional, no kill switch — freezing one is never right.
+      const listTyped = meta && String(meta.type || '').toLowerCase() === 'list';
+      const isVariable = schemaVariable || multiValued.has(key) || recipientName
+                         || nonIssuerBlocked || !!declineReason || listTyped;
       return {
         field_key:    key,
         anchor_label: null,
@@ -981,8 +1988,24 @@ async function _maybeGraduationTemplate(ctx, db, document_id, info) {
     try { templates.setSampleDocument(db, res.templateId, document_id); } catch (e) { console.warn('Graduation sample pin failed:', e.message); }
     try { if (ctx.generateLandmarks)   await ctx.generateLandmarks(res.templateId); }   catch (e) { console.warn('Graduation landmarks failed:', e.message); }
     try { if (ctx.generateFingerprint) await ctx.generateFingerprint(res.templateId); } catch (e) { console.warn('Graduation fingerprint failed:', e.message); }
+    try { if (ctx.generateSampleAngle) await ctx.generateSampleAngle(res.templateId); } catch (e) { console.warn('Graduation sample-angle failed:', e.message); }
     console.log(`[graduation] auto-created template "${res.name}" (id ${res.templateId}${res.keywordOnly ? ', keyword-only' : ''}) on scope graduation`);
   }
+  // F2a (Chris r13 card 1 → Oracle C2a.1/C2a.2, 2026-08-22): a graduation MINT (create OR link) is a
+  // template-creation event — the same class as a teach — so the sender's held template-less
+  // siblings are re-read on the quiet lane (DARK behind quiet_reread_enabled) and can then file
+  // through the sweep. Placed AFTER enrichment (landmarks / fingerprint / sample angle) so the
+  // siblings never read against an unenriched template. A `skip` decision never reaches here.
+  try {
+    require('../processing/handler').scheduleQuietReread(db, {
+      supplier: info && info.supplier_name, typeSlug: info && info.document_type_slug,
+      reason: 'graduated', seedDocId: document_id });
+  } catch (e) { console.warn('Graduation quiet re-read schedule failed:', e && e.message); }
+}
+
+/** Chris round 15 card 2: the one file-write for callers outside register() (the auto-file door). */
+function _writeTemplateFileForSync(db, templateId, dir) {
+  _writeTemplateFile(db, templateId, require('path'), require('fs'), dir);
 }
 
 function _writeTemplateFile(db, templateId, path, fs, dir) {

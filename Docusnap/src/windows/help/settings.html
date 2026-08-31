@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
   <title>Scan Finder — Settings &amp; Help</title>
   <link rel="stylesheet" href="../shared/theme.css" />
   <link rel="stylesheet" href="help.css">
@@ -56,15 +56,15 @@
             <figure class="shot-fig">
               <img class="shot" src="img/settings-general-folders.png" alt="The folder settings: Output, Processed Scans and Watch folders">
               <figcaption><b>Output</b> &mdash; where filed documents go &nbsp;&middot;&nbsp;
-                <b>Processed Scans</b> &mdash; where each original is moved after filing, nothing is deleted (leave blank
-                to keep originals in place) &nbsp;&middot;&nbsp; <b>Watch</b> &mdash; drop scans here to import them
+                <b>Processed Scans</b> &mdash; where each original is moved as it is imported (leave blank for a
+                &ldquo;Processed&rdquo; folder beside your scans). With <b>Keep original scans after filing</b> on,
+                the original stays there after filing too; off, it is removed once the filed copy exists &nbsp;&middot;&nbsp; <b>Watch</b> &mdash; drop scans here to import them
                 automatically. This tab also sets how filed documents are <b>named and foldered</b>.</figcaption>
             </figure>
 
             <h3>Processing</h3>
             <p>How Scan Finder reads your scans. Sensible defaults &mdash; change these only if you want to:</p>
             <ul>
-              <li><b>Processing mode</b> &mdash; <b>Fast</b> (instant) or <b>Smart</b> (the default, more thorough).</li>
               <li><b>Auto-file 100%-confidence documents</b> &mdash; when a document is read with full confidence,
                 Scan Finder files it automatically and skips Review. You still review anything less certain.</li>
               <li><b>Auto-rotate sideways or upside-down scans</b> &mdash; detects a page scanned the wrong way up and

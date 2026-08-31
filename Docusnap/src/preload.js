@@ -2,6 +2,33 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Audit M4: Chromium's default action for a file dropped on the page is to NAVIGATE to
+// file://<dropped>, which would load a page that keeps this preload (privileged IPC) but
+// loses the per-page <meta> CSP. No window accepts drag-drop, so swallow both events for
+// every window uniformly (the preload shares the page DOM). Pairs with the main-process
+// will-navigate guard. SECURITY (Stage 2 — M9): ALWAYS on — a security boundary must not
+// carry an environment kill switch (the old NAV_GUARD_DISABLED=1 could be set by a local
+// attacker to re-open the drop-a-local-HTML → privileged-preload-with-no-CSP path).
+try {
+  window.addEventListener('dragover', (e) => e.preventDefault(), false);
+  window.addEventListener('drop', (e) => e.preventDefault(), false);
+} catch { /* window unavailable in an odd context — the main-process guard still applies */ }
+
+// Diagnostic completeness (2026-08-02): forward every window's uncaught errors and unhandled
+// promise rejections to the main-process log, so "the red text in a screenshot" is in
+// processing.log by itself. Fire-and-forget send; main caps per-window volume. The preload
+// runs in every window, so no per-window wiring is needed. Never throws.
+try {
+  const _fwd = (message, stack) => {
+    try { ipcRenderer.send('renderer-error', { message: String(message).slice(0, 500), stack: stack ? String(stack).slice(0, 1500) : null, href: location && location.href }); } catch {}
+  };
+  window.addEventListener('error', (e) => _fwd(e.message || e.type, e.error && e.error.stack), true);
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e.reason;
+    _fwd(`unhandledrejection: ${r && (r.message || r)}`, r && r.stack);
+  });
+} catch { /* diagnostics must never break a window */ }
+
 contextBridge.exposeInMainWorld('docusnap', {
 
   // ── Authentication ───────────────────────────────────────────────────────────
@@ -22,6 +49,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   authGetAuditLog:      (limit)      => ipcRenderer.invoke('auth-get-audit-log', limit),
   auditQuery:           (filters)    => ipcRenderer.invoke('audit-query', filters),
   auditExportCsv:       (filters)    => ipcRenderer.invoke('audit-export-csv', filters),
+  verifyAuditChain:     ()           => ipcRenderer.invoke('verify-audit-chain'),
   // Login ⇄ main-app window swap (the login window has no other window powers)
   authEnterApp:         () => ipcRenderer.send('auth-enter-app'),
   authShowLoginScreen:  () => ipcRenderer.send('auth-show-login'),
@@ -77,6 +105,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   showInExplorer:     (p) => ipcRenderer.send('show-in-explorer', p),
   openFile:           (p) => ipcRenderer.send('open-file', p),
   openFolder:         (p) => ipcRenderer.send('open-folder', p),
+  // De-pathed opens: the main process resolves the filed copy from the doc row —
+  // no renderer ever supplies a path (returns {success,error}).
+  openDocumentFile:        (docId) => ipcRenderer.invoke('open-document-file', docId),
+  showDocumentInExplorer:  (docId) => ipcRenderer.invoke('show-document-in-explorer', docId),
 
   // ── Window navigation ────────────────────────────────────────────────────────
   openReviewWindow:    ()       => ipcRenderer.send('open-review-window'),
@@ -89,8 +121,16 @@ contextBridge.exposeInMainWorld('docusnap', {
   getSettingsSectionTarget:     ()           => ipcRenderer.invoke('get-settings-section-target'),
   onNavigateToSection:          (cb)         => ipcRenderer.on('navigate-to-section', (_e, s) => cb(s)),
   openSearchWindow:    (q)      => ipcRenderer.send('open-search-window', q),
+  openSearchWindowAt:  (view)   => ipcRenderer.send('open-search-window-at', view),
+  openExportWindow:    ()       => ipcRenderer.send('open-export-window'),
+  // Export-data window IPC (admin; read-only pull of confirmed doc data)
+  exportOptions:       ()        => ipcRenderer.invoke('export-options'),
+  exportPreview:       (payload) => ipcRenderer.invoke('export-preview', payload),
+  exportRun:           (payload) => ipcRenderer.invoke('export-run', payload),
   getSearchTarget:     ()       => ipcRenderer.invoke('get-search-target'),
+  getSearchViewTarget: ()       => ipcRenderer.invoke('get-search-view-target'),
   onSearchSetQuery:    (cb)     => ipcRenderer.on('search-set-query', (_e, q) => cb(q)),
+  onSearchGoto:        (cb)     => ipcRenderer.on('search-goto', (_e, v) => cb(v)),
   getReviewTarget:     ()       => ipcRenderer.invoke('get-review-target'),
   onNavigateToDoc:     (cb)     => ipcRenderer.on('navigate-to-doc', (_e, id) => cb(id)),
   // User-guide / help window (optional section to jump to, e.g. 'review')
@@ -102,6 +142,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   openTeachWindowAt:   (docId)  => ipcRenderer.send('open-teach-window-at', docId),
   getTeachTarget:      ()       => ipcRenderer.invoke('get-teach-target'),
   onTeachLoadDoc:      (cb)     => ipcRenderer.on('teach-load-doc', (_e, id) => cb(id)),
+  getStampedViewerTarget: ()    => ipcRenderer.invoke('get-stamped-viewer-target'),
+  onStampedViewerLoad:  (cb)    => ipcRenderer.on('stamped-viewer-load', (_e, id) => cb(id)),
   createDocTypeWithFields: (data) => ipcRenderer.invoke('create-doc-type-with-fields', data),
 
   // First-run setup wizard
@@ -147,6 +189,11 @@ contextBridge.exposeInMainWorld('docusnap', {
   updateField:         (id, ch)     => ipcRenderer.invoke('update-field', id, ch),
   deleteField:         (id)         => ipcRenderer.invoke('delete-field', id),
   getValidationPatterns: ()         => ipcRenderer.invoke('get-validation-patterns'),
+  // Teach-time issuer plausibility (warning only; Chris round 2). Answered by the ONE shared
+  // predicate in learning.js so the teach surfaces cannot grow their own copy of it.
+  checkIssuerRead:     (value)      => ipcRenderer.invoke('check-issuer-read', value),
+  checkIdentityNearMatch: (value)   => ipcRenderer.invoke('check-identity-near-match', value),
+  checkTypeSplit:      (p)          => ipcRenderer.invoke('check-type-split', p),   // A3: {supplier_name, document_type_slug}
   getFieldPatterns:      ()         => ipcRenderer.invoke('get-field-patterns'),
   getFieldSuggestions:   (docId, key) => ipcRenderer.invoke('get-field-suggestions', docId, key),
 
@@ -154,12 +201,19 @@ contextBridge.exposeInMainWorld('docusnap', {
   getReviewQueue:              ()        => ipcRenderer.invoke('get-review-queue'),
   getDeferredQueue:            ()        => ipcRenderer.invoke('get-deferred-queue'),
   getReviewCount:              ()        => ipcRenderer.invoke('get-review-count'),
+  getReviewSplit:              ()        => ipcRenderer.invoke('get-review-split'),
+  devSwitchesUnlock:           (pw)      => ipcRenderer.invoke('dev-switches-unlock', pw),
   getDeferredCount:            ()        => ipcRenderer.invoke('get-deferred-count'),
   getFieldRules:               ()        => ipcRenderer.invoke('get-field-rules'),
   getRecentAutoFiled:          ()        => ipcRenderer.invoke('get-recent-auto-filed'),
+  getQuietRereadStatus:        ()        => ipcRenderer.invoke('get-quiet-reread-status'),
+  cancelQuietReread:           (jobId)   => ipcRenderer.invoke('cancel-quiet-reread', { jobId }),
   clearRecentAutoFiled:        ()        => ipcRenderer.invoke('clear-recent-auto-filed'),
-  getAutoFileEligible:         (ids)     => ipcRenderer.invoke('get-auto-file-eligible', ids),
+  reprocessAutocommitAccept:   ()        => ipcRenderer.invoke('reprocess-autocommit-accept'),
+  getAutoFileReason:           (docId)   => ipcRenderer.invoke('get-auto-file-reason', docId),
   getGraduatedSuppliers:       ()        => ipcRenderer.invoke('get-graduated-suppliers'),
+  getScopeReadiness:           ()        => ipcRenderer.invoke('get-scope-readiness'),
+  getTeachFollowup:            (docId)   => ipcRenderer.invoke('get-teach-followup', { docId }),
   setGraduationOptout:         (p)       => ipcRenderer.invoke('set-graduation-optout', p),
   getFieldValueHistory:        (scope)   => ipcRenderer.invoke('get-field-value-history', scope),
   getDocumentsForFieldValue:   (scope)   => ipcRenderer.invoke('get-documents-for-field-value', scope),
@@ -169,6 +223,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   renameFieldValue:            (scope)   => ipcRenderer.invoke('rename-field-value', scope),
   acceptNameValue:             (p)       => ipcRenderer.invoke('accept-name-value', p),
   acceptIssuer:                (p)       => ipcRenderer.invoke('accept-issuer', p),
+  resolveIssuer:               (p)       => ipcRenderer.invoke('resolve-issuer', p),
   // Tell main the render widget's keyboard focus is now SUSPECT (call right after a native
   // confirm()/alert() returns) so the next text-field press does the real blurWebView() repair
   // even if the window's own 'blur' event didn't fire for the dialog. See focusRepair.js.
@@ -179,7 +234,13 @@ contextBridge.exposeInMainWorld('docusnap', {
   // just-filled input BEFORE the user clicks — the click's own repair races the Python-spawn
   // desync and loses (eric, 2026-07-10).
   ensureWindowFocus:           ()        => ipcRenderer.send('ensure-window-focus', { pageHasFocus: document.hasFocus() }),
+  // Awaitable variant of the same widget-focus edge — lets a PROGRAMMATIC el.focus() be
+  // ordered AFTER the edge (the fire-and-forget send above can't be sequenced, which is the
+  // exact race the pointerdown chokepoint warns about). Used by shared/dialogFocus focusField.
+  ensureWindowFocusAsync:      ()        => ipcRenderer.invoke('ensure-window-focus', { pageHasFocus: document.hasFocus() }),
   getDocumentWithExtractions:  (id)      => ipcRenderer.invoke('get-document-with-extractions', id),
+  // Projected detail (no paths/ocr_text — the /v1 DTO shape): the Search/mailbox surfaces' read.
+  getDocumentDetail:           (id)      => ipcRenderer.invoke('get-document-detail', id),
   notifyDocClosed:             (id)      => ipcRenderer.send('notify-doc-closed', id),
   reviewHeartbeat:             (id)      => ipcRenderer.invoke('review-heartbeat', id),
   getDocumentPages:            (id, fp, fn, scale) => ipcRenderer.invoke('get-document-pages', id, fp, fn, scale),
@@ -192,30 +253,48 @@ contextBridge.exposeInMainWorld('docusnap', {
   deleteDocument:              (id, fp)  => ipcRenderer.invoke('delete-document', id, fp),
   getDeletedQueue:             ()        => ipcRenderer.invoke('get-deleted-queue'),
   restoreDocument:             (id)      => ipcRenderer.invoke('restore-document', id),
+  restoreAllDeleted:           ()        => ipcRenderer.invoke('restore-all-deleted'),
   purgeDocument:               (id)      => ipcRenderer.invoke('purge-document', id),
   purgeAllDeleted:             ()        => ipcRenderer.invoke('purge-all-deleted'),
   deleteAllReview:             ()        => ipcRenderer.invoke('delete-all-review'),
   deleteAllDeferred:           ()        => ipcRenderer.invoke('delete-all-deferred'),
   reprocessDocument:           (data)    => ipcRenderer.invoke('reprocess-document', data),
   reprocessBatch:              (docs, opts) => ipcRenderer.invoke('reprocess-batch', docs, opts),
+  getReprocessStatus:          ()           => ipcRenderer.invoke('get-reprocess-status'),
+  consumeReprocessCompletion:  ()           => ipcRenderer.invoke('consume-reprocess-completion'),
   getStuckCount:               ()        => ipcRenderer.invoke('get-stuck-count'),
   getStuckDocs:                ()        => ipcRenderer.invoke('get-stuck-docs'),
   promoteToTemplate:           (data)    => ipcRenderer.invoke('promote-to-template', data),
   linkDocumentToTemplate:      (data)    => ipcRenderer.invoke('link-document-to-template', data),
   checkTemplateMatch:          (id)      => ipcRenderer.invoke('check-template-match-for-document', id),
+  reextractFieldsFast:         (docId)   => ipcRenderer.invoke('reextract-fields-fast', { docId }),
+  // Catch-up Filing (consent-gated scope sweep) — candidates is READ-ONLY; accept is the only writer.
+  sweepScopeCandidates: (supplier, typeSlug)                       => ipcRenderer.invoke('sweep-scope-candidates', { supplier, typeSlug }),
+  sweepQueueCandidates: ()                                         => ipcRenderer.invoke('sweep-queue-candidates'),
+  classFixUndo:         (batchId)                                  => ipcRenderer.invoke('class-fix-undo', batchId),
+  classFixResolveAsk:   (payload)                                  => ipcRenderer.invoke('class-fix-resolve-ask', payload),
+  sweepScopeAccept:     (supplier, typeSlug, accepts, untickedIds) => ipcRenderer.invoke('sweep-scope-accept', { supplier, typeSlug, accepts, untickedIds }),
+  sweepScopeUndo:       (docIds)                                   => ipcRenderer.invoke('sweep-scope-undo', { docIds }),
   notifyReviewComplete:        ()        => ipcRenderer.send('notify-review-complete'),
 
   // ── Zone OCR & learning ──────────────────────────────────────────────────────
   ocrRegion:           (b64)      => ipcRenderer.invoke('ocr-region', b64),
   ocrRegionBoxes:      (b64)      => ipcRenderer.invoke('ocr-region-boxes', b64),
+  ocrPageWords:        (b64)      => ipcRenderer.invoke('ocr-page-words', b64),
   getPageDeskew:       (b64, minAngle) => ipcRenderer.invoke('get-page-deskew', b64, minAngle),
   testTemplateMapping: (pageB64, mapping, landmarks) => ipcRenderer.invoke('test-template-mapping', pageB64, mapping, landmarks),
   saveFieldAnchor:     (data)     => ipcRenderer.invoke('save-field-anchor', data),
   getTaughtFieldKeys:  (scope)    => ipcRenderer.invoke('get-taught-field-keys', scope),
+  scopeConfirmedCount: (scope)    => ipcRenderer.invoke('scope-confirmed-count', scope),
+  resolveFieldVisibility: (payload) => ipcRenderer.invoke('resolve-field-visibility', payload),
   saveFieldRule:       (data)     => ipcRenderer.invoke('save-field-rule', data),
   extractLogoHash:     (b64)      => ipcRenderer.invoke('extract-logo-hash', b64),
   matchLogoHash:       (b64)      => ipcRenderer.invoke('match-logo-hash', b64),
   saveLogoFingerprint: (data)     => ipcRenderer.invoke('save-logo-fingerprint', data),
+  // Correction ripple (identity text-first slice 2): find same-sender siblings by page text,
+  // then pin the chosen ones so a reprocess re-reads them under the corrected supplier.
+  findIssuerSiblings:  (docId, value)   => ipcRenderer.invoke('find-issuer-siblings', { docId, value }),
+  applyIssuerRipple:   (docIds, value)  => ipcRenderer.invoke('apply-issuer-ripple', { docIds, value }),
 
   // ── Processing mode ──────────────────────────────────────────────────────────
   getProcessingMode:         ()           => ipcRenderer.invoke('get-processing-mode'),
@@ -234,6 +313,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   previewFilenamePattern:  (pattern)  => ipcRenderer.invoke('preview-filename-pattern', pattern),
   getOutputStructureInfo:  ()         => ipcRenderer.invoke('get-output-structure-info'),
   previewOutputPath:       (folderPattern, filenamePattern) => ipcRenderer.invoke('preview-output-path', { folderPattern, filenamePattern }),
+  previewDuplicateName:    (suffix)    => ipcRenderer.invoke('preview-duplicate-name', suffix),
 
   // ── Search ───────────────────────────────────────────────────────────────────
   searchDocuments:     (params)   => ipcRenderer.invoke('search-documents', params),
@@ -247,13 +327,44 @@ contextBridge.exposeInMainWorld('docusnap', {
     sent:       () => ipcRenderer.invoke('workflow-sent'),
     assigned:   () => ipcRenderer.invoke('workflow-assigned'),
     completed:  () => ipcRenderer.invoke('workflow-completed'),
+    counts:     () => ipcRenderer.invoke('get-workflow-counts'),
     recipients: () => ipcRenderer.invoke('workflow-recipients'),
-    assign:     (documentId, toUserId, actionRequired, comment) =>
-                   ipcRenderer.invoke('workflow-assign', { documentId, toUserId, actionRequired, comment }),
+    assign:     (documentId, toUserId, actionRequired, comment, resubmitOf) =>
+                   ipcRenderer.invoke('workflow-assign', { documentId, toUserId, actionRequired, comment, resubmitOf }),
     claim:      (id, version) => ipcRenderer.invoke('workflow-claim', { id, version }),
     resolve:    (id, decision, comment, version) =>
                    ipcRenderer.invoke('workflow-resolve', { id, decision, comment, version }),
     recall:     (id, version) => ipcRenderer.invoke('workflow-recall', { id, version }),
+    // E1 admin cancel-route (admin) + the open-route reads that surface stuck routes
+    adminCancel: (id, version, reason) => ipcRenderer.invoke('workflow-admin-cancel', { id, version, reason }),
+    docRoutes:   (documentId)  => ipcRenderer.invoke('workflow-doc-routes', { documentId }),
+    openRoutes:  ()            => ipcRenderer.invoke('workflow-open-routes'),
+    docHistory:  (documentId)  => ipcRenderer.invoke('workflow-doc-history', { documentId }),
+    stampedPages:  (routeId)   => ipcRenderer.invoke('workflow-stamped-pages', { routeId }),
+    exportStamped: (routeId)   => ipcRenderer.invoke('workflow-export-stamped', { routeId }),
+    openStampedViewer: (routeId) => ipcRenderer.send('open-stamped-viewer', routeId),
+    // Routing rules — the Workflow settings area (admin)
+    rulesList:  ()           => ipcRenderer.invoke('workflow-rules-list'),
+    ruleCreate: (p)          => ipcRenderer.invoke('workflow-rule-create', p),
+    ruleUpdate: (p)          => ipcRenderer.invoke('workflow-rule-update', p),
+    ruleToggle: (id, active) => ipcRenderer.invoke('workflow-rule-toggle', { id, active }),
+    ruleDelete: (id)         => ipcRenderer.invoke('workflow-rule-delete', { id }),
+    ruleDryRun: (p)          => ipcRenderer.invoke('workflow-rule-dry-run', p),
+  },
+
+  // ── Stamping (Workflow+Stamping redesign 2026-08-28) ───────────────────────────
+  // Desktop self-stamp is a core capability (permission + access gated in the main process, not the
+  // add-on). The renderer only ever sends coords + a stamp type; the main process resolves the source
+  // and writes the immutable record.
+  stamp: {
+    can:          ()               => ipcRenderer.invoke('stamp-can'),
+    types:        ()               => ipcRenderer.invoke('stamp-types'),
+    place:        (p)              => ipcRenderer.invoke('stamp-place', p),
+    list:         (documentId)     => ipcRenderer.invoke('stamp-list', { documentId }),
+    currentPages: (documentId)     => ipcRenderer.invoke('stamp-current-pages', { documentId }),
+    typeCreate:   (p)              => ipcRenderer.invoke('stamp-type-create', p),
+    grants:       ()               => ipcRenderer.invoke('stamp-grants'),
+    grant:        (userId, grant)  => ipcRenderer.invoke('stamp-grant', { userId, grant }),
   },
 
   // ── Template Viewer / Anchor Mapping (admin-only, lives in Settings) ────────
@@ -266,6 +377,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   setTemplateSample:          (id, docId)         => ipcRenderer.invoke('set-template-sample', id, docId),
   reassignTemplateDocuments:  (fromId, toId)      => ipcRenderer.invoke('reassign-template-documents', fromId, toId),
   mergeTemplate:              (fromId, toId)      => ipcRenderer.invoke('merge-template', fromId, toId),
+  getMergeCandidates:         ()                  => ipcRenderer.invoke('get-merge-candidates'),
+  planTemplateBackfill:       ()                  => ipcRenderer.invoke('plan-template-backfill'),
+  applyTemplateBackfill:      ()                  => ipcRenderer.invoke('apply-template-backfill'),
+  mergeTemplateCluster:       (canonId, memberIds) => ipcRenderer.invoke('merge-template-cluster', canonId, memberIds),
   setTemplateOcrAuto:         (id, enabled)       => ipcRenderer.invoke('set-template-ocr-auto', id, enabled),
   pickTemplateSampleFile:     ()                  => ipcRenderer.invoke('pick-template-sample-file'),
   importTemplateSampleFile:   (id, filePath)      => ipcRenderer.invoke('import-template-sample-file', id, filePath),
@@ -276,6 +391,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   clearTemplateLandmarks:     (id)                => ipcRenderer.invoke('clear-template-landmarks', id),
   saveTemplateMapping:        (id, mapping)       => ipcRenderer.invoke('save-template-mapping', id, mapping),
   setTemplateMappingEnabled:  (id, key, enabled)  => ipcRenderer.invoke('set-template-mapping-enabled', id, key, enabled),
+  setTemplateHiddenField:     (id, key, hidden)   => ipcRenderer.invoke('set-template-hidden-field', id, key, hidden),
+  getSenderFieldEditor:       (payload)           => ipcRenderer.invoke('get-sender-field-editor', payload),
+  setSenderFieldHidden:       (payload)           => ipcRenderer.invoke('set-sender-field-hidden', payload),
+  onReviewVisibilityChanged:  (cb)                => ipcRenderer.on('review-visibility-changed', (_e, p) => cb(p)),
   deleteTemplateMapping:      (id, key)           => ipcRenderer.invoke('delete-template-mapping', id, key),
   recordTemplateMappingTest:  (id, key, result)   => ipcRenderer.invoke('record-template-mapping-test', id, key, result),
   setTemplateFieldFixed:      (id, key, value)    => ipcRenderer.invoke('set-template-field-fixed', id, key, value),
@@ -287,6 +406,12 @@ contextBridge.exposeInMainWorld('docusnap', {
   getTemplateSiblings:        (id)           => ipcRenderer.invoke('get-template-siblings', id),
   // PDF splitting
   splitPdf:                   (file, ranges, outDir, docId, every) => ipcRenderer.invoke('split-pdf', file, ranges, outDir, docId, every),
+  // Filing Slips — printable separator-sheet pack (opens via openFile/showInExplorer)
+  generateFilingSlips:        (count)        => ipcRenderer.invoke('generate-filing-slips', count),
+  // Document printing through the customer's printer driver (Print-Slice 1 + preview)
+  printDocument:              (payload)      => ipcRenderer.invoke('print-document', payload),
+  printAvailable:             ()             => ipcRenderer.invoke('print-available'),
+  listPrinters:               ()             => ipcRenderer.invoke('list-printers'),
 
   // ── Settings ─────────────────────────────────────────────────────────────────
   getSetting:          (key)      => ipcRenderer.invoke('get-setting', key),
@@ -314,6 +439,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   clearLearningFieldRules: (params) => ipcRenderer.invoke('clear-learning-field-rules', params),
   getSupplierScopeCounts: (name)    => ipcRenderer.invoke('get-supplier-scope-counts', name),
   renameSupplier:      (payload)  => ipcRenderer.invoke('rename-supplier', payload),
+  findDuplicateSuppliers: ()     => ipcRenderer.invoke('find-duplicate-suppliers'),
   // "Fix a document type" recovery (scope reset + document set-aside)
   recoveryOverview:    (scope)   => ipcRenderer.invoke('recovery-overview', scope),
   recoveryApply:       (payload) => ipcRenderer.invoke('recovery-apply', payload),
@@ -321,12 +447,21 @@ contextBridge.exposeInMainWorld('docusnap', {
   // Learning Repair (browse/preview/suspects/send-to-review)
   repairOverview:      (scope)   => ipcRenderer.invoke('repair-overview', scope),
   repairDocFields:     (id)      => ipcRenderer.invoke('repair-doc-fields', id),
-  repairDeconfirm:     (id)      => ipcRenderer.invoke('repair-deconfirm', id),
+  repairDeconfirm:     (id, opts) => ipcRenderer.invoke('repair-deconfirm', id, opts),
   repairDelete:        (id)      => ipcRenderer.invoke('repair-delete', id),
+  // Learning Repair v2 (2026-08-26): the scope selector + console + "start fresh" (DARK)
+  learningScopes:        (opts)   => ipcRenderer.invoke('learning-scopes', opts),
+  learningRepairDryRun:  (scope)  => ipcRenderer.invoke('learning-repair-dry-run', scope),
+  learningRepairForget:  (scope)  => ipcRenderer.invoke('learning-repair-forget', scope),
+  learningRepairUndo:    (p)      => ipcRenderer.invoke('learning-repair-undo', p),
+  learningRepairSnapshots: ()     => ipcRenderer.invoke('learning-repair-snapshots'),
 
   // ── Advanced (Settings tab) — keyword label overrides ───────────────────────
   getLabelOverrides:   ()        => ipcRenderer.invoke('get-label-overrides'),
   addLabelOverride:    (data)    => ipcRenderer.invoke('add-label-override', data),
+  // Teach a LIST field = teach its caption (owner 2026-08-27): the wizard/⊕ write the printed caption
+  // beside the drawn value as a doc-type-wide keyword for that field (Admin+Edit gated, list-typed only).
+  teachListCaption:    (data)    => ipcRenderer.invoke('teach-list-caption', data),
   addLabelOverrides:   (data)    => ipcRenderer.invoke('add-label-overrides', data),
   diagTeach:           (data)    => ipcRenderer.send('diag-teach', data),
   deleteLabelOverride: (id)      => ipcRenderer.invoke('delete-label-override', id),
@@ -335,8 +470,18 @@ contextBridge.exposeInMainWorld('docusnap', {
   onThemeChanged:        (cb) => ipcRenderer.on('theme-changed',          (_e, t) => cb(t)),
   onDocTypesChanged:     (cb) => ipcRenderer.on('doc-types-changed',      ()      => cb()),
   onDashboardCardsChanged: (cb) => ipcRenderer.on('dashboard-cards-changed', ()   => cb()),
+  // Child-window dock (main window only — main-side sender guard enforces it): the list of
+  // minimised child windows, so the shell can show a chip to bring each one back.
+  getDockedChildren:     ()   => ipcRenderer.invoke('get-docked-children'),
+  restoreChildWindow:    (n)  => ipcRenderer.send('restore-child-window', n),
+  onChildDockChanged:    (cb) => ipcRenderer.on('child-dock-changed',     (_e, l) => cb(l)),
   onReviewCountChanged:  (cb) => ipcRenderer.on('review-count-changed',  (_e, n) => cb(n)),
   onDeferredCountChanged:(cb) => ipcRenderer.on('deferred-count-changed', (_e, n) => cb(n)),
+  // Workflow invalidation ping (Slice 1) — carries NO data; listeners re-pull counts.
+  onWorkflowCountsChanged:(cb) => ipcRenderer.on('workflow-counts-changed', () => cb()),
+  // Recycle-bin change signal (2026-08-16): no payload — the subscriber re-pulls its own
+  // role-gated get-deleted-queue. See main.js notifyBinChanged.
+  onBinChanged:           (cb) => ipcRenderer.on('bin-changed', () => cb()),
   onReprocessProgress:   (cb) => ipcRenderer.on('reprocess-progress',    (_e, m) => cb(m)),
   // Import/watch activity (broadcast to ALL windows) so Review can show WHY reprocess is paused.
   onProcessingActivity:  (cb) => ipcRenderer.on('processing-activity',   (_e, s) => cb(s)),
@@ -353,11 +498,25 @@ contextBridge.exposeInMainWorld('docusnap', {
   onProcessProgress:   (cb) => ipcRenderer.on('process-progress', (_e, m) => cb(m)),
   onWatchProgress:     (cb) => ipcRenderer.on('watch-progress',   (_e, m) => cb(m)),
   onDocAutoFiled:      (cb) => ipcRenderer.on('doc-auto-filed',   (_e, info) => cb(info)),
+  onScopeAutoFiled:    (cb) => ipcRenderer.on('scope-auto-filed', (_e, info) => cb(info)),   // Slice 1: a sender's ready docs filed by itself
+  // B1 (activity strip): the review activity ledger — event-id addressed, the renderer never sends doc ids
+  getReviewEvents:       ()          => ipcRenderer.invoke('get-review-events'),
+  onReviewEvent:         (cb)        => ipcRenderer.on('review-event', (_e, ev) => cb(ev)),
+  markReviewEventsSeen:  (uptoId)    => ipcRenderer.invoke('review-events-seen', { uptoId }),
+  getReviewEventDocs:    (eventId)   => ipcRenderer.invoke('get-review-event-docs', { eventId }),
+  undoReviewEvent:       (eventId)   => ipcRenderer.invoke('review-event-undo', { eventId }),
+  recordFileAllOutcome:  (payload)   => ipcRenderer.invoke('record-file-all-outcome', payload),   // File All kept-back receipt
+  getAutofiledGrid:      (eventId)   => ipcRenderer.invoke('get-autofiled-grid', { eventId }),        // batch-audit "Quick check" grid
+  batchAuditCorrect:     (payload)   => ipcRenderer.invoke('batch-audit-correct', payload),           // { eventId, edits:[{docId,fields}] }
+  onQuietReprocess:    (cb) => ipcRenderer.on('quiet-reprocess', (_e, info) => cb(info)),   // Slice 3: the quiet re-read lane's progress (never reprocess-progress)
   onStuckCountChanged: (cb) => ipcRenderer.on('stuck-count-changed', (_e, n) => cb(n)),
   onProcessTrace:      (cb) => ipcRenderer.on('process-trace',    (_e, m) => cb(m)),
   devGetSessionDocs:   ()        => ipcRenderer.invoke('dev-get-session-docs'),
   devGetSessionDoc:    (key)     => ipcRenderer.invoke('dev-get-session-doc', key),
   devGetSlice:         (path)    => ipcRenderer.invoke('dev-get-slice', path),
+  // SFDEV bulk debug-table: read the queue-wide field grid / save it + slices to disk.
+  devDebugTableData:   ()        => ipcRenderer.invoke('dev-debug-table-data'),
+  devDebugTableSave:   (payload) => ipcRenderer.invoke('dev-debug-table-save', payload),
 });
 
 // ── Keyboard-focus repair (Windows) ────────────────────────────────────────────

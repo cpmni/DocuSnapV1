@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
   <title>Scan Finder — Getting Started</title>
   <link rel="stylesheet" href="../shared/theme.css" />
   <link rel="stylesheet" href="help.css">
@@ -62,7 +62,7 @@
             <div class="callout note">
               <div class="callout-title">Already set up?</div>
               <p>Existing installations skip this wizard. An admin can run it again any time from
-                <a class="xref" href="settings.html">Settings &rarr; General &rarr; Re-run setup</a>.</p>
+                <a class="xref" href="settings.html">Settings &rarr; Advanced &rarr; Re-run setup wizard</a>.</p>
             </div>
           </section>
 
@@ -73,9 +73,10 @@
               any other area.</p>
 
             <figure class="shot-fig">
-              <img class="shot" src="img/home-dashboard.png" alt="The Scan Finder home screen with the nav rail, trial bar and dashboard cards">
+              <img class="shot" src="img/home-dashboard.png" alt="The Scan Finder home screen with the nav rail and dashboard cards">
               <figcaption><b>1</b> the navigation rail (Home · Import · Review · Search · Teach · Settings; clock &amp;
-                dark-mode toggle at the foot) &nbsp;&middot;&nbsp; <b>2</b> your trial / licence status &nbsp;&middot;&nbsp;
+                dark-mode toggle at the foot) &nbsp;&middot;&nbsp; <b>2</b> your trial / licence status (only shown
+                while on a trial or unactivated) &nbsp;&middot;&nbsp;
                 <b>3</b> what needs your attention &nbsp;&middot;&nbsp; <b>4</b> how many documents you&rsquo;ve filed
                 &nbsp;&middot;&nbsp; <b>5</b> recent activity.</figcaption>
             </figure>
@@ -85,7 +86,8 @@
             <ul>
               <li><b>Navigation rail</b> &mdash; Home, Import, Review (with a badge for waiting documents), Search, Teach
                 and Settings. A clock and a dark-mode toggle sit at the foot.</li>
-              <li><b>Trial / licence</b> &mdash; your status, with buttons to purchase or activate a licence.</li>
+              <li><b>Trial / licence</b> &mdash; your status, with buttons to purchase or activate a licence
+                (only shown while on a trial or unactivated).</li>
               <li><b>Quick find</b> &mdash; search your filed documents straight from the home screen.</li>
               <li><b>Needs your attention</b> &mdash; documents waiting in Review, set aside, or that couldn&rsquo;t be read.</li>
               <li><b>Documents filed</b> &mdash; how many you&rsquo;ve filed today, this week and this month.</li>
@@ -100,16 +102,6 @@
               <p>Don&rsquo;t want a card? Turn any of them on or off under <b>Settings &rarr; Appearance &rarr; Home screen</b>
                 &mdash; the home screen updates straight away.</p>
             </div>
-          </section>
-
-          <section id="mode">
-            <h2>Processing mode: Fast or Smart</h2>
-            <p>The badge near the top shows how Scan Finder reads your documents. Click it to change the mode in Settings.</p>
-            <ul>
-              <li><b>Fast</b> &mdash; reads documents almost instantly. Great for familiar, good-quality scans.</li>
-              <li><b>Smart</b> &mdash; the default. A careful, thorough read that suits everyday documents.</li>
-            </ul>
-            <p>You can switch between them at any time; it only affects documents processed afterwards.</p>
           </section>
 
           <div class="callout tip">

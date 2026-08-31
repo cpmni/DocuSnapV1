@@ -5,6 +5,7 @@ Stage 4 — cross-field validation and confidence adjustment.
 Catches obvious errors before they reach the review queue.
 """
 
+import os
 import re
 from datetime import datetime
 
@@ -86,6 +87,19 @@ DATE_FORMATS = _formats_for_order("dmy")
 # is CLEARLY in the future, not merely unusual.
 _FUTURE_DATE_TOLERANCE_DAYS = 366
 
+
+def days_in_future(value, now=None):
+    """Whole days between the parsed date of `value` and `now` (None if `value` doesn't parse).
+    The SINGLE clock/parse source for future-date decisions — the Stage-4 future flag below and the
+    engine's merge-time future-yield guard share this exact `(d - now).days` formula so retuning one
+    can't silently diverge from the other. `now` is injectable for date-stable tests (defaults to
+    datetime.now())."""
+    d = parse_date(value)
+    if d is None:
+        return None
+    return (d - (now or datetime.now())).days
+
+
 def parse_date(raw: str | None, date_order: str | None = None) -> datetime | None:
     if not raw:
         return None
@@ -98,9 +112,17 @@ def parse_date(raw: str | None, date_order: str | None = None) -> datetime | Non
     s = re.sub(r'\s{2,}', ' ', s).strip()
     for fmt in _formats_for_order(date_order or _DATE_ORDER):
         try:
-            return datetime.strptime(s, fmt)
+            d = datetime.strptime(s, fmt)
         except ValueError:
-            pass
+            continue
+        # Year floor (Oracle 2026-08-05, Slice B companion): %Y happily parses a
+        # 3-digit year ('03-06-202' → year 202) — always a right-clipped 4-digit
+        # year from a cut crop, never a real office document. Without the floor,
+        # normalise/salvage expand the fragment into a confidently-wrong full date.
+        # 2-digit years are untouched (%y maps to 1969-2068, always >= 1000).
+        if d.year < 1000:
+            continue
+        return d
     return None
 
 def normalise_date(raw: str | None) -> str | None:
@@ -135,6 +157,39 @@ _MONTH_NAME_DATE_RE = re.compile(
 )
 
 
+# ── OCR date pre-clean (space/split tolerance) ────────────────────────────────
+# Rejoin a number an OCR word-break SPLIT ("1 5" -> "15", "2 0 2 6" -> "2026") WITHOUT
+# touching a digit/letter boundary ("15 Jun" stays), then collapse whitespace around the
+# date separators ("16 / 03 / 2026" -> "16/03/2026"). The zero-width lookaround is REQUIRED:
+# a capturing replace r'(\d)\s+(\d)' consumes the trailing digit and misses the next split
+# space in a 3+-digit run ("2 0 2 6" -> "20 26"). Deletes whitespace only — never reorders or
+# inserts a digit, so it cannot fabricate a date (parse_date/strptime stays the sole gate).
+#
+# SAFETY (Oracle 2026-07-16): fed in front of the SALVAGE locator ONLY — never parse_date, the
+# Stage-2 anchor read, or the engine merge. So a recovered split date stays at the salvage tier
+# (_CLEAN_SALVAGE_CONF 80, review-held, < the 88 critical-field floor) and can NEVER auto-file;
+# and the spaced anchor read keeps its (depressed) confidence and still loses to a clean keyword
+# read. Moving this into parse_date would let a spaced date parse at _CLEAN_DATE_CONF 94 (>=88)
+# and become auto-file-eligible — do NOT. JS twin: _datePreclean in src/windows/review/renderer.js
+# and src/modules/filing/handler.js (keep the three aligned — see test_date_salvage.py twin pin).
+_DIGIT_SPLIT_RE = re.compile(r'(?<=\d)\s+(?=\d)')
+_DATE_SEP_WS_RE = re.compile(r'\s*([/.\-])\s*')
+# A month NAME means a space can legitimately separate a day from a year ("Aug 3 2024"), where the
+# digit-join would wrongly FUSE "3 2024" -> "32024". Numeric dates (digits + / - . separators) never
+# contain a month token, so a digit-space-digit there is always an OCR split. Gate the join on the
+# ABSENCE of a month name — so "1 5/06/2026" rejoins but "Aug 3 2024" / "15 Jun 2026" are untouched.
+_MONTH_TOKEN_RE = re.compile(r'jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec', re.IGNORECASE)
+
+
+def _date_preclean(text: str) -> str:
+    s = str(text)
+    if not _MONTH_TOKEN_RE.search(s):
+        s = _DIGIT_SPLIT_RE.sub('', s)              # numeric-only: "1 5/06/2026" -> "15/06/2026"
+    s = _DATE_SEP_WS_RE.sub(r'\1', s)               # "16 / 03 / 2026" -> "16/03/2026"
+    s = re.sub(r'\s{2,}', ' ', s)
+    return s.strip()
+
+
 def _best_date_candidate(candidates: list[datetime]) -> datetime:
     """Pick the most plausible date among confirmed candidates.
 
@@ -162,7 +217,7 @@ def salvage_date_detail(raw: str | None) -> "tuple[datetime | None, int]":
     candidate is a real date — callers fall back to their existing handling."""
     if not raw:
         return None, 0
-    s = str(raw)
+    s = _date_preclean(str(raw))   # rejoin an OCR-split number ("1 5" -> "15") BEFORE locating (salvage tier only)
     candidates: list[datetime] = []
     for rx in (_NUMERIC_DATE_RE, _MONTH_NAME_DATE_RE):
         for m in rx.finditer(s):
@@ -250,6 +305,99 @@ CURRENCY_RE = re.compile(
     r'[£$€¥]?\s*([\d,]+\.?\d*)\s*(?:GBP|USD|EUR|JPY)?', re.IGNORECASE
 )
 
+# ── Credit-note sign coherence (2026-08-07) — see the call site in validate_and_adjust ──────────
+_CREDIT_SIGN_ON = os.environ.get('CREDIT_SIGN_COHERENCE', '0') != '0'
+
+# ── Reconcile shadow-attribution (2026-08-12; gary design → Oracle SIGN-OFF-W/COND C1-C5) ────────
+# See the reconcile block in validate_and_adjust. DEFAULT OFF; bridged via _reconcileEnv
+# ('reconcile_shadow_attribution'). RECONCILE_ATTRIB_CENSUS_DIR = the inert census instrument.
+_SHADOW_ATTRIB_ON = os.environ.get('RECONCILE_SHADOW_ATTRIBUTION', '0') != '0'
+
+# A NEGATIVE MARKER in the RAW text that the reader did not commit. Deliberately RAW-STRING based.
+# ORACLE C1 — DO NOT reimplement this via text_normalise.normalise_for_tokens / engine._cmp_norm /
+# the JS twin: `_EDGE_RE` strips edge non-alphanumerics, so `normalise_for_tokens('-160.32')` ==
+# `normalise_for_tokens('160.32')` == '160.32'. VERIFIED 2026-08-07. Every shared comparator in the
+# pipeline is therefore structurally sign-blind, and building this arm on one would be a dead guard
+# that greens every unit test while never firing.
+_NEG_MARKERS = (
+    re.compile(r'(?<![0-9A-Za-z.,-])-\s*[£$€¥]?\s*\d'),   # leading minus, before symbol or digits
+    re.compile(r'[£$€¥]\s*-\s*\d'),                        # symbol then minus: '£-160.32'
+    re.compile(r'\d\s*-\s*(?![0-9])'),                     # trailing/accounting minus: '160.32-'
+    re.compile(r'\(\s*[£$€¥]?\s*[\d,]+\.?\d*\s*\)'),       # accounting parentheses: '(160.32)'
+    re.compile(r'(?<![A-Za-z])CR(?![A-Za-z])', re.IGNORECASE),   # a credit marker token
+)
+
+_CREDIT_POSITIVE_NOTE = ("this looks like a credit note but the total is positive — check whether "
+                         "it should be negative")
+_CREDIT_MARKER_NOTE   = ("the amount may be negative on the page — check the sign before filing")
+_INVOICE_NEGATIVE_NOTE = ("the total is negative on a document that isn't a credit note — "
+                          "please check")
+
+
+_CREDIT_PHRASES = ('credit note', 'credit memo', 'credit advice', 'refund', 'adjustment note')
+_CHARGE_PHRASES = ('invoice', 'purchase order', 'sales order', 'quote', 'quotation',
+                   'delivery note', 'worksheet', 'statement', 'receipt')
+
+
+def type_expects_credit(type_name, aliases=None):
+    """TRI-STATE: True (this document type expects a NEGATIVE total), False (expects a charge),
+    None (unknown -> the sign arms abstain, the raw-marker arm still fires).
+
+    Keys on the PRINTED-TITLE phrases — the type's display name AND its "Also appears as" aliases —
+    never on an arbitrary internal slug (CLAUDE.md: a custom doc type is identified by its ALIASES,
+    never its internal name; a user may name a type 'CN' and alias it 'Credit Note').
+    Deliberately conservative: an unrecognised type returns None rather than guessing a direction."""
+    phrases = [str(type_name or '')] + [str(a) for a in (aliases or [])]
+    blob = ' '.join(phrases).lower()
+    if not blob.strip():
+        return None
+    if any(p in blob for p in _CREDIT_PHRASES):
+        return True
+    if any(p in blob for p in _CHARGE_PHRASES):
+        return False
+    return None
+
+
+def _is_negative_value(value) -> bool:
+    """True when the COMMITTED value already carries a negative sign (leading '-' or parens)."""
+    s = str(value or '').strip()
+    if not s:
+        return False
+    return bool(re.match(r'^\(.*\)$', s)) or bool(re.match(r'^\s*[£$€¥]?\s*-', s))
+
+
+def credit_sign_note(value, raw_value=None, credit_expected=None):
+    """Return a review note when the total's SIGN is incoherent, else None. PURE — never mutates,
+    never negates, never swaps.
+
+    Three arms (all FLAG-only, total field only — never subtotal/tax/shipping, which would note
+    half the statement corpus):
+      1. the type expects a credit but the committed total is NOT negative;
+      2. the RAW text carried a negative marker the reader did not commit (this is the load-bearing
+         arm for the accounting forms the read layer deliberately does not parse — '(160.32)',
+         '160.32-', 'CR' — and for the CLIPPED-SIGN class where a tight taught crop cuts the '-'
+         glyph before OCR ever runs, which no read-layer fix can see);
+      3. the committed total IS negative but the type is a plain invoice — the mirror arm, which is
+         what makes a future read-layer sign fix safe against a table rule or dot-leader being read
+         as a minus ('TOTAL-------160.32').
+
+    `credit_expected` is a TRI-STATE: True (type expects a credit), False (type expects a charge),
+    None (unknown — arms 1 and 3 abstain, arm 2 still fires). Resolution of that flag belongs to the
+    caller and must key on the doc type's ALIASES, never an arbitrary internal name."""
+    if not str(value or '').strip():
+        return None                                    # empty total is another gate's problem
+    negative = _is_negative_value(value)
+    if credit_expected is True and not negative:
+        return _CREDIT_POSITIVE_NOTE
+    if not negative and raw_value:
+        for pat in _NEG_MARKERS:
+            if pat.search(str(raw_value)):
+                return _CREDIT_MARKER_NOTE
+    if negative and credit_expected is False:
+        return _INVOICE_NEGATIVE_NOTE
+    return None
+
+
 def parse_amount(raw: str | None) -> float | None:
     if not raw:
         return None
@@ -306,7 +454,9 @@ def total_reconciles(total_value, results: dict):
 
 def validate_and_adjust(extractions: dict,
                         field_defs:  list[dict],
-                        trace = None) -> dict:
+                        trace = None,
+                        credit_expected = None,
+                        corroboration = None) -> dict:
     """
     Cross-validate extracted fields and adjust confidence scores.
     Returns the same dict with confidence scores modified.
@@ -509,11 +659,17 @@ def validate_and_adjust(extractions: dict,
                 return k, data
         return role, {}
     total_key, total_data = _role_field("total_amount")
+    # Keep the RESOLVED (key, data) pairs — the shadow-attribution guard below must judge the
+    # exact operands the maths used, aliases included (Oracle C4), not a re-resolution.
+    _sub_kd  = _role_field("subtotal")
+    _tax_kd  = _role_field("vat_tax")
+    _ship_kd = _role_field("shipping")
+    _disc_kd = _role_field("discount")
     total      = parse_amount(total_data.get("value"))
-    subtotal   = parse_amount(_role_field("subtotal")[1].get("value"))
-    tax        = parse_amount(_role_field("vat_tax")[1].get("value"))
-    shipping   = parse_amount(_role_field("shipping")[1].get("value"))
-    discount   = parse_amount(_role_field("discount")[1].get("value"))
+    subtotal   = parse_amount(_sub_kd[1].get("value"))
+    tax        = parse_amount(_tax_kd[1].get("value"))
+    shipping   = parse_amount(_ship_kd[1].get("value"))
+    discount   = parse_amount(_disc_kd[1].get("value"))
 
     if total and total > 0 and subtotal and subtotal > 0 and total_data.get("value"):
         tol        = max(total * 0.02, 0.05)   # 2% or 5 cents, absorbs rounding/OCR
@@ -549,11 +705,93 @@ def validate_and_adjust(extractions: dict,
                   computed=_computed, delta=round(abs(total - _computed), 2), tol=round(tol, 2),
                   reconciles=reconciles, verdict=(note or 'OK — reconciles / plausible'))
         if note:
-            results[total_key] = {
-                **total_data,
-                "confidence":      min(total_data.get("confidence", 0), _RECONCILE_CAP),
-                "validation_note": note,
-            }
+            # ── SHADOW-ATTRIBUTION (RECONCILE_SHADOW_ATTRIBUTION, DEFAULT OFF; gary → Oracle
+            # SIGN-OFF-W/COND C1-C5, 2026-08-12). The contradiction charge above lands on the
+            # total UNCONDITIONALLY, yet the total can be the DOUBLY-WITNESSED side (mapping +
+            # keyword families agreeing on the printed TOTAL DUE) while every operand is an
+            # invisible, ledger-less shadow_reconcile read (Silverbeck 0016: shadow subtotal
+            # 387.75 misread as 3875.75 → the CORRECT total capped to 50). When (a) the total's
+            # corroboration record says independent_agree AND (b) EVERY VALUED operand is a
+            # shadow read (any real type-field operand ⇒ today's behaviour — the operator can
+            # see and fix that field), KEEP a note (fail-toward-review: a noted field is refused
+            # by auto-file at every floor incl. 100 — the trust.js any-noted-field rule, which
+            # stays the sole barrier on this class) but state the EVIDENCE neutrally instead of
+            # asserting the corroborated total wrong, and SKIP the 50-cap (confidence stays
+            # earned). Values never touched. STANDING RULE: never arm alongside any future
+            # corroboration-clears-notes mechanism.
+            _valued_ops = [d for _, d in (_sub_kd, _tax_kd, _ship_kd, _disc_kd)
+                           if isinstance(d, dict) and d.get("value")]
+            _all_shadow = bool(_valued_ops) and all(
+                str(d.get("method") or "") == "shadow_reconcile" for d in _valued_ops)
+            _rec = (corroboration or {}).get(total_key) if isinstance(corroboration, dict) else None
+            _corroborated = bool(_rec and _rec.get("independent_agree"))
+            # Census instrument (inert unless RECONCILE_ATTRIB_CENSUS_DIR set): every
+            # contradiction bucketed by (corroborated? × all-shadow?) — the flip evidence.
+            _cdir = os.environ.get("RECONCILE_ATTRIB_CENSUS_DIR")
+            if _cdir:
+                try:
+                    import json as _json
+                    with open(os.path.join(_cdir, "reconcile_attrib_census.jsonl"), "a",
+                              encoding="utf-8") as _f:
+                        _f.write(_json.dumps({
+                            "total_key": total_key, "total": str(total_data.get("value")),
+                            "corroborated": _corroborated, "all_shadow": _all_shadow,
+                            "note": note,
+                            "would_fire": bool(_corroborated and _all_shadow)}) + "\n")
+                except Exception:
+                    pass
+            if _SHADOW_ATTRIB_ON and _corroborated and _all_shadow:
+                _sub_v = _sub_kd[1].get("value")
+                note2 = (f"the total {total_data.get('value')} was read the same way by two "
+                         f"independent methods; the page's net/subtotal reading "
+                         f"{_sub_v if _sub_v else '(none)'} disagrees with it — please check")
+                if trace:
+                    trace('reconcile_attrib', total_key=total_key,
+                          suspected=_sub_kd[0], suspected_value=str(_sub_v), note=note2)
+                results[total_key] = {**total_data, "validation_note": note2}
+            else:
+                results[total_key] = {
+                    **total_data,
+                    "confidence":      min(total_data.get("confidence", 0), _RECONCILE_CAP),
+                    "validation_note": note,
+                }
+
+    # 2b. CREDIT-NOTE SIGN COHERENCE (2026-08-07; gary -> Oracle SIGN-OFF-W/COND C1/C2).
+    # A credit note whose total is stored POSITIVE turns money OWED TO the customer into money
+    # OWED BY them. The 2026-08-06 incident: 16/16 credit notes filed at +£x; THREE carried no
+    # warning at all and bulk "File All Ready" wrote them to disk.
+    # WHY NOTHING CAUGHT IT: the reconciliation above is structurally sign-blind — it opens
+    # `total > 0 and subtotal > 0`, so it only ever sees MAGNITUDES. Worse, on one of the three it
+    # AFFIRMED the sign-wrong value (subtotal 133.60 + tax 27.84 = 161.44 vs 160.32, inside the 2%
+    # tolerance -> `reconciles=True` -> "CLOSE -> trust"). The other two escaped through unrelated
+    # arms (no subtotal captured; tax and shipping both absent -> NEUTRAL). So the 13 that WERE
+    # flagged were flagged by luck, and the true silent rate is not 3/16 but "3/16 today and
+    # unbounded tomorrow" — capture a subtotal on the next scan and a silent one reconciles.
+    # THIS IS A DETECTION FIX ONLY. Everything downstream is already correct: ONE note blocks bulk
+    # File All Ready (renderer.js isFlagged), blocks backend auto-file (trust.js — any noted field
+    # returns {ok:false}), and surfaces in Review. No new gate is needed or wanted.
+    # NEVER SWAPS AND NEVER NEGATES. The document TYPE is admissible as evidence about the
+    # EXPECTATION, never as evidence about the VALUE — "it's a credit note, therefore negate it"
+    # would file a confident wrong number whenever the type is wrong (owner's explicit instruction).
+    # AUTHORITATIVE-READ CLAIM (Oracle): this is a deterministic content-nature + type-coherence
+    # check — the same category as date-in-ref / ref-length / prefix-outlier — NOT a learned-shape
+    # veto, so it may legitimately apply to a taught `shape_mode='ignore'` read. THE LINE IT MUST
+    # NOT CROSS: if this ever consults confirmed history, sample counts or a learned shape it
+    # becomes a learned-shape veto on an authoritative read and the invariant forbids it.
+    # Default OFF; OFF is byte-identical. Pins: tests/test_credit_sign_coherence.py.
+    if _CREDIT_SIGN_ON and total_key and isinstance(results.get(total_key), dict):
+        _td = results[total_key]
+        if not str(_td.get("validation_note") or "").strip():      # never erase an existing flag
+            _sign_note = credit_sign_note(_td.get("value"), _td.get("raw_value"), credit_expected)
+            if _sign_note:
+                results[total_key] = {
+                    **_td,
+                    "confidence":      min(_td.get("confidence", 0), _RECONCILE_CAP),
+                    "validation_note": _sign_note,
+                }
+                if trace:
+                    trace('credit_sign', total_key=total_key, value=_td.get("value"),
+                          credit_expected=credit_expected, note=_sign_note)
 
     # 3. Sanity check — a document date should not be in the future. Old dates
     # are expected (this system files historical paperwork) and are NEVER flagged
@@ -600,13 +838,22 @@ def validate_and_adjust(extractions: dict,
 
 def overall_confidence(extractions: dict,
                        field_defs: list[dict] | None = None,
-                       key_fields: list[str] | None = None) -> int:
+                       key_fields: list[str] | None = None,
+                       exclude_keys: set | None = None) -> int:
     """
     Calculate weighted average confidence across the fields that matter most
     for this document type. "What matters" comes from the type's own schema
     (required fields) — not a hardcoded list of field-key names that only
     covers the three built-in document types and silently ignores any custom
     type's fields entirely.
+
+    exclude_keys (HIDDEN_FIELD_SCORING, Oracle-signed 2026-07-27): operator-declared
+    "this layout lacks this field" keys (template_hidden_fields, resolved per
+    (supplier, type) by template_matcher.hidden_fields_for_scope). EMPTY-ONLY
+    exclusion: an excluded key suppresses ONLY the expected-but-missing 0 below —
+    a VALUED excluded field still counts exactly as today (its drag is what keeps a
+    ghost read out of the gate-free at-100 auto-file arm; do NOT widen this to
+    filtering key_fields). None ⇒ byte-identical.
     """
     # When the key fields come from the type's SCHEMA, an expected field that is EMPTY is
     # a real failure to extract — it must count as 0, not be skipped. Otherwise a doc with
@@ -629,6 +876,8 @@ def overall_confidence(extractions: dict,
         if isinstance(data, dict) and data.get("value"):
             scores.append(data.get("confidence", 0))
         elif from_schema:
+            if exclude_keys and k in exclude_keys:
+                continue       # operator declared this layout lacks the field — not an expected miss
             scores.append(0)   # an expected (required/schema) field with no value → 0
     return int(sum(scores) / len(scores)) if scores else 0
 

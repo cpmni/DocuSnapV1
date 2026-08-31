@@ -28,7 +28,7 @@ function register(ctx) {
   const { spawn } = require('child_process');
   const templates = require('../../../database/modules/templates');
   const documents = require('../../../database/modules/documents');
-  const { requireRole } = require('../auth/handler');
+  const { requireRole, logAudit } = require('../auth/handler');   // Stage 5a: audit destructive template ops
 
   // Resolve a document row to an on-disk file (managed working copy preferred,
   // then the filed/stored location) — mirrors the preview/reprocess resolution.
@@ -191,6 +191,51 @@ function register(ctx) {
   // inert, letting a mapping box drift onto the wrong row. Best-effort; never throws.
   ctx.generateLandmarks = generateLandmarks;
 
+  // TEACH-COMMIT SAMPLE-ANGLE WRITE (TEACH_ANGLE_COMPOSE enabler). The lazy heal in
+  // processing/handler.js (_healSampleAngles) detects a template's sample tilt at RUN start,
+  // fire-and-forget — so a JUST-taught template's angle lands only on the SECOND batch (the
+  // "one batch behind" cost the owner's Chris rounds surfaced). Detect + store it HERE, at the
+  // promote/link/graduation commit, so the very first process of a sibling composes correctly.
+  // Same detector the heal uses (ocr/detect_angle.py -> {"angle": float|null}, 0.0 = level);
+  // writes sample_deskew_angle ONLY when a finite number comes back and the column is still
+  // unset (never clobbers an owner-set or heal-set value). Inert unless TEACH_ANGLE_COMPOSE is
+  // ON (the compose step is the only reader); best-effort, never throws, never blocks the commit.
+  async function generateSampleAngle(templateId) {
+    const db   = getDb();
+    const tmpl = templates.getById(db, templateId);
+    if (!tmpl || !tmpl.sample_document_id) return { success: false, reason: 'no sample' };
+    if (tmpl.sample_deskew_angle != null) return { success: true, skipped: true };   // already known
+    const doc  = db.prepare('SELECT working_path, stored_path FROM documents WHERE id = ?')
+                   .get(tmpl.sample_document_id);
+    const file = _resolveDocPath(doc);
+    if (!file) return { success: false, reason: 'sample file not found' };
+    const script = ctx.resourcePath('python_backend', 'ocr', 'detect_angle.py');
+    return new Promise((resolve) => {
+      let proc;
+      try { proc = spawn(ctx.pythonExe(), ctx.pythonArgs(script, '--file', file), { windowsHide: true }); }
+      catch (e) { resolve({ success: false, reason: e.message }); return; }
+      let out = '', err = '';
+      proc.stdout.on('data', d => { out += d.toString(); });
+      proc.stderr.on('data', d => { err += d.toString(); });
+      proc.on('close', () => {
+        if (err) console.error('detect_angle stderr:', err.trim());
+        let angle = null;
+        try { const r = JSON.parse(out.trim()); if (r && typeof r.angle === 'number' && isFinite(r.angle)) angle = r.angle; }
+        catch {}
+        if (angle != null) {
+          try {
+            db.prepare('UPDATE templates SET sample_deskew_angle = ? WHERE id = ? AND sample_deskew_angle IS NULL')
+              .run(angle, templateId);
+            console.log(`[templates] sample angle written at commit: template ${templateId} = ${angle.toFixed(2)} deg`);
+          } catch (e) { console.error('write sample_deskew_angle:', e.message); }
+        }
+        resolve({ success: angle != null, angle });
+      });
+      proc.on('error', (e) => { console.error('detect_angle spawn:', e.message); resolve({ success: false, reason: e.message }); });
+    });
+  }
+  ctx.generateSampleAngle = generateSampleAngle;
+
   // Lazy one-shot backfill: existing templates that have a pinned sample but no
   // landmarks gain them with NO re-teach. Delayed + sequential so it never
   // competes with startup or active processing; entirely best-effort.
@@ -285,12 +330,132 @@ function register(ctx) {
   // ── Browse ──────────────────────────────────────────────────────────────────
   ipcMain.handle('get-templates', () => {
     requireRole('admin', 'edit');   // Edit users need the list for Review's "link to an existing document"
-    return templates.getAll(getDb());
+    return templates.getAllWithLiveCounts(getDb());   // N: live confirmed-doc count (the stored column under-counts)
   });
 
   ipcMain.handle('get-template-detail', (_e, templateId) => {
     requireRole('admin');
-    return templates.getById(getDb(), templateId);
+    const db = getDb();
+    const detail = templates.getById(db, templateId);
+    if (detail) {
+      detail.confirmed_count = templates.confirmedDocCount(db, templateId);   // N: same live truth as the roster
+      detail.hidden_fields = templates.getHiddenFields(db, templateId);       // per-template field-hiding mask (mig 54)
+      detail.type_fields   = templates.getTypeFieldsForHiding(db, templateId);// {key,label,structural,hidden} for the hide UI
+    }
+    return detail;
+  });
+
+  // Per-template field HIDING (migration 54): mark a field the type has but this layout lacks as
+  // hidden, so Review stops flagging it missing. Backend REFUSES a structural role or a field not on
+  // the type (superset-lock) and returns {ok:false, reason}. Admin+Edit since the Review sender-field
+  // editor (Oracle C4, 2026-08-12 — Review itself is admin/edit-gated at open-review-window, and the
+  // teach wizard, also Edit territory, already calls this and silently no-opped on the refusal). The
+  // structural/superset refusals stay server-side in templates.setHiddenField regardless of role.
+  // Audited (was the one hidden-field write with no audit row — rename/delete always had one).
+  ipcMain.handle('set-template-hidden-field', (_e, templateId, fieldKey, hidden) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const r  = templates.setHiddenField(db, templateId, fieldKey, !!hidden);
+    // LIVE-UPDATE an open Review window: push the fresh hidden set for this template so a doc on
+    // screen re-renders immediately (no close/reopen). The payload CARRIES the array so Review needs
+    // no admin-gated re-fetch (a Review window can be an Edit user). No-op if Review isn't open.
+    if (r && r.ok !== false) {
+      try { ctx.notifyReview('review-visibility-changed', { templateId, hidden: templates.getHiddenFields(db, templateId) }); } catch {}
+      try {
+        logAudit(db, { action: hidden ? 'template_field_hidden' : 'template_field_shown',
+          action_category: 'templates', target_type: 'template', target_id: String(templateId),
+          outcome: 'success', metadata: { field_key: fieldKey } });
+      } catch {}
+    }
+    return r;
+  });
+
+  // ── Review sender-field editor (2026-08-12, Oracle SIGN-OFF-W/COND ×5) ─────────────────────────
+  // ONE door in Review for "this sender's documents never show field X". Resolution-first: report the
+  // canonical template for (supplier NAME, type) — the SAME resolver Review's display uses
+  // (findForSupplierType + resolveVisibilityTemplateIds) so editor-scope ≡ display-scope by
+  // construction. `resolved:false` ⇒ the renderer shows the name-confirm prompt and mints
+  // IDENTITY-ONLY via promote-to-template (Oracle C1 — no field rules from an unreviewed sample).
+  // The hidden list returned is the UNION across every sibling id ∪ the doc's own matched template
+  // (the display truth, review/handler.js get-document-with-extractions).
+  ipcMain.handle('get-sender-field-editor', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const supplier_name      = (p && typeof p.supplier_name === 'string') ? p.supplier_name.trim() : '';
+    const document_type_slug = (p && p.document_type_slug) || null;
+    const docId              = p && p.doc_id;
+    if (!document_type_slug) return { resolved: false, reason: 'no-type' };
+    const doc = docId ? (documents.getById(db, docId) || null) : null;
+    let fp = null; try { fp = JSON.parse((doc && doc.keyword_fingerprint) || 'null'); } catch {}
+    const canonical = templates.findForSupplierType(db, {
+      supplier_name, document_type_slug, keyword_fingerprint: Array.isArray(fp) ? fp : null,
+    }) || (doc && doc.template_id) || null;
+    if (!canonical) return { resolved: false, reason: 'no-template' };
+    const ids = templates.resolveVisibilityTemplateIds(db, {
+      supplier_name, document_type_slug, keyword_fingerprint: Array.isArray(fp) ? fp : null,
+    });
+    ids.add(canonical);
+    if (doc && doc.template_id) ids.add(doc.template_id);
+    const hiddenUnion = new Set();
+    for (const id of ids) for (const k of templates.getHiddenFields(db, id)) hiddenUnion.add(k);
+    const fields = templates.getTypeFieldsForHiding(db, canonical)
+      .map(f => ({ ...f, hidden: hiddenUnion.has(f.key) }));
+    const tmpl = templates.getById(db, canonical);
+    return { resolved: true, templateId: canonical, unionIds: [...ids],
+             senderName: (tmpl && tmpl.name) || supplier_name || null, fields,
+             hidden: [...hiddenUnion].sort() };
+  });
+
+  // Union-aware hide/un-hide (Oracle C3): HIDE writes the canonical template only (the display union
+  // surfaces it everywhere); UN-HIDE ("Show again") must clear the row from EVERY template in the
+  // resolved set ∪ the doc's matched template — the display union STARTS with doc.template_id outside
+  // the resolver, so a resolver-only clear leaves a garble-named matched sibling still hiding the
+  // field on exactly the doc the user is looking at. Every delete audited. Fail-safe both ways:
+  // un-hide only ever INCREASES visible fields.
+  ipcMain.handle('set-sender-field-hidden', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const supplier_name      = (p && typeof p.supplier_name === 'string') ? p.supplier_name.trim() : '';
+    const document_type_slug = (p && p.document_type_slug) || null;
+    const fieldKey           = p && p.field_key;
+    const hidden             = !!(p && p.hidden);
+    const templateId         = p && p.template_id;       // the editor's bound canonical
+    const docId              = p && p.doc_id;
+    if (!document_type_slug || !fieldKey || !templateId) return { ok: false, reason: 'missing-args' };
+    const doc = docId ? (documents.getById(db, docId) || null) : null;
+    let fp = null; try { fp = JSON.parse((doc && doc.keyword_fingerprint) || 'null'); } catch {}
+    const ids = templates.resolveVisibilityTemplateIds(db, {
+      supplier_name, document_type_slug, keyword_fingerprint: Array.isArray(fp) ? fp : null,
+    });
+    ids.add(templateId);
+    if (doc && doc.template_id) ids.add(doc.template_id);
+    let r;
+    const touched = [];
+    if (hidden) {
+      r = templates.setHiddenField(db, templateId, fieldKey, true);   // structural/superset refusal lives here
+      if (r && r.ok !== false) touched.push(templateId);
+    } else {
+      r = { ok: true };
+      for (const id of ids) {
+        const rr = templates.setHiddenField(db, id, fieldKey, false);
+        if (rr && rr.ok !== false) touched.push(id);
+      }
+    }
+    if (r && r.ok !== false) {
+      for (const id of touched) {
+        try {
+          logAudit(db, { action: hidden ? 'template_field_hidden' : 'template_field_shown',
+            action_category: 'templates', target_type: 'template', target_id: String(id),
+            outcome: 'success', metadata: { field_key: fieldKey, via: 'sender-field-editor', doc_id: docId || null } });
+        } catch {}
+      }
+      // Keep the Settings-path broadcast contract so ANOTHER open surface refreshes too; the editor
+      // itself repaints from the returned union (C5 — no dependence on the broadcast's template_id key).
+      try { ctx.notifyReview('review-visibility-changed', { templateId, hidden: templates.getHiddenFields(db, templateId) }); } catch {}
+    }
+    const hiddenUnion = new Set();
+    for (const id of ids) for (const k of templates.getHiddenFields(db, id)) hiddenUnion.add(k);
+    return { ...(r || { ok: false }), hidden: [...hiddenUnion].sort() };
   });
 
   // Admin-facing template management — name is purely cosmetic metadata
@@ -308,12 +473,17 @@ function register(ctx) {
 
   ipcMain.handle('rename-template', (_e, templateId, name) => {
     requireRole('admin');
-    return templates.rename(getDb(), templateId, (name || '').trim());
+    const r = templates.rename(getDb(), templateId, (name || '').trim());
+    logAudit(getDb(), { action: 'template_renamed', action_category: 'templates', target_type: 'template',
+      target_id: String(templateId), outcome: 'success', metadata: { name: (name || '').trim().slice(0, 80) } });
+    return r;
   });
 
   ipcMain.handle('delete-template', (_e, templateId) => {
     requireRole('admin');
     templates.remove(getDb(), templateId);
+    logAudit(getDb(), { action: 'template_deleted', action_category: 'templates', target_type: 'template',
+      target_id: String(templateId), outcome: 'success' });
     return true;
   });
 
@@ -383,6 +553,8 @@ function register(ctx) {
   ipcMain.handle('clear-template-landmarks', async (_e, templateId) => {
     requireRole('admin');
     templates.clearLandmarks(getDb(), templateId);
+    logAudit(getDb(), { action: 'template_landmarks_cleared', action_category: 'templates', target_type: 'template',
+      target_id: String(templateId), outcome: 'success' });
     return generateLandmarks(templateId);
   });
 
@@ -392,7 +564,15 @@ function register(ctx) {
   // empty duplicate to be removed. Returns a {moved, sampleAdopted} summary.
   ipcMain.handle('reassign-template-documents', (_e, fromTemplateId, toTemplateId) => {
     requireRole('admin');
-    return templates.reassignDocuments(getDb(), Number(fromTemplateId), Number(toTemplateId));
+    const r = templates.reassignDocuments(getDb(), Number(fromTemplateId), Number(toTemplateId));
+    // Audit the REAL outcome (2026-07-31 hardening): the old unconditional 'success' asserted
+    // reassigns/merges that never happened — an audit log that can't be trusted is worse than
+    // none. ok:false → 'failure' with the reason in metadata.
+    logAudit(getDb(), { action: 'template_documents_reassigned', action_category: 'templates', target_type: 'template',
+      target_id: String(toTemplateId), outcome: (r && r.ok !== false) ? 'success' : 'failure',
+      metadata: { from: Number(fromTemplateId), to: Number(toTemplateId),
+                  ...(r && r.ok === false ? { reason: r.reason || 'failed' } : { moved: r && r.moved }) } });
+    return r;
   });
 
   // Consolidate a duplicate/fragment template INTO a canonical one and delete the
@@ -401,7 +581,75 @@ function register(ctx) {
   // (target wins) and removes the source. See templates.mergeInto.
   ipcMain.handle('merge-template', (_e, fromTemplateId, toTemplateId) => {
     requireRole('admin');
-    return templates.mergeInto(getDb(), Number(fromTemplateId), Number(toTemplateId));
+    const r = templates.mergeInto(getDb(), Number(fromTemplateId), Number(toTemplateId));
+    // Real outcome (2026-07-31 hardening — see reassign above): a refused merge
+    // (self/missing source/missing target) must not audit as a merge that happened.
+    logAudit(getDb(), { action: 'template_merged', action_category: 'templates', target_type: 'template',
+      target_id: String(toTemplateId), outcome: (r && r.ok !== false) ? 'success' : 'failure',
+      metadata: { from: Number(fromTemplateId), to: Number(toTemplateId),
+                  ...(r && r.ok === false ? { reason: r.reason || 'failed' } : {}) } });
+    return r;
+  });
+
+  // ── M3 template-convergence cleanup (docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md) ──────────
+  // The engine (findMergeCandidates / planBackfill / applyBackfill) is READ-ONLY or LINK-only; only
+  // the cluster merge is destructive, and it takes a DB backup first (Oracle M3 condition).
+  const templateMerge = require('../../../database/modules/templateMerge');
+
+  // Online DB backup to a timestamped sibling file (better-sqlite3 .backup handles WAL correctly).
+  async function _backupDbBeforeMerge(db) {
+    const src = db.name;
+    if (!src || src === ':memory:') throw new Error('no database file to back up');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const dest  = path.join(path.dirname(src), `docusnap.db.merge-backup-${stamp}`);
+    await db.backup(dest);
+    return dest;
+  }
+
+  // READ-ONLY: clusters of duplicate same-supplier same-type templates worth reviewing for a merge.
+  ipcMain.handle('get-merge-candidates', () => {
+    requireRole('admin');
+    return templateMerge.findMergeCandidates(getDb());
+  });
+
+  // READ-ONLY: confirmed documents with no template that a same-type branding match would LINK.
+  ipcMain.handle('plan-template-backfill', () => {
+    requireRole('admin');
+    const plan = templateMerge.planBackfill(getDb());
+    return { count: plan.length, plan };
+  });
+
+  // NON-DESTRUCTIVE: apply the backfill LINK (guarded `WHERE template_id IS NULL`; reversible).
+  ipcMain.handle('apply-template-backfill', () => {
+    requireRole('admin');
+    const r = templateMerge.applyBackfill(getDb());
+    logAudit(getDb(), { action: 'template_backfill_applied', action_category: 'templates', target_type: 'template',
+      outcome: 'success', metadata: { linked: (r && (r.linked ?? r.count)) ?? undefined } });
+    return r;
+  });
+
+  // DESTRUCTIVE, admin-confirmed: BACK UP THE DB, then fold each member template INTO the canonical
+  // (templates.mergeInto DELETEs each source). Refuses to merge if the backup fails — never destroy
+  // without the safety net. The renderer confirms + shows the structure verdict first.
+  ipcMain.handle('merge-template-cluster', async (_e, canonicalId, memberIds) => {
+    requireRole('admin');
+    const db      = getDb();
+    const canon   = Number(canonicalId);
+    const members = (Array.isArray(memberIds) ? memberIds : []).map(Number).filter(id => id && id !== canon);
+    if (!canon || !members.length) return { ok: false, reason: 'invalid' };
+    let backup;
+    try { backup = await _backupDbBeforeMerge(db); }
+    catch (e) { return { ok: false, reason: 'backup-failed', error: e.message }; }
+    const results = [];
+    for (const m of members) {
+      try { results.push({ from: m, ...templates.mergeInto(db, m, canon) }); }
+      catch (e) { results.push({ from: m, ok: false, reason: e.message }); }
+    }
+    const merged = results.filter(r => r.ok).length;
+    logAudit(db, { action: 'template_cluster_merged', action_category: 'templates', target_type: 'template',
+      target_id: String(canon), outcome: merged > 0 ? 'success' : 'failure',
+      metadata: { canonical: canon, members: members.length, merged, backup: !!backup } });
+    return { ok: merged > 0, backup, canonicalId: canon, merged, attempted: members.length, results };
   });
 
   // OCR auto-processing — enable/disable a learned per-template OCR
@@ -465,7 +713,78 @@ function register(ctx) {
     if (required.some(k => mapping[k] == null)) {
       return { success: false, error: 'anchor and target boxes are both required' };
     }
+    // GEOMETRY VALIDATION (2026-07-31 hardening): presence-only checking persisted NaN /
+    // negative / off-page / zero-area boxes straight into Stage-0.5 geometry, where they
+    // become silent mis-crops on every future doc of the template. Each coordinate must be
+    // a finite normalised number; each box needs real area and must stay on the page.
+    // Renderer draws can't produce these; a buggy/scripted caller could. NOTE anchor==target
+    // is LEGITIMATE and must stay allowed — the teach wizard's POSITION-ONLY issuer mapping
+    // deliberately sets the anchor box to the target box (teach/renderer.js ~:992, "never a
+    // synthesised box"); do not add an identity refusal here.
+    for (const k of required) {
+      const v = Number(mapping[k]);
+      if (!Number.isFinite(v) || v < 0 || v > 1) return { success: false, error: `invalid ${k}` };
+    }
+    for (const side of ['anchor', 'target']) {
+      const x = Number(mapping[`${side}_x_norm`]), y = Number(mapping[`${side}_y_norm`]);
+      const w = Number(mapping[`${side}_w_norm`]), h = Number(mapping[`${side}_h_norm`]);
+      if (w <= 0 || h <= 0) return { success: false, error: `${side} box has no area` };
+      if (x + w > 1.0001 || y + h > 1.0001) return { success: false, error: `${side} box off the page` };
+    }
+    // Q3: snapshot the field's mapping BEFORE the write (a no-op re-save must not trigger a re-read).
+    const _mapSnap = () => {
+      try {
+        const m = (templates.getMappings(getDb(), templateId) || []).find(x => x.field_key === mapping.field_key);
+        return m ? JSON.stringify(['anchor_x_norm', 'anchor_y_norm', 'anchor_w_norm', 'anchor_h_norm', 'target_x_norm', 'target_y_norm', 'target_w_norm', 'target_h_norm', 'anchor_text'].map(k => m[k])) : 'none';
+      } catch { return null; }
+    };
+    const _mapBefore = _mapSnap();
     const saved = templates.saveMapping(getDb(), templateId, mapping);
+    // Q3 (Oracle C3.5): a template MAPPING write that changed the layout schedules the lane's
+    // 'layout' re-read for the template's (frozen supplier, type). The wizard's commit saves several
+    // mappings in a row — the lane's debounce coalesces them into one job.
+    try {
+      if (_mapBefore !== null && _mapSnap() !== _mapBefore) {
+        const db = getDb();
+        const t = db.prepare('SELECT document_type_slug, sample_document_id FROM templates WHERE id = ?').get(templateId);
+        const fixed = db.prepare("SELECT fixed_value FROM template_fields WHERE template_id = ? AND field_key = 'supplier_name' AND fixed_value IS NOT NULL AND TRIM(fixed_value) <> '' LIMIT 1").get(templateId);
+        let supplier = fixed ? fixed.fixed_value : null;
+        if (!supplier && t && t.sample_document_id) supplier = (db.prepare('SELECT supplier_name FROM documents WHERE id = ?').get(t.sample_document_id) || {}).supplier_name || null;
+        if (t && t.document_type_slug && supplier) {
+          require('../processing/handler').scheduleQuietReread(db, { supplier, typeSlug: t.document_type_slug, reason: 'layout', seedDocId: t.sample_document_id || null });
+        }
+      }
+    } catch (e) { try { (ctx.logger || console).warn?.(`layout re-read (mapping): ${e && e.message}`); } catch {} }
+
+    // TAUGHT LABEL BECOMES THE KEYWORD — the WIZARD half (owner decision 2026-08-11).
+    // The ⊕ Review teach writes this from `save-field-anchor`; the TEACH WIZARD does not go
+    // through that path at all — it persists a Stage 0.5 anchor→target MAPPING instead. Hooking
+    // only the anchor path would have missed the very case the owner reported, and the live
+    // numbers say so plainly: 6 taught anchors carry a label against 38 template mappings
+    // carrying `anchor_text`. Most taught captions arrive HERE.
+    // Same rules as the anchor path: exclusive, doc-type-scoped, never an empty label (the
+    // issuer's position-only mapping deliberately has none), and never fatal to the save above.
+    // DEFAULT OFF — setting `teach_label_becomes_keyword`.
+    try {
+      const db = getDb();
+      const learning = require('../../../database/modules/learning');
+      if (learning.getSetting(db, 'teach_label_becomes_keyword', 'false') === 'true') {
+        const label = String(mapping.anchor_text || '').trim();
+        if (label) {
+          const tpl = templates.getById ? templates.getById(db, templateId) : null;
+          const slug = String((tpl && tpl.document_type_slug) || '').trim();
+          if (slug) {
+            // template_id (migration 62): the override applies only when THIS template matches
+            // — "per doc type for each supplier, set at the template level" (owner 2026-08-11).
+            require('../../../database/modules/label_overrides')
+              .addLabelOverride(db, { doc_type_slug: slug, field_key: mapping.field_key,
+                                      label, exclusive: 1, template_id: Number(templateId) || 0 });
+          }
+        }
+      }
+    } catch (e) {
+      logger?.warn?.(`teach mapping label -> keyword: ${e.message}`);
+    }
     return { success: true, mapping: saved };
   });
 

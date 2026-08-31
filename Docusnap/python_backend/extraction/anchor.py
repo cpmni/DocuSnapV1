@@ -179,21 +179,99 @@ def _slipfix_to_shape(value, field_key, format_lookup, val_type, validation_patt
 # means OCR CLIP-DEBRIS (a clipped label tail / a hallucinated separator at the crop edge), never
 # part of the value. EXCLUDES types whose patterns embed \s (job_reference / vat_gb / postcode_uk),
 # date/currency (substring/salvage path, never coverage-gated), mac/ip (precise), and free text.
+# The anchor_crop_crosscheck disagreement note — SINGLE-SOURCED (Oracle C3, note-demote slice
+# 2026-08-12): the writer below and engine._demote_xcheck_corroborated_note share this constant;
+# eligibility is EXACT equality, so a composed multi-note string is automatically ineligible.
+XCHECK_DISAGREE_NOTE = ("The taught position and the full-page read disagreed — "
+                        "using the full-page value; please verify.")
+
+# The Layer-A name-guard disagreement note — SINGLE-SOURCED (note-demote slice 3, Oracle W/COND
+# 2026-08-13): the write site in the relocate guard below and engine._demote_name_guard_
+# corroborated_note share this constant; eligibility is EXACT equality, so composed notes and the
+# five OTHER _relocate_guard_note texts (which warn about the KEPT value itself) are structurally
+# ineligible. The literal is ALSO pinned byte-for-byte in test_name_guard_keyword_clear.py — the
+# text must never drift from that pin.
+NAME_GUARD_DISAGREE_NOTE = ("The value found beside this document's own caption disagreed "
+                            "with the taught position — please verify.")
+
 _RECOVERABLE_TOKEN_TYPES = frozenset({"alphanumeric", "reference_code"})
 _MAX_DEBRIS_TOKEN_LEN = 2      # a clipped label tail / stray separator is 1-2 chars ("-R", ". =")
 _MAX_DEBRIS_CHARS     = 3      # total non-space debris chars tolerated
 
 
-def _recover_clean_token(value, val_type, validation_patterns, label=None):
+_CHARSET_DEBRIS_MIN_SUPPORT = 10   # mirrors the noise-profile 10+ (learning.js) + trust W=10
+
+
+def _charset_excludes(token, charset) -> bool:
+    """True when EVERY character of `token` is impossible under the scope's learned charset —
+    letters need has_letter False, digits need has_digit False, anything else must be absent
+    from the learned literals. One in-charset char ⇒ False (could be a split-off value piece)."""
+    for c in token:
+        if c.isalpha():
+            if charset.get('has_letter'):
+                return False
+        elif c.isdigit():
+            if charset.get('has_digit'):
+                return False
+        elif c in (charset.get('literals') or ()):
+            return False
+    return True
+
+
+def _alnum_debris_admissible(token, side, field_key, format_lookup, edge_contact) -> bool:
+    """ANCHOR_CHARSET_DEBRIS (Oracle SIGN-OFF-W/COND 2026-07-27): may this bare-ALNUM ≤2-char
+    token be treated as clip-debris? ALL of (fail toward refuse → today's reject → review):
+      * kill switch on;
+      * the scope's learned-format entry exists with support ≥ 10 confirms and a charset
+        descriptor derived from ALL raw distinct confirmed values (UNANIMITY — one lettered
+        confirm anywhere puts letters in-charset and permanently refuses letter debris for the
+        scope; Oracle ruling over dominance: a real "F-14266"-style prefix must never be
+        stripped, the abstain cost is only the status-quo review);
+      * has_space False (a space-bearing history makes token-level recovery unsafe);
+      * every char of the token outside the charset (a mixed "F3" on a digit scope has an
+        in-charset char → refuse the WHOLE recovery — it could be a split-off value piece);
+      * EDGE-CONTACT on the token's side (iris/Oracle C3): clipped-glyph debris abuts the crop
+        boundary by physical necessity; an INTERIOR letter token is real page content (format
+        drift) and must keep refusing. No edge metadata ⇒ refuse."""
+    if os.environ.get("ANCHOR_CHARSET_DEBRIS", "1") == "0":
+        return False
+    if format_lookup is None or not field_key:
+        return False
+    try:
+        entry = format_lookup(field_key) or {}
+    except Exception:
+        return False
+    if int(entry.get('support') or 0) < _CHARSET_DEBRIS_MIN_SUPPORT:
+        return False
+    charset = entry.get('charset')
+    if not charset or charset.get('has_space'):
+        return False
+    if not _charset_excludes(token, charset):
+        return False
+    if not edge_contact:
+        return False
+    return bool(edge_contact[0] if side == 'left' else edge_contact[1])
+
+
+def _recover_clean_token(value, val_type, validation_patterns, label=None,
+                         field_key=None, format_lookup=None, edge_contact=None,
+                         allow_alnum_debris=False, debris_out=None):
     """Recover the clean value from an anchor read that FAILED the credibility/coverage gate only
-    because it is ONE clean pattern-matching token wrapped in SHORT punctuation clip-debris
-    (". = 317437" / "-R 317437"). Regex-only (no learned history → works on document #1).
+    because it is ONE clean pattern-matching token wrapped in SHORT clip-debris
+    (". = 317437" / "-R 317437"). Regex-only base arm (no learned history → works on document #1).
     PRECISION-FIRST: returns the token ONLY when EXACTLY ONE whitespace-token fully matches the
-    field pattern AND every other token is clip-debris (len<=2 AND carries a non-alphanumeric char).
-    A bare-alnum fragment (the leading "2" in "2 317437", a lone "R") is REFUSED — it could be a
-    space-split part of the real value, so it is routed to review rather than guessed. A multi-value
-    read ("Total 250.00 317437", a real drift) is refused (not exactly one value token). The caller
-    commits the recovered value FLAGGED + conf-capped, mirroring _slipfix_to_shape — never silently.
+    field pattern AND every other token is clip-debris: len<=2 AND EITHER carries a non-alphanumeric
+    char (the original arm) OR — ANCHOR_CHARSET_DEBRIS, Oracle-signed 2026-07-27 — is a bare-ALNUM
+    token the scope's confirmed history proves impossible (see _alnum_debris_admissible: charset
+    unanimity, support ≥10, edge-contact, rigid site only via allow_alnum_debris). That arm exists
+    because a caption glyph clipped by the crop pad OCRs as a LETTER ("#" → "F 33504" — the
+    SuperStore 61-doc class) which the original refusal routed to a permanent 69-cap hold. A
+    bare-alnum fragment WITHOUT that evidence (the leading "2" in "2 317437", a lone "R") is still
+    REFUSED — it could be a space-split part of the real value. A multi-value read ("Total 250.00
+    317437", a real drift) is refused (not exactly one value token). Charset-stripped tokens are
+    reported via debris_out['alnum'] = [(token, side)] so the caller can run the vector-refutation
+    check (Oracle C4). The caller commits the recovered value FLAGGED + conf-capped (or the
+    Oracle-gated confident tiers), mirroring _slipfix_to_shape — never silently.
     reggie-designed; guarded by tests/test_recover_clean_token.py."""
     if not value or val_type not in _RECOVERABLE_TOKEN_TYPES:
         return None
@@ -203,20 +281,33 @@ def _recover_clean_token(value, val_type, validation_patterns, label=None):
     tokens = str(value).split()
     if len(tokens) < 2:                                   # single token already judged by credibility
         return None
-    value_tokens, debris_chars = [], 0
-    for t in tokens:
-        if any(re.fullmatch(p, t, re.IGNORECASE) for p in pats):
-            value_tokens.append(t)                        # coverage 1.0 for this token
+    matches = [any(re.fullmatch(p, t, re.IGNORECASE) for p in pats) for t in tokens]
+    value_idxs = [i for i, m in enumerate(matches) if m]
+    if len(value_idxs) != 1:                              # zero or ambiguous → refuse
+        return None
+    vi = value_idxs[0]
+    debris_chars, alnum_debris = 0, []
+    for i, t in enumerate(tokens):
+        if i == vi:
             continue
-        if len(t) > _MAX_DEBRIS_TOKEN_LEN or not any(not c.isalnum() for c in t):
-            return None                                   # a real word, OR a bare-alnum fragment → refuse
+        if len(t) > _MAX_DEBRIS_TOKEN_LEN:
+            return None                                   # a real word → refuse
+        if not any(not c.isalnum() for c in t):
+            # bare-alnum fragment: refuse UNLESS the learned-charset arm admits it
+            side = 'left' if i < vi else 'right'
+            if not (allow_alnum_debris
+                    and _alnum_debris_admissible(t, side, field_key, format_lookup, edge_contact)):
+                return None
+            alnum_debris.append((t, side))
         debris_chars += len(t)
         if debris_chars > _MAX_DEBRIS_CHARS:
             return None
-    if len(value_tokens) != 1:                            # zero or ambiguous → refuse
+    token = tokens[vi]
+    if not _crop_is_credible(token, val_type, validation_patterns, label):
         return None
-    token = value_tokens[0]
-    return token if _crop_is_credible(token, val_type, validation_patterns, label) else None
+    if debris_out is not None and alnum_debris:
+        debris_out['alnum'] = alnum_debris
+    return token
 
 
 def _matches_learned_shape(value, field_key, format_lookup) -> bool:
@@ -288,52 +379,75 @@ def _exact_text_corroborates(value, anchor, y_norm, page_text_lines) -> bool:
     return False
 
 
-def extract_with_anchors(ocr_text: str, anchors: list[dict],
-                         supplier_name: str | None,
-                         document_type: str | None,
-                         page_images: list | None = None,
-                         field_patterns: dict | None = None,
-                         validation_patterns: dict | None = None,
-                         slice_capture = None,
-                         format_lookup = None,
-                         page_transform = None,
-                         on_reject = None,
-                         page_text_lines = None,
-                         text_field_keys = None,
-                         multiline_lookup = None,
-                         identity_labels = None) -> dict:
-    """
-    Attempt to extract field values using saved structural anchors.
+def _vector_refutes_strip(value, alnum_debris, anchor, y_norm, page_text_lines) -> bool:
+    """Vector-REFUTATION of a charset-debris strip (Oracle C4, 2026-07-27). The born-digital text
+    layer corroborates that the REMAINDER is printed at the taught row — but it can also positively
+    prove the stripped token was REAL INK: when the printed alnum run adjacent to the matched value
+    on the stripped side equals the stripped debris (case-insensitive, ≤2 non-alnum separator chars
+    tolerated — covers "F 14266" and "F-14266"), the strip destroyed genuine content. The caller
+    then caps ≤70 + the verify note (never noteless, never tier 3). For the target class the
+    adjacent ink is "#" (non-alnum) ≠ "F" → no refutation. Same row-band frame as
+    _exact_text_corroborates; None/scanned page_text_lines ⇒ False (tier 3 can't fire there anyway)."""
+    if not page_text_lines or not alnum_debris:
+        return False
+    cv = str(value or "").strip()
+    if not cv:
+        return False
+    try:
+        pat = re.compile(r'(?<![0-9A-Za-z])' + re.escape(cv) + r'(?![0-9A-Za-z])')
+    except re.error:
+        return False
+    h  = float(anchor.get("h_norm") or 0.0) or 0.02
+    y0 = float(y_norm or 0.0) + h / 2.0
+    band = max(h * 1.5, 0.03)
+    for ln in page_text_lines:
+        try:
+            lcy = float(ln.get("y_norm", 0.0)) + float(ln.get("h_norm", 0.0)) / 2.0
+        except Exception:
+            continue
+        if abs(lcy - y0) > band:
+            continue
+        text = ln.get("text", "") or ""
+        for m in pat.finditer(text):
+            for tok, side in alnum_debris:
+                if side == 'left':
+                    seg = re.sub(r'[^0-9A-Za-z]{0,2}$', '', text[:m.start()])
+                    run = re.search(r'[0-9A-Za-z]{1,2}$', seg)
+                else:
+                    seg = re.sub(r'^[^0-9A-Za-z]{0,2}', '', text[m.end():])
+                    run = re.match(r'[0-9A-Za-z]{1,2}', seg)
+                if run and run.group(0).casefold() == str(tok).casefold():
+                    return True
+    return False
 
-    When an anchor has x_norm/y_norm coordinates (set by the user via the ⊕
-    selection tool), the page image is cropped to a tight region around the
-    value and re-OCR'd. This is far more accurate than full-page text search
-    for multi-column layouts where columns bleed into each other in OCR text.
 
-    Falls back to text-based search for anchors without coordinates.
-
-    Returns dict of {field_key: {"value": str, "confidence": int, "method": str}}
-    """
-    if not anchors or not ocr_text:
-        return {}
-
-    relevant = _filter_anchors(anchors, supplier_name, document_type)
-    if not relevant:
-        return {}
-
-    lines   = ocr_text.split("\n")
+def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_labels,
+                      line_cache, lines, multiline_lookup, on_reject, page0,
+                      page_text_lines, page_transform, slice_capture, supplier_name,
+                      text_field_keys, validation_patterns):
+    """Evaluate ONE field_key GROUP: run its anchors in _filter_anchors priority order,
+    committing the first value that qualifies (the `if field_key in results: continue`
+    short-circuit, now per-group). Move-only extraction of the former extract_with_anchors
+    per-anchor loop (C Stage 2a, 2026-07-17) — the body below is verbatim. Fields are
+    independent (every results access is this group's own key), so groups merge disjoint
+    keys; Option C parallelises the groups across cores (DS_OCR_PARALLEL_FIELDS)."""
     results = {}
-    page0   = page_images[0] if page_images else None
-    # Per-page OCR cache (Stage 1 / #4): every field whose rigid crop fails does a
-    # page-wide label locate; without sharing, each re-ran a full-page image_to_data
-    # (~2s). One cache for this page collapses them to a single pass (see
-    # template_mapper._locate_anchor). Especially hot when NO template matched and
-    # all fields fall here.
-    line_cache = {}
-
-    for anchor in relevant:
+    # Label-relocation caption guard (group-level): a RE-READ that lands on a page CAPTION word nulls
+    # the value; if nothing else fills the field, an empty+note row is emitted after the loop so the
+    # doc routes to review (never a silent blank auto-file). See the guard + after-loop emit. Oracle C2.
+    _caption_detected, _caption_field, _caption_note = False, None, None
+    # Dev-trace only: every reject below is raised INSIDE one anchor's iteration, so the
+    # caption that rung was answering is `anchor["anchor_label"]` — known here and at none
+    # of the ~20 raise sites. Rebind `on_reject` per iteration FROM THE ORIGINAL (never from
+    # the previous wrapper, which would nest one closure per anchor) so the raise sites keep
+    # their 4-argument call unchanged. None stays None: off-trace this loop is inert.
+    _on_reject_orig = on_reject
+    for anchor in group_anchors:
         field_key   = anchor["field_key"]
         label       = anchor["anchor_label"].lower().strip()
+        if _on_reject_orig is not None:
+            on_reject = (lambda fk, st, v, r, _f=_on_reject_orig, _c=anchor.get("anchor_label"):
+                         _f(fk, st, v, r, _c))
         direction   = anchor["direction"]
         usage_count = anchor.get("usage_count", 1)
         conf_factor = anchor.get("confidence", 0.5)
@@ -407,6 +521,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # and it SAVES the heavy rigid + registration crop OCR when the skip fires. Passive anchors are
         # untouched (authoritative-only, this slice).
         _xsup_absolute_ok = True
+        _plc = None   # the cross-supplier placement locate, reused by the left clamp below
         if (_named_cross_supplier(anchor, supplier_name)
                 and anchor.get("last_authoritative_at")
                 and (anchor.get("anchor_label") or "").strip() and page0 is not None):
@@ -424,9 +539,62 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             w_norm   = anchor.get("w_norm") or 0.0
             h_norm   = anchor.get("h_norm") or 0.0
             _cap = ((lambda c: slice_capture(field_key, "anchor_crop", 0,
-                       (x_norm, y_norm, w_norm, h_norm), c, "target")) if slice_capture else None)
+                       (x_norm, y_norm, w_norm, h_norm), c, "target", "taught box")) if slice_capture else None)
             _m = {}
-            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m, continuation=continuation)
+            # ANCHOR_LABEL_LEFT_CLAMP at the RIGID site (C2 full gate): the rigid crop reads
+            # the TAUGHT box, so a LOCATED-frame boundary is only coherent when the located
+            # caption sits AT the taught position (frames coincide) — a drifted page keeps
+            # the rigid read unclamped (the drift rung's located-frame crop clamps instead).
+            # The locate is paid ONLY when the switch is armed and the preconditions hold
+            # (OFF ⇒ byte-identical, no extra OCR); line_cache makes the later :1391
+            # authoritative-locate verification a cache hit, not a second page OCR (C7).
+            _lclamp = None
+            _rlim = None
+            # Arm the located frame for EITHER the left clamp OR the right grow (C-frame + arming-OR,
+            # Oracle 2026-08-02): both boundaries are only coherent when the located caption sits AT
+            # the taught position (frames coincide), so a drifted page keeps the rigid read
+            # unclamped/ungrown. Extend the arming to RIGHT_GROW so flipping it alone still computes
+            # the locate (else the right grow is silently inert on the rigid rung).
+            _want_lclamp = os.environ.get("ANCHOR_LABEL_LEFT_CLAMP", "0") != "0"
+            _want_rgrow  = os.environ.get("ANCHOR_VALUE_RIGHT_GROW", "0") != "0"
+            if ((_want_lclamp or _want_rgrow)
+                    and direction == "right" and val_type in _LEFT_CLAMP_TYPES
+                    and anchor.get("last_authoritative_at")
+                    and (anchor.get("anchor_label") or "").strip()):
+                _cloc = _plc if _plc is not None else _locate_for_relocation(
+                    page0, (anchor.get("anchor_label") or "").strip(), direction,
+                    (x_norm, y_norm, w_norm, h_norm), page_text_lines, line_cache=line_cache)
+                if _cloc and _located_at_taught_position(
+                        _cloc, x_norm, y_norm,
+                        anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")):
+                    if _want_lclamp:
+                        _lclamp = _label_left_limit(_cloc, anchor, direction, val_type)
+                    if _want_rgrow:
+                        _rlim = _label_right_limit(field_key, _cloc, anchor, direction, val_type, validation_patterns)
+            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m, continuation=continuation, max_w_norm=anchor.get("max_w_norm"), left_limit_norm=_lclamp, right_limit_norm=_rlim)
+            # CAPTION-PREFIX STRIP (kill ANCHOR_CAPTION_PREFIX_STRIP, DEFAULT OFF => byte-identical).
+            # A rigid crop can capture its own caption ("Date 22/07/2026", "No. DN-36457"), which then
+            # fails the credibility / learned-format gate below (the correct value is DISCARDED) OR — on a
+            # cold supplier with no learned format — commits DIRTY into the filename ("...Date 22-07-2026..").
+            # Recover the value by stripping the field's own taught label prefix. RECOVERY not pre-emption
+            # (Oracle SEAM B): keep the ORIGINAL whenever it already qualifies against real history; use the
+            # stripped value only when the original would be REJECTED, or when there is NO learned format at
+            # all (the cold-supplier dirty-commit). Structured non-currency only (Oracle SEAM A). The stripped
+            # value still faces the UNCHANGED gates below and commits as a plain anchor_crop, so a disagreeing
+            # Stage-1 keyword read still flags/holds it (the strip is never authoritative).
+            if (crop_value and val_type in _CAPTION_STRIP_TYPES
+                    and os.environ.get("ANCHOR_CAPTION_PREFIX_STRIP", "0") != "0"):
+                _stripped = _strip_caption_prefix(crop_value, label, val_type, validation_patterns)
+                if _stripped != crop_value:
+                    _orig_ok = bool(_crop_is_credible(crop_value, val_type, validation_patterns, label)
+                                    and _qualify_against_format(crop_value, field_key, format_lookup,
+                                                                text_field_keys, val_type, validation_patterns))
+                    _no_history = True
+                    if format_lookup is not None:
+                        try: _no_history = not format_lookup(field_key)
+                        except Exception: _no_history = True
+                    if (not _orig_ok) or _no_history:
+                        crop_value = _stripped
             # A fixed crop is positionally rigid: when an upstream line wraps or
             # the block shifts on a sibling layout, the box can land off-target
             # and return a NON-EMPTY but wrong value (e.g. ">alifornia" from the
@@ -445,10 +613,18 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 else:
                     # DEBRIS RECOVERY: a clean single token wrapped in short clip-debris
                     # (". = 317437" → "317437") — recover-and-flag, else reject to review.
-                    _rec = _recover_clean_token(crop_value, val_type, validation_patterns, label)
+                    # The RIGID site additionally arms the learned-charset bare-alnum arm
+                    # (ANCHOR_CHARSET_DEBRIS — the clipped-"#"-reads-as-"F" class); the
+                    # registration fallback site keeps the original refusal (Oracle C3).
+                    _rec_meta = {}
+                    _rec = _recover_clean_token(crop_value, val_type, validation_patterns, label,
+                                                field_key=field_key, format_lookup=format_lookup,
+                                                edge_contact=_m.get('edge_contact'),
+                                                allow_alnum_debris=True, debris_out=_rec_meta)
                     if _rec:
                         value, method = _rec, "anchor_crop_recovered"
                         ocr_conf, ocr_min = _m.get('conf'), _m.get('min_conf')
+                        _rec_alnum_debris = _rec_meta.get('alnum') or []
                     elif on_reject:
                         on_reject(field_key, "anchor_crop", crop_value, "not_credible")
             elif crop_value:
@@ -493,8 +669,11 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # crosscheck block can later FLIP the value, and this note describes the KEPT-RIGID
         # (or junk-relocate) case only. Applied at the result build when no other note landed.
         _relocate_guard_note = None
+        _name_guard_junk_note = False   # True ONLY for the :586 clean-rigid-vs-junk-sibling note ->
+                                        # marks the result for engine.NAME_GUARD_KEYWORD_CLEAR
         _caption_bleed = False   # fix #2: the relocate read the field's OWN caption (landed on the label)
         _read_box = None         # picker: the winning read's VALUE box (top-left norm) for name candidates
+        _rec_alnum_debris = []   # charset-debris strips from THIS anchor's rigid recovery (Oracle C4 refutation)
         if value and val_type in (None, "text", "multiline_text", "currency") \
                 and (anchor.get("anchor_label") or "").strip() \
                 and anchor.get("offset_dy_norm") is not None and page0 is not None:
@@ -529,6 +708,9 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 _dlb = (_dloc or {}).get("label_box")
                 if _dlb:   # label LOCATED -> lock the value to it (no drift threshold)
                     _dcand = None
+                    _drelo = None      # slice B: pre-bound — the inline branch below leaves it unset,
+                    _dinline = False   # and the commit block read it (NameError, swallowed at :598)
+                    _dband_reject = False
                     # Part A (007, 2026-07-14): capture the relocate crop's measured word
                     # confidence so the field-conf cap (~1057) + the engine Tier-A OCR gate
                     # aren't BLIND to a garbled clip (this rung uniquely NULLED it — the
@@ -536,6 +718,16 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     _dm = {}
                     # 1) inline harvest off the located label's line (value shares the row)
                     _div = (_dloc.get("inline_value") or "").strip()
+                    # Door 1 of 2: the harvested value must sit at the TAUGHT offset from the located
+                    # label, else it is another column's text sharing the OCR row (see
+                    # _inline_at_taught_offset). Dropping it falls through to the crop read below,
+                    # which is seated at that same taught offset.
+                    if _div and not _inline_at_taught_offset(
+                            _dloc, direction, (x_norm, y_norm, _dw, _dh),
+                            (anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm"))):
+                        if on_reject:
+                            on_reject(field_key, "anchor_inline", _div, "inline_off_taught_position")
+                        _div = ""
                     if _div:
                         _dc = _clean_text_fallback(_div, val_type, validation_patterns) or clean_crop_segment(_div, val_type)
                         if _dc and val_type in (None, "text", "multiline_text"):
@@ -545,6 +737,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                 and _crop_is_credible(_dc, val_type, validation_patterns, label) \
                                 and _qualify_against_format(_dc, field_key, format_lookup, text_field_keys):
                             _dcand = _dc
+                            _dinline = True
                     # 2) else re-read a crop seated beside the LOCATED label
                     if not _dcand:
                         _drelo = _place_from_located(_dloc, direction, (x_norm, y_norm, _dw, _dh),
@@ -552,13 +745,27 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         if _drelo:
                             _drelo = _widen_relocated_crop(_drelo, val_type)
                             _tl = _caption_top_limit(_dlb, direction, _drelo)   # (P) exclude the located caption band
+                            # Left clamp + right grow (C4): this rung's types (free-text/currency) are
+                            # DISJOINT from _LEFT_CLAMP_TYPES / the ref-like|date right-grow scope today, so
+                            # both helpers return None here — passed anyway so a future type-set widening
+                            # can't silently leave this site unclamped/ungrown (rung-discipline pin).
                             _drv = _crop_and_ocr(page0, _drelo[0], _drelo[1], _drelo[2], _drelo[3],
                                                  val_type, verify_fn=_verify, meta=_dm, continuation=continuation,
-                                                 top_limit_norm=_tl)
+                                                 top_limit_norm=_tl, max_w_norm=anchor.get("max_w_norm"),
+                                                 left_limit_norm=_label_left_limit(_dloc, anchor, direction, val_type),
+                                                 right_limit_norm=_label_right_limit(field_key, _dloc, anchor, direction, val_type, validation_patterns))
                             if _drv and not _name_field_code_reject(_drv, field_key) \
                                     and _crop_is_credible(_drv, val_type, validation_patterns, label):
                                 _dq = _qualify_against_format(_drv, field_key, format_lookup, text_field_keys)
-                                if _dq:
+                                # (C) COMPOSED CAPTION-BAND REJECT: the read is a garbled caption AND
+                                # the window that produced it still overlaps the located caption band
+                                # -> it is the LABEL, not the value. Keep the rigid read; never commit.
+                                if _dq and _is_caption_band_read(_dq, anchor.get("anchor_label"), field_key,
+                                                                _dlb, _drelo, val_type, page0.size, _tl):
+                                    _dband_reject = True
+                                    if on_reject:
+                                        on_reject(field_key, "anchor_crop_relocated", _dq, "caption_band_read")
+                                elif _dq:
                                     _dcand = _dq
                     if _dcand and _dcand.strip().lower() != (value or "").strip().lower():
                         _rv, _dv = (value or "").strip(), _dcand.strip()
@@ -599,34 +806,55 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                             if on_reject:
                                 on_reject(field_key, "anchor_crop_relocated", _dv,
                                           "name_guard_junk_candidate")
-                            _relocate_guard_note = ("The value found beside this document's own "
-                                                    "caption disagreed with the taught position "
-                                                    "— please verify.")
+                            _relocate_guard_note = NAME_GUARD_DISAGREE_NOTE
+                            _name_guard_junk_note = True   # kept value is an independently-clean name
+                                                           # -> a Stage-1 keyword that AGREES clears it
                         else:
                             if on_reject:
                                 on_reject(field_key, "anchor_crop", value, "off_row_drift")
                             value = _dcand
                             method = "anchor_crop_relocated"
-                            _read_box = _norm_box_dict(_drelo, True)   # picker: where the relocate read
-                            # Part A: keep the crop's measured confidence (was NULLED here).
-                            # _dm stays {} when _dcand came from the INLINE HARVEST (no crop
-                            # ran) -> .get returns None -> byte-identical for that sub-case.
-                            ocr_conf, ocr_min = _dm.get('conf'), _dm.get('min_conf')
-                            # CAPTION-BLEED demotion (fix #2, RELOCATE_CAPTION_DEMOTE): the
-                            # relocate's LEADING tokens ARE the taught caption (e.g. "Customer
-                            # Site tee" vs label "Customer Site") -> the crop landed on the
-                            # LABEL, not the value. name_quality can't catch it (real caption
-                            # words score >=0.6, colliding with a legit mixed-case name), so
-                            # FLAG it: the engine merge guard then prefers the clean keyword,
-                            # and the note makes it review-bound even with no keyword incumbent.
-                            # Free-text only (a caption is never a currency). Kill switch below.
-                            if val_type in (None, "text", "multiline_text") \
-                                    and os.environ.get("RELOCATE_CAPTION_DEMOTE", "1") != "0" \
-                                    and _is_caption_bleed(_dcand, anchor.get("anchor_label")):
-                                _caption_bleed = True
-                                if not _relocate_guard_note:
-                                    _relocate_guard_note = ("The taught box landed on this field's "
-                                                            "label, not its value — please verify.")
+                            # (B) SLICE B — the swallowed NameError. Everything from here down used
+                            # to be DEAD whenever the candidate came from the INLINE HARVEST: that
+                            # branch never bound `_drelo`, so the next line raised NameError, which
+                            # the bare `except` at the end of this guard swallowed — AFTER value +
+                            # method had already committed. Consequences, all silent: the provenance
+                            # box was lost; the RIGID crop's ocr_conf/ocr_min were carried over onto
+                            # a read the rigid crop did not produce (corrupting the free-text
+                            # confidence cap and the engine's Tier-A OCR gate); and the caption-bleed
+                            # demotion below never ran for inline reads. Branch-aware now — the
+                            # inline box is already TOP-LEFT (centre=False). Kill switch
+                            # LABELLOCK_INLINE_PROVENANCE=0 restores the crash-truncated behaviour
+                            # for the inline sub-case only (crop reads are unaffected either way).
+                            if not _dinline or os.environ.get("LABELLOCK_INLINE_PROVENANCE", "1") != "0":
+                              _read_box = (_norm_box_dict((_dloc or {}).get("inline_box"), False) if _dinline
+                                           else _norm_box_dict(_drelo, True))   # picker: where the read came from
+                              # Part A: keep the crop's measured confidence (was NULLED here).
+                              # _dm stays {} when _dcand came from the INLINE HARVEST (no crop
+                              # ran) -> .get returns None -> the documented "clean located read".
+                              ocr_conf, ocr_min = _dm.get('conf'), _dm.get('min_conf')
+                              # CAPTION-BLEED demotion (fix #2, RELOCATE_CAPTION_DEMOTE): the
+                              # relocate's LEADING tokens ARE the taught caption (e.g. "Customer
+                              # Site tee" vs label "Customer Site") -> the crop landed on the
+                              # LABEL, not the value. name_quality can't catch it (real caption
+                              # words score >=0.6, colliding with a legit mixed-case name), so
+                              # FLAG it: the engine merge guard then prefers the clean keyword,
+                              # and the note makes it review-bound even with no keyword incumbent.
+                              # Free-text only (a caption is never a currency). Kill switch below.
+                              if val_type in (None, "text", "multiline_text") \
+                                      and os.environ.get("RELOCATE_CAPTION_DEMOTE", "1") != "0" \
+                                      and _is_caption_bleed(_dcand, anchor.get("anchor_label")):
+                                  _caption_bleed = True
+                                  if not _relocate_guard_note:
+                                      _relocate_guard_note = ("The taught box landed on this field's "
+                                                              "label, not its value — please verify.")
+                    # (C) The relocate read its own caption and was refused above. The rigid read we
+                    # KEPT disagreed with it by construction, so the anchor's two reads contradict
+                    # each other -> flag for review (cap <=70 at the confidence block). No note when
+                    # nothing was rejected, so a clean corroborated read is untouched.
+                    if _dband_reject and not _relocate_guard_note:
+                        _relocate_guard_note = ("The value beside this document's own caption was the "
+                                                "caption itself — please verify.")
             except Exception:
                 pass  # dev/robustness: the guard must never break a read
 
@@ -653,6 +881,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         # The date disagreement compares CALENDAR dates (parse_date), so a format-only difference
         # (29/05/2026 vs 29-05-2026) is NOT a flip. Reuses line_cache — one locate per label per page.
         _xcheck_note = None   # flag-only note (value-below-label false-locate); set below, applied at the result build
+        _xcheck_preflip = None  # C1: credible PRE-FLIP crop read, stashed (gated) as an independent crop-family witness for the engine's post-merge crosscheck-outlier reconcile
         if value and method == "anchor_crop" and (_is_ref_like_key(field_key) or val_type == "date") \
                 and anchor.get("last_authoritative_at") \
                 and (anchor.get("anchor_label") or "").strip() and page0 is not None:
@@ -664,6 +893,11 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 _xloc = _locate_for_relocation(page0, anchor["anchor_label"], direction,
                                                (x_norm, y_norm, _xw, _xh), page_text_lines,
                                                line_cache=line_cache)
+                # SEAM, deliberate: this THIRD inline consumer is NOT covered by the taught-offset
+                # veto. It never commits the harvest — it only compares it to the crop read and
+                # FLAGS a disagreement — so a wrong-column harvest here costs a needless review, not
+                # a wrong value. Guarding it would move ref/date flag counts and needs its own corpus
+                # arm; the two COMMITTING doors are guarded.
                 _xiv = ((_xloc or {}).get("inline_value") or "").strip()
                 if _xiv:
                     _xc = _clean_text_fallback(_xiv, val_type, validation_patterns) \
@@ -675,6 +909,15 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         # can't win silently: prefer the full-page native read + flag for review.
                         if on_reject:
                             on_reject(field_key, "anchor_crop", value, "crop_fullpage_disagree")
+                        if os.environ.get("CROSSCHECK_OUTLIER_RECONCILE", "0") != "0":
+                            # Oracle C1: the fresh full-page locate can ITSELF be the garbler (doc-09:
+                            # correct crop PO-83150 flipped to a lone-outlier PO-83160). Preserve the
+                            # credible pre-flip CROP read so the engine's post-merge reconcile has an
+                            # independent crop-family witness — WITHOUT it the fix only heals mapping-
+                            # backed docs and leaves the ⊕-anchor-only sibling broken (a document fix,
+                            # not a system fix). Gated: the OFF path never adds the key (byte-identical,
+                            # ledger included). Consumed + popped in engine._reconcile_crosscheck_outlier.
+                            _xcheck_preflip = value
                         value  = _xc.strip()             # prefer the full-page native read
                         method = "anchor_crop_crosscheck"
                         ocr_conf, ocr_min = None, None
@@ -700,7 +943,10 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                                 offset=(anchor.get("offset_dx_norm"),
                                                         anchor.get("offset_dy_norm")))
                     _gv = (_crop_and_ocr(page0, _gbox[0], _gbox[1], _gbox[2], _gbox[3], val_type,
-                                         verify_fn=_verify, continuation=continuation) if _gbox else None)
+                                         verify_fn=_verify, continuation=continuation,
+                                         top_limit_norm=_caption_top_limit(_xloc.get("label_box"),
+                                                                           direction, _gbox),
+                                         left_limit_norm=_label_left_limit(_xloc, anchor, direction, val_type)) if _gbox else None)
                     _gc = (_clean_text_fallback(_gv, val_type, validation_patterns)
                            or clean_crop_segment(_gv, val_type)) if _gv else None
                     if _gc and _crop_is_credible(_gc, val_type, validation_patterns, label) \
@@ -763,7 +1009,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                                                      tol_x=_RELOC_TOL_X, tol_y=_RELOC_TOL_Y))
                     slice_capture(field_key, "anchor_label", 0,
                                   (_lb["x_norm"], _lb["y_norm"], _lb["w_norm"], _lb["h_norm"]),
-                                  _lcrop, "anchor_vetoed" if _t_vetoed else "anchor")
+                                  _lcrop, "anchor_vetoed" if _t_vetoed else "anchor", "label locate")
             except Exception:
                 pass  # dev-only diagnostic; never disrupt extraction
 
@@ -805,6 +1051,49 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # the SAME credibility + learned-format gates as a crop read, so it
                 # can never commit something a crop read would have rejected.
                 iv = located.get("inline_value")
+                # Door 2 of 2 for the taught-offset veto (see _inline_at_taught_offset): the label
+                # located here can be exactly right while the harvest comes from the NEXT BLOCK on the
+                # same OCR row. Drops the harvest only; the crop read seated at the taught offset (2)
+                # below then runs.
+                if iv and not _inline_at_taught_offset(located, direction, vbox,
+                                                       (_reloc_odx, _reloc_ody)):
+                    if on_reject:
+                        on_reject(field_key, "anchor_inline", iv, "inline_off_taught_position")
+                    iv = None
+                # 007-A (ANCHOR_INLINE_FULLRES_REREAD, default ON — owner+007 2026-07-27): inline_value is
+                # harvested from the label-LOCATE pass, which _prep_for_lines downscales to ~120 DPI for
+                # locate SPEED (_MAX=1100). At that resolution a printed digit can flip (measured 9->0 on a
+                # good, mildly-skewed scan: PO-78399 -> PO-78309, committed silently). The KNOWN inline_box is
+                # in page coords, so re-read it at FULL render resolution with the SAME crop ladder the DRAW
+                # TOOL / _crop_and_ocr use (resolution-adaptive: full-res for codes, preview-scale for degraded
+                # free-text — the owner's "the draw box seldom fails OCR" recipe). Prefer the full-res read
+                # ONLY when it is itself CREDIBLE, so a garbled re-read never displaces a correct harvest
+                # (non-monotonicity guard — downscale can incidentally rescue a noisy glyph; Oracle Q2). No
+                # inline_box / OFF => the low-res harvest stands (byte-identical). Value-only: position + gates
+                # below are unchanged.
+                # ⚠ DARK (default '0') — the corpus A/B REGRESSED: re-cropping full-res at the inline_box
+                # (which is derived from the LOW-RES locate pass, so its edges are ~120-DPI coarse) and
+                # re-OCRing corrupted many reads (ref 97.6->86.8%, date 95.5->90.0%, silentAutoFile 3->27
+                # 2026-07-27) — the non-monotonic re-OCR Oracle warned of (Q2), at scale. The box-precision
+                # problem must be solved (re-locate the value at full res, not re-crop the coarse box)
+                # before this can re-enable. reggie's independent Stage-1 reader (PO_ORDER_NO_LABELS) makes
+                # the target case fail-toward-review meanwhile. =1 to experiment.
+                if (iv and page0 is not None and located.get("inline_box")
+                        and os.environ.get('ANCHOR_INLINE_FULLRES_REREAD', '0') != '0'):
+                    try:
+                        _ib0 = located["inline_box"]
+                        _W0, _H0 = page0.size[0], page0.size[1]
+                        _fcrop = page0.crop((int(_ib0["x_norm"] * _W0), int(_ib0["y_norm"] * _H0),
+                                             int((_ib0["x_norm"] + _ib0["w_norm"]) * _W0),
+                                             int((_ib0["y_norm"] + _ib0["h_norm"]) * _H0)))
+                        _frv = _ocr_crop_laddered(_fcrop, val_type, meta={}, page=page0,
+                                                  box=(_ib0["x_norm"], _ib0["y_norm"], _ib0["w_norm"], _ib0["h_norm"]))
+                        if _frv and _frv.strip():
+                            _frc = _clean_text_fallback(_frv, val_type, validation_patterns) or clean_crop_segment(_frv, val_type)
+                            if _frc and _crop_is_credible(_frc, val_type, validation_patterns, label):
+                                iv = _frv.strip()   # credible full-res re-read replaces the low-res harvest
+                    except Exception:
+                        pass   # any failure -> keep the low-res harvest (byte-identical fallback)
                 if iv:
                     hv = _clean_text_fallback(iv, val_type, validation_patterns) or clean_crop_segment(iv, val_type)
                     # A code-like value column ("2602-0768-1 Work Address …") is a
@@ -852,7 +1141,7 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                                          int(_ib["y_norm"] * page0.size[1]),
                                                          int((_ib["x_norm"] + _ib["w_norm"]) * page0.size[0]),
                                                          int((_ib["y_norm"] + _ib["h_norm"]) * page0.size[1])))
-                                    slice_capture(field_key, "anchor_inline", 0, _ibox, _icrop, "target")
+                                    slice_capture(field_key, "anchor_inline", 0, _ibox, _icrop, "target", "inline harvest")
                                 except Exception:
                                     pass   # dev-only; never disrupt extraction
                     elif hv and on_reject:
@@ -871,8 +1160,17 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                         _rcap = ((lambda c: slice_capture(field_key, "anchor_relocate", 0,
                                     relo, c, "target")) if slice_capture else None)
                         _mr = {}
+                        # (P) slice A: the drift rung's relocate crop was NEVER clamped — the
+                        # exclusion was produced at exactly one call site (the label-lock rung).
+                        # Same geometry, same failure: a padded below-anchor crop balloons up into
+                        # the caption it was seated beneath. Rides RELOCATE_CAPTION_EXCLUDE.
+                        _rtl = _caption_top_limit(located.get("label_box"), direction, relo)
                         rval = _crop_and_ocr(page0, relo[0], relo[1], relo[2], relo[3],
-                                             val_type, capture=_rcap, verify_fn=_verify, meta=_mr, continuation=continuation)
+                                             val_type, capture=_rcap, verify_fn=_verify, meta=_mr,
+                                             continuation=continuation, top_limit_norm=_rtl,
+                                             max_w_norm=anchor.get("max_w_norm"),
+                                             left_limit_norm=_label_left_limit(located, anchor, direction, val_type),
+                                             right_limit_norm=_label_right_limit(field_key, located, anchor, direction, val_type, validation_patterns))
                         _xfield = bool(rval) and _name_field_code_reject(rval, field_key)
                         if rval and (_xfield or not _crop_is_credible(rval, val_type, validation_patterns, label)):
                             _rec = None if _xfield else _recover_clean_token(rval, val_type, validation_patterns, label)
@@ -900,6 +1198,18 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                             if not q and not _digit_free_on_digit_field(rval, field_key, format_lookup) \
                                     and not _partial_of_uniform_shape(rval, field_key, format_lookup):
                                 q = rval
+                            # (C) COMPOSED CAPTION-BAND REJECT — the second commit point. Same rule as
+                            # the label-lock rung: a garbled caption read from a window that still
+                            # overlaps the located caption band is the LABEL, not the value.
+                            if q and _is_caption_band_read(q, anchor.get("anchor_label"), field_key,
+                                                          located.get("label_box"), relo, val_type,
+                                                          page0.size, _rtl):
+                                if on_reject:
+                                    on_reject(field_key, "anchor_crop_relocated", q, "caption_band_read")
+                                if not _relocate_guard_note:
+                                    _relocate_guard_note = ("The value beside this document's own caption "
+                                                            "was the caption itself — please verify.")
+                                q = None
                             if q and _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
                                 value  = q
                                 method = "anchor_crop_relocated"
@@ -1012,6 +1322,22 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
         if value and not _crop_is_credible(value, val_type, validation_patterns, label):
             value = None
 
+        # CAPTION-CONTINUATION GUARD (label relocation): a RE-READ (text-fallback / inline / relocate /
+        # registration) that landed on a page CAPTION word — the "Item Information" heading stealing the
+        # "Item" label and reading 'information' — must NEVER commit. Null it; a rigid taught crop
+        # (method 'anchor_crop') is deliberately NOT in the method set, so a clean rigid read is
+        # preserved and auto-files unflagged. Content-only predicate (val_type-aware); if no anchor
+        # fills the field, the after-loop branch emits an empty+note row -> review. This is the ONE
+        # convergence point (no read after it re-sources a value). Kill switch
+        # ANCHOR_CAPTION_HARVEST_GUARD=0 (OFF => byte-identical). (Oracle SIGN-OFF-WITH-CONDITIONS.)
+        if (value and method in ("anchor", "anchor_inline", "anchor_crop_relocated", "anchor_registration")
+                and os.environ.get("ANCHOR_CAPTION_HARVEST_GUARD", "1") != "0"):
+            from extraction.keyword import is_caption_continuation
+            if is_caption_continuation(value, val_type, anchor.get("anchor_label")):
+                value, _caption_detected, _caption_field = None, True, field_key
+                _caption_note = ("The label matched a heading on the page, not a value — "
+                                 "please check this field.")
+
         # Final learned-format gate — also covers the text-fallback value, so a
         # label-search read that grabbed the wrong token is rejected/trimmed too.
         # SKIP for the label-confirmed rungs (inline/relocated/registration): they
@@ -1033,6 +1359,37 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
             from extraction.value_quality import is_name_like_field, name_quality
             if is_name_like_field(field_key) and name_quality(value) < 0.5:
                 value = None
+
+        # Guard B (fuzzy caption bleed, RIGID anchor_crop — Oracle 2026-07-15): a rigid taught crop that
+        # landed on the field's own CAPTION and OCR-garbled it ("Veliver 10°" from "Deliver To") slips the
+        # token-EXACT _is_caption_bleed (relocate-only) AND the multi-word name null above (name_quality
+        # 0.5, not < 0.5), then WINS Tier-A over the correct keyword. Fuzzy-detect it and set BOTH the flag
+        # (so engine._name_relocate_should_hold keeps the clean keyword) AND _relocate_guard_note (which
+        # caps conf <= 70 at the anchor_crop guard below AND persists a note, so it's review-bound even
+        # with NO keyword incumbent — Oracle C1). Gated to name_quality < 0.6 (Oracle C3: real names like
+        # "Denver Trading"/"Delivery Solutions Ltd" score 1.0 and survive). Kill switch ANCHOR_CAPTION_BLEED_GUARD.
+        # 2026-07-20 — WIDENED to the RELOCATED crop (owner report, Northgate delivery dockets).
+        # The two caption guards had a hole exactly between them: the token-EXACT check
+        # (_is_caption_bleed) is relocate-scoped but can't match a caption OCR mangled it, and this
+        # FUZZY check caught the garble but only on the RIGID crop — so a GARBLED RELOCATE walked
+        # through both. Live trace: taught label "Deliver To" (direction below) produced
+        # anchor_crop "Wenver i0" (rejected off_row_drift) and anchor_crop_relocated "Vetiver 10"
+        # @80, which BEAT the correct keyword read "Halcyon Leisure Group" @78 and filed the label
+        # as the customer. "vetiver" vs "deliver" = 2/7 = 0.29 <= 0.35, so the predicate always
+        # recognised it — only the method gate kept it out. The name_quality < 0.6 condition below
+        # is what keeps REAL names safe here ("Denver Trading"/"Delivery Solutions Ltd" fuzzy-match
+        # a caption but score 1.0), so widening the method set cannot demote a clean name.
+        if (value and method in ("anchor_crop", "anchor_crop_relocated")
+                and val_type in (None, "text", "multiline_text")
+                and os.environ.get("ANCHOR_CAPTION_BLEED_GUARD", "1") != "0"):
+            from extraction.value_quality import is_name_like_field as _isnl2, name_quality as _nq2
+            if (_isnl2(field_key) and field_key != "supplier_name"
+                    and _is_fuzzy_caption_bleed(value, anchor.get("anchor_label"), field_key)
+                    and _nq2(value) < 0.6):
+                _caption_bleed = True
+                if not _relocate_guard_note:
+                    _relocate_guard_note = ("The taught box landed on this field's label, not its "
+                                            "value — please verify.")
 
         if value:
             conf = min(95, 55 + (usage_count * 5) + int(conf_factor * 20))
@@ -1145,6 +1502,26 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                                 _loc, x_norm, y_norm,
                                 anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")):
                             located_ok = False
+                    # SAME_SUPPLIER_LAYOUT_GATE (gary-designed, Oracle-pending; DARK, default OFF) —
+                    # a SAME-supplier authoritative rigid ABSOLUTE read is certified Tier-A on caption
+                    # PRESENCE alone (located_ok = bool(_loc) above), so a digital doc that reuses a
+                    # scanned template's geometry reads the WRONG region and, if it OCRs credibly, can
+                    # auto-file silently. When on, require the caption at the TAUGHT position too — the
+                    # looser relocate budget (_RELOC_TOL) + an offset-present precondition so legacy
+                    # no-offset anchors (pre-mig-21) are NEVER vetoed. A displaced caption drops through
+                    # to conf<=50 + review (value still commits capped / loses to a better read, never
+                    # blanked). Own-layout reads keep winning (the caption IS at the taught position).
+                    # OFF -> byte-identical. Flip only after Oracle + realdoc M=0 with the switch ON.
+                    elif (located_ok
+                          and os.environ.get("SAME_SUPPLIER_LAYOUT_GATE", "0") != "0"
+                          and anchor.get("offset_dx_norm") is not None
+                          and anchor.get("offset_dy_norm") is not None
+                          and (anchor.get("offset_dx_norm") or anchor.get("offset_dy_norm"))
+                          and not _located_at_taught_position(
+                                  _loc, x_norm, y_norm,
+                                  anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm"),
+                                  tol_x=_RELOC_TOL_X, tol_y=_RELOC_TOL_Y)):
+                        located_ok = False
             # HEADING-GARBLE NAME DEMOTION (Oracle 2026-07-12) — the DN-82792 customer_name class.
             # A relocated/placed read on a NAME field that lands on a document CAPTION garble
             # ("Deliver lo", "Deliver To RRS") is marked located BY METHOD (anchor_crop_relocated is
@@ -1173,18 +1550,27 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                     continue
             # Confident recovery (oscar's confident-clean, Oracle-gated): a debris-recovered read
             # whose clean token is LOCATED at the taught position AND matches the field's learned
-            # shape is trustworthy — _recover_clean_token only ever stripped NON-alphanumeric edge
-            # debris, so it cannot have force-fit a glyph (the Oracle's glyph-preservation condition,
-            # satisfied by construction). Three tiers: an UNLOCATED / OFF-shape recovery is capped +
-            # flagged (fail toward review); a LOCATED + shape-matched one drops the flag but stays
-            # BELOW the auto-file floor (a one-glance human confirm) UNLESS it is also independently
-            # corroborated by the born-digital vector text at the taught row, which lifts it to
-            # auto-file-eligible (Oracle condition #4). Harness M=0 is the safety gate.
+            # shape is trustworthy. GLYPH SAFETY (revised 2026-07-27, Oracle C5 — the old "only ever
+            # stripped NON-alphanumeric debris, satisfied by construction" is STALE since the
+            # ANCHOR_CHARSET_DEBRIS arm): stripping never substitutes a glyph, and a stripped
+            # bare-ALNUM token is admitted only on (a) the scope's UNANIMOUS confirmed-history
+            # charset at support ≥10, (b) crop-boundary edge-contact (clipped-glyph physics), and
+            # (c) the vector-REFUTATION below — when the born-digital text layer proves the stripped
+            # token was real ink adjacent to the value ("F 14266" printed), the recovery is demoted
+            # to capped+flagged, never noteless, never tier 3. Three tiers: an UNLOCATED / OFF-shape
+            # / REFUTED recovery is capped + flagged (fail toward review); a LOCATED + shape-matched
+            # one drops the flag but stays BELOW the auto-file floor (a one-glance human confirm)
+            # UNLESS it is also independently corroborated by the born-digital vector text at the
+            # taught row, which lifts it to auto-file-eligible (Oracle condition #4). Harness M=0 +
+            # the 61-doc live replay are the safety gates.
             _rec_confident = False
             if method == "anchor_crop_recovered":
-                _rec_confident = bool(located_ok) and _matches_learned_shape(value, field_key, format_lookup)
+                _rec_refuted = bool(_rec_alnum_debris) and _vector_refutes_strip(
+                    value, _rec_alnum_debris, anchor, y_norm, page_text_lines)
+                _rec_confident = (not _rec_refuted) and bool(located_ok) \
+                    and _matches_learned_shape(value, field_key, format_lookup)
                 if not _rec_confident:
-                    conf = min(70, conf)   # unlocated / off-shape → capped + flagged (route to review)
+                    conf = min(70, conf)   # unlocated / off-shape / vector-refuted → capped + flagged
                 elif _exact_text_corroborates(value, anchor, y_norm, page_text_lines):
                     # BORN-DIGITAL + independent exact-text agreement on the value's OWN taught row
                     # (Oracle condition #4): the debris-recovered token is confirmed by a fully
@@ -1233,7 +1619,16 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # candidate contract. Emitted ONLY for the instrumented relocate/inline rungs
                 # (which set _read_box); any other method -> None so a stale box can't leak.
                 "box": _read_box if method in ("anchor_inline", "anchor_crop_relocated") else None,
+                # Deskew raw-witness (issue-3): the ORIGINAL taught box (immune to any relocate
+                # mutation) for a raw-page re-crop of a crop-derived ref/date read on a --deskew-pages
+                # reprocess. None for non-crop methods; the engine reads it only when raw_page0 is set.
+                "taught_box": ((x_norm, y_norm, anchor.get("w_norm") or 0.0, anchor.get("h_norm") or 0.0)
+                               if method in _CROP_FAMILY_METHODS else None),
             }
+            if _xcheck_preflip is not None:
+                # C1 (gated): carry the pre-flip crop read to the engine as a transient private
+                # key — read + popped by _reconcile_crosscheck_outlier, never persisted.
+                results[field_key]["_crosscheck_original"] = _xcheck_preflip
             if method == "anchor_crop_slipfix":
                 # Recover-and-flag: surface as an auto-correction (value==corrected_to) routed to
                 # review, the same posture as a salvaged date / weak name-repair.
@@ -1255,10 +1650,16 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # Recover-and-flag: the taught crop and the full-page read of the same label
                 # DISAGREED; we took the full-page value (native-DPI, generally the truer read)
                 # but never let a disagreement file silently — surface it for a human to confirm.
+                # The note text is the SHARED CONSTANT below (XCHECK_DISAGREE_NOTE): the terminal
+                # corroboration demote (engine._demote_xcheck_corroborated_note, Oracle-signed
+                # 2026-08-12) is eligibility-keyed on EXACT equality with it. Do NOT "unify" the
+                # deskew raw-witness note (engine.py ~:7062) into this constant — that note is a
+                # two-read consensus that the committed value is WRONG; demoting it would be
+                # perverse (Oracle C2).
                 results[field_key].update({
                     "was_corrected":   True,
                     "corrected_to":    value.strip(),
-                    "validation_note": "The taught position and the full-page read disagreed — using the full-page value; please verify.",
+                    "validation_note": XCHECK_DISAGREE_NOTE,
                 })
             if _xcheck_note and field_key in results:
                 # FLAG-ONLY (value-below-label cross-supplier false-locate): KEEP the rigid value (no
@@ -1269,6 +1670,119 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                 # NAME-GUARD note (Layers A/B): flag-only — the value (kept rigid, or a capped
                 # junk relocate) is surfaced for a human; never overwrites a method-specific note.
                 results[field_key]["validation_note"] = _relocate_guard_note
+                if _name_guard_junk_note:
+                    # ONLY the :586 clean-rigid-vs-off-junk site: mark for the engine keyword-corrob
+                    # clear (engine.NAME_GUARD_KEYWORD_CLEAR). The kept value is an independently-clean
+                    # name, so a Stage-1 keyword that agrees clears the phantom flag; a STALE clean name
+                    # (keyword disagrees) keeps it. The other note sites (garble-IS-the-value / geometric
+                    # caption) are deliberately NOT marked — they must keep flagging (Oracle C4).
+                    results[field_key]["_name_guard_clearable"] = True
+    # After every anchor: if a RE-READ landed on a page caption AND nothing else filled the field,
+    # emit an EMPTY row carrying the note so trust.isAutoFileEligible's flagged gate holds the doc for
+    # review (never a silent blank auto-file). Same pattern as engine._flag_type_ambiguity. Oracle C2.
+    if _caption_detected and _caption_field and _caption_field not in results:
+        results[_caption_field] = {"value": None, "confidence": 40, "method": "anchor",
+                                   "validation_note": _caption_note}
+    return results
+
+
+def extract_with_anchors(ocr_text: str, anchors: list[dict],
+                         supplier_name: str | None,
+                         document_type: str | None,
+                         page_images: list | None = None,
+                         field_patterns: dict | None = None,
+                         validation_patterns: dict | None = None,
+                         slice_capture = None,
+                         format_lookup = None,
+                         page_transform = None,
+                         on_reject = None,
+                         page_text_lines = None,
+                         text_field_keys = None,
+                         multiline_lookup = None,
+                         identity_labels = None,
+                         force_serial = False) -> dict:
+    """
+    Attempt to extract field values using saved structural anchors.
+
+    When an anchor has x_norm/y_norm coordinates (set by the user via the ⊕
+    selection tool), the page image is cropped to a tight region around the
+    value and re-OCR'd. This is far more accurate than full-page text search
+    for multi-column layouts where columns bleed into each other in OCR text.
+
+    Falls back to text-based search for anchors without coordinates.
+
+    Returns dict of {field_key: {"value": str, "confidence": int, "method": str}}
+    """
+    if not anchors or not ocr_text:
+        return {}
+
+    relevant = _filter_anchors(anchors, supplier_name, document_type)
+    if not relevant:
+        return {}
+
+    lines   = ocr_text.split("\n")
+    results = {}
+    page0   = page_images[0] if page_images else None
+    # Per-page OCR cache (Stage 1 / #4): every field whose rigid crop fails does a
+    # page-wide label locate; without sharing, each re-ran a full-page image_to_data
+    # (~2s). One cache for this page collapses them to a single pass (see
+    # template_mapper._locate_anchor). Especially hot when NO template matched and
+    # all fields fall here.
+    line_cache = {}
+
+    # ── Option C: evaluate anchors GROUPED BY field_key (2026-07-17) ──────────────────────
+    # Fields are INDEPENDENT — every `results` access in the former per-anchor loop was the
+    # field's OWN key (verified), so groups produce disjoint keys and merge cleanly. Within a
+    # group, anchors run in _filter_anchors priority order and the first committable value wins.
+    # Stage 2a = MOVE-ONLY: dispatch is sequential in the original order -> byte-identical to the
+    # old inline loop. Stage 2b parallelises the groups behind DS_OCR_PARALLEL_FIELDS.
+    _groups = {}
+    for _a in relevant:
+        _groups.setdefault(_a["field_key"], []).append(_a)
+    _ctx = (field_patterns, format_lookup, identity_labels, line_cache, lines, multiline_lookup,
+            on_reject, page0, page_text_lines, page_transform, slice_capture, supplier_name,
+            text_field_keys, validation_patterns)
+    _gvals = list(_groups.values())
+    # Stage 2b — parallelise the independent field-key groups across cores (each _eval_field_group
+    # OCRs its own crops via GIL-releasing tesseract.exe). Gated OFF by default; FORCED SEQUENTIAL
+    # under trace/inspector (force_serial/slice_capture) so dev diagnostics stay in serial order,
+    # and when there is <=1 group. Byte-identical: groups write DISJOINT field-keys; line_cache is
+    # keyed per crop-box, so we warm any shared entry by running the FIRST group serially, then pool
+    # the rest (Oracle cond 4). Each pooled task falls back to a SEQUENTIAL re-run on any abnormal
+    # exception (cond 3), so an under-pressure degraded read is "slower", never a silent wrong value.
+    # ⚠ The predicate must NEVER key on `on_reject` (slice-3 Oracle B1, 2026-08-13): the rejection
+    # recorder is now ALWAYS ON in production (engine._rejected_reads), so an `on_reject is None`
+    # leg would silently force-serialise every run — and Tesseract is thread-count-nondeterministic
+    # on boundary glyphs, so that is a READ-DETERMINISM change, not a perf loss (the deskew→
+    # COMPOSE_SCAN interaction class). The engine passes force_serial=self._trace instead; the
+    # recorder itself is thread-safe (list.append is GIL-atomic; field-key groups are disjoint).
+    # Pinned in test_name_corrob_demote.py (predicate must not reference on_reject).
+    _parallel = (os.environ.get('DS_OCR_PARALLEL_FIELDS', '0') != '0'
+                 and not force_serial and slice_capture is None
+                 and len(_gvals) > 1)
+    if _parallel:
+        os.environ['OMP_THREAD_LIMIT'] = '1'   # cap Tesseract OMP (1 = floor; LSTM is 1-core-bound)
+        results.update(_eval_field_group(_gvals[0], *_ctx))   # warm shared line_cache entries
+        _rest = _gvals[1:]
+        try:
+            import concurrent.futures as _cf
+            _cap = os.environ.get('DS_OCR_POOL_WORKERS')       # optional width override / memory bound
+            _maxw = int(_cap) if (_cap and _cap.isdigit() and int(_cap) > 0) else (os.cpu_count() or 1)
+            _W = max(1, min(_maxw, 8, len(_rest)))
+            with _cf.ThreadPoolExecutor(max_workers=_W) as _ex:
+                _pairs = [(g, _ex.submit(_eval_field_group, g, *_ctx)) for g in _rest]
+                for g, _fut in _pairs:                         # merge in original group order
+                    try:
+                        _gr = _fut.result()
+                    except Exception:
+                        _gr = _eval_field_group(g, *_ctx)      # sequential-retry belt (cond 3)
+                    results.update(_gr)
+        except Exception:
+            for g in _rest:                                    # pool construction failed → sequential
+                results.update(_eval_field_group(g, *_ctx))
+    else:
+        for _ga in _gvals:
+            results.update(_eval_field_group(_ga, *_ctx))
 
     return results
 
@@ -1339,6 +1853,119 @@ def _is_caption_bleed(cand, label) -> bool:
     if n < 1 or len(vt) < n:
         return False
     return vt[:n] == ct
+
+
+# Party/recipient caption PHRASES a garbled taught-box read can land on. Fuzzy-matched (below) so an OCR
+# garble of the caption ("Deliver To" -> "Veliver 10°") is caught where the token-EXACT _is_caption_bleed
+# can't. Short 4-char captions (Site/etc.) are left to the exact check (joined len < 5 is skipped).
+_FUZZY_CAPTION_PHRASES = ("deliver", "delivery", "deliver to", "delivery address", "customer", "client",
+                          "consignee", "ship to", "sold to", "bill to", "invoice to", "account")
+
+
+def _is_fuzzy_caption_bleed(value, label, field_key) -> bool:
+    """True → the value's LEADING tokens are an OCR-GARBLED form of a party/recipient CAPTION — the crop
+    landed on the field's own label and garbled it ("Veliver 10°" from "Deliver To": D->V, "To"->"10°").
+    The FUZZY companion to _is_caption_bleed (token-EXACT, relocate-only); it catches the RIGID anchor_crop
+    garble the exact check misses. For each caption phrase: k = its content-token count, cj = its
+    alnum-joined form; compare the value's leading-k content tokens (alnum-joined) -> vj; fires when
+    normalized Levenshtein(vj, cj) <= 0.35 AND |len(vj)-len(cj)| <= 2 AND len(cj) >= 5 AND len(vj) >= 4.
+    "veliver10" vs "deliverto" = 3/9 = 0.33 -> fires. The CALLER additionally requires name_quality < 0.6
+    (Oracle C3) so a CLEAN real name that fuzzy-resembles a caption ("Delivery Solutions Ltd" dist 0 to
+    "delivery", "Denver Trading" dist 2 to "deliver") is NEVER demoted (it scores 1.0). Vocab =
+    _FUZZY_CAPTION_PHRASES + the taught anchor_label. Fail-safe False on missing/short input."""
+    if not value:
+        return False
+    from extraction import keyword as _kw
+    vt = [t.lower() for t in re.findall(r"[0-9A-Za-z]+", str(value))]
+    if not vt:
+        return False
+    phrases = list(_FUZZY_CAPTION_PHRASES)
+    if label:
+        phrases.append(str(label))
+    for phrase in phrases:
+        ct = re.findall(r"[0-9A-Za-z]+", phrase.lower())
+        if not ct:
+            continue
+        k = len(ct)
+        cj = "".join(ct)
+        if len(cj) < 5 or len(vt) < k:
+            continue
+        vj = "".join(vt[:k])
+        if len(vj) < 4 or abs(len(vj) - len(cj)) > 2:
+            continue
+        if _kw._bounded_levenshtein(vj, cj) / max(len(vj), len(cj)) <= 0.35:
+            return True
+    return False
+
+
+def _read_window_top_norm(relo_box, val_type, page_h, top_limit_norm) -> float:
+    """The WORST-CASE (highest, smallest-y) normalised edge that a value read seated at `relo_box`
+    can actually see. Mirrors the two windows that exist downstream:
+      (a) `_crop_and_ocr`'s padded crop — centre − (h/2 + 20px), + 0.4·h + 6px more for free text;
+      (b) the ladder's PREVIEW FAST PATH re-crop — the tight box's top − 0.5·h of headroom.
+    Then applies the caller's (P) clamp, which after slice A really does bound BOTH. Deliberately
+    duplicates (a)'s arithmetic rather than refactoring `_crop_and_ocr`: that function is on every
+    value-read path in the app and must not change shape for a guard. Keep the two in step."""
+    try:
+        cx, cy, wn, hn = float(relo_box[0]), float(relo_box[1]), float(relo_box[2]), float(relo_box[3])
+        ph = float(page_h)
+    except Exception:
+        return 0.0
+    if wn > 0 and hn > 0:
+        half_h = int(hn * ph / 2) + 20
+        if val_type in ("text", "multiline_text"):
+            half_h += int(hn * ph * 0.4) + 6
+    else:
+        half_h = 60
+    top = max(0.0, (int(cy * ph) - half_h) / ph)
+    if wn > 0 and hn > 0:                              # (b) the preview fast path's headroom
+        top = min(top, max(0.0, cy - hn / 2.0 - hn * 0.5))
+    if top_limit_norm is not None:
+        top = max(top, float(top_limit_norm))
+    return top
+
+
+def _is_caption_band_read(value, label, field_key, label_box, relo_box, val_type,
+                          page_size, top_limit_norm) -> bool:
+    """COMPOSED CAPTION-BAND REJECT (Oracle ruling, 2026-07-20 — the discriminator that content alone
+    cannot provide). True → this relocated read must NOT commit, because it is BOTH:
+      • CONTENT: an OCR-garbled form of a party/recipient caption (`_is_fuzzy_caption_bleed`, the BARE
+        vocab with NO name_quality gate — 'Vetiver 10' scores a perfect 1.0, so the nq<0.6 gate that
+        protects the flag family is structurally blind to exactly this class); AND
+      • GEOMETRY: the worst-case read window still OVERLAPS the caption the caller POSITIVELY located.
+
+    Why BOTH are load-bearing (Oracle's arithmetic, why two earlier single-signal designs were sent
+    back): a full-label echo test MISSES 'Vetiver 10' (normalised lev to "deliverto" = 0.444 > 0.35),
+    while the bare k=1 phrase vocab FALSELY rejects the real customer 'Denver Trading'
+    (lev("denver","deliver") = 0.286 ≤ 0.35). Content cannot separate them — only geometry can: a real
+    name sits BELOW its caption (the caller's clamp then bounds the window and this returns False),
+    whereas a caption capture is read from inside the caption band itself.
+
+    ACCEPTED, PINNED COST: a customer whose name genuinely echoes its caption AND is printed ABUTTING
+    it (no clean gap, so `_caption_top_limit` cannot clamp) loses this relocate rung and falls back to
+    the rigid/keyword read or to review. Fail toward review, never toward a silent wrong value.
+    Kill switch CAPTION_BAND_REJECT=0 ⇒ byte-identical."""
+    if os.environ.get("CAPTION_BAND_REJECT", "1") == "0":
+        return False
+    if not value or not label_box or not relo_box:
+        return False
+    if val_type not in (None, "text", "multiline_text"):
+        return False
+    try:
+        from extraction.value_quality import is_name_like_field as _isnl
+        if not _isnl(field_key) or field_key == "supplier_name":
+            return False
+        if not _is_fuzzy_caption_bleed(value, label, field_key):
+            return False
+        cap_top = float(label_box.get("y_norm"))
+        cap_bottom = cap_top + float(label_box.get("h_norm") or 0.0)
+        page_h = page_size[1]
+        val_centre = float(relo_box[1])
+    except Exception:
+        return False                                   # fail-safe: never block a read on bad input
+    if val_centre <= cap_top:                          # the value isn't below the caption at all
+        return False
+    return _read_window_top_norm(relo_box, val_type, page_h, top_limit_norm) < cap_bottom
 
 
 def _name_junk_shaped(value, field_key) -> bool:
@@ -1450,6 +2077,78 @@ def try_logo_supplier_match(page_image: Image.Image,
             return None
 
         winner = _pick_unambiguous_supplier(by_supplier)
+
+        # SLICE D — PRIMARY detail resolver (kill switch LOGO_DETAIL_PRIMARY, default ON since 2026-07-15
+        # — owner-enabled after the NT↔Copperfield logo collision; set env LOGO_DETAIL_PRIMARY=0 to disable,
+        # which skips this whole block and keeps the function byte-identical to the veto-only path). When ON and a
+        # mark detail hash is present, classify the supplier by NEAREST isolated-mark over ALL enrolled
+        # sets — this reaches ACROSS the coarse band, so a look-alike whose coarse phash drifted into a
+        # rival's band (doc-193) still resolves to the RIGHT company. AGREE with the coarse winner → keep
+        # it untouched (its confidence/bonus intact). DISAGREE, or coarse None/ambiguous → OVERRIDE, but
+        # REVIEW-BOUND (conf 69 + note): a supplier re-route is the highest blast radius, and
+        # supplier_name is text-typed so the trust.js critical-field floor does NOT guard it — the note
+        # is the auto-file block. classify_supplier is FAIL-SAFE: on None/abstain it returns None and we
+        # FALL THROUGH to the veto + coarse path below, so the veto still guards the coarse winner even
+        # with PRIMARY on (Oracle Seam 3). Method stays 'logo' so the engine _genuine_template_supplier
+        # precedence override (which fires only on method.startswith('anchor')) can never re-engage on
+        # it (Oracle C3).
+        if query_detail_hash and os.environ.get('LOGO_DETAIL_PRIMARY', '1') == '1':
+            try:
+                import logo_detail
+                by_sup_det: dict[str, list] = {}
+                for fp in logos:
+                    dh = fp.get("detail_hash")
+                    sn = (fp.get("supplier_name") or "").strip()
+                    if dh and sn:
+                        by_sup_det.setdefault(sn, []).append(dh)
+                s, _d, band = logo_detail.classify_supplier(query_detail_hash, by_sup_det)
+                if s is not None:
+                    if winner and (winner.get("supplier_name") or "").strip().lower() == s.strip().lower():
+                        return winner            # AGREE → coarse winner untouched (byte-identical)
+                    # SPARSE-GUARD (Oracle-signed 2026-07-23; kill LOGO_DETAIL_MISS_SUGGEST=0 ⇒ the
+                    # legacy assert-on-miss): the activation A/B measured the COARSE-MISS fill arm
+                    # as the 268→131 throughput collapse — a CORRECT pick, asserted at conf 69 + a
+                    # review note, on docs whose supplier resolved the SAME name un-noted downstream
+                    # (keyword/hints/text) in the starved baseline. So a coarse MISS now returns a
+                    # SUGGESTION, never an identity: the engine stashes it and consumes it at
+                    # finalisation AFTER the last supplier writer — agree→clean, disagree→note,
+                    # still-empty→review-bound fill. A coarse WINNER that the detail POSITIVELY
+                    # contradicts keeps today's review-bound override (the collision-healing arm —
+                    # that is the job this machinery exists for).
+                    # UNIFIED (Oracle re-adjudication 2026-07-23 — his own premise measured false:
+                    # on the 2-bit coarse-collision class the WINNER is the RIVAL, so a correct
+                    # pick "disagrees" with a wrong winner and the old pre-stage override held 36
+                    # clean docs the text gate was already healing). BOTH the miss AND disagree
+                    # arms now suggest; the COARSE WINNER is THREADED (Oracle C1 — a bare suggest
+                    # dict would silently discard it and the text gate would never judge it: the
+                    # dead-guard trap) so the engine intercept re-asserts it exactly as in the
+                    # starved baseline. Consumption then judges the pick against the FINAL
+                    # resolution: agree→clean file · a STANDING wrong winner→the disagree note
+                    # (healing kept, now at the right seam) · empty→text-gated fill. Accepted
+                    # trade (named): mid-pipeline pick-scoping on disagree docs is given up —
+                    # equal to the starved baseline, proven value-neutral on the corpus. Do NOT
+                    # "restore" the pre-stage override to get it back.
+                    if os.environ.get('LOGO_DETAIL_MISS_SUGGEST', '1') != '0':
+                        return {
+                            "suggest_only":  True,
+                            "supplier_name": s,
+                            "detail_band":   band,
+                            "coarse_winner": winner,   # None on the miss arm (today's behaviour)
+                        }
+                    return {                     # DISAGREE (winner exists) / legacy miss → OVERRIDE, review-bound
+                        "supplier_name":   s,
+                        "confidence":      69,   # < 70 review threshold AND < 88 critical floor
+                        "match_count":     len(by_sup_det.get(s, [])),
+                        "method":          "logo",
+                        "validation_note": "Company identified from the letterhead logo mark; "
+                                           "please confirm it's correct.",
+                        "detail_override": True,
+                        "detail_band":     band,
+                    }
+                # classify abstained (None) → fall through to the veto + coarse path (unchanged)
+            except Exception:
+                pass   # best-effort; never break identification
+
         # SLICE C — isolated-mark VETO on the supplier-fingerprint path. _pick_unambiguous_supplier's ±4
         # near-tie guard only rejects an AMBIGUOUS-distance pick; a look-alike monogram whose greyscale
         # phash is DECISIVELY closest (the Northgate-doc-reads-Cascade case) sails through. Abstain the
@@ -1710,6 +2409,44 @@ def _is_bare_label(v: str, label: str | None) -> bool:
     return all(t in label_tokens for t in val_tokens)
 
 
+# Structured val_types eligible for the caption-prefix strip. DELIBERATELY EXCLUDES currency
+# (Oracle SEAM A, 2026-07-25): a currency anchor goes through the label-lock/relocate block below,
+# whose caption defences (_is_caption_bleed / _is_caption_band_read) detect a caption-landed crop by
+# the caption STILL being present in the value — stripping it first would blind that defence and let
+# a caption-landed "$500" pass silently. date/reference/number SKIP the label-lock entirely, so there
+# is no downstream caption defence for the strip to blind on them. Free-text is excluded in the helper.
+_CAPTION_STRIP_TYPES = frozenset({"date", "alphanumeric", "reference_code", "job_reference", "number"})
+
+
+def _strip_caption_prefix(value, label, val_type, validation_patterns):
+    """Recover a STRUCTURED value whose anchor crop captured its own caption/label prefix
+    ("Date 22/07/2026" -> "22/07/2026", "No. DN-36457" -> "DN-36457"): strip a leading run of the
+    field's OWN taught label words (+ caption punctuation), each of which MUST be followed by
+    whitespace — so a GLUED value ("NO-1234", label "no") is never touched (that is the precision
+    lever that tells "caption + value" from "value that starts with a caption word"). Structured,
+    NON-currency, NON-free-text only. Returns the value UNCHANGED on every no-op path (no label, no
+    matching prefix, would-strip-to-empty), so a caption-free read is byte-identical. Never
+    manufactures a value: the remainder still faces the UNCHANGED credibility + learned-format gates
+    and commits as a plain (non-authoritative) anchor_crop. Precision-first cousin of _is_bare_label."""
+    v = (value or "").strip()
+    if not v or not label or val_type in (None, "text", "multiline_text", "currency"):
+        return value
+    if not (validation_patterns or {}).get(val_type):
+        return value                       # no format backstop for this type -> don't risk a strip
+    words = sorted(set(re.findall(r"[a-z0-9]+", label.lower())), key=len, reverse=True)
+    if not words:
+        return value
+    alt = "|".join(re.escape(w) for w in words)
+    # leading punctuation, then 1+ (label-word + optional caption punct + MANDATORY whitespace)
+    m = re.match(rf"[^A-Za-z0-9]*(?:(?:{alt})[.:#)\-]*\s+)+", v, re.IGNORECASE)
+    if not m or m.end() == 0:
+        return value
+    remainder = v[m.end():].strip()
+    if not remainder or not re.search(r"[A-Za-z0-9]", remainder):
+        return value                       # would strip to nothing -> leave it for the gates/review
+    return remainder
+
+
 # Mean OCR word-confidence floor below which a FREE-TEXT rigid crop read is treated
 # as suspect (clipped/drifted) and routed to the label-located harvest. Validated
 # empirically: garbled cust reads land at 17-34, clean reads at 87-95, so 60 sits in
@@ -1850,6 +2587,23 @@ def _pattern_coverage(v: str, pats) -> float:
     return best / len(s)
 
 
+def _val_census(site, val_type, value, accepted):
+    """MEASUREMENT ONLY (Oracle C2 on VAT_EU_FORMATS, 2026-08-10) — twin of keyword.val_census,
+    duplicated rather than imported: anchor.py does not import keyword and a measurement must not
+    be the thing that introduces a module cycle. Records the candidates this credibility gate
+    REFUSES — the population every committed-value census is structurally blind to."""
+    d = os.environ.get("VAL_CENSUS_DIR")
+    if not d:
+        return
+    try:
+        import json as _json
+        with open(os.path.join(d, f"val_{os.getpid()}.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(_json.dumps({"site": site, "val_type": val_type,
+                                  "value": value, "accepted": bool(accepted)}) + chr(10))
+    except Exception:
+        pass
+
+
 def _crop_is_credible(value: str, val_type: str | None,
                       validation_patterns: dict | None,
                       label: str | None = None) -> bool:
@@ -1893,7 +2647,9 @@ def _crop_is_credible(value: str, val_type: str | None,
         # Other typed fields (alphanumeric / reference / code): the pattern must
         # COVER most of the value, so a colon-laden MAC matching only a sub-run is
         # rejected and the field relocates/falls to review instead of committing junk.
-        return _pattern_coverage(v, pats) >= _CREDIBLE_COVERAGE_MIN
+        _ok = _pattern_coverage(v, pats) >= _CREDIBLE_COVERAGE_MIN
+        _val_census("crop", val_type, v, _ok)
+        return _ok
 
     # Free-text: must start with an alphanumeric char and be mostly alphanumeric.
     # Also require a minimum of 3 non-space characters — a single letter or two-char
@@ -1928,6 +2684,43 @@ def _value_drifted_from_box(label_box, offset_dy, stored_cy, h_norm) -> bool:
     return abs(expected_cy - float(stored_cy)) > max(float(h_norm or 0.0) * 1.5, _DRIFT_FLOOR)
 
 
+# A reference code may legitimately carry INTERIOR separators, and telling that apart from the
+# PSM-7 artefact is a SHAPE question. An artefact wedges a separator into an otherwise unbroken run
+# ('H7R5326676' -> 'H/7R5326676'), leaving a ragged split with a one-character group. A structured
+# code splits into groups that each stand on their own: 'PI/26/6000', 'INV/2024/001', 'OED/91377'.
+# Only '/', '.' and '-' can be structural — a '|' or '\' inside a code is a table rule or a stroke
+# artefact, never a printed separator, so a token carrying one is still repaired.
+_STRUCTURED_CODE_SEP = re.compile(r"^[0-9A-Za-z]{2,}(?:[/.\-][0-9A-Za-z]{2,})+$")
+
+
+def _sepguard_census(outcome, segment, val_type, alt=None):
+    """MEASUREMENT ONLY (Oracle C2, 2026-08-10) — record what `_repair_single_token` actually does
+    with a separator-bearing token, so the class the structure guard DISABLES can be counted
+    instead of assumed.
+
+    The eight byte-identical corpus lanes are consistent with two very different worlds: the repair
+    fires everywhere and the shape rule agrees with it, OR the repair's true-positive path never
+    fires on this corpus at all — in which case those flat lanes say nothing about the cost. Only
+    counting `repaired` can tell them apart.
+
+    Writes one JSON line per observation to `$SEPGUARD_CENSUS_DIR/sep_<pid>.jsonl`. Per-PID because
+    the harness fans out across shard workers and a shared append would interleave. Completely
+    inert unless that env var is set — no file handle, no formatting, one dict lookup on a path
+    that already does regex work. NOT keyed by field_key: this function is not given one, and
+    threading it through would change a production signature for a measurement.
+    """
+    d = os.environ.get("SEPGUARD_CENSUS_DIR")
+    if not d:
+        return
+    try:
+        import json as _json
+        with open(os.path.join(d, f"sep_{os.getpid()}.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(_json.dumps({"outcome": outcome, "segment": segment,
+                                  "val_type": val_type, "alt": alt}) + "\n")
+    except Exception:
+        pass          # a measurement must never break an extraction
+
+
 def _repair_single_token(img, segment, val_type):
     """Fix the PSM-7 single-token separator artefact: a value that is ONE token
     (no spaces) — a serial, reference or part number — can come back from PSM 7
@@ -1952,6 +2745,45 @@ def _repair_single_token(img, segment, val_type):
         # serial misread with a spurious slash ("H/7R..", "12/34567") does NOT
         # match this strict layout and is still repaired.
         if re.fullmatch(r"\d{1,4}[./\-]\d{1,2}(?:[./\-]\d{1,4})?", segment):
+            _sepguard_census("date_shape_kept", segment, val_type)
+            return segment
+        _sepguard_census("reached", segment, val_type)
+        # STRUCTURED CODE: the guard above only protects a token whose shape is a DATE, so a
+        # reference that legitimately carries separators ('PI/26/6000') falls straight through and
+        # is re-read with a whitelist that CANNOT emit '/', which then matches on alphanumerics and
+        # is accepted — silently deleting a printed character from a correct value.
+        # MEASURED on the live install (2026-08-10, read-only census over documents whose page text
+        # is stored): 36 committed invoice_numbers had lost a separator their own page still prints,
+        # every one of them through the template_mapping rung, and this predicate keeps the
+        # separator on 36 of 36 while the docstring's own artefact example ('H/7R5326676', whose
+        # first group is a single character) is still repaired. Short-circuits BEFORE the extra
+        # OCR passes, so an armed run is also cheaper on these tokens.
+        #
+        # CURRENCY IS EXCLUDED (Oracle C5). A '/' inside money is never a printed separator — it is
+        # a misread decimal point. Today '10603/44' (the misread of a right-aligned '£10,603.44',
+        # the 2026-08-09 exhibit) is repaired to '1060344', a value 100x too large that then PASSES
+        # currency credibility; keeping the slash would instead fail it and drop the value to
+        # review, which is arguably better but is an UNMEASURED change on the money lane (the
+        # corpus money lane is flat only because the class did not occur there). Excluded so this
+        # guard's blast radius is exactly the code fields it was measured on. If the money
+        # improvement is ever wanted, measure it as its own arm.
+        # NOTE, because the obvious example misleads: a SHORT money misread like '1234/56' never
+        # reaches here in either state — the date-shape guard above already claims it.
+        #
+        # CONFIDENCE (Oracle C6): a value this guard corrects commits at 90, not the 95 it scored
+        # while broken. That is NOT this guard touching a confidence path — it is Stage 2.5b
+        # withdrawing a conformance boost (ocr_corrector.correct_extraction's boost_table {0: 8},
+        # applied at engine.py:6693 as min(95, conf+boost)) that the install's own SEPARATOR-FREE
+        # learned history — i.e. history generated by this very defect — used to grant. 90 clears
+        # the 88 auto-file floor. DO NOT "restore" the 95: doing so would be re-rewarding
+        # conformance to the poisoned shape.
+        #
+        # DEFAULT OFF — off is byte-identical. Arm: CODE_SEPARATOR_STRUCTURE_GUARD=1.
+        if (os.environ.get("CODE_SEPARATOR_STRUCTURE_GUARD", "0") != "0"
+                and val_type != "currency"
+                and not re.search(r"[\\|]", segment)
+                and _STRUCTURED_CODE_SEP.fullmatch(segment)):
+            _sepguard_census("guard_kept", segment, val_type)
             return segment
         import pytesseract
         # Re-read the SAME prepped crop with configs that cannot emit (or don't
@@ -1968,7 +2800,11 @@ def _repair_single_token(img, segment, val_type):
                     "--oem 3 --psm 8"):
             alt = pytesseract.image_to_string(img, config=cfg).strip().split("\n")[0].strip()
             if alt and re.sub(r"[^0-9A-Za-z]", "", alt) == target:
+                _sepguard_census("repaired", segment, val_type, alt)
                 return alt
+        # Reached the re-reads and NONE agreed — the separator survives anyway. Counted because
+        # "the guard kept it" and "the repair could not fix it" look identical in the output.
+        _sepguard_census("repair_failed", segment, val_type)
     except Exception:
         pass
     return segment
@@ -1997,7 +2833,12 @@ def clean_crop_segment(text: str | None, val_type: str | None) -> str | None:
     template-mapping crop (template_mapper._clean_value) so a drawn target zone
     is cleaned IDENTICALLY to a learned-anchor crop — one rule, system-wide.
 
-    Rules, in order, on the first non-empty line:
+    Rules, in order, on the FIRST non-empty line. NOTE (2026-07-23): the padded crop
+    structurally holds ~1.5-2.2 text rows, so "first line wins" commits/rejects on
+    whichever row Tesseract emits first — when ANCHOR_LINE_SELECT is active the crop
+    LADDER supersedes this take per rung with a band-gated per-line chooser
+    (select_row_line); this function remains the fall-through and the rule for every
+    other caller.
       * Split off Tesseract column-gap noise: 4+ spaces (every field type).
       * For free-text name/address fields (text/multiline_text) ONLY, trim a
         TRAILING postcode/year boundary via _trim_trailing_digit_boundary —
@@ -2072,6 +2913,100 @@ def _clean_text_fallback(value: str | None, val_type: str | None,
     return clean_crop_segment(value, val_type)
 
 
+_STRUCT_READ_TYPES = frozenset({"alphanumeric", "reference_code", "date"})   # job_reference (spaces) excluded
+
+# ── RAW-CROP WITNESS (gary design → Oracle SIGN-OFF-W/COND C1-C6 2026-08-11; BUILT 2026-08-12) ──
+# Tesseract's mean word confidence is NOT comparable across preprocessing recipes: sharpening
+# raises certainty while destroying the antialiasing grey that separates a serif I from 1 (and
+# ACC-229]'s bracket, and l from i) — so the ladder can prefer a confidently-WRONG prepped rung
+# over a quietly-RIGHT raw read (raw reads the Pelican exhibit 5/5 correct and was not a rung).
+# The witness: ONE read of the untouched crop. It is a WITNESS, never a candidate — it may only
+# act when it differs from what the ladder was about to return by EXACTLY one confusable-glyph
+# substitution at the SAME length (pairs from ocr_corrector._is_confusion, never a new table).
+# Two tiers (C2, UNIVERSAL_VERIFY precedent): RAW_CROP_WITNESS_FLAG keeps today's value and
+# surfaces the ambiguity (note + corrected_to + sub-88 cap, attached by the Stage-0.5 caller);
+# RAW_CROP_WITNESS_ADOPT swaps — and stays inert until RAW_WITNESS_ADOPT_PAIRS names the pairs
+# the census evidenced (C3: bidirectional per-pair census over corpus + born-digital arms;
+# O/0 etc. are NOT assumed raw-winnable). C1: comparison runs on the PRE-_repair_single_token
+# string at BOTH ladder exits (post-repair strings differ in LENGTH while the sep-guard is off,
+# so a post-repair comparison heals zero documents). An ADOPTED witness string commits VERBATIM —
+# re-repairing it would re-open the C1 seam; its printed separators survive by construction.
+# C4 (toggle copy + oracle_log): never flip CODE_SEPARATOR_STRUCTURE_GUARD alone — together,
+# sep-guard AFTER the witness. Census: RAWWITNESS_CENSUS_DIR. Pins: tests/test_raw_crop_witness.py.
+_RAW_WITNESS_TYPES = frozenset({"alphanumeric", "reference_code"})
+
+def _raw_witness_read(crop, psm=7):
+    """One untouched read of the crop — no prep, no resample. Separate fn so pins can script it."""
+    text, _conf, _mn, _lines = _read_lines_full(crop, psm)
+    return text
+
+def _one_confusion_diff(a, b):
+    """(ladder_ch, witness_ch) when `a` and `b` differ by EXACTLY one confusable substitution at
+    the same length, else None. Symmetric membership test (either direction confusable) — the
+    DIRECTION bound lives in the tiers, not here."""
+    if not a or not b or a == b or len(a) != len(b):
+        return None
+    try:
+        from extraction import ocr_corrector as _oc
+    except Exception:
+        return None
+    pair = None
+    for x, y in zip(a, b):
+        if x == y:
+            continue
+        if pair is not None:
+            return None                       # a second difference is outside the licence
+        if not (_oc._is_confusion(x, y) or _oc._is_confusion(y, x)):
+            return None
+        pair = (x, y)
+    return pair
+
+def _witness_census(row):
+    _cdir = os.environ.get("RAWWITNESS_CENSUS_DIR")
+    if not _cdir:
+        return
+    try:
+        import json as _json
+        with open(os.path.join(_cdir, "rawwitness_census.jsonl"), "a", encoding="utf-8") as _f:
+            _f.write(_json.dumps(row) + "\n")
+    except Exception:
+        pass
+
+
+def _struct_prep(crop):
+    """STRUCT_CODE_READ (Oracle SIGN-OFF-WITH-CONDITIONS 2026-08-03, slice 1 — PREP ONLY): read a
+    tight structured code/date crop cleanly, curing the '»0-17039'/'09-06-2026' garble at the READ.
+    Three prep changes, no whitelist:
+      • CAP-HEIGHT-DRIVEN UPSCALE — a WIDE ~13px code crop gets NO upscale on the light rung
+        (_light_prep only upscales width<300px) → native-13px starvation. Scale so cap height lands
+        in Tesseract's ~30-40px comfort band (target 34), from the measured ink-band height.
+      • SYNTHETIC READ-TIME QUIET ZONE — a median-grey border (paper luminance) so the leading glyph
+        has left context + ascender/descender headroom. This is a border on the PIXELS FED to
+        Tesseract, NOT a wider crop-window — it feeds no neighbouring ink (the 007 seam distinction).
+      • NO SHARPEN — the heavy rung's Laplacian SHARPEN is what manufactures the '»' on the
+        unsupported leading glyph.
+    Deliberately NO char whitelist — that is a separately-gated slice 2: the gateless Stage-0.5
+    absolute path has no learned-shape backstop, so a whitelist could snap a mis-segmented glyph to a
+    clean-SHAPED wrong code that auto-files (Oracle seam 2). Prep-only preserves fail-toward-review:
+    a genuinely ambiguous glyph still garbles → credibility fails / the reads disagree → review."""
+    from PIL import ImageOps
+    import numpy as np
+    g = crop.convert("L")
+    try:
+        from ocr.region_core import _ink_band_height
+        ib = _ink_band_height(g)
+        scale = min(4.0, max(1.0, 34.0 / max(ib, 1)))
+    except Exception:
+        scale = 2.0                                    # fail-safe = today's heavy upscale floor
+    if scale > 1.0:
+        g = g.resize((max(1, int(g.width * scale)), max(1, int(g.height * scale))), Image.LANCZOS)
+    try:
+        bg = int(np.median(np.asarray(g)))
+    except Exception:
+        bg = 255
+    return ImageOps.expand(g, border=12, fill=bg)      # synthetic quiet zone, not a wider window
+
+
 def _light_prep(image):
     """LIGHT crop prep for the first OCR rung: greyscale, plus an upscale ONLY for
     a small crop (tiny numeric tokens need ~300px to read). No autocontrast and no
@@ -2088,22 +3023,21 @@ def _light_prep(image):
     return img
 
 
-def _read(img, psm):
-    """One image_to_data pass → (text, mean_word_conf, min_word_conf).
-    Reconstructs lines from word boxes (block/par/line) so clean_crop_segment
-    still sees real line breaks, and averages positive word confidences as a
-    deterministic rung tie-breaker. Also returns the MINIMUM confidence over the
-    SUBSTANTIAL words (alphabetic, length ≥ 3) — a discriminator the mean dilutes:
-    a name like "Aaiumant Care Homes Ltd Galaorm" has three clean words masking
-    two garbled ones, so its mean stays moderate while its min (the garbled word)
-    drops. Used to gate the authoritative-anchor outright win. min == mean when no
-    substantial word is present. Same OCR cost as image_to_string on the same image."""
+def _read_lines_full(img, psm):
+    """One image_to_data pass → (text, mean_word_conf, min_word_conf, lines).
+    The single implementation behind _read — SAME Tesseract call, SAME first three
+    outputs, byte-identical — that ALSO keeps the per-word GEOMETRY the dict already
+    carries (top/height/line_num, previously received and discarded): `lines` is a
+    list of per-visual-line dicts {text, top, height, mean_conf, min_conf} in IMAGE
+    px, for the ANCHOR_LINE_SELECT per-line chooser. Zero extra OCR cost. Per-line
+    min_conf mirrors the whole-read rule: min over that line's SUBSTANTIAL words
+    (alphabetic, length ≥ 3), else the line's mean."""
     import pytesseract
     from pytesseract import Output
     try:
         d = pytesseract.image_to_data(img, config=f"--oem 3 --psm {psm}", output_type=Output.DICT)
     except Exception:
-        return "", 0.0, 0.0
+        return "", 0.0, 0.0, []
     lines, confs, word_confs = {}, [], []
     for i in range(len(d.get("text", []))):
         t = (d["text"][i] or "").strip()
@@ -2113,15 +3047,52 @@ def _read(img, psm):
             c = -1.0
         if not t or c < 0:
             continue
-        lines.setdefault((d["block_num"][i], d["par_num"][i], d["line_num"][i]), []).append(t)
+        key = (d["block_num"][i], d["par_num"][i], d["line_num"][i])
+        g = lines.get(key)
+        if g is None:
+            g = lines[key] = {"w": [], "c": [], "sc": [], "y0": None, "y1": None}
+        g["w"].append(t)
+        g["c"].append(c)
+        try:
+            T, H = int(d["top"][i]), int(d["height"][i])
+            g["y0"] = T if g["y0"] is None else min(g["y0"], T)
+            g["y1"] = (T + H) if g["y1"] is None else max(g["y1"], T + H)
+        except Exception:
+            pass   # geometry-less stub rows: line still carries text/confs
         confs.append(c)
         # A "substantial" word for the min — skip 1-2 char tokens and punctuation
         # ("-", ":", "Co") whose OCR confidence is noisy and not name-bearing.
         if len(t) >= 3 and sum(ch.isalpha() for ch in t) >= 3:
             word_confs.append(c)
-    text = "\n".join(" ".join(lines[k]) for k in sorted(lines.keys())).strip()
+            g["sc"].append(c)
+    text = "\n".join(" ".join(lines[k]["w"]) for k in sorted(lines.keys())).strip()
     mean = (sum(confs) / len(confs)) if confs else 0.0
     min_conf = min(word_confs) if word_confs else mean
+    out = []
+    for k in sorted(lines.keys()):
+        g = lines[k]
+        lmean = sum(g["c"]) / len(g["c"])
+        out.append({"text": " ".join(g["w"]),
+                    "top": g["y0"] if g["y0"] is not None else 0,
+                    "height": max(0, (g["y1"] or 0) - (g["y0"] or 0)),
+                    "mean_conf": lmean,
+                    "min_conf": min(g["sc"]) if g["sc"] else lmean})
+    return text, mean, min_conf, out
+
+
+def _read(img, psm):
+    """One image_to_data pass → (text, mean_word_conf, min_word_conf).
+    Thin wrapper over _read_lines_full (the single implementation) — kept so the
+    non-ladder callers (_noise_smooth_retry, the text_enhance escalation) keep their
+    3-tuple contract. Reconstructs lines from word boxes (block/par/line) so
+    clean_crop_segment still sees real line breaks, and averages positive word
+    confidences as a deterministic rung tie-breaker. Also returns the MINIMUM
+    confidence over the SUBSTANTIAL words (alphabetic, length ≥ 3) — a discriminator
+    the mean dilutes: a name like "Aaiumant Care Homes Ltd Galaorm" has three clean
+    words masking two garbled ones, so its mean stays moderate while its min (the
+    garbled word) drops. Used to gate the authoritative-anchor outright win. min ==
+    mean when no substantial word is present. Same OCR cost as image_to_string."""
+    text, mean, min_conf, _lines = _read_lines_full(img, psm)
     return text, mean, min_conf
 
 
@@ -2136,7 +3107,7 @@ _PREVIEW_ACCEPT_MIN = 55  # a preview-scale free-text read this confident (min s
                           # to the full-resolution ladder (tiny text that needs the detail).
 
 
-def _noise_smooth_retry(crop, val_type, base_min, page=None, box=None):
+def _noise_smooth_retry(crop, val_type, base_min, page=None, box=None, top_limit_norm=None):
     """Reproduce the on-screen DRAW TOOL's read so extraction reads what the operator can
     read perfectly with a target box. The draw tool wins for TWO reasons, both reproduced
     here: (1) it reads the ~108 DPI PREVIEW image — the 300 DPI extraction render amplifies
@@ -2151,7 +3122,16 @@ def _noise_smooth_retry(crop, val_type, base_min, page=None, box=None):
     CLEANER than the base read — a higher MINIMUM substantial-word confidence (the mean
     dilutes a couple of garbled words; the min is the discriminator). The smaller image
     also OCRs FASTER. Free-text only; gated on a shaky base read, so clean/structured/
-    numeric crops never reach here."""
+    numeric crops never reach here.
+
+    top_limit_norm (slice A, 2026-07-21): the caller's (P) CAPTION-BAND clamp. THE HOLE THIS CLOSES —
+    `_crop_and_ocr` clamped its OWN window to keep the located caption out, then handed this function
+    the page + the UNCLAMPED value box, so the headroom re-crop below (box top − 0.5·h) RESTORED the
+    caption band and `clean_crop_segment` (first line wins) returned the CAPTION as the value. The
+    clamp is only real once it reaches HERE. Applied to the page re-crop only; if the clamp makes that
+    crop degenerate we simply don't offer it, and the FALLBACK below downscales the crop we were handed
+    — which the caller already clamped — so we fall back to the CLAMPED read, never to an unclamped
+    one. None ⇒ every existing caller is byte-identical."""
     try:
         candidates = []
         # PRIMARY: re-crop from the page with vertical headroom, then downscale to the
@@ -2164,6 +3144,8 @@ def _noise_smooth_retry(crop, val_type, base_min, page=None, box=None):
                 y0 = max(0, int((float(box["y_norm"]) - padh) * ph))
                 x1 = min(pw, int((float(box["x_norm"]) + float(box["w_norm"])) * pw))
                 y1 = min(ph, int((float(box["y_norm"]) + float(box["h_norm"]) + padh) * ph))
+                if top_limit_norm is not None:      # slice A: honour the caller's caption clamp
+                    y0 = max(y0, int(float(top_limit_norm) * ph))
                 if x1 > x0 and y1 > y0:
                     pc = page.crop((x0, y0, x1, y1))
                     cw, ch = pc.size
@@ -2196,7 +3178,95 @@ def _noise_smooth_retry(crop, val_type, base_min, page=None, box=None):
     return None
 
 
-def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None, box=None):
+# ── ANCHOR_LINE_SELECT — per-line candidate selection for the anchored crop read ──
+# (Oracle-signed design 2026-07-23: docs/designs/ANCHOR_LINE_SELECT_2026-07-23.md.)
+# The crop pad is a FIXED +20px half-height, so a single-row taught box structurally
+# crops ~1.5-2.2 text rows and skew slides the adjacent row in half-sliced; the
+# first-line take then commits/rejects on the WRONG row's garbage. The chooser reads
+# ALL the rung's lines (already in the same image_to_data pass) and commits the ONE
+# line inside the taught row's band that passes the rung's own gates — never
+# nearest-wins, never a second-best. Scope: structured types only.
+#
+# THE LADDER NOTE (Oracle's closing condition — do not remove lower rungs):
+# 2026-07-23's four rulings form a deliberate ladder: LINE_SELECT fixes the READ ·
+# the crosscheck+E2 (CROSSCHECK_KEYWORD_CLEAR) arbitrates a DISAGREEMENT with a real
+# witness · clean-accept (GATE_REREAD_CLEAN_ACCEPT) stops flagging a NON-correction ·
+# the review flag survives wherever no second independent read exists. Each layer's
+# guard assumes the one below still fires — a future "simplification" that removes
+# the crosscheck because "LINE_SELECT made it quiet" reopens the City Office silent
+# digit-mangle class.
+
+_LINE_SELECT_TYPES = ("date", "alphanumeric", "job_reference", "currency_code")
+# Free-text (incl. None) is EXCLUDED (its preview fast path + loose gates are a
+# different regime); currency is EXCLUDED (its all-rows-regex-valid stacked-totals
+# geometry is handled by the label lock / _skip_rigid, and every totals row would
+# qualify here — the chooser could only ever abstain or pick a wrong-but-valid row).
+
+
+def _row_band(cy_px: float, box_h_px: float, y1_px: float) -> tuple:
+    """The TAUGHT row's vertical band in CROP px: the un-padded taught box height
+    centred on the stored value centre, expressed relative to the crop's FINAL top
+    edge (after any grace expansion + caption clamp). Pure arithmetic — computed
+    ONCE per crop in _crop_and_ocr from its own args and rescaled PER RUNG by the
+    prepped image's height ratio (the prep upscales ×2-3; a once-per-crop scale is
+    the frame bug)."""
+    top = (cy_px - box_h_px / 2.0) - y1_px
+    bottom = (cy_px + box_h_px / 2.0) - y1_px
+    return (top, bottom)
+
+
+def select_row_line(lines, band, val_type, qualify_fn, edge_exclude=None):
+    """Pick THE line inside the taught row band, or None (→ the caller falls
+    through to the exact status-quo whole-text path for that rung).
+
+    lines: _read_lines_full per-line dicts, in the SAME px frame as `band` (the
+    caller rescales the band to the rung image). Selection, top-sorted:
+      1. _clean_one_line (the same per-line cleaning the first-line take used);
+      2. band overlap ≥ 50% of min(line_height, band_height) — the narrower-box
+         convention (_x_overlap's vertical twin);
+      3. the rung's existing qualify_fn (verify_fn = credibility + learned-format
+         — NO new predicates);
+      4. `date` additionally: validator.parse_date non-None (a shape-valid
+         non-date like "99/99/2026" must NOT qualify).
+    EXACTLY ONE in-band qualifier → (line, cleaned_seg). Zero or ≥2 → None —
+    NEVER nearest-wins (an ambiguous crop is a review problem, not a coin toss).
+    An out-of-band qualifier alone is also None: never commit another field's row.
+
+    edge_exclude (slice 2, ANCHOR_ROW_GRACE only): (low, high) px bounds — a line
+    whose bbox touches the crop top/bottom edge is half-sliced by construction, so
+    it is INELIGIBLE (row-integrity by disqualification). None ⇒ no exclusion."""
+    if not lines or not band or qualify_fn is None:
+        return None
+    band_top, band_bottom = float(band[0]), float(band[1])
+    band_h = max(1.0, band_bottom - band_top)
+    chosen = None
+    for ln in sorted(lines, key=lambda l: l.get("top", 0)):
+        top = float(ln.get("top", 0))
+        height = max(1.0, float(ln.get("height", 0)))
+        if edge_exclude is not None:
+            lo, hi = float(edge_exclude[0]), float(edge_exclude[1])
+            if top <= lo or (top + height) >= hi:
+                continue   # half-sliced edge line: ineligible (slice 2)
+        overlap = max(0.0, min(top + height, band_bottom) - max(top, band_top))
+        if overlap / min(height, band_h) < 0.5:
+            continue
+        seg = _clean_one_line(ln.get("text"), val_type)
+        if not seg:
+            continue
+        if not qualify_fn(seg):
+            continue
+        if val_type == "date":
+            from extraction import validator   # lazy: avoid a module-load cycle
+            if validator.parse_date(seg) is None:
+                continue
+        if chosen is not None:
+            return None   # ≥2 in-band qualifiers → ambiguous → status quo (pin a)
+        chosen = (ln, seg)
+    return chosen
+
+
+def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None, box=None,
+                       top_limit_norm=None, row_band=None, edge_ineligible=False):
     """Light-first OCR ladder on an ALREADY-CROPPED image -> cleaned best-rung text
     (or None). SHARED by anchor._crop_and_ocr (centre+dims crop) and
     template_mapper._crop_and_ocr (drawn-box crop) so every value-crop path reads with the
@@ -2210,7 +3280,22 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
     page + box (optional, the source page and the value's normalised box): enable the
     PREVIEW-SCALE FAST PATH for free-text — read the crop the way the on-screen draw tool
     does (re-crop with headroom, downscale to ≈the 108 DPI preview) which is both cleaner
-    on degraded scans AND faster. Without them the ladder runs unchanged."""
+    on degraded scans AND faster. Without them the ladder runs unchanged.
+
+    top_limit_norm: the caller's (P) caption-band clamp, threaded to BOTH `_noise_smooth_retry`
+    sites so the re-crop can't reach back above it (slice A — see that function's docstring).
+
+    row_band (ANCHOR_LINE_SELECT, kill-switched, DEFAULT OFF): the taught row's vertical
+    band in CROP px (see _row_band). When active + in scope, each rung tries the per-line
+    chooser (select_row_line) BEFORE the whole-text first-line take; EXACTLY ONE in-band
+    qualifier commits with meta from the SELECTED LINE's words only (the whole-crop min
+    includes the garbled neighbour and would falsely demote a correct read out of Tier-A);
+    zero/≥2/any exception falls through to the exact status-quo path for that rung —
+    including the best_seg bookkeeping and the no-rung-gated return-best path. The chooser
+    result flows back to the CALLING RUNG's own commit, so method stays rung-native
+    (anchor_crop / anchor_crop_relocated / anchor_registration — forcing 'anchor_crop'
+    would erase relocate provenance). edge_ineligible (ANCHOR_ROW_GRACE, slice 2 — DARK):
+    a line whose bbox touches the crop's top/bottom edge is ineligible in the chooser."""
     def _set_meta(c, mn):
         if meta is not None:
             meta['conf'] = c
@@ -2224,7 +3309,7 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
     # outright; an unconfident one (tiny text needing the detail) falls through. Needs the
     # page + box to re-crop with headroom — absent (a test stub) → ladder unchanged.
     if val_type in (None, "text", "multiline_text") and page is not None and box is not None:
-        pv = _noise_smooth_retry(crop, val_type, -1.0, page=page, box=box)
+        pv = _noise_smooth_retry(crop, val_type, -1.0, page=page, box=box, top_limit_norm=top_limit_norm)
         if pv is not None and pv[2] >= _PREVIEW_ACCEPT_MIN and (
                 bool(verify_fn(pv[0])) if verify_fn is not None else pv[1] >= 60.0):
             _set_meta(pv[1], pv[2])
@@ -2252,17 +3337,101 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
 
     light = _light_prep(crop)
     heavy = None
+    struct = None
     best_seg, best_conf, best_min = None, -1.0, 0.0
-    for _src, _psm in (("light", 7), ("light", 6), ("heavy", 7), ("heavy", 6)):
+    best_pre = None   # PRE-repair string of the best sub-floor rung (raw-witness C1 frame)
+    # ── RAW-CROP WITNESS scope (see the block above _raw_witness_read) ──────────────────
+    # Gateless Stage-0.5 caller only; code types only; <300px wide (at/above, _light_prep IS
+    # raw so a witness pass would be a duplicate). Inactive ⇒ this function is byte-identical.
+    _wit_flag  = os.environ.get("RAW_CROP_WITNESS_FLAG", "0") != "0"
+    _wit_adopt = os.environ.get("RAW_CROP_WITNESS_ADOPT", "0") != "0"
+    _wit_active = ((_wit_flag or _wit_adopt or os.environ.get("RAWWITNESS_CENSUS_DIR"))
+                   and verify_fn is None
+                   and val_type in _RAW_WITNESS_TYPES
+                   and crop.width < 300)
+    _wit_seg = None
+    if _wit_active:
+        try:
+            _wit_seg = clean_crop_segment(_raw_witness_read(crop), val_type)
+        except Exception:
+            _wit_seg = None
+        if not _wit_seg:
+            _wit_active = False
+    _adopt_pairs = frozenset(
+        p.strip() for p in os.environ.get("RAW_WITNESS_ADOPT_PAIRS", "").split(",") if p.strip())
+
+    def _witness_exit(pre_seg, post_seg):
+        """Apply the witness at a ladder EXIT. `pre_seg` is the PRE-repair string (C1 frame);
+        `post_seg` is what today's ladder returns. FLAG: return today's value, stash the
+        ambiguity in meta (the Stage-0.5 caller attaches note + corrected_to + sub-88 cap).
+        ADOPT (per census-evidenced pair only): return the witness string VERBATIM."""
+        if not _wit_active or not pre_seg:
+            return post_seg
+        pair = _one_confusion_diff(pre_seg, _wit_seg)
+        _witness_census({"val_type": val_type, "ladder_pre": pre_seg, "ladder_post": post_seg,
+                         "witness": _wit_seg, "pair": list(pair) if pair else None,
+                         "adopt_armed": _wit_adopt})
+        if not pair:
+            return post_seg
+        pair_key = f"{pair[0]}:{pair[1]}"
+        if _wit_adopt and pair_key in _adopt_pairs:
+            if meta is not None:
+                meta['witness_adopted'] = {"from": post_seg, "pair": list(pair)}
+            return _wit_seg
+        if _wit_flag and meta is not None:
+            meta['witness_alt'] = _wit_seg
+            meta['witness_pair'] = list(pair)
+        return post_seg
+    # STRUCT_CODE_READ (slice 1, default OFF → byte-identical): for structured code/date crops,
+    # try a cleaner PREP (cap-height upscale + quiet-zone + no-sharpen) FIRST; a gate-passing struct
+    # read returns early, a sub-floor one FALLS THROUGH to today's light/heavy rungs unchanged
+    # (Oracle C2 — the SHARPEN fallback for tight degraded serials must survive). Per-call env read.
+    _struct_on = (val_type in _STRUCT_READ_TYPES
+                  and os.environ.get("STRUCT_CODE_READ", "0") != "0")
+    # ANCHOR_LINE_SELECT (per-call env read — the :2825/:1453 convention). The recheck of
+    # scope here is belt-and-braces: _crop_and_ocr only passes row_band when in scope, and
+    # the gateless Stage-0.5 caller (verify_fn None) never passes one.
+    _line_select = (row_band is not None and verify_fn is not None
+                    and val_type in _LINE_SELECT_TYPES
+                    and os.environ.get("ANCHOR_LINE_SELECT", "0") != "0")
+    _rungs = ((("struct", 7), ("struct", 6)) if _struct_on else ()) \
+             + (("light", 7), ("light", 6), ("heavy", 7), ("heavy", 6))
+    for _src, _psm in _rungs:
         if _src == "heavy" and heavy is None:
             heavy = _tm._prep(crop)            # Rung 3 = today's recipe verbatim
-        rimg = light if _src == "light" else heavy
-        rtext, rconf, rmin = _read(rimg, _psm)
-        rseg = clean_crop_segment(rtext, val_type)
+        elif _src == "struct" and struct is None:
+            struct = _struct_prep(crop)        # cleaner prep for structured code/date (slice 1)
+        rimg = struct if _src == "struct" else (light if _src == "light" else heavy)
+        rtext, rconf, rmin, rlines = _read_lines_full(rimg, _psm)
+        if _line_select and rlines:
+            # Per-line chooser — wrapped WHOLE (Oracle cond 1): any exception ⇒ the exact
+            # status-quo path below, including best_seg bookkeeping (Oracle cond 2, pin k).
+            # No _repair_single_token here: a separator-mangled read fails verify_fn, so it
+            # falls through to the status-quo path where repair still gets its chance.
+            try:
+                _scale = rimg.height / max(1, crop.height)   # PER-RUNG frame rescale (pin c):
+                # heavy _prep upscales ×2 for virtually every crop; light only <300px wide.
+                _sband = (row_band[0] * _scale, row_band[1] * _scale)
+                _edges = None
+                if edge_ineligible:
+                    _epx = 2.0 * _scale                      # ~2px in CROP px, rung frame
+                    _edges = (_epx, rimg.height - _epx)
+                _sel = select_row_line(rlines, _sband, val_type, verify_fn, edge_exclude=_edges)
+                if _sel is not None:
+                    _ln, _lseg = _sel
+                    # Meta from the SELECTED line's words ONLY (pin d) — the whole-crop min
+                    # includes the garbled neighbour and feeds _TIER_A_OCR_MIN.
+                    _set_meta(_ln.get("mean_conf", rconf), _ln.get("min_conf", rmin))
+                    return _lseg
+            except Exception:
+                pass
+        rseg0 = clean_crop_segment(rtext, val_type)   # PRE-repair (raw-witness C1 frame)
+        rseg = rseg0
         if rseg:
             rseg = _repair_single_token(rimg, rseg, val_type)
         if rseg and rconf > best_conf:
             best_seg, best_conf, best_min = rseg, rconf, rmin
+            best_pre = rseg0
         if _gate(rseg, rconf):
             # NOISE-SMOOTHING RETRY: a free-text rung can PASS the gate with a garbled-but-
             # name-shaped read on a noisy high-DPI scan. When its substantial-word floor is
@@ -2270,12 +3439,13 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
             # _noise_smooth_retry). Clean reads (high min) and structured/numeric fields are
             # byte-identical — the retry is never reached.
             if val_type in (None, "text", "multiline_text") and rmin < _NOISE_RETRY_MIN_CONF:
-                ds = _noise_smooth_retry(crop, val_type, rmin, page=page, box=box)
+                ds = _noise_smooth_retry(crop, val_type, rmin, page=page, box=box,
+                                         top_limit_norm=top_limit_norm)
                 if ds is not None and (verify_fn is None or verify_fn(ds[0])):
                     _set_meta(ds[1], ds[2])
                     return ds[0]
             _set_meta(rconf, rmin)
-            return rseg
+            return _witness_exit(rseg0, rseg) if _wit_active else rseg   # C1 exit 1: the GATE
 
     # No rung satisfied the gate. Degraded TEXT-LINE escalation (free-text
     # fields, verify_fn only) — denoise + adaptive threshold, accepted only if
@@ -2297,6 +3467,8 @@ def _ocr_crop_laddered(crop, val_type=None, verify_fn=None, meta=None, page=None
         except Exception:
             pass
     _set_meta(best_conf if best_conf >= 0 else 0.0, best_min)
+    if _wit_active and best_seg:
+        return _witness_exit(best_pre, best_seg) or None   # C1 exit 2: the sub-floor best
     return best_seg or None
 
 
@@ -2437,11 +3609,20 @@ def _maybe_continue(page_image, x1: int, y1: int, x2: int, y2: int,
         return value
 
 
+# Absolute ceiling on the learned crop width (normalised), so a fat-finger over-wide draw can't
+# run the crop to the page edge before the operator notices (Oracle: eff_w = max(w_norm,
+# min(max_w_norm, cap)) — the OUTER max guarantees a legitimately-wide single teach is never shrunk).
+_MAX_CROP_WIDTH_CAP = 0.6
+
+
 def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
                   w_norm: float = 0.0, h_norm: float = 0.0,
                   val_type: str | None = None, capture = None,
                   verify_fn = None, meta = None, continuation = None,
-                  top_limit_norm: float | None = None) -> str | None:
+                  top_limit_norm: float | None = None,
+                  max_w_norm: float | None = None,
+                  left_limit_norm: float | None = None,
+                  right_limit_norm: float | None = None) -> str | None:
     """
     Crop a tight region centred on the stored value coordinates and re-OCR it.
     Uses the exact selection dimensions saved by the ⊕ tool (w_norm/h_norm) so
@@ -2460,6 +3641,26 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
     """
     try:
         w, h = page_image.size
+
+        # BOX-WIDTH LEARNING (ANCHOR_MAX_CROP_WIDTH, DARK by default; Oracle SIGN-OFF-WITH-CONDITIONS
+        # 2026-07-21): a field's crop width is the taught box's w_norm, so a value LONGER than the box
+        # ever drawn is truncated (teach "Tesco", then "Billies Hardware Store" is cut off). max_w_norm
+        # is the MONOTONIC widest width ever drawn for this anchor's scope (learning.js). Extend the
+        # crop RIGHTWARD to it — KEEP the value's LEFT edge fixed (values flow right from the left-
+        # anchored label), never beyond the absolute cap. eff_w = max(w_norm, min(max_w_norm, cap)):
+        # the outer max never shrinks a legitimately-wide single teach. OFF (default) OR max_w_norm
+        # ≤ w_norm (legacy backfill / first teach) ⇒ this block is skipped ⇒ byte-identical. Applied
+        # only at the rigid + label-lock/drift RELOCATE rungs (the caller passes it there, NOT at the
+        # cross-check or registration rungs — Oracle). y/h are untouched, so the (P) caption clamp and
+        # vertical geometry are unchanged.
+        if (max_w_norm and w_norm > 0 and h_norm > 0 and right_limit_norm is None
+                and os.environ.get("ANCHOR_MAX_CROP_WIDTH", "0") != "0"):
+            eff_w = max(w_norm, min(float(max_w_norm), _MAX_CROP_WIDTH_CAP))
+            if eff_w > w_norm:
+                left   = x_norm - w_norm / 2.0      # value LEFT edge (normalised) — preserved
+                x_norm = left + eff_w / 2.0          # new centre, shifted right
+                w_norm = eff_w                       # widened width
+
         cx = int(x_norm * w)
         cy = int(y_norm * h)
 
@@ -2482,6 +3683,25 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         x2 = min(w, cx + half_w)
         y2 = min(h, cy + half_h)
 
+        # ANCHOR_LINE_SELECT scope (per-call env, the convention above): structured types
+        # only, a real verify gate (auto-excludes the gateless Stage-0.5 caller), real dims
+        # (the 200×60 no-dims fallback → no band → inert).
+        _ls_scope = (w_norm > 0 and h_norm > 0 and verify_fn is not None
+                     and val_type in _LINE_SELECT_TYPES)
+        _ls_on = _ls_scope and os.environ.get("ANCHOR_LINE_SELECT", "0") != "0"
+        # ANCHOR_ROW_GRACE (slice 2 — ships DARK; do NOT flip with slice 1): ±0.6·box_h
+        # vertical expansion BEFORE the caption clamp below, so top_limit_norm enforcement
+        # is the existing code and grace can never reach above a located caption. INERT
+        # unless LINE_SELECT is active (enforced here — grace without the chooser re-opens
+        # the 2026-07-20 caption-band incident class). The honest residual lives in this
+        # zone (a fully-contained wrong row + a garbled true row), hence dark until a
+        # measured case slice 1 alone fails.
+        _rg_on = _ls_on and os.environ.get("ANCHOR_ROW_GRACE", "0") != "0"
+        if _rg_on:
+            _g = int(h_norm * h * 0.6)          # downward cap ≤0.6 row == the same _g
+            y1 = max(0, y1 - _g)
+            y2 = min(h, y2 + _g)
+
         # (P) CAPTION-BAND EXCLUSION (007+Oracle 2026-07-14): a thin one-line value box is padded
         # ~3× taller here (fixed +20/+6 px), so a below-anchor crop can balloon UP into the caption
         # sitting a few px above the value ("Customer" → the shifted-scan "Customer eu" read). When
@@ -2494,10 +3714,42 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
             if y1 >= y2 - 1:
                 return None
 
+        # ANCHOR_LABEL_LEFT_CLAMP (007+Oracle 2026-08-01) — the horizontal mirror of (P):
+        # the ±20px pad is label-blind, so a direction-right crop swallows the located
+        # label's tail and the read trifurcates on tail debris. The caller passes the
+        # expected value LEFT edge derived in the LOCATED frame (never the taught box —
+        # C1); the edge only ever moves RIGHTWARD (G3: a clamp can exclude left content,
+        # never admit more), a small guard keeps the first glyph column intact, and a
+        # clamp that would collapse the crop reverts to UNCLAMPED (C5 — never refuse:
+        # unlike the caption clamp above, an over-tight left edge must not erase the read).
+        if left_limit_norm is not None:
+            _clx = int(left_limit_norm * w) - _LEFT_CLAMP_GUARD_PX
+            if _clx > x1 and _clx < x2 - 1:
+                x1 = _clx
+
+        # ANCHOR_VALUE_RIGHT_GROW (007/oscar/gary + Oracle 2026-08-02) — the right-edge twin of the
+        # left clamp. right_limit_norm is the value's MEASURED right edge (inline_box, column-bounded
+        # by cluster_value_words), so a value longer than the taught box is no longer chopped. Extend
+        # x2 RIGHTWARD ONLY (+guard for the coarse ~120-DPI locate edge), never shrink, never past the
+        # page. Grow-only + left edge/crop body untouched is what avoids the ANCHOR_INLINE_FULLRES_
+        # REREAD regression (Oracle C-grow-only). GUARD is right-grow-specific, not _LEFT_CLAMP_GUARD_PX.
+        if right_limit_norm is not None:
+            x2 = min(w, max(x2, int(right_limit_norm * w) + _RIGHT_GROW_GUARD_PX))
+
+        # The taught row's band, in CROP px from the FINAL y1 (after grace + clamp), so the
+        # per-line chooser judges against the un-padded taught box, not the padded crop.
+        _band = _row_band(cy, h_norm * h, y1) if _ls_on else None
+
         crop = page_image.crop((x1, y1, x2, y2))
         if capture:
             try: capture(crop)
             except Exception: pass   # dev-only slice capture; never disrupt OCR
+        # ANCHOR_CHARSET_DEBRIS edge-contact metadata (iris/Oracle C3): does ink touch the crop's
+        # left/right boundary? A clipped neighbouring glyph ("#" cut by the ±20px pad, OCR'd "F")
+        # abuts the boundary by physical necessity; a genuinely separated interior token does not.
+        # Metadata-only (read by the charset-debris arm); computed only when the arm is armed.
+        if meta is not None and os.environ.get("ANCHOR_CHARSET_DEBRIS", "1") != "0":
+            meta['edge_contact'] = _crop_edge_contact(crop)
         # The value's TIGHT normalised box (from the stored centre+dims) lets the
         # ladder's free-text preview fast-path re-crop with its own headroom at the
         # preview scale. Only when real dims are stored (not the 200×60 default).
@@ -2506,7 +3758,8 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
             _box = {"x_norm": max(0.0, x_norm - w_norm / 2), "y_norm": max(0.0, y_norm - h_norm / 2),
                     "w_norm": w_norm, "h_norm": h_norm}
         _v = _ocr_crop_laddered(crop, val_type, verify_fn=verify_fn, meta=meta,
-                                page=page_image, box=_box)
+                                page=page_image, box=_box, top_limit_norm=top_limit_norm,
+                                row_band=_band, edge_ineligible=_rg_on)
         # Multi-line continuation (gated): only re-reads/joins when a rule + the trailing-
         # pattern/history signal say the value wraps onto the next line; else byte-identical.
         if continuation and _v:
@@ -2514,6 +3767,21 @@ def _crop_and_ocr(page_image: "Image.Image", x_norm: float, y_norm: float,
         return _v
     except Exception:
         return None
+
+
+def _crop_edge_contact(crop):
+    """(left, right) — True when INK (dark pixels) touches within 2px of that crop boundary.
+    Cheap PIL-only: binarize + getbbox. Any failure ⇒ (False, False) ⇒ the charset-debris arm
+    refuses (fail toward review)."""
+    try:
+        g = crop.convert("L").point(lambda p: 255 if p < 128 else 0)
+        bbox = g.getbbox()
+        if not bbox:
+            return (False, False)
+        l, _t, r, _b = bbox
+        return (l <= 2, r >= crop.size[0] - 2)
+    except Exception:
+        return (False, False)
 
 
 def _auth_rank(anchor: dict) -> int:
@@ -2651,19 +3919,267 @@ def _located_at_taught_position(located, vx, vy, offset_dx, offset_dy,
     return abs(float(lx) - exp_lx) <= tol_x and abs(float(ly) - exp_ly) <= tol_y
 
 
+def _inline_at_taught_offset(located, direction, vbox, offset,
+                             tol_x=_RELOC_TOL_X, tol_y=_RELOC_TOL_Y) -> bool:
+    """ANCHOR_INLINE_TAUGHT_OFFSET_VETO (kill switch, DEFAULT OFF) — is the INLINE-HARVESTED value
+    where the teach said this field's value would be? The sibling above verifies the re-located
+    LABEL; nothing verified the harvested VALUE.
+
+    THE HOLE (measured live 2026-08-08 on the Pelican delivery notes). _locate_for_relocation
+    searches a FULL-PAGE-WIDTH strip at the label's row deliberately — a key/value value can sit in
+    a far column — and cluster_value_words only splits the post-label words into gap-runs and returns
+    the run nearest expect_x; with a SINGLE run it returns it UNCHANGED (template_mapper.py:2229).
+    So on a two-block layout ("CUSTOMER …" left, "SHIP TO …" right, printed on the SAME OCR row) the
+    neighbouring block's HEADING is the only thing after the label and is harvested as the value: a
+    taught CUSTOMER anchor harvested the word 'SHIP' (committed 'sui'/'sup'/'sup to' at conf 70-82,
+    9 live documents) from 0.45 of a page away while its own taught offset says 0.10. No absolute
+    label→value distance test existed anywhere on this path — the gap-clustering is RELATIVE, so it
+    cannot reject a far column that is the only thing there.
+
+    TWO LEGS, and they catch different things:
+      1. DIRECTION — an inline harvest is always same-ROW as the label, so an anchor taught 'below'
+         or 'above' can never legitimately produce one. No tolerance expresses this: one line of
+         vertical separation (~0.015) is far inside tol_y. This leg is what covers a two-block
+         layout whose neighbouring caption sits CLOSER than tol_x.
+      2. DISTANCE — for 'right' anchors, which CAN harvest inline, the harvest must sit where the
+         teach put it.
+
+    The anchor already carries the answer: expected value CENTRE = located label top-left + taught
+    offset, which is EXACTLY what _place_from_located computes for the crop rung — so this reuses
+    that placement rather than inventing geometry, and reuses the tolerances the label veto already
+    ships with. Returns True (ACCEPT) on every unverifiable path — OFF, no usable offset (legacy
+    pre-migration-21 anchors), or no inline_box geometry (a text-layer line with no per-word boxes)
+    — so those stay byte-identical. It can only ever DROP a harvest, after which the crop read seated
+    AT the taught offset runs: fail-toward-the-taught-position, never toward a new value."""
+    if os.environ.get("ANCHOR_INLINE_TAUGHT_OFFSET_VETO", "0") == "0":
+        return True
+    ib = (located or {}).get("inline_box") or {}
+    try:
+        ax = float(ib["x_norm"]) + float(ib["w_norm"]) / 2.0     # inline_box is TOP-LEFT convention
+        ay = float(ib["y_norm"]) + float(ib["h_norm"]) / 2.0
+    except (KeyError, TypeError, ValueError):
+        return True                       # no value geometry → cannot verify → accept (unchanged)
+    odx, ody = (offset or (None, None))
+    if odx is None or ody is None or (not odx and not ody):
+        return True                       # same C1 precondition as the label veto: no offset, no veto
+    # LEG 1 — DIRECTION. An inline harvest is BY CONSTRUCTION the words following the label on the
+    # label's OWN OCR line (_locate_for_relocation centres its band on that row). So for an anchor
+    # taught 'below' or 'above' — "the value is a LINE away from its caption" — a same-row harvest
+    # contradicts the teach outright, and no tolerance can express that: the y-gap between the
+    # caption row and the value row is ONE line (~0.015 here) against tol_y 0.14. This is the leg
+    # that catches a two-block layout whose neighbouring caption sits CLOSER than tol_x, which the
+    # distance leg below cannot. Only 'right' anchors can legitimately harvest inline.
+    if str(direction or "").lower() in ("below", "above"):
+        return False
+    # LEG 2 — DISTANCE, for the 'right' anchors that CAN harvest inline.
+    placed = _place_from_located(located, direction, vbox, offset=(odx, ody))
+    if not placed:
+        return True
+    return abs(ax - float(placed[0])) <= tol_x and abs(ay - float(placed[1])) <= tol_y
+
+
+_LEFT_CLAMP_TYPES = _CAPTION_STRIP_TYPES   # structured, non-currency (C3) — one source with the strip
+_LEFT_CLAMP_GUARD_PX = 3                   # keep the value's first glyph column intact on a hairline offset error
+_RIGHT_GROW_GUARD_PX = 10                  # cover the ~120-DPI locate-pass quantisation of inline_box's RIGHT edge
+                                           # (a few full-res px) without reaching the next column — well below the
+                                           # med_h*1.2 cluster gap cluster_value_words split on (Oracle GUARD condition)
+
+
+def _label_left_limit(located, anchor, direction, val_type):
+    """ANCHOR_LABEL_LEFT_CLAMP (kill switch, DEFAULT OFF) — the label-tail crop clamp
+    (007+Oracle SIGN-OFF-W/COND 2026-08-01). Expected value LEFT edge (normalised x) in
+    the LOCATED frame: located label top-left + stored offset (the convention above —
+    offset = value_centre − label_top_left) gives the value CENTRE on THIS page; minus
+    half the taught width gives its left edge. The rigid crop's fixed +20px pad is
+    label-blind while scans jitter, so a direction-right crop swallows the label TAIL
+    ("Vo. WS-73541") and the read trifurcates on what the tail OCRs as (clean · ≤2-char
+    debris recovered@85 · 3+char rescue · near-miss wrong value). Clamping the crop's
+    left edge to where the value actually STARTS — drift-corrected by the locate —
+    excludes the tail for every future supplier with the same tight-gap topology.
+    C1 (frame trap): NEVER derived from the taught box — on a drifted page the taught
+    frame computes a boundary that silently no-ops exactly on the worst-drift docs.
+    C2: returns None (no clamp) unless the switch is ON, the anchor is AUTHORITATIVE
+    with a real stored offset (same bar as _located_at_taught_position), direction is
+    'right', and a real located label_box exists.
+    C3: structured val_types only — free-text keeps its ladder/preview regime (its
+    page re-crops never see this clamp and must not); currency already skips the
+    rigid crop entirely (_skip_rigid).
+    The consumer (_crop_and_ocr) moves the crop's left edge RIGHTWARD ONLY and reverts
+    to unclamped when degenerate (C5 — never refuse)."""
+    if os.environ.get("ANCHOR_LABEL_LEFT_CLAMP", "0") == "0":
+        return None
+    if direction != "right" or val_type not in _LEFT_CLAMP_TYPES:
+        return None
+    if not (anchor or {}).get("last_authoritative_at"):
+        return None
+    odx, ody = anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")
+    if odx is None or ody is None or (not odx and not ody):
+        return None                          # no offset → the value can't be placed from the label
+    w_norm = anchor.get("w_norm") or 0.0
+    if w_norm <= 0:
+        return None
+    lb = (located or {}).get("label_box")
+    if not lb or lb.get("x_norm") is None:
+        return None
+    return _clamp01(float(lb["x_norm"]) + float(odx) - w_norm / 2.0)
+
+
+def _label_right_limit(field_key, located, anchor, direction, val_type, validation_patterns):
+    """ANCHOR_VALUE_RIGHT_GROW (kill switch, DEFAULT OFF) — the RIGHT-edge twin of the label-tail
+    left clamp (007/oscar/gary + Oracle SIGN-OFF-W/COND 2026-08-02). The rigid crop is sized from
+    the TAUGHT box width, so a value LONGER than the taught sample chops on the right ("PO-25909" →
+    the crop reads "PO-2590!"). Return the value's REAL right edge (normalised x) MEASURED on THIS
+    page from the located value box — inline_box.x_norm + inline_box.w_norm — so the crop grows
+    rightward to the actual value end. inline_box is the cluster-selected value column
+    (template_mapper.cluster_value_words, gap-split at med_h*1.2), so it is next-column-excluded BY
+    CONSTRUCTION — the grown crop cannot reach the neighbour. Sourced from the MEASURED box, NEVER
+    the taught box (C1 frame trap), like the left clamp.
+
+    Oracle conditions (2026-08-02), all ship-blocking:
+    - C-scope: SLICE 1 fires ONLY for a REFERENCE-like key that ALSO carries a validation pattern →
+      the value then rides the STRICT _pattern_coverage>=0.8 credibility branch, which REJECTS a
+      merged-column read ('PO-25909 Qty' scores 0.67) so the clean-token recovery runs. SEAM A: the
+      label-lock rung commits anchor_crop_relocated, which bypasses the shape veto AND has no
+      crop_fullpage_disagree cross-check — the strict credibility branch is the SOLE guard there, so
+      a non-ref alphanumeric or an untyped ref (lenient free-text branch) must NOT arm.
+    - DATE is DEFERRED to slice 1b (Oracle anomaly #2, VERIFIED): date credibility is a SUBSTRING
+      match, so a merged 'DD/MM/YYYY Qty' PASSES the gate, and the downstream salvage does NOT strip
+      the trailing token (validator.parse_date('12/05/2026 Qty') → None, normalise_date leaves it
+      dirty) — so a merged date would commit dirty. Date needs its own clean-token step before the
+      right grow can arm on it. Do NOT add `or val_type=='date'` here until that lands + is pinned.
+    - Same authority bar as the left clamp: switch ON, authoritative anchor with a real stored
+      offset, direction 'right', and a real located inline_box.
+    The consumer (_crop_and_ocr) extends x2 RIGHTWARD ONLY (+_RIGHT_GROW_GUARD_PX) and never past
+    the page edge; OFF ⇒ returns None ⇒ byte-identical."""
+    if os.environ.get("ANCHOR_VALUE_RIGHT_GROW", "0") == "0":
+        return None
+    if direction != "right":
+        return None
+    if not _is_ref_like_key(field_key):
+        return None                          # slice 1: ref-like only (date deferred — see docstring)
+    if not (validation_patterns or {}).get(val_type):
+        return None                          # no pattern → lenient credibility branch → NOT backstopped
+    if not (anchor or {}).get("last_authoritative_at"):
+        return None
+    odx, ody = anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")
+    if odx is None or ody is None or (not odx and not ody):
+        return None                          # same authority bar as _label_left_limit
+    ib = (located or {}).get("inline_box")
+    if not ib or ib.get("x_norm") is None or ib.get("w_norm") is None:
+        return None
+    return _clamp01(float(ib["x_norm"]) + float(ib["w_norm"]))
+
+
 def _reads_disagree(a, b, val_type) -> bool:
     """Do two independent reads of a field carry genuinely DIFFERENT values? For a DATE, compare
     CALENDAR dates (parse_date) so a format-only difference (29/05/2026 vs 29-05-2026) is NOT a
     disagreement and an unparseable read never counts; everything else is a case-insensitive string
-    compare. Shared by the authoritative-crop cross-check's inline AND value-below branches."""
+    compare. Shared by the authoritative-crop cross-check's inline AND value-below branches.
+
+    DATE-AWARE even when val_type didn't resolve to 'date' here: if BOTH reads parse as calendar
+    dates we compare the DATES, not the raw strings — so a crop that OCR'd the separator differently
+    ('04/06/2026' vs '04-06-2026') never fires a needless cross-check flag. Kill switch
+    DATE_AWARE_CROSSCHECK=0 restores the val_type=='date'-only behaviour (OFF => byte-identical)."""
     a, b = (a or "").strip(), (b or "").strip()
     if not a or not b:
         return False
-    if val_type == "date":
+    if val_type == "date" or os.environ.get("DATE_AWARE_CROSSCHECK", "1") != "0":
         from extraction.validator import parse_date
         da, db = parse_date(a), parse_date(b)
-        return bool(da and db and da.date() != db.date())
+        if da and db:
+            return da.date() != db.date()
+        if val_type == "date":
+            return False   # a date field where one read didn't parse → never a disagreement
     return a.lower() != b.lower()
+
+
+# ── Deskew RAW-FRAME witness (issue-3, Oracle SIGN-OFF-WITH-CONDITIONS 2026-07-24) ──────────────
+# On a `--deskew-pages` reprocess a taught crop is read off the DESKEWED page; the rotation resample
+# can flip a valid-SHAPED glyph (PO-98370 → PO-98270) that no regex catches, so it files silently at
+# ref/date confidence. The RAW page (raw_page0) is the teach-time frame — drawn ⊕ coords are back-
+# transformed to raw on save — so a re-crop there reproduces the correct read. This witness heals a
+# committed ref/date value ONLY on a two-read CONSENSUS (the raw crop AND the raw page text agree on
+# a value that DISAGREES with the committed one) and otherwise leaves it untouched. FAIL-TOWARD-
+# REVIEW: never a silent wrong value; never a silent DROP of a correct value — a LONE raw dissenter
+# the page text can't corroborate is left alone (that is the benign column-only crop class, ~2% of
+# refs the full-page OCR misses but the crop reads correctly — measured on the live corpus).
+# The engine calls this pre-Stage-2.5d (a witness after the dominant-snap would undo a legit snap);
+# gated on raw_page0 present + kill switch → byte-identical off the deskew path.
+# OUT OF SCOPE (documented residual): a Stage-2.5d snap-INDUCED corruption on a constant-ish ref
+# (the DN-22222 poisoned-dominant class) is owned by 2.5d's own guard / Learning Repair, not here.
+_CROP_FAMILY_METHODS = frozenset({
+    "anchor_crop", "anchor_crop_relocated", "anchor_crop_recovered",
+    "anchor_crop_slipfix", "anchor_registration",
+})
+
+
+def _alnum_core(s) -> str:
+    return re.sub(r'[^a-z0-9]', '', str(s or '').lower())
+
+
+def _ref_witnessed(value, witness_text) -> bool:
+    """Normalized-EXACT membership of a ref value's alnum core in the page text. EXACT by
+    construction — a single-glyph flip changes the core ('po98370' ≠ 'po98270'); NO edit-distance
+    fold (that would mask the exact bug this catches). A tiny core (<4 chars) is unjudgeable →
+    treated as witnessed (never act on a coincidence)."""
+    core = _alnum_core(value)
+    if len(core) < 4:
+        return True
+    return core in _alnum_core(witness_text)
+
+
+def _date_witnessed(value, witness_text) -> bool:
+    """Calendar membership: does the value's day+month+year appear as a contiguous date in the page
+    text in ANY common order/separator? (A date needn't appear verbatim in DD-MM-YYYY form.)"""
+    d = re.sub(r'[^0-9]', '', str(value or ''))
+    if len(d) != 8:
+        return True   # unparseable digit-shape → don't judge
+    dd, mm, yyyy = d[0:2], d[2:4], d[4:8]
+    td = re.sub(r'[^0-9]', '', str(witness_text or ''))
+    return any(c in td for c in (dd + mm + yyyy, mm + dd + yyyy, yyyy + mm + dd, yyyy + dd + mm))
+
+
+def raw_crop_recheck(committed_value, taught_box, raw_page0, witness_text,
+                     val_type, field_key, label, format_lookup, text_field_keys,
+                     validation_patterns):
+    """Return (new_value, note) to FLIP+FLAG a deskew-corrupted ref/date read, or None to leave it
+    unchanged (see the module note above). Best-effort: any error → None. Guarded by
+    tests/test_deskew_raw_witness.py."""
+    try:
+        is_date = (val_type == "date")
+        # DETECT (cheap pre-filter). REF: committed value already witnessed on the raw page → agree
+        # → untouched (byte-identical, and the ~97.6% common case). DATE: skip membership (a wrong-
+        # field date read can itself be 'on the page') → always re-crop + calendar-compare.
+        if not is_date and _ref_witnessed(committed_value, witness_text):
+            return None
+        if not taught_box or raw_page0 is None:
+            return None
+        x, y, w, h = taught_box
+        if not (x and y):
+            return None
+
+        def _verify(t):
+            return (bool(t) and _crop_is_credible(t, val_type, validation_patterns, label)
+                    and bool(_qualify_against_format(t, field_key, format_lookup, text_field_keys,
+                                                     val_type, validation_patterns)))
+        raw = _crop_and_ocr(raw_page0, x, y, w or 0.0, h or 0.0, val_type, verify_fn=_verify)
+        if not raw:
+            return None
+        raw = (_qualify_against_format(raw, field_key, format_lookup, text_field_keys,
+                                       val_type, validation_patterns) or "").strip()
+        if not raw or not _crop_is_credible(raw, val_type, validation_patterns, label):
+            return None
+        if not _reads_disagree(raw, committed_value, val_type):
+            return None   # raw crop AGREES with the committed read → no correction (byte-identical)
+        # TWO-READ CONSENSUS: the raw crop's value must be corroborated by the raw page text. A lone
+        # raw dissenter (the raw crop reads something the page can't confirm) is NOT trusted — leave
+        # the committed value alone (guards against the raw crop itself being the wrong read).
+        corroborated = _date_witnessed(raw, witness_text) if is_date else _ref_witnessed(raw, witness_text)
+        if not corroborated:
+            return None
+        return (raw, "The straightened read disagreed with the original scan — using the original; please verify.")
+    except Exception:
+        return None
 
 
 def _is_blind_cross_supplier_anchor(field_key: str, anchor: dict,

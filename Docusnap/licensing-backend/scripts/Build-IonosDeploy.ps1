@@ -203,6 +203,41 @@ $setEnvStatus  = Write-IfMissing (Join-Path $OutDir   'set-env.php') $SetEnv
 $userIniStatus = Write-IfMissing (Join-Path $OutPublic '.user.ini')  $UserIni
 $htaccessStat  = Write-IfMissing (Join-Path $OutPublic '.htaccess')  $Htaccess
 
+# ── SEC-02 deny backstops — config-independent last wall if a mis-pointed docroot
+#    (account-root instead of public/) ever serves this tree. Two layers: a root
+#    .htaccess denying secret extensions + set-env.php + dotfiles, and a hard
+#    keys/.htaccess Require-all-denied beside the signing seed. Always (re)written —
+#    unlike the templates above these carry no per-host values, so a stale copy has
+#    no value and a MISSING one is the SEC-02 hole itself.
+$RootDeny = @'
+# DENY BACKSTOP (SEC-02) — this tree deploys with the docroot pointing at public/
+# ONLY. If a host ever serves THIS directory instead, these rules are the last wall
+# in front of the signing seed, admin secrets and DB creds. Apache-only — on
+# nginx/LiteSpeed the outside-docroot layout is the sole control.
+<FilesMatch "(?i)\.(pem|b64|hash|json|key|sql)$|^set-env\.php$|^\.">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+  </IfModule>
+</FilesMatch>
+'@
+$KeysDeny = @'
+# DENY BACKSTOP (SEC-02) — Ed25519 signing seed + admin secrets live here. This file
+# is the last wall if a mis-pointed docroot ever serves the tree.
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order deny,allow
+  Deny from all
+</IfModule>
+'@
+Set-Content -Path (Join-Path $OutDir  '.htaccess') -Value $RootDeny -Encoding ascii
+Set-Content -Path (Join-Path $OutKeys '.htaccess') -Value $KeysDeny -Encoding ascii
+
 # ── GUARDRAIL: no sensitive file may exist anywhere under public/ ─────────────
 $leak = Get-ChildItem $OutPublic -Recurse -File -Force | Where-Object {
   $_.Name -match '(?i)(\.pem$|sodium_seed|admin_password\.hash|admin_2fa\.json|^set-env\.php$|\.key$)'

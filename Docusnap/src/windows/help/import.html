@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>Scan Finder — Import a batch</title>
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="help.css">
+  <script src="../shared/theme.js"></script>
+</head>
+<body>
+  <div id="titlebar">
+    <span class="tb-title">Scan Finder — User Guide</span>
+    <button class="tb-btn close" id="btn-close" title="Close">&#215;</button>
+  </div>
+
+  <div id="shell">
+    <nav id="nav">
+      <div class="nav-label">User Guide</div>
+      <div id="nav-links"></div>
+    </nav>
+
+    <div id="content">
+      <div class="doc">
+        <div class="breadcrumb" id="breadcrumb"></div>
+
+        <main>
+          <section id="import">
+            <p class="use-when">Use this page when you have a folder of scans to bring in.</p>
+            <h1>Import a batch</h1>
+
+            <h2 id="folders">The two folders</h2>
+            <p>Keep them apart. <b>Folder B</b> holds fresh scans waiting to come in. <b>Folder A</b> is where
+              Scan Finder files the tidy copies. You import <i>from</i> B; filed documents land <i>in</i> A.</p>
+            <figure class="diagram">
+              <svg viewBox="0 0 560 120" role="img" aria-label="Scans go from folder B into Scan Finder, and filed documents come out into folder A">
+                <title>In-folder and out-folder</title>
+                <rect class="dg-panel2" x="8"   y="34" width="150" height="52" rx="8"/>
+                <rect class="dg-accent" x="205" y="34" width="150" height="52" rx="8"/>
+                <rect class="dg-panel"  x="402" y="34" width="150" height="52" rx="8"/>
+                <g class="dg-flow"><line x1="158" y1="60" x2="203" y2="60"/><line x1="355" y1="60" x2="400" y2="60"/></g>
+                <g class="dg-arrow"><path d="M203 60 l-8 -4 v8 z"/><path d="M400 60 l-8 -4 v8 z"/></g>
+                <text class="dg-text" x="83"  y="57" text-anchor="middle">Folder B</text>
+                <text class="dg-sub"  x="83"  y="73" text-anchor="middle">your fresh scans</text>
+                <text class="dg-text" x="280" y="57" text-anchor="middle">Scan Finder</text>
+                <text class="dg-sub"  x="280" y="73" text-anchor="middle">reads &amp; files</text>
+                <text class="dg-text" x="477" y="57" text-anchor="middle">Folder A</text>
+                <text class="dg-sub"  x="477" y="73" text-anchor="middle">tidy filed copies</text>
+              </svg>
+              <figcaption>Import from B; filed documents land in A.</figcaption>
+            </figure>
+
+            <h2 id="process">Bring them in</h2>
+            <p>Click <b>Import</b>, then <b>choose folder B</b>, then <b>Process Documents</b>. Scan Finder
+              makes its own copy of each scan to read, so your originals are safe — they stay in folder B
+              until you file them. A big pile takes a while; <b>Stop</b> halts it after the current file.</p>
+            <p>When it finishes, a <b>results table</b> lists what it found:</p>
+            <ul>
+              <li><span class="pill ok">Ready to file</span> — read cleanly; you can file it with one click.</li>
+              <li><span class="pill warn">Confirm to file</span> — it wants you to check something first.</li>
+              <li><span class="pill mut">couldn't be read</span> — the scan was too poor to read; open it in
+                Review and straighten or re-scan it.</li>
+            </ul>
+            <figure class="shot-fig">
+              <img class="shot" src="img/import-view.png" alt="The import results table after processing a batch">
+              <figcaption>The results table after a batch.</figcaption>
+            </figure>
+            <p>Click <b>Review your documents</b> to check them. What you taught earlier is already filled in.</p>
+
+            <h2 id="more">A few things to know</h2>
+            <ul>
+              <li><b>What happens to a scan after you file it?</b> Its original is moved out of folder B — into
+                a &ldquo;Processed&rdquo; folder if you asked to keep originals (Settings &rarr; Files &amp;
+                filing), otherwise removed. The filed copy is the one in folder A.</li>
+              <li><b>Two documents in one PDF?</b> Put a blank <b>separator sheet</b> between them, or use
+                <b>Split</b> in Review to break the file up. Splitting replaces the original file, so keep a
+                copy if you need one.</li>
+              <li><b>Same document twice?</b> Scan Finder marks a duplicate rather than filing it twice.</li>
+              <li><b>Don't want to click Import each time?</b> A <b>watch folder</b> (Settings &rarr; Files
+                &amp; filing) brings in anything dropped into a chosen folder automatically.</li>
+            </ul>
+
+            <div class="callout note">
+              <div class="callout-title">The first time will feel slow</div>
+              <p>Reading scans takes real work, and nothing files by itself until you've confirmed a few from
+                each sender. It speeds up fast — by your second or third batch most documents come through
+                marked <b>Ready to file</b>.</p>
+            </div>
+
+            <div class="callout tip">
+              <div class="callout-title">What's next</div>
+              <p><a href="review.html">Check what it wasn't sure about</a> — confirm the details and file.</p>
+            </div>
+          </section>
+        </main>
+
+        <nav class="page-foot" id="page-foot"></nav>
+      </div>
+    </div>
+  </div>
+
+  <script src="help-nav.js"></script>
+</body>
+</html>

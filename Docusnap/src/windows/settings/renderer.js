@@ -2,6 +2,23 @@
 
 const api = window.docusnap;
 
+// Keyboard-focus repair (Windows) — mirror of the Review window's wrapper. A native
+// confirm()/alert() drops Blink's render-widget keyboard focus while the window still reports
+// focused (document.hasFocus() lies TRUE), so the preload's pointerdown self-heal can't detect
+// the desync on its own and the NEXT text-field click shows no caret until you alt-tab out and
+// back. Settings' Learning Repair fires confirm() (Forget / Delete / clear-anchors), so wrap the
+// native dialogs once: flag this window "focus suspect" in main whenever one returns, and the
+// pointerdown repair (preload → ensure-window-focus → focusRepair.blurWebView) then does the real
+// transition on the next field press. Single point, no call-site changes. Guarded so it never
+// breaks a dialog.
+(function instrumentNativeDialogsForFocusRepair() {
+  const mark = () => { try { window.docusnap?.markFocusSuspect?.(); } catch {} };
+  const _confirm = window.confirm.bind(window);
+  const _alert = window.alert.bind(window);
+  window.confirm = (...a) => { try { return _confirm(...a); } finally { mark(); } };
+  window.alert = (...a) => { try { return _alert(...a); } finally { mark(); } };
+})();
+
 // ── Tab switching ─────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -12,12 +29,187 @@ document.querySelectorAll('.tab').forEach(btn => {
     // Learning Recovery + Keyword Label Overrides live under the Learning tab; the
     // Audit log lives under the Audit tab; the Search client API lives under the
     // Search client tab — load each lazily on show.
-    if (btn.dataset.tab === 'learning') { loadMemoryInventory(); loadGraduationRoster(); }
+    if (btn.dataset.tab === 'learning') { loadScopeBrowse(); loadMemoryInventory(); loadGraduationRoster(); }
     if (btn.dataset.tab === 'repair') repairInit();
     if (btn.dataset.tab === 'audit' && !auditState.loaded) loadAudit();
     if (btn.dataset.tab === 'searchclient') initClientApiSection();
+    // The Workflow add-on + client-seat sections live in the Licensing tab but are populated by
+    // initClientApiSection/loadSeats — run them on Licensing open too, not just on Refresh (after the
+    // Settings tab-reorg the sections moved here but their lazy-init trigger stayed on 'searchclient',
+    // so the workflow toggle/chip/seat-count sat in their raw default until a manual Refresh).
+    if (btn.dataset.tab === 'licensing') { initClientApiSection(); if (typeof loadSeats === 'function') loadSeats(); }
+    if (btn.dataset.tab === 'workflow') initWorkflowPanel();
   });
 });
+
+// ── Workflow routing rules (admin; entitlement-gated, hidden while the add-on is dark) ──────────
+let _wfWired = false;
+let _wfEditId = null;
+const _wfEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function applyWorkflowTabVisibility() {
+  const tab = document.querySelector('.tab[data-tab="workflow"]');
+  if (!tab) return;
+  try {
+    const e = await api.getEntitlement();
+    tab.style.display = (e && e.workflow && e.workflow.entitled && !e.workflow.disabled) ? '' : 'none';
+  } catch { tab.style.display = 'none'; }   // fail-closed
+}
+
+async function initWorkflowPanel() {
+  if (_wfWired) { loadWorkflowRules(); loadWorkflowOpenRoutes(); return; }
+  _wfWired = true;
+  try {
+    const types = (await api.getDocumentTypes()) || [];
+    document.getElementById('wf-b-type').innerHTML =
+      '<option value="">any document type</option>' + types.map(t => `<option value="${t.id}">${_wfEsc(t.name)}</option>`).join('');
+  } catch {}
+  try {
+    const [usersRes, me] = await Promise.all([api.authListUsers(), api.authGetCurrentUser().catch(() => null)]);
+    const meId = me && me.id;
+    // auth-list-users returns { users: [...] } (see loadUsersList) — NOT a bare array; the
+    // original array-shaped read threw inside this catch and left the dropdown EMPTY (found
+    // in the owner's first live click-through of the rule builder).
+    const users = (usersRes && usersRes.users) || [];
+    document.getElementById('wf-b-person').innerHTML = users.filter(u => u.is_active)
+      .map(u => `<option value="${u.id}">${_wfEsc(u.display_name || u.username)}${meId === u.id ? ' (me)' : ''}</option>`).join('');
+  } catch {}
+  const amtOn = document.getElementById('wf-b-amount-on');
+  amtOn.addEventListener('change', () => {
+    document.getElementById('wf-b-amount').style.display = amtOn.checked ? '' : 'none';
+    document.getElementById('wf-b-amount-suffix').style.display = amtOn.checked ? '' : 'none';
+  });
+  document.getElementById('wf-b-save').addEventListener('click', wfSaveRule);
+  document.getElementById('wf-b-dryrun').addEventListener('click', wfDryRun);
+  document.getElementById('wf-b-cancel').addEventListener('click', wfResetBuilder);
+  loadWorkflowRules();
+  loadWorkflowOpenRoutes();
+}
+
+// E1 admin cancel-route: the "Open routes" list — the DISCOVERY surface for stuck routes
+// (a NULL-sender auto-file route appears in NOBODY's Sent box; without this list a stuck doc
+// is only found by per-doc luck in Search). Includes routes whose document was deleted
+// ("(document deleted)") — those are legacy strands and this list is their only healing
+// surface (Oracle OC3). Cancel = two-step inline confirm, same IPC as the Search banner.
+async function loadWorkflowOpenRoutes() {
+  const list = document.getElementById('wf-open-list');
+  if (!list) return;
+  try {
+    const routes = (await api.workflow.openRoutes()) || [];
+    if (!routes.length) { list.innerHTML = '<p style="color:var(--muted);">Nothing is waiting on anyone.</p>'; return; }
+    list.innerHTML = routes.map(r => {
+      const fname = r.stored_filename || r.original_filename || ('Document #' + r.document_id);
+      const gone = r.doc_status === 'deleted' ? ' <span style="color:var(--err); font-size:11px;">(document deleted)</span>' : '';
+      const await_ = r.action_required === 'approve' ? 'awaiting approval' : 'for information';
+      const age = (r.created_at || '').slice(0, 10);
+      return `<div class="card" style="display:flex; align-items:center; gap:12px; padding:10px 14px; margin-bottom:8px;">
+        <div style="flex:1; min-width:0;">
+          <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${_wfEsc(fname)}${gone}</div>
+          <div style="font-size:11px; color:var(--muted);">${_wfEsc(r.supplier_name || '')} · to ${_wfEsc(r.to_username)} · ${_wfEsc(await_)} · since ${_wfEsc(age)}</div>
+        </div>
+        <button class="btn" data-wf-cancel="${r.id}" data-wf-cancel-v="${r.version}" data-wf-cancel-to="${_wfEsc(r.to_username)}" style="padding:4px 10px;">Cancel</button>
+      </div>`;
+    }).join('');
+    list.querySelectorAll('[data-wf-cancel]').forEach(el => el.addEventListener('click', async () => {
+      if (!el.dataset.armed) {
+        el.dataset.armed = '1'; el.textContent = `Confirm — remove from ${el.dataset.wfCancelTo}'s inbox`;
+        setTimeout(() => { if (el.isConnected) { delete el.dataset.armed; el.textContent = 'Cancel'; } }, 5000);
+        return;
+      }
+      el.disabled = true;
+      try { await api.workflow.adminCancel(Number(el.dataset.wfCancel), Number(el.dataset.wfCancelV)); }
+      catch (e) { el.disabled = false; el.textContent = 'Cancel'; delete el.dataset.armed; }
+      loadWorkflowOpenRoutes();
+    }));
+  } catch { list.innerHTML = '<p style="color:var(--muted);">Couldn\'t load the open routes.</p>'; }
+}
+
+function _wfBuilderPayload() {
+  const p = { documentTypeId: document.getElementById('wf-b-type').value || '', targetUserId: document.getElementById('wf-b-person').value || null,
+    actionRequired: document.getElementById('wf-b-action').value || 'approve' };
+  if (document.getElementById('wf-b-amount-on').checked) p.amountText = document.getElementById('wf-b-amount').value;
+  if (_wfEditId) p.id = _wfEditId;
+  return p;
+}
+
+async function wfSaveRule() {
+  const msg = document.getElementById('wf-b-msg');
+  msg.textContent = 'Saving…';
+  try {
+    const res = _wfEditId ? await api.workflow.ruleUpdate(_wfBuilderPayload()) : await api.workflow.ruleCreate(_wfBuilderPayload());
+    if (res && res.error) { msg.textContent = res.error; return; }
+    wfResetBuilder(); msg.textContent = 'Saved.'; loadWorkflowRules();
+  } catch { msg.textContent = "Couldn't save the rule."; }
+}
+
+function wfResetBuilder() {
+  _wfEditId = null;
+  document.getElementById('wf-builder-title').textContent = 'Add a routing rule';
+  document.getElementById('wf-b-save').textContent = 'Add rule';
+  document.getElementById('wf-b-cancel').style.display = 'none';
+  document.getElementById('wf-b-type').value = '';
+  document.getElementById('wf-b-amount-on').checked = false;
+  document.getElementById('wf-b-amount').value = '';
+  document.getElementById('wf-b-amount').style.display = 'none';
+  document.getElementById('wf-b-amount-suffix').style.display = 'none';
+  document.getElementById('wf-b-action').value = 'approve';
+  document.getElementById('wf-dryrun').innerHTML = '';
+}
+
+async function wfDryRun() {
+  const box = document.getElementById('wf-dryrun');
+  box.innerHTML = '<p style="color:var(--muted);">Checking your recent documents…</p>';
+  try {
+    const res = await api.workflow.ruleDryRun(_wfBuilderPayload());
+    if (res && res.error) { box.innerHTML = `<p style="color:var(--muted);">${_wfEsc(res.error)}</p>`; return; }
+    if (!res || res.count === 0) {
+      box.innerHTML = `<p style="color:var(--muted);">None of your last ${res ? res.sampled : 0} filed documents would match — the rule may be too narrow.</p>`;
+      return;
+    }
+    const rows = (res.matched || []).map(m => `<div style="padding:4px 0; border-top:1px solid var(--border); font-size:12px;">${_wfEsc(m.supplier)} · ${_wfEsc(m.total)} · ${_wfEsc(m.filename)}</div>`).join('');
+    box.innerHTML = `<div style="margin-top:6px; padding:12px; background:var(--surface2); border-radius:8px;"><div style="font-weight:600; margin-bottom:6px;">This would have routed ${res.count} of your last ${res.sampled} filed documents:</div>${rows}<div style="font-size:11px; color:var(--muted); margin-top:8px;">Preview only — saving a rule doesn't route these; it applies to documents filed from now on.</div></div>`;
+  } catch { box.innerHTML = '<p style="color:var(--muted);">Couldn\'t run the preview.</p>'; }
+}
+
+async function loadWorkflowRules() {
+  const list = document.getElementById('wf-rules-list');
+  try {
+    const rules = (await api.workflow.rulesList()) || [];
+    if (!rules.length) { list.innerHTML = '<p style="color:var(--muted);">No rules yet. Add one above.</p>'; return; }
+    list.innerHTML = rules.map(r => `<div class="card" style="display:flex; align-items:center; gap:12px; padding:12px 14px; margin-bottom:8px; ${r.active ? '' : 'opacity:.55;'}">
+        <div style="flex:1;">${_wfEsc(r.summary || 'Routing rule')}</div>
+        <label style="display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); cursor:pointer;"><input type="checkbox" ${r.active ? 'checked' : ''} data-wf-toggle="${r.id}"> On</label>
+        <button class="btn" data-wf-edit="${r.id}" style="padding:4px 10px;">Edit</button>
+        <button class="btn" data-wf-del="${r.id}" style="padding:4px 10px;">Delete</button>
+      </div>`).join('');
+    list.querySelectorAll('[data-wf-toggle]').forEach(el => el.addEventListener('change', () => api.workflow.ruleToggle(Number(el.dataset.wfToggle), el.checked).then(loadWorkflowRules)));
+    list.querySelectorAll('[data-wf-edit]').forEach(el => el.addEventListener('click', () => wfEditRule(Number(el.dataset.wfEdit), rules)));
+    list.querySelectorAll('[data-wf-del]').forEach(el => el.addEventListener('click', () => { if (confirm('Delete this routing rule?')) api.workflow.ruleDelete(Number(el.dataset.wfDel)).then(loadWorkflowRules); }));
+  } catch { list.innerHTML = '<p style="color:var(--muted);">Couldn\'t load your rules.</p>'; }
+}
+
+function wfEditRule(id, rules) {
+  const r = rules.find(x => x.id === id);
+  if (!r) return;
+  _wfEditId = id;
+  document.getElementById('wf-builder-title').textContent = 'Edit routing rule';
+  document.getElementById('wf-b-save').textContent = 'Save changes';
+  document.getElementById('wf-b-cancel').style.display = '';
+  document.getElementById('wf-b-type').value = r.document_type_id != null ? String(r.document_type_id) : '';
+  const hasAmt = Number(r.min_amount_pennies) > 0;
+  document.getElementById('wf-b-amount-on').checked = hasAmt;
+  document.getElementById('wf-b-amount').value = hasAmt ? (r.min_amount_pennies / 100).toFixed(2) : '';
+  document.getElementById('wf-b-amount').style.display = hasAmt ? '' : 'none';
+  document.getElementById('wf-b-amount-suffix').style.display = hasAmt ? '' : 'none';
+  // Prefill the action — without this, editing a for-information rule and saving would
+  // silently convert it to approval (eric's catch in the FYI slice review).
+  document.getElementById('wf-b-action').value = r.action_required === 'acknowledge' ? 'acknowledge' : 'approve';
+  if (r.target_user_id != null) document.getElementById('wf-b-person').value = String(r.target_user_id);
+}
+
+applyWorkflowTabVisibility();   // reveal the tab iff the add-on is entitled (dark today ⇒ stays hidden)
+
+// ── Search client access (admin) — host the detached-client API ────────────────
 
 // ── Search client access (admin) — host the detached-client API ────────────────
 let _clientApiWired = false;
@@ -81,20 +273,37 @@ async function initClientApiSection() {
   const wfSub = document.getElementById('wf-addon-sub');
   if (wfTgl && wfSub) {
     wfTgl.disabled = true;
+    const sec = document.getElementById('wf-section');
     try {
       const ent = await api.getEntitlement();
       // Pre-release: the workflow feature is master-disabled (entitlement returns workflow.disabled).
       // Hide the whole section so there's no mention of the unbuilt feature; un-hides automatically
-      // when the WORKFLOW_FEATURE_ENABLED flag is flipped back on.
+      // when the WORKFLOW_FEATURE_ENABLED flag is flipped back on. #wf-section defaults hidden in the
+      // HTML (so it never FLASHES visible before this async check resolves) — REVEAL it whenever the
+      // feature is not master-disabled.
+      // The stamp only exists for approvals, so its placement card follows the workflow section's
+      // visibility exactly — one entitlement, one answer, no second gate to drift.
+      const stampSec = document.getElementById('stamp-section');
       if (ent && ent.workflow && ent.workflow.disabled) {
-        const sec = document.getElementById('wf-section'); if (sec) sec.style.display = 'none';
+        if (sec) sec.style.display = 'none';
+        if (stampSec) stampSec.style.display = 'none';
       } else {
+        if (sec) sec.style.display = '';
+        if (stampSec) { stampSec.style.display = ''; initStampPlacement(); }
         const on = !!(ent && ent.workflow && ent.workflow.entitled);
+        const seats = (ent && ent.workflow && ent.workflow.seats) || 0;
         wfTgl.checked = on;
-        wfSub.textContent = on ? 'Licensed' : 'Not licensed';
+        wfSub.textContent = on
+          ? (seats > 0 ? `Licensed · ${seats} seat${seats === 1 ? '' : 's'}` : 'Licensed')
+          : 'Not licensed';
         setChip('wf-chip', on ? 'On' : 'Off', on ? 'ok' : '');
       }
-    } catch { wfSub.textContent = 'Unknown'; setChip('wf-chip', 'Unknown', ''); }
+    } catch {
+      if (sec) sec.style.display = '';
+      const stampSec = document.getElementById('stamp-section');
+      if (stampSec) { stampSec.style.display = ''; initStampPlacement(); }
+      wfSub.textContent = 'Unknown'; setChip('wf-chip', 'Unknown', '');
+    }
   }
 
   if (_clientApiWired) return; // bind listeners once
@@ -171,6 +380,7 @@ const HELP_TEXTS = {
   'add-type':       'Create a custom document type with its own fields (e.g. “Delivery Note”) alongside the built-in Invoice / Sales Order / Purchase Order.',
   'add-field':      'Add a custom field to the selected document type: a label, an auto-generated key, a value type and whether it’s required.',
   'add-catalog':    'Add a ready-made document type (Purchase/Sales Invoice, Credit Note, Statement, Receipt…) with its fields already set up.',
+  'field-visibility':'Choose which fields each sender\'s layout shows. Untick a field a layout doesn\'t print so Review stops asking for it. The Issuer, Date and Reference are always shown.',
   'pick-output':    'Choose the folder where confirmed documents are filed. Must be set before any document can be confirmed.',
   'pick-processed': 'Choose where each original scan is moved after it’s filed. Leave blank to keep originals where they are.',
   'clear-processed':'Stop moving originals — leave them in the source folder after filing.',
@@ -318,6 +528,22 @@ document.getElementById('auto-file-threshold').addEventListener('change', async 
   enforceAutoFileInvariant(true);
 });
 
+// ── Graduation window (clean confirms before a sender is trusted; default 10) ───
+// Read by trust.js scopeTrust via settings.graduation_window (clamped 3..50 server-side).
+(async () => {
+  try {
+    const v = parseInt((await api.getSetting('graduation_window')) || '10', 10) || 10;
+    document.getElementById('graduation-window').value = v;
+    document.getElementById('graduation-window-val').textContent = String(v);
+  } catch {}
+})();
+document.getElementById('graduation-window').addEventListener('input', (e) => {
+  document.getElementById('graduation-window-val').textContent = e.target.value;
+});
+document.getElementById('graduation-window').addEventListener('change', async (e) => {
+  await api.setSetting('graduation_window', String(e.target.value));
+});
+
 // ── Read values that wrap onto the next line (default ON) ──────────────────────
 (async () => {
   try {
@@ -327,6 +553,18 @@ document.getElementById('auto-file-threshold').addEventListener('change', async 
 })();
 document.getElementById('multiline-toggle').addEventListener('change', async (e) => {
   await api.setSetting('multiline_enabled', e.target.checked ? 'true' : 'false');
+});
+
+// ── Keep original scans after filing (keep_processed_originals; mig 83 ON for every install —
+//    Chris round 14 card 1 / Oracle C1.4, 2026-08-22). Unset → treated as OFF (pre-mig DBs) ──
+(async () => {
+  try {
+    const v = await api.getSetting('keep_processed_originals');
+    document.getElementById('keep-originals-toggle').checked = (v === 'true');
+  } catch { document.getElementById('keep-originals-toggle').checked = false; }
+})();
+document.getElementById('keep-originals-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('keep_processed_originals', e.target.checked ? 'true' : 'false');
 });
 
 // ── Auto-rotate sideways/upside-down scans (default ON) ────────────────────────
@@ -340,6 +578,568 @@ document.getElementById('auto-rotate-toggle').addEventListener('change', async (
   await api.setSetting('auto_rotate_enabled', e.target.checked ? 'true' : 'false');
 });
 
+// ── Corroborated auto-file (corroboration_autofile, default OFF; Oracle-signed 2026-08-11) ──
+(async () => {
+  try {
+    const v = await api.getSetting('corroboration_autofile');
+    document.getElementById('corrob-autofile-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('corrob-autofile-toggle').checked = false; }
+})();
+document.getElementById('corrob-autofile-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('corroboration_autofile', e.target.checked ? 'true' : 'false');
+});
+
+// ── Post-reprocess consent offer (reprocess_autocommit_offer, default ON — Oracle-granted
+// deviation 2026-08-12: the offer is consent-gated, hence fail-safe; the silent queue-wide
+// sweep it replaced is REMOVED, not flag-preserved) ──
+(async () => {
+  try {
+    const v = await api.getSetting('reprocess_autocommit_offer');
+    document.getElementById('reprocess-autocommit-toggle').checked = (v !== 'false');   // unset → ON
+  } catch { document.getElementById('reprocess-autocommit-toggle').checked = true; }
+})();
+document.getElementById('reprocess-autocommit-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('reprocess_autocommit_offer', e.target.checked ? 'true' : 'false');
+});
+
+// ── Recover long refs the crop cuts off (ANCHOR_VALUE_RIGHT_GROW, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('anchor_value_right_grow');
+    document.getElementById('right-grow-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('right-grow-toggle').checked = false; }
+})();
+document.getElementById('right-grow-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('anchor_value_right_grow', e.target.checked ? 'true' : 'false');
+});
+
+// ── Trim a label off the start of a read value (ANCHOR_LABEL_LEFT_CLAMP, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('anchor_label_left_clamp');
+    document.getElementById('left-clamp-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('left-clamp-toggle').checked = false; }
+})();
+document.getElementById('left-clamp-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('anchor_label_left_clamp', e.target.checked ? 'true' : 'false');
+});
+
+// ── Recover a misread reference prefix (PREFIX_GARBLE_ADOPT, default OFF) ──────
+(async () => {
+  try {
+    const v = await api.getSetting('prefix_garble_adopt');
+    document.getElementById('prefix-garble-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('prefix-garble-toggle').checked = false; }
+})();
+document.getElementById('prefix-garble-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('prefix_garble_adopt', e.target.checked ? 'true' : 'false');
+});
+
+// ── Correct a reference that lost a cross-check (CROSSCHECK_OUTLIER_RECONCILE, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('crosscheck_outlier_reconcile');
+    document.getElementById('crosscheck-reconcile-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('crosscheck-reconcile-toggle').checked = false; }
+})();
+document.getElementById('crosscheck-reconcile-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('crosscheck_outlier_reconcile', e.target.checked ? 'true' : 'false');
+});
+
+// ── Double-check references and dates against the whole document (Slice-2 stage 2a,
+// UNIVERSAL_VERIFY_RESTORE, default OFF; numeric/text stages keep their own switches) ──
+(async () => {
+  try {
+    const v = await api.getSetting('universal_verify_restore');
+    document.getElementById('universal-verify-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('universal-verify-toggle').checked = false; }
+})();
+document.getElementById('universal-verify-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('universal_verify_restore', e.target.checked ? 'true' : 'false');
+});
+
+// ── Tidy stray marks from taught reference reads (Slice A edge-debris heal,
+// TEMPLATE_CODE_EDGE_CLEAN, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('template_code_edge_clean');
+    document.getElementById('edge-clean-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('edge-clean-toggle').checked = false; }
+})();
+document.getElementById('edge-clean-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('template_code_edge_clean', e.target.checked ? 'true' : 'false');
+});
+
+// ── Snap taught boxes to the printed text (Slice B word-snap, TEMPLATE_TARGET_WORD_SNAP,
+// default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('template_target_word_snap');
+    document.getElementById('word-snap-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('word-snap-toggle').checked = false; }
+})();
+document.getElementById('word-snap-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('template_target_word_snap', e.target.checked ? 'true' : 'false');
+});
+
+// ── Remove label fragments / complete cut-short taught reads (NIGHT round 2026-08-03:
+// TEMPLATE_CODE_FRAG_CLEAN + TEMPLATE_CLIP_COMMIT, both default OFF) + the jitter-crater
+// arc trio (Oracle 2026-08-05, gates green: TEMPLATE_ABS_EDGE_GUARD word-edge grow ·
+// TEMPLATE_DATE_CLIP_GATE cut-date reject · TEMPLATE_LABEL_DIGIT_EXACT locate digit
+// exactness — all default OFF until the owner flip) ──
+for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
+                         ['clip-commit-toggle', 'template_clip_commit'],
+                         ['edge-guard-toggle', 'template_abs_edge_guard'],
+                         ['date-clip-toggle', 'template_date_clip_gate'],
+                         ['label-digit-toggle', 'template_label_digit_exact'],
+                         ['angle-compose-toggle', 'teach_angle_compose'],
+                         ['edge-cut-relocate-toggle', 'template_edge_cut_relocate'],
+                         ['clip-slack-toggle', 'template_clip_commit_edge_slack'],
+                         ['date-invalid-yield-toggle', 'template_date_invalid_yield'],
+                         ['date-future-yield-toggle', 'template_date_future_yield'],
+                         ['pad-window-read-toggle', 'template_pad_window_read'],
+                         ['heading-absent-reread-toggle', 'heading_absent_reread'],
+                         // Type-election title-first (herald 2026-08-12): one switch → three
+                         // keyword.py env flags via _reconcileEnv (the heading_absent_reread pattern).
+                         ['type-election-title-toggle', 'type_election_title_first'],
+                         ['xcheck-demote-toggle', 'xcheck_corrob_note_demote'],
+                         // Corroboration step 3, slice 2 (Oracle W/COND 2026-08-13): adjusted-total
+                         // note demote — crop witness (penny-exact + sign) AND arithmetic re-check.
+                         ['recon-demote-toggle', 'recon_total_note_demote'],
+                         // Corroboration step 3, slice 3 (Oracle W/COND B1-B3 2026-08-13): name
+                         // note demote — crop + keyword witnesses, guard-rejected dissenters.
+                         ['name-demote-toggle', 'name_corrob_note_demote'],
+                         // Class F (gary audit 2026-08-26): verification-doubt note clear + field
+                         // lift on two-distinct-page-family agreement + learned-shape pass.
+                         ['verification-doubt-clear-toggle', 'corrob_verification_doubt_clear'],
+                         // Light-text recovery (2026-08-27, oscar + 007 → Oracle): the threshold-200 supplementary
+                         // full-page pass that recovers small light-grey print into the page text (DARK).
+                         ['light-text-recovery-toggle', 'ocr_light_text_recovery'],
+                         // Barcodes (2026-08-26, barry → gary design): the page inventory and the field type.
+                         ['barcode-inventory-toggle', 'barcode_inventory'],
+                         ['barcode-field-toggle', 'barcode_field'],
+                         // Learning Repair v2 (barry + gary → Oracle 2026-08-26): the selector/console
+                         // UI and the "start fresh" door (the service enforces the second one).
+                         ['learning-repair-console-toggle', 'learning_repair_console'],
+                         ['learning-repair-forget-toggle', 'learning_repair_forget'],
+                         // Machine-feed arc slice 1 (Oracle W/COND C1-C6 2026-08-13): learning.js
+                         // + templates.js read the key directly (setting-only, no env bridge).
+                         ['machine-confirms-toggle', 'learning_exclude_machine_confirms'],
+                         ['credit-sign-toggle', 'credit_sign_coherence'],
+                         ['inline-row-overlap-toggle', 'template_inline_row_overlap'],
+                         ['ref-role-digit-toggle', 'ref_role_digit_gate'],
+                         ['inline-offset-veto-toggle', 'anchor_inline_taught_offset_veto'],
+                         // The money slice (Oracle C1-C7 closed, `c027d86`). Independent switches:
+                         // the row-pitch fix is standalone, but currency-edge-grow is INERT unless
+                         // 'template_target_word_snap' or 'template_abs_edge_guard' is also on —
+                         // both already true on this install, and both have their own rows above.
+                         ['drift-row-pitch-toggle', 'template_drift_row_pitch'],
+                         ['currency-edge-grow-toggle', 'template_currency_edge_grow'],
+                         // NAME leg of the edge guard (2026-08-11 flush-edge clip class):
+                         // right-edge cut only, last-token repair, page-present witness,
+                         // FLAG-ONLY commit — inert unless template_abs_edge_guard is also on.
+                         ['name-edge-grow-toggle', 'template_name_edge_grow'],
+                         // Teach-side pair. 'angle-compose-scan' is the SIBLING of the
+                         // 'angle-compose-toggle' row above and they are mutually exclusive in the
+                         // extractor by construction, so both may be on; on the ordinary import
+                         // path (no deskew) this is the one that actually fires.
+                         ['angle-compose-scan-toggle', 'teach_angle_compose_scan'],
+                         ['fixed-issuer-repair-toggle', 'template_fixed_issuer_repair'],
+                         // The issuer cure: the registration arbiter may only override a taught
+                         // read when the field's own caption was looked for AND failed. A mapping
+                         // with no caption (every `supplier_name` mapping on this install) never
+                         // had a test to fail, so it was being overridden on no local evidence.
+                         ['reg-arbiter-anchor-evidence-toggle', 'template_reg_arbiter_anchor_evidence'],
+                         // Its standing guard: keep a confirmed issuer when that name is
+                         // actually printed in the taught region on THIS page. Confirm-only.
+                         ['issuer-region-presence-toggle', 'template_issuer_region_presence'],
+                         // Agreement is corroboration: an exact re-read of the confirmed issuer
+                         // keeps the seed's 95 instead of demoting it to the mapping tier's 78.
+                         ['fixed-seed-agreement-toggle', 'template_fixed_seed_agreement_keep'],
+                         // The 2026-08-08 teach-side trio + the filing sanity flags: built
+                         // and measured, then left env-only, so no install could reach them.
+                         ['stage05-ref-code-toggle', 'stage05_ref_code_gate'],
+                         ['generic-caption-exclusive-toggle', 'keyword_generic_caption_exclusive'],
+                         ['type-title-owner-toggle', 'type_title_owner_precedence'],
+                         ['filing-sanity-flags-toggle', 'filing_value_sanity_flags'],
+                         // Cold start: read the sender off the letterhead on document #1 and
+                         // OFFER it (never fill it in - a wrong assert plants a bad scope).
+                         ['letterhead-issuer-toggle', 'letterhead_issuer'],
+                         // Fill the read letterhead name INTO the box (not just offer it) so one
+                         // Confirm files it — held two ways (conf 69 + note), plants no learning.
+                         ['letterhead-prefill-toggle', 'letterhead_prefill'],
+                         // A learned layout may only claim a document that names its company -
+                         // the wrong-company misfile (2026-08-10).
+                         ['identity-on-page-toggle', 'template_identity_on_page'],
+                         // A confirmed taught label REPLACES the generic keyword bank for its
+                         // field, scoped to the template it was taught on (migrations 61+62).
+                         // JS-side setting read (both teach writers + the extraction payload);
+                         // no env bridge needed.
+                         ['teach-label-keyword-toggle', 'teach_label_becomes_keyword'],
+                         // LIST field type: collect every occurrence of the field's label
+                         // (serial numbers). Bridged to LIST_FIELD_SCAN in _reconcileEnv.
+                         ['list-field-scan-toggle', 'list_field_scan'],
+                         // Declared-absent fields stay EMPTY (engine drop + reprocess merge).
+                         ['hidden-field-drop-toggle', 'template_hidden_field_drop'],
+                         // Bridged 2026-08-10: both were built + measured on 08-09 and recorded as
+                         // "awaiting the owner's flip", but neither had a bridge, so there was
+                         // nothing to flip - env-only, and npm start injects no env.
+                         ['format-fail-yield-toggle', 'template_format_fail_yield'],
+                         ['customer-po-labels-toggle', 'customer_po_labels'],
+                         // A printed separator inside a reference code is not an OCR artefact -
+                         // 'PI/26/6000' was being committed as 'PI266000' (2026-08-10).
+                         ['code-separator-guard-toggle', 'code_separator_structure_guard'],
+                         // vat_no's shipped format is UK-only, so a non-UK supplier reads empty and
+                         // a correctly typed number is warned against (2026-08-10).
+                         ['vat-eu-formats-toggle', 'vat_eu_formats'],
+                         ['deskew-import-toggle', 'deskew_on_import'],
+                         // NOT an extraction switch and NOT bridged through _reconcileEnv: the
+                         // auto-file gate is JS-side, so database/modules/trust.js reads this key
+                         // itself, once per document. That also means it takes effect on the next
+                         // filing decision rather than needing an app restart.
+                         ['shadow-row-skip-toggle', 'trust_shadow_row_skip'],
+                         // Gate-unify (Oracle W/COND 2026-08-12 NIGHT): JS-side reads — trust.js
+                         // owns autofile_gate_unify (T1 import gate + T2 missing-required refusal
+                         // + T3 via stamps share trust._gateUnifyEnabled); documents.js + the
+                         // Review renderer own far_lowconf_valued_only. No _reconcileEnv leg.
+                         ['autofile-gate-unify-toggle', 'autofile_gate_unify'],
+                         ['far-valued-only-toggle', 'far_lowconf_valued_only'],
+                         // Stale shadow-row drop on reprocess (2026-08-12 NIGHT, the Pelican
+                         // re-poison exhibit): processing/handler.js reads the key at merge time.
+                         ['shadow-stale-drop-toggle', 'reprocess_shadow_stale_drop'],
+                         // A corroborated total is no longer capped when the only disagreeing
+                         // operands are invisible shadow reads (Oracle W/COND ×5, 2026-08-12).
+                         ['shadow-attrib-toggle', 'reconcile_shadow_attribution'],
+                         // '@'-decorated rate annotations skipped to the amount column (2026-08-12).
+                         ['vat-rate-at-toggle', 'vat_rate_at_skip'],
+                         // Self-discharging operator pins (Oracle W/COND, 2026-08-12).
+                         ['pin-discharge-toggle', 'supplier_pin_self_discharge'],
+                         // Confirmed-dominant adoption (Oracle B1-B5, 2026-08-12).
+                         ['confirmed-adopt-toggle', 'confirmed_dominant_adopt'],
+                         // Raw-crop witness (Oracle C1-C6, 2026-08-12) — C4: flip WITH the
+                         // separator guard, sep-guard AFTER; never the guard alone.
+                         ['raw-witness-flag-toggle',  'raw_crop_witness_flag'],
+                         ['raw-witness-adopt-toggle', 'raw_crop_witness_adopt'],
+                         // Graduation issuer freeze (Oracle W/COND, 2026-08-12; C6 narrowed).
+                         // FLIP CHECKLIST: record template_identity_on_page state — flipping this
+                         // with identity-on-page OFF re-opens the wrong-company class with
+                         // stronger stamps; flip them together.
+                         ['graduation-freeze-issuer-toggle', 'graduation_freeze_issuer'],
+                         // Filing-identity coherence (2026-08-14): the folder + learning scope key
+                         // are taken from a supplier value captured BEFORE Stage 4.5 can repair it,
+                         // so a healed name reaches the extraction row while the document files and
+                         // learns under the unrepaired string. Flip needs the corpus arm — every
+                         // moved document must move TOWARD the corroborated value, M=0.
+                         ['identity-scope-post-repair-toggle', 'identity_scope_post_repair'],
+                         // Identity-overwrite guard (2026-08-14, the Chris round-4 exhibit): a
+                         // teach could replace a frozen company identity backed by 38 confirms
+                         // with one draw-box OCR read. Read inside templates.js at the one upsert
+                         // every writer passes through; a genuinely different company still wins.
+                         ['identity-near-match-keep-toggle', 'teach_identity_near_match_keep'],
+                         // Hold the siblings (2026-08-13, owner decision 4): a teach that replaces a
+                         // frozen identity with a genuinely DIFFERENT company commits, but the
+                         // layout's other documents ask for one more confirmation before the new
+                         // name is used at full confidence. Read in BOTH places — templates.js marks
+                         // the template, and the Python stamp yields via TEMPLATE_IDENTITY_HOLD_SIBLINGS.
+                         ['identity-hold-siblings-toggle', 'template_identity_hold_siblings'],
+                         // Buyer-issued type scope (2026-08-13): a layout taught on a purchase
+                         // order the business ISSUED stops claiming inbound documents whose own
+                         // printed title says they are something else.
+                         ['buyer-issued-scope-toggle', 'template_buyer_issued_type_scope'],
+                         // Buyer-issued LETTERHEAD scope (2026-08-27, Chris round 6 card 1): the same
+                         // layout is recognised by TEXT only when the owner's name sits in the letterhead
+                         // band — never from the Bill-to block. Read by template_matcher (bridged) AND by
+                         // templates.findByKeywordFingerprint (the quiet lane's selector) directly.
+                         ['buyer-issued-letterhead-toggle', 'template_buyer_issued_letterhead_scope'],
+                         // Name lexicon from a low-distinct scope (B5, 2026-08-13): the shipped
+                         // name repair never saw the scopes with ONE dominant confirmed name.
+                         // Suggest-and-review only — it can never silently rewrite a company name.
+                         ['name-lex-low-distinct-toggle', 'name_lexicon_low_distinct'],
+                         // Issuer near-match confirm gate (2026-08-14, Chris round 6): a typed OR drawn
+                         // company name one/two chars off one you already use is held for a Use/Keep
+                         // choice before filing. JS-side — reviewService.confirm reads the key. Seeded
+                         // ON by migration 68 so the toggle renders truthfully.
+                         ['issuer-near-match-confirm-toggle', 'issuer_near_match_confirm_guard'],
+                         // Graduation-licensed fuzzy geometry shed (2026-08-14, the owner's Silverbeck
+                         // class): drop the "please confirm" note on a heavily-graduated layout when the
+                         // garbled letterhead still fuzzily names the graduated issuer. DEFAULT OFF —
+                         // needs the corpus arm + Oracle flip conditions before it goes on.
+                         ['identity-geom-fuzzy-toggle', 'template_identity_geom_fuzzy_graduate'],
+                         // ── Corroboration-driven auto-file resolution (2026-08-15 held-queue arc, mig 69) ──
+                         // Each lets the DB's own recorded corroboration resolve a note/floor that today
+                         // holds a document whose value is already known-good. ALL DEFAULT OFF; Oracle
+                         // owes a per-predicate ratification (B/D/E/G) before any defaults to ON.
+                         // G (gate, JS): a licensed ref/date read clears the 88 critical-field floor when
+                         // it matches the scope's dominant learned shape. Nested under corroboration_autofile.
+                         ['critfield-corrob-relax-toggle', 'critfield_corrob_floor_relax'],
+                         // B (gate, JS): a corrected_to equal to the committed value no longer flags.
+                         ['vacuous-corrected-ignore-toggle', 'vacuous_corrected_to_ignore'],
+                         // B (extraction): drop the 1/I rawwitness note when the ref already matches the
+                         // scope's ≥90%-dominant learned prefix (the note was holding a correct value).
+                         ['ref-dominant-format-demote-toggle', 'ref_dominant_format_note_demote'],
+                         // A (extraction): shed "Company inferred… please confirm" from the persisted
+                         // corroboration (geometry-free) on a graduated single-issuer layout.
+                         ['identity-corrob-shed-toggle', 'template_identity_corrob_note_shed'],
+                         // C (extraction): drop a doubly-corroborated total's shadow-attribution note on a
+                         // penny-exact VAT re-verify — never changes the total value.
+                         ['shadow-attrib-demote-toggle', 'recon_shadow_attrib_note_demote'],
+                         // D (extraction): snap-and-adopt a symbol-misread of a single-canonical confirmed
+                         // constant (ACC-229] → ACC-2291) when an independent hint family corroborates.
+                         ['snap-confusable-adopt-toggle', 'snap_confusable_clean_autofile'],
+                         // E (extraction): ADOPT a Stage-4.5 name suggestion (non-identity fields only) when
+                         // it equals the scope's dominant confirmed literal AND the page's own keyword read.
+                         ['name-corrob-adopt-toggle', 'name_corrob_suggestion_adopt'],
+                         // The linchpin: after a note is cleared/demoted, recompute the format-consistency
+                         // penalty so the document's confidence actually rises (else the demote is cosmetic).
+                         ['corrob-recompute-fc-toggle', 'corrob_note_recompute_fc'],
+                         // P (extraction, 2026-08-16): adopt the scope's ≥90%-dominant ref PREFIX over a
+                         // single-confusable read head (P1/→PI/) — page witness required, both-forms refusal.
+                         ['ref-prefix-confusable-adopt-toggle', 'ref_prefix_confusable_adopt'],
+                         // Vacuous raw-witness suppression (2026-08-16): when the repair lands ON the wider
+                         // reading, stop asking the operator to compare a value with itself.
+                         ['raw-witness-vacuous-suppress-toggle', 'raw_witness_vacuous_suppress'],
+                         // Round-7 card-1/card-3 switches (2026-08-16, mig 72, all OFF): Gate-C page-match
+                         // v2 · vat-reg '$'-mid-run fold · money sign capture at the mint.
+                         ['filing-sanity-page-match-v2-toggle', 'filing_sanity_page_match_v2'],
+                         ['vat-reg-symbol-confusable-toggle', 'vat_reg_symbol_confusable'],
+                         ['money-sign-capture-toggle', 'money_sign_capture'],
+                         // The human-licensed class correction (2026-08-19, mig 74): one corrected
+                         // reference propagates its exact substitution to the sender's queued siblings.
+                         ['ref-class-fix-toggle', 'ref_class_fix_enabled'],
+                         // Lever E (2026-08-20, Oracle SIGN-OFF-W/COND): whitespace-normalise the
+                         // Stage-2.5a issuer-band presence test so a column-broken confirmed
+                         // letterhead ("Silverbeck    Cleaning    Supplies") still sheds the
+                         // "Company inferred… please confirm" note via the graduated confirmed value.
+                         // DEFAULT OFF — flip after the live counterfactual.
+                         ['hint-band-ws-normalize-toggle', 'hint_band_ws_normalize'],
+                         // Lever D (2026-08-20, gary → Oracle SIGN-OFF-W/COND): shed the "Company
+                         // inferred" note when a wide letter-spaced letterhead prints the confirmed
+                         // issuer as a column-broken name the strict geometry pick can't reassemble.
+                         // DEFAULT OFF — default-ON flip needs a recipient-collision fixture (Oracle).
+                         ['identity-geom-fragment-toggle', 'template_identity_geom_fragment_shed'],
+                         // The "teach 1 → import N → it files itself" arc (2026-08-21, mig 79, ALL OFF):
+                         // the post-confirm sweep bar · Slice 1 scope-local auto-accept · Slice 0
+                         // letterhead fragment abstain · Slice 3 quiet background re-read.
+                         ['scope-sweep-toggle', 'scope_sweep_enabled'],
+                         ['scope-sweep-auto-accept-toggle', 'scope_sweep_auto_accept'],
+                         ['letterhead-fragment-abstain-toggle', 'letterhead_fragment_abstain'],
+                         ['quiet-reread-toggle', 'quiet_reread_enabled'],
+                         ['role-dominant-class-toggle', 'role_field_dominant_class'],
+                         // The two-line wordmark slice (2026-08-22, mig 82, ON).
+                         ['letterhead-stack-abstain-toggle', 'letterhead_stack_abstain'],
+                         ['letterhead-depth-guard-toggle', 'letterhead_depth_guard'],
+                         ['fixed-seed-fragment-keep-toggle', 'template_fixed_seed_fragment_keep'],
+                         ['quiet-reread-kw-select-toggle', 'quiet_reread_kw_select'],
+                         ['quiet-reread-on-ready-toggle', 'quiet_reread_on_ready'],
+                         // Q2 one-sample seed support prune (2026-08-22, DARK).
+                         ['fingerprint-seed-support-toggle', 'fingerprint_seed_support_prune'],
+                         // Q3 layout-write re-read (2026-08-22, DARK).
+                         ['quiet-reread-on-layout-toggle', 'quiet_reread_on_layout'],
+                         // Owner card 1 (2026-08-23): the READY arm over template-carrying siblings (DARK).
+                         ['quiet-reread-on-ready-templated-toggle', 'quiet_reread_on_ready_templated'],
+                         // Chris r18 A1 (2026-08-23): the first-fill reliability hold (DARK).
+                         ['quiet-reread-ff-reliability-toggle', 'quiet_reread_first_fill_reliability_hold'],
+                         // Chris r19 (d) (2026-08-23): the role-field disagreement refusal (DARK).
+                         ['trust-role-disagreement-toggle', 'trust_role_disagreement_refuse'],
+                         // Chris r19 N1 (2026-08-23): Reprocess writes the lane's holds (DARK).
+                         ['reprocess-holds-toggle', 'reprocess_holds_as_lane'],
+                         // The garbled-issuer arc (2026-08-22 evening, DARK).
+                         ['fixed-seed-fragment-garble-toggle', 'template_fixed_seed_fragment_garble'],
+                         ['fixed-seed-debris-wide-toggle', 'template_fixed_debris_wide'],
+                         ['identity-suggest-canonical-toggle', 'identity_suggest_canonical'],
+                         ['review-group-by-letterhead-toggle', 'review_group_by_letterhead'],
+                         // The type-split arc (2026-08-22 night, DARK).
+                         ['type-ambiguity-waiver-toggle', 'type_ambiguity_unsupported_waiver'],
+                         ['type-ambiguity-ripple-toggle', 'type_ambiguity_ripple'],
+                         // The Review activity strip (2026-08-22 night, DARK).
+                         ['review-activity-strip-toggle', 'review_activity_strip'],
+                         // Put-back re-file via File All Ready (2026-08-23, DARK).
+                         ['putback-refile-toggle', 'putback_refile_on_file_all'],
+                         // Detail-veto single-supplier immunity (2026-08-23, DARK) — RESTART to load (Python env bridge).
+                         ['logo-detail-immune-toggle', 'logo_detail_veto_single_supplier_immune']]) {
+  (async () => {
+    try {
+      const v = await api.getSetting(key);
+      document.getElementById(id).checked = (v === 'true');   // unset → off
+    } catch { document.getElementById(id).checked = false; }
+  })();
+  document.getElementById(id).addEventListener('change', async (e) => {
+    await api.setSetting(key, e.target.checked ? 'true' : 'false');
+  });
+}
+
+// ── Fix families where ONE owner-facing switch drives TWO stored settings. Each pair is
+// always flipped together (the second is meaningless alone), so the UI shows one row and
+// writes both keys. Read state from the FIRST key; both default OFF.
+//  • curated sender name  — template_fixed_near_match (same name, misread) +
+//    template_fixed_fragment (debris too short to be a company name). Both decline a bad
+//    letterhead read in favour of the template's saved value.
+//  • pad-window code read — template_pad_window_code (label-less taught boxes) +
+//    template_pad_window_code_labelled (labelled ones; a STRICT SUBSET that the bridge
+//    ignores unless the parent is also on).
+//  • VAT registration vs VAT amount — vat_reg_not_amount + net_misread_total_flag. Paired because
+//    removing the phantom tax also disarms the "total looks like the subtotal" note (that arm needs
+//    a tax to be present), so a net-as-gross total would lose a TRUE flag. Measured over 288 docs:
+//    false alarms 39 -> 0; true flags 16 -> 12 alone, 15 when paired, with zero false flags added.
+for (const [id, keys] of [['template-fixed-supplier-toggle', ['template_fixed_near_match', 'template_fixed_fragment']],
+                          ['pad-window-code-toggle', ['template_pad_window_code', 'template_pad_window_code_labelled']],
+                          ['vat-reg-toggle', ['vat_reg_not_amount', 'net_misread_total_flag']]]) {
+  (async () => {
+    try {
+      const v = await api.getSetting(keys[0]);
+      document.getElementById(id).checked = (v === 'true');   // unset → off
+    } catch { document.getElementById(id).checked = false; }
+  })();
+  document.getElementById(id).addEventListener('change', async (e) => {
+    const val = e.target.checked ? 'true' : 'false';
+    for (const k of keys) await api.setSetting(k, val);
+  });
+}
+
+// ── ADVANCED READING SWITCHES gate (owner decision 2026-08-11) ───────────────────────────────
+// The Processing tab grew ~50 kill-switch/experimental toggles a customer should never meet
+// (Chris, both rounds: "58 switches, 46 ON"). They hide behind ONE persisted SFDEV unlock
+// (`dev_switches_unlocked`; password checked in MAIN — dev-switches-unlock IPC). Hiding changes
+// NO flag values — the rows still exist and the wiring pins still see them; only visibility
+// moves. The visible set = genuine customer choices (auto-file, thresholds, straighten,
+// watch/rotate/multiline, printing/slips, generic/title, name checks, telemetry/diag) plus the
+// three switches the owner is actively evaluating (teach-label-keyword, list-field-scan,
+// hidden-field-drop) — migrate those behind the gate once settled.
+const DEV_SWITCH_IDS = [
+  'right-grow-toggle', 'left-clamp-toggle', 'prefix-garble-toggle', 'crosscheck-reconcile-toggle',
+  'universal-verify-toggle', 'edge-clean-toggle', 'word-snap-toggle', 'struct-code-read-toggle',
+  'warm-ocr-toggle', 'parallel-reprocess-toggle',
+  'template-fixed-supplier-toggle', 'pad-window-code-toggle', 'vat-reg-toggle',
+  'frag-clean-toggle', 'clip-commit-toggle', 'edge-guard-toggle', 'date-clip-toggle',
+  'label-digit-toggle', 'angle-compose-toggle', 'edge-cut-relocate-toggle', 'clip-slack-toggle',
+  'date-invalid-yield-toggle', 'date-future-yield-toggle', 'pad-window-read-toggle',
+  'heading-absent-reread-toggle', 'credit-sign-toggle', 'inline-row-overlap-toggle',
+  'ref-role-digit-toggle', 'inline-offset-veto-toggle', 'drift-row-pitch-toggle',
+  'currency-edge-grow-toggle', 'name-edge-grow-toggle', 'angle-compose-scan-toggle',
+  'fixed-issuer-repair-toggle',
+  'reg-arbiter-anchor-evidence-toggle', 'issuer-region-presence-toggle',
+  'fixed-seed-agreement-toggle', 'stage05-ref-code-toggle', 'generic-caption-exclusive-toggle',
+  'type-title-owner-toggle', 'filing-sanity-flags-toggle', 'letterhead-issuer-toggle',
+  'identity-on-page-toggle', 'format-fail-yield-toggle', 'customer-po-labels-toggle',
+  'code-separator-guard-toggle', 'vat-eu-formats-toggle', 'shadow-row-skip-toggle',
+  'shadow-attrib-toggle', 'vat-rate-at-toggle', 'pin-discharge-toggle',
+  'graduation-freeze-issuer-toggle', 'confirmed-adopt-toggle',
+  'raw-witness-flag-toggle', 'raw-witness-adopt-toggle',
+  // Corroboration-driven auto-file resolution (2026-08-15 arc) — technical reading internals, hidden
+  // from customers per the owner's decision; they ship ON (migration 70) and work silently.
+  'critfield-corrob-relax-toggle', 'vacuous-corrected-ignore-toggle', 'ref-dominant-format-demote-toggle',
+  'identity-corrob-shed-toggle', 'shadow-attrib-demote-toggle', 'snap-confusable-adopt-toggle',
+  'name-corrob-adopt-toggle', 'corrob-recompute-fc-toggle',
+  // 2026-08-16 additions (Oracle S-O-W/C): the P prefix-adopt lane + the vacuous-witness suppression.
+  'ref-prefix-confusable-adopt-toggle', 'raw-witness-vacuous-suppress-toggle',
+  // Round-7 card-1/card-3 switches (mig 72, all OFF).
+  'filing-sanity-page-match-v2-toggle', 'vat-reg-symbol-confusable-toggle', 'money-sign-capture-toggle',
+  // The class correction (mig 74, OFF) — dev-gated until the confirm-path harness has run.
+  'ref-class-fix-toggle',
+  // Lever E (2026-08-20, OFF) — reading internal: whitespace-normalise the 2.5a issuer-band test.
+  'hint-band-ws-normalize-toggle',
+  // Lever D (2026-08-20, OFF) — reading internal: shed the inferred-company note on a column-broken letterhead.
+  'identity-geom-fragment-toggle',
+  // The teach→file arc (2026-08-21, mig 79, OFF) — dev-gated until the owner decides what surfaces.
+  'scope-sweep-toggle', 'scope-sweep-auto-accept-toggle', 'letterhead-fragment-abstain-toggle', 'quiet-reread-toggle',
+  'role-dominant-class-toggle',
+  'letterhead-stack-abstain-toggle', 'letterhead-depth-guard-toggle', 'fixed-seed-fragment-keep-toggle',
+  'quiet-reread-kw-select-toggle', 'quiet-reread-on-ready-toggle', 'fingerprint-seed-support-toggle', 'quiet-reread-on-layout-toggle',
+  'fixed-seed-fragment-garble-toggle', 'fixed-seed-debris-wide-toggle', 'identity-suggest-canonical-toggle', 'review-group-by-letterhead-toggle',
+  'type-ambiguity-waiver-toggle', 'type-ambiguity-ripple-toggle', 'review-activity-strip-toggle',
+];
+function _applyDevSwitchVisibility(unlocked, revealGate){
+  for (const id of DEV_SWITCH_IDS){
+    const row = document.getElementById(id)?.closest('.threshold-row');
+    if (row) row.classList.add('dev-switch');
+  }
+  const panel = document.getElementById('panel-processing');
+  if (panel) panel.classList.toggle('dev-unlocked', !!unlocked);
+  const lockRow = document.getElementById('dev-switches-lock-row');
+  const openRow = document.getElementById('dev-switches-open-row');
+  if (lockRow) lockRow.style.display = unlocked ? 'none' : '';
+  if (openRow) openRow.style.display = unlocked ? '' : 'none';
+  // The GATE ITSELF is invisible unless unlocked or explicitly summoned by the dev combo
+  // (owner: a visible locked door "leads to curiosity"). Customers see nothing at all.
+  const group = document.getElementById('dev-switches-group');
+  if (group) group.style.display = (unlocked || revealGate) ? '' : 'none';
+}
+(async () => {
+  let unlocked = false;
+  try { unlocked = (await api.getSetting('dev_switches_unlocked')) === 'true'; } catch {}
+  _applyDevSwitchVisibility(unlocked);
+})();
+document.getElementById('dev-switches-show')?.addEventListener('click', async () => {
+  const inp = document.getElementById('dev-switches-pw');
+  const msg = document.getElementById('dev-switches-msg');
+  let r = null;
+  try { r = await api.devSwitchesUnlock((inp?.value || '').trim()); } catch {}
+  if (r && r.ok){ if (inp) inp.value = ''; if (msg) msg.textContent = ''; _applyDevSwitchVisibility(true); }
+  else if (msg) msg.textContent = 'That password isn’t right.';
+});
+document.getElementById('dev-switches-hide')?.addEventListener('click', async () => {
+  try { await api.setSetting('dev_switches_unlocked', 'false'); } catch {}
+  _applyDevSwitchVisibility(false);
+});
+// The familiar dev combo (Ctrl+Shift+D then M — the main window's inspector / Review's trace
+// console) is the ONLY way to summon the gate (owner, 2026-08-11): it reveals the hidden
+// group on the Processing tab and puts the caret in the password box — or scrolls to the hide
+// row when already unlocked. Same 3-second two-key window as the other surfaces.
+let _devComboArmed = 0;
+window.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.shiftKey && String(e.key).toLowerCase() === 'd') { _devComboArmed = Date.now(); return; }
+  if (String(e.key).toLowerCase() === 'm' && _devComboArmed && Date.now() - _devComboArmed < 3000) {
+    _devComboArmed = 0;
+    document.querySelector('.tab[data-tab="processing"]')?.click();
+    const lockRow = document.getElementById('dev-switches-lock-row');
+    const unlocked = !lockRow || lockRow.style.display === 'none';
+    if (unlocked) {
+      document.getElementById('dev-switches-open-row')?.scrollIntoView({ block: 'center' });
+      return;
+    }
+    _applyDevSwitchVisibility(false, /*revealGate*/true);
+    lockRow.scrollIntoView({ block: 'center' });
+    const pw = document.getElementById('dev-switches-pw');
+    if (pw) {
+      if (typeof focusField === 'function') focusField(pw);
+      else try { pw.focus(); } catch {}
+    }
+  }
+});
+
+// ── Read small reference/date print more clearly (STRUCT_CODE_READ, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('struct_code_read');
+    document.getElementById('struct-code-read-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('struct-code-read-toggle').checked = false; }
+})();
+document.getElementById('struct-code-read-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('struct_code_read', e.target.checked ? 'true' : 'false');
+});
+
+// ── Faster field reads via a warm OCR helper pool (default ON) ─────────────────
+(async () => {
+  try {
+    const v = await api.getSetting('ocr_warm_worker_enabled');
+    document.getElementById('warm-ocr-toggle').checked = (v !== 'false');   // unset → on
+  } catch { document.getElementById('warm-ocr-toggle').checked = true; }
+})();
+document.getElementById('warm-ocr-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('ocr_warm_worker_enabled', e.target.checked ? 'true' : 'false');
+});
+
+// ── Faster single-document reprocessing via multiple CPU cores (Option B/C; default OFF) ──────
+(async () => {
+  try {
+    const v = await api.getSetting('ocr_parallel_reprocess_enabled');
+    document.getElementById('parallel-reprocess-toggle').checked = (v === 'true');   // unset → off
+  } catch { document.getElementById('parallel-reprocess-toggle').checked = false; }
+})();
+document.getElementById('parallel-reprocess-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('ocr_parallel_reprocess_enabled', e.target.checked ? 'true' : 'false');
+});
+
 // ── Home dashboard cards (show/hide) ───────────────────────────────────────────
 // A toggle per Home card. Checked = shown, unchecked = hidden. Stored as a JSON list of HIDDEN
 // card ids in `dashboard_hidden_cards`; the main window applies it live (dashboard-cards-changed).
@@ -349,6 +1149,7 @@ const DASH_CARD_SECTIONS = [
   ['Top', [
     ['dash-quickfind', 'Quick find'],
     ['dash-attention', 'Needs your attention'],
+    ['dash-workflow',  'Waiting on you (approvals)'],
     ['dash-pulse',     'Documents filed'],
     ['dash-autofile',  'Filed automatically'],
     ['dash-learning',  'Getting smarter'],
@@ -445,6 +1246,23 @@ if (fileTimeoutSelect) {
   });
 }
 
+// ── Scan reading detail (OCR render resolution) ───────────────────────────────
+// Lower DPI = faster OCR + far better parallel scaling, traded against small-text accuracy.
+// Default 300 (byte-identical to the old hardcoded render). Snaps a stored/legacy value to an
+// offered option; the backend independently coerces anything out of [100,600] back to 300.
+const ocrDpiSelect = document.getElementById('ocr-dpi-select');
+if (ocrDpiSelect) {
+  (async () => {
+    let n = parseInt(await api.getSetting('ocr_dpi'), 10);
+    if (!Number.isFinite(n)) n = 300;                                   // unset → default 300
+    if (!['150', '200', '300'].includes(String(n))) n = 300;           // snap to an offered option
+    ocrDpiSelect.value = String(n);
+  })();
+  ocrDpiSelect.addEventListener('change', async () => {
+    await api.setSetting('ocr_dpi', ocrDpiSelect.value);
+  });
+}
+
 
 // ── Date format (region) — how an ambiguous numeric date is read ──────────────
 const dateOrderSelect = document.getElementById('date-order-select');
@@ -486,6 +1304,108 @@ loadAutoSeparate();
 if (autoSeparateToggle) autoSeparateToggle.addEventListener('change', async () => {
   try { await api.setSetting('auto_separate_enabled', autoSeparateToggle.checked ? 'true' : 'false'); }
   catch { /* non-fatal; reloads on next open */ }
+});
+
+// ── Filing Slips ("Separator sheets") ──────────────────────────────────────────
+// Default OFF (backend reads 'filing_slips_enabled' with a 'false' default). The
+// detection gate is INDEPENDENT of the auto-separation toggle above (Oracle C2,
+// docs/designs/FILING_SLIPS_2026-07-18.md). C3: while a watch folder is configured,
+// a persistent warning explains sheets are detected on manual Import only.
+const slipsToggle = document.getElementById('filing-slips-toggle');
+const slipsWatchWarn = document.getElementById('filing-slips-watch-warn');
+const slipsCountInput = document.getElementById('filing-slips-count');
+const slipsPrintBtn = document.getElementById('filing-slips-print');
+const slipsResult = document.getElementById('filing-slips-result');
+async function slipsWatchConfigured() {
+  try {
+    return (await api.getSetting('watch_folder_enabled')) === '1'
+      && !!(await api.getSetting('watch_folder'));
+  } catch { return false; }
+}
+async function refreshSlipsWatchWarn() {
+  if (!slipsWatchWarn) return;
+  slipsWatchWarn.style.display = (slipsToggle?.checked && await slipsWatchConfigured()) ? '' : 'none';
+}
+async function loadFilingSlips() {
+  if (!slipsToggle) return;
+  slipsToggle.checked = (await api.getSetting('filing_slips_enabled')) === 'true';
+  refreshSlipsWatchWarn();
+}
+loadFilingSlips();
+if (slipsToggle) slipsToggle.addEventListener('change', async () => {
+  try { await api.setSetting('filing_slips_enabled', slipsToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+  refreshSlipsWatchWarn();
+});
+// ── Document printing (Print-Slice 1) ──────────────────────────────────────────
+// Default OFF (backend reads 'printing_enabled' with a 'false' default). Adds the
+// Review Print button + the driver-dialog print IPC when on.
+const printingToggle = document.getElementById('printing-toggle');
+async function loadPrinting() {
+  if (!printingToggle) return;
+  try { printingToggle.checked = (await api.getSetting('printing_enabled')) === 'true'; } catch {}
+}
+loadPrinting();
+if (printingToggle) printingToggle.addEventListener('change', async () => {
+  try { await api.setSetting('printing_enabled', printingToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
+// ── Generic Document fallback + Auto-Title (docs/designs/GENERIC_DOCTYPE_2026-07-18.md) ──
+// Defaults OFF (backend reads 'generic_fallback_enabled' / 'auto_title_enabled' with
+// 'false' defaults). Enabling the fallback AUTO-CREATES the "General Document" preset
+// first (transactional + idempotent via the existing add-doctype-presets IPC — owner Q5)
+// so the insert-seam mapping always has a type to land on.
+const genericToggle = document.getElementById('generic-fallback-toggle');
+const autoTitleToggle = document.getElementById('auto-title-toggle');
+async function loadGenericFallback() {
+  try {
+    if (genericToggle) genericToggle.checked = (await api.getSetting('generic_fallback_enabled')) === 'true';
+    if (autoTitleToggle) autoTitleToggle.checked = (await api.getSetting('auto_title_enabled')) === 'true';
+  } catch { /* defaults stay unchecked */ }
+}
+loadGenericFallback();
+if (genericToggle) genericToggle.addEventListener('change', async () => {
+  try {
+    if (genericToggle.checked) { try { await api.addDoctypePresets(['general_document']); } catch { /* already present */ } }
+    await api.setSetting('generic_fallback_enabled', genericToggle.checked ? 'true' : 'false');
+  } catch { /* non-fatal; reloads on next open */ }
+});
+if (autoTitleToggle) autoTitleToggle.addEventListener('change', async () => {
+  try { await api.setSetting('auto_title_enabled', autoTitleToggle.checked ? 'true' : 'false'); }
+  catch { /* non-fatal; reloads on next open */ }
+});
+
+if (slipsPrintBtn) slipsPrintBtn.addEventListener('click', async () => {
+  slipsPrintBtn.disabled = true;
+  if (slipsResult) { slipsResult.style.display = ''; slipsResult.textContent = 'Creating separator sheets…'; }
+  try {
+    const res = await api.generateFilingSlips(parseInt(slipsCountInput?.value, 10));
+    if (res && res.success && slipsResult) {
+      const pad = (n) => String(n).padStart(4, '0');
+      slipsResult.textContent = '';
+      slipsResult.append(`Created sheets ${pad(res.first)}–${pad(res.last)}. `);
+      const openBtn = document.createElement('button');
+      openBtn.className = 'btn'; openBtn.textContent = 'Open to print';
+      openBtn.style.marginRight = '6px';
+      openBtn.addEventListener('click', () => api.openFile(res.path));
+      const showBtn = document.createElement('button');
+      showBtn.className = 'btn'; showBtn.textContent = 'Show in folder';
+      showBtn.addEventListener('click', () => api.showInExplorer(res.path));
+      slipsResult.append(openBtn, showBtn);
+      if (await slipsWatchConfigured()) {
+        const w = document.createElement('div');
+        w.style.color = 'var(--warn)';
+        w.textContent = 'Note: sheets are detected on manual Import only — not yet in the auto-import folder.';
+        slipsResult.append(w);
+      }
+    } else if (slipsResult) {
+      slipsResult.textContent = `Could not create sheets: ${(res && res.error) || 'unknown error'}`;
+    }
+  } catch (e) {
+    if (slipsResult) slipsResult.textContent = `Could not create sheets: ${e.message}`;
+  }
+  slipsPrintBtn.disabled = false;
 });
 
 // ── Name wordness review flag (flag odd supplier/customer names) ───────────────
@@ -554,6 +1474,56 @@ async function loadOutputStructure() {
   updateOutputPreview();
 }
 loadOutputStructure();
+
+// ── Duplicate-file label (Settings → Files & filing) ─────────────────────────
+// Stored setting `duplicate_suffix`: DUPLICATE (default) | COPY | number | date | any custom word.
+// Default is byte-identical to the legacy "-DUPLICATE". Server-authoritative preview (no drift).
+const dupSelect  = document.getElementById('dup-suffix-select');
+const dupCustom  = document.getElementById('dup-suffix-custom');
+const dupPreview = document.getElementById('dup-preview');
+const DUP_KNOWN  = new Set(['DUPLICATE', 'COPY', 'NUMBER', 'DATE']);
+let _dupDebounce = null;
+
+function _dupEffectiveValue() {
+  if (!dupSelect) return 'DUPLICATE';
+  if (dupSelect.value === '__custom') return (dupCustom.value || '').trim();
+  return dupSelect.value;
+}
+async function refreshDupPreview() {
+  if (!dupPreview) return;
+  try {
+    const r = await api.previewDuplicateName(_dupEffectiveValue() || 'DUPLICATE');
+    dupPreview.textContent = (r && r.example) ? r.example : '…';
+  } catch { dupPreview.textContent = '…'; }
+}
+async function saveDupSuffix() {
+  // A blank custom box falls back to the default so filing never receives an empty label.
+  try { await api.setSetting('duplicate_suffix', _dupEffectiveValue() || 'DUPLICATE'); } catch { /* noop */ }
+  refreshDupPreview();
+}
+async function loadDupSuffix() {
+  if (!dupSelect) return;
+  const stored = String((await api.getSetting('duplicate_suffix')) || 'DUPLICATE').trim();
+  const up = stored.toUpperCase();
+  if (DUP_KNOWN.has(up)) {
+    dupSelect.value = (up === 'NUMBER' || up === 'DATE') ? up.toLowerCase() : up;
+    dupCustom.style.display = 'none';
+  } else {
+    dupSelect.value = '__custom';
+    dupCustom.value = stored;
+    dupCustom.style.display = '';
+  }
+  refreshDupPreview();
+}
+if (dupSelect) {
+  dupSelect.addEventListener('change', () => {
+    const custom = dupSelect.value === '__custom';
+    dupCustom.style.display = custom ? '' : 'none';
+    if (custom) { dupCustom.focus(); refreshDupPreview(); } else saveDupSuffix();
+  });
+  dupCustom.addEventListener('input', () => { clearTimeout(_dupDebounce); _dupDebounce = setTimeout(saveDupSuffix, 400); });
+  loadDupSuffix();
+}
 
 function renderOutputTokenList(listId, tokens, editor) {
   const list = document.getElementById(listId);
@@ -635,6 +1605,11 @@ thresholdSlider.addEventListener('change', async () => {
 let allTypesWithFields = [];
 
 async function loadDocTypes() {
+  // LIST field type gate: the shared editor offers 'List (several values)' only while
+  // list_field_scan is armed (an existing list-typed field always keeps its option).
+  try { window.__listFieldTypeOn = (await api.getSetting('list_field_scan')) === 'true'; } catch {}
+  // BARCODE field type gate (2026-08-26): 'Barcode / QR code' is offered only while barcode_field is armed.
+  try { window.__barcodeFieldOn = (await api.getSetting('barcode_field')) === 'true'; } catch {}
   allTypesWithFields = await api.getAllDocTypesAll();
   renderDocTypesList();
 }
@@ -654,8 +1629,11 @@ function renderDocTypesList() {
     row.className = 'doctype-row'
       + (dt.enabled ? '' : ' disabled')
       + (dt.id === selectedDocTypeId ? ' active' : '');
+    row.dataset.tid = dt.id;
+    row.draggable = true;
     const fieldCount = (dt.fields || []).length;
     row.innerHTML = `
+      <span class="doctype-handle" title="Drag to reorder this type" aria-hidden="true">&#10303;</span>
       <div class="doctype-name">
         <span class="doctype-nametext" title="${escHtml(dt.name)}">${escHtml(dt.name)}</span>
         <span class="${dt.built_in ? 'badge-builtin' : 'badge-custom'}">${dt.built_in ? 'built-in' : 'custom'}</span>
@@ -664,6 +1642,77 @@ function renderDocTypesList() {
     `;
     row.addEventListener('click', () => selectDocType(dt.id));
     list.appendChild(row);
+  }
+  wireDocTypeListReorder(list);
+}
+
+// ── Drag-to-reorder the doc-type LIST (owner-requested; mirrors the field-row pattern) ──
+// Handle-armed native DnD, exactly the d91da4b gesture: the row is draggable but a drag
+// only STARTS from the ⠿ handle, so plain clicks still select. Live feedback moves the
+// SAME node via insertBefore; the drop commits ONCE via the SHARED
+// DocTypeEditor.planReorder math (gap-of-10 sort_order, minimal writes). Container
+// listeners are attached once (the container survives re-renders; rows don't).
+function wireDocTypeListReorder(list) {
+  if (list.dataset.dndWired) return;
+  list.dataset.dndWired = '1';
+  let pressedHandle = false;
+  let dragRow = null;
+  const rowAfter = (y) => {
+    const rows = Array.prototype.slice.call(list.querySelectorAll('.doctype-row')).filter(r => r !== dragRow);
+    for (const r of rows) {
+      const box = r.getBoundingClientRect();
+      if (y < box.top + box.height / 2) return r;
+    }
+    return null;
+  };
+  list.addEventListener('pointerdown', (e) => { pressedHandle = !!e.target.closest('.doctype-handle'); });
+  list.addEventListener('pointerup',   () => { pressedHandle = false; });
+  list.addEventListener('dragstart', (e) => {
+    const row = e.target.closest('.doctype-row');
+    if (!row || !pressedHandle) { e.preventDefault(); return; }
+    dragRow = row;
+    row.classList.add('dragging');
+    try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', row.dataset.tid || ''); } catch (_) {}
+  });
+  list.addEventListener('dragend', () => {
+    pressedHandle = false;
+    if (dragRow) dragRow.classList.remove('dragging');
+    dragRow = null;
+  });
+  list.addEventListener('dragover', (e) => {
+    if (!dragRow) return;
+    e.preventDefault();
+    try { e.dataTransfer.dropEffect = 'move'; } catch (_) {}
+    const after = rowAfter(e.clientY);
+    if (after == null) { if (dragRow !== list.lastElementChild) list.appendChild(dragRow); }
+    else if (after !== dragRow && after !== dragRow.nextSibling) list.insertBefore(dragRow, after);
+  });
+  list.addEventListener('drop', (e) => {
+    if (!dragRow) return;
+    e.preventDefault();
+    dragRow.classList.remove('dragging');
+    dragRow = null; pressedHandle = false;
+    const ids = Array.prototype.slice.call(list.querySelectorAll('.doctype-row')).map(r => Number(r.dataset.tid));
+    commitDocTypeOrder(ids);
+  });
+}
+
+// Persist a new type-list order: renumber sort_order via the SHARED planReorder math and
+// write only the changed rows (updateType whitelists sort_order; every fetch already
+// ORDERs BY it, so Review/teach/search pickers follow this order automatically).
+// Re-render FIRST so no click can act on a stale row mid-await; any write failure
+// re-reads from the DB so the list snaps back to server truth.
+async function commitDocTypeOrder(idsInNewOrder) {
+  const byId = new Map(allTypesWithFields.map(t => [t.id, t]));
+  const reordered = idsInNewOrder.map(id => byId.get(id)).filter(Boolean);
+  if (reordered.length !== allTypesWithFields.length) { renderDocTypesList(); return; }   // DOM/state mismatch → repaint, don't persist
+  const prevSort = new Map(allTypesWithFields.map(t => [t.id, t.sort_order]));
+  const writes = window.DocTypeEditor.planReorder(reordered, prevSort);
+  allTypesWithFields = reordered;
+  renderDocTypesList();
+  for (const w of writes) {
+    try { await api.updateDocumentType(w.id, { sort_order: w.sort_order }); }
+    catch (e) { await refreshDocTypesList(); return; }
   }
 }
 
@@ -700,7 +1749,7 @@ function renderDocTypeDetail(type) {
         <span class="toggle-slider"></span>
       </label>
       <span id="dt-enable-lbl" class="field-label-small">${type.enabled ? 'Enabled' : 'Disabled'}</span>
-      <button class="btn" id="dt-fix-type" title="Reset what's been learned for this type if it's reading documents wrong" style="padding:4px 10px; font-size:12px;">Fix this type…</button>
+      <button class="btn" id="dt-fix-type" title="Opens Learning Repair for this type — see what it's learned and send a badly-read document back to Review. Nothing changes until you choose there." style="padding:4px 10px; font-size:12px;">Repair learning…</button>
       ${type.built_in ? '' : '<button class="btn-icon" id="dt-hide" title="Hide this type">&#215;</button>'}
     </div>
     <div id="dt-editor-host"></div>`;
@@ -781,35 +1830,31 @@ function openNewTypeForm() {
 document.getElementById('btn-add-type').addEventListener('click', openNewTypeForm);
 
 // ── Preset catalog: tick ready-made document types to add ─────────────────────
-// Lists the shipped presets (document_types.PRESET_CATALOG) and, on submit, creates
-// each ticked type + fields + structural roles AND seeds its likely field-label
-// aliases (so Stage-1 extraction works without teaching). Already-present types are
-// shown ticked + disabled. Mirrors the showSecretDialog/showTypedConfirmDialog overlay.
-const COMPANY_LABELS = { supplier_name: 'Document Issuer', customer_name: 'Document Issuer' };
+// The picker itself now lives in shared/doctype-catalog.js, because the Teach wizard needs the
+// SAME one: creating a type mid-teach offered less than creating one in Settings, which is the
+// gap the owner reported. Extracted rather than copied — a second copy drifts, and then the two
+// surfaces disagree in a way nobody notices until a customer says so.
+function openCatalogModal() {
+  return window.DocTypeCatalog.open({ api, onAdded: () => refreshDocTypesList() });
+}
 
-async function openCatalogModal() {
-  let catalog;
-  try { catalog = await api.getDoctypeCatalog(); }
-  catch (e) { alert('Could not load the catalog: ' + (e && e.message || e)); return; }
-  if (!Array.isArray(catalog) || !catalog.length) return;
+document.getElementById('btn-catalog').addEventListener('click', openCatalogModal);
 
-  const rows = catalog.map((p) => {
-    const fieldList = p.fields.map(f => escHtml(f.label)).join(', ');
-    const company = COMPANY_LABELS[p.company_key] || p.company_key;
-    const tag = p.already_present
-      ? '<span style="font-size:10px; color:var(--ok); border:1px solid var(--ok); border-radius:999px; padding:1px 7px;">Already added</span>'
-      : '';
-    return `
-      <label style="display:flex; gap:10px; align-items:flex-start; padding:8px 6px; border-radius:8px; cursor:pointer;">
-        <input type="checkbox" data-slug="${escHtml(p.slug)}" ${p.already_present ? 'checked disabled' : ''}
-               style="margin-top:3px;">
-        <div style="flex:1;">
-          <div style="font-size:12px; font-weight:500;">${escHtml(p.name)}
-            <span style="font-weight:400; color:var(--muted);">· company: ${escHtml(company)}</span> ${tag}</div>
-          <div style="font-size:11px; color:var(--muted); line-height:1.5;">${fieldList}</div>
-        </div>
-      </label>`;
-  }).join('');
+// ── "Field visibility" — per-layout field masking (migration 54). The GENERAL-PURPOSE home for the
+// hide/show control, moved OUT of the advanced Template Manager (owner, 2026-07-25): pick a learned
+// layout, then tick the fields it actually shows. Unticking hides a field a supplier's layout doesn't
+// print, so Review stops flagging it. Structural roles (Issuer/Date/Reference) are always shown +
+// locked. Each toggle persists immediately (set-template-hidden-field, unticked => hide=true). Nothing
+// is deleted; other layouts are unaffected. Mirrors openCatalogModal's overlay pattern.
+async function openFieldVisibilityModal() {
+  let tmpls;
+  try { tmpls = await api.getTemplates(); }
+  catch (e) { alert('Could not load layouts: ' + (e && e.message || e)); return; }
+  tmpls = Array.isArray(tmpls)
+    ? tmpls.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+    : [];
+  const opts = tmpls.map(t =>
+    `<option value="${t.id}">${escHtml(t.name)}${t.document_type_slug ? ' · ' + escHtml(t.document_type_slug) : ''}</option>`).join('');
 
   const overlay = document.createElement('div');
   overlay.style.cssText =
@@ -818,17 +1863,25 @@ async function openCatalogModal() {
     <div style="width:460px; max-height:80vh; background:var(--surface); border:1px solid var(--border2);
                 border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:12px;
                 font-family:var(--sans); color:var(--text);">
-      <div style="font-size:13px; font-weight:600;">Add document types from catalog</div>
+      <div style="font-size:13px; font-weight:600;">Field visibility</div>
       <div style="font-size:11px; color:var(--muted); line-height:1.6;">
-        Tick the document types your business uses. Each one is added with its fields and likely
-        labels, so extraction has a head start before you teach anything.</div>
-      <div id="cat-rows" style="overflow-y:auto; border:1px solid var(--border); border-radius:8px;
-           padding:4px; flex:1; min-height:120px;">${rows}</div>
-      <div style="display:flex; gap:8px;">
-        <button id="cat-cancel" style="flex:1; padding:9px; border-radius:6px; border:1px solid var(--border2);
-                background:transparent; color:var(--muted); font-family:inherit; font-size:12px; cursor:pointer;">Cancel</button>
-        <button id="cat-add" style="flex:1; padding:9px; border-radius:6px; border:none; background:var(--accent);
-                color:#fff; font-family:inherit; font-size:12px; font-weight:500; cursor:pointer;">Add selected</button>
+        Choose which fields each layout shows. Untick a field a sender's layout doesn't print — Review
+        will stop asking for it on those documents. The Document Issuer, Date and Reference are always
+        shown. Nothing is deleted, and other layouts are unaffected.</div>
+      ${tmpls.length
+        ? `<label style="font-size:11px; color:var(--muted);">Layout
+             <select id="fv-template" style="width:100%; margin-top:4px; padding:7px; border-radius:6px;
+                     border:1px solid var(--border2); background:var(--surface2); color:var(--text);
+                     font-family:inherit; font-size:12px;">${opts}</select>
+           </label>
+           <div id="fv-fields" style="overflow-y:auto; border:1px solid var(--border); border-radius:8px;
+                padding:4px; flex:1; min-height:120px;"></div>`
+        : `<div style="font-size:12px; color:var(--muted); padding:22px 6px; text-align:center; line-height:1.6;">
+             No layouts learned yet. A layout appears here once you've confirmed a few documents from a
+             sender, so Scan Finder knows what that sender's paperwork looks like.</div>`}
+      <div style="display:flex;">
+        <button id="fv-close" style="flex:1; padding:9px; border-radius:6px; border:1px solid var(--border2);
+                background:transparent; color:var(--muted); font-family:inherit; font-size:12px; cursor:pointer;">Done</button>
       </div>
     </div>`;
   overlay.setAttribute('data-help-ignore', '1');
@@ -838,27 +1891,54 @@ async function openCatalogModal() {
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
   overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
-  overlay.querySelector('#cat-cancel').addEventListener('click', close);
+  overlay.querySelector('#fv-close').addEventListener('click', close);
 
-  overlay.querySelector('#cat-add').addEventListener('click', async () => {
-    const slugs = Array.from(overlay.querySelectorAll('input[type=checkbox]:checked:not(:disabled)'))
-      .map(cb => cb.getAttribute('data-slug'));
-    if (!slugs.length) { close(); return; }
-    const btn = overlay.querySelector('#cat-add');
-    btn.disabled = true; btn.textContent = 'Adding…';
-    try {
-      const res = await api.addDoctypePresets(slugs);
-      close();
-      if (res && res.success) await refreshDocTypesList();
-      else alert('Could not add types: ' + ((res && res.error) || 'unknown error'));
-    } catch (e) {
-      close();
-      alert('Could not add types: ' + (e && e.message || e));
+  const sel  = overlay.querySelector('#fv-template');
+  const list = overlay.querySelector('#fv-fields');
+  if (!sel || !list) return;   // empty state — nothing to wire
+
+  async function renderFor(id) {
+    list.innerHTML = '<div style="font-size:11px; color:var(--muted); padding:12px;">Loading…</div>';
+    let detail;
+    try { detail = await api.getTemplateDetail(Number(id)); } catch { detail = null; }
+    const fields = (detail && detail.type_fields) || [];
+    if (!fields.length) {
+      list.innerHTML = '<div style="font-size:11px; color:var(--muted); padding:12px;">No fields on this layout.</div>';
+      return;
     }
-  });
+    list.innerHTML = '';
+    for (const f of fields) {
+      const row = document.createElement('label');
+      row.style.cssText = 'display:flex; gap:10px; align-items:center; padding:7px 8px; border-radius:8px; cursor:'
+        + (f.structural ? 'default' : 'pointer') + ';';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !f.hidden;            // TICKED = shown (allowed); unticked = hidden
+      cb.disabled = !!f.structural;
+      cb.title = f.structural
+        ? 'The Document Issuer / Date / Reference roles are always shown'
+        : 'Untick to hide this field on this layout';
+      if (!f.structural) cb.addEventListener('change', async () => {
+        cb.disabled = true;
+        try {
+          const r = await api.setTemplateHiddenField(Number(id), f.key, !cb.checked);   // unticked -> hide=true
+          if (!r || r.ok === false) cb.checked = !cb.checked;   // revert on refusal
+          else f.hidden = !cb.checked;
+        } catch { cb.checked = !cb.checked; }
+        cb.disabled = false;
+      });
+      const txt = document.createElement('span');
+      txt.style.cssText = 'font-size:12px;' + (f.structural ? ' color:var(--muted);' : '');
+      txt.textContent = (f.label || f.key) + (f.structural ? '  🔒' : '');
+      row.appendChild(cb);
+      row.appendChild(txt);
+      list.appendChild(row);
+    }
+  }
+  sel.addEventListener('change', () => renderFor(sel.value));
+  renderFor(sel.value);
 }
-
-document.getElementById('btn-catalog').addEventListener('click', openCatalogModal);
+document.getElementById('btn-field-visibility')?.addEventListener('click', openFieldVisibilityModal);
 
 // (FIELDS TAB removed — merged into the Document Types master-detail tab above.
 //  Field add/edit/delete now happens in the shared DocTypeEditor component via the
@@ -906,6 +1986,13 @@ async function loadUsers() {
 
   const result = await api.authListUsers();
   allUsers = (result && result.users) || [];
+  // Merge each user's stamp-permission state (Workflow+Stamping redesign) so the Users list can show a
+  // "Can stamp" toggle. Admin-only IPC; on failure the toggle simply shows off.
+  try {
+    const grants = await api.stamp.grants();
+    const m = new Map((grants || []).map(g => [g.id, !!g.canStamp]));
+    allUsers.forEach(u => { u.canStamp = m.get(u.id) || false; });
+  } catch { /* stamp permission unavailable — leave the toggle off */ }
   renderUsersList();
 }
 
@@ -941,6 +2028,11 @@ function renderUsersList() {
           ${roleOptions}
         </select>
         <button class="btn user-reset" data-id="${u.id}" style="font-size:11px; padding:5px 10px;">Reset password&hellip;</button>
+        <label class="toggle" title="Allow this person to place stamps and to approve / reject documents" style="margin-right:6px;">
+          <span style="font-size:11px;color:var(--muted);margin-right:4px;">Can stamp</span>
+          <input type="checkbox" class="user-stamp-toggle" data-id="${u.id}" ${u.canStamp ? 'checked' : ''}>
+          <span class="toggle-slider"></span>
+        </label>
         <label class="toggle" title="${isSelf ? 'You cannot disable your own account' : (u.is_active ? 'Disable account' : 'Enable account')}">
           <input type="checkbox" class="user-active-toggle" data-id="${u.id}" ${u.is_active ? 'checked' : ''} ${isSelf ? 'disabled' : ''}>
           <span class="toggle-slider"></span>
@@ -975,6 +2067,16 @@ function renderUsersList() {
       await loadUsers();
     });
 
+    // Can stamp — a distinct per-user permission (NOT role-derived). The server writes a SIGNED grant
+    // event on the audit chain; a failed grant reverts the toggle.
+    const stampToggle = row.querySelector('.user-stamp-toggle');
+    if (stampToggle) stampToggle.addEventListener('change', async () => {
+      const want = stampToggle.checked;
+      try { await api.stamp.grant(u.id, want); }
+      catch (e) { alert((e && e.message) || 'Could not change stamping permission.'); stampToggle.checked = !want; return; }
+      await loadUsers();
+    });
+
     // Reset password — generates a one-time temp password, shown once here
     // (mirrors the login window's "shown once" recovery-code screen).
     row.querySelector('.user-reset').addEventListener('click', async () => {
@@ -992,6 +2094,53 @@ function renderUsersList() {
 
     list.appendChild(row);
   }
+}
+
+// ── Document stamps catalog (Workflow+Stamping redesign 2026-08-28) ───────────
+const STAMP_COLORS = { green: '#2E7D32', red: '#C62828', amber: '#B07816', blue: '#1565C0', grey: '#546170' };
+let _newStampColor = null;
+async function loadStampCatalog() {
+  const list = document.getElementById('stamp-catalog-list');
+  if (!list) return;
+  let types = [];
+  try { types = await api.stamp.types(); } catch { types = []; }
+  list.innerHTML = types.length
+    ? types.map(t => `<span title="${t.built_in ? 'Built-in' : 'Custom'}" style="border:1.5px solid ${escHtml(t.color)};color:${escHtml(t.color)};border-radius:999px;padding:3px 11px;font-weight:700;font-size:11px;letter-spacing:.03em">${escHtml(t.label)}</span>`).join('')
+    : '<span class="section-desc">No stamps yet.</span>';
+}
+function _syncAddStamp() {
+  const w = document.getElementById('new-stamp-word'), b = document.getElementById('btn-add-stamp');
+  if (w && b) b.disabled = !(w.value.trim() && _newStampColor);
+}
+function initStampCatalog() {
+  const sw = document.getElementById('new-stamp-swatches');
+  if (sw && !sw.dataset.built) {
+    sw.dataset.built = '1';
+    sw.innerHTML = Object.entries(STAMP_COLORS).map(([k, v]) =>
+      `<span class="stamp-sw" data-c="${v}" title="${k}" style="width:22px;height:22px;border-radius:50%;background:${v};display:inline-block;cursor:pointer;border:2px solid transparent"></span>`).join('');
+    sw.querySelectorAll('.stamp-sw').forEach(el => el.addEventListener('click', () => {
+      sw.querySelectorAll('.stamp-sw').forEach(x => { x.style.borderColor = 'transparent'; });
+      el.style.borderColor = 'var(--text)'; _newStampColor = el.dataset.c; _syncAddStamp();
+    }));
+  }
+  const word = document.getElementById('new-stamp-word');
+  if (word && !word.dataset.wired) { word.dataset.wired = '1'; word.addEventListener('input', _syncAddStamp); }
+  const add = document.getElementById('btn-add-stamp');
+  if (add && !add.dataset.wired) {
+    add.dataset.wired = '1';
+    add.addEventListener('click', async () => {
+      const w = document.getElementById('new-stamp-word'), msg = document.getElementById('new-stamp-msg');
+      try {
+        await api.stamp.typeCreate({ label: w.value.trim(), color: _newStampColor });
+        w.value = ''; _newStampColor = null;
+        document.querySelectorAll('#new-stamp-swatches .stamp-sw').forEach(x => { x.style.borderColor = 'transparent'; });
+        _syncAddStamp();
+        if (msg) { msg.textContent = 'Added.'; setTimeout(() => { if (msg) msg.textContent = ''; }, 2000); }
+        await loadStampCatalog();
+      } catch (e) { if (msg) msg.textContent = (e && e.message) || 'Could not add that stamp.'; }
+    });
+  }
+  loadStampCatalog();
 }
 
 // ── Add user ──────────────────────────────────────────────────────────────────
@@ -1162,7 +2311,7 @@ function showTypedConfirmDialog({ title, warningHtml, requiredText, confirmLabel
 // ══════════════════════════════════════════════════════════════════════════════
 
 const THEME_VALUES = ['light', 'warm', 'slate', 'dark', 'midnight', 'graphite',
-                      'spring', 'summer', 'autumn', 'winter', 'festive'];
+                      'spring', 'summer', 'autumn', 'winter', 'festive', 'festivelight', 'spooky'];
 async function loadThemeSelect() {
   const theme = await api.getSetting('theme') || 'warm';
   const sel = document.getElementById('theme-select');
@@ -1236,6 +2385,215 @@ const tplViewer  = document.getElementById('tpl-doc-viewer');
 const tplCanvas  = document.getElementById('tpl-overlay-canvas');
 const tplCtx     = tplCanvas.getContext('2d');
 
+// ── Straighten (Template Viewer) ─────────────────────────────────────────────
+// A tilted sample makes anchor/target boxes almost impossible to place: the operator either
+// draws a box big enough to swallow the tilt (which then admits the neighbouring row) or clips
+// the value. Review and the teach wizard both let the page be levelled first; the Template
+// Manager did not (owner, 2026-07-30).
+//
+// THE LOAD-BEARING PART IS NOT THE PICTURE, IT IS THE FRAME. Extraction reads the RAW scan, so a
+// box drawn on the straightened image is in the WRONG COORDINATE FRAME and must be rotated back
+// before it is persisted — the same problem the ⊕ teach solved in 2026-07-12 with
+// `AnchorLabel.deskewedNormToRaw`, whose rotation SIGN was established empirically against real
+// PIL.rotate and is pinned in shared/test_anchor_label.js. This reuses that primitive rather than
+// re-deriving it (a wrong sign here silently mis-seats every box drawn while straightened).
+//
+// Each draft box drawn while straightened is stamped with the frame it was drawn on, and the save
+// REFUSES if the displayed frame has changed since (page navigated, straighten toggled, a new
+// sample loaded) — the Oracle C1 fail-safe from the teach path: never persist coords whose frame
+// you can no longer vouch for.
+const TPL_DESKEW_FLOOR = 0.35;      // below this a page is already level — don't re-render it
+let tplDeskewOn     = false;        // is the straightened render currently displayed?
+let tplDeskewAngle  = 0;            // CCW-positive angle of the DISPLAYED frame (0 when raw)
+let tplDeskewBusy   = false;
+let tplSuppressPreviewRerun = false;   // set across a straighten image swap (see tplImg.onload)
+const tplDeskewCache = {};          // page index → { image (dataURL), angle, W, H } | { angle: 0 }
+
+// The frame a box was drawn on. `angle: 0` means the raw page, which needs no transform.
+function tplCurrentFrame() {
+  const c = tplDeskewCache[tplCurrentPage];
+  return {
+    sampleId: selectedTemplate?.sample_document?.id ?? null,
+    page:  tplCurrentPage,
+    angle: tplDeskewOn ? tplDeskewAngle : 0,
+    W: (c && c.W) || tplImg.naturalWidth || 0,
+    H: (c && c.H) || tplImg.naturalHeight || 0,
+  };
+}
+function tplStampFrame(norm) {
+  if (norm) norm._frame = tplCurrentFrame();
+  return norm;
+}
+// Rotate a box drawn on the straightened frame back onto the raw page. Mirrors the teach
+// wizard's _teachBackBox: transform the CENTRE and keep the drawn size (the box is axis-aligned
+// in both frames; at the angles a scanner produces, re-fitting the size buys nothing and would
+// only grow the box).
+function tplBoxToRaw(norm, live) {
+  if (!norm || !norm._frame || !norm._frame.angle) return norm;      // drawn raw → already raw
+  const f = norm._frame;
+  const frameOk = live && live.sampleId === f.sampleId && live.page === f.page
+                  && live.angle === f.angle && live.W === f.W && live.H === f.H
+                  && !!f.W && !!f.H;
+  if (!frameOk) return null;                                          // caller refuses the save
+  const A = window.AnchorLabel;
+  if (!A || typeof A.deskewedNormToRaw !== 'function') return null;   // no primitive → never guess
+  const cx = norm.x_norm + norm.w_norm / 2, cy = norm.y_norm + norm.h_norm / 2;
+  const r = A.deskewedNormToRaw(cx, cy, f.angle, f.W, f.H);
+  return { ...norm, x_norm: r.x - norm.w_norm / 2, y_norm: r.y - norm.h_norm / 2 };
+}
+
+async function toggleTplStraighten(forceOff) {
+  if (tplDeskewBusy || !tplPageImages.length) return;
+  const btn = document.getElementById('tpl-btn-straighten');
+  const goOn = forceOff === true ? false : !tplDeskewOn;
+  tplDeskewBusy = true;
+  if (btn) btn.disabled = true;
+  try {
+    if (!goOn) {
+      tplDeskewOn = false; tplDeskewAngle = 0;
+      tplSuppressPreviewRerun = true;
+      tplImg.src = tplPageImages[tplCurrentPage];
+    } else {
+      let entry = tplDeskewCache[tplCurrentPage];
+      if (!entry) {
+        // Render once per page and bank it — re-fetching on every toggle is a visible stall.
+        const src = tplPageImages[tplCurrentPage] || '';
+        const b64 = src.includes(',') ? src.split(',')[1] : src;
+        let res = null;
+        try { res = await api.getPageDeskew?.(b64, TPL_DESKEW_FLOOR); } catch { /* treated as level */ }
+        entry = (res && res.image && res.angle)
+          ? { image: 'data:image/png;base64,' + res.image, angle: res.angle,
+              W: tplImg.naturalWidth, H: tplImg.naturalHeight }
+          : { angle: 0 };
+        tplDeskewCache[tplCurrentPage] = entry;
+      }
+      if (entry.angle && entry.image) {
+        tplDeskewOn = true; tplDeskewAngle = entry.angle;
+        tplSuppressPreviewRerun = true;
+        tplImg.src = entry.image;
+      } else {
+        setTplStraightenMsg('This page is already straight.');
+      }
+    }
+  } finally {
+    tplDeskewBusy = false;
+    if (btn) { btn.disabled = false; btn.classList.toggle('active', tplDeskewOn); }
+    updateTplStraightenUI();
+    redrawTplCanvas();
+  }
+}
+
+function setTplStraightenMsg(text) {
+  const el = document.getElementById('tpl-mapping-msg');
+  if (el) { el.textContent = text; el.style.color = 'var(--muted)'; }
+}
+
+// Landmark drawing is NOT frame-aware (it has its own save path, untouched here), so it is
+// unavailable while straightened rather than silently storing display-frame coords.
+function updateTplStraightenUI() {
+  const btn = document.getElementById('tpl-btn-straighten');
+  if (btn) {
+    btn.classList.toggle('active', tplDeskewOn);
+    btn.textContent = tplDeskewOn ? '∞ Straightened' : '∞ Straighten';
+  }
+  const lm = document.getElementById('tpl-btn-enhance');
+  if (lm) {
+    if (!lm.dataset.titleDefault) lm.dataset.titleDefault = lm.title || '';
+    lm.disabled = tplDeskewOn;
+    lm.title = tplDeskewOn
+      ? 'Turn Straighten off to draw landmarks — landmarks are stored against the real page angle.'
+      : lm.dataset.titleDefault;
+  }
+  if (tplDeskewOn && tplLandmarkMode) exitDrawMode();
+}
+
+document.getElementById('tpl-btn-straighten')?.addEventListener('click', () => toggleTplStraighten());
+
+// ── Approval-stamp placement ─────────────────────────────────────────────────
+// Stored as ONE settings row, `stamp_placement` = {x, y, w} normalised with a TOP-LEFT origin —
+// the same convention as every other geometry in this app. pdfStamp owns the flip to pdf-lib's
+// bottom-left origin and re-validates whatever it reads, so a hand-edited or stale setting can
+// never place a stamp off the page (or stop a decision being stamped).
+// An UNSET placement is meaningful: it means "the built-in top-right corner", which is why Reset
+// deletes the value rather than writing a corner-shaped one.
+const STAMP_DEFAULT = { x: 0.62, y: 0.04, w: 0.30 };
+let _stampWired = false;
+let _stampPlacement = { ...STAMP_DEFAULT };
+let _stampIsSet = false;
+
+function stampPreviewPaint() {
+  const box = document.getElementById('stamp-preview-box');
+  const pv  = document.getElementById('stamp-preview');
+  if (!box || !pv) return;
+  const { x, y, w } = _stampPlacement;
+  // Height is the stamp's own aspect (a headline plus a few small lines), not a stored value —
+  // the real stamp sizes its block from its content, and inventing a height here would show a
+  // shape the PDF never produces.
+  box.style.left   = (x * 100) + '%';
+  box.style.top    = (y * 100) + '%';
+  box.style.width  = (w * 100) + '%';
+  box.style.height = Math.min(30, w * 62) + '%';
+  box.style.opacity = _stampIsSet ? '1' : '.45';
+  for (const c of document.querySelectorAll('#stamp-grid .stamp-cell')) {
+    c.classList.toggle('sel', Math.abs(+c.dataset.x - x) < 0.02 && Math.abs(+c.dataset.y - y) < 0.02);
+  }
+}
+function stampSetMsg(text, tone) {
+  const el = document.getElementById('stamp-msg');
+  if (!el) return;
+  el.textContent = text || '';
+  el.style.color = tone === 'err' ? 'var(--err)' : tone === 'ok' ? 'var(--ok)' : 'var(--muted)';
+}
+async function initStampPlacement() {
+  const sizeEl = document.getElementById('stamp-size');
+  if (!sizeEl) return;
+  try {
+    const raw = await api.getSetting('stamp_placement');
+    const v = raw ? JSON.parse(raw) : null;
+    if (v && Number(v.w) > 0) { _stampPlacement = { x: +v.x, y: +v.y, w: +v.w }; _stampIsSet = true; }
+    else { _stampPlacement = { ...STAMP_DEFAULT }; _stampIsSet = false; }
+  } catch { _stampPlacement = { ...STAMP_DEFAULT }; _stampIsSet = false; }
+  sizeEl.value = Math.round(_stampPlacement.w * 100);
+  document.getElementById('stamp-size-val').textContent = sizeEl.value + '%';
+  stampSetMsg(_stampIsSet ? '' : 'Not set — using the top-right corner.');
+  stampPreviewPaint();
+
+  if (_stampWired) return;
+  _stampWired = true;
+  for (const c of document.querySelectorAll('#stamp-grid .stamp-cell')) {
+    c.addEventListener('click', () => {
+      _stampPlacement.x = +c.dataset.x; _stampPlacement.y = +c.dataset.y;
+      _stampIsSet = true; stampSetMsg('Not saved yet.'); stampPreviewPaint();
+    });
+  }
+  sizeEl.addEventListener('input', (e) => {
+    const pct = Math.max(12, Math.min(60, parseInt(e.target.value, 10) || 30));
+    document.getElementById('stamp-size-val').textContent = pct + '%';
+    _stampPlacement.w = pct / 100;
+    _stampIsSet = true; stampSetMsg('Not saved yet.'); stampPreviewPaint();
+  });
+  document.getElementById('stamp-save')?.addEventListener('click', async () => {
+    try {
+      await api.setSetting('stamp_placement', JSON.stringify({
+        x: +_stampPlacement.x.toFixed(4), y: +_stampPlacement.y.toFixed(4), w: +_stampPlacement.w.toFixed(4),
+      }));
+      _stampIsSet = true;
+      stampSetMsg('Saved — new decisions use this placement.', 'ok');
+      stampPreviewPaint();
+    } catch (e) { stampSetMsg(`Couldn't save: ${e.message}`, 'err'); }
+  });
+  document.getElementById('stamp-reset')?.addEventListener('click', async () => {
+    try {
+      await api.setSetting('stamp_placement', '');     // empty ⇒ pdfStamp falls back to the corner
+      _stampPlacement = { ...STAMP_DEFAULT }; _stampIsSet = false;
+      sizeEl.value = Math.round(STAMP_DEFAULT.w * 100);
+      document.getElementById('stamp-size-val').textContent = sizeEl.value + '%';
+      stampSetMsg('Back to the built-in top-right corner.', 'ok');
+      stampPreviewPaint();
+    } catch (e) { stampSetMsg(`Couldn't reset: ${e.message}`, 'err'); }
+  });
+}
+
 async function loadTemplates() {
   try {
     [allTemplates, allGroups] = await Promise.all([
@@ -1250,6 +2608,146 @@ async function loadTemplates() {
     allGroups    = [];
   }
   renderTemplateList();
+}
+
+// ── M3 "Suggested cleanups" (docs/designs/TEMPLATE_CONVERGENCE_2026-07-17.md) ────────────────
+// Read-only scan for duplicate templates + a backup-first admin-confirmed merge, plus a
+// non-destructive "re-link stray documents" backfill. Wired once at init (setupTemplateCleanups).
+function setupTemplateCleanups() {
+  const scanBtn   = document.getElementById('btn-scan-duplicates');
+  const relinkBtn = document.getElementById('btn-relink-strays');
+  const msg       = document.getElementById('tpl-cleanup-msg');
+  const results   = document.getElementById('tpl-cleanup-results');
+  if (!scanBtn || !relinkBtn || scanBtn.dataset.wired) return;
+  scanBtn.dataset.wired = '1';
+
+  scanBtn.addEventListener('click', async () => {
+    scanBtn.disabled = true; msg.textContent = 'Scanning…'; results.innerHTML = '';
+    try { renderMergeCandidates(await api.getMergeCandidates(), results, msg); }
+    catch (e) { msg.textContent = 'Scan failed: ' + e.message; }
+    finally { scanBtn.disabled = false; }
+  });
+
+  relinkBtn.addEventListener('click', async () => {
+    relinkBtn.disabled = true; msg.textContent = 'Checking…';
+    try {
+      const plan = await api.planTemplateBackfill();
+      if (!plan.count) { msg.textContent = 'No stray documents to re-link.'; return; }
+      if (!confirm(`Re-link ${plan.count} document(s) that have no template to their matching template?\n\n`
+        + `Documents are only linked (reversible) — nothing is deleted.`)) { msg.textContent = ''; return; }
+      const r = await api.applyTemplateBackfill();
+      msg.textContent = `Re-linked ${r.linked} document(s).`;
+      await loadTemplates();
+    } catch (e) { msg.textContent = 'Re-link failed: ' + e.message; }
+    finally { relinkBtn.disabled = false; }
+  });
+}
+
+// Plain-English name for a member's layout verdict (avoid the raw 'insufficient'/'divergent' jargon).
+function _layoutPhrase(structure) {
+  if (structure === 'compatible') return 'same layout';
+  if (structure === 'divergent')  return 'different layout';
+  return 'layout not verified';   // insufficient
+}
+
+function renderMergeCandidates(clusters, results, msg) {
+  results.innerHTML = '';
+  clusters = clusters || [];
+  if (!clusters.length) { msg.textContent = 'No duplicate templates found.'; return; }
+  // Both 'merge' (confident) and 'merge_review' (owner-verify) offer a merge button.
+  const mergeable = clusters.filter(c => c.suggestedAction === 'merge' || c.suggestedAction === 'merge_review').length;
+  msg.textContent = `${clusters.length} group(s) of possible duplicates (${mergeable} you can merge).`;
+
+  // A clickable template name that opens that template (and its sample) in the viewer, so the owner can
+  // actually compare two layouts before merging (Oracle #4c — the merge_review checkpoint must be real).
+  const tplLink = (id, name) => {
+    const a = document.createElement('a');
+    a.href = '#'; a.textContent = name; a.style.cssText = 'color:var(--accent); text-decoration:underline; cursor:pointer;';
+    a.title = 'Open this layout to view its sample';
+    a.addEventListener('click', (e) => { e.preventDefault(); try { selectTemplate(id); } catch {} });
+    return a;
+  };
+
+  for (const c of clusters) {
+    const box = document.createElement('div');
+    box.className = 'section';
+    box.style.cssText = 'padding:10px; margin-top:8px;';
+    const canon = c.canonical;
+    const head = document.createElement('div');
+    head.append(document.createTextNode('Keep: '));
+    const strong = document.createElement('strong'); strong.appendChild(tplLink(canon.id, canon.name)); head.appendChild(strong);
+    const meta = document.createElement('span');
+    meta.className = 'field-key';
+    meta.textContent = ` (${c.slug} · ${canon.liveConfirmed} confirmed)`;
+    head.appendChild(meta);
+    box.appendChild(head);
+
+    const memberDiv = document.createElement('div');
+    memberDiv.className = 'section-desc';
+    memberDiv.style.margin = '4px 0';
+    memberDiv.append(document.createTextNode(`Duplicate${c.members.length === 1 ? '' : 's'}: `));
+    c.members.forEach((m, i) => {
+      if (i) memberDiv.append(document.createTextNode(', '));
+      memberDiv.appendChild(tplLink(m.id, m.name));
+      const info = document.createElement('span');
+      info.className = 'field-key';
+      info.textContent = ` (${m.liveConfirmed}× · ${Math.round(m.jaccard * 100)}% branding · ${_layoutPhrase(m.structure)})`;
+      memberDiv.appendChild(info);
+    });
+    box.appendChild(memberDiv);
+
+    const action = c.suggestedAction;
+    if (action === 'merge' || action === 'merge_review') {
+      // merge_review = same supplier + type, near-identical branding, but the layout could NOT be verified
+      // automatically (independent teaches rarely reuse the same anchor words). It is NOT a claim they
+      // differ — but the owner must eyeball, because branding sameness never proves layout sameness.
+      if (action === 'merge_review') {
+        const hint = document.createElement('div');
+        hint.className = 'section-desc';
+        hint.style.cssText = 'margin:0 0 6px;';
+        hint.textContent = 'Same sender and type with near-identical branding, but the field layout couldn\'t be '
+          + 'auto-verified. Open a sample of each (click a name above) and merge only if the fields sit in the '
+          + 'same places.';
+        box.appendChild(hint);
+      }
+      const btn = document.createElement('button');
+      btn.className = 'btn danger';
+      btn.textContent = `Merge ${c.members.length} into "${canon.name}"`;
+      btn.addEventListener('click', async () => {
+        const geo = action === 'merge_review'
+          ? `\n\nThese may be different LAYOUTS of the same supplier — merge only if you've checked the fields sit in the same places.`
+          : '';
+        if (!confirm(`Merge ${c.members.length} duplicate(s) INTO "${canon.name}" and DELETE them?${geo}\n\n`
+          + `A database backup is taken first. "${canon.name}" gains all their documents plus any field `
+          + `mappings / landmarks / sample it lacks. This is NOT reversible (the backup is your safety net).`)) return;
+        btn.disabled = true; btn.textContent = 'Backing up + merging…';
+        try {
+          const r = await api.mergeTemplateCluster(canon.id, c.members.map(m => m.id));
+          if (r && r.ok) { msg.textContent = `Merged ${r.merged} into "${canon.name}".`; box.remove(); }
+          else { msg.textContent = 'Merge failed: ' + ((r && (r.error || r.reason)) || 'unknown'); btn.disabled = false; btn.textContent = `Merge ${c.members.length} into "${canon.name}"`; }
+        } catch (e) { msg.textContent = 'Merge failed: ' + e.message; btn.disabled = false; btn.textContent = `Merge ${c.members.length} into "${canon.name}"`; }
+        await loadTemplates();
+      });
+      box.appendChild(btn);
+    } else if (action === 'group_or_review') {
+      // Now ONLY genuinely-different geometry (a divergent landmark OR field-zone signal).
+      const note = document.createElement('div');
+      note.className = 'section-desc';
+      note.style.cssText = 'color:var(--warn); margin:0;';
+      note.textContent = 'These look like different layouts of the same supplier (their field positions differ), '
+        + 'so an automatic merge could break extraction. Merge manually in Learning Recovery only if they really are duplicates.';
+      box.appendChild(note);
+    } else {
+      // review — branding overlaps but not strongly enough to suggest a merge.
+      const note = document.createElement('div');
+      note.className = 'section-desc';
+      note.style.cssText = 'margin:0;';
+      note.textContent = 'Branding partly overlaps but not strongly enough to suggest a merge. Compare them and '
+        + 'merge manually in Learning Recovery if they are the same template.';
+      box.appendChild(note);
+    }
+    results.appendChild(box);
+  }
 }
 
 function makeTplRow(t, isChild) {
@@ -1837,9 +3335,25 @@ async function addLandmarkFromRect(rect, norm) {
   } catch (e) { console.warn('landmark OCR failed:', e.message); }
   text = text.replace(/\s+/g, ' ').trim();
   if (!text) { landmarkMsg("Couldn't read text there — draw a tighter box around printed words.", 'warn'); redrawTplCanvas(); return; }
+  // Word-snap the hand-drawn box to the printed words so the stored/displayed landmark is TIGHT
+  // (owner 2026-08-26: mapping boxes snap since 2026-08-10, landmark boxes didn't). Same shared
+  // BoxSnap + the same `template_box_word_snap` gate (TPL_SNAP_ON); fail-closed to the drawn box.
+  // Frame-safe: landmarks are drawn Straighten-OFF (the UI enforces it), so tplImg is the RAW page
+  // and the snapped coords are already in the stored raw frame — no back-transform / re-stamp needed.
+  let box = { x_norm: norm.x_norm, y_norm: norm.y_norm, w_norm: norm.w_norm, h_norm: norm.h_norm };
+  if (TPL_SNAP_ON && window.BoxSnap && tplImg && tplImg.naturalWidth) {
+    try {
+      const res = await window.BoxSnap.snapBoxToWords(
+        { x: box.x_norm, y: box.y_norm, w: box.w_norm, h: box.h_norm },
+        { natW: tplImg.naturalWidth, natH: tplImg.naturalHeight,
+          cropB64: window.BoxSnap.makeNativeCropper(tplImg),
+          ocrRegionBoxes: (b64) => api.ocrRegionBoxes(b64) });
+      if (res && res.box) box = { x_norm: res.box.x, y_norm: res.box.y, w_norm: res.box.w, h_norm: res.box.h };
+    } catch { /* snapping is an improvement, never a requirement — keep the drawn box */ }
+  }
   tplLandmarkDraft.push({
     label_text: text,
-    x_norm: norm.x_norm, y_norm: norm.y_norm, w_norm: norm.w_norm, h_norm: norm.h_norm,
+    x_norm: box.x_norm, y_norm: box.y_norm, w_norm: box.w_norm, h_norm: box.h_norm,
     ocr_conf: 95, page_number: tplCurrentPage,   // admin-asserted landmark (high trust)
   });
   landmarkMsg(`Added "${text}".`, 'ok');
@@ -1938,6 +3452,10 @@ function tplFileArgs(doc) {
 async function loadSamplePages(detail) {
   tplPageImages  = [];
   tplCurrentPage = 0;
+  // Straightened renders belong to the sample that produced them — a new sample invalidates
+  // every cached angle (and the frame stamped on any half-drawn box).
+  for (const k of Object.keys(tplDeskewCache)) delete tplDeskewCache[k];
+  tplDeskewOn = false; tplDeskewAngle = 0;
 
   const sample = detail.sample_document;
   if (sample) {
@@ -1988,10 +3506,19 @@ function renderTplPage() {
   placeholder.style.display = 'none';
   wrap.style.display        = 'inline-block';
   resetTplView();
+  // A page change always lands on the RAW frame. Straighten is per page (the tilt differs sheet to
+  // sheet), and leaving the toggle "on" across a navigation would claim a frame this page has not
+  // been measured for — which is exactly what the save-time frame guard exists to catch.
+  tplDeskewOn = false; tplDeskewAngle = 0;
+  updateTplStraightenUI();
   tplImg.onload = () => {
     tplCanvas.width  = tplImg.offsetWidth;
     tplCanvas.height = tplImg.offsetHeight;
     redrawTplCanvas();
+    // A straighten toggle swaps the picture but changes NOTHING about where the mappings resolve
+    // (that is computed against the raw page either way), so it must not re-run the resolver —
+    // that is one Python call per mapping and would stall the toggle for no new information.
+    if (tplSuppressPreviewRerun) { tplSuppressPreviewRerun = false; return; }
     if (tplPreviewMode) runRegistrationPreview();
   };
   tplImg.src = tplPageImages[tplCurrentPage];
@@ -2089,8 +3616,17 @@ let tplPreviewMode = false;
 let tplPreviewBoxes = {};            // field_key -> {anchor_box,target_box,value,method}
 let tplPreviewRunToken = 0;          // discards a run whose doc/page changed mid-resolve
 
+// ALWAYS the RAW page, never the straightened render on screen. The whole point of the preview is
+// "where will this mapping actually land when a document is processed", and processing reads the
+// raw scan — resolving against a straightened picture would answer a question nobody asked and
+// would quietly disagree with production. The resolved boxes come back in raw coordinates and are
+// mapped into the displayed frame at DRAW time (tplArrToDisplay), not here.
 function currentTplPageB64() {
+  const raw = tplPageImages[tplCurrentPage];
+  if (typeof raw === 'string' && raw.startsWith('data:')) return raw.split(',')[1];
   if (!tplImg || !tplImg.naturalWidth) return null;
+  // Fallback for a non-data-URL source: only safe while the raw page is the one displayed.
+  if (tplDeskewOn) return null;
   const c = document.createElement('canvas');
   c.width = tplImg.naturalWidth; c.height = tplImg.naturalHeight;
   c.getContext('2d').drawImage(tplImg, 0, 0);
@@ -2152,25 +3688,47 @@ function drawRegistrationPreview() {
   const w = tplCanvas.width, h = tplCanvas.height;
   for (const m of (selectedTemplate.field_mappings || [])) {
     if (!m.enabled || (m.page_number || 0) !== tplCurrentPage) continue;
-    // DRAWN (stored) position — faint grey + label, so it can be compared to the value.
-    drawNormBox(m.anchor_x_norm, m.anchor_y_norm, m.anchor_w_norm, m.anchor_h_norm, w, h, '#9aa3b2', null, false);
-    drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#9aa3b2', null, false);
-    drawPreviewLabel(`${m.field_key} (drawn)`,
-      [m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm], w, h, '#6b7280');
+    // EVERY box in this overlay is in RAW page coordinates — the stored mapping, and the resolved
+    // positions Python computed against the raw page. When the preview is straightened the picture
+    // rotates under them, so each one is mapped into the displayed frame before it is drawn or
+    // labelled. Display only: nothing here is persisted, and `resolve_geometry` still runs against
+    // the raw page exactly as before.
+    const dm = tplMapDisplay(m);
+    drawNormBox(dm.anchor_x_norm, dm.anchor_y_norm, dm.anchor_w_norm, dm.anchor_h_norm, w, h, '#9aa3b2', null, false);
+    drawNormBox(dm.target_x_norm, dm.target_y_norm, dm.target_w_norm, dm.target_h_norm, w, h, '#9aa3b2', null, false);
+    const dTargetArr = [dm.target_x_norm, dm.target_y_norm, dm.target_w_norm, dm.target_h_norm];
+    drawPreviewLabel(`${m.field_key} (drawn)`, dTargetArr, w, h, '#6b7280');
     const r = tplPreviewBoxes[m.field_key];
     if (!r) continue;
-    if (r.anchor_box) drawArrBox(r.anchor_box, w, h, '#4f8ef7');
-    if (r.target_box) {
-      drawArrBox(r.target_box, w, h, '#3ecf8e');
+    const dAnchorBox = tplArrToDisplay(r.anchor_box);
+    const dTargetBox = tplArrToDisplay(r.target_box);
+    if (dAnchorBox) drawArrBox(dAnchorBox, w, h, '#4f8ef7');
+    if (dTargetBox) {
+      drawArrBox(dTargetBox, w, h, '#3ecf8e');
       // [rung] = which mechanism placed this box: REG=global transform, map=anchor+offset.
       drawPreviewLabel(`${m.field_key}${r.value ? ' = ' + r.value : ''} [${shortMethod(r.method)}]`,
-        r.target_box, w, h, '#2f9e63');
+        dTargetBox, w, h, '#2f9e63');
     } else {
-      drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#e0a23c', null, true);
-      drawPreviewLabel(`${m.field_key}: not located`,
-        [m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm], w, h, '#b07816');
+      drawNormBox(dm.target_x_norm, dm.target_y_norm, dm.target_w_norm, dm.target_h_norm, w, h, '#e0a23c', null, true);
+      drawPreviewLabel(`${m.field_key}: not located`, dTargetArr, w, h, '#b07816');
     }
   }
+}
+
+// Raw-frame mapping row → the frame on screen. Returns a shallow copy; the row is never mutated.
+function tplMapDisplay(m) {
+  const a = tplToDisplayBox({ x_norm: m.anchor_x_norm, y_norm: m.anchor_y_norm, w_norm: m.anchor_w_norm, h_norm: m.anchor_h_norm }, 0);
+  const t = tplToDisplayBox({ x_norm: m.target_x_norm, y_norm: m.target_y_norm, w_norm: m.target_w_norm, h_norm: m.target_h_norm }, 0);
+  return {
+    anchor_x_norm: a.x_norm, anchor_y_norm: a.y_norm, anchor_w_norm: a.w_norm, anchor_h_norm: a.h_norm,
+    target_x_norm: t.x_norm, target_y_norm: t.y_norm, target_w_norm: t.w_norm, target_h_norm: t.h_norm,
+  };
+}
+// Same, for the [x, y, w, h] array form the resolver returns.
+function tplArrToDisplay(arr) {
+  if (!Array.isArray(arr) || arr.length < 4 || arr[0] == null) return arr;
+  const d = tplToDisplayBox({ x_norm: arr[0], y_norm: arr[1], w_norm: arr[2], h_norm: arr[3] }, 0);
+  return [d.x_norm, d.y_norm, d.w_norm, d.h_norm];
 }
 
 // Short rung code for the diagnostic overlay/status: which mechanism placed the box.
@@ -2208,6 +3766,25 @@ document.getElementById('tpl-preview-registration').addEventListener('change', (
 // currently has in flight (draft anchor/target boxes, live drag rectangle) on
 // top — so drawing a new box never has to fight the persisted overlay for
 // visibility.
+// Map a box into the frame currently ON SCREEN so the overlay keeps sitting on its words when the
+// page is straightened. STORED mappings and mappings loaded into the editor are raw-frame
+// (srcAngle 0); a box just drawn while straightened is already in the display frame. Purely
+// cosmetic — nothing here is ever persisted; the save path uses tplBoxToRaw.
+function tplToDisplayBox(n, srcAngle) {
+  const dispAngle = tplDeskewOn ? tplDeskewAngle : 0;
+  const src = srcAngle || 0;
+  if (src === dispAngle) return n;                                   // same frame — nothing to do
+  const A = window.AnchorLabel;
+  const c = tplDeskewCache[tplCurrentPage];
+  const W = (c && c.W) || tplImg.naturalWidth || 0;
+  const H = (c && c.H) || tplImg.naturalHeight || 0;
+  if (!A || typeof A.deskewedNormToRaw !== 'function' || !W || !H) return n;
+  const cx = n.x_norm + n.w_norm / 2, cy = n.y_norm + n.h_norm / 2;
+  // raw → straightened is the INVERSE rotation (negative angle); straightened → raw is positive.
+  const r = A.deskewedNormToRaw(cx, cy, src ? src : -dispAngle, W, H);
+  return { ...n, x_norm: r.x - n.w_norm / 2, y_norm: r.y - n.h_norm / 2 };
+}
+
 function redrawTplCanvas() {
   tplCtx.clearRect(0, 0, tplCanvas.width, tplCanvas.height);
   if (tplPreviewMode) { drawRegistrationPreview(); return; }
@@ -2216,11 +3793,13 @@ function redrawTplCanvas() {
   const w = tplCanvas.width, h = tplCanvas.height;
   if (tplDraftAnchor && (tplDraftAnchor.page_number || 0) === tplCurrentPage) {
     const sel = tplSelectedBox?.boxType === 'anchor';
-    drawNormBox(tplDraftAnchor.x_norm, tplDraftAnchor.y_norm, tplDraftAnchor.w_norm, tplDraftAnchor.h_norm, w, h, '#4f8ef7', 'anchor (draft)', sel);
+    const d = tplToDisplayBox(tplDraftAnchor, tplDraftAnchor._frame?.angle);
+    drawNormBox(d.x_norm, d.y_norm, d.w_norm, d.h_norm, w, h, '#4f8ef7', 'anchor (draft)', sel);
   }
   if (tplDraftTarget && (tplDraftTarget.page_number || 0) === tplCurrentPage) {
     const sel = tplSelectedBox?.boxType === 'target';
-    drawNormBox(tplDraftTarget.x_norm, tplDraftTarget.y_norm, tplDraftTarget.w_norm, tplDraftTarget.h_norm, w, h, '#3ecf8e', 'target (draft)', sel);
+    const d = tplToDisplayBox(tplDraftTarget, tplDraftTarget._frame?.angle);
+    drawNormBox(d.x_norm, d.y_norm, d.w_norm, d.h_norm, w, h, '#3ecf8e', 'target (draft)', sel);
   }
   if (tplDragRect) {
     const dragColor = tplMapMode === 'target' ? '#3ecf8e' : '#4f8ef7';
@@ -2252,8 +3831,11 @@ function drawSavedMappings() {
     if ((m.page_number || 0) !== tplCurrentPage) continue;
     const asel = tplSelectedBox?.fieldKey === m.field_key && tplSelectedBox?.boxType === 'anchor';
     const tsel = tplSelectedBox?.fieldKey === m.field_key && tplSelectedBox?.boxType === 'target';
-    drawNormBox(m.anchor_x_norm, m.anchor_y_norm, m.anchor_w_norm, m.anchor_h_norm, w, h, '#4f8ef7', `${m.field_key} anchor`, asel);
-    drawNormBox(m.target_x_norm, m.target_y_norm, m.target_w_norm, m.target_h_norm, w, h, '#3ecf8e', m.field_key, tsel);
+    // Stored mappings are raw-frame; follow the page when it is straightened on screen.
+    const a = tplToDisplayBox({ x_norm: m.anchor_x_norm, y_norm: m.anchor_y_norm, w_norm: m.anchor_w_norm, h_norm: m.anchor_h_norm }, 0);
+    const t = tplToDisplayBox({ x_norm: m.target_x_norm, y_norm: m.target_y_norm, w_norm: m.target_w_norm, h_norm: m.target_h_norm }, 0);
+    drawNormBox(a.x_norm, a.y_norm, a.w_norm, a.h_norm, w, h, '#4f8ef7', `${m.field_key} anchor`, asel);
+    drawNormBox(t.x_norm, t.y_norm, t.w_norm, t.h_norm, w, h, '#3ecf8e', m.field_key, tsel);
   }
 }
 
@@ -2308,6 +3890,9 @@ function getBoxNorm(sel) {
   return sel.boxType === 'anchor' ? { ...tplDraftAnchor } : { ...tplDraftTarget };
 }
 function setBoxNorm(sel, norm) {
+  // A MOVED box is re-staged against whatever frame is on screen right now, not the one it was
+  // first drawn on — otherwise nudging a box while straightened would keep a stale angle.
+  tplStampFrame(norm);
   if (sel.boxType === 'anchor') tplDraftAnchor = norm;
   else                          tplDraftTarget = norm;
 }
@@ -2438,11 +4023,17 @@ tplCanvas.addEventListener('mouseup', () => {
     };
     if (tplLandmarkMode) { addLandmarkFromRect(rect, norm); return; }   // stays armed for the next landmark
     if (!tplMapMode) { redrawTplCanvas(); return; }
+    // Record WHICH FRAME this box was drawn on — raw, or the straightened render and its angle.
+    // Save rotates it back and refuses if the frame has since changed (see tplBoxToRaw).
+    tplStampFrame(norm);
     if (tplMapMode === 'anchor') { tplDraftAnchor = norm; autoDetectAnchorText(rect); }
     else                         { tplDraftTarget = norm; }
     exitDrawMode();
     updateMappingEditorState();
     redrawTplCanvas();
+    // Word-snap runs AFTER the draft is staged and drawn, so the hand-drawn box appears
+    // immediately and then tightens — a snap that blocked the first paint would read as lag.
+    tplSnapDraft(tplMapMode === 'anchor' ? 'anchor' : 'target');
     return;
   }
 
@@ -2488,6 +4079,71 @@ window.addEventListener('keydown', (e) => {
 // drops the recognised text into the label field, exactly the crop→base64→
 // ocrRegion round trip the review window's zone-OCR tool uses (just without
 // writing the result back into a document field).
+// ── Word-snap a freshly drawn mapping box (owner 2026-08-10) ─────────────────
+// The teach wizard has snapped drawn boxes to the printed words since 2026-08-04; the Template
+// Manager never did, so the same hand-drawn rectangle produced a tight box in one surface and a
+// loose one in the other — and a loose taught box is exactly what reads the neighbouring row on a
+// shifted scan. Same shared implementation (shared/boxSnap.js), same gate: the snapped box is
+// DRAWN on the canvas, so it is approved by being seen before it can be saved.
+//
+// Frame-safe by construction: the crop comes from `tplImg`, i.e. whatever is on screen, so with
+// Straighten on the snap happens in the straightened frame — the same frame the drawn box is in,
+// and the same frame `_frame` records. The existing save-time back-transform then rotates the
+// SNAPPED box to raw. Re-stamping the frame afterwards keeps that chain honest.
+//
+// Kill: setting `template_box_word_snap` = 'false' (default ON, mirroring `teach_box_word_snap`).
+let TPL_SNAP_ON = true;
+try { api.getSetting?.('template_box_word_snap').then(v => { TPL_SNAP_ON = v !== 'false'; }); } catch { /* default ON */ }
+
+async function tplSnapDraft(which) {
+  if (!TPL_SNAP_ON || !window.BoxSnap || !tplImg || !tplImg.naturalWidth) return;
+  const draft = which === 'anchor' ? tplDraftAnchor : tplDraftTarget;
+  if (!draft) return;
+  // Snapshot enough to prove, when the async OCR returns, that nothing moved underneath it. A
+  // snap applied to a box the user has since redrawn/navigated away from would land on the wrong
+  // words — the same fail-closed rule the save-time frame guard uses.
+  const page = tplCurrentPage, angle = tplDeskewOn ? tplDeskewAngle : 0;
+  const before = { ...draft };
+  try {
+    // The label cut only applies to the VALUE box, and only when the anchor sits to its LEFT —
+    // an anchor above (or right of) the value says nothing about where the value starts.
+    let labelRightEdge;
+    if (which === 'target' && tplDraftAnchor) {
+      const aRight = tplDraftAnchor.x_norm + tplDraftAnchor.w_norm;
+      const sameRow = Math.abs((tplDraftAnchor.y_norm + tplDraftAnchor.h_norm / 2)
+                             - (draft.y_norm + draft.h_norm / 2)) < Math.max(draft.h_norm, 1e-6);
+      if (sameRow && aRight <= draft.x_norm + draft.w_norm / 2) labelRightEdge = aRight;
+    }
+    const res = await window.BoxSnap.snapBoxToWords(
+      { x: draft.x_norm, y: draft.y_norm, w: draft.w_norm, h: draft.h_norm },
+      {
+        natW: tplImg.naturalWidth, natH: tplImg.naturalHeight,
+        cropB64: window.BoxSnap.makeNativeCropper(tplImg),
+        ocrRegionBoxes: (b64) => api.ocrRegionBoxes(b64),
+        labelRightEdge,
+      });
+    if (!res || !res.box) return;                       // every guard failed closed to the drawn box
+    const live = which === 'anchor' ? tplDraftAnchor : tplDraftTarget;
+    if (!live || page !== tplCurrentPage || angle !== (tplDeskewOn ? tplDeskewAngle : 0)) return;
+    if (live.x_norm !== before.x_norm || live.y_norm !== before.y_norm
+        || live.w_norm !== before.w_norm || live.h_norm !== before.h_norm) return;   // redrawn since
+    const snapped = tplStampFrame({
+      x_norm: res.box.x, y_norm: res.box.y, w_norm: res.box.w, h_norm: res.box.h,
+      page_number: live.page_number,
+    });
+    if (which === 'anchor') {
+      tplDraftAnchor = snapped;
+      // The words the snap admitted ARE the label text — better evidence than a separate OCR of
+      // the hand-drawn rectangle, which is what autoDetectAnchorText read a moment ago.
+      const el = document.getElementById('tpl-map-anchor-text');
+      if (el && res.text) el.value = res.text;
+    } else {
+      tplDraftTarget = snapped;
+    }
+    redrawTplCanvas();                                   // the operator SEES the snapped box
+  } catch { /* snapping is an improvement, never a requirement — keep the drawn box */ }
+}
+
 async function autoDetectAnchorText(rect) {
   try {
     const scaleX = tplImg.naturalWidth  / tplImg.offsetWidth;
@@ -2509,6 +4165,22 @@ async function autoDetectAnchorText(rect) {
 }
 
 // ── Mapping editor (Phase 2) ─────────────────────────────────────────────────
+
+// The field's REAL declared data type, for the "Test" preview. This replaced the mapping's
+// `ocr_type` when that column was deleted (2026-08-08, owner decision) — and it is strictly more
+// correct than what it replaced: test_mapping.py feeds this into the SAME
+// engine._seed_field_patterns the pipeline uses, so the preview now gates on the type the document
+// type actually declares rather than on a per-mapping value three UI surfaces wrote with three
+// different vocabularies and no production code ever read. Defensive: any lookup miss falls back
+// to 'text', which is what an absent ocr_type resolved to anyway.
+function tplFieldTypeFor(key) {
+  try {
+    const slug = (selectedTemplate && (selectedTemplate.document_type_slug || selectedTemplate.slug)) || null;
+    const dt   = slug ? (allTypesWithFields || []).find(t => t.slug === slug) : null;
+    const f    = dt && (dt.fields || []).find(x => x.key === key);
+    return (f && f.type) ? f.type : 'text';
+  } catch { return 'text'; }
+}
 
 async function populateMapFieldSelect(detail) {
   if (!allTypesWithFields.length) {
@@ -2577,10 +4249,9 @@ function loadMappingIntoEditor(fieldKey) {
       page_number: existing.page_number || 0,
     };
     document.getElementById('tpl-map-anchor-text').value = existing.anchor_text || '';
-    document.getElementById('tpl-map-ocr-type').value    = existing.ocr_type || 'text';
     const pct = Math.round((existing.search_expansion ?? 0.04) * 100);
     document.getElementById('tpl-map-expansion').value     = pct;
-    document.getElementById('tpl-map-expansion-val').textContent = pct + '%';
+    setTplExpansionUI(pct);
     document.getElementById('tpl-map-enabled').checked   = existing.enabled !== 0;
     document.getElementById('tpl-btn-delete-mapping').style.display = '';
 
@@ -2592,9 +4263,8 @@ function loadMappingIntoEditor(fieldKey) {
     tplDraftAnchor = null;
     tplDraftTarget = null;
     document.getElementById('tpl-map-anchor-text').value = '';
-    document.getElementById('tpl-map-ocr-type').value    = 'text';
     document.getElementById('tpl-map-expansion').value     = 4;
-    document.getElementById('tpl-map-expansion-val').textContent = '4%';
+    setTplExpansionUI(4);
     document.getElementById('tpl-map-enabled').checked   = true;
     document.getElementById('tpl-btn-delete-mapping').style.display = 'none';
   }
@@ -2620,8 +4290,24 @@ function updateMappingEditorState() {
   document.getElementById('tpl-btn-test-mapping').disabled = !ready;
 }
 
+// Name what each end of the slider actually DOES to a misfiring box. Too tight clips the value;
+// too loose swallows the neighbouring row or column — and those are the two things an operator
+// is looking at when they come here, so the hint reads as a diagnosis, not a definition.
+function tplExpansionHint(pct) {
+  const p = Number(pct) || 0;
+  if (p === 0)  return 'No margin — the box is read exactly as drawn. Use when a neighbouring value keeps being picked up; risky if scans shift at all.';
+  if (p <= 4)   return 'Tight. Best when the value sits close to other text. If reads come back clipped, raise this.';
+  if (p <= 10)  return 'Roomy — tolerates a shifted or rescaled scan. If reads pick up the row above/below or the next column, lower this.';
+  return 'Very loose. Only for a value that moves a lot on the page; at this width a neighbouring value can easily be read instead.';
+}
+function setTplExpansionUI(pct) {
+  const v = document.getElementById('tpl-map-expansion-val');
+  const h = document.getElementById('tpl-map-expansion-hint');
+  if (v) v.textContent = pct + '%';
+  if (h) h.textContent = tplExpansionHint(pct);
+}
 document.getElementById('tpl-map-expansion').addEventListener('input', (e) => {
-  document.getElementById('tpl-map-expansion-val').textContent = e.target.value + '%';
+  setTplExpansionUI(e.target.value);
 });
 
 document.getElementById('tpl-map-mode')?.addEventListener('change', (e) => {
@@ -2637,15 +4323,27 @@ document.getElementById('tpl-btn-save-mapping').addEventListener('click', async 
   if (!selectedTemplate || !tplEditingFieldKey || !tplDraftAnchor || !tplDraftTarget) return;
   const msg = document.getElementById('tpl-mapping-msg');
 
+  // Straighten: rotate anything drawn on the straightened render back onto the RAW page, which is
+  // what extraction reads. FAIL-CLOSED — if either box's frame can no longer be vouched for, the
+  // save is REFUSED with an explanation rather than persisting coords in the wrong frame (a
+  // silently mis-seated mapping is far worse than a re-draw).
+  const liveFrame = tplCurrentFrame();
+  const rawAnchor = tplBoxToRaw(tplDraftAnchor, liveFrame);
+  const rawTarget = tplBoxToRaw(tplDraftTarget, liveFrame);
+  if (!rawAnchor || !rawTarget) {
+    msg.textContent = 'The page changed after those boxes were drawn — please redraw the anchor and target, then save.';
+    msg.style.color = 'var(--err)';
+    return;
+  }
+
   const mapping = {
     field_key:        tplEditingFieldKey,
-    page_number:      tplDraftAnchor.page_number || 0,
+    page_number:      rawAnchor.page_number || 0,
     anchor_text:      document.getElementById('tpl-map-anchor-text').value.trim() || null,
-    anchor_x_norm: tplDraftAnchor.x_norm, anchor_y_norm: tplDraftAnchor.y_norm,
-    anchor_w_norm: tplDraftAnchor.w_norm, anchor_h_norm: tplDraftAnchor.h_norm,
-    target_x_norm: tplDraftTarget.x_norm, target_y_norm: tplDraftTarget.y_norm,
-    target_w_norm: tplDraftTarget.w_norm, target_h_norm: tplDraftTarget.h_norm,
-    ocr_type:         document.getElementById('tpl-map-ocr-type').value,
+    anchor_x_norm: rawAnchor.x_norm, anchor_y_norm: rawAnchor.y_norm,
+    anchor_w_norm: rawAnchor.w_norm, anchor_h_norm: rawAnchor.h_norm,
+    target_x_norm: rawTarget.x_norm, target_y_norm: rawTarget.y_norm,
+    target_w_norm: rawTarget.w_norm, target_h_norm: rawTarget.h_norm,
     search_expansion: parseInt(document.getElementById('tpl-map-expansion').value, 10) / 100,
     enabled:          document.getElementById('tpl-map-enabled').checked,
   };
@@ -2718,9 +4416,10 @@ document.getElementById('tpl-btn-test-mapping').addEventListener('click', async 
       target_w_norm: tplDraftTarget.w_norm, target_h_norm: tplDraftTarget.h_norm,
       offset_dx_norm:   tplDraftTarget.x_norm - tplDraftAnchor.x_norm,
       offset_dy_norm:   tplDraftTarget.y_norm - tplDraftAnchor.y_norm,
-      ocr_type:         document.getElementById('tpl-map-ocr-type').value,
       search_expansion: parseInt(document.getElementById('tpl-map-expansion').value, 10) / 100,
       enabled:          true,
+      // Preview-only, never persisted: test_mapping.py seeds the credibility pattern from this.
+      field_type:       tplFieldTypeFor(tplEditingFieldKey),
     };
 
     // The extractor relocates the anchor and derives the target itself, so send
@@ -2766,6 +4465,22 @@ async function refreshSelectedTemplate() {
   renderMappingsTable(refreshed);
 }
 
+// "tested 3 days ago" from the stored SQLite datetime('now') stamp (UTC, no zone marker — parsed
+// as UTC explicitly so the age can't be shifted by the local offset).
+function tplTestAge(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})/);
+  const ms = m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : Date.parse(s);
+  if (!Number.isFinite(ms)) return '';
+  const days = Math.floor((Date.now() - ms) / 86400000);
+  if (days < 0)  return '';
+  if (days === 0) return 'tested today';
+  if (days === 1) return 'tested yesterday';
+  if (days < 30)  return `tested ${days} days ago`;
+  return `tested ${m ? `${m[3]}-${m[2]}-${m[1]}` : 'a while ago'}`;
+}
+
 function renderMappingsTable(detail) {
   const tbody = document.getElementById('tpl-mappings-tbody');
   const empty = document.getElementById('tpl-mappings-empty');
@@ -2774,17 +4489,20 @@ function renderMappingsTable(detail) {
   empty.style.display = mappings.length ? 'none' : '';
 
   for (const m of mappings) {
-    let lastTest = '—';
+    let lastTest = '<span class="section-desc">never tested</span>';
     if (m.last_test_status) {
       const cls = m.last_test_status === 'ok' ? 'ok' : m.last_test_status === 'low_confidence' ? 'warn' : 'err';
       const conf = m.last_test_confidence != null ? ` · ${Math.round(m.last_test_confidence)}%` : '';
-      lastTest = `<span class="mapping-status ${cls}">${escHtml(m.last_test_value || m.last_test_status)}${conf}</span>`;
+      // WHEN it was tested matters as much as the result: a green read from before the box was
+      // last moved is not evidence that the box works now, and the table gave no way to tell.
+      const when = tplTestAge(m.last_test_at);
+      lastTest = `<span class="mapping-status ${cls}">${escHtml(m.last_test_value || m.last_test_status)}${conf}</span>`
+               + (when ? `<span class="section-desc" style="display:block; margin-top:2px;">${escHtml(when)}</span>` : '');
     }
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><span class="field-key">${escHtml(m.field_key)}</span></td>
       <td>${escHtml(m.anchor_text || '—')}</td>
-      <td>${escHtml(m.ocr_type)}</td>
       <td>${Math.round((m.search_expansion || 0) * 100)}%</td>
       <td>${lastTest}</td>
       <td>${m.enabled ? 'Yes' : 'No'}</td>
@@ -2987,6 +4705,149 @@ async function loadMemoryInventory() {
       `<td>${escHtml(r.last_seen || '—')}</td>`;
     tbody.appendChild(tr);
   }
+}
+
+// ── Learned memory inventory: click-to-browse (READ-ONLY) ─────────────────────
+// Mirrors the Learning Repair selector but never mutates — the cleanup tools stay
+// in the Advanced disclosure below + the Learning Repair tab. Reuses the existing
+// admin IPCs learning-scopes ({suspects:false} to skip the per-type phash cost —
+// this view has no "worth a look" filter) + get-learning-recovery. ONE delegated
+// click listener + a wire-once guard so re-showing the Learning tab (the tab
+// handler re-runs the lazy-init on every show) can never stack handlers.
+let _lrScopes = [], _lrFilter = 'all', _lrQuery = '', _lrBrowseWired = false, _lrOpenScope = null;
+
+async function loadScopeBrowse() {
+  const list = document.getElementById('lr-scope-list');
+  if (!list) return;
+  if (!_lrBrowseWired) {
+    _lrBrowseWired = true;
+    const q = document.getElementById('lr-browse-search');
+    if (q) q.addEventListener('input', () => { _lrQuery = q.value.trim().toLowerCase(); lrRenderScopes(); });
+    document.querySelectorAll('#lr-browse-filters .lr-browse-chip').forEach(b => b.addEventListener('click', () => {
+      _lrFilter = b.dataset.filter;
+      document.querySelectorAll('#lr-browse-filters .lr-browse-chip').forEach(x => x.classList.toggle('active', x === b));
+      lrRenderScopes();
+    }));
+    document.getElementById('lr-browse-refresh')?.addEventListener('click', loadScopeBrowse);
+    // Event DELEGATION: one listener on the static container; rows re-render freely.
+    list.addEventListener('click', (e) => {
+      const row = e.target.closest('.lr-scope-row');
+      if (row) lrBrowseOpen(row.dataset.sup, row.dataset.slug);
+    });
+  }
+  let r = null;
+  try { r = await api.learningScopes({ suspects: false }); } catch (e) { r = { ok: false, error: e.message || String(e) }; }
+  _lrScopes = (r && r.scopes) || [];
+  const cnt = document.getElementById('lr-browse-count');
+  if (cnt) cnt.textContent = r && r.ok
+    ? `${_lrScopes.length} sender${_lrScopes.length === 1 ? '' : 's'} × type${_lrScopes.length === 1 ? '' : 's'} hold learning`
+    : ((r && r.error) || 'Could not list learned memory.');
+  lrRenderScopes();
+}
+
+function _lrScopeMatches(s) {
+  if (_lrQuery && !`${s.supplier_name || ''} ${s.document_type_name || ''} ${s.document_type_slug || ''}`.toLowerCase().includes(_lrQuery)) return false;
+  switch (_lrFilter) {
+    case 'notauto': return !(s.trust && s.trust.autoFiles) && s.docs > 0;
+    case 'orphan': return !!s.orphaned;
+    case 'blank': return !!s.blankIssuer;
+    default: return true;
+  }
+}
+function _lrWhen(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return isNaN(d) ? String(iso).slice(0, 10) : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function lrRenderScopes() {
+  const el = document.getElementById('lr-scope-list'); if (!el) return;
+  const rows = _lrScopes.filter(_lrScopeMatches);
+  if (!rows.length) { el.innerHTML = '<div class="section-desc" style="padding:16px; text-align:center;">Nothing matches.</div>'; return; }
+  el.innerHTML = rows.map(s => {
+    const learned = s.learned ? `${s.learned} learned item${s.learned === 1 ? '' : 's'}` : (s.logos ? 'logo known' : '');
+    const auto = s.trust && s.trust.autoFiles
+      ? '<span style="color:var(--ok);">Files by itself</span>'
+      : `<span style="color:var(--muted);">${escHtml((s.trust && s.trust.text) || 'Not yet')}</span>`;
+    const badge = s.orphaned ? ' <span style="font-size:10px; color:var(--warn);">learning, no documents</span>' : '';
+    const active = _lrOpenScope && _lrOpenScope.sup === s.supplier_name && _lrOpenScope.slug === s.document_type_slug;
+    return `<div class="doctype-row lr-scope-row${active ? ' active' : ''}" data-sup="${escHtml(s.supplier_name || '')}" data-slug="${escHtml(s.document_type_slug || '')}" style="cursor:pointer; align-items:center; gap:10px; padding:8px 12px;">
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><strong>${escHtml(s.supplier_name || '(no sender recognised)')}</strong> <span style="color:var(--muted);">· ${escHtml(s.document_type_name || s.document_type_slug || 'untyped')}</span>${badge}</div>
+        <div style="font-size:11px; color:var(--muted);">${s.docs ? `${s.docs} document${s.docs === 1 ? '' : 's'}` : 'no documents'} · last ${_lrWhen(s.last_confirmed)}${learned ? ' · ' + learned : ''}</div>
+      </div>
+      <div style="font-size:11px; white-space:nowrap;">${auto}</div>
+    </div>`;
+  }).join('');
+}
+
+async function lrBrowseOpen(sup, slug) {
+  _lrOpenScope = { sup, slug };
+  lrRenderScopes();
+  const empty = document.getElementById('lr-browse-empty');
+  const host = document.getElementById('lr-browse-detail');
+  if (!host) return;
+  if (empty) empty.style.display = 'none';
+  host.style.display = '';
+  host.innerHTML = '<div class="section-desc">Loading…</div>';
+  let data = null;
+  try { data = await api.getLearningRecovery({ supplier_name: sup, document_type: slug || null }); }
+  catch (e) { host.innerHTML = `<div class="section-desc">Could not load: ${escHtml(e.message || e)}</div>`; return; }
+  const scope = _lrScopes.find(x => x.supplier_name === sup && x.document_type_slug === slug) || {};
+  host.innerHTML = lrBrowseDetailHtml(sup, slug, scope, data || {});
+  // Pre-fill the Advanced typed tools so "clean this sender" is one click away.
+  const sIn = document.getElementById('lr-supplier'); if (sIn) sIn.value = sup || '';
+  const dSel = document.getElementById('lr-doctype'); if (dSel && slug && [...dSel.options].some(o => o.value === slug)) dSel.value = slug;
+  host.querySelector('[data-lr-repair]')?.addEventListener('click', () => lrOpenInRepair(sup, slug));
+  host.querySelector('[data-lr-advanced]')?.addEventListener('click', () => {
+    const adv = document.getElementById('lr-advanced-tools');
+    if (adv) { adv.open = true; adv.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    if (typeof runLearningSearch === 'function') runLearningSearch();
+  });
+}
+
+function lrBrowseDetailHtml(sup, slug, scope, data) {
+  const d = (data && data.detail) || {};
+  const templates = (data && data.templates) || [];
+  const esc = escHtml;
+  const out = [];
+  const t = scope.trust || {};
+  const autoTxt = t.autoFiles ? 'Files new documents by itself.' : (t.text ? t.text + '.' : 'Not filing by itself yet.');
+  out.push(`<div class="section-title" style="margin-top:0;">${esc(sup || '(no sender recognised)')} <span style="color:var(--muted); font-weight:400;">· ${esc(scope.document_type_name || slug || 'untyped')}</span></div>`);
+  out.push(`<div class="section-desc" style="margin-bottom:10px;">${scope.docs ? `Learned from ${scope.docs} document${scope.docs === 1 ? '' : 's'}` : 'No documents behind this learning'}${scope.last_confirmed ? `, last on ${_lrWhen(scope.last_confirmed)}` : ''}. ${esc(autoTxt)}</div>`);
+
+  const grp = (title, items) => { if (items.length) { out.push(`<div class="section-title sub" style="margin-top:12px;">${title}</div><div style="font-family:var(--mono); font-size:11px; line-height:1.8;">${items.join('')}</div>`); } };
+  grp('Remembered values (fill-in hints)', (d.hints || []).map(h => `<div>${esc(h.field_key)} = &ldquo;${esc(h.hint_value)}&rdquo; <span style="color:var(--muted);">(used ${h.usage_count || 0}×)</span></div>`));
+  grp('Past corrections', (d.corrections || []).map(c => `<div>${esc(c.field_key)}: &ldquo;${esc(c.original_value || '')}&rdquo; → &ldquo;${esc(c.corrected_value)}&rdquo; <span style="color:var(--muted);">${esc((c.corrected_at || '').slice(0, 10))}</span></div>`));
+  grp('Where it reads (taught positions)', (d.anchors || []).map(a => `<div>${esc(a.field_key)} ← &ldquo;${esc(a.anchor_label)}&rdquo; (${esc(a.direction)}) <span style="color:var(--muted);">used ${a.usage_count || 0}×</span></div>`));
+  grp('Cleanup rules', (d.rules || []).map(r => `<div>${esc(r.field_key)} — ${esc(r.rule_type === 'keep_block' ? 'keep only the main value' : ('remove &ldquo;' + (r.created_from || r.token_norm || '') + '&rdquo;'))}</div>`));
+  const recog = (d.logos || []).map(l => `<div>logo fingerprint <span style="color:var(--muted);">(matched ${l.match_count || 0}×)</span></div>`)
+    .concat(templates.map(tp => `<div>layout &ldquo;${esc(tp.name)}&rdquo; <span style="color:var(--muted);">(${esc(tp.document_type_slug || '—')}, confirmed ${tp.confirmed_count || 0}×)</span></div>`));
+  grp('How this sender is recognised', recog);
+
+  if (!(d.hints || []).length && !(d.corrections || []).length && !(d.anchors || []).length && !(d.rules || []).length && !recog.length) {
+    out.push('<div class="section-desc">Nothing detailed is stored for this sender yet.</div>');
+  }
+  out.push(`<div class="row-flex" style="gap:8px; margin-top:16px; flex-wrap:wrap;">
+    <button class="btn" data-lr-repair>Open in Learning Repair →</button>
+    <button class="btn" data-lr-advanced>Clean this sender&rsquo;s learning ↓</button>
+  </div>`);
+  return out.join('');
+}
+
+// Deep-link into the Learning Repair tab AND load this scope (not a bare tab
+// switch — that would land on the empty typed box, the friction we're removing).
+// Works whether or not the Repair console switch is on (rpOpenScope loads via
+// the typed-picker path, which is not console-gated).
+async function lrOpenInRepair(sup, slug) {
+  const tabBtn = document.querySelector('.tab[data-tab="repair"]');
+  if (!tabBtn) return;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  tabBtn.classList.add('active');
+  const panel = document.getElementById('panel-repair'); if (panel) panel.classList.add('active');
+  try { await repairInit(); } catch (e) { console.warn('repairInit failed', e); }
+  try { await rpOpenScope(sup, slug); } catch (e) { console.warn('rpOpenScope failed', e); }
 }
 
 function renderLearningSummary(summary) {
@@ -3238,6 +5099,8 @@ async function repairInit() {
   document.getElementById('rp-delete').addEventListener('click', rpDelete);
   document.getElementById('rp-fine').addEventListener('click', rpDismiss);
   document.getElementById('rp-forget').addEventListener('click', rpForget);
+  // Learning Repair v2 (DARK `learning_repair_console`): the selector replaces the typed picker.
+  rpConsoleInit();
   document.querySelectorAll('#rp-filters .rp-chip').forEach(b => b.addEventListener('click', () => {
     _rpFilter = b.dataset.filter;
     document.querySelectorAll('#rp-filters .rp-chip').forEach(x => x.classList.toggle('active', x === b));
@@ -3409,8 +5272,14 @@ async function rpSend() {
   if (!_rpSel) return;
   const doc = _rpDocs.find(d => d.id === _rpSel);
   if (!confirm(`Send “${doc.original_filename}” back to Review?\n\nThis just moves it to your Review list — nothing is deleted. If it was fine, confirm it there and it goes right back to where it was.`)) return;
+  // Thread the SUSPECT context so the un-plant can flag the exact field(s) that brought the
+  // operator here — the doc returns to Review visibly suspect (note + flag + File-All-Ready
+  // exclusion) instead of clean-looking (the rubber-stamp gap). Empty reasons ⇒ the service
+  // stamps its generic doc-level note.
+  const _reasons = (_rpSuspects[_rpSel] && _rpSuspects[_rpSel].reasons) || [];
+  const suspects = _reasons.map(rr => ({ field: rr.field || null, note: String(rr.text || rr.kind || '') }));
   let r = null;
-  try { r = await api.repairDeconfirm(_rpSel); } catch (e) { alert('Failed: ' + (e.message || e)); return; }
+  try { r = await api.repairDeconfirm(_rpSel, { suspects }); } catch (e) { alert('Failed: ' + (e.message || e)); return; }
   if (!r || !r.ok) { document.getElementById('rp-action-msg').textContent = (r && r.error) || 'Could not send this document back (it may be locked by an approval route).'; return; }
   rpRemoveCurrent('Sent back to Review.');
 }
@@ -3444,6 +5313,153 @@ async function rpForget() {
   document.getElementById('rp-forget-msg').textContent = (r && r.ok)
     ? `Forgot ${s.anchors || 0} field position(s), ${s.hints || 0} hint(s), ${s.fieldRules || 0} rule(s).${r.backup ? ' Backup saved.' : ''} Reprocess this type's documents to relearn.`
     : ((r && r.error) || 'Could not forget the learning.');
+}
+
+// ── Learning Repair v2: the SELECTOR + CONSOLE + "start fresh" (barry UX + gary semantics → Oracle
+//    SIGN-OFF-W/COND C1–C6, 2026-08-26). DARK: `learning_repair_console` shows the selector in place
+//    of the typed picker; `learning_repair_forget` shows the start-fresh button (the service enforces
+//    the switch again — the renderer can never forget on its own). ──────────────────────────────────
+let _rpScopes = [], _rpScopeFilter = 'all', _rpScopeQuery = '', _rpConsoleOn = false, _rpForgetOn = false;
+let _rpOpenScope = null, _rpLastSnapshot = null;
+
+async function rpConsoleInit() {
+  try { _rpConsoleOn = (await api.getSetting('learning_repair_console')) === 'true'; } catch { _rpConsoleOn = false; }
+  try { _rpForgetOn = (await api.getSetting('learning_repair_forget')) === 'true'; } catch { _rpForgetOn = false; }
+  const sel = document.getElementById('rp-selector'), picker = document.getElementById('rp-picker-row');
+  if (!sel || !picker) return;
+  sel.style.display = _rpConsoleOn ? '' : 'none';
+  picker.style.display = _rpConsoleOn ? 'none' : '';
+  if (!_rpConsoleOn) return;
+  const q = document.getElementById('rp-scope-search');
+  q.addEventListener('input', () => { _rpScopeQuery = q.value.trim().toLowerCase(); rpRenderScopes(); });
+  document.querySelectorAll('#rp-scope-filters .rp-scope-chip').forEach(b => b.addEventListener('click', () => {
+    _rpScopeFilter = b.dataset.filter;
+    document.querySelectorAll('#rp-scope-filters .rp-scope-chip').forEach(x => x.classList.toggle('active', x === b));
+    rpRenderScopes();
+  }));
+  document.getElementById('rp-scope-refresh').addEventListener('click', rpLoadScopes);
+  document.getElementById('rp-fresh').addEventListener('click', rpStartFresh);
+  document.getElementById('rp-fresh-undo').addEventListener('click', rpUndoForget);
+  await rpLoadScopes();
+}
+
+async function rpLoadScopes() {
+  let r = null;
+  try { r = await api.learningScopes(); } catch (e) { r = { ok: false, error: e.message || String(e) }; }
+  _rpScopes = (r && r.scopes) || [];
+  document.getElementById('rp-scope-count').textContent = r && r.ok
+    ? `${_rpScopes.length} sender${_rpScopes.length === 1 ? '' : 's'} × type${_rpScopes.length === 1 ? '' : 's'} hold learning`
+    : (r && r.error) || 'Could not list what Scan Finder has learned.';
+  rpRenderScopes();
+}
+
+function _rpScopeMatches(s) {
+  if (_rpScopeQuery && !`${s.supplier_name} ${s.document_type_name || ''} ${s.document_type_slug}`.toLowerCase().includes(_rpScopeQuery)) return false;
+  switch (_rpScopeFilter) {
+    case 'look': return !!(s.suspects);
+    case 'notauto': return !(s.trust && s.trust.autoFiles) && s.docs > 0;
+    case 'orphan': return !!s.orphaned;
+    case 'blank': return !!s.blankIssuer;
+    default: return true;
+  }
+}
+function _rpWhen(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso); if (isNaN(d)) return String(iso).slice(0, 10);
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function rpRenderScopes() {
+  const el = document.getElementById('rp-scope-list'); if (!el) return;
+  const rows = _rpScopes.filter(_rpScopeMatches);
+  if (!rows.length) { el.innerHTML = '<div class="section-desc" style="padding:16px; text-align:center;">Nothing matches.</div>'; return; }
+  el.innerHTML = rows.map(s => {
+    const learned = (s.templates ? `${s.templates} layout${s.templates === 1 ? '' : 's'}` : '') ;
+    const auto = s.trust && s.trust.autoFiles ? '<span style="color:var(--ok);">Files by itself</span>' : `<span style="color:var(--muted);">${_rpEsc((s.trust && s.trust.text) || 'Not yet')}</span>`;
+    const badge = s.orphaned ? '<span style="font-size:10px; color:var(--warn);">learning, no documents</span>' : '';
+    const active = _rpOpenScope && _rpOpenScope.supplier_name === s.supplier_name && _rpOpenScope.document_type_slug === s.document_type_slug;
+    return `<div class="doctype-row rp-scope-row${active ? ' active' : ''}" data-sup="${_rpEsc(s.supplier_name)}" data-slug="${_rpEsc(s.document_type_slug)}" style="cursor:pointer; align-items:center; gap:10px; padding:8px 12px;">
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><strong>${_rpEsc(s.supplier_name || '(no sender recognised)')}</strong> <span style="color:var(--muted);">· ${_rpEsc(s.document_type_name || s.document_type_slug || 'untyped')}</span> ${badge}</div>
+        <div style="font-size:11px; color:var(--muted);">${s.excluded ? `${s.docs} filed · ${s.excluded === s.docs ? 'none' : s.teaching} still teaching` : `Learned from ${s.docs} document${s.docs === 1 ? '' : 's'}`} · last ${_rpWhen(s.last_confirmed)}${learned ? ' · ' + learned : ''}${s.logos ? ' · logo known' : ''}</div>
+      </div>
+      <div style="font-size:11px; white-space:nowrap;">${auto}</div>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.rp-scope-row').forEach(r => r.addEventListener('click', () => rpOpenScope(r.dataset.sup, r.dataset.slug)));
+}
+
+async function rpOpenScope(sup, slug) {
+  _rpOpenScope = { supplier_name: sup, document_type_slug: slug };
+  _rpLastSnapshot = null;
+  const sel = document.getElementById('rp-doctype');
+  if (sel && slug && [...sel.options].some(o => o.value === slug)) sel.value = slug;
+  document.getElementById('rp-supplier').value = sup || '';
+  rpRenderScopes();
+  await rpLoad();
+  // The typed picker is a CONTAINS filter ("Acme" would show "Pacmec Acme"); the console is exact — and
+  // the type-wide "worth a look" outliers of OTHER senders stay out of THIS sender's console (Chris r6
+  // card 8: "I clicked Harrowgate and got Silverbeck's papers").
+  if (sup) {
+    const same = (d) => String(d.supplier_name || '').trim().toLowerCase() === String(sup).trim().toLowerCase();
+    const before = _rpDocs.length;
+    _rpDocs = _rpDocs.filter(same);
+    for (const id of Object.keys(_rpSuspects)) { if (!_rpDocs.some(d => d.id === Number(id))) delete _rpSuspects[id]; }
+    if (_rpDocs.length !== before) { document.getElementById('rp-count').textContent = `Learned from ${_rpDocs.length} document(s)`; }
+    rpRenderSuspectStrip(); rpRenderList();
+  }
+  document.getElementById('rp-worklist').style.display = '';
+  rpRenderConsoleHead();
+}
+
+function rpRenderConsoleHead() {
+  const head = document.getElementById('rp-console-head'); if (!head) return;
+  if (!_rpConsoleOn || !_rpOpenScope) { head.style.display = 'none'; return; }
+  const s = _rpScopes.find(x => x.supplier_name === _rpOpenScope.supplier_name && x.document_type_slug === _rpOpenScope.document_type_slug) || {};
+  head.style.display = '';
+  document.getElementById('rp-console-title').textContent = `${_rpOpenScope.supplier_name || '(no sender recognised)'} · ${s.document_type_name || _rpOpenScope.document_type_slug}`;
+  const t = s.trust || {};
+  const why = t.autoFiles ? 'Files by itself.' : (t.text ? `${t.text}.` : 'Not filing by itself yet.');
+  const learnedTxt = s.excluded
+    ? `${s.docs} filed document${s.docs === 1 ? '' : 's'} — ${s.excluded === s.docs ? 'none of them teach any more (forgotten)' : `${s.teaching} still teaching, ${s.excluded} forgotten`}`
+    : `Learned from ${s.docs || 0} document${(s.docs || 0) === 1 ? '' : 's'}`;
+  document.getElementById('rp-console-status').textContent =
+    `${learnedTxt}${s.last_confirmed ? `, last on ${_rpWhen(s.last_confirmed)}` : ''}. ${why}` +
+    (s.templates ? ` ${s.templates} layout${s.templates === 1 ? '' : 's'} remembered.` : '') +
+    ' Sending a document back is what un-teaches it.';
+  document.getElementById('rp-fresh').style.display = (_rpForgetOn && _rpOpenScope.supplier_name) ? '' : 'none';
+  document.getElementById('rp-fresh-undo').style.display = _rpLastSnapshot ? '' : 'none';
+  document.getElementById('rp-fresh-msg').textContent = '';
+}
+
+async function rpStartFresh() {
+  if (!_rpOpenScope || !_rpForgetOn) return;
+  const msg = document.getElementById('rp-fresh-msg');
+  let plan = null;
+  try { plan = await api.learningRepairDryRun(_rpOpenScope); } catch (e) { plan = { ok: false, error: e.message || String(e) }; }
+  if (!plan || !plan.ok) { msg.textContent = (plan && plan.error) || 'Could not work out what would be forgotten.'; return; }
+  if (!confirm(`Start fresh with ${_rpOpenScope.supplier_name} (${plan.typeName || _rpOpenScope.document_type_slug})?\n\n${plan.text}`)) return;
+  let r = null;
+  try { r = await api.learningRepairForget(_rpOpenScope); } catch (e) { r = { ok: false, error: e.message || String(e) }; }
+  if (!r || !r.ok) { msg.textContent = (r && r.error) || 'Nothing was changed.'; return; }
+  _rpLastSnapshot = r.snapshotPath || null;
+  const sm = r.summary || {};
+  msg.textContent = `Forgotten: ${sm.templates || 0} layout(s), ${(sm.hints || 0) + (sm.anchors || 0) + (sm.rules || 0)} remembered value(s)/position(s); ${sm.docsStamped || 0} filed document(s) stopped teaching.`
+    + (r.reread ? ' Waiting documents will be read again.' : ' Use Reprocess on any waiting documents.');
+  await rpLoadScopes();
+  rpRenderConsoleHead();
+  document.getElementById('rp-fresh-undo').style.display = _rpLastSnapshot ? '' : 'none';
+}
+
+async function rpUndoForget() {
+  if (!_rpLastSnapshot) return;
+  const msg = document.getElementById('rp-fresh-msg');
+  let r = null;
+  try { r = await api.learningRepairUndo({ snapshotPath: _rpLastSnapshot }); } catch (e) { r = { ok: false, error: e.message || String(e) }; }
+  if (!r || !r.ok) { msg.textContent = (r && r.error) || 'Could not undo.'; return; }
+  _rpLastSnapshot = null;
+  msg.textContent = 'Restored — the sender teaches again. Documents already read again keep their "confirm once" note.';
+  await rpLoadScopes();
+  rpRenderConsoleHead();
 }
 
 document.getElementById('lr-inv-refresh').addEventListener('click', loadMemoryInventory);
@@ -3541,6 +5557,51 @@ document.getElementById('lr-btn-clear-hints').addEventListener('click', async ()
   await runLearningSearch();
 });
 
+// ── Senders that look like duplicates (report-only) ──────────────────────────────────────────
+// The B9 census as a screen. Every preventive fix in the teach-poisoning arc leaves a customer
+// whose filing tree is ALREADY split with nothing telling them; this is what tells them. It never
+// merges — picking a row only PREFILLS the audited rename below, which still has to be confirmed
+// by typing the old name.
+document.getElementById('lr-btn-find-duplicates')?.addEventListener('click', async () => {
+  const msg  = document.getElementById('lr-dupe-msg');
+  const host = document.getElementById('lr-dupe-list');
+  msg.textContent = 'Checking…';
+  host.innerHTML  = '';
+  let pairs = [];
+  try { pairs = await api.findDuplicateSuppliers(); }
+  catch (e) { msg.textContent = 'Could not check: ' + e.message; return; }
+  if (!pairs.length) {
+    msg.textContent = 'No senders differ by only a character or two — nothing looks split.';
+    return;
+  }
+  msg.textContent = `${pairs.length} pair${pairs.length === 1 ? '' : 's'} to look at.`;
+  host.innerHTML = pairs.map((p, i) => {
+    const scope = p.otherScope || {};
+    const extra = [scope.supplier_hints ? `${scope.supplier_hints} hint(s)` : '',
+                   scope.field_anchors ? `${scope.field_anchors} taught spot(s)` : '']
+      .filter(Boolean).join(', ');
+    return `<div class="row-flex" style="gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--border)">
+      <div style="flex:1">
+        <div><strong>${escHtml(p.likelyCorrect)}</strong> <span class="muted">— ${p.likelyCorrectDocs} document(s)</span></div>
+        <div><strong>${escHtml(p.other)}</strong> <span class="muted">— ${p.otherDocs} document(s)${extra ? ', ' + escHtml(extra) : ''}</span></div>
+        <div class="muted" style="font-size:11.5px">${p.distance === 1 ? 'one character' : p.distance + ' characters'} different</div>
+      </div>
+      <button class="btn" data-dupe-fix="${i}">Use "${escHtml(p.likelyCorrect)}"</button>
+    </div>`;
+  }).join('');
+  host.querySelectorAll('[data-dupe-fix]').forEach(btn => btn.addEventListener('click', () => {
+    const p = pairs[Number(btn.dataset.dupeFix)];
+    // Prefill BOTH sides of the existing rename tool and hand the operator straight to it — the
+    // rename itself stays exactly as audited and still demands the typed confirmation.
+    document.getElementById('lr-supplier').value   = p.other;
+    document.getElementById('lr-rename-new').value = p.likelyCorrect;
+    document.getElementById('lr-btn-search')?.click();
+    document.getElementById('lr-rename-new').scrollIntoView({ block: 'center', behavior: 'smooth' });
+    document.getElementById('lr-dupe-msg').textContent =
+      `Ready: rename "${p.other}" to "${p.likelyCorrect}" below, if that is the right way round.`;
+  }));
+});
+
 document.getElementById('lr-btn-rename-supplier').addEventListener('click', async () => {
   const msg = document.getElementById('lr-msg');
   if (!lrCurrentScope || !lrCurrentScope.supplier_name) {
@@ -3621,6 +5682,7 @@ loadDocTypes().then(() => {
 // A doc type created/changed elsewhere (e.g. the Teach wizard) — reload the list.
 api.onDocTypesChanged?.(() => { loadDocTypes().catch(() => {}); });
 loadUsers();
+initStampCatalog();
 loadAuditLog();
 
 // Open the editor on a specific template when launched from Review's "Add to
@@ -3639,6 +5701,7 @@ loadTemplates().then(async () => {
     if (targetId) openTemplateInEditor(targetId);
   } catch (e) { console.warn('settings template target failed:', e.message); }
 });
+setupTemplateCleanups();   // M3 "Suggested cleanups" — wire the scan/merge/re-link buttons (idempotent)
 api.onNavigateToTemplate(openTemplateInEditor);
 
 // Section/tab deep-link (e.g. Home "Activate" → 'licensing'): click the matching tab. The target
@@ -4017,8 +6080,16 @@ async function loLoadList() {
         + '</div>';
     }
     for (const r of overrides) {
+      // Oracle C3 (2026-08-11): teach-written rows must be VISIBLE here — deletion in this list
+      // is the only remediation once teach_label_becomes_keyword has written them (turning the
+      // flag off gates writes, never retires rows). "replaces built-ins" = exclusive; the layout
+      // tag names the template scope (migration 62); nothing = a plain additive admin row.
+      const tags = [];
+      if (r.exclusive) tags.push('<span style="font-size:10px; padding:1px 6px; border-radius:var(--r-pill); background:var(--accent-bg); color:var(--accent2);" title="Taught label — replaces the built-in labels for this field (instead of adding to them)">replaces built-ins</span>');
+      if (r.template_id > 0) tags.push(`<span style="font-size:10px; padding:1px 6px; border-radius:var(--r-pill); background:var(--surface3); color:var(--muted);" title="Applies only to documents matching this learned layout">${escHtml(r.template_name || 'layout #' + r.template_id)} only</span>`);
       html += `<div class="row-flex" style="gap:8px; align-items:center; padding:3px 0;">
         <span style="font-family:var(--mono); color:var(--accent2);">&ldquo;${escHtml(r.label)}&rdquo;</span>
+        ${tags.join(' ')}
         <button class="btn" data-lo-del="${r.id}" style="padding:2px 8px; font-size:11px;">Remove</button>
       </div>`;
     }
@@ -4203,9 +6274,20 @@ function renderAuditRows(rows) {
     const cat = escHtml(r.action_category || '');
     const outcome = escHtml(r.outcome || '');
     const oclass = auditOutcomeClass(r.outcome);
-    const target = r.target_type
-      ? escHtml(r.target_id ? `${r.target_type}:${r.target_id}` : r.target_type)
-      : (r.document_id ? escHtml(`document:${r.document_id}`) : '');
+    // Document targets show the FILENAME + a "View" link (opens the doc in Review, full zoom/pan)
+    // instead of "document:111"; a deleted/missing doc shows as unavailable. Other target types unchanged.
+    const auditDocId = (r.target_type === 'document' && r.target_id) ? r.target_id : (r.document_id || null);
+    let target;
+    if (auditDocId) {
+      const gone = !r.doc_filename || r.doc_status === 'deleted';
+      const fname = r.doc_filename ? escHtml(r.doc_filename) : `document #${auditDocId}`;
+      target = `<span title="document #${auditDocId}">${fname}</span>`
+        + (gone
+            ? ` <span style="color:var(--muted)" title="This document is no longer available">(unavailable)</span>`
+            : ` <button type="button" class="aud-view-btn" data-doc="${auditDocId}" title="Open this document in Review">View</button>`);
+    } else {
+      target = r.target_type ? escHtml(r.target_id ? `${r.target_type}:${r.target_id}` : r.target_type) : '';
+    }
     html.push(`<tr class="aud-row" data-id="${r.id}">
       <td>${when}</td>
       <td>${user}${r.actor_role ? ` <span style="color:var(--muted)">(${escHtml(r.actor_role)})</span>` : ''}</td>
@@ -4232,6 +6314,15 @@ function renderAuditRows(rows) {
     tr.addEventListener('click', () => {
       const d = tbody.querySelector(`tr.aud-detail[data-detail="${tr.dataset.id}"]`);
       if (d) d.style.display = d.style.display === 'none' ? '' : 'none';
+    });
+  });
+  // "View" opens the audited document in Review (full zoom/pan); stop the click from also toggling the
+  // detail row. openReviewWindowAt is admin/edit-gated in main.js (the Audit tab is itself admin-only).
+  tbody.querySelectorAll('.aud-view-btn').forEach(b => {
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = Number(b.dataset.doc);
+      if (id) api.openReviewWindowAt(id);
     });
   });
 }
@@ -4278,4 +6369,34 @@ document.getElementById('aud-csv')?.addEventListener('click', async () => {
     btn.textContent = 'Export failed';
   }
   setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1800);
+});
+
+// Stage 5b — re-walk the tamper-evident audit hash chain (live + archives) and report the result.
+document.getElementById('aud-verify')?.addEventListener('click', async () => {
+  const btn = document.getElementById('aud-verify');
+  const out = document.getElementById('aud-verify-result');
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Verifying…';
+  try {
+    const r = await api.verifyAuditChain();
+    let msg, colour;
+    if (r && r.ok) {
+      msg = `✓ Integrity OK — ${r.checked || 0} record(s) verified, chain unbroken.`;
+      if (r.archivesPartial) msg += ' (Note: some archived months exceeded the attach limit and were not all checked.)';
+      colour = 'var(--ok)';
+    } else if (r && r.reason === 'no_key') {
+      msg = 'Integrity checking is not active on this install (no audit key set).'; colour = 'var(--muted)';
+    } else if (r && r.reason === 'no_chain_columns') {
+      msg = 'This log predates tamper-evidence — no chain to verify.'; colour = 'var(--muted)';
+    } else {
+      const at = r && r.brokenAt != null ? ` at record #${r.brokenAt}` : '';
+      msg = `⚠ Integrity FAILED${at} — the audit log has been altered, reordered, or truncated (${(r && r.reason) || 'unknown'}).`;
+      colour = 'var(--err)';
+    }
+    out.textContent = msg; out.style.color = colour; out.style.display = 'block';
+  } catch (e) {
+    out.textContent = 'Verify failed: ' + (e && e.message ? e.message : 'unknown error');
+    out.style.color = 'var(--err)'; out.style.display = 'block';
+  }
+  btn.textContent = orig; btn.disabled = false;
 });

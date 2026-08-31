@@ -126,6 +126,78 @@ function stageMeta(stage) {
     default:                 return { cls: 's1',  label: stage || 'stage' };
   }
 }
+
+// Fixed pipeline order for the every-step ladder (slice 1 = the four core read
+// stages; late 2.5/2.6 stages are deferred to slice 2). Every field renders a row
+// per stage in THIS order, so a stage that produced nothing is visibly present
+// (skipped / no_candidate), not silently absent — the point of the feature.
+const LADDER_STAGES = ['0_template', '0.5_mapping', '1_keyword', '2_anchor'];
+
+// Outcome → CSS class + label via an ALLOWLIST — a raw engine outcome string is
+// NEVER interpolated into a class attribute (escapeHtml guards text nodes, not
+// attributes). Unknown outcomes fall back to the neutral style.
+const OUTCOME_META = {
+  won:              { cls: 'oc-won',   label: 'won' },
+  lost:             { cls: 'oc-lost',  label: 'lost' },
+  no_candidate:     { cls: 'oc-none',  label: 'no candidate' },
+  already_resolved: { cls: 'oc-prior', label: 'already resolved' },
+  skipped:          { cls: 'oc-skip',  label: 'skipped' },
+};
+function outcomeMeta(o) { return OUTCOME_META[o] || { cls: 'oc-none', label: 'step' }; }
+
+// The complete per-field ladder: every read stage with its ENGINE-DECLARED outcome.
+// Unlike the "Winning lineage" chain below (a best-effort reconstruction), this is
+// declared by the engine, so it carries no "approx" caveat and shows the stages
+// that produced NOTHING. Stage-2 rung rejects (anchor_reject) nest under 2_anchor.
+function ladderHtml(m) {
+  const byStage = new Map((m.steps || []).map(s => [s.stage, s]));
+  const rows = LADDER_STAGES.map(stage => {
+    const sm = stageMeta(stage);
+    const st = byStage.get(stage);
+    if (!st) {
+      return `<div class="lrow missing"><span class="sbadge ${sm.cls}">${escapeHtml(sm.label)}</span><span class="oc oc-none">—</span></div>`;
+    }
+    const om = outcomeMeta(st.outcome);
+    let detail = '';
+    if (st.outcome === 'won' || st.outcome === 'lost') {
+      detail = `<span class="lval">${escapeHtml(shownVal(st.value))}</span>`
+             + (st.method ? `<span class="conf">${escapeHtml(st.method)}</span>` : '')
+             + captionHtml(st.caption)
+             + (st.confidence != null ? confBar(st.confidence) : '')
+             // A LOST rung names what currently holds the field (state, not a claimed cause) so
+             // "the taught anchor read X but lost to Y" is visible without re-running.
+             + (st.outcome === 'lost' && st.reason ? `<span class="lreason">${escapeHtml(st.reason)}</span>` : '');
+    } else if (st.outcome === 'already_resolved') {
+      detail = `<span class="lval muted">${escapeHtml(shownVal(st.value))}</span>`
+             + (st.by ? `<span class="conf">by ${escapeHtml(st.by)}</span>` : '')
+             + captionHtml(st.caption)
+             + (st.reason ? `<span class="lreason">${escapeHtml(st.reason)}</span>` : '');
+    } else { // no_candidate / skipped — the reason is the diagnostic datum
+      detail = st.reason ? `<span class="lreason">${escapeHtml(st.reason)}</span>` : '';
+    }
+    let rejects = '';
+    if (stage === '2_anchor' && m.rejects && m.rejects.length) {
+      rejects = `<div class="lrejects">` + m.rejects.map(r =>
+        `<div class="lreject">✗ <b>${escapeHtml(r.method || 'anchor')}</b>${captionHtml(r.caption)} read ${escapeHtml(shownVal(r.value))} — ${escapeHtml(r.reason || 'rejected')}</div>`
+      ).join('') + `</div>`;
+    }
+    return `<div class="lrow"><span class="sbadge ${sm.cls}">${escapeHtml(sm.label)}</span>`
+         + `<span class="oc ${om.cls}">${escapeHtml(om.label)}</span>${detail}${rejects}</div>`;
+  }).join('');
+  return `<div class="sec-label">Every step</div><div class="ladder">${rows}</div>`;
+}
+
+// The PRINTED CAPTION the rung matched (owner request 2026-08-09: "I would like to see the
+// winning keyword so I know what the app used to derive the value"). Engine-supplied
+// (`caption` on step / candidate / merge / anchor_reject), never re-derived here — and the
+// engine already suppresses the Stage-0.5 field-key fallback, so anything that arrives is a
+// caption the rung really answered. Absent on older traces and on rungs that match no label
+// (a positional read), which is itself the datum: no caption means nothing was matched BY NAME.
+function captionHtml(caption) {
+  const c = (caption == null ? '' : String(caption)).trim();
+  return c ? `<span class="lcap" title="the printed caption this rung matched">matched “${escapeHtml(c)}”</span>` : '';
+}
+
 function confBar(c) {
   if (c == null) return '';
   const pct = Math.max(0, Math.min(100, c));
@@ -192,12 +264,22 @@ function setFollow() { followTgl.classList.toggle('on', autoFollow); }
 async function selectDoc(key) {
   selectedDoc = key;
   selectedField = null;
-  let events = [];
-  try { events = (await window.docusnap.devGetSessionDoc(key)) || []; } catch {}
-  buildModel(events);
-  renderDoc();
+  await refreshSelectedDoc();
   clearEvidence();
   renderDocList([...docMetaByKey.values()]);
+}
+
+// Re-fetch + re-render the CURRENT doc WITHOUT resetting the field selection or the
+// evidence pane. Used by the live trace tick so a 120ms refresh doesn't wipe the
+// crop the user is inspecting (the every-step ladder invites more crop clicks; the
+// old live path called selectDoc, which nulled selectedField + cleared evidence
+// every tick). If a field is open, re-render its evidence in place.
+async function refreshSelectedDoc() {
+  let events = [];
+  try { events = (await window.docusnap.devGetSessionDoc(selectedDoc)) || []; } catch {}
+  buildModel(events);
+  renderDoc();
+  if (selectedField) showEvidence(selectedField);
 }
 
 // Reconstruct a per-field model from the ordered event stream.
@@ -208,6 +290,7 @@ function buildModel(events) {
     if (!docModels.has(f)) docModels.set(f, {
       field: f, wins: [], losers: [], transforms: [], validations: [],
       reprocess: [], final: null, reconcile: null,
+      steps: [], rejects: [],
     });
     return docModels.get(f);
   };
@@ -229,6 +312,11 @@ function buildModel(events) {
       case 'validation':  m.validations.push(ev); break;
       case 'reprocess_merge': m.reprocess.push(ev); break;
       case 'final':       m.final = ev; break;
+      // Every-step ladder (slice 1): one 'step' per (stage, field) declared by the
+      // engine; 'anchor_reject' = a Stage-2 rung read that a gate dropped (was
+      // previously dropped here — now surfaced under the 2_anchor ladder row).
+      case 'step':          m.steps.push(ev); break;
+      case 'anchor_reject': m.rejects.push(ev); break;
       case 'slice':
         if (!slicesByField.has(ev.field)) slicesByField.set(ev.field, []);
         slicesByField.get(ev.field).push(ev);
@@ -314,7 +402,7 @@ function renderField(field, m, flagged, open) {
   for (const w of m.wins) {
     const sm = stageMeta(w.stage);
     nodes.push(chainNode(sm, escapeHtml(w.value == null ? '—' : String(w.value)),
-      w.confidence, w.method, field, hasCrop(field, w.stage)));
+      w.confidence, w.method, field, hasCrop(field, w.stage), false, captionHtml(w.caption)));
   }
   for (const t of m.transforms) {
     const sm = stageMeta(t.stage);
@@ -338,12 +426,26 @@ function renderField(field, m, flagged, open) {
     const desc = rc.verdict ? `<span class="desc">${escapeHtml(String(rc.verdict))}</span>` : '';
     nodes.push(chainNode(stageMeta('4_validate'), escapeHtml(calc), null, 'reconcile', field, false, false, desc));
   }
-  // Final node
+  // Final node — plus the CORROBORATION line (owner principle 2026-08-11: agreement between
+  // INDEPENDENT method families is evidence; same-family agreement counts for nothing). Green
+  // when an independent family agrees with the winner, amber when one read a DIFFERENT value —
+  // the disagreement surfaces HERE first, deliberately, before it is allowed to move anything.
   if (m.final) {
+    const cb = m.final.corrob;
+    let corrobLine = '';
+    if (cb && (cb.agree || []).length) {
+      corrobLine = `<div class="desc" style="color:var(--ok)" title="independent method families that read the same value">✓ corroborated by ${escapeHtml(cb.agree.join(' + '))}</div>`;
+    } else if (cb && (cb.disagree || []).length) {
+      const d = cb.disagree.map(x => `${x.family}: “${shownVal(x.value)}”`).join(' · ');
+      corrobLine = `<div class="desc" style="color:var(--warn)" title="an independent method family read a different value — nothing acts on this yet; it is recorded so it can be seen">⚠ uncorroborated — ${escapeHtml(d)}</div>`;
+    } else if (cb) {
+      corrobLine = `<div class="desc" style="color:var(--muted)">sole witness (${escapeHtml(cb.winner_family || '?')})</div>`;
+    }
     nodes.push(`<div class="node final"><div class="rail"><div class="dot"></div></div>`
       + `<div class="body"><div class="stage-line"><span class="sbadge s2" style="background:rgba(62,207,142,.16);color:var(--final)">★ FINAL</span>`
       + (reviewForced ? `<span class="desc" style="color:var(--warn)">held for review</span>` : '')
-      + `</div><div class="val-line">${escapeHtml(shownVal(finalVal))} ${finalMethod ? `<span class="conf">${escapeHtml(finalMethod)}</span>` : ''}</div></div></div>`);
+      + `</div><div class="val-line">${escapeHtml(shownVal(finalVal))} ${finalMethod ? `<span class="conf">${escapeHtml(finalMethod)}</span>` : ''}</div>`
+      + corrobLine + `</div></div>`);
   }
 
   // Reprocess-merge node (post-pipeline JS decision) — shown first if present.
@@ -368,7 +470,8 @@ function renderField(field, m, flagged, open) {
         : 'superseded (reason not recorded)';
       const vs = l.vs && l.vs.value != null ? ` vs <b>${escapeHtml(String(l.vs.value))}</b>` : '';
       return `<div class="loser"><div class="stage-line"><span class="sbadge ${sm.cls}">${escapeHtml(sm.label)}</span>`
-        + (l.method ? `<span class="conf">${escapeHtml(l.method)}</span>` : '') + `</div>`
+        + (l.method ? `<span class="conf">${escapeHtml(l.method)}</span>` : '')
+        + captionHtml(l.caption) + `</div>`
         + `<div class="val-line">${escapeHtml(shownVal(l.value))} ${confBar(l.confidence)}</div>`
         + `<div class="reason">✗ lost${vs} — ${reason}</div></div>`;
     }).join('');
@@ -393,7 +496,8 @@ function renderField(field, m, flagged, open) {
     + (m.final && m.final.confidence != null ? `<span class="fm">conf ${m.final.confidence}%</span>` : '')
     + `<span class="fm">${finalMethod ? escapeHtml(finalMethod) : ''}</span></div>`
     + (m.final && m.final.note ? `<div class="reason" style="color:var(--warn);margin:-6px 0 12px">⚠ ${escapeHtml(m.final.note)}</div>` : '')
-    + `<div class="sec-label">Winning lineage <span class="approx" title="Reconstructed from trace events. The engine does not yet declare a definitive winner or per-decision reasons — treat as best-effort.">approx</span></div>`
+    + ladderHtml(m)
+    + `<div class="sec-label">Winning lineage <span class="approx" title="The Every-step ladder above is engine-declared. This lineage CHAIN (order + transforms) is still reconstructed from trace events — treat as best-effort.">approx</span></div>`
     + `<div class="chain">${reprNode}${nodes.join('')}</div>`
     + othersHtml
     + `</div></div>`;
@@ -555,7 +659,7 @@ function handleTrace(ev) {
     // events during processing doesn't thrash the DOM (simple + correct — the
     // per-doc event volume is small).
     clearTimeout(liveRenderTimer);
-    liveRenderTimer = setTimeout(() => selectDoc(selectedDoc), 120);
+    liveRenderTimer = setTimeout(() => refreshSelectedDoc(), 120);
   }
 }
 

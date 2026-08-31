@@ -223,7 +223,9 @@ function _annotateFieldVariability(dt) {
       f.key === dt.ref_field_key ||
       f.key === dt.date_field_key ||
       f.type === 'date' ||
-      f.type === 'currency'
+      f.type === 'currency' ||
+      f.type === 'list' ||       // a list (e.g. serial numbers) is per-document by construction (2026-08-11)
+      f.type === 'barcode'       // a decoded barcode is per-document too (2026-08-26) — never a frozen template value
     ) ? 1 : 0;
     // STRUCTURAL = Company / Date / Reference role: permanent, can't be deleted,
     // disabled, renamed or retyped (the value stays editable). Surfaced so the
@@ -405,12 +407,17 @@ function updateType(db, id, changes) {
   // caller create a dangling ref/date role (which would make Review's Confirm gate
   // impossible to satisfy). A non-null role key with no matching field is dropped from
   // the update; clearing a role to null/'' is always allowed.
+  // A LIST-typed field can never be a role (2026-08-11): the ref role feeds the {ref}
+  // FILENAME token, and a joined 'A; B; C' in a filename is never right.
   for (const role of ['ref_field_key', 'date_field_key']) {
     if (role in changes && changes[role]) {
-      const exists = db.prepare(
-        'SELECT 1 FROM fields WHERE document_type_id = ? AND key = ? LIMIT 1'
+      const row = db.prepare(
+        'SELECT type FROM fields WHERE document_type_id = ? AND key = ? LIMIT 1'
       ).get(id, changes[role]);
-      if (!exists) delete changes[role];
+      const _t = String((row && row.type) || '').toLowerCase();
+      // A BARCODE field may be the reference role (a decoded document ID is a clean, unique string) but
+      // never the DATE role — Chris r6 card 4 set one and got a queue row saying "Needs: Barcode".
+      if (!row || _t === 'list' || (role === 'date_field_key' && _t === 'barcode')) delete changes[role];
     }
   }
   const sets = Object.keys(changes)
@@ -418,8 +425,13 @@ function updateType(db, id, changes) {
     .map(k => `${k} = @${k}`)
     .join(', ');
   if (!sets) return;
-  return db.prepare(`UPDATE document_types SET ${sets} WHERE id = @id`)
+  const res = db.prepare(`UPDATE document_types SET ${sets} WHERE id = @id`)
     .run({ ...changes, id });
+  // A newly designated ref/date role is required by nature — assert the flag on its field. The
+  // PREVIOUS role field is no longer structural and is left as the operator had it (they may
+  // untick it now). A dropped (dangling) role never reaches here: it was deleted from `changes`.
+  if (changes.ref_field_key || changes.date_field_key) assertStructuralRequired(db, id);
+  return res;
 }
 
 // Force the structural ID fields to EXIST + be protected on a doc type. Idempotent;
@@ -452,6 +464,38 @@ function ensureStructuralRoles(db, typeId) {
     }
     updateType(db, typeId, { date_field_key: 'date' });
   }
+  assertStructuralRequired(db, typeId);   // the roles are required by nature — make the flag say so
+}
+
+// STRUCTURAL ROLES ARE REQUIRED BY NATURE (2026-08-27, owner: "surely ref, date and supplier must
+// be required by nature"). The Confirm gate, the queue's "missing" marker and the auto-file
+// predicate all key off the ROLE assignment — but `fields.required` is what the SCORER reads
+// (validator.overall_confidence: the required fields, ELSE every field, an expected-but-empty one
+// = 0), plus validator.needs_review and scopeTrust's graduation-verifiability loop. Every SEEDED
+// type sets required=1 on its roles; the shared doc-type editor's create road (seedCreate →
+// create-doc-type-with-fields) never did, so a wizard/editor-made type carried required=0 on all
+// three roles: the scorer fell to "every field" and any optional field the engine could not read
+// (a List serial, a customer) counted 0 — a whole graduated scope held at overall 81 < 95
+// (Castellan worksheets, 2026-08-27; the Northgate "72% cap" of 07-27 was the same class). The
+// edit-mode editor LOCKS the Required toggle ("Structural field — always required") and
+// updateField refuses the change, so the operator could not even tick it: the promise was
+// asserted by the guards and written by nobody. This is the ONE writer that makes it true —
+// asserts required=1 on the identity + the ASSIGNED ref/date roles of one type (or every type
+// when typeId is null: migration 92, backup restore). Idempotent; only ever 0→1 on a ROLE field;
+// never touches a non-role field; never creates or assigns a role (Reference stays optional to
+// DESIGNATE — the no-ref dead-end rule above is untouched). Returns the number of rows healed.
+function assertStructuralRequired(db, typeId = null) {
+  const ph = COMPANY_KEYS.map(() => '?').join(',');
+  const scope = typeId == null ? '' : 'AND dt.id = ?';
+  const args = typeId == null ? [...COMPANY_KEYS] : [...COMPANY_KEYS, typeId];
+  return db.prepare(`
+    UPDATE fields SET required = 1
+     WHERE COALESCE(required, 0) <> 1
+       AND id IN (
+         SELECT f.id FROM fields f JOIN document_types dt ON dt.id = f.document_type_id
+          WHERE (f.key IN (${ph}) OR f.key = dt.ref_field_key OR f.key = dt.date_field_key)
+            ${scope})
+  `).run(...args).changes;
 }
 
 // Migration 44 core (idempotent + reusable): UNLINK customer_name from identity. For every type
@@ -572,6 +616,7 @@ const PRESET_CATALOG = [
   },
   {
     name: 'Remittance Advice', ref_field_key: 'remittance_number', date_field_key: 'remittance_date',
+    title_aliases: ['Remittance'],
     company_key: 'supplier_name',
     fields: [
       { key: 'supplier_name',     label: 'Document Issuer',     type: 'text',     required: 1,
@@ -608,13 +653,18 @@ const PRESET_CATALOG = [
         labels: ['Delivered By', 'Despatched By', 'Dispatched By'] },
       { key: 'customer_name',   label: 'Customer',          type: 'text', required: 0,
         labels: ['Deliver To', 'Delivery To', 'Ship To', 'Consignee'] },
-      { key: 'delivery_number', label: 'Delivery Number', type: 'text', required: 1,
+      // reference_code, not text: it is a CODE and must carry at least one digit. `text` has no
+      // validation_patterns entry and is not in trust.js STRICT_TYPES, so a text-typed delivery
+      // number had no format gate at all — which is how the caption 'Delivery' was stored as one
+      // and auto-filed. Migration 59 retypes existing installs; see the note there.
+      { key: 'delivery_number', label: 'Delivery Number', type: 'reference_code', required: 1,
         labels: ['Delivery No', 'Delivery Number', 'Delivery Note No', 'DN No', 'Despatch No', 'Dispatch No', 'Docket No', 'Note No'] },
       { key: 'delivery_date',   label: 'Delivery Date',   type: 'date', required: 1 },
     ],
   },
   {
     name: 'Statement', ref_field_key: 'statement_number', date_field_key: 'statement_date',
+    title_aliases: ['Statement of Account'],
     company_key: 'supplier_name',
     fields: [
       { key: 'supplier_name',    label: 'Document Issuer',    type: 'text',     required: 1,
@@ -646,6 +696,11 @@ const PRESET_CATALOG = [
   },
   {
     name: 'Quote', ref_field_key: 'quote_number', date_field_key: 'quote_date',
+    // A4 of the type-split arc (2026-08-22): the printed heading is almost always "QUOTATION" — the
+    // type NAME folds in as a heading phrase (keyword.py) but "Quotation" never did, so no Quote
+    // could ever carry a trusted title. Aliases enter the same scoring bucket as the name (a caption
+    // line "Quotation Ref NRQ-2551" scores as a MENTION, never a trusted heading — pinned).
+    title_aliases: ['Quotation', 'Estimate'],
     company_key: 'supplier_name',
     fields: [
       { key: 'supplier_name', label: 'Document Issuer', type: 'text',     required: 1,
@@ -659,7 +714,50 @@ const PRESET_CATALOG = [
         labels: ['Quote Total', 'Quotation Total', 'Estimated Total', 'Total Estimate'] },
     ],
   },
+  {
+    // Service/job worksheet. ref keyed to reference_number (the live convention) so the
+    // type-scoped "Worksheet No"/"Job No" captions raise its ~30% recall without touching the
+    // global _REF_ROLE_CAPTIONS seed (which would collide with the dedicated job_no field and
+    // blast every custom ref type — reggie). No supplier/customer label seeds: name fields are
+    // format-ungated, and "Engineer"/"Site" would grab a person/site, not the issuer (Oracle C2).
+    name: 'Service Worksheet', ref_field_key: 'reference_number', date_field_key: 'worksheet_date',
+    title_aliases: ['Worksheet', 'Job Sheet'],
+    company_key: 'supplier_name',
+    fields: [
+      { key: 'supplier_name',    label: 'Document Issuer',  type: 'text', required: 1 },
+      { key: 'reference_number', label: 'Worksheet Number', type: 'text', required: 1,
+        labels: ['Worksheet No', 'Worksheet Number', 'Worksheet Ref', 'Job Sheet No',
+                 'Job Sheet Number', 'Job No', 'Job Number', 'Job Ref', 'Job Card No', 'WS No'] },
+      { key: 'worksheet_date',   label: 'Worksheet Date',   type: 'date', required: 1,
+        labels: ['Job Date', 'Service Date', 'Date of Work', 'Attendance Date'] },
+    ],
+  },
+  {
+    // The "just file this, I'll find it later" FALLBACK type (docs/designs/
+    // GENERIC_DOCTYPE_2026-07-18.md): arbitrary paperwork retrieved by full-text search +
+    // the Auto-Title. No reference role (first-class; a forced ref trains junk-typing).
+    // Date stays structural/required — satisfied by the visible scan-date prefill at review.
+    // NO label seeds anywhere: a title has no printed caption to anchor, and "Title:" is a
+    // salutation caption the free-text seeder must never bind (Oracle C2 excludes the key).
+    name: 'General Document', ref_field_key: null, date_field_key: 'date',
+    company_key: 'supplier_name',
+    fields: [
+      { key: 'supplier_name', label: 'Document Issuer', type: 'text', required: 1 },
+      { key: 'title',         label: 'Title',           type: 'text', required: 0 },
+      { key: 'date',          label: 'Date',            type: 'date', required: 1 },
+    ],
+  },
 ];
+
+// The Generic fallback type is identified by its FROZEN slug — a deliberate convention,
+// not a schema column (slugs freeze at creation and survive display renames; a
+// user-created type already carrying this slug IS their generic type — documented
+// trade-off). getGenericType returns null unless the type exists AND is enabled, which
+// is exactly the condition the insert-seam fallback and the Review chip key on.
+const GENERIC_SLUG = 'general_document';
+function getGenericType(db) {
+  return db.prepare('SELECT * FROM document_types WHERE slug = ? AND enabled = 1').get(GENERIC_SLUG) || null;
+}
 
 // Slug a preset's display name EXACTLY as addType does, so labels seed under the
 // same slug the type is created with (and the engine resolves at runtime).
@@ -703,6 +801,7 @@ function addPresetTypes(db, slugs) {
           name: preset.name,
           ref_field_key: preset.ref_field_key,
           date_field_key: preset.date_field_key,
+          title_aliases: preset.title_aliases || null,   // A4: the printed-heading aliases ship with the preset
         });
         const typeId = Number(info.lastInsertRowid);
         let sort = 10;
@@ -732,10 +831,37 @@ function addPresetTypes(db, slugs) {
   return results;
 }
 
+// A4 of the type-split arc (2026-08-22): seed the catalog's title aliases onto an EXISTING install's
+// types that carry none — matched by preset NAME, NEVER overwriting an operator's own aliases (a
+// non-empty row is left alone), and through normaliseTitleAliases so the alias==another-type-name
+// hard reject and the length/letter rules apply exactly as in Settings. Returns the names seeded.
+// Called by migration 85; idempotent.
+function seedPresetTitleAliases(db) {
+  const seeded = [];
+  let hasCol = false;
+  try { hasCol = db.prepare("PRAGMA table_info(document_types)").all().some(c => c.name === 'title_aliases'); } catch { hasCol = false; }
+  if (!hasCol) return seeded;
+  for (const preset of PRESET_CATALOG) {
+    if (!Array.isArray(preset.title_aliases) || !preset.title_aliases.length) continue;
+    const row = db.prepare('SELECT id, name, title_aliases FROM document_types WHERE LOWER(TRIM(name)) = LOWER(?)').get(preset.name);
+    if (!row) continue;
+    const cur = _parseAliases(row.title_aliases);
+    if (Array.isArray(cur) && cur.length) continue;                 // the operator's own aliases stand
+    const na = normaliseTitleAliases(db, preset.title_aliases, row.name);
+    if (na.error || !na.aliases.length) continue;                   // e.g. "Quotation" is already a type here
+    db.prepare('UPDATE document_types SET title_aliases = ? WHERE id = ?').run(_serialiseAliases(na.aliases), row.id);
+    seeded.push(row.name);
+  }
+  return seeded;
+}
+
 module.exports = {
+  seedPresetTitleAliases,
   seedBuiltInTypes, getAll, getWithFields, getAllWithFields, getAllWithFieldsAll,
   addType, updateType, addField, updateField, deleteField, ensureStructuralRoles,
+  assertStructuralRequired,
   reshapeCustomerIdentityTypes, cleanupStaleCustomerLearning,
   COMPANY_KEYS, isStructuralKey, normaliseTitleAliases,
   PRESET_CATALOG, presetSlug, getPresetCatalog, addPresetTypes,
+  GENERIC_SLUG, getGenericType,
 };

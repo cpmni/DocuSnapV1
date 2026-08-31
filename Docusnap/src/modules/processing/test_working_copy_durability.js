@@ -57,7 +57,8 @@ function testReconcileRealFs() {
   const idNR = mk('needs_review'), idDF = mk('deferred'), idER = mk('error'), idCF = mk('confirmed'), idDL = mk('deleted');
   const T = (n) => fs.writeFileSync(path.join(inbox, n), 'x');
   T(`${idNR}.pdf`); T(`${idDF}.pdf`); T(`${idER}.pdf`);        // live → keep
-  T(`${idCF}.pdf`); T(`${idDL}.pdf`);                          // dead → remove
+  T(`${idCF}.pdf`);                                            // confirmed (dead) → remove (copy already unlinked at confirm)
+  T(`${idDL}.pdf`);                                            // soft-deleted → KEEP (recoverable — card 1)
   T('888888.pdf');                                             // orphan → remove
   T('junk.part'); T(`${idNR}.pdf.part`);                       // .part debris → remove
   T('notes.txt'); T('final-report.pdf'); T('7x.pdf');          // unmanaged → keep
@@ -65,12 +66,13 @@ function testReconcileRealFs() {
   const s = proc.reconcileHolding(fs, path, db, inbox);
   const left = new Set(fs.readdirSync(inbox));
   check('live copies (needs_review/deferred/error) all KEPT', left.has(`${idNR}.pdf`) && left.has(`${idDF}.pdf`) && left.has(`${idER}.pdf`));
-  check('dead copies (confirmed/deleted) removed', !left.has(`${idCF}.pdf`) && !left.has(`${idDL}.pdf`));
+  check('confirmed (dead) copy removed', !left.has(`${idCF}.pdf`));
+  check('SOFT-DELETED copy KEPT — restore must find a page (card 1)', left.has(`${idDL}.pdf`));
   check('orphan (no doc row) removed', !left.has('888888.pdf'));
   check('.part debris removed', !left.has('junk.part') && !left.has(`${idNR}.pdf.part`));
   check('unmanaged files untouched', left.has('notes.txt') && left.has('final-report.pdf') && left.has('7x.pdf'));
-  check('summary counts: 2 parts, 1 orphan, 2 dead, 6 kept',
-    s.partsRemoved === 2 && s.orphansRemoved === 1 && s.deadRemoved === 2 && s.kept === 6, JSON.stringify(s));
+  check('summary counts: 2 parts, 1 orphan, 1 dead, 7 kept',
+    s.partsRemoved === 2 && s.orphansRemoved === 1 && s.deadRemoved === 1 && s.kept === 7, JSON.stringify(s));
   db.close();
 }
 

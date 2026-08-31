@@ -1,0 +1,209 @@
+# HANDOVER — 2026-08-08 OVERNIGHT (autonomous) — teach-side run measured, 3 fixes shipped dark, 1 design REFUTED by measurement
+
+**Branch `feat/teach-side-overnight`. Revert point: `8b8b458` on `feat/reprocess-throughput-autostraighten`.**
+Everything tonight is on the new branch and every behaviour change is DEFAULT OFF, so the revert is
+either `git checkout feat/reprocess-throughput-autostraighten` (abandon) or simply leaving the
+switches off (keep the code, keep today's behaviour).
+
+---
+
+## READ THIS FIRST — the goal was not met, and here is the honest number
+
+The target was **98% on teach + targeting**. It is not there. Best measured state after tonight's
+fixes, over 200 scanned siblings of 10 taught documents:
+
+| field | after | field | after |
+|---|---|---|---|
+| date | 83% | vat_no | 51% |
+| customer | 53% | account_no | 28% |
+| ref | 64% | po_ref | 35% |
+| issuer | 60% | serials | 0% |
+| total | 72% | | |
+
+What tonight actually bought: **+9 correct reads and 33 confidently-wrong values converted to
+empty** (review instead of a silent misfile), with **no lane going down**. The gap to 98% is not one
+more fix — the remaining failures are the taught box reading the wrong row/column on drifted scans,
+which is a geometry problem, not a rules problem. See NEXT.
+
+I did not run the Chris loop. Three fixes needed measuring end to end, the freeze design needed
+refuting, and a Chris replication needs a fresh sandbox plus UI-driven teaching that I could not
+have validated properly in the time left. Choosing verified measurement over an unverifiable
+fifth artefact was the right trade, but it does mean **the Chris arm of your instruction is
+outstanding**.
+
+---
+
+## What shipped (commit `4e5c21c`, all DEFAULT OFF, byte-identical off)
+
+| switch | defect | measured |
+|---|---|---|
+| `STAGE05_REF_CODE_GATE` | a taught box read its own CAPTION and committed it — expected `HTS-SO-12013`, got the literal `'Ref'` at conf 70. Stage 1 has refused codeless references since 08-07 but that gate lives inside `keyword.extract_fields`; all six Stage-0.5 rungs were unprotected. Guard added at `_gate_value`, the choke point they share. | Harrowgate ref 80% → 85% |
+| `KEYWORD_GENERIC_CAPTION_EXCLUSIVE` | one code captured into THREE fields: `sales_order_number`, `account_no` and `vat_no` all committed `'VXS79871'`. Every ref-role field is seeded with the same generic caption bank; the free-text branch dedupes siblings, the ref branch does not. | account_no wrong 51→29, vat_no wrong 65→54 |
+| `TYPE_TITLE_OWNER_PRECEDENCE` | **the silent one.** Type election is a bucket SUM: an install-created type owns one phrase, a built-in owns a whole caption vocabulary, and `ORDER CONFIRMATION` is itself a Sales Order phrase — so the install type cannot win, even on a tie (`max` returns the first maximal key). A template taught against such a type binds to a slug its siblings can never detect as. | issuer 56% → 60%; Veltrix 0%→30%, Silverbeck 40%→50% |
+
+Tests: `python_backend/tests/test_teach_side_gates.py` (17 pins, every ON case has an OFF twin) and
+`database/modules/test_freeze_issuer_only.js` (13 pins).
+
+---
+
+## The design that measurement REFUTED — do not flip it
+
+`TEMPLATE_FREEZE_ISSUER_ONLY` ships **off and is not recommended.** eric's design is sound and the
+defect is real: `_buildTemplateFields` decides a field is a supplier CONSTANT from a sample of ONE
+taught document and stamps it on every sibling at `template_fixed` conf 95 — above the 88 auto-file
+floor. Your templates carry `po_ref 'PO-78567'`, `serials 'PO-43906'`, `account_no 'ACC-2291'`.
+
+The arm refuted the fix:
+
+```
+             base    freeze-issuer-only
+po_ref        35%  →   50%    (+6 correct)
+vat_no        51%  →   16%    (-70 correct, empties 32→95)
+```
+
+A VAT number **is** a genuine per-supplier constant whose taught mapping often fails to read, and
+the stamp was carrying it. eric argues (correctly) that on a mature install `supplier_hints` would
+carry it instead once `usage_count>=2`, and that the loss is transient. That may be true, but it is
+not true in the regime you care about — a fresh teach — and "NO REGRESSIONS" was the constraint.
+**Re-measure before ever flipping it.** The arm is one command (below).
+
+I also corrected a FALSE comment in that function claiming the freeze "self-heals on the next
+confirm". It does not — the builder is only reached via `_upsertTemplate`, and neither an ordinary
+confirm nor the auto-file path rebuilds, so every stamped value is re-confirmed as evidence that the
+field is constant. **The freeze manufactures its own proof.**
+
+---
+
+## New instruments (these are the reusable part)
+
+- **`stress_test/teach_run_ab.js`** — replays the 200 sibling documents through the real pipeline
+  under a mutated learning state or an env-flag arm, 8 shards, ~6.5 min per arm. This is what made
+  tonight measurable: it turns "should we ship this?" into a number before the code is written.
+  `ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe stress_test/teach_run_ab.js base fixes`
+  Arms: `base`, `unfreeze`, `retarget`, `unfreeze+retarget`, `refgate`, `exclusive`, `typeowner`, `fixes`.
+- **`stress_test/score_teach_run.py`** — scores an arm (or the live sandbox DB) against
+  `ground_truth.json`: per scope, per field, ok/wrong/**empty** separately, plus which rung won.
+  `py -3.12 stress_test/score_teach_run.py --json <arm>.json --label <name>`
+- **`scripts/teach-sandbox.js`** — snapshot/restore. `snapshot` is safe while the app runs (SQLite
+  online backup); `restore` refuses while it is running. Snapshots already taken:
+  `clean-start`, `phase1-after-import`, `owner-teaches-baseline`.
+
+**One scorer caveat to fix before trusting it further:** it resolves a scope's ref/date field keys
+from the MANIFEST's type, not from the type the document actually detected as. For the two scopes
+whose type is in dispute that makes those lanes read as empty. It does not affect the other eight.
+
+---
+
+## What your run found that is NOT yet fixed
+
+1. **`serials` 0%, and it is a capability gap, not a bug.** Ground truth is a LIST
+   (`['CT-3766614','CT-7446380']`); one drawn box cannot capture a variable-length list, and the
+   whole `template_fields`/`fixed_value` model is single-valued. Needs a multi-value field type.
+2. **`customer` 53%, `po_ref` 35%, `account_no` 28%** — dominated by the taught box reading the
+   wrong row or column on a drifted scan. This is the same family as the caption-harvest fixed
+   earlier today, and it is where the remaining 35 points live.
+3. **`'Neltrix Automotive Parts'`** — the issuer name was learned from an OCR misread at teach time
+   and is now the stored identity AND the learning-scope key. gary's point stands: at teach time the
+   system is structurally defenceless (the dominant-value snap needs 5 confirms, there is one), so
+   the only correct layer is the operator — the issuer row on the summary step must be explicitly
+   confirmed, not one grey row among ten.
+4. **Two teaches were orphaned and nothing said so.** `TYPE_TITLE_OWNER_PRECEDENCE` fixes the cause
+   going forward; it does not add a detector. gary designed one (a template with mappings whose
+   `confirmed_count` never grows while documents with its logo keep arriving) — not built.
+
+---
+
+## NEXT, ranked
+
+1. **Decide the three switches** — measured, pinned and reversible. The no-regression gate is GREEN:
+   see below.
+2. **Run Chris** on a fresh sandbox to replicate the teach flow. My instruments measure the
+   PIPELINE; only Chris measures the EXPERIENCE, and your run already proved the experience is where
+   the damage starts (you missed the skip control, and two teaches silently did nothing).
+3. **Then go at the geometry**, not more rules. Points 1-3 above are 35 of the missing 38 points.
+4. `pendingfeatures.md` carries the un-built advisor slices: gary's teach-time divergence warning,
+   the unused-template detector and `templates.retargetType`; reggie's `SEED_TYPE_TIGHTENS_VALIDATION`
+   and the role-qualifier stop list.
+
+## Gotchas earned tonight
+
+- **Never edit a Python extraction file while an arm is running** — workers import per shard. Cost me
+  one arm.
+- `template_mapper` reads its kill switches at IMPORT time (house style: flag zone above the first
+  `def`), so a test arm must `importlib.reload` it.
+- The realdoc report's live progress lines are deliberately NOT in the md — completion order varies
+  between runs and made an arm-to-arm diff unreadable the first time it was used.
+- Ground truth calls the rendition `'scan'`, not `'scanned'`; and its `issuer` column names the
+  COUNTERPARTY, so for buyer-issued purchase orders it is inverted against the app's Document Issuer
+  role. The scorer handles this (`BUYER_ISSUED`) — verified at the pixels, not assumed.
+
+---
+
+## NO-REGRESSION GATE — GREEN
+
+`stress_test/realdoc_regression.js`, 812 confirmed real documents, **all switches OFF**, diffed
+against the pre-change baseline taken before any of tonight's edits:
+
+```
+| type | supplier | ref | date | total | subtotal |   IDENTICAL
+Regressions 198 (49 SILENT)                          IDENTICAL
+Auto-file 546/812; 24 would auto-file a WRONG value  IDENTICAL
+Wrong-TYPE auto-file 0                               IDENTICAL
+```
+
+So the default-OFF claim is corpus-verified, not merely asserted — today's behaviour is untouched
+until somebody flips something.
+
+Test batteries at hand-over, all green:
+```
+python_backend/tests/test_teach_side_gates.py            17/17
+python_backend/tests/test_anchor_inline_taught_offset.py  9/9
+database/modules/test_freeze_issuer_only.js              13/13
+database/modules/test_build_template_fields.js           ALL PASS  (unchanged by the freeze switch)
+src/windows/settings/test_settings_wiring.js             ALL PASS
+```
+
+Working tree carries one uncommitted file — `python_backend/tests/test_template_target_word_snap.py`
+— which is YOUR long-standing edit, untouched all night.
+
+---
+
+## CHRIS ROUND 3 — RUN, and it answered the question (`docs/CHRIS_FULL_APP_REVIEW_2026-08-09.md`)
+
+Fresh sandbox, true first-run, the three overnight switches ARMED via the launch env. He was given
+the two suppliers whose teaches behaved oppositely in the owner's run — Castellan (worked) and
+Veltrix (silently did nothing) — and forbidden from reading code or DB to find out which.
+
+**HIS ANSWER TO THE HEADLINE QUESTION: NO.** *"After teaching two suppliers, I could not tell which
+one had worked."* The information exists in three places and each fails differently — Home knows
+("1 supplier now files automatically") but will not name it; the Review sender groups show the
+5-of-18 vs 15-of-17 split that IS the answer but render the sender as a single character (`'`, `V`);
+and the per-document badge reads "Taught positions · 5 taught fields" identically on a document
+whose Customer field had captured the word "signature:". His words: *"a badge that says teaching was
+APPLIED reads, to me, as teaching WORKED."*
+
+**Verdict on the two controls changed last night:**
+- **"Teach another document" — PASSES CLEANLY.** Nothing to change.
+- **"This isn't on this document" — FINDABLE NOW (the fix worked), WORDING STILL WRONG.** It states
+  what the user is asserting, not the consequence; he only learned the consequence two screens later
+  ("you'll fill this in when reviewing"). And pressing it is immediately contradicted by
+  **"All fields captured — 6 OF 6 DONE"**, which is FALSE.
+
+**TRIAGE — owner's vet queue, ranked. NOTHING IMPLEMENTED.**
+
+| # | finding | severity | note |
+|---|---|---|---|
+| 1 | Visibly wrong values reach the FILENAME and FOLDER unflagged | HIGH | **Owner-verified on disk:** 4 of 18 filed documents — `VyYoa1niRe` (page says `VXS10186`), `05-02-2020` (page says 2026), `2020/April` (page says 2026), `C.JB-7957`. All read "High · 90%", none flagged. |
+| 2 | Import table shows green **"Filed"** for documents not in the output folder | HIGH | Same screen's bottom bar says "17 ready", which is the true word. One-word copy fix. |
+| 3 | "Grouped by sender" renders the sender as ONE character | HIGH | Blocks the one screen that actually answers "did my teach work". |
+| 5 | A WRONG read offers no "type it instead" box; only a FAILED read does | HIGH | He hit `~ Neltrix Automotive Parts` — the exact misread in the owner's own run — and the only escape was accepting it. This is how a supplier scope gets poisoned in one click. |
+| 4 | "This isn't on this document" then says "All fields captured · 6 OF 6 DONE" | MED | Directly contradicts last night's fix. |
+| 6 | "File All Ready" never says HOW MANY (the delete beside it does) | MED | |
+| 7 | Home names no supplier in "1 supplier now files automatically" | MED | |
+| 8 | Fixed-value hint says "(e.g. the company name)" on a REFERENCE field | MED | Invites pinning an invoice number as a constant — the same freeze class measured last night. |
+
+**Cross-reference worth noting:** findings 1, 5 and 8 are the SAME defect family the overnight
+measurement found from the other side. Finding 8 in particular is the UI inviting the freeze whose
+data consequence was measured (`po_ref 'PO-78567'` stamped on every sibling).
+
+**Sandbox left running for the owner: CDP 9223, PID 30840.** The next /christest rebuilds it.

@@ -61,6 +61,21 @@ def main():
     del os.environ['LOGO_DETAIL_VETO']
     check('re-enabled → vetoes again', _logo_detail_veto(cross, 1, CAS, FAR) is True)
 
+    # C2(iii) [Slice-1d DO-NOTHING ledger 2026-07-24]: the underlying primitive veto_by_detail and its
+    # pm-is-None ACCEPTED TRADE-OFF. A DETAIL-LESS pick (empty pick set → pm None) is UNJUDGEABLE → KEEP,
+    # EVEN WHEN the query positively matches a rival. Locks residual (a)'s deliberate non-close: a future
+    # (a)-fix that makes pm-None abstain must consciously update this pin (and keep the positive-rival
+    # requirement + re-gate anchor.try_logo_supplier_match — the OTHER consumer of this shared primitive).
+    import logo_detail as LD
+    check('veto_by_detail: detail-less pick (pm None) → keep EVEN IF a rival matches (residual-(a))',
+          LD.veto_by_detail(FAR, [], {'Northgate': [FAR]}) is False)
+    check('veto_by_detail: pick AGREES (pm ≤ t) → keep (recall pin)',
+          LD.veto_by_detail(NEAR, [BASE], {'Northgate': [NEAR]}) is False)
+    check('veto_by_detail: pick disagrees AND a rival positively matches → VETO',
+          LD.veto_by_detail(FAR, [BASE], {'Northgate': [FAR]}) is True)
+    check('veto_by_detail: pick disagrees but NO rival matches → keep (novel/garbled)',
+          LD.veto_by_detail(FAR, [BASE], {'Northgate': [BASE]}) is False)
+
     print('\n' + ('ALL PASS' if fails == 0 else f'{fails} FAILED'))
     sys.exit(1 if fails else 0)
 

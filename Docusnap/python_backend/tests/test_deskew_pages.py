@@ -30,7 +30,7 @@ def check(name, cond):
 class _StubEngine:
     """No real Tesseract: the deskew geometry + raw-frame capture run BEFORE read_page, so a stub
     lets the test exercise the wiring without depending on a Tesseract install."""
-    def read_page(self, img, params, dpi=None): return 'stub-text'
+    def read_page(self, img, params, dpi=None, words_out=None): return 'stub-text'  # words_out: geometry hand-off kwarg
 
 
 def _barred(w=600, h=800):

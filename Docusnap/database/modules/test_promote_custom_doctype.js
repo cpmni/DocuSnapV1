@@ -49,9 +49,14 @@ function freshDb() {
     CREATE TABLE fields (id INTEGER PRIMARY KEY AUTOINCREMENT, document_type_id INTEGER, key TEXT, label TEXT,
       type TEXT, required INTEGER DEFAULT 0, built_in INTEGER DEFAULT 0, sort_order INTEGER DEFAULT 100, enabled INTEGER DEFAULT 1);
     CREATE TABLE documents (id INTEGER PRIMARY KEY, supplier_name TEXT, status TEXT, template_id INTEGER,
-      logo_phash TEXT, keyword_fingerprint TEXT, document_type_id INTEGER);
+      logo_phash TEXT, logo_detail_hash TEXT, keyword_fingerprint TEXT, document_type_id INTEGER);
+    -- logo_detail_hash is the Slice-D 256-bit isolated-mark column (migration 47): _upsertTemplate
+    -- SELECTs it off documents and templates.create writes it, so a fixture without it fails the
+    -- promote with "no such column" and every later assertion cascades off that one error.
+    -- Keep this schema in step with database/index.js.
     CREATE TABLE templates (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, slug TEXT, document_type_slug TEXT,
-      logo_phash TEXT, keyword_fingerprint TEXT, confirmed_count INTEGER DEFAULT 0, sample_document_id INTEGER,
+      logo_phash TEXT, logo_detail_hash TEXT, keyword_fingerprint TEXT, confirmed_count INTEGER DEFAULT 0,
+      sample_document_id INTEGER,
       group_id INTEGER, ocr_auto_enabled INTEGER DEFAULT 0, ocr_auto_params TEXT,
       created_at TEXT DEFAULT (datetime('now')), updated_at TEXT);
     CREATE TABLE template_fields (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,7 +67,9 @@ function freshDb() {
     CREATE TABLE template_field_mappings (id INTEGER PRIMARY KEY AUTOINCREMENT,
       template_id INTEGER REFERENCES templates(id) ON DELETE CASCADE, field_key TEXT, region_hint TEXT, enabled INTEGER DEFAULT 1);
     CREATE TABLE template_logo_hashes (id INTEGER PRIMARY KEY AUTOINCREMENT,   -- migration 26 (multi-ref logo set)
-      template_id INTEGER REFERENCES templates(id) ON DELETE CASCADE, phash TEXT, UNIQUE(template_id, phash));
+      template_id INTEGER REFERENCES templates(id) ON DELETE CASCADE, phash TEXT,
+      detail_hash TEXT,                                                    -- migration 47 (Slice B)
+      UNIQUE(template_id, phash));
     CREATE TABLE template_landmarks (id INTEGER PRIMARY KEY AUTOINCREMENT,     -- migration 22 (registration landmarks)
       template_id INTEGER REFERENCES templates(id) ON DELETE CASCADE, label_text TEXT,
       x_norm REAL, y_norm REAL, w_norm REAL, h_norm REAL, ocr_conf REAL, page_number INTEGER);
@@ -75,6 +82,7 @@ function freshDb() {
   f.run('delivery_no',   'Delivery No',   'text', 2);
   f.run('delivery_date', 'Delivery Date', 'date', 3);
   f.run('customer',      'Customer',      'text', 4);
+  f.run('vat_number',    'VAT Number',    'text', 5);   // genuinely-constant, NOT name-like
   return db;
 }
 
@@ -95,7 +103,7 @@ async function main() {
 
   // ── 1. Custom type fields load like a built-in ──────────────────────────────
   const dt = doctypes.getWithFields(db, 'delivery_note');
-  fail += !check('getWithFields loads the custom type with all 4 fields', dt && dt.fields.length === 4);
+  fail += !check('getWithFields loads the custom type with all 5 fields', dt && dt.fields.length === 5);
   const byKey = Object.fromEntries((dt.fields || []).map(f => [f.key, f]));
   fail += !check('ref/date keys flagged variable, others constant (custom schema honoured)',
     byKey.delivery_no.is_variable === 1 && byKey.delivery_date.is_variable === 1 &&
@@ -104,7 +112,8 @@ async function main() {
   // ── 2. Gate: missing / unknown doc type is rejected ─────────────────────────
   db.prepare(`INSERT INTO documents (id,status,logo_phash,keyword_fingerprint) VALUES (1,'confirmed','abcd','[]')`).run();
   const promote = bind(db);
-  const allValues = { supplier_name: 'Acme Logistics', delivery_no: 'DN-1', delivery_date: '01-01-2026', customer: 'Big Co' };
+  const allValues = { supplier_name: 'Acme Logistics', delivery_no: 'DN-1', delivery_date: '01-01-2026',
+                      customer: 'Big Co', vat_number: 'GB123456789' };
 
   const noType = await promote({ document_id: 1, allValues });
   fail += !check('promote rejected when no document type is selected', noType && noType.success === false);
@@ -122,7 +131,15 @@ async function main() {
     db.prepare('SELECT field_key, fixed_value, is_variable FROM template_fields WHERE template_id = ?').all(ok.templateId)
       .map(r => [r.field_key, r]));
   fail += !check('template includes the custom fields (not empty)', !!tf.delivery_no && !!tf.customer && !!tf.supplier_name);
-  fail += !check('constant custom field stored as fixed_value', tf.customer.fixed_value === 'Big Co' && tf.customer.is_variable === 0);
+  fail += !check('constant custom field stored as fixed_value', tf.vat_number.fixed_value === 'GB123456789' && tf.vat_number.is_variable === 0);
+  // Rule (B) in _buildTemplateFields (gary/Oracle): a NON-ISSUER name-like field is never frozen,
+  // because a frozen recipient name stamps one customer onto every matching document. This test
+  // used to assert the opposite ('customer' frozen to "Big Co") and has been stale since that rule
+  // landed — the constant-freeze case now rides on vat_number above. Do not restore the freeze.
+  fail += !check('recipient NAME field is never frozen (fails toward re-extract)',
+    tf.customer.is_variable === 1 && !tf.customer.fixed_value);
+  fail += !check('the ISSUER is still legitimately constant for a supplier template',
+    tf.supplier_name.fixed_value === 'Acme Logistics' && tf.supplier_name.is_variable === 0);
   fail += !check('variable (ref) custom field stored without a fixed_value', tf.delivery_no.is_variable === 1 && !tf.delivery_no.fixed_value);
 
   db.close();

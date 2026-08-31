@@ -20,7 +20,7 @@ $activity = $pdo->query(
 admin_page_open('Activity');
 admin_nav('activity');
 ?>
-<h1>Recent activity</h1>
+<?php admin_page_head('activity', 'Activity', 'Every licence, admin and webhook event — newest first.'); ?>
 <p class="lead">Audit trail of licence actions. Activation keys are never recorded.</p>
 <?php if (!$activity): ?>
   <div class="empty">No activity recorded yet.</div>

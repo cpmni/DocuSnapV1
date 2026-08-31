@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'; object-src 'none'">
   <title>ScanFinder — Settings</title>
   <link rel="stylesheet" href="../shared/theme.css" />
   <style>
@@ -87,17 +87,20 @@
     .folders-group .group-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); align-items: start; }
     .folders-group .group-body > .section { flex: none; }
     .folders-group .group-body .section-desc { min-height: 4.8em; }
-    /* Top-level section headings: stronger contrast/weight so they read as the
-       primary label of each block. Restrained — no colour/decoration, same
-       uppercase tracking as before, just promoted from muted 10px to text 11px. */
-    .section-title { font-size:14px; font-weight:600; letter-spacing:0; text-transform:none; color:var(--text); margin-bottom:10px; }
-    /* Card header row: a section title with a right-aligned status pill. */
+    /* Top-level section headings: small-caps ACCENT "eyebrows" with a hairline rule —
+       the same idiom as .dash-cards-subhead and the sidebar .side-head — so a section
+       title reads as a different SPECIES of text from control labels and body copy,
+       not just a different size (2026-07-18 hierarchy restyle, barry+eric consult). */
+    .section-title { font-size:11.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+      color:var(--accent2); margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+    /* Card header row: a section title with a right-aligned status pill — stays one clean line. */
     .card-head { margin-bottom:10px; }
-    .card-head > .section-title { margin-bottom:0; }
+    .card-head > .section-title { margin-bottom:0; border-bottom:none; padding-bottom:0; }
     /* Subordinate (sub-section) headings: kept muted/light so they sit clearly
        below a top-level .section-title. Apply `sub` to nested headings. */
-    .section-title.sub { font-size:10px; font-weight:500; letter-spacing:.1em; color:var(--muted); margin-bottom:8px; }
-    .section-desc { font-size:12px; color:var(--muted); line-height:1.6; margin-bottom:10px; }
+    .section-title.sub { font-size:10px; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
+      color:var(--muted); margin-bottom:8px; padding-bottom:0; border-bottom:none; }
+    .section-desc { font-size:12px; color:var(--muted); line-height:1.6; margin-bottom:10px; max-width:68ch; }
     /* Progressive-disclosure expander: a clean chevron summary for tucking advanced/rare
        options or long explanations behind a click. */
     details > summary.disclose { cursor:pointer; color:var(--accent2); font-size:13px; font-weight:700;
@@ -137,8 +140,14 @@
     /* ── Threshold / toggle rows ── */
     .threshold-row { display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border); }
     .threshold-row:last-child { border-bottom:none; }
-    .threshold-label { font-size:13px; }
-    .threshold-sub { font-size:11px; color:var(--muted); margin-top:2px; }
+    /* Advanced reading switches (2026-08-11): dev-tagged rows hide unless the panel is
+       unlocked (persisted SFDEV unlock). Values never change — visibility only. */
+    #panel-processing:not(.dev-unlocked) .threshold-row.dev-switch { display:none; }
+    /* The type ladder per row: label = the medium-weight hero of the row; sub = visibly
+       secondary (small, muted, line-length CAPPED — full-width 200-char lines were half
+       the "wall of text" impression). Copy stays 100% visible, styled as secondary. */
+    .threshold-label { font-size:13px; font-weight:500; color:var(--text); }
+    .threshold-sub { font-size:11px; color:var(--muted); margin-top:3px; line-height:1.55; max-width:65ch; }
     /* Sub-heading that separates non-watch-specific toggles within the Watch Folder card. */
     .settings-subgroup-divider { font-size:11px; color:var(--muted); margin:14px 0 2px; padding-top:12px;
       border-top:1px solid var(--border); text-transform:uppercase; letter-spacing:.04em; }
@@ -192,6 +201,12 @@
     .dt-list-header .lbl { font-size:16px; font-weight:600; color:var(--text); }
     .doctype-row { cursor:pointer; }
     .doctype-row.active { border-color:var(--accent); background:var(--accent-bg); }
+    /* Drag-to-reorder handle on each type row — same ⠿ affordance as the field rows in
+       the type editor (a drag only starts from the handle, so click-to-select is safe). */
+    .doctype-row .doctype-handle { flex:0 0 auto; cursor:grab; color:var(--muted);
+      font-size:15px; line-height:1; user-select:none; padding:0 2px; }
+    .doctype-row .doctype-handle:active { cursor:grabbing; }
+    .doctype-row.dragging { opacity:.45; }
     .doctype-count { font-size:10px; color:var(--muted); font-family:var(--mono); }
     .dt-detail-header { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:18px; }
     .dt-detail-header h3 { margin:0; font-size:16px; }
@@ -369,6 +384,28 @@
     /* 2px divider + clearer (promoted) heading above each dock section. The dock
        is id="tpl-dock", so this must be an id selector — the old .tpl-dock class
        selector never matched, which is why the dividers were missing. */
+    /* Straighten is a STATE, not a one-shot action — it stays visibly latched while the
+       straightened render is on screen, so the operator always knows which frame they are
+       looking at before they draw a box. */
+    /* Approval-stamp placement picker. The 3x3 grid and the A4-proportioned preview are the same
+       normalised, top-left-origin coordinates the stamp itself uses, so what is shown is what is
+       printed — no second coordinate system to keep in step. */
+    #stamp-grid { display:grid; grid-template-columns:repeat(3, 34px); grid-template-rows:repeat(3, 46px);
+      gap:4px; padding:6px; background:var(--surface2); border:1px solid var(--border2); border-radius:var(--r-sm); }
+    .stamp-cell { border:1px dashed var(--border2); background:var(--surface); border-radius:5px; cursor:pointer;
+      transition:background .12s, border-color .12s; }
+    .stamp-cell:hover { border-color:var(--accent); }
+    .stamp-cell.sel { background:var(--accent-bg); border:1px solid var(--accent); }
+    .stamp-cell:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+    #stamp-preview { position:relative; width:150px; height:212px; background:var(--surface);
+      border:1px solid var(--border2); border-radius:4px; overflow:hidden; }
+    #stamp-preview-box { position:absolute; box-sizing:border-box; display:flex; align-items:center;
+      justify-content:center; padding:2px; border:1.5px solid var(--ok); color:var(--ok);
+      background:rgba(255,255,255,.85); border-radius:2px; font-size:7px; font-weight:700;
+      letter-spacing:.04em; white-space:nowrap; overflow:hidden; }
+    #tpl-btn-straighten.active {
+      background: var(--accent-bg); border-color: var(--accent); color: var(--accent2); font-weight: 600;
+    }
     #tpl-dock .section { border-top:2px solid var(--border2); padding-top:16px; margin-top:16px; }
     #tpl-dock .section-title.sub { font-size:11px; font-weight:600; letter-spacing:.1em; color:var(--text); }
 
@@ -399,6 +436,7 @@
     <button class="tab" data-tab="learning" data-help-key="tab-learning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1 2.7 2 6 2s6-1 6-2v-5"/></svg>Learning</button>
     <button class="tab" data-tab="repair" data-help-key="tab-repair"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.3 2.3-2.5-.7-.7-2.5z"/></svg>Learning Repair</button>
     <button class="tab" data-tab="users" data-help-key="tab-users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>Users &amp; activity</button>
+    <button class="tab" data-tab="workflow" data-help-key="tab-workflow" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.7" x2="15.4" y2="6.3"/><line x1="8.6" y1="13.3" x2="15.4" y2="17.7"/></svg>Workflow</button>
     <button class="tab" data-tab="audit" data-help-key="tab-audit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="18" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>Audit</button>
     <button class="tab" data-tab="licensing" data-help-key="tab-licensing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 21 2"/><path d="M16 7l3 3"/><path d="M18 5l3 3"/></svg>Licensing</button>
     <button class="tab" data-tab="searchclient" data-help-key="tab-searchclient"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg>Search client</button>
@@ -424,13 +462,20 @@
 
           <div class="section">
             <div class="section-title">Processed Scans Folder</div>
-            <p class="section-desc">Source files are moved here after processing. Leave blank to keep originals in place.</p>
+            <p class="section-desc">Each original scan is moved here as it is imported. Leave blank for a &ldquo;Processed&rdquo; folder beside your scans.</p>
             <div class="row-flex">
-              <input type="text" id="processed-folder-path" class="path-input" readonly placeholder="No folder selected (files stay in source)">
+              <input type="text" id="processed-folder-path" class="path-input" readonly placeholder="No folder selected (a “Processed” folder beside your scans)">
               <button class="btn primary" id="btn-pick-processed" data-help-key="pick-processed">Browse…</button>
             </div>
             <div style="margin-top:6px;">
               <button class="btn small" id="btn-clear-processed" data-help-key="clear-processed" style="font-size:10px; padding:3px 10px; color:var(--err); border-color:var(--err);">Clear</button>
+            </div>
+            <div class="threshold-row" style="margin-top:12px;">
+              <div>
+                <div class="threshold-label">Keep original scans after filing</div>
+                <div class="threshold-sub">On: the original stays in the Processed folder after its filed copy is made, so emptying the recycle bin can never destroy your only copy. This keeps a second copy of every filed scan (about the size of your scan folder again). Off: the original is removed once the filed copy exists.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="keep-originals-toggle"><span class="toggle-slider"></span></label>
             </div>
           </div>
 
@@ -493,9 +538,29 @@
         <div id="output-path-preview" class="pattern-preview">…</div>
         <p class="section-desc" style="margin-top:8px;">
           Forbidden characters (<span class="field-key">&lt; &gt; : " / \ | ? *</span>) are
-          stripped from folder and file names, reserved device names are defused, and
-          duplicate files get a <span class="field-key">-DUPLICATE</span> suffix automatically.
+          stripped from folder and file names, and reserved device names are defused. Duplicate
+          files are labelled using the setting below.
         </p>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Duplicate files</div>
+        <p class="section-desc">
+          If a new document would be filed under a name that already exists, the newer copy is kept
+          with a label added to its file name, so nothing is ever overwritten. Choose the label:
+        </p>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <select id="dup-suffix-select" style="min-width:240px;">
+            <option value="DUPLICATE">DUPLICATE — Invoice….INV-001-DUPLICATE.pdf</option>
+            <option value="COPY">COPY — Invoice….INV-001-COPY.pdf</option>
+            <option value="number">Number only — Invoice….INV-001-2.pdf</option>
+            <option value="date">Import date — Invoice….INV-001-2026-07-28.pdf</option>
+            <option value="__custom">Custom label…</option>
+          </select>
+          <input id="dup-suffix-custom" type="text" maxlength="40" placeholder="e.g. OLD"
+                 style="display:none; min-width:160px;">
+        </div>
+        <div id="dup-preview" class="pattern-preview" style="margin-top:10px;">…</div>
       </div>
 
     </div>
@@ -505,6 +570,10 @@
       <div class="section">
         <div class="section-title">Document Types</div>
         <p class="section-desc">Select a type to edit its fields and filing roles, or create a new one. Each type's Company, Date and Reference roles drive filing and learning.</p>
+        <div style="margin:0 0 12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <button class="btn" id="btn-field-visibility" data-help-key="field-visibility">Field visibility…</button>
+          <span class="section-desc" style="margin:0;">Choose which fields each sender's layout shows — hide ones a layout doesn't print.</span>
+        </div>
         <div id="dt-master-detail">
           <div id="dt-list-col">
             <div class="dt-list-header"><span class="lbl">Type Name</span></div>
@@ -550,6 +619,30 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Auto-file earlier when two readings agree</div>
+                <div class="threshold-sub">For a supplier you've confirmed a few times cleanly (but fewer than the full trust window above), file a 95%+ document automatically when two independent reading methods found the same issuer, reference and date on the page — every other safety check still applies. On by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="corrob-autofile-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Offer to file clean documents after a reprocess</div>
+                <div class="threshold-sub">When a reprocess finishes, Scan Finder checks only the documents it just reprocessed and, if any read cleanly enough to file themselves, shows a bar in Review asking whether to file them. Nothing is filed until you say yes. On by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="reprocess-autocommit-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row" id="graduation-window-row">
+              <div>
+                <div class="threshold-label">Clean confirmations before a sender is trusted</div>
+                <div class="threshold-sub">How many of a sender's documents you confirm (without corrections) before Scan Finder treats that sender as learned and lets its documents auto-file at 95%+. Five is the default (measured to file more of a settled sender's documents without letting anything wrong through); raise it if you want a longer proving period, lower it if your senders settle in quickly.</div>
+              </div>
+              <div class="conf-row">
+                <input type="range" class="conf-slider" id="graduation-window" min="3" max="20" value="5">
+                <span class="conf-val" id="graduation-window-val">5</span>
+              </div>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Read values that wrap onto the next line</div>
                 <div class="threshold-sub">When a field is taught to wrap (e.g. an address whose first line ends “-”), read the line below and join them. Single-line values are unaffected.</div>
               </div>
@@ -561,6 +654,877 @@
                 <div class="threshold-sub">Detects a page scanned in the wrong orientation and turns it upright — both for reading and in the filed PDF. Only acts on a confident result; pages it isn't sure about are left as-is.</div>
               </div>
               <label class="toggle"><input type="checkbox" id="auto-rotate-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Recover long reference numbers cut off by the crop</div>
+                <div class="threshold-sub">When a taught reference is longer than the example it was taught on, the reader can clip the last character (e.g. “PO-58987” read as “PO-5898”). Turn this on to extend the read to the full value. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="right-grow-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Trim the label off the start of a read value</div>
+                <div class="threshold-sub">On slightly shifted scans the reader can pick up the label text just before a value (e.g. “PO-27425” read as “PO9974A9C”). Turn this on to clamp the read to just the value. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="left-clamp-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Recover a reference whose prefix was misread</div>
+                <div class="threshold-sub">When a reference's letter prefix is garbled to a symbol (e.g. “PO-17039” read as “0-17039”) but another read on the page has it right, use the correct one automatically — only for a sender whose references all share that prefix. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="prefix-garble-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Correct a reference that lost a cross-check</div>
+                <div class="threshold-sub">When ScanFinder re-checks a taught reference against a fresh read of the whole page and the two disagree, it can occasionally trust a mis-read of the page over the correct value. When the correct value is backed by the document's other reads and is present on the page, ScanFinder keeps it instead of the mis-read. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="crosscheck-reconcile-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Double-check references and dates against the whole document</div>
+                <div class="threshold-sub">After reading, ScanFinder compares each reference and date against every other read it made of the same field. If the chosen value can't be found anywhere else but a different value is backed by several independent reads and printed on the page, ScanFinder uses the backed value instead. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="universal-verify-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Tidy stray marks from taught reference reads</div>
+                <div class="threshold-sub">When a taught box accidentally catches a stray dot or mark from the label next to it (e.g. “. DN-60902”), and a second independent read of the same spot shows the clean value, ScanFinder files the clean value. The two reads must agree exactly. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="edge-clean-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Snap taught boxes to the printed text</div>
+                <div class="threshold-sub">When a taught reading spot lands slightly off on a tilted or shifted scan, ScanFinder adjusts the box to cover the full printed value it overlaps — never grabbing neighbouring text — so references and dates aren't cut short. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="word-snap-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Remove label fragments from taught reads</div>
+                <div class="threshold-sub">When a taught box catches the tail of its own label (e.g. the “o.” of “No.” read as “o. DN-67428”), and an independent read of the same spot shows the value without it, ScanFinder files the clean value. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="frag-clean-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Complete a cut-short taught read</div>
+                <div class="threshold-sub">When a taught box cuts a reference short (e.g. “DN-6742” for “DN-67428”) and two further reads of the same spot agree on the full value in the sender's usual format, ScanFinder files the full value instead of asking you to verify. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="clip-commit-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Grow a taught box that cuts through the printed value</div>
+                <div class="threshold-sub">When a taught reading spot's edge lands mid-word on a document (a longer reference than the one it was taught on, or a shifted scan), ScanFinder widens just that read to the full word and files it only when an independent check of the same spot agrees — otherwise the shortened reading is sent for review instead of filing silently. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="edge-guard-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Catch cut-short dates</div>
+                <div class="threshold-sub">A date read with its year cut off (e.g. “07-01-20-” from “07-01-2026”) is no longer accepted as-is — ScanFinder retries the read or sends the document for review, so a shortened date can't be filed as the wrong year. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="date-clip-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Stricter matching for number-like reading spots</div>
+                <div class="threshold-sub">A taught reading spot identified by a number (rather than a printed label) must match that number exactly — so a different date or reference nearby can never be mistaken for it. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="label-digit-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Align taught reading spots on straightened pages</div>
+                <div class="threshold-sub">When a document was taught on a straightened page, ScanFinder aligns every taught reading spot to the straightened view of each new document — so a slightly tilted scan reads the same values the teaching showed. The first re-read of a sender measures the teaching page's tilt; reads after that use it automatically. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="angle-compose-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Re-read a taught spot off its label when the box clips the value</div>
+                <div class="threshold-sub">When a taught reading spot lands a hair off on a new document and cuts through the value, ScanFinder re-reads it from where the printed label actually sits — so the right value is shown (flagged for a quick check) instead of a garbled one. Works best with word-snapping on. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="edge-cut-relocate-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't flag a taught value when only its last character was misread</div>
+                <div class="threshold-sub">When a taught reading spot clips the last character of a code but the label-anchored re-read (confirmed by a second reading and matching this sender's usual format) recovers the full value, ScanFinder files it without a needless "check this" flag. Only applies when the fuller read is clearly more confident. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="clip-slack-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Never file an impossible date over a valid one</div>
+                <div class="threshold-sub">If a taught date reading spot misreads a date into something impossible (e.g. day 33), ScanFinder keeps the clearly-read date from elsewhere on the page instead — flagged for a quick check. Only when the other read is confident and a genuine calendar date. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="date-invalid-yield-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Never file a wildly-future date over a valid one</div>
+                <div class="threshold-sub">If a taught date reading spot misreads the year into the far future (e.g. 2096 instead of 2026), ScanFinder keeps the clearly-read date from elsewhere on the page instead — flagged for a quick check. Only for dates more than ~3 years out, so a genuine post-dated document is never affected. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="date-future-yield-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Double-check a taught date when the box clips a digit</div>
+                <div class="threshold-sub">When a taught date-reading spot is drawn tightly and clips the first digit on a slightly-tilted scan (e.g. “03/04/2026” read as “01/04/2026”), ScanFinder takes a second, wider reading of the same spot; if it clearly disagrees, the date is flagged for a quick check instead of being filed silently. Never changes a value on its own. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="pad-window-read-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Recognise a document's type from a large title heading</div>
+                <div class="threshold-sub">When a document's big title (e.g. “CREDIT NOTE”) is printed large or widely letter-spaced, the reader can drop it or split it, and the document is mis-typed (a credit note read as an invoice). ScanFinder takes a quick second look at the title and corrects the type — on both new imports and reprocessing. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="heading-absent-reread-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Let the printed title decide the document's type</div>
+                <div class="threshold-sub">An address caption like “BILL TO” no longer counts as a document title (it says who the document is for, not what it is); a real title that shares its line with the letterhead still counts; and when two types score a dead heat, the one whose actual title is printed on the page wins. Fixes credit notes being typed as invoices. On by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="type-election-title-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't ask about a date disagreement other readings already settled</div>
+                <div class="threshold-sub">When the taught position and the full-page read of a date disagreed, but a second independent reading of the page agrees with the value that was kept, the "please verify" warning is released — the disagreement is still recorded for the developer view. Dates only; anything genuinely unresolved still asks. On by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="xcheck-demote-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't ask about a corrected total the page's own arithmetic proves</div>
+                <div class="threshold-sub">When a misread total is corrected to the amount that balances against the line amounts, a "please verify" warning is left on it. If a second independent reading of the total's own box read the same amount to the penny (same sign), and the arithmetic still checks out, that warning is released — the original misread is still recorded for the developer view. Totals only; anything genuinely unresolved still asks. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="recon-demote-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't ask about a name disagreement other readings already settled</div>
+                <div class="threshold-sub">When the reading beside a document's own caption disagreed with the taught position for a name, but the disagreeing readings were rejected as junk and two independent readings agree with the name that was kept, the "please verify" warning is released — the disagreement is still recorded for the developer view. Never applies to the document issuer, and anything genuinely unresolved still asks. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="name-demote-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't ask to double-check a value two independent readings already agree on</div>
+                <div class="threshold-sub">Some warnings only say "please check this" — the taught box's edge cut through the value, the value was read from the surrounding line, or it was tidied to the usual format. When two different ways of reading the page (the taught box, a located crop, the page text) independently read the same value, none of them was flagged, and the value matches this sender's usual format, that warning is released and the value counts as verified. Disagreements, unreadable dates, sender/type doubts and "not printed on this page" warnings are never released this way. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="verification-doubt-clear-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Also read faint small print on scans</div>
+                <div class="threshold-sub">Scanned pages get a second, high-contrast read so light-grey small print — a serial number under an item line, a footer, a registration strip — reaches the text the app searches and reads fields from. Only words in places the normal read left empty are added — a line that gains a word can change how its words are spaced, but no word already read is replaced. Documents read before this was turned on keep their earlier text until they are read again. Adds about a second per scanned page. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="light-text-recovery-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Read the barcodes printed on each page</div>
+                <div class="threshold-sub">Every barcode or QR code on a page is decoded when the document is read and remembered with it, so a search for a tracking number, an asset tag or a supplier's document ID finds the document even when that number is only printed as bars. Nothing on screen changes. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="barcode-inventory-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Allow "Barcode / QR code" fields</div>
+                <div class="threshold-sub">Adds a field type that is filled from a barcode printed on the page instead of being read as text — there is no box to draw and no format to check, because a barcode is either read correctly or not at all. When a page carries exactly one barcode the field is filled and the document waits for you to confirm it once; when it carries several, the field is left for you to pick. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="barcode-field-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Learning Repair: pick a sender from a list</div>
+                <div class="threshold-sub">Learning Repair lists every sender and document type Scan Finder has learned from — how many documents, when, whether it files by itself — and opens the repair view when you click one, instead of asking you to type the sender's name. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="learning-repair-console-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Learning Repair: allow "Start fresh with this sender"</div>
+                <div class="threshold-sub">Adds a button that forgets everything Scan Finder learned for one sender and document type — its layout, remembered values and taught positions — so the next document from that sender is read like a brand-new one. Filed documents stay where they are and simply stop teaching. Everything forgotten is saved first and can be undone. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="learning-repair-forget-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Learn only from documents a person confirmed</div>
+                <div class="threshold-sub">Documents ScanFinder filed automatically no longer count as evidence when it learns what a field usually looks like — only documents a person confirmed (or corrected) do. This stops an automatic filing of a misread value from teaching the misread back to the reader. Requires "Auto-file gate unification" to be on, so automatic filings are labelled. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="machine-confirms-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Check a credit note's total for a missing minus sign</div>
+                <div class="threshold-sub">A credit note's total is money going back to you, but the minus sign in front of it can be lost when the page is read — so a £160.32 credit is filed as a £160.32 charge. ScanFinder checks the total's sign against the document's type and flags it for a quick check instead of filing it silently. It never changes the amount itself — you type the minus. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="credit-sign-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Trust a template's saved sender name over a misread letterhead</div>
+                <div class="threshold-sub">When you save a template you tell ScanFinder who the sender is. If the letterhead on a later scan reads badly — a stray mark turning “Castellan Security Systems” into “tastellan Security Systems”, or into a scrap like “an:” — that misreading can currently replace the name you saved, filing the document under the wrong sender. This keeps your saved name when the reading is clearly the same name misread, or is too short to be a company name at all. A genuinely different company still wins, so re-teaching a template still works. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="template-fixed-supplier-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Take a wider second look when a taught box clips a reference code</div>
+                <div class="threshold-sub">When a taught reading spot is drawn slightly too tight for its code, the first characters can be cut off (“PO-48009” read as “-48009”). ScanFinder re-reads the same spot a little wider and either recovers the full code or flags the disagreement for a quick check. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="pad-window-code-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't mistake a VAT registration number for a VAT amount</div>
+                <div class="threshold-sub">Most letterheads print a VAT registration number (“VAT Reg GB 651 0027 84”). ScanFinder could read those digits as the VAT amount, which then made the totals look like they didn't add up — so documents that were perfectly correct came to you saying “please check”, with nothing wrong to find. This tells the two apart and reads the real VAT line further down instead. It also flags a total that looks like a part-total, so a net figure filed as the grand total is still caught. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="vat-reg-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Read a taught value that sits under its heading, not the heading itself</div>
+                <div class="threshold-sub">When you teach ScanFinder where a value is, it also notes the wording beside it so it can find that value again on the next document. If you drew the value <em>underneath</em> its heading — common on delivery notes, where “Delivery Note No.” is on one line and the number on the next — ScanFinder could treat anything within a few lines as being “on the same line”, and file the heading word itself (“Delivery”) as the reference number. This measures the two boxes properly, so a value you taught below its heading is read from where you actually drew it. Where it then can't read the value confidently the document comes to you instead of guessing. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="inline-row-overlap-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Never accept a heading word as a reference number</div>
+                <div class="threshold-sub">A reference number — an invoice number, credit note number, delivery number — is always a code with digits in it, never a plain word. ScanFinder already refused word-only readings for order numbers; this applies the same rule to every reference field, including the ones on document types you create yourself, so a heading like “Despatch” or the sender's own name can't be filed as the document's reference. When a word is refused ScanFinder usually reads on and finds the real code beside it. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="ref-role-digit-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Keep a taught field reading from the spot you pointed at</div>
+                <div class="threshold-sub">When you point out a field, ScanFinder remembers where its value sits relative to its heading. On a document with two blocks side by side — “Customer” on the left and “Ship To” on the right, printed level with each other — it could pick up the neighbouring block's heading instead of your value and file that as the customer's name. This checks that anything it reads along the heading's line is where you taught the value to be; if it isn't, it goes back and reads the spot you actually pointed at. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="inline-offset-veto-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Read the total from the row you pointed at, not the one above it</div>
+                <div class="threshold-sub">A totals block moves up and down the page depending on how many lines the document has, so the box you drew around the total on one invoice can land a row too high on the next — usually on the VAT line. The amount it finds there looks perfectly valid, so nothing further down catches it, and the wrong figure is filed. On the test set this was 19 of 23 wrong totals, each one exactly the true total divided by six — the signature of reading a 20% VAT row. This measures a one-row shift properly and re-reads from where you actually pointed. It only acts when the heading it found is the exact wording you taught, so a similar heading nearby can't redirect it. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="drift-row-pitch-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Read a whole amount when it's longer than the one you taught</div>
+                <div class="threshold-sub">Amounts are printed right-aligned, so a bigger figure grows to the <em>left</em> — past the edge of the box you drew. If you taught the total on a £99 invoice, a £10,603.44 total on the next one can be read as “0,603.44”. This lets the box stretch left to take in the whole amount. It will only do so when it can show nothing was lost: if stretching would drop the leading digits instead of recovering them, it keeps the original reading and the document comes to you. Works alongside the two reading-accuracy switches above it and does nothing on its own. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="currency-edge-grow-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Finish a company name whose last letter the box just clips</div>
+                <div class="threshold-sub">A box drawn around a company name usually ends exactly at its last letter. The next scan sits a fraction to one side, so that edge can shear the final letter — a “d” with its edge cut off reads as “c”, and “Bramblewood Joinery Ltd” becomes “…Ltc”. This lets the reading stretch just far enough to finish that one word, and only when the page itself shows the full word in that spot. The corrected name always comes to you for checking — it is never filed silently. OFF until you turn it on here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="name-edge-grow-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Allow for a slightly crooked scan when reading a taught field</div>
+                <div class="threshold-sub">When you point out where a field sits, Scan Finder records that position against the page you taught it on. The next scan of the same document usually goes through the scanner at a very slightly different angle, so the remembered box arrives tilted against the printing — often by around half a line, which is enough to read the heading above a value, or the address line below a company name, instead of the value itself. This tilts the remembered box to match each page as it arrives. It does not straighten or alter your document in any way; it only measures the angle and reads in the right place. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="angle-compose-scan-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Keep the sender's name you confirmed when the letterhead reads as nonsense</div>
+                <div class="threshold-sub">Once you've confirmed who a document is from, Scan Finder keeps that company name against the layout. On a poor scan the letterhead can come back garbled, or the reading can pick up something that isn't a company name at all — a date line, a VAT number, a page heading. On the test set that happened on 42 documents out of 135. Scan Finder already spots this and tells you (“Letterhead may read ‘Castellan Security Systems’ — detected ‘DATE 14-03-2026 Job Ref JB-8887’”); this lets it act on what it has already worked out, and keep the name you confirmed. A genuinely different company still comes through, and re-teaching still replaces a name that has gone out of date. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="fixed-issuer-repair-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Trust a taught box when the field has no printed label to check it against</div>
+                <div class="threshold-sub">When you point out where a field sits, Scan Finder also notes the printed wording beside it (“Invoice No”, “Balance Due”) and uses it to check the page hasn't shifted before it reads. The company name at the top of a letterhead has no such wording — there is nothing to look for. Until now Scan Finder treated “no wording to check” the same as “checked and failed”, and fell back on a whole-page estimate of how the scan had moved; on a scan that estimate can pull the reading onto the wrong line, so what got saved as the sender was a page heading, a street address or a VAT line instead. With this on, it only falls back that way when there really was wording to find and it could not be found. On the test set the sender's name was wrong on 22 documents out of 140 for exactly this reason, and all 22 read correctly with this on. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="reg-arbiter-anchor-evidence-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Check the sender's name is really printed where you drew the box</div>
+                <div class="threshold-sub">Works alongside the setting above. Once you have confirmed who a document is from, Scan Finder keeps that name against the layout. When a scan arrives shifted or crooked, the box you drew around the company name can land on the wrong part of the page and read something else — and that reading replaces the name you confirmed. This looks in the area around where you drew the box (half as much again in each direction) and checks whether the confirmed name is actually printed there. If it is, the name you confirmed is kept. If it isn't there, or that part of the page could not be read at all, nothing changes. It can only keep a name you already confirmed — it never invents one, never raises how sure Scan Finder is, and a document genuinely from a different company still comes through. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="issuer-region-presence-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Treat a matching read of the sender's name as confirmation, not a correction</div>
+                <div class="threshold-sub">When the box you drew reads back exactly the company name you already confirmed, Scan Finder currently replaces the confirmed name with that reading — the same words, but held with less certainty. On the test set that dropped four documents below the level at which Scan Finder is willing to file them without asking you, for reading the right answer. With this on, the name you confirmed simply stands. A document genuinely from a different company still comes through, and re-teaching still replaces a name that has gone out of date. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="fixed-seed-agreement-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don&rsquo;t let a field&rsquo;s own printed wording be saved as its value</div>
+                <div class="threshold-sub">When you point out where a reference or account number sits, a shifted scan can make that box land on the printed wording beside it instead &mdash; so Scan Finder saves the word &ldquo;Ref&rdquo;, &ldquo;Account&rdquo; or &ldquo;Delivery&rdquo; as the reference number. A reference is a code, and a code always carries at least one number, so a value with no numbers in it at all is refused and the document comes to you instead. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="stage05-ref-code-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Stop one printed code filling three different fields</div>
+                <div class="threshold-sub">Fields that hold a reference of some kind all start out looking for the same general wording (&ldquo;Ref&rdquo;, &ldquo;No.&rdquo;, &ldquo;Number&rdquo;), so a single code printed on the page can be picked up as the invoice number AND the order number AND the account number at once. With this on, when one field matches that code by its own specific wording, the fields that matched only general wording give it up. It can only ever remove a duplicate &mdash; it never moves a value to a different field. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="generic-caption-exclusive-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Trust the document&rsquo;s own printed heading when deciding what it is</div>
+                <div class="threshold-sub">Scan Finder works out what a document is by adding up evidence, so a built-in type that recognises a lot of wording can outvote a type you created yourself that recognises only its own name. When that happens, a template you taught is filed under a type its own future documents can never be recognised as &mdash; on one test run 35 documents matched no template at all, and nothing on screen said why. With this on, if exactly one of your document types has its own name printed as the heading at the top of the page, that type wins. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="type-title-owner-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Query a reference or date that doesn&rsquo;t look real before filing it</div>
+                <div class="threshold-sub">Two checks that only ever ADD a note &mdash; they never change a value or choose a different one, and a document carrying a note is never filed without you seeing it. First: a reference whose shape is scanning noise rather than a code (jumbled capitals with no run of digits). Second: a date whose year is printed nowhere on the page, which is exactly what a misread digit produces. Genuine codes like &ldquo;HTS-SO-12013&rdquo; or &ldquo;PD/25/1197&rdquo; are left alone. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="filing-sanity-flags-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Read the sender&rsquo;s name off the letterhead the first time you see a company</div>
+                <div class="threshold-sub">The first document from a new company has nothing for Scan Finder to recognise &mdash; no logo it has seen before, no name you have confirmed, no layout it has been taught &mdash; so the sender is left blank even though the company name is printed across the top of the page. With this on, Scan Finder reads the largest name at the top of the page (ignoring the recipient block and the document heading) and offers it: the name appears with a &ldquo;Use this&rdquo; button and a note asking you to check it is the sender and not the customer. It never fills the name in by itself, on purpose &mdash; getting it wrong once would teach Scan Finder the wrong company and every later document from them would follow it. Once you confirm the name once, the app recognises them from then on. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="letterhead-issuer-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Fill the company in for you when the letterhead clearly reads one</div>
+                <div class="threshold-sub">Builds on the setting above. Instead of leaving the box blank behind a &ldquo;Use this&rdquo; button, Scan Finder puts the name it read straight into the Document Issuer box &mdash; so on a first batch you press Confirm once per document instead of clicking the name in first. It is still held for you to check: the document stays in Review with the same &ldquo;is this the sender, not the customer?&rdquo; note, and it can never file itself on this guess. Nothing is learned until you confirm. Turn it off to go back to the &ldquo;Use this&rdquo; button.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="letterhead-prefill-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Only use a learned layout on documents that actually name that company</div>
+                <div class="threshold-sub">When Scan Finder learns a layout, it remembers a handful of words from the top of the page to recognise it again. On a document you send out yourself &mdash; a purchase order &mdash; the top of the page is <em>your own</em> name and address, and that same block is printed on nearly every document you receive, as the delivery address. So a layout learned from one of your own orders can recognise itself in everybody else&rsquo;s paperwork, and stamp the wrong company on it with high confidence. With this on, a layout is only used on a document that mentions that company somewhere on the page. Anything else goes to you instead. On the test set this removed 17 documents labelled with the wrong sender, and recovered 17 reference numbers and dates that had been read off the wrong layout. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="identity-on-page-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don&rsquo;t fill fields marked &ldquo;not on this layout&rdquo;</div>
+                <div class="threshold-desc">A field you&rsquo;ve hidden for a sender&rsquo;s layout (Document Types &rarr; Field visibility, or the teach wizard) stays empty instead of being filled with something read from elsewhere on the page &mdash; and a wrong value already stored is cleared on the next reprocess. Values you typed in yourself are always kept.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="hidden-field-drop-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Collect every value of a &ldquo;List&rdquo; field</div>
+                <div class="threshold-desc">A field typed as &ldquo;List (several values)&rdquo; — like serial numbers — is read by scanning the whole document for its label and collecting every occurrence (&ldquo;NW-123; NW-456&rdquo;). Also unlocks the List type in the field editor. Off: list-typed fields read like ordinary text fields.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="list-field-scan-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">A label you teach becomes the keyword for that field</div>
+                <div class="threshold-desc">When you teach a field and confirm its printed label (e.g. &ldquo;Job Sheet No&rdquo;), that label replaces the generic ones (like &ldquo;Ref&rdquo;) when reading documents that match the layout you taught it on. Off: taught labels only guide the position, and the generic keywords keep hunting too.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="teach-label-keyword-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don&rsquo;t accept a taught reading that isn&rsquo;t the right shape</div>
+                <div class="threshold-sub">When you teach Scan Finder where a value sits, it reads that spot on every later document from the same sender. If the layout shifts, that spot can land on the wrong thing &mdash; and the wrong thing still gets used, because a taught reading is trusted. With this on, a taught reading that doesn&rsquo;t look like the field it belongs to (the word &ldquo;Account&rdquo; where an account number should be, or &ldquo;L922.14&rdquo; where a total should be) is set aside, and Scan Finder falls back to finding the value the usual way. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="format-fail-yield-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Treat &ldquo;Your Order&rdquo; as the customer&rsquo;s order number, not yours</div>
+                <div class="threshold-sub">On a document a supplier sends you, a line labelled &ldquo;Your Order&rdquo; or &ldquo;Your PO&rdquo; is <em>your</em> purchase-order number, not theirs &mdash; so it belongs in the customer order field rather than being read as the supplier&rsquo;s own order number. With this on, those labels fill the right field. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="customer-po-labels-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Keep the slashes and dashes printed inside a reference</div>
+                <div class="threshold-sub">Reference numbers are often printed with separators &mdash; <span class="mono">PI/26/6000</span>, <span class="mono">OED/91377</span>. Scan Finder removes a stray slash that the scanner invents inside a code, and that clean-up currently cannot tell an invented slash from a printed one, so a reference like the ones above is filed as <span class="mono">PI266000</span>. With this on, a code that splits neatly into parts keeps its separators, while a stray mark wedged into an unbroken code is still cleaned up. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="code-separator-guard-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Recognise VAT numbers from outside the UK</div>
+                <div class="threshold-sub">Scan Finder currently only recognises UK VAT numbers, so an invoice from an Irish, German or French supplier leaves the VAT field empty &mdash; and if you type the number in yourself, you are warned that your correct value looks wrong. This adds the VAT formats used across the EU, Switzerland and Norway. Each country&rsquo;s format is matched exactly rather than by a loose &ldquo;two letters and some digits&rdquo; rule, so scanning mistakes are still rejected. Turn this on if you buy from outside the UK. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="vat-eu-formats-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Straighten crooked scans before reading them</div>
+                <div class="threshold-sub">A page that went through the scanner slightly askew is read at an angle, and the boxes Scan Finder was taught drift off the values they were pointed at. This straightens each crooked page before reading it — the same thing the ∞ Straighten button does in Review, applied automatically as documents come in. Your filed file is never altered; only the reading is straightened. It also changes what gets filed without you looking at it, so treat it as a trade rather than a free improvement. Pages that are already straight, and documents that carry their own text, are skipped. Off by default, and not yet recommended — straightening can make a marginal scan read worse as easily as better, and that has not been proven either way on real paper.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="deskew-import-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't let a hidden working figure block a document from filing itself</div>
+                <div class="threshold-sub">To check that a document's totals add up, ScanFinder sometimes reads figures your document type has no field for — a subtotal or a VAT line on a form that only shows a grand total. Those working figures are never shown to you, never learned, and are thrown away the moment you confirm. Until now one of them could quietly stop a perfectly good document from filing itself, and because it isn't on your form there was nothing on screen to look at or clear. This lets those hidden figures out of the filing decision, while still holding back any document where one of them looks wrong. ON by default &mdash; you can turn it off here.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="shadow-row-skip-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't hold a ready document just because an optional field is blank</div>
+                <div class="threshold-sub">One filing decision, everywhere: a document a trusted sender's history says is safe to file no longer waits in Review because an optional field (like a VAT number the page doesn't print) read empty. A missing Reference or Date still holds the document, and any field with a real warning always holds it. On by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="autofile-gate-unify-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Let a reprocess clear out stale hidden working figures</div>
+                <div class="threshold-sub">The maths check sometimes keeps an old hidden working figure (like a VAT amount misread from the letterhead's VAT registration number) even after a reprocess reads the page correctly — so a fixed document keeps failing its "adds up" check forever. On, a reprocess drops any hidden working figure the fresh read no longer produces. Values you corrected yourself are never touched. On by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="shadow-stale-drop-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">"File All Ready" files documents whose only note is a blank optional field</div>
+                <div class="threshold-sub">The orange "low confidence" check only counts fields that actually read a value. A document whose optional fields simply came back empty shows as ready and files with File All Ready; anything with a warning or a weak <em>valued</em> read still waits for you. On by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="far-valued-only-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Blame the right figure when totals don't add up</div>
+                <div class="threshold-sub">When the maths check fails but the total itself was read the same way by two independent methods, and the only disagreeing figures are hidden working reads your form has no field for, the note names the working figure instead of marking the total down. The document still waits for your check — nothing files silently. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="shadow-attrib-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Read amounts on "VAT @ 20%" style lines</div>
+                <div class="threshold-sub">Some documents print the tax rate with an @ sign between the label and the amount ("VAT @ 20%   £77.55"). This skips past the rate annotation to the amount, the same way "(20%)" is already skipped. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="vat-rate-at-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Double-check reference codes against the untouched scan</div>
+                <div class="threshold-sub">Image sharpening can make the reader more confident while destroying the tiny detail that separates an I from a 1. This reads the code once more with no processing at all, and when the two reads differ by exactly one such character, the document waits for you with both readings shown. Off by default. Flip together with the printed-separator guard (that guard second), never alone.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="raw-witness-flag-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Adopt the untouched-scan reading automatically</div>
+                <div class="threshold-sub">Instead of asking, swap to the untouched reading — only for character pairs the measurement census has proven the raw scan wins. Inert until those pairs are enabled after the census; keep it off until then. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="raw-witness-adopt-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Use your confirmed history to fix unreadable names</div>
+                <div class="threshold-sub">When a name field reads as obvious junk (a code, a garble) and every one of your past confirmations for that sender agrees on ONE name (five or more times, never a second value), Scan Finder fills the confirmed name from where it's printed on the page — no "which is correct?" question. Any sender where you've ever confirmed two different values keeps asking. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="confirmed-adopt-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Let a trusted sender's name release your "set by you" holds</div>
+                <div class="threshold-sub">When you set a sender's name on a batch, each document waits for your confirm. With this on, reprocessing a held document releases the hold automatically IF Scan Finder now reads the same name on its own — the document then files (or not) on its own merits, exactly like any other. A document whose reading disagrees with your name keeps waiting. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="pin-discharge-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Remember a trusted sender's name in its layout</div>
+                <div class="threshold-sub">Once a sender is trusted (your clean confirmations above), the layout Scan Finder builds for them records the sender's name itself — so their documents identify at full strength instead of leaning on weaker memory, and can actually reach the auto-file bar. Off by default. Best flipped together with "the page must name its sender" (identity check) — without it, a rare wrong layout match would carry a stronger wrong name.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="graduation-freeze-issuer-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">File under the corrected sender name, not the first guess</div>
+                <div class="threshold-sub">When Scan Finder tidies up a misread sender name, the correction currently reaches the document's details but not the folder it is filed into or the memory it is learned under — so the same company can end up split across two spellings. This makes the folder and the memory follow the corrected name. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="identity-scope-post-repair-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't let one misread box rename a sender you already know</div>
+                <div class="threshold-sub">When you teach the company name, Scan Finder saves it as that layout's permanent sender. If the box is slightly off and the name comes back a character or two wrong, that misspelling currently replaces the name you have already confirmed many times — and then goes on every document from that sender. This keeps the name you already have when the new reading is only a character or two different. A genuinely different company still replaces it, so you can always correct a sender by teaching it again. On by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="identity-near-match-keep-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Warn before filing when a company name looks like one you already use</div>
+                <div class="threshold-sub">Whether you draw the company name or type it into the field, if it comes out one or two characters off a company you already file under, Scan Finder asks before filing — offering the name you already use, or letting you keep the new one as a separate company. Stops a single mistyped letter from quietly filing a supplier into a second folder. On by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="issuer-near-match-confirm-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Check a changed sender on a second document before using it everywhere</div>
+                <div class="threshold-sub">When you teach a different company name for a layout Scan Finder already knows, it believes you for that document straight away — but the same layout may cover dozens of others. With this on, those other documents ask you to confirm the new sender once more before it is used automatically, so one changed name can't quietly re-file a whole pile. Confirming a single further document releases it. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="identity-hold-siblings-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Stop a purchase-order layout claiming documents that say they are something else</div>
+                <div class="threshold-sub">When you teach a purchase order your business sends out, that layout carries your own company name — and your name and address are printed on nearly everything you receive, as the recipient. Scan Finder can then match that layout to suppliers' delivery notes and quotes and file them under your own company. With this on, a layout taught from a purchase order is not used for a document whose own printed heading clearly says it is a different kind of document. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="buyer-issued-scope-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Only recognise a purchase-order layout you send out by its letterhead</div>
+                <div class="threshold-sub">A layout taught from a purchase order your business sends carries your own company name and address — and those are printed in the "Bill to" box of nearly everything you receive. The switch above only helps when the other document's printed heading is clear; this one goes further: that layout is recognised only when your name sits in the letterhead at the top of the page, never from the address block lower down. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="buyer-issued-letterhead-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Use a sender's confirmed name to spot a misread of it</div>
+                <div class="threshold-sub">When you have confirmed the same company name on several documents, Scan Finder can compare a new reading against it and point out a one-character misread — "Bramblewood Lid" against your confirmed "Bramblewood Ltd". Until now it only did this for senders whose name it had seen spelled several different ways, which is almost none of them. It only ever SUGGESTS the correction and asks you to look; it never changes a company name on its own. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="name-lex-low-distinct-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Stop re-asking for a company you've confirmed many times on the same layout</div>
+                <div class="threshold-sub">When a layout you have confirmed many times always names the same company, Scan Finder fills that company on a new document from it — but if the scanned letterhead is smudged it still says "Company inferred from previously filed documents — please confirm before filing" on every one. With this on, once a layout is well established (confirmed enough times, always the same sender) and that sender's name is readable in the letterhead even a little garbled, the "please confirm" note is dropped and the document is treated normally. If the page's letterhead names a DIFFERENT company (for example a purchase order you issued), the note stays. Off by default — turn on after checking the reading report.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="identity-geom-fuzzy-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <!-- ── File more automatically when the answer is already proven (2026-08-15) ── -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">File a reference/date when two readings agree and it fits the sender's format</div>
+                <div class="threshold-sub">Sometimes a reference or date is read a little below the confidence needed to file on its own, yet two independent readings landed on exactly the same value and it matches the shape this sender always uses (e.g. "SB-ORD39342"). With this on, that agreement is allowed to stand in for the missing confidence so the document files instead of waiting for you. If the two readings disagree, or the value doesn't fit the sender's usual format, it still waits. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="critfield-corrob-relax-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't hold a document for a "correction" that changed nothing</div>
+                <div class="threshold-sub">When a reading is double-checked and the check agrees with what was already there, the document was still being held as if a correction were pending. With this on, a check that made no change no longer holds the document. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="vacuous-corrected-ignore-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Stop flagging a reference that already matches the sender's format</div>
+                <div class="threshold-sub">A scan can make the letter "I" and the digit "1" hard to tell apart, so a reference like "PI/26/9646" gets a "one character differs — please check" note even when it already matches the exact "PI/…" pattern this sender always uses. With this on, when the reference matches the sender's well-established format the note is dropped and the document files normally. If the reference does NOT match the sender's format, the note stays. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="ref-dominant-format-demote-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Trust a well-established sender's name without re-asking (from any reading)</div>
+                <div class="threshold-sub">A companion to the setting above: on a layout you have confirmed many times as one sender, this drops the "please confirm" note using the readings already recorded for the document, so it also works on documents already in your queue — not only freshly imported ones. The sender's name is never changed; the note is only dropped when several independent readings already agree on it. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="identity-corrob-shed-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't hold a total that two readings agree on and the VAT confirms</div>
+                <div class="threshold-sub">When a total is read the same way by two independent methods AND the net figure plus standard VAT comes to exactly that total, the total is sound even if a smaller figure elsewhere (like a mis-scanned subtotal) looks off. With this on, that "the net disagrees" note no longer holds the document. The total itself is never changed — only the note is dropped, and only when the VAT arithmetic matches to the penny. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="shadow-attrib-demote-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Fix an obvious one-character misread of a value you always use</div>
+                <div class="threshold-sub">When a value like an account number is the same on every document from a sender (e.g. "ACC-2291") and a scan turns one character into a stray symbol ("ACC-229]"), this restores the character you have confirmed many times — but only when a second, independent record also holds that same value. Anything less certain still asks you to check. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="snap-confusable-adopt-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Apply a suggested name correction when it's the name you always confirm</div>
+                <div class="threshold-sub">When a customer/recipient name is read with a small garble ("Quilistone Print &amp; Packaging") and Scan Finder's suggested correction matches both the name you have confirmed many times on this sender AND the page's own printed reading, the correction is applied so the document files under the right name instead of the garble. It never changes the sender/company a document is filed under, only recipient-style name fields, and only when the page itself agrees. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="name-corrob-adopt-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Let a resolved warning actually raise a document's confidence</div>
+                <div class="threshold-sub">When one of the settings above clears a warning on a document, that document should also stop being marked down for it. Until now the warning was cleared but the confidence penalty stayed, so the document still sat in Review just below the bar. With this on, a document's reading confidence is recalculated once its warnings are resolved — so a document whose only problem was a warning the app just cleared can file on its own. This is what makes the settings above actually reduce your review pile rather than only tidy the wording. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="corrob-recompute-fc-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Fix a one-character misread at the start of a reference you always use</div>
+                <div class="threshold-sub">When a sender's references almost always start the same way (e.g. "PI/" on 90%+ of confirmed documents) and a scan turns one look-alike character ("P1/26/3130" — 1 for I), this restores the confirmed start — but only when the page itself also carries the corrected reading (a wider read or a second detector) and the rest of the number is untouched. A sender that genuinely uses both starts is left alone and asked about as usual. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="ref-prefix-confusable-adopt-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Skip the "check this character" question when both readings agree</div>
+                <div class="threshold-sub">Sometimes the app reads a value twice as a cross-check and both readings come out identical after an automatic repair. Asking you to compare the value with itself is a question with no answer — with this on, that case files normally instead of waiting for a check. A genuine disagreement between the two readings still asks. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="raw-witness-vacuous-suppress-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Double-check "not on this page" against how the page was actually read</div>
+                <div class="threshold-sub">Before warning that a reference "doesn't appear on this page as written", also accept the value when the page carries it split across a space ("SB-ORD7 4238"), joined differently, or with one look-alike character in a well-established start ("VX$22033" for VXS22033). A value the page genuinely doesn't carry still warns. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="filing-sanity-page-match-v2-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't let a misread "$" turn a VAT registration number into an amount</div>
+                <div class="threshold-sub">A letterhead line like "VAT Reg No GB 118 5540 63" can scan with the 5 misread as "$" — which used to switch off the very check that stops registration numbers being read as money, letting a "$540" appear in a tax field. With this on, that one misread character is seen through and the registration number is skipped as before. Real prices are untouched. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="vat-reg-symbol-confusable-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Keep the minus sign on credit-note amounts</div>
+                <div class="threshold-sub">A credit note printing "£-428.58" used to have the minus dropped by one of the readers, so the app's own cross-check then claimed the numbers disagreed on a document that was perfectly right. With this on, a minus printed directly against the number is kept. A dash used as a dot-leader or separator is still ignored. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="money-sign-capture-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Apply a reference correction to the sender's other waiting documents</div>
+                <div class="threshold-sub">When you correct a reference by a single easily-confused character in its code — "P1/26/3130" to "PI/26/3130" — the same correction is applied to the other documents from that sender still waiting in Review, and you are told afterwards with an Undo. Only that exact substitution travels: correcting a "P1" never changes a "PL". Nothing is filed — the corrected documents stay in Review for you to confirm as usual. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="ref-class-fix-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">File documents from a company you've confirmed, even when its letterhead is widely spaced</div>
+                <div class="threshold-sub">When a company's name is printed with wide gaps between the words in its letterhead, Scan Finder can fail to recognise a company you've already confirmed many times, so those documents keep asking "please confirm before filing" and never file themselves. With this on, once you've confirmed a company on a layout a few times, that same widely-spaced letterhead is matched to the confirmed name and the note is cleared. Only the company you actually confirmed is matched — a different name is never filled. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="hint-band-ws-normalize-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">After you confirm a document, check whether others from the same sender are now ready</div>
+                <div class="threshold-sub">Each time you confirm a document, Scan Finder re-checks the documents still waiting in Review against what it has just learned — without re-reading any pages — and offers to file the ones that now pass every check. You see a bar listing them and choose File or Not now. Nothing is filed without that choice. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="scope-sweep-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">…and file that sender's ready documents by itself</div>
+                <div class="threshold-sub">Goes one step further than the check above: once you've confirmed enough documents from a sender for its documents to pass every check, the rest of THAT sender's waiting documents are filed for you — only that sender, never the whole queue — and a notice in Review lists what was filed with a Put back button. Other senders still get the bar. Needs the check above on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="scope-sweep-auto-accept-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't pre-fill a single word from a widely-spaced letterhead</div>
+                <div class="threshold-sub">When a company name is printed with wide gaps ("Silverbeck   Cleaning   Supplies"), the letterhead reader could pick out one word ("Cleaning") as the company. With this on, it leaves the Document Issuer for the text reader or for you instead of filling a fragment. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="letterhead-fragment-abstain-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">After teaching a sender, quietly re-read its waiting documents in the background</div>
+                <div class="threshold-sub">When you teach Scan Finder a sender's layout, the documents from that sender already waiting in Review were read before it knew the layout. With this on they are re-read quietly in the background at low priority — Review stays fully usable, nothing is greyed out, and any import or reprocess you start takes over immediately. A document whose values change in the re-read is held and shown "was X, now Y". Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="quiet-reread-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't let one odd confirmed value stop a sender filing itself</div>
+                <div class="threshold-sub">If you once confirmed a mis-read reference (say "VX$22033" where every other one reads "VXS…"), Scan Finder's learned pattern for that sender breaks and none of its documents can file themselves again. With this on, when at least five different confirmed values agree on a shape and three-quarters or more of them match, a new document is checked against that usual shape — the odd one out is still refused, and a sender whose references genuinely vary stays held. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="role-dominant-class-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't pre-fill one line of a two-line company logo</div>
+                <div class="threshold-sub">When a company prints its name as a stacked logo ("DOCUMENT" over "SOLUTIONS"), a scan can read one line badly ("TIONS") and that fragment used to be filled in as the company. With this on, a single word sitting directly above or below another name-sized word is treated as part of a wider name and left for you (or the text reader) instead. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="letterhead-stack-abstain-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Never pre-fill a single word from deep in the page header</div>
+                <div class="threshold-sub">A lone word several lines down the header — the tail of a delivery address ("Patrick") — could be picked as the company. With this on, the reader only accepts a single word from the top three header lines, the same rule the text reader has always used. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="letterhead-depth-guard-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Keep the taught company name when a taught box reads only part of it</div>
+                <div class="threshold-sub">If you taught the Document Issuer on a company whose logo is two lines, a later scan can read only one line ("DOCUMENT") from that box, and that partial read used to replace the company you taught — leaving the document asking you to "please confirm" forever. With this on, a read that is plainly part of the taught name, on a page whose header prints the whole name, keeps the taught name. A genuinely different company still wins. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="fixed-seed-fragment-keep-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">After teaching, also re-read the waiting documents the layout would recognise by their text</div>
+                <div class="threshold-sub">The quiet background re-read after a teach finds the sender's other documents by name and by similarity to the taught page; a badly scanned copy can slip through both. With this on it also re-reads waiting documents that the layout's own text fingerprint matches — the same check the app uses when it recognises a layout — without ever assigning the company by itself. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="quiet-reread-kw-select-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">When a sender becomes ready to file itself, quietly re-read its waiting documents</div>
+                <div class="threshold-sub">A sender's waiting documents were read before its details were learned, so they can keep a stale hold even after the confirms that made it ready. With this on, the confirm that crosses that line triggers one quiet background re-read of its waiting documents, so they can file themselves without you pressing Reprocess. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="quiet-reread-on-ready-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">When a layout is learned from one page, drop text-fingerprint words that appear on no other document</div>
+                <div class="threshold-sub">A layout taught from a single poor scan keeps that scan's OCR garble in its text fingerprint, so its own siblings score just under the recognition bar until several more confirms wear the garble away. With this on, words found on no other document in the install are dropped at the moment the layout is made — only when that visibly recovers two or more waiting same-layout documents, never a word from the company's own name, never more than half the fingerprint. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="fingerprint-seed-support-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">After you draw or fix a box on a learned layout, quietly re-read that sender's waiting documents</div>
+                <div class="threshold-sub">Today a box drawn on one document only takes effect on the others when you press "Reprocess N from this sender". With this on, the app re-reads that sender's waiting documents in the background after the box is saved — the same documents that button would re-read. A detail the new box fills in for the first time is held for you to confirm once unless the page backs it up two ways; anything the app already asked you about is left alone. Needs "a layout may only claim a document that names its company" to be on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="quiet-reread-on-layout-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <!-- Owner card 1 (2026-08-23): the READY arm — template-carrying siblings below the floor (DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">When a sender starts filing by itself, also re-read its waiting documents that already matched a learned layout</div>
+                <div class="threshold-sub">Once a taught sender's siblings match its layout before any confirm, they sit just under the bar the sender needs to file by itself — and the re-read that fires when the sender becomes ready only looks at documents with no layout yet, so those stay waiting for File All. With this on, that re-read also covers the sender's waiting documents that matched its layout but sit below the bar. Same safeguards as the box re-read above; a detail filled in for the first time is held for you to confirm once. Needs "re-read when a sender becomes ready" and "a layout may only claim a document that names its company" to be on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="quiet-reread-on-ready-templated-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <!-- Chris r18 A1 (2026-08-23): the first-fill reliability hold (DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Hold a detail the background re-read filled in for the first time when the same box misread it on a sibling</div>
+                <div class="threshold-sub">When the app re-reads a sender's waiting documents after a teach, a box that reads a date or reference differently from what the page already said on one document is treated as unreliable for that whole re-read: any document where that same box filled in a blank is held for you to confirm once instead of filing by itself. Where the box reads cleanly everywhere, nothing changes. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="quiet-reread-ff-reliability-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <!-- Chris r19 (d) (2026-08-23): a role read the page's own text contradicts never files by itself (DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Never file a date or reference by itself when the page's own text reads it differently</div>
+                <div class="threshold-sub">When a taught box reads a date or reference one way and the page's own printed text reads it another, the document waits for you instead of filing by itself — on import, after your confirms, and after a re-read. Four wrong dates filed themselves this way while the page text had them right. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="trust-role-disagreement-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <!-- Chris r19 N1 (2026-08-23): Reprocess writes the same holds as the background re-read (DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">When you press Reprocess, keep a value that reads differently from before for your check, like the background re-read does</div>
+                <div class="threshold-sub">Today "Reprocess N from this sender" and the single-document Reprocess replace values silently. With this on they behave like the background re-read: a date or reference that now reads differently is kept for you with the previous value one click away, and a blank the re-read fills in for the first time is held for you to confirm once where the same box misread a sibling. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="reprocess-holds-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <!-- The garbled-issuer arc (2026-08-22 evening, three slices, all DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Keep the taught company name when a taught box misreads one word of it</div>
+                <div class="threshold-sub">A taught Document Issuer box over a two-line logo can read one line with a single wrong letter ("NOCUMENT" for "DOCUMENT"). That misread used to replace the company you taught and start a new sender of its own. With this on, a read that is one letter off a word of the taught name, on a page whose header prints the whole name, keeps the taught name. A genuinely different company still wins; a read that spells another company you use is never treated as a misread. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="fixed-seed-fragment-garble-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Keep the taught company name when a taught box reads only scraps</div>
+                <div class="threshold-sub">A box over a two-line logo can read a three-letter scrap that is not even on the page ("Gay") or a piece of one word ("MENT"), and that scrap used to replace the company you taught and start a new sender folder. With this on, a read of four characters or fewer, or a short piece of the taught name, keeps the taught name — only on pages that print that company. Needs "a layout may only claim a document that names its company" to be on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="fixed-seed-debris-wide-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">When the letterhead names the company, offer that name — not a spelling fix</div>
+                <div class="threshold-sub">When the app notes "Letterhead may read X — detected Y", the button next to the issuer used to offer a one-word spelling fix of Y instead of X. With this on, the button offers X (the company the letterhead reads), and choosing it also pins this document and offers to apply it to the sender's other waiting documents. Only when Y looks like a misread of X; a different company named on the page is never offered. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="identity-suggest-canonical-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">In the Review list, show a misread issuer under the company the letterhead reads</div>
+                <div class="threshold-sub">A document whose issuer box misread the company ("NOCUMENT") used to appear as a sender of its own in the list. With this on it sits under the company the letterhead reads, marked "check sender", and filing it under the misread name is held with a one-click choice. Needs the option above to be on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="review-group-by-letterhead-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <!-- The type-split arc (2026-08-22 night) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't hold a sender's documents for a document type that was only ever confirmed once</div>
+                <div class="threshold-sub">When one document from a sender was filed as a different type (one Purchase Order among 24 Quotes), every later document from that sender used to be held with "this letterhead is used for several document types". With this on, a type that has fewer than two confirmed documents behind it does not cause that hold — as long as the document's own reference number carries the sender's usual prefix. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="type-ambiguity-waiver-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">After you confirm one held document of a sender, quietly re-check the others held for the same reason</div>
+                <div class="threshold-sub">When a sender's documents are held with "this letterhead is used for several document types" and you confirm one of them, the others from the same sender and layout that carry the same note are re-read in the background — they clear by themselves when the option above applies, and are left alone otherwise. Needs the quiet re-read and the option above to be on. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="type-ambiguity-ripple-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <!-- The Review activity strip (2026-08-22 night, DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Show what just happened in a strip above the document (instead of the running totals at the top left)</div>
+                <div class="threshold-sub">A one-line row of short notices above the preview — "Just now · 23 filed themselves", newest on the left, scrolling sideways. Click one to see what happened, which documents, and to put them back; clicking anywhere else just closes that detail. Notices fade after 15 minutes; putting documents back stays possible for a week. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="review-activity-strip-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <!-- Put-back re-file via File All Ready (2026-08-23, DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Let "File All Ready" re-file documents you put back just to look at</div>
+                <div class="threshold-sub">When Scan Finder auto-files a document and you put it back only to have a glance, "File All Ready" normally skips it and asks you to confirm it one by one. With this on, a put-back document that still reads cleanly is filed again by "File All Ready" as if you confirmed it — the confirm dialog names how many, and you can undo from the activity strip. A document you actually change stays held, and if you put a re-filed one back again it is held until you confirm it yourself. Documents the system was never confident about stay held. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="putback-refile-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <!-- Detail-veto single-supplier immunity (2026-08-23, DARK) -->
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Don't reject a document's own saved layout over a logo look-alike when the sender is certain</div>
+                <div class="threshold-sub">A fine logo check occasionally rejects a document that clearly belongs to one sender — it mistakes part of the letterhead for another company's mark, so a document that matches its sender's saved layout is sent to review with "couldn't match this layout". With this on, when the logo is a strong single-sender match and the sender's own name is printed on the page, that fine check is only allowed to override when it is genuinely confident the mark belongs to a different company — a marginal look-alike no longer blocks the match. A real two-company logo collision is still caught. Needs an app restart to take effect. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="logo-detail-immune-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Recognise a confirmed company even when its letterhead is column-spaced</div>
+                <div class="threshold-sub">Some letterheads print the company name with big gaps between the words. Scan Finder can read the gaps as separate columns and fail to match the name to a company you've confirmed, so those documents keep the "please confirm before filing" note. With this on, the spaced-out name is reassembled and, when it matches a company you've confirmed on this layout, the note is cleared. Only the company you confirmed is matched — a name on the page addressed TO you is never treated as the sender. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="identity-geom-fragment-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Read small reference/date print more clearly</div>
+                <div class="threshold-sub">Enlarges a tightly-cropped reference or date before reading it and drops an over-sharpen step, so small print (e.g. “PO-17039” misread as “»0-17039”) reads correctly. Only helps where it can, never changes a read it can't improve. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="struct-code-read-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Faster field reads (warm OCR helper)</div>
+                <div class="threshold-sub">Keeps a small OCR helper warm in the background so drawing a box around a value reads in a fraction of a second instead of a couple of seconds. Reads work either way — turn this off only if you ever notice extra background activity.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="warm-ocr-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Faster single-document reprocessing (uses more CPU cores)</div>
+                <div class="threshold-sub">When you Reprocess or Straighten &amp; Reprocess one document, spreads the work across several CPU cores so it finishes faster on a slower PC. The result is identical either way — this only changes the speed. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="parallel-reprocess-toggle"><span class="toggle-slider"></span></label>
             </div>
           </div>
         </div>
@@ -579,6 +1543,17 @@
               <!-- Options are populated by the renderer, sized to this PC's CPU cores (get-concurrency-info). -->
               <select id="processing-concurrency" class="field-select" style="width:80px;">
                 <option value="1">1</option>
+              </select>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Scan reading detail (OCR resolution)</div>
+                <div class="threshold-sub">How finely each page is read for text. <b>High (300 DPI)</b> is most accurate for genuine paper scans. <b>Balanced (200)</b> and <b>Fast (150)</b> read noticeably quicker and use far less memory — ideal when your documents are already low-resolution. Lower detail can miss very small print, so check accuracy after changing it.</div>
+              </div>
+              <select id="ocr-dpi-select" class="field-select" style="width:230px;">
+                <option value="150">Fast (150 DPI)</option>
+                <option value="200">Balanced (200 DPI)</option>
+                <option value="300">High — most accurate (300 DPI)</option>
               </select>
             </div>
             <div class="threshold-row">
@@ -635,6 +1610,66 @@
                 <span class="toggle-slider"></span>
               </label>
             </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Recognise separator sheets</div>
+                <div class="threshold-sub">Split a scanned pile wherever a printed ScanFinder separator sheet appears — the sheet page is removed from the filed documents. Print sheets below, slot them between documents, and scan the lot as one batch. If a sheet can't be read, nothing is split — the batch just arrives as one document in Review.</div>
+                <div class="threshold-sub" id="filing-slips-watch-warn" style="display:none; color: var(--warn);">Separator sheets are detected on manual Import only — not yet in the auto-import (watch) folder.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="filing-slips-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Print separator sheets</div>
+                <div class="threshold-sub">Creates a PDF pack of numbered sheets and opens it — print from your PDF viewer (double-sided if you can). Sheets are reusable; keep the pack by the scanner.</div>
+                <div class="threshold-sub" id="filing-slips-result" style="display:none"></div>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
+                <input type="number" id="filing-slips-count" min="1" max="50" value="10" title="How many sheets to print" style="width:64px;">
+                <button class="btn" id="filing-slips-print">Print separator sheets…</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Printing</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Enable document printing</div>
+                <div class="threshold-sub">Adds a Print button in Review. It opens your printer's own dialog so you choose the tray, sides, paper and copies your printer supports — nothing is printed until you confirm there. Every print is recorded in the audit log.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="printing-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Unrecognised documents</div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">File unrecognised documents as General Documents</div>
+                <div class="threshold-sub">When ScanFinder can't tell what kind of document something is, it becomes a "General Document" — reviewed as usual, filed under a General folder, and found later by searching its text. Never applies to anything ScanFinder recognises, and these documents never file themselves automatically.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="generic-fallback-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Suggest a title from the document's own heading</div>
+                <div class="threshold-sub">General Documents get a suggested Title picked from the page's main heading ("Boiler Service Certificate") — editable at review, searchable, and usable in filenames. If no clean heading is found the Title is simply left blank.</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="auto-title-toggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
           </div>
 
           <div class="section">
@@ -677,6 +1712,38 @@
         </div>
       </div>
 
+      <!-- Advanced reading switches gate (owner decision 2026-08-11, sharpened same day): ~50
+           kill-switch / experimental toggles hide behind one persisted SFDEV unlock — and the
+           GATE ITSELF is invisible to customers ("i dont want them seeing there are options
+           gated that they cannot access, it leads to curiosity"). The whole group renders ONLY
+           via Ctrl+Shift+D then M (or while the persisted unlock is on). Hiding changes NO
+           values — the rows keep their ids (wiring pins unaffected); only visibility moves. -->
+      <div class="settings-group" id="dev-switches-group" style="display:none;">
+        <div class="group-title">Advanced reading switches</div>
+        <div class="group-body">
+          <div class="section">
+            <div id="dev-switches-lock-row" class="threshold-row">
+              <div>
+                <div class="threshold-label">Fine-grained reading switches (developer)</div>
+                <div class="threshold-sub">Dozens of internal reading safeguards live here. They ship with the right defaults — changing them can quietly change how documents are read.</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input type="password" id="dev-switches-pw" class="field-select" style="width:130px;" placeholder="Password" autocomplete="off">
+                <button class="btn" id="dev-switches-show" style="padding:6px 14px;">Show</button>
+              </div>
+            </div>
+            <div id="dev-switches-msg" style="font-size:12px;color:var(--err);padding:0 2px;"></div>
+            <div id="dev-switches-open-row" class="threshold-row" style="display:none;">
+              <div>
+                <div class="threshold-label">Advanced switches are shown</div>
+                <div class="threshold-sub">The developer switches above are visible on this computer. Values are unchanged either way.</div>
+              </div>
+              <button class="btn" id="dev-switches-hide" style="padding:6px 14px;">Hide them again</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ══ APPEARANCE ══ -->
@@ -709,6 +1776,8 @@
                   <option value="autumn">Autumn</option>
                   <option value="winter">Winter</option>
                   <option value="festive">Festive</option>
+                  <option value="festivelight">Festive (Light)</option>
+                  <option value="spooky">Spooky</option>
                 </optgroup>
               </select>
             </div>
@@ -754,6 +1823,18 @@
         <p class="section-desc" style="border-left:2px solid var(--warn); padding-left:8px; color:var(--warn); margin-top:6px;">
           Advanced: use only when standard extraction is repeatedly failing for a supplier layout.
         </p>
+      </div>
+      <div class="section" id="tpl-cleanup-section">
+        <div class="section-title">Suggested cleanups</div>
+        <p class="section-desc">
+          Find duplicate templates of the same supplier &amp; type (they can fragment when a scanned logo drifts) and re-link documents that ended up with no template. A merge takes a database backup and asks you to confirm first.
+        </p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button class="btn" id="btn-scan-duplicates">Scan for duplicate templates</button>
+          <button class="btn" id="btn-relink-strays">Re-link stray documents</button>
+          <span id="tpl-cleanup-msg" class="section-desc" style="margin:0;"></span>
+        </div>
+        <div id="tpl-cleanup-results" style="margin-top:12px;"></div>
       </div>
       <div id="tpl-layout">
         <div id="tpl-list-col">
@@ -825,6 +1906,7 @@
                     <button class="btn-icon" id="tpl-btn-zoom-in" title="Zoom in">+</button>
                     <button class="btn-icon" id="tpl-btn-zoom-reset" title="Reset zoom &amp; pan">&#8634;</button>
                   </span>
+                  <button class="btn" id="tpl-btn-straighten" data-help-key="tpl-straighten" title="Straighten a tilted sample so you can draw and check anchor/target boxes on level text. Boxes drawn while straightened are converted back to the real page's angle when you save.">&#8734; Straighten</button>
                   <span class="tpl-legend">
                     <span class="tpl-swatch tpl-swatch-anchor"></span> Anchor
                     <span class="tpl-swatch tpl-swatch-target"></span> Target zone
@@ -893,21 +1975,24 @@
                       <label>Anchor text</label>
                       <input type="text" id="tpl-map-anchor-text" placeholder="auto-detected" style="width:220px;" title="Label text to find on the document — auto-filled from drawn box">
                     </div>
+                    <!-- The "OCR type" select was removed 2026-08-08 (owner decision). Its title
+                         claimed it affected post-processing; it did not. It wrote
+                         template_field_mappings.ocr_type, which NO production code reads — the
+                         value format comes from engine._seed_field_patterns, keyed on the document
+                         TYPE's field definitions. Three surfaces offered three different
+                         vocabularies for it and none changed a read. -->
+                    <!-- The ONE per-mapping tightness control that exists today (owner's
+                         "what settings tighten a frequently-misfiring box?"). It was a bare
+                         slider labelled "Expansion" with a tooltip — the number was adjustable
+                         without being understandable, so nobody could tell which way to move it.
+                         The two failure modes pull in opposite directions, so both are named. -->
                     <div class="form-group">
-                      <label>OCR type</label>
-                      <select id="tpl-map-ocr-type" class="field-select" title="Expected value format — affects post-processing">
-                        <option value="text">Text</option>
-                        <option value="number">Number</option>
-                        <option value="date">Date</option>
-                        <option value="currency">Currency</option>
-                      </select>
-                    </div>
-                    <div class="form-group">
-                      <label>Expansion</label>
+                      <label>Search expansion (box tightness)</label>
                       <div class="conf-row">
-                        <input type="range" class="conf-slider" id="tpl-map-expansion" min="0" max="20" value="4" title="Extra margin added around the target zone when searching">
+                        <input type="range" class="conf-slider" id="tpl-map-expansion" min="0" max="20" value="4" title="Extra margin searched around the target zone">
                         <span class="conf-val" id="tpl-map-expansion-val">4%</span>
                       </div>
+                      <span class="section-desc" id="tpl-map-expansion-hint" style="display:block; margin-top:4px;"></span>
                     </div>
                     <div class="form-group">
                       <label>Enabled</label>
@@ -957,7 +2042,7 @@
               <p class="section-desc">Click a row to edit. The “Last test” column shows the raw mapped read; the filed value (Review/Search) is normalised later (spacing, date format).</p>
               <table class="fields-table" id="tpl-mappings-table">
                 <thead>
-                  <tr><th>Field</th><th>Anchor label</th><th>OCR type</th><th>Search expansion</th><th>Last test</th><th>Enabled</th></tr>
+                  <tr><th>Field</th><th>Anchor label</th><th>Search expansion</th><th>Last test</th><th>Enabled</th></tr>
                 </thead>
                 <tbody id="tpl-mappings-tbody"></tbody>
               </table>
@@ -1087,6 +2172,39 @@
         <div id="lo-list" class="section-desc"></div>
       </div>
 
+      <!-- ══ Learned memory inventory — click-to-browse (read-only) ══ -->
+      <div class="section" id="lr-browse-section">
+        <div class="section-title">Learned memory inventory</div>
+        <p class="section-desc">
+          Browse everything Scan Finder has learned, sender by sender — click a row to see the values,
+          spellings and positions it remembers. This is a read-only view; to correct or forget
+          something, use <strong>Learning Repair</strong> or the advanced tools below.
+        </p>
+        <div class="row-flex" style="gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+          <input type="text" id="lr-browse-search" class="path-input" placeholder="Find a sender or document type…" spellcheck="false" style="max-width:320px;">
+          <div class="row-flex" id="lr-browse-filters" style="gap:6px; flex-wrap:wrap;">
+            <button class="btn lr-browse-chip active" data-filter="all" style="padding:3px 9px; font-size:11px;">All</button>
+            <button class="btn lr-browse-chip" data-filter="notauto" style="padding:3px 9px; font-size:11px;">Not filing by itself</button>
+            <button class="btn lr-browse-chip" data-filter="orphan" style="padding:3px 9px; font-size:11px;">Learning but no documents</button>
+            <button class="btn lr-browse-chip" data-filter="blank" style="padding:3px 9px; font-size:11px;">No sender recognised</button>
+          </div>
+          <button class="btn" id="lr-browse-refresh" style="padding:3px 10px; font-size:11px;">Refresh</button>
+          <span id="lr-browse-count" class="section-desc" style="margin:0;"></span>
+        </div>
+        <div style="display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;">
+          <div id="lr-scope-list" style="flex:1 1 300px; min-width:280px; max-height:460px; overflow:auto; border:1px solid var(--border); border-radius:10px;"></div>
+          <div style="flex:2 1 360px; min-width:320px;">
+            <div id="lr-browse-empty" class="section-desc" style="padding:30px 12px; text-align:center; border:1px dashed var(--border); border-radius:10px;">Select a sender on the left to see what Scan Finder remembers about it.</div>
+            <div id="lr-browse-detail" style="display:none;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ Advanced: the former typed Recovery search + cleanup tools + full table (preserved) ══ -->
+      <details class="section" id="lr-advanced-tools" style="margin-top:4px;">
+        <summary style="cursor:pointer; font-weight:600; color:var(--muted);">Advanced — search &amp; clean a specific supplier</summary>
+        <div style="margin-top:12px;">
+
       <!-- ── Learning Recovery ── -->
       <div class="section">
         <div class="section-title">Learning Recovery</div>
@@ -1171,11 +2289,26 @@
           <button class="btn danger" id="lr-btn-clear-field-rules" data-help-key="lr-clear-rules">Clear field cleanup rules for this scope</button>
         </div>
 
+        <div class="section-title" style="margin-top:18px;">Senders that look like duplicates</div>
+        <div class="section-desc" style="margin-bottom:8px;">
+          One misread character can leave the same company in your filing cabinet twice, one letter
+          apart, with new documents going to whichever spelling was read that day. This lists any
+          pair of senders that differ by only a character or two, with how many documents sit under
+          each. Nothing is changed by looking: pick the correct spelling and it fills in the rename
+          below, which you still have to confirm.
+        </div>
+        <div class="row-flex" style="gap:8px; align-items:center;">
+          <button class="btn" id="lr-btn-find-duplicates" data-help-key="lr-find-duplicates">Check for duplicate senders</button>
+          <span id="lr-dupe-msg" class="muted" style="font-size:12px;"></span>
+        </div>
+        <div id="lr-dupe-list" style="margin-top:8px;"></div>
+
         <div class="section-title" style="margin-top:18px;">Rename / fix this supplier</div>
         <div class="section-desc" style="margin-bottom:8px;">
           Corrects a wrong or merged Document Issuer everywhere it is a learning key — the
-          documents, hints, anchors, logo and corrections for this supplier — in one move, so
-          it stops re-appearing on new scans. Filed documents keep their files.
+          documents, hints, anchors, logo and corrections for this supplier, and the permanent
+          sender stored on its layout — in one move, so it stops re-appearing on new scans.
+          Filed documents keep their files where they are.
         </div>
         <div class="row-flex" style="gap:8px; align-items:center;">
           <input type="text" id="lr-rename-new" class="path-input" placeholder="Corrected supplier name…" style="max-width:280px;" spellcheck="false">
@@ -1201,6 +2334,9 @@
         <p class="section-desc">No learned data found for this supplier / document type.</p>
       </div>
 
+        </div>
+      </details>
+
     </div>
 
     <!-- ══ LEARNING REPAIR ══ -->
@@ -1208,7 +2344,25 @@
       <div class="section">
         <div class="section-title">Learning Repair</div>
         <p class="section-desc">Check the documents Scan Finder has learned from for a document type, and send anything that looks off back to Review. Nothing here is destructive — <strong>Send back to Review</strong> just puts a document in your Review list (confirm it there and it goes right back), and <strong>Delete</strong> goes to the recycle bin.</p>
-        <div class="row-flex" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:4px;">
+        <!-- Learning Repair v2 SELECTOR (DARK `learning_repair_console`; barry + gary → Oracle 2026-08-26):
+             one row per sender × document type that holds any learning — click a row to open its console.
+             Hidden while the switch is off (the typed picker below stays the door). -->
+        <div id="rp-selector" style="display:none; margin-bottom:10px;">
+          <div class="row-flex" style="gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+            <input type="text" id="rp-scope-search" class="path-input" placeholder="Find a sender or document type…" spellcheck="false" style="max-width:320px;">
+            <div class="row-flex" id="rp-scope-filters" style="gap:6px; flex-wrap:wrap;">
+              <button class="btn rp-scope-chip active" data-filter="all" style="padding:3px 9px; font-size:11px;">All</button>
+              <button class="btn rp-scope-chip" data-filter="look" style="padding:3px 9px; font-size:11px;">Worth a look</button>
+              <button class="btn rp-scope-chip" data-filter="notauto" style="padding:3px 9px; font-size:11px;">Not filing by itself</button>
+              <button class="btn rp-scope-chip" data-filter="orphan" style="padding:3px 9px; font-size:11px;">Learning but no documents</button>
+              <button class="btn rp-scope-chip" data-filter="blank" style="padding:3px 9px; font-size:11px;">No sender recognised</button>
+            </div>
+            <button class="btn" id="rp-scope-refresh" style="padding:3px 10px; font-size:11px;">Refresh</button>
+            <span id="rp-scope-count" class="section-desc" style="margin:0;"></span>
+          </div>
+          <div id="rp-scope-list" style="max-height:300px; overflow:auto; border:1px solid var(--border); border-radius:10px;"></div>
+        </div>
+        <div class="row-flex" id="rp-picker-row" style="gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:4px;">
           <div style="display:flex; flex-direction:column; gap:4px; min-width:200px;">
             <label style="font-size:11px; color:var(--muted);">Document type</label>
             <select id="rp-doctype" class="field-select"></select>
@@ -1223,6 +2377,16 @@
       </div>
 
       <div class="section" id="rp-worklist" style="display:none;">
+        <!-- Console STATUS card (v2): one sentence, one reason — the same words the selector row shows. -->
+        <div id="rp-console-head" style="display:none; margin-bottom:14px; border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:var(--surface2);">
+          <div id="rp-console-title" style="font-weight:600; margin-bottom:4px;"></div>
+          <div id="rp-console-status" class="section-desc" style="margin:0;"></div>
+          <div class="row-flex" style="gap:8px; margin-top:8px; flex-wrap:wrap; align-items:center;">
+            <button class="btn danger" id="rp-fresh" style="display:none;">Start fresh with this sender…</button>
+            <button class="btn" id="rp-fresh-undo" style="display:none;">Undo start fresh</button>
+            <span id="rp-fresh-msg" class="section-desc" style="margin:0;"></span>
+          </div>
+        </div>
         <div id="rp-suspects-strip" style="display:none; margin-bottom:14px; border:1px solid var(--warn); border-radius:10px; padding:10px 12px; background:var(--surface2);">
           <div style="font-weight:600; margin-bottom:6px;">A few documents worth a look</div>
           <div id="rp-suspects-list" style="font-size:12px;"></div>
@@ -1274,6 +2438,18 @@
     <!-- ══ USERS ══ -->
     <div class="panel" id="panel-users" data-help-key="tab-users">
 
+      <div class="section" id="stamp-catalog-section">
+        <div class="section-title">Document stamps</div>
+        <p class="section-desc">The stamps people can place on documents to record a decision or a status (PAID, APPROVED, RECEIVED&hellip;). Built-in stamps can't be removed; add your own below. Who is allowed to stamp is set per person in the Users list.</p>
+        <div id="stamp-catalog-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+        <div class="row-flex" style="gap:10px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="new-stamp-word" placeholder="New stamp word (e.g. POSTED)" maxlength="16" autocomplete="off" style="text-transform:uppercase;width:200px">
+          <span id="new-stamp-swatches" style="display:inline-flex;gap:8px"></span>
+          <button class="btn primary" id="btn-add-stamp" disabled>Add stamp</button>
+          <span class="section-desc" id="new-stamp-msg"></span>
+        </div>
+      </div>
+
       <div class="section">
         <div class="section-title">Users</div>
         <p class="section-desc">Who can sign in and what they can do. New accounts get a temporary password; the user sets their own on first sign-in.</p>
@@ -1319,6 +2495,45 @@
     </div>
 
     <!-- ══ AUDIT ══ -->
+    <div class="panel" id="panel-workflow" data-help-key="tab-workflow">
+      <div class="section-title">Document routing</div>
+      <p style="color:var(--muted); max-width:65ch;">Automatically send a filed document to someone — for approval or just for information — based on its type and amount. Rules run on <b>every</b> document as it's filed, whether it was auto-filed or reviewed.</p>
+
+      <div class="card" id="wf-builder" style="margin-top:14px; padding:16px;">
+        <div style="font-weight:600; margin-bottom:10px;" id="wf-builder-title">Add a routing rule</div>
+        <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; line-height:2.4;">
+          <span>When a</span>
+          <select id="wf-b-type" style="min-width:150px;"></select>
+          <span>is filed</span>
+          <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="wf-b-amount-on"> and it's £</label>
+          <input type="text" id="wf-b-amount" inputmode="decimal" placeholder="0.00" style="width:90px; display:none;">
+          <span id="wf-b-amount-suffix" style="display:none;">or more</span>
+          <span>, send it to</span>
+          <select id="wf-b-person" style="min-width:160px;"></select>
+          <select id="wf-b-action" style="min-width:150px;">
+            <option value="approve">for approval</option>
+            <option value="acknowledge">for information</option>
+          </select>
+          <span>.</span>
+        </div>
+        <div style="margin-top:10px; font-size:11px; color:var(--muted);">Approval holds the document until they decide. For-information never holds anything — filing carries on as normal.</div>
+        <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+          <button class="btn primary" id="wf-b-save">Add rule</button>
+          <button class="btn" id="wf-b-dryrun">Show me what this would do</button>
+          <button class="btn" id="wf-b-cancel" style="display:none;">Cancel</button>
+        </div>
+        <div id="wf-b-msg" style="font-size:12px; color:var(--muted); min-height:16px; margin-top:10px;"></div>
+        <div id="wf-dryrun" style="margin-top:8px;"></div>
+      </div>
+
+      <div style="font-weight:600; margin:20px 0 8px;">Your rules</div>
+      <div id="wf-rules-list"><p style="color:var(--muted);">Loading…</p></div>
+
+      <div style="font-weight:600; margin:20px 0 8px;">Open routes</div>
+      <p class="section-desc" style="max-width:65ch;">Everything currently waiting on someone — including automatic routes, which don't appear in anyone's Sent box. Cancelling removes it from the recipient's inbox and leaves an honest note in their Completed list.</p>
+      <div id="wf-open-list"><p style="color:var(--muted);">Loading…</p></div>
+    </div>
+
     <div class="panel" id="panel-audit" data-help-key="tab-audit">
       <style>
         #panel-audit .aud-lbl { display:block; font-size:10px; color:var(--muted); margin-bottom:3px; letter-spacing:.04em; }
@@ -1332,6 +2547,18 @@
         #panel-audit .aud-pill.failure { background:var(--err-bg); color:var(--err); }
         #panel-audit .aud-pill.denied  { background:var(--warn-bg); color:var(--warn); }
         #panel-audit .aud-detail td { background:var(--bg); color:var(--muted); font-family:var(--mono); font-size:10.5px; white-space:pre-wrap; word-break:break-word; }
+        /* Inline "View" affordance in the Target cell — a compact accent pill (was a bare default
+           button); fills the accent on hover, matching the app's button language. */
+        #panel-audit .aud-view-btn {
+          display:inline-flex; align-items:center; float:right; margin-left:8px; padding:2px 9px; vertical-align:middle;
+          border-radius:var(--r-pill, 999px); border:1px solid var(--accent-border, var(--border2));
+          background:var(--accent-bg); color:var(--accent2);
+          font-family:var(--sans); font-size:10px; font-weight:600; letter-spacing:.02em; line-height:1.5;
+          cursor:pointer; transition:background .15s, border-color .15s, color .15s, transform .1s;
+        }
+        #panel-audit .aud-view-btn:hover { background:var(--accent); border-color:var(--accent); color:#fff; transform:translateY(-1px); }
+        #panel-audit .aud-view-btn:active { transform:translateY(0); }
+        #panel-audit .aud-view-btn:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
       </style>
       <div class="section">
         <div class="section-title">Audit log</div>
@@ -1357,7 +2584,9 @@
           <button class="btn primary" id="aud-apply">Apply</button>
           <button class="btn" id="aud-clear">Clear</button>
           <button class="btn" id="aud-csv">Export CSV</button>
+          <button class="btn" id="aud-verify" title="Re-walk the tamper-evident hash chain across the live log and all archived months, and report the first break.">Verify integrity</button>
         </div>
+        <div id="aud-verify-result" style="font-size:12px; margin-bottom:6px; display:none;"></div>
 
         <div id="aud-summary" style="font-size:11px; color:var(--muted); margin-bottom:6px;"></div>
         <table class="fields-table" id="aud-table" style="width:100%">
@@ -1408,7 +2637,7 @@
         <div id="lic-activate-msg" class="section-desc" style="font-size:12px; min-height:1em;"></div>
       </div>
 
-      <div class="section" id="wf-section">
+      <div class="section" id="wf-section" style="display:none;">
         <div class="card-head"><div class="section-title">Workflow add-on</div><span class="chip" id="wf-chip" style="display:none;"></span></div>
         <p class="section-desc">Unlocks the enhanced Search experience — confidence cues, approval workflow and mailbox. Set by your licence (read‑only).</p>
         <div class="threshold-row">
@@ -1422,6 +2651,12 @@
           </label>
         </div>
       </div>
+
+      <!-- Approval stamp placement (owner 2026-08-02: "choose where it goes and resize it to fit a
+           blank area"). Shares #wf-section's visibility — the stamp only exists for approvals. -->
+      <!-- The old fixed "Approval stamp" placement card was removed 2026-08-28 — stamps are now placed by
+           clicking on the document, and their types are managed in Settings → Users → Document stamps
+           (Workflow+Stamping redesign). -->
 
       <div class="section" id="seats-section">
         <div class="section-title">Client seats — search &amp; workflow</div>
@@ -1615,9 +2850,14 @@
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
 <script src="../shared/doctype-editor.js"></script>
+<script src="../shared/doctype-catalog.js"></script>
 <script src="../shared/thumbs.js"></script>
 <script src="../shared/pattern-editor.js"></script>
 <script src="../shared/modalFocus.js"></script>
+<!-- deskewedNormToRaw: the Straighten toggle in the Template Viewer draws on the STRAIGHTENED
+     frame but must persist RAW-frame coords, exactly as the teach wizard does. -->
+<script src="../shared/anchorLabel.js"></script>
+<script src="../shared/boxSnap.js"></script>   <!-- the drawn-box word-snap, shared with the teach wizard -->
 <script src="renderer.js"></script>
 </body>
 </html>

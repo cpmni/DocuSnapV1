@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:">
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'none'; base-uri 'none'; object-src 'none'">
   <title>ScanFinder — Dev Inspector</title>
   <script src="../shared/theme.js"></script>
   <link rel="stylesheet" href="../shared/theme.css" />
@@ -233,6 +233,30 @@
     .loser .val-line { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 3px; }
     .loser .reason { font-size: 10.5px; color: #e89a9a; margin-top: 4px; }
     .loser .reason b { color:#f3b3b3; font-weight:600; }
+
+    /* ── Every-step ladder (engine-declared per-field outcome, slice 1) ─────── */
+    .ladder { display:flex; flex-direction:column; gap:2px; margin-bottom:16px; }
+    .lrow { display:flex; align-items:center; gap:9px; flex-wrap:wrap; padding:6px 0; border-bottom:1px dashed var(--border); }
+    .lrow:last-child { border-bottom:none; }
+    .lrow.missing { opacity:.4; }
+    .oc { font-size:9.5px; font-family:var(--mono); padding:2px 8px; border-radius:7px; letter-spacing:.03em; white-space:nowrap; }
+    .oc-won   { background:rgba(62,207,142,.18); color:var(--ok); font-weight:600; }
+    .oc-lost  { background:var(--surface3); color:var(--muted); }
+    .oc-none  { background:transparent; color:var(--muted2); border:1px dashed var(--border2); }
+    .oc-prior { background:rgba(79,142,247,.14); color:var(--s1); }
+    .oc-skip  { background:transparent; color:var(--muted2); border:1px solid var(--border); }
+    .lval { font-family:var(--mono); font-size:12px; color:var(--text); word-break:break-all; }
+    .lval.muted { color:var(--muted); }
+    .lreason { font-size:10.5px; color:var(--muted); }
+    /* The printed caption a rung matched. Given its own accent so it reads as EVIDENCE
+       off the page rather than another internal method name (which sits in .conf). */
+    .lcap { font-size:10.5px; font-family:var(--mono); color:var(--s1);
+            background:rgba(79,142,247,.10); border:1px solid rgba(79,142,247,.22);
+            padding:1px 6px; border-radius:7px; white-space:nowrap; cursor:help; }
+    .lreject .lcap { margin:0 4px; }
+    .lrejects { flex-basis:100%; padding:3px 0 1px 18px; }
+    .lreject { font-size:10.5px; color:#e89a9a; font-family:var(--mono); margin-top:2px; word-break:break-all; }
+    .lreject b { color:#f3b3b3; font-weight:600; }
 
     .approx { font-size: 9.5px; font-family: var(--mono); color: var(--warn); border:1px solid rgba(247,184,79,.3); padding: 1px 7px; border-radius: 7px; cursor: help; }
 

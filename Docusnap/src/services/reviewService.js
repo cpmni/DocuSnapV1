@@ -24,22 +24,69 @@
 
 function fail(code, error, extra) { return { ok: false, success: false, code, error, ...(extra || {}) }; }
 
+/** Q1 switch (2026-08-22): keep the drained original on filing. Env KEEP_PROCESSED_ORIGINALS=0/1
+ *  overrides the `keep_processed_originals` setting (mig 83 UPSERTs 'true' for every install). */
+function keepProcessedOriginals(db, learning) {
+  const env = process.env.KEEP_PROCESSED_ORIGINALS;
+  if (env === '0') return false;
+  if (env === '1') return true;
+  try { return (learning || require('../../database/modules/learning')).getSetting(db, 'keep_processed_originals', 'false') === 'true'; }
+  catch { return false; }
+}
+
 function createReviewService(deps = {}) {
   const documents = deps.documents || require('../../database/modules/documents');
   const learning  = deps.learning  || require('../../database/modules/learning');
   const doctypes  = deps.doctypes  || require('../../database/modules/document_types');
+  const templates = deps.templates || require('../../database/modules/templates');
+  const prefixOutlier = deps.prefixOutlier || require('../../database/modules/prefix_outlier');
+  const typeSplit = deps.typeSplit || require('../../database/modules/typeSplit');   // A3: the type-split ask
   const filing    = deps.filing    || require('../modules/filing/handler');
+  const foreignFields = deps.foreignFields || require('../lib/foreignFields');
   const fs   = deps.fs   || require('fs');
   const path = deps.path || require('path');
   const logger = deps.logger || null;
   const audit  = deps.audit || (() => {});
   // Optional Electron-only hooks — no-ops for the API path.
   const onScheduleSourceMove = deps.onScheduleSourceMove || (() => {});
+  // Q1 (2026-08-22): under keep_processed_originals an UN-drained original is drained NOW instead
+  // of unlinked — (srcPath, destDir, originalFilename) → {folder, filename} | null. Optional: with
+  // no dep the original is simply left where it is (the safe direction is always "keep").
+  const drainOriginal        = deps.drainOriginal        || null;
+  function _drainAtConfirm(db, docRow, srcPath, originalFilename) {
+    try {
+      if (!drainOriginal) return;
+      if (learning.getSetting(db, 'drain_processed', 'true') === 'false') return;   // the user keeps originals in place
+      const explicit = learning.getSetting(db, 'processed_folder', null);
+      const destDir  = (explicit && String(explicit).trim()) || path.join(path.dirname(srcPath), 'Processed');
+      const moved = drainOriginal(srcPath, destDir, originalFilename);
+      if (moved && moved.folder) {
+        // direct UPDATE: documents.update() whitelists columns and would silently drop these
+        db.prepare("UPDATE documents SET folder_path = ?, drained_at = datetime('now') WHERE id = ?").run(moved.folder, docRow.id);
+        if (moved.filename && moved.filename !== originalFilename) {
+          db.prepare('UPDATE documents SET original_filename = ? WHERE id = ?').run(moved.filename, docRow.id);
+        }
+        logger?.log?.(`[filing] original drained at confirm: ${originalFilename} → ${moved.folder}`);
+      }
+    } catch (e) { logger?.warn?.('[filing] drain-at-confirm skipped: ' + (e && e.message)); }
+  }
   const onTaughtConfirm      = deps.onTaughtConfirm      || (async () => {});
   const onScopeGraduated     = deps.onScopeGraduated     || (async () => {});
+  const learnTemplateOnCommit = deps.learnTemplateOnCommit || (async () => {});   // Slice 1: identity convergence on every commit (dark)
   const captureSample        = deps.captureSample        || (async () => {});
   const notifyCounts         = deps.notifyCounts         || (() => {});
+  const captureRouteContext  = deps.captureRouteContext  || (() => null);   // Slice 3: total trust ctx captured pre-note-clear
+  const startDefaultRoute    = deps.startDefaultRoute    || (() => {});     // Slice 3: amount-threshold auto-route (detached)
   const releaseDelayMs       = deps.releaseDelayMs != null ? deps.releaseDelayMs : 0;
+  // Slice 1 (2026-08-21): after a HUMAN confirm lands, tell the scope-local auto-accept scheduler
+  // (processing/handler). Fired for every human confirm — desktop, File-All, /v1 — which is why it
+  // lives here and not on a renderer timer. Fire-and-forget; can never affect the returned confirm.
+  const onAfterConfirm       = deps.onAfterConfirm       || (() => {});
+  // P2 (2026-08-22): ask whether the scope is READY before this confirm lands, so the after-hook can
+  // detect the crossing. Returns null when the feature is dark (no query made).
+  const readyProbe           = deps.readyProbe           || (() => null);
+  // B1 (activity strip): the class fix's receipt — {batchId, docs} → a class_fix event with its undo handle.
+  const recordReviewEvent    = deps.recordReviewEvent    || (() => null);
 
   // ── Queue reads (Admin/Edit; the caller gates) ────────────────────────────────
   const queue    = (db) => documents.getReviewQueue(db);
@@ -47,17 +94,68 @@ function createReviewService(deps = {}) {
   const counts   = (db) => ({ review: documents.getReviewCount(db), deferred: documents.getDeferredCount(db) });
 
   // ── Confirm / file ────────────────────────────────────────────────────────────
-  async function confirm(db, actor, payload) {
+  async function confirm(db, actor, payload, internal = {}) {
     const {
-      document_id, folder_path, original_filename,
+      document_id,
       corrections, allValues, supplier_name,
       document_type, document_type_slug, taught_fields, bulk,
     } = payload || {};
+    // Machine-confirm sentinels, set ONLY by server-side call sites via the INTERNAL arg —
+    // never from the renderer/client payload (a compromised client must not be able to label
+    // its confirms as machine confirms or vice versa). Anything outside the exact set collapses
+    // to null (human/legacy). 'scope_sweep' = Catch-up Filing accept (design 2026-07-31);
+    // 'auto_reprocess' = the post-reprocess consent-bar accept (Oracle-signed 2026-08-12 —
+    // replaces the renderer queue-wide autoCommitFullConfidence sweep that filed as the human).
+    const _VIA_SENTINELS = ['scope_sweep', 'auto_reprocess'];
+    const _via = internal && _VIA_SENTINELS.includes(internal.via) ? internal.via : null;
     const actorName = (actor && actor.username) || null;
     const _t0 = Date.now();   // confirm return-latency probe (logged below when diag logging is on)
+    // The issuer the operator CONFIRMED (the field value), param as fallback — the same precedence
+    // documents.update uses below (A1 of the type-split arc, 2026-08-22): the renderer's
+    // `supplier_name` param is the MACHINE's pre-confirm read, never what learning should see.
+    const confirmedSupplier = String((allValues && allValues.supplier_name) || supplier_name || '').trim() || null;
 
     const docRow = documents.getById(db, document_id);
-    const workingPath = docRow?.working_path || null;
+    if (!docRow) return fail('NOT_FOUND', 'Document not found.');
+    // A6 (type-split arc): did THIS document carry the Fix A type-ambiguity note before the confirm?
+    // Read pre-claim (the confirm clears notes); consumed by the after-hook only. Never fatal.
+    let _typeSplitNoted = false;
+    try {
+      _typeSplitNoted = !!db.prepare(`SELECT 1 FROM extractions WHERE document_id = ? AND field_key = 'supplier_name'
+                                         AND validation_note LIKE '%used for several document types%'`).get(document_id);
+    } catch { _typeSplitNoted = false; }
+    // P2: readiness BEFORE the claim (human confirms only; dark ⇒ null, no query).
+    let _readyBefore = null;
+    if (!_via) {
+      try { _readyBefore = readyProbe(db, (allValues && allValues.supplier_name) || supplier_name || null, document_type_slug || null); }
+      catch { _readyBefore = null; }
+    }
+    // #1 (issuer sibling-fill): capture the source doc's letterhead issuer READ + layout phash BEFORE the
+    // confirm resolves it (Oracle C3, 2026-08-25 — thread the pre-persist row; the LAST-effect hook must
+    // NOT re-read the now-resolved row). Human single confirms only; the service also gates OFF, but skip
+    // the query when it can't fire.
+    let _issuerFillSrc = null;
+    if (!_via && !bulk) {
+      try {
+        const _se = db.prepare(`SELECT display_value, extraction_method, validation_note FROM extractions
+                                  WHERE document_id = ? AND field_key = 'supplier_name'`).get(document_id);
+        // keyword_fingerprint is stored as TEXT/JSON on the row; thread it as a parsed ARRAY so the service's
+        // keyword-overlap arm (Oracle-revised C2) can compare it directly (never re-read the resolved row).
+        let _srcKwfp = null;
+        try { const _v = docRow && docRow.keyword_fingerprint; const _a = typeof _v === 'string' ? JSON.parse(_v) : _v; _srcKwfp = Array.isArray(_a) ? _a : null; } catch { _srcKwfp = null; }
+        if (_se) _issuerFillSrc = { method: _se.extraction_method || '', display: _se.display_value || '',
+                                    note: _se.validation_note || '', phash: (docRow && docRow.logo_phash) || null,
+                                    keyword_fingerprint: _srcKwfp };
+      } catch { _issuerFillSrc = null; }
+    }
+    // SECURITY (Stage 1 — H1/M12): the on-disk source paths are resolved SERVER-SIDE from the doc
+    // row, NEVER from the payload (which carries field VALUES only). This mirrors the /v1 confirm
+    // path (api/handler.js), which already reads folder_path/original_filename from the row. Without
+    // this, a compromised/replaced renderer could aim filing's copy-in (arbitrary file → output
+    // tree) or the deferred source-unlink (arbitrary file delete) at any host path it named.
+    const folder_path       = docRow.folder_path || null;
+    const original_filename = docRow.original_filename || null;
+    const workingPath = docRow.working_path || null;
     // PREVIOUSLY-FILED copy: the doc's current filed copy, captured REGARDLESS of status and
     // BEFORE the claim below (which nulls the row's stored_path). Two cases carry one:
     //   • an already-confirmed doc ("Edit in Review" / re-surfaced auto-filed doc), and
@@ -65,6 +163,23 @@ function createReviewService(deps = {}) {
     //     (deconfirmDocument KEEPS stored_path). In BOTH, passing it as existingFiledPath makes
     //     the re-confirm REPLACE the original copy IN PLACE instead of minting a -DUPLICATE.
     const oldStoredPath = (docRow && docRow.stored_path) ? docRow.stored_path : null;
+
+    // NO-PAGE GUARD (Chris round 5, card 1): never file a document whose scanned page is gone.
+    // The reconcileHolding fix stops NEW page loss, but a doc damaged by the old startup sweep —
+    // or by OneDrive dehydration, a manual file deletion, or a crash — can still reach here with a
+    // stale working_path and no file on disk. Filing would fail deep in commitDocument with a raw
+    // "Source file not found: <path>"; refuse EARLY (before the claim, so no status churn) with a
+    // message the operator can act on. Mirrors filing.commitDocument's copyFrom precedence exactly.
+    const _srcPath = (folder_path && original_filename) ? path.join(folder_path, original_filename) : null;
+    const _hasPage = (workingPath   && fs.existsSync(workingPath))
+                  || (oldStoredPath && fs.existsSync(oldStoredPath))
+                  || (_srcPath      && fs.existsSync(_srcPath));
+    if (!_hasPage) {
+      return fail('NO_SOURCE_FILE',
+        "The scanned page for this document is no longer available, so it can’t be filed. "
+        + "Its details are still in Search — you can delete this entry from the queue.");
+    }
+
     // isRefile = SKIP the atomic claim. Only an ALREADY-CONFIRMED doc with explicit caller intent
     // does so ("Edit in Review"; renderer: allowRefile = status==='confirmed'). A confirm from the
     // review QUEUE (needs_review — incl. a Learning-Repair send-back) must still CLAIM (so a lost
@@ -85,12 +200,28 @@ function createReviewService(deps = {}) {
       if (Array.isArray(dtInfo.fields)) for (const f of dtInfo.fields) if (f && f.type === 'date') dateKeys.add(f.key);
       if (dtInfo.date_field_key) dateKeys.add(dtInfo.date_field_key);
       for (const k of dateKeys) {
-        const norm = filing.normaliseDate(allValues[k]);
-        if (norm && norm !== allValues[k]) {
+        const rawDate = allValues[k];
+        const norm = filing.normaliseDate(rawDate);
+        if (norm && norm !== rawDate) {
           allValues[k] = norm;
           if (corrections && corrections[k] && corrections[k].corrected_value != null) {
             corrections[k].corrected_value = norm;
           }
+        } else if (k === dtInfo.date_field_key && rawDate != null && String(rawDate).trim() !== '' && norm === null) {
+          // SILENT-MISFILE GUARD (Chris 2026-08-25 Card 1; gary + Oracle WRONG-LAYER → gate at the
+          // FILING predicate, not the loose validation_patterns). A present-but-unparseable DATE-ROLE
+          // value files to Company/Unknown Year/Unknown Month with NO signal — commitDocument
+          // substitutes 'Unknown Year'/'Unknown Month' (filing/handler.js) and returns success. Refuse
+          // HERE, pre-claim (no status churn, no file movement), keyed on the EXACT parser the folder
+          // builder uses (filing.normaliseDate) so there is zero divergence and zero false-block: any
+          // value filing CAN parse — including an OCR-spaced "15 / 12 / 2025" the preclean handles —
+          // still files; only a value that WOULD land in Unknown is held. Covers every human door
+          // (interactive Confirm, File All Ready, /v1), which all funnel through here. Extends the
+          // existing empty-required-role block from EMPTY to UNPARSEABLE — the same harm (no year/month).
+          return fail('INVALID_DATE',
+            `The date “${String(rawDate).trim()}” isn’t one the app can file — it would be saved under `
+            + '“Unknown Year / Unknown Month”. Please correct the date, then file it.',
+            { field: k });
         }
       }
     }
@@ -98,10 +229,149 @@ function createReviewService(deps = {}) {
     const outputRoot = learning.getSetting(db, 'output_folder', null);
     if (!outputRoot) return fail('NO_OUTPUT', 'No output folder set. Please configure it in Settings.');
 
+    // ── PREFIX-OUTLIER confirm gate (Slice 1, cold-start) ────────────────────────────────────────
+    // The extraction-time prefix guard is INERT on a first bulk import (its history snapshot is
+    // empty), so RE-CHECK the reference here against LIVE confirmed history and HOLD an odd-one-out
+    // for review BEFORE it files. Flag-only + PRE-CLAIM: writes a review note, leaves the doc
+    // needs_review; nothing is claimed or filed. Exempt: a re-file, a human-typed value (a
+    // correction), and an explicit acknowledge ("Confirm anyway"). Dual kill switch (env + setting).
+    // Reuses the SAME weight-aware predicate as the Python extraction guard (prefix_outlier.js
+    // mirrors ocr_corrector.py; parity pinned by test_prefix_outlier.js). ADVISORY: a gate error
+    // fails OPEN (never blocks a confirm), like the Python guard.
+    if (!isRefile && dtInfo && dtInfo.ref_field_key
+        && process.env.PREFIX_OUTLIER_CONFIRM_GUARD !== '0'
+        && learning.getSetting(db, 'prefix_outlier_confirm_guard_enabled', 'true') !== 'false') {
+      try {
+        const refKey = dtInfo.ref_field_key;
+        const refVal = allValues ? allValues[refKey] : null;
+        const humanCorrected = !!(corrections && corrections[refKey] && corrections[refKey].corrected_value != null);
+        const acked = Array.isArray(payload && payload.acknowledgePrefixOutlier)
+                   && payload.acknowledgePrefixOutlier.includes(refKey);
+        if (refVal && !humanCorrected && !acked) {
+          const scopeSupplier = (allValues && allValues.supplier_name) || supplier_name || null;
+          const rec = learning.getPrefixModelForScope(db, scopeSupplier, document_type_slug, refKey);
+          const chk = prefixOutlier.checkValue(refVal, rec);   // { outlier, prefix, dominant }
+          if (chk.outlier) {
+            db.prepare('UPDATE extractions SET validation_note = ? WHERE document_id = ? AND field_key = ?')
+              .run(`Reference starts "${chk.prefix}-" but this sender's usually start "${chk.dominant}-" - please check.`,
+                   document_id, refKey);
+            audit(db, { action: 'confirm_held_prefix_outlier', target_type: 'document', target_id: document_id,
+              document_id, outcome: 'held', actor_username: actorName,
+              metadata: { field: refKey, dominant: chk.dominant, prefix: chk.prefix } });
+            notifyCounts(db);
+            return fail('PREFIX_OUTLIER', 'The reference looks unusual for this sender - please review.',
+              { field: refKey, dominant: chk.dominant, prefix: chk.prefix });
+          }
+        }
+      } catch (e) {
+        if (logger && logger.warn) logger.warn('prefix-outlier confirm gate skipped: ' + (e && e.message));
+      }
+    }
+
+    // ── ISSUER NEAR-MATCH confirm gate (Chris round 6; issuer_near_match_confirm_guard, default ON) ─
+    // A Document Issuer that is 1-2 characters off a company you ALREADY use would file this sender
+    // into a SECOND folder and split it across two Search identities. The teach-time challenge
+    // (findNearMatchIdentity, Tier A human confirms + Tier B frozen template identities) catches it
+    // at the ⊕ draw and the wizard, but NOT on a TYPED correction into the issuer field — the path
+    // a customer actually uses, and the one Chris drove into a `Drambiewood-Joinery-Ltd` folder.
+    // This is that check at the LAST gate before filing, so no route can misfile a near-miss silently.
+    // Unlike the prefix guard, a HUMAN-TYPED value is NOT exempt — a typo is exactly what this catches.
+    // PRE-CLAIM + advisory (a gate error fails OPEN). Exempt: a re-file, and an explicit acknowledge
+    // ("Keep what I typed"). Bulk callers pass no acknowledge, so a near-miss is HELD (left in the
+    // queue) rather than bulk-filed. Dual kill switch (env + setting).
+    if (!isRefile
+        && process.env.ISSUER_NEAR_MATCH_CONFIRM_GUARD !== '0'
+        && learning.getSetting(db, 'issuer_near_match_confirm_guard', 'true') !== 'false') {
+      try {
+        const issuerVal = (allValues && allValues.supplier_name != null) ? String(allValues.supplier_name).trim() : '';
+        const acked = !!(payload && payload.acknowledgeIssuerNearMatch === true);
+        if (issuerVal && !acked) {
+          const nm = learning.findNearMatchIdentity(db, issuerVal, { templateId: docRow.template_id || null });   // card 3: the sub-run arm sees the doc's own layout
+          if (nm && nm.near && issuerVal.toLowerCase() !== String(nm.existing).toLowerCase()) {
+            audit(db, { action: 'confirm_held_issuer_near_match', target_type: 'document', target_id: document_id,
+              document_id, outcome: 'held', actor_username: actorName,
+              metadata: { typed: issuerVal, existing: nm.existing, distance: nm.distance, source: nm.source } });
+            return fail('ISSUER_NEAR_MATCH',
+              `"${issuerVal}" looks like "${nm.existing}", a company you already use — please check the issuer.`,
+              { nearMatch: { existing: nm.existing, distance: nm.distance, confirms: nm.confirms, source: nm.source, kind: nm.kind || null } });   // r18: `kind` rides along — without it the sub-run hold read "null characters off" 
+          }
+          // ── LETTERHEAD-SUGGESTION hold (slice 3 of the garbled-issuer arc, 2026-08-22; Oracle C3.3) ──
+          // The Review list now GROUPS a garbled issuer ("NOCUMENT") under the company the letterhead
+          // reads ("DOCUMENT SOLUTIONS"), which hides the garble in the list but NOT in the field — a
+          // rubber-stamp Confirm would still mint the garble as a sender. So at this same last gate:
+          // while the identity note still stands on the stored row AND the engine carried a letterhead
+          // suggestion, confirming a value that is not that suggestion is HELD with the same inline
+          // choice (Use the letterhead name / Keep what is there). An explicit "Keep … as the issuer"
+          // click clears the note (accept-issuer) and passes; "Use" makes the value equal and passes;
+          // the acknowledge flag passes. Gated on the slice-3 setting; fails OPEN like the near-match.
+          if (learning.getSetting(db, 'review_group_by_letterhead', 'false') === 'true') {
+            const srow = db.prepare(`SELECT suggested_supplier, validation_note FROM extractions
+                                      WHERE document_id = ? AND field_key = 'supplier_name'`).get(document_id);
+            const sug  = srow ? String(srow.suggested_supplier || '').trim() : '';
+            const noted = !!(srow && String(srow.validation_note || '').trim());
+            if (sug && noted && issuerVal.toLowerCase() !== sug.toLowerCase()) {
+              audit(db, { action: 'confirm_held_letterhead_suggestion', target_type: 'document', target_id: document_id,
+                document_id, outcome: 'held', actor_username: actorName,
+                metadata: { typed: issuerVal, suggested: sug } });
+              return fail('ISSUER_NEAR_MATCH',
+                `The letterhead on this page reads "${sug}" — the issuer box read "${issuerVal}". Please check the issuer.`,
+                { nearMatch: { existing: sug, distance: null, confirms: null, source: 'letterhead' } });
+            }
+          }
+        }
+      } catch (e) {
+        if (logger && logger.warn) logger.warn('issuer near-match confirm gate skipped: ' + (e && e.message));
+      }
+    }
+
+    // ── TYPE-SPLIT ask (A3 of the type-split arc, 2026-08-22; gary → Oracle SIGN-OFF-W/COND) ────
+    // Confirming a type the issuer has NEVER filed as, when its history (≥3 confirmed docs) is 100 %
+    // one other type, is asked about ONCE before filing — the owner's mis-confirm of one quote as a
+    // Purchase Order bore a rival template and held 17 siblings. Human, non-bulk confirms only (a
+    // bulk route carries no affordance; machine vias never invent a type); NOT exempt on re-file
+    // (Oracle: "Edit in Review" is exactly where a type gets changed). Pre-claim; advisory; fails
+    // OPEN. The Review window shows an inline Keep/Change; the teach wizard asks BEFORE it promotes
+    // (check-type-split IPC) so a template is never born half-committed — this gate is the backstop.
+    // Same fail/ack payload shape as ISSUER_NEAR_MATCH so the /v1 client degrades to a message.
+    // Setting `type_split_confirm_gate` (default ON), env TYPE_SPLIT_CONFIRM_GATE=0 kills.
+    if (!_via && !bulk
+        && process.env.TYPE_SPLIT_CONFIRM_GATE !== '0'
+        && learning.getSetting(db, 'type_split_confirm_gate', 'true') !== 'false'
+        && !(payload && payload.acknowledgeTypeSplit === true)) {
+      try {
+        const ts = typeSplit.checkTypeSplit(db, confirmedSupplier, document_type_slug);
+        if (ts && ts.split) {
+          audit(db, { action: 'confirm_held_type_split', target_type: 'document', target_id: document_id,
+            document_id, outcome: 'held', actor_username: actorName,
+            metadata: { supplier: ts.supplier, established: ts.established_slug, typed: ts.typed_slug, count: ts.count } });
+          return fail('TYPE_SPLIT', ts.message, { typeSplit: ts });
+        }
+      } catch (e) {
+        if (logger && logger.warn) logger.warn('type-split confirm gate skipped: ' + (e && e.message));
+      }
+    }
+
     // CLAIM before filing (first-confirm only) so a lost race can't double-file. The loser
     // reads the winner's name off confirmed_by_username and reports it.
     if (!isRefile) {
-      const claim = documents.confirmIfReviewable(db, document_id, { confirmed_by_username: actorName });
+      // Oracle 2026-08-23 (put-back W/COND): a machine via never files a document a human put back —
+      // every machine door runs the predicate first, but make it structural here so a future door
+      // that forgets cannot. Human confirms (no via) pass; the claim below clears the stamp only then.
+      if (_via) {
+        let _pb = null;
+        try { _pb = (documents.getById(db, document_id) || {}).put_back_at || null; } catch { _pb = null; }
+        if (_pb) {
+          try { audit(db, { action: 'confirm_refused_put_back', target_type: 'document', target_id: document_id, outcome: 'refused',
+                                           document_id, metadata: { via: _via, put_back_at: _pb } }); } catch { /* best-effort */ }
+          return fail('PUT_BACK', 'This document was put back by a person — it waits for their confirm.');
+        }
+      }
+      // 'auto_reprocess' stamps a machine username so audit/search/banner can tell these files
+      // from hand confirms (today's incident forensics needed exactly this). scope_sweep keeps
+      // the human name byte-identical — it is a human-CONSENTED action, shipped and flipped ON.
+      const claim = documents.confirmIfReviewable(db, document_id, {
+        confirmed_by_username: _via === 'auto_reprocess' ? 'Auto-filed (reprocess)' : actorName,
+        confirmed_via: _via });
       if (!claim || claim.changes === 0) {
         const winner = documents.getById(db, document_id)?.confirmed_by_username || 'another user';
         return fail('ALREADY_FILED', `This document was already filed by ${winner}.`, { confirmedBy: winner });
@@ -148,7 +418,33 @@ function createReviewService(deps = {}) {
       if (fieldSummary) logger.log(`  Values: ${fieldSummary}`);
     }
 
-    learning.saveCorrections(db, document_id, corrections || {}, supplier_name, document_type_slug, allValues, taught_fields || []);
+    // C7 (2026-07-23, the un-plant's plant-side twin): the desktop panel is fieldDefs-driven, but
+    // this service is SHARED (bulk File-All + /v1) and the foreign-row drop below runs AFTER this
+    // plant — so a payload carrying foreign keys could learn hints the later row-drop orphans.
+    // Filter the LEARNING input through the same keep-predicate + switch (FOREIGN_FIELD_DROP);
+    // the original `corrections` object still feeds captureRouteContext below, unfiltered.
+    const _learn = foreignFields.filterLearningInput(allValues, corrections || {}, dtInfo);
+    // Catch-up LEARNING RULING (Oracle, design 2026-07-31): a machine 'scope_sweep' confirm
+    // SKIPS saveCorrections entirely — no hint usage inflation on machine echoes, no
+    // corrections rows, no anchor writes (the sweep files stored values verbatim; there is
+    // nothing human-taught to learn). Live-DERIVED learning (formats/shapes/prefix — computed
+    // from confirmed status at read time) still flows and rolls back cleanly on undo, which is
+    // what makes "Undo all" honest. learnTemplateOnCommit self-guards on confirmed_via.
+    if (!_via) {
+      // Batch-audit grid (2026-08-24): a VALUE-ONLY correction preserves the field's learned anchor
+      // (the read was wrong, not the position — Oracle Condition 2). Set ONLY via the server-side
+      // `internal` arg by batchAuditService; a renderer/client payload can never reach it.
+      const _preserveAllAnchors = !!(internal && internal.preserveAnchors);
+      learning.saveCorrections(db, document_id, _learn.corrections || {}, supplier_name, document_type_slug, _learn.allValues, taught_fields || [], { preserveAllAnchors: _preserveAllAnchors });
+      // Supplier hard-identifier registry (slice 1a, DARK `identifier_registry`): learn the issuer's
+      // stable identifiers (VAT / company_no) from the confirmed doc's page text — issuer-region +
+      // name-gated inside saveSupplierIdentifiers (Oracle C2). OFF ⇒ no-op; fail-open (a learn miss
+      // must never fail an already-completed confirm).
+      try {
+        const _ocr = (db.prepare('SELECT ocr_text FROM documents WHERE id = ?').get(document_id) || {}).ocr_text;
+        if (_ocr && confirmedSupplier) learning.saveSupplierIdentifiers(db, { supplierName: confirmedSupplier, ocrText: _ocr, documentId: document_id });
+      } catch (e) { logger?.warn?.('identifier learn skipped: ' + (e && e.message)); }
+    }
 
     // Record the stored location. First-confirm already flipped status/confirmed_at/confirmed_by
     // in the claim; a re-file confirms now (and records who re-filed).
@@ -158,13 +454,55 @@ function createReviewService(deps = {}) {
       documents.update(db, document_id, { stored_filename: filingResult.filename, stored_path: filingResult.filePath });
     }
 
+    // Chris r19 N5 (Oracle SEND BACK → here): a MACHINE via's audit row must not carry the signed-in
+    // user's id — logAudit injects currentSession.id and the Audit screen renders the user join first,
+    // so a sweep that filed 14 showed "Chris (admin)" ×14. The explicit null overrides the injection.
     audit(db, { action: 'review_confirmed', target_type: 'document', target_id: document_id,
-      document_id, outcome: 'success', actor_username: actorName,
+      document_id, outcome: 'success', actor_username: actorName, ...(_via ? { user_id: null } : {}),
       metadata: { type: document_type_slug || null, filed: filingResult.filename,
-                  fields_changed: Object.keys(corrections || {}).join(',') || null } });
+                  fields_changed: Object.keys(corrections || {}).join(',') || null,
+                  ...(_via ? { via: _via } : {}) } });
+
+    // Slice 3 (amount routing): capture the total's trust context — its note + confidence — BEFORE the
+    // note-clear below wipes it (Oracle A1). No-op (returns null) unless WORKFLOW_AMOUNT_ROUTING is armed,
+    // so OFF is byte-identical. Consumed by the detached startDefaultRoute in the !bulk block.
+    const _routeCtx = captureRouteContext(db, document_id, corrections || {});
 
     // Clear pre-confirmation review aids (display-only; not read by learning).
     db.prepare('UPDATE extractions SET validation_note = NULL, corrected_to = NULL WHERE document_id = ?').run(document_id);
+
+    // P2 — drop FOREIGN extraction rows (keys not on this doc's assigned type: the union-of-keys
+    // bleed where a delivery docket's bare `Date:` also filled invoice/order/po_date). AFTER the
+    // claim + file above, so it can't affect the filing decision. Kill switch FOREIGN_FIELD_DROP=0.
+    // Shares _buildTemplateFields' keep-predicate (foreignFields.js) so the two can't drift.
+    if (dtInfo) { try { foreignFields.dropForeignExtractions(db, document_id, dtInfo); } catch (e) { logger?.warn?.('foreign-field drop skipped: ' + (e && e.message)); } }
+
+    // ── PERSIST THE OPERATOR'S APPROVED VALUES (gary → Oracle SIGN-OFF-W/COND, 2026-08-18) ──────
+    // A value the operator APPROVED without editing never became an extraction row: the
+    // confirm-upsert fires only from the corrections loop, and a teach sends `corrections: []` by
+    // design. Since `getFieldFormats` reads FROM extractions, a taught document was invisible to
+    // the evidence that decides whether its sender can file itself (measured: 9/10 taught docs had
+    // no issuer row). Mint a row for any approved value that has none.
+    //
+    // ORDERING IS LOAD-BEARING — this must stay STRICTLY LAST of the learning writes:
+    //   claim → commitDocument → filterLearningInput → saveCorrections → note clear (:303)
+    //   → dropForeignExtractions (:309) → persistConfirmedValues (here)
+    // so (1) every filing/auto-file decision on THIS document was already made — a minted row can
+    // never open its own gate; (2) it cannot resurrect what the drop just removed (it writes only
+    // `_learn.allValues`, filtered by the SAME ownFieldPredicate, and runs after the drop).
+    //
+    // Oracle C1: an EXPLICIT `!_via` guard — the one at :279 closes at :281, so relying on it here
+    // would be a machine hole waiting for a refactor. Machine confirms (scope_sweep,
+    // auto_reprocess) must never mint evidence for their own future trust.
+    // Oracle C3: `dtInfo` mirrored from the drop above — with no field metadata, filterLearningInput
+    // is a passthrough and the drop is a no-op, so minting would write rows nothing would ever
+    // clean up. A metadata-gap document mints nothing.
+    if (!_via && dtInfo && process.env.CONFIRM_PERSIST_VALUES !== '0'
+        && (process.env.CONFIRM_PERSIST_VALUES === '1'
+            || learning.getSetting(db, 'confirm_persist_values', 'false') === 'true')) {
+      try { learning.persistConfirmedValues(db, document_id, _learn.allValues); }
+      catch (e) { logger?.warn?.('confirmed-value persist skipped: ' + (e && e.message)); }
+    }
 
     // The working copy has served its purpose — remove it + clear the pointer.
     if (workingPath) {
@@ -193,7 +531,55 @@ function createReviewService(deps = {}) {
       document_type_id: dtInfo?.id || null,
     });
 
-    if (filingResult.srcPath) onScheduleSourceMove({ srcPath: filingResult.srcPath, originalFilename: original_filename });
+    // TEMPLATE SUPPLIER-LINK GUARD (Oracle condition A on the template-misfile fix, 2026-07-20).
+    // A doc Stage-0-matched to ANOTHER supplier's template keeps that template_id through confirm —
+    // Part D (review/handler.js _upsertTemplate) detaches on TYPE mismatch only, so an invoice
+    // mis-matched to a foreign invoice template survives here. The stale link then poisons the
+    // wrong template on a PLAIN confirm through three doors: its LIVE confirmed_count (matcher
+    // tiebreaks), its dominant_supplier distribution (the identity key for the branding banks and
+    // gates), and captureSample below (this foreign page would become a LANDMARK SAMPLE of the
+    // wrong template). Detach ONLY when the confirmed issuer is NAME-DISJOINT from the template's
+    // established identity (zero shared distinctive tokens — a suffix/variant spelling shares one
+    // and keeps the link); an unjudgeable identity keeps the link (fail toward today). Runs for
+    // bulk confirms too — the count/dominant doors are derived state, not hooks.
+    if (process.env.TEMPLATE_SUPPLIER_LINK_GUARD !== '0') {
+      try {
+        const linkId = db.prepare('SELECT template_id FROM documents WHERE id = ?').get(document_id)?.template_id;
+        const confirmedIssuer = (allValues && allValues.supplier_name) || supplier_name || null;
+        if (linkId && confirmedIssuer) {
+          // SELF-INDEPENDENT identity (TEMPLATE_GUARD_SELF_INDEPENDENT, 2026-07-21): judge the
+          // template's identity from its OTHER confirmed docs — this doc is ALREADY confirmed +
+          // linked + supplier_name=confirmedIssuer at this point, so a plain establishedIdentity
+          // counts it against itself and the guard compares the issuer to itself (never disjoint →
+          // never detaches → the wrong template's dominant is permanently poisoned). Passing
+          // document_id removes the self-vote. OFF ('0') ⇒ excludeDocId=null ⇒ byte-identical.
+          const _selfIndep = process.env.TEMPLATE_GUARD_SELF_INDEPENDENT !== '0';
+          const ident = templates.establishedIdentity(db, linkId, _selfIndep ? document_id : null);
+          if (ident && templates.supplierNamesDisjoint(confirmedIssuer, ident)) {
+            documents.update(db, document_id, { template_id: null });
+            if (logger) logger.log(`  Supplier-link guard: detached template ${linkId} (${ident}) from doc ${document_id} — confirmed issuer '${confirmedIssuer}'`);
+          }
+        }
+      } catch { /* guard is best-effort; a failure must never affect the confirm */ }
+    }
+
+    // KEEP THE PROCESSED ORIGINAL (Chris round 14 card 1; gary (a′) → Oracle SIGN-OFF-W/COND C1.1,
+    // 2026-08-22). `srcPath` is `folder_path/original_filename` — AFTER the import drain that is
+    // the file in the customer's Processed folder, the one the wizard promises is "never deleted".
+    // Unlinking it here made the Output copy the ONLY copy (Put back → Delete → Empty bin destroyed
+    // the scan). THIS IS THE ONE GATE — human, scope-sweep, reprocess-offer and /v1 confirms all
+    // pass through here (the /v1 callback must NOT add a second check). Semantics:
+    //   OFF  → today's removal, byte-identical.
+    //   ON + drained_at set → the original stays (it is the archive copy).
+    //   ON + not drained (drain off, or the file stayed locked at import) → drain it NOW when
+    //        drain_processed allows (stamps drained_at); otherwise leave it in place. NEVER unlink.
+    if (filingResult.srcPath) {
+      if (!keepProcessedOriginals(db, learning)) {
+        onScheduleSourceMove({ srcPath: filingResult.srcPath, originalFilename: original_filename });
+      } else if (!docRow.drained_at) {
+        _drainAtConfirm(db, docRow, filingResult.srcPath, original_filename);
+      }
+    }
     notifyCounts(db);
 
     // Cross-sample landmark learning + taught-confirm auto-promote (best-effort). Both SPAWN a
@@ -225,10 +611,174 @@ function createReviewService(deps = {}) {
         // check; a failure here can never affect the already-returned confirm.
         try { await onScopeGraduated(db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }); }
         catch (e) { console.warn('Graduation auto-template failed:', e.message); }
+        // Slice 1 (learn-on-commit): AFTER graduation may have created/linked the template, keep its
+        // identity converging on this confirm (kill switch template_learn_on_confirm, DEFAULT OFF ⇒
+        // no-op). SKIP a taught confirm — onTaughtConfirm already enriched via templates.update. The
+        // hook self-gates on a resolvable same-type/same-supplier template; a failure can never affect
+        // the already-returned confirm.
+        if (!(Array.isArray(taught_fields) && taught_fields.length)) {
+          try { await learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_name: confirmedSupplier }); }
+          catch (e) { console.warn('Learn-on-commit failed:', e.message); }
+        }
       }).catch(() => {});
     }
 
-    return { ok: true, success: true, ...filingResult };
+    // HOLD THE SIBLINGS — the release (owner decision 4, 2026-08-13). When a teach replaced a
+    // template's frozen identity with a genuinely DIFFERENT company, that template's other
+    // documents are held below full confidence until a SECOND document agrees. This is where
+    // agreement is observed: a human has just confirmed a document bound to the template, and the
+    // issuer they confirmed either matches the new frozen name or does not. One agreeing document
+    // releases the hold; the teach itself never counts, because it is the evidence being tested.
+    // Runs on BOTH bulk and single confirms (a filed doc is a filed doc, Oracle D2), inert unless
+    // the column exists AND the flag is armed, and can never affect the already-returned confirm.
+    // A TAUGHT confirm is SKIPPED (Oracle blocking condition, 2026-08-16): the teach is the very
+    // evidence being tested, so its own confirm may not release the hold it is about to create.
+    // Before the identical-rewrite fix this was true only by ordering accident — the detached
+    // onTaughtConfirm re-write RE-marked the template after this release ran; with identical
+    // rewrites no longer marking, an unguarded release here would let a genuine-change teach
+    // self-release and the round-4 protection (20 siblings @95, 12 misfiled) would die silently.
+    try {
+      if (!(Array.isArray(taught_fields) && taught_fields.length)) {
+        const _tid = (documents.getById(db, document_id) || {}).template_id;
+        if (_tid) {
+          require('../../database/modules/templates')
+            .noteIdentitySupported(db, _tid, (allValues && allValues.supplier_name) || supplier_name || '');
+        }
+      }
+    } catch (e) { logger?.warn?.('identity-hold release skipped: ' + (e && e.message)); }
+
+    // Routing (SEAM A/A'): auto-create an approval route from the extracted total/type. Fires on BOTH
+    // bulk and non-bulk confirms — a filed doc is a filed doc (Oracle D2); the !bulk guard above exists
+    // only to throttle the Python-spawning landmark hooks, which routing is not. Detached + fail-open
+    // (can never affect the already-returned confirm). NOT on a re-file (Oracle B1 — an "Edit in Review"
+    // of a settled doc must not spawn a second route); the engine self-guards on the kill switch + real
+    // entitlement + hasActiveRoute.
+    if (!isRefile) {
+      Promise.resolve().then(() => {
+        startDefaultRoute(db, document_id, _routeCtx, {
+          actor,
+          supplierName: (allValues && allValues.supplier_name) || supplier_name || null,
+          slug: document_type_slug || (dtInfo && dtInfo.slug) || null,
+          documentTypeId: (dtInfo && dtInfo.id) || null,
+        });
+      }).catch(() => {});
+    }
+
+    // Slice 1 (learn-on-commit) — the !bulk chain above is SKIPPED on File-All/bulk, but bulk is the
+    // owner's common route, so mirror the hook here for bulk exactly as routing fires on both. Bulk
+    // carries no taught_fields, so no taught-skip is needed. Detached + fail-open + self-gated on the
+    // kill switch (DEFAULT OFF ⇒ byte-identical).
+    if (bulk) {
+      Promise.resolve().then(() => learnTemplateOnCommit(db, document_id, { document_type_slug, supplier_name: confirmedSupplier }))
+        .catch(() => {});
+    }
+
+    // ── THE HUMAN-LICENSED CLASS CORRECTION (gary + reggie → Oracle S-O-W/COND, 2026-08-19) ──────
+    // The operator corrected one reference by a single confusable glyph inside its prefix ('P1/' →
+    // 'PI/'). Apply that same byte-exact substitution to the other QUEUED documents of this sender
+    // and tell them afterwards, with an undo. Owner's ask: no dialog beforehand, and NO second
+    // dialog after — "if the user has already told us it is correct, there is no need".
+    //
+    // PLACEMENT (Oracle C7): LAST, after every effect of THIS confirm has landed, as its own
+    // transaction — never nested inside another. Its own explicit `!_via` check rather than
+    // borrowing the one at :279 (that guard closes at :281; leaning on it from here is the machine
+    // hole a refactor opens, the same ruling as persistConfirmedValues). `!bulk` because File-All
+    // iterates confirms, and a propagation firing mid-loop would rewrite siblings the loop has
+    // already read into memory. Fail-open: this can never fail an already-completed confirm.
+    let _classFix = null;
+    if (!_via && !bulk && dtInfo) {
+      try {
+        _classFix = require('./classFixService').applyForConfirm(db, {
+          documentId: document_id, corrections: corrections || {},
+          supplierName: (allValues && allValues.supplier_name) || supplier_name || null,
+          typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null,
+          dtInfo, actorName, learning, audit,
+          presence: (() => { try { return require('./presenceService').shared(); } catch { return null; } })(),
+          logger,
+        });
+        if (_classFix && _classFix.batchId && Array.isArray(_classFix.docs) && _classFix.docs.length) {
+          try {
+            recordReviewEvent(db, { kind: 'class_fix', ids: _classFix.docs.map(d => d.id), approved: true,
+              scope: { supplier: (allValues && allValues.supplier_name) || supplier_name || null, typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null },
+              undo: { type: 'classfix', batchId: _classFix.batchId } });
+          } catch { /* presentation only */ }
+        }
+      } catch (e) { logger?.warn?.('class fix skipped: ' + (e && e.message)); }
+    }
+
+    // ── THE FIRST-BATCH LETTERHEAD SIBLING-FILL (gary → Oracle S-O-W/COND, 2026-08-25) ────────────
+    // The operator confirmed a document and left its letterhead PREFILL unchanged (accepted "this
+    // letterhead IS the sender"). Fill the queued, SAME-LAYOUT siblings whose OWN letterhead read the
+    // same company, so File All Ready offers them — told afterwards with an undo. Same placement rules as
+    // the class fix above (LAST, its own `!_via`/`!bulk`, own transaction inside the service, fail-open).
+    // PRE-FILL only: the service never touches overall_confidence, so only the human File-All click files
+    // them (Oracle seam 2). Source row captured PRE-CLAIM above (C3), threaded in — never re-read here.
+    let _issuerFill = null;
+    if (!_via && !bulk && dtInfo && _issuerFillSrc) {
+      try {
+        _issuerFill = require('./issuerSiblingFillService').applyForConfirm(db, {
+          documentId: document_id, confirmedIssuer: confirmedSupplier, src: _issuerFillSrc,
+          typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null,
+          actorName, learning, audit,
+          presence: (() => { try { return require('./presenceService').shared(); } catch { return null; } })(),
+          logger,
+        });
+        if (_issuerFill && _issuerFill.batchId && Array.isArray(_issuerFill.docs) && _issuerFill.docs.length) {
+          try {
+            recordReviewEvent(db, { kind: 'issuer_fill', ids: _issuerFill.docs.map(d => d.id), approved: true,
+              scope: { supplier: confirmedSupplier, typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null },
+              undo: { type: 'issuerfill', batchId: _issuerFill.batchId } });
+          } catch { /* presentation only */ }
+        }
+      } catch (e) { logger?.warn?.('issuer sibling-fill skipped: ' + (e && e.message)); }
+    }
+
+    // ── CARD 1 (Chris R5) — THE POSITION-TEACH NUDGE (eric → Oracle SIGN-OFF-W/COND, 2026-08-26) ──
+    // A human typed a filing field from scratch (empty → value) that the app has NO learned POSITION
+    // for on this sender's layout → the value fixed THIS document but not the next 40 (typing teaches
+    // the value, a box teaches WHERE). Return a one-time nudge to DRAW a box; NEVER synthesise a
+    // position from a typed value (the standing 2026-08-10 WRONG-LAYER ruling). Same placement rules
+    // as the two hooks above (LAST, its own `!_via`/`!bulk`, fail-open, DARK). The service reads BOTH
+    // the field_anchor and the Stage-0.5 mapping/fixed_value scope (by template id, not supplier) so a
+    // wizard-taught field is never nagged. Value-blind by construction: it returns only field labels.
+    let _positionHint = null;
+    if (!_via && !bulk && dtInfo) {
+      try {
+        let _tplForHint = null;
+        try { _tplForHint = (documents.getById(db, document_id) || {}).template_id || null; } catch { _tplForHint = null; }
+        _positionHint = require('./positionTeachHintService').applyForConfirm(db, {
+          documentId: document_id, corrections: corrections || {}, taughtFields: taught_fields || [],
+          supplierName: confirmedSupplier, typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null,
+          dtInfo, templateId: _tplForHint, learning, audit, logger,
+        });
+      } catch (e) { logger?.warn?.('position-teach nudge skipped: ' + (e && e.message)); }
+    }
+
+    // Slice 1 trigger (S1-C3): HUMAN confirms only — its own explicit `!_via` (same ruling as the
+    // two guards above: never lean on a closed guard). A machine-filed doc (scope_sweep / auto_*)
+    // never re-triggers, so the auto-accept cannot chain. `bulk` confirms DO trigger — File-All is
+    // the moment a sender crosses the line — and the scheduler debounces the burst into one pass.
+    if (!_via) {
+      try {
+        let _tplAfter = null;
+        try { _tplAfter = (documents.getById(db, document_id) || {}).template_id || null; } catch { _tplAfter = null; }
+        onAfterConfirm(db, { document_id, supplier_name: (allValues && allValues.supplier_name) || supplier_name || null,
+                             typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null, bulk: !!bulk, via: null,
+                             taught: !!(Array.isArray(taught_fields) && taught_fields.length), readyBefore: _readyBefore,
+                             typeSplitNoted: _typeSplitNoted, templateId: _tplAfter });   // A6
+      } catch (e) { logger?.warn?.('onAfterConfirm skipped: ' + (e && e.message)); }
+      // Chris round 17 card 5a: File All Ready is a renderer loop of bulk human confirms — not one of the
+      // ledger's doors, so the commonest batch action left no chip. One receipt per doc, merged by the
+      // ledger into ONE bulk event with a per-sender breakdown ("You filed 17 in one go · Nordwind 12 …").
+      // Not sweep-undoable (human via) → undo:null; the /v1 client's bulk confirm is a File N too.
+      if (bulk) {
+        try { recordReviewEvent(db, { kind: 'approved', ids: [document_id], approved: true, undo: null, bulk: true,
+                                      scope: { supplier: confirmedSupplier, typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null } }); } catch { /* presentation only */ }
+      }
+    }
+
+    return { ok: true, success: true, ...filingResult, ...(_classFix ? { classFix: _classFix } : {}),
+             ...(_issuerFill ? { issuerFill: _issuerFill } : {}), ...(_positionHint ? { positionHint: _positionHint } : {}) };
   }
 
   // ── Defer / restore (status-guarded) ──────────────────────────────────────────
@@ -253,4 +803,4 @@ function createReviewService(deps = {}) {
   return { queue, deferred, counts, confirm, defer, restore };
 }
 
-module.exports = { createReviewService, fail };
+module.exports = { createReviewService, fail, keepProcessedOriginals };

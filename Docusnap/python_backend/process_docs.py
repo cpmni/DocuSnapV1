@@ -107,7 +107,8 @@ def load_json_arg(inline: str | None, filepath: str | None) -> list | dict | Non
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def doc_overrides(manifest, name, *, enhance=None, known_template_id=None,
-                  known_doc_slug=None, cached_text=None, known_doc_slug_authority=None):
+                  known_doc_slug=None, cached_text=None, known_doc_slug_authority=None,
+                  known_supplier=None):
     """Per-document reprocess overrides from a manifest (batched Reprocess All), each
     keyed by the file's basename. Falls back to the global args when the manifest has
     no entry for this file — so single-doc reprocess and folder import (no manifest)
@@ -132,7 +133,26 @@ def doc_overrides(manifest, name, *, enhance=None, known_template_id=None,
         o.get("known_doc_slug") or known_doc_slug,
         ct if ct else cached_text,
         o.get("known_doc_slug_authority") if has_entry else known_doc_slug_authority,
+        o.get("known_supplier") if has_entry else known_supplier,   # per-doc pin; no global leak onto batch docs
     )
+
+
+# Python twin of database/modules/slug.js safeSlug (as used by document_types.presetSlug), so a
+# type name detected from the SHIPPED keyword buckets derives the SAME slug the type would carry if
+# the operator added it from the preset catalog. Keep the two in step: "Delivery Note" must yield
+# 'delivery_note' on both sides or the type-refuse guards compare against the wrong string.
+def _slug_from_type_name(name, fallback="type", max_len=64):
+    import unicodedata as _ud
+    import re as _re
+    s = "" if name is None else str(name)
+    try:
+        s = "".join(c for c in _ud.normalize("NFKD", s) if not _ud.combining(c))
+    except Exception:
+        pass
+    s = _re.sub(r"[^a-z0-9]+", "_", s.lower()).strip("_")
+    if len(s) > max_len:
+        s = s[:max_len].rstrip("_")
+    return s or fallback
 
 
 def resolve_assigned_type_authority(ks, ks_auth, detected_name_slug, title_trusted_fresh):
@@ -162,7 +182,25 @@ def resolve_assigned_type_authority(ks, ks_auth, detected_name_slug, title_trust
     return override, bool(title_trusted_fresh)
 
 
+def _demote_process_priority():
+    """Quiet-lane self-demotion (Slice 3, 2026-08-21, eric → Oracle S3). When the Electron side marks
+    this worker DS_PROCESS_PRIORITY=below_normal, drop OUR OWN priority class so every Tesseract child
+    pytesseract spawns later INHERITS it (CreateProcess semantics) — the Node-side os.setPriority on
+    the launcher PID cannot reach those children (and in dev `py.exe` is a launcher, a PID race).
+    BELOW_NORMAL (0x4000), never IDLE: an idle-class worker crawls under any foreground load. Failure
+    is swallowed — a missed demotion must never fail a read."""
+    if os.environ.get("DS_PROCESS_PRIORITY") != "below_normal" or os.name != "nt":
+        return
+    try:
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        k32.SetPriorityClass(k32.GetCurrentProcess(), 0x4000)
+    except Exception:
+        pass
+
+
 def main():
+    _demote_process_priority()
     parser = argparse.ArgumentParser()
     parser.add_argument("--folder",          required=True)
     parser.add_argument("--tesseract",       default=None)
@@ -182,6 +220,7 @@ def main():
     parser.add_argument("--field-rules-file", default=None)
     parser.add_argument("--accepted-names-file", default=None)
     parser.add_argument("--accepted-issuers-file", default=None)
+    parser.add_argument("--identifiers-file", default=None)   # slice 1b: supplier hard-identifier registry (DARK)
     parser.add_argument("--enhance-file",   default=None)
     # Parallel processing: when Electron runs a bounded worker pool, each worker
     # gets an explicit JSON list of the filenames (within --folder) it owns, so
@@ -195,6 +234,11 @@ def main():
     # type). Used in preference to re-detecting from OCR, which fails on a clipped
     # scan and leaves document_slug null — silently disabling the format gates.
     parser.add_argument("--known-doc-slug", default=None)
+    # Operator "Resolve" supplier PIN (Part B): a per-doc reprocess override that forces the issuer to
+    # the operator-chosen supplier BEFORE the logo/template match, so a colliding-logo doc stops
+    # reverting to the wrong one. Single-doc reprocess only here (Reprocess-All carries it per-doc in
+    # the manifest). The engine keeps it REVIEW-BOUND (method 'operator_pin' + note). Never set on import.
+    parser.add_argument("--known-supplier", default=None)
     # Who assigned --known-doc-slug: 'machine' = the pipeline typed the doc and no human
     # ever confirmed it, so a TRUSTED contradicting title (a real standalone heading) may
     # re-type it on reprocess (see resolve_assigned_type_authority). Anything else —
@@ -213,6 +257,13 @@ def main():
     # the learned data does, and per-field crop reads still re-run). Single-doc reprocess
     # only; the batch path carries the text per-doc in --reprocess-manifest instead.
     parser.add_argument("--cached-ocr-file", default=None)
+    # Fast text-only re-extract (Oracle-vetted, kill switch caller-side REEXTRACT_TEXT_ONLY): with a
+    # cached full-page OCR supplied (--cached-ocr-file / manifest ocr_text), render NO page images and
+    # run only the engine's image-free stages (keyword + hints + validation + known-id template text-read;
+    # crop/anchor/mapping stages self-skip on page_images=[]). Skips BOTH the full-page OCR AND the
+    # per-field crop OCR. Absent flag ⇒ byte-identical. Caller excludes born-digital docs (C3).
+    parser.add_argument("--reextract", action="store_true",
+                        help="text-only re-extract from cached OCR; render no images (fast on-open path)")
     # Dev-only: emit a structured per-field extraction TRACE stream (type:"trace")
     # for the hidden Dev Inspector. Off by default → zero extra output/overhead and
     # the user-facing process-progress stream is byte-identical.
@@ -314,6 +365,7 @@ def main():
     field_rules    = load_json_arg(None, args.field_rules_file) or []
     accepted_names = load_json_arg(None, args.accepted_names_file) or []
     accepted_issuers = load_json_arg(None, args.accepted_issuers_file) or []
+    supplier_identifiers = load_json_arg(None, args.identifiers_file) or []   # slice 1b registry (DARK; [] ⇒ inert)
     enhance_params = load_json_arg(None, args.enhance_file)   or None
     reprocess_manifest = load_json_arg(None, args.reprocess_manifest) or {}
 
@@ -362,6 +414,10 @@ def main():
     # the identity-conflict "Issuer is correct" button (skips the conflict flag). Empty → no change.
     if accepted_issuers:
         engine.set_accepted_issuers(accepted_issuers)
+    # Supplier hard-identifier registry (slice 1b MATCH, DARK): reverse-lookup a matched issuer VAT to
+    # SUGGEST the sender on a blank-issuer doc. Empty list ⇒ no-op (byte-identical).
+    if supplier_identifiers:
+        engine.set_supplier_identifiers(supplier_identifiers)
 
     # Text-led supplier-identity conflict flag (off unless --identity-conflict; flag-only).
     if args.identity_conflict:
@@ -429,13 +485,14 @@ def main():
 
         # Per-document overrides (batched reprocess) — fall back to the global args
         # when no manifest entry exists (byte-identical for folder import / single doc).
-        _enh, _kt, _ks, _cached, _ks_auth = doc_overrides(
+        _enh, _kt, _ks, _cached, _ks_auth, _known_supplier = doc_overrides(
             reprocess_manifest, filepath.name,
             enhance=enhance_params,
             known_template_id=args.known_template_id,
             known_doc_slug=args.known_doc_slug,
             cached_text=global_cached_text,
             known_doc_slug_authority=args.known_doc_slug_authority,
+            known_supplier=args.known_supplier,
         )
 
         try:
@@ -451,17 +508,53 @@ def main():
             _deskew_pages = bool(getattr(args, 'deskew_pages', False)) and os.environ.get('DESKEW_PAGES', '1') != '0'
             _deskew_min_angle = max(0.2, min(5.0, float(getattr(args, 'deskew_min_angle', 0.2) or 0.2)))
             _raw_pages = [] if _deskew_pages else None
-            ocr_text, page_images = extract_text_and_images(
-                filepath, _enh, born_digital=args.born_digital, engine=ocr_engine,
-                cached_text=(_cached if (_cached and _cached.strip()) else None),
-                auto_rotate=getattr(args, 'auto_rotate', False), rotations_out=_rotations,
-                provenance_out=_provenance,
-                deskew_pages=_deskew_pages, deskew_min_angle=_deskew_min_angle, raw_pages_out=_raw_pages)
+            # Per-page applied deskew angles (parallel to pages) — load-bearing for the
+            # DESKEW_RAW_CROPS election's per-page cap (Oracle C4), not just observability.
+            _deskew_angles = [] if _deskew_pages else None
+            # PAGE-0 GEOMETRY hand-off (letterhead height ranking): filled only when page 0 was
+            # freshly OCR'd — empty on a cached reprocess (the pairing would be stale) and on a
+            # born-digital page 0 (exact vector text, no word boxes) → consumers fall back to
+            # text-only. Empty dict ⇒ None into engine.extract (byte-identical no-geometry path).
+            _page0_geom = {}
+            if getattr(args, 'reextract', False):
+                # Fast text-only re-extract: reuse the cached full-page OCR verbatim, render NO images →
+                # the engine runs its image-free subset and every crop/anchor/mapping stage self-skips on
+                # page_images=[]. Kills BOTH the full-page OCR and the per-field crop OCR (the two repeated
+                # reprocess costs once OCR is cached). An empty cache trips the non-empty guard below.
+                ocr_text, page_images = (_cached or ''), []
+            else:
+                ocr_text, page_images = extract_text_and_images(
+                    filepath, _enh, born_digital=args.born_digital, engine=ocr_engine,
+                    cached_text=(_cached if (_cached and _cached.strip()) else None),
+                    auto_rotate=getattr(args, 'auto_rotate', False), rotations_out=_rotations,
+                    provenance_out=_provenance,
+                    deskew_pages=_deskew_pages, deskew_min_angle=_deskew_min_angle, raw_pages_out=_raw_pages,
+                    page0_words_out=_page0_geom, deskew_angles_out=_deskew_angles)
             if any(_rotations):
                 log(f"  auto-rotate: {[r for r in _rotations if r]} (clockwise°) on {filepath.name}")
 
             # Live page count, so the UI can flag a multi-page document while it processes.
             emit({"type": "file_pages", "filename": filepath.name, "pages": len(page_images)})
+            # BARCODE INVENTORY (2026-08-26, barry → gary design; kill switches BARCODE_INVENTORY /
+            # BARCODE_FIELD, both DEFAULT OFF): decode every symbol on the pages the OCR pass already
+            # rendered — ONE call per page, no second render, no OCR. TRI-STATE is load-bearing:
+            # `_bc is None` = no decode ran (dark, or --reextract rendered no pages) → the emit key is
+            # ABSENT and the handler keeps a doc's existing rows; `[]` = rendered, nothing found → rows
+            # cleared. The engine receives it either way (a barcode-typed field reads from it).
+            _bc = None
+            _bc_armed = (os.environ.get("BARCODE_INVENTORY", "0") != "0"
+                         or os.environ.get("BARCODE_FIELD", "0") != "0")
+            if _bc_armed and page_images:
+                try:
+                    import time as _time_mod
+                    from ocr.barcodes import decode_pages as _decode_barcodes
+                    _t_bc = _time_mod.time()
+                    _bc = _decode_barcodes(page_images)
+                    log(f"  Barcodes: {len(_bc)} decoded on {len(page_images)} page(s) "
+                        f"({int((_time_mod.time() - _t_bc) * 1000)} ms)")
+                except Exception as _bce:      # fail toward "no inventory" — never toward a crash
+                    log(f"  Barcodes: decode skipped ({_bce})", "warn")
+                    _bc = None
 
             if not ocr_text.strip():
                 raise ValueError("OCR returned no text — is the scan readable?")
@@ -471,7 +564,7 @@ def main():
             # taken from the vector text, not an OCR re-read. None for image-only/
             # scanned pages (no text layer) -> anchors fall back to OCR unchanged.
             page_text_lines = None
-            if args.born_digital and filepath.suffix.lower() == ".pdf":
+            if args.born_digital and not getattr(args, 'reextract', False) and filepath.suffix.lower() == ".pdf":
                 _bd_doc = None
                 try:
                     import pypdfium2 as _pdfium
@@ -504,8 +597,160 @@ def main():
                     if al:
                         type_aliases[dt["name"]] = al
             type_detection = engine.detect_document_type(ocr_text, known_type_names, type_aliases or None)
+            # CREDIT-NOTE SIGN COHERENCE (2026-08-07): does this document TYPE expect a NEGATIVE
+            # total? Resolved HERE because this is the only place the type's "Also appears as"
+            # ALIASES are available — CLAUDE.md: a custom doc type is identified by its aliases,
+            # never its arbitrary internal name (a user may name a type 'CN' and alias it
+            # 'Credit Note'). Tri-state; None simply means the sign arms abstain.
             document_type  = type_detection["type"] if type_detection else None
             type_conf      = type_detection["confidence"] if type_detection else 0
+
+            # REPROCESS HEADING GEOMETRY (kill REPROCESS_HEADING_GEOM, default OFF). A cached reprocess
+            # reuses stored OCR text and never builds page-0 word geometry, so the heading re-read rungs
+            # (1/2/3) are INERT on reprocess — a mis-typed doc (e.g. a credit note whose large title the
+            # main --dpi pass DROPPED) can't self-correct on a re-run. When enabled AND page 0 was
+            # rendered (not a text-only reextract) AND scanned provenance AND the geometry is empty
+            # (cached) AND the cached text gave NO trusted heading (the only mis-type-risk case), build
+            # the geometry with ONE page-0 pass — SAME --dpi as the main pass so a dropped title stays
+            # absent from this geometry (rung-3's coverage test then fires correctly). Bounded: page 0
+            # only, reprocess-with-no-trusted-heading only. OFF = byte-identical (never runs).
+            if (os.environ.get("REPROCESS_HEADING_GEOM", "0") != "0"
+                    and not _page0_geom and page_images and page_images[0] is not None
+                    and _provenance and _provenance[0] == "ocr" and known_type_names
+                    and not (type_detection and type_detection.get("heading") and type_conf >= 70)):
+                try:
+                    from ocr.tesseract import reconstruct_page_text as _recon, _RENDER_DPI as _rdpi
+                    _recon(page_images[0], dpi=_rdpi, words_out=_page0_geom)
+                except Exception:
+                    _page0_geom = {}   # geometry aid only — never break extraction
+
+            # BANNER HEADING RE-READ. ORDERING IS LOAD-BEARING (Oracle C2): this MUST stay BEFORE
+            # title_trusted_fresh (~L560) AND before identify_template (~L623), so a recovered heading
+            # flips BOTH the fresh-scan type-precedence and the machine-authority reprocess override.
+            # A stylised RED type heading (e.g. a big-red "WORKSHEET" banner) is destroyed by the main
+            # pass's greyscale OCR (red is luminance-underweighted -> "WORKSH = ET"), so
+            # detect_document_type never matches the alias -> heading=False -> title_trusted=False and
+            # the whole 2026-07-15 heading-authority net is disarmed, so the type falls to a same-logo
+            # sibling. Recover the banner from the RAW RGB page-0 red channel and RE-DETECT through the
+            # SAME exact-alias matcher (no fuzzy -> no new false-positive surface); adopt ONLY a TRUSTED
+            # heading. Fires only when the main pass produced no trusted heading, on a scanned page 0
+            # (provenance 'ocr') carrying a real red top-band mark (recover_heading_band's C1 pre-gate
+            # confines cost + FP surface to red-banner docs — measured firing rate ~0.4%). Fail-safe:
+            # any miss keeps the original detection (today's review-hold). Kill switch
+            # BANNER_HEADING_REREAD (default ON). Design: docs/designs/BANNER_HEADING_REREAD_2026-07-16.md.
+            _banner_reread = False   # telemetry: did the red-channel heading re-read adopt a type?
+            if (os.environ.get("BANNER_HEADING_REREAD", "1") != "0"
+                    and not (type_detection and type_detection.get("heading") and type_conf >= 70)
+                    and page_images and known_type_names
+                    and _provenance and _provenance[0] == "ocr"):
+                try:
+                    from ocr.heading_reread import recover_type_detection
+                    _aug = recover_type_detection(page_images[0], ocr_text, known_type_names,
+                                                  type_aliases or None, engine.detect_document_type)
+                    if _aug:
+                        type_detection = _aug
+                        document_type  = _aug["type"]
+                        type_conf      = _aug["confidence"]
+                        _banner_reread = True
+                        log(f"  Banner heading recovered: {document_type} ({type_conf}%) [red-channel re-read]")
+                except Exception:
+                    pass  # additive; on any failure the original detection stands (fail toward review)
+
+            # RUNG 2 — GENERAL TITLE-BAND RE-READ (2026-07-31; herald→Oracle SIGN-OFF-W/COND;
+            # kill HEADING_BAND_REREAD=0; default ON — flipped after unit+probe+realdoc census). The full-page pass can MANUFACTURE a
+            # garbled heading the red rung can't touch: at low ocr_dpi PSM-3 fragments a tracked
+            # banner and the PSM-6 supp merge DOUBLES tokens ("PURCHASE PU RC HASE Oo RDER", doc 180
+            # @200 DPI) → wrong low-conf detection → title_trusted=False → the heading-authority net
+            # disarms and the ambiguity/refuse guards mis-arm. A geometry-pre-gated (no OCR;
+            # top-band banner-height type only — the mid-body column class stays out, Oracle A2)
+            # SINGLE-PASS re-read of just the banner band recovers the same pixels verbatim; adoption
+            # via the SAME detect_fn + trusted-heading contract as rung 1 (Oracle A1 — no new
+            # matcher). Fresh page-0 geometry only (_page0_geom empty on cached reprocess /
+            # born-digital → honestly inert). SAME ordering constraint as rung 1 (before
+            # title_trusted_fresh + identify_template).
+            _band_reread = False   # telemetry: did the general band re-read adopt a type?
+            if (os.environ.get("HEADING_BAND_REREAD", "1") != "0"
+                    and not _banner_reread
+                    and not (type_detection and type_detection.get("heading") and type_conf >= 70)
+                    and page_images and known_type_names and _page0_geom
+                    and _provenance and _provenance[0] == "ocr"):
+                try:
+                    from ocr.heading_reread import recover_type_detection_general
+                    _aug2 = recover_type_detection_general(page_images[0], _page0_geom, ocr_text,
+                                                           known_type_names, type_aliases or None,
+                                                           engine.detect_document_type)
+                    if _aug2:
+                        type_detection = _aug2
+                        document_type  = _aug2["type"]
+                        type_conf      = _aug2["confidence"]
+                        _band_reread   = True
+                        log(f"  Banner heading recovered: {document_type} ({type_conf}%) [band re-read]")
+                except Exception:
+                    pass  # additive; on any failure the original detection stands (fail toward review)
+
+            # RUNG 3 — ABSENT-TITLE PIXEL RE-READ (2026-08-07; oscar→Oracle-pending; kill
+            # HEADING_ABSENT_REREAD, DEFAULT OFF/DARK — a type-changing path; flip only after the
+            # corpus M=0 gate). The full-page --dpi PSM-3 pass can DROP an oversized centred title
+            # ENTIRELY (Castellan 'CREDIT NOTE': --dpi 300 drops it from full-page PSM-3 AND the PSM-6
+            # supp merge — proven), so it never reaches the word GEOMETRY rung 2's
+            # find_prominent_heading_band reads → rung 2 is BLIND to it BY CONSTRUCTION. A NumPy PIXEL
+            # prominence pre-gate (NO OCR — a top-band banner-height ink run the full-page pass left
+            # unread) locates the title, and a TIGHT single-pass band re-read (PSM 6/7/11) recovers it
+            # (a loose band re-garbles; proven). Adoption via the SAME detect_fn + trusted-heading
+            # contract as rungs 1/2 (no new matcher). Needs fresh page-0 geometry (med_h + the read
+            # word-set for the coverage test) → honestly inert on a cached reprocess / born-digital.
+            # SAME ordering as rungs 1/2 (before title_trusted_fresh + identify_template).
+            # Oracle C3 (WON'T-FIX-in-rung-3): a corrected type changing the FIELD SET (the gate's
+            # Silverbeck sales_order total −1 — a mis-typed doc that captured total_amount now types
+            # correctly as a sales_order whose field set doesn't) is a `document_types` field-config
+            # question, NOT something rung 3 should compensate for by preserving the mis-typed field
+            # set — that would restore the total by WEAKENING the correct type. Right folder + right
+            # fields dominates a stray total. Owner-watch (C2): the first recovered high-volume-scope
+            # docs (e.g. Castellan credit notes) must land in review / file CORRECTLY, never silently
+            # auto-file — watch the scope graduating past the ungraduated-100 floor to 95.
+            _absent_reread = False
+            if (os.environ.get("HEADING_ABSENT_REREAD", "0") != "0"    # DARK — flip after the gate
+                    and not _banner_reread and not _band_reread
+                    and not (type_detection and type_detection.get("heading") and type_conf >= 70)
+                    and page_images and known_type_names and _page0_geom
+                    and _provenance and _provenance[0] == "ocr"):
+                try:
+                    from ocr.heading_reread import recover_type_detection_absent
+                    _aug3 = recover_type_detection_absent(page_images[0], _page0_geom, ocr_text,
+                                                          known_type_names, type_aliases or None,
+                                                          engine.detect_document_type)
+                    if _aug3:
+                        type_detection = _aug3
+                        document_type  = _aug3["type"]
+                        type_conf      = _aug3["confidence"]
+                        _absent_reread = True
+                        log(f"  Banner heading recovered: {document_type} ({type_conf}%) [absent-title pixel re-read]")
+                except Exception:
+                    pass  # additive; on any failure the original detection stands (fail toward review)
+
+            # TYPE-PRESENCE GATE (keyword path, Slice 1b — kill switch TYPE_PRESENCE_GATE, default OFF
+            # = byte-identical). A keyword-detected type must show its OWN name/alias as a HEADING in the
+            # title band. A type assigned only from a BODY mention (heading=False) whose name is ABSENT
+            # from the top band is a false-positive — the PO keyword "order to" substring-matched an
+            # "Order Total" totals line and typed worksheets as Purchase Order. DROP it -> review UNTYPED
+            # (a null type CANNOT auto-file, trust.js 'no-type' — fail toward review). Nulls the COMMITTED
+            # type ONLY; type_detection is left intact so detected_name_slug/title_trusted still thread to
+            # the template-path guards (herald). Fresh-import path only — a reprocess with an assigned
+            # _ks re-honours the stored type at L613, so existing mis-typed docs need re-import/re-type.
+            # Reuses the parity-locked type-presence primitives; the token set is the same one the
+            # template-path veto scores (test_type_heading_tokens.py). Nudge harvest (emit the page's own
+            # heading for the "Add <type>" prompt) is a separate follow-on — until then a dropped doc
+            # lands generically-untyped in review (safe, no misfile).
+            if (os.environ.get("TYPE_PRESENCE_GATE", "1") != "0"    # flipped default ON 2026-07-30; =0 disables
+                    and document_type and type_detection and not type_detection.get("heading")):
+                from extraction.template_matcher import (
+                    _type_heading_tokens, _type_presence_top_band, _type_heading_present)
+                _th_tok = _type_heading_tokens(document_type, (type_aliases or {}).get(document_type))
+                if _th_tok and not _type_heading_present(_th_tok, _type_presence_top_band(ocr_text.lower())):
+                    log(f"  Type '{document_type}' has no title-band heading — body-mention "
+                        f"false-positive; routing to UNTYPED review")
+                    document_type = None
+                    type_conf = 0
 
             if document_type:
                 log(f"  Document type: {document_type} ({type_conf}%)")
@@ -551,6 +796,25 @@ def main():
                     if dt["name"] == type_detection["type"]:
                         detected_name_slug = dt.get("slug")
                         break
+            # UNINSTALLED-TYPE FALLBACK (2026-07-20, owner report — the delivery dockets that
+            # filed as Purchase Orders on a FRESH install). The detected type NAME comes from the
+            # SHIPPED document_type_keywords buckets, which exist independently of the types this
+            # install actually has. Delivery Note is a PRESET, not a built-in — so on a new install
+            # the engine detected "Delivery Note" at 93% with a trusted heading, failed to map it to
+            # any installed type, and left detected_name_slug None. BOTH type-refuse guards in
+            # template_matcher (the logo path AND the keyword path) are conditioned on a truthy
+            # detected_slug, so they silently DISARMED, and a same-supplier PURCHASE ORDER template
+            # matched by keywords (80%) stamped its own slug over the correct detection. Net effect:
+            # the protection was strongest for a fully-configured install and ABSENT for a brand-new
+            # one — exactly backwards. So when the name doesn't resolve, DERIVE the slug the type
+            # would have if it were added (same safeSlug rules as document_types.presetSlug), which
+            # re-arms the refuse: 'delivery_note' != 'purchase_order' => refuse => the doc reaches
+            # review UNTYPED instead of MIS-typed. Only ever consulted alongside title_trusted
+            # (heading + conf >= 70), so an incidental mention still refuses nothing.
+            # Kill switch DETECTED_SLUG_FALLBACK=0 restores the old None behaviour.
+            if (detected_name_slug is None and type_detection
+                    and os.environ.get("DETECTED_SLUG_FALLBACK", "1") != "0"):
+                detected_name_slug = _slug_from_type_name(type_detection.get("type"))
             title_trusted_fresh = bool(type_detection and type_detection.get("heading") and type_conf >= 70)
 
             # MACHINE-assigned type vs the document's OWN trusted title: a doc the pipeline
@@ -616,8 +880,22 @@ def main():
             _pinned_tid = None   # FIX B1: id of the ref-prefix-resolved sibling template, pinned into extract() below
             if (not _ks or _ks_overridden) and templates and page_images:
                 try:
+                    # NOTE (Oracle A2, 2026-07-26): this pre-extract call carries NO query_detail_hash
+                    # (the 256-bit mark hash is computed inside engine.extract), so with
+                    # LOGO_DETAIL_GLOBAL_RIVALS on, the ENGINE's identify can detail-veto a wrong pick
+                    # this call accepted. The divergence is REVIEW-BOUND by construction: a B1 pin from
+                    # an ambiguous pick forces the ambiguous-HOLD in the engine (C2, engine.py — a
+                    # pinned doc never auto-files), and the engine's own match is the authoritative one
+                    # persisted. Documented in lieu of threading the hash here (lower blast radius).
+                    # Site 6 (Oracle C6, DESKEW_RAW_CROPS): logo hashes are LEARNED raw-frame
+                    # (engine identity reads raw_page0 unconditionally) — this pre-pass was the
+                    # split-brain hashing the DESKEWED logo against raw-learned hashes. Under the
+                    # election, query raw too. Switch off / deskew off -> byte-identical.
+                    _idpage = page_images[0]
+                    if _raw_pages and os.environ.get('DESKEW_RAW_CROPS', '0') != '0':
+                        _idpage = _raw_pages[0]
                     tmatch = template_matcher.identify_template(
-                        page_images[0], ocr_text, templates,
+                        _idpage, ocr_text, templates,
                         detected_slug=detected_slug, title_trusted=title_trusted)
                 except Exception:
                     tmatch = None
@@ -674,9 +952,12 @@ def main():
             # instead of accepting it as free text. Never touches a date/currency
             # field; reusable for every custom doc type.
             _ref_key = None   # hoisted (Oracle C2): threaded to extract() below even when this block is skipped
+            _date_key = None  # the type's date ROLE — threaded so hidden-field scoring can never exclude it
             if doc_slug and doc_types:
                 _ref_key = next((dt.get("ref_field_key") for dt in doc_types
                                  if dt.get("slug") == doc_slug), None)
+                _date_key = next((dt.get("date_field_key") for dt in doc_types
+                                  if dt.get("slug") == doc_slug), None)
                 if _ref_key and active_fields:
                     for _f in active_fields:
                         if _f.get("key") == _ref_key and (_f.get("type") or "text") in ("text", "", None):
@@ -695,8 +976,12 @@ def main():
                 document_slug = doc_slug,
                 detected_slug = detected_slug,
                 title_trusted = title_trusted,
+                credit_expected = _validator.type_expects_credit(
+                    document_type, (type_aliases or {}).get(document_type)),
                 ref_field_key = _ref_key,
+                date_field_key = _date_key,
                 supplier_name = None,
+                pinned_supplier = _known_supplier,   # operator Resolve pin (Part B); per-doc via doc_overrides, None on import
                 known_template_id = _kt,
                 pinned_template_id = _pinned_tid,
                 trace         = emit_trace if args.trace else None,
@@ -705,6 +990,11 @@ def main():
                 page_provenance = _provenance,
                 identity_shadow = args.identity_shadow,
                 raw_page0       = (_raw_pages[0] if _raw_pages else None),
+                page0_geometry  = (_page0_geom or None),   # empty (cached/born-digital p0) ⇒ None
+                cached_text     = global_cached_text,       # raw-frame witness text (deskew reprocess); None ⇒ engine falls back to ocr_text
+                raw_pages       = (_raw_pages or None),     # DESKEW_RAW_CROPS election substrate (Oracle 2026-08-05)
+                deskew_angles   = (_deskew_angles or None), # per-page cap input (C4)
+                barcodes        = _bc,                      # page barcode inventory (None ⇒ no decode ran)
             )
 
             # Pull out metadata keys before sanitising
@@ -737,11 +1027,59 @@ def main():
             identity_shadow_v = raw_extractions.pop("_identity_shadow", None)
             # Disambiguation picker: {field_key: [candidate,…]} for flagged name fields (or {}).
             field_candidates  = raw_extractions.pop("_field_candidate_emit", None) or {}
+            # Corroboration record (owner principle 2026-08-11): {field_key: {winner_family,
+            # agree, disagree, independent_agree}} — record-only, woven per-field below.
+            field_corrob      = raw_extractions.pop("_corroboration_emit", None) or {}
+            # Self-discharged operator pin (SUPPLIER_PIN_SELF_DISCHARGE, 2026-08-12): popped HERE,
+            # BEFORE sanitise_extractions — a leaked '_'-key is the old BUG-1 class (Oracle G9).
+            # Absent when dark ⇒ the file_done emit below is byte-identical.
+            pin_discharged    = raw_extractions.pop("_supplier_pin_discharged", None)
             raw_extractions.pop("_mode_used", None)
             raw_extractions.pop("_document_slug", None)
 
             # Sanitise — ensure all values are proper dicts
             extractions = sanitise_extractions(raw_extractions)
+
+            # TYPE-HEADING NUDGE (Slice 1b-nudge, kill switch TYPE_HEADING_NUDGE, default OFF). When the
+            # doc ended UNTYPED (the presence gate/veto dropped a wrong type, or nothing matched), harvest
+            # the page's own dominant top-band heading — an UNINSTALLED type like "Worksheet" — and emit it
+            # as the detected type NAME. It maps to NO installed type, so the doc STAYS untyped
+            # (document_type_id null, cannot auto-file) but the handler's _resolveDetectedType surfaces
+            # detected_type_name -> the existing "Add '<type>'" nudge, closing the loop (add the type once
+            # -> future docs of it type correctly). Conservative harvest -> None on any doubt = plain untyped.
+            # Runs BEFORE AUTO_TITLE so a real heading nudge wins over a generic title.
+            if doc_type_result is None and os.environ.get("TYPE_HEADING_NUDGE", "1") != "0":   # default ON 2026-07-30; =0 disables
+                try:
+                    from extraction.keyword import _harvest_top_band_heading
+                    # Q4a: the issuer READ (resolved identity + the supplier_name field value) is
+                    # handed in so it is never offered back as a document TYPE.
+                    _issuer_reads = [supplier_name,
+                                     (extractions.get("supplier_name") or {}).get("value") if isinstance(extractions.get("supplier_name"), dict) else None]
+                    _hh = _harvest_top_band_heading(ocr_text.split("\n"), known_type_names, exclude_texts=_issuer_reads)
+                    if _hh:
+                        doc_type_result = _hh
+                        log(f"  Detected uninstalled type heading '{_hh}' -> UNTYPED + Add-type nudge")
+                except Exception:
+                    pass
+
+            # AUTO-TITLE (Generic Document design §5; kill switch env AUTO_TITLE, default
+            # OFF): ONLY for a doc NO type claimed — the same None the Electron fallback
+            # maps to "General Document" — so title rows exist precisely for the docs that
+            # become generic; typed docs NEVER get one (PIN 5; also why a reprocess with a
+            # known slug never re-runs it — the title row survives via the merge carry,
+            # Oracle C5). Post-sanitise injection: overall confidence is already computed,
+            # zero pipeline interaction. conf 60 keeps it review-threshold-bound on its
+            # own; the trust 'generic-type' refusal is the real auto-file wall.
+            if doc_type_result is None and os.environ.get("AUTO_TITLE") == "1":
+                try:
+                    from extraction.title_pick import pick_title
+                    _tp = pick_title(ocr_text, supplier_name=supplier_name)
+                    if _tp:
+                        extractions["title"] = {"value": _tp["title"], "confidence": 60,
+                                                "method": "auto_title"}
+                        log(f"  TITLE   {_tp['title']!r} (auto_title, line {_tp['line_index']})")
+                except Exception as _te:    # fail toward NO title — never junk, never a crash
+                    log(f"  TITLE   skipped: {_te}")
 
             # Emit per-field extraction detail so the log shows what was found vs missed
             for field_key, data in extractions.items():
@@ -770,13 +1108,21 @@ def main():
                 # authority override) — the handler plants a review note + drops stale
                 # wrong-type extraction rows off this signal.
                 **({"type_overridden": {"from": _ks, "to": doc_slug}} if _ks_overridden else {}),
+                # Red-channel banner heading re-read adopted a recovered TYPE (telemetry so a corpus
+                # A/B can prove the fix FIRED; absent when it didn't). See heading_reread.py.
+                **({"banner_heading_reread": True} if _banner_reread else {}),
                 "supplier_name":      supplier_name,
                 "template_id":        template_id,
                 "logo_phash":         logo_phash,
                 "logo_detail_hash":   logo_detail_hash,
                 "keyword_fingerprint": kw_fingerprint,
                 **({"identity_shadow": identity_shadow_v} if identity_shadow_v else {}),
+                # Self-discharged pin signal (absent when dark — byte-identical emit).
+                **({"supplier_pin_discharged": pin_discharged} if pin_discharged else {}),
                 "page_count":         len(page_images),
+                # Barcode inventory (slice A, BARCODE_INVENTORY): ABSENT when no decode ran (dark /
+                # no pages) so the handler keeps existing rows; a list (possibly []) replaces them.
+                **({"barcodes": _bc} if (os.environ.get("BARCODE_INVENTORY", "0") != "0" and _bc is not None) else {}),
                 "mode_used":          "fast",
                 "ocr_text":           ocr_text[:50000],
                 "extractions":        {
@@ -797,6 +1143,11 @@ def main():
                         # armed it (>=2 distinct candidates on a noted name field).
                         **({"candidates": field_candidates[k]}
                            if field_candidates.get(k) else {}),
+                        # Corroboration record: which independent method families read this same
+                        # value (owner principle 2026-08-11). Record-only; persisted to
+                        # extractions.corroboration by the handler.
+                        **({"corroboration": field_corrob[k]}
+                           if field_corrob.get(k) else {}),
                     }
                     for k, v in extractions.items()
                 },

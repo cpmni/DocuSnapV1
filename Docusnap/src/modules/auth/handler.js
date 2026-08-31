@@ -431,7 +431,25 @@ function register(ctx) {
   // Admin audit search (filters + pagination) and CSV export of the filtered set.
   ipcMain.handle('audit-query', (_e, filters) => {
     requireRole('admin');
-    return auth.getAuditLogFiltered(getDb(), filters || {}, { archiveDir: _auditArchiveDir() });
+    const db = getDb();
+    const res = auth.getAuditLogFiltered(db, filters || {}, { archiveDir: _auditArchiveDir() });
+    // Enrich document-target rows with the CURRENT filename + status so the Audit table can show the
+    // filename (not "document:111") + a "View" link. Post-query on the LIVE documents table (works for
+    // archived audit rows too); a deleted/missing doc resolves to null → the UI shows it unavailable.
+    try {
+      const rows = res.rows || [];
+      const idOf = (r) => (r.target_type === 'document' && r.target_id) ? Number(r.target_id) : (r.document_id ? Number(r.document_id) : null);
+      const ids = [...new Set(rows.map(idOf).filter(Boolean))];
+      if (ids.length) {
+        const docs = db.prepare(`SELECT id, original_filename, stored_filename, status FROM documents WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids);
+        const byId = new Map(docs.map(d => [d.id, d]));
+        for (const r of rows) {
+          const d = byId.get(idOf(r));
+          if (d) { r.doc_filename = d.stored_filename || d.original_filename || null; r.doc_status = d.status || null; }
+        }
+      }
+    } catch { /* best-effort enrichment — never break the audit query */ }
+    return res;
   });
   ipcMain.handle('audit-export-csv', async (e, filters) => {
     requireRole('admin');
@@ -447,6 +465,52 @@ function register(ctx) {
     if (r.canceled || !r.filePath) return { saved: false };
     require('fs').writeFileSync(r.filePath, csv, 'utf8');
     return { saved: true, path: r.filePath, count: rows.length };
+  });
+
+  // Stage 5b: re-walk the tamper-evident HMAC chain across live + ALL archived months and report
+  // the first break (deletion / reorder / out-of-band edit). Archived rows keep their original live
+  // id, so ORDER BY id ASC is the correct global order. Best-effort archive attach; a bad archive is
+  // skipped + flagged (archivesPartial) and never throws. Admin-only. Returns
+  // { ok, checked, brokenAt?, reason?, archivesPartial? }.
+  ipcMain.handle('verify-audit-chain', () => {
+    requireRole('admin');
+    const db = getDb();
+    const attached = [];
+    let archivesPartial = false;
+    try {
+      const cols = new Set(db.prepare('PRAGMA table_info(audit_log)').all().map(r => r.name));
+      if (!cols.has('row_hmac') || !cols.has('prev_hash')) return { ok: false, reason: 'no_chain_columns' };
+      const colSql = [...cols].map(c => `"${c}"`).join(', ');
+      const parts = [`SELECT ${colSql} FROM audit_log`];
+      const archiveDir = _auditArchiveDir();
+      if (archiveDir) {
+        try {
+          const { archiveFilesForRange } = require('../../../database/modules/audit_archive');
+          const picked = archiveFilesForRange(archiveDir, null, null, 8);   // all months, capped
+          archivesPartial = picked.partial;
+          picked.files.forEach((file, i) => {
+            const alias = `arcv${i}`;
+            try {
+              db.exec(`ATTACH DATABASE '${String(file.path).replace(/'/g, "''")}' AS ${alias}`);
+              const acols = new Set(db.prepare(`PRAGMA ${alias}.table_info(audit_log)`).all().map(r => r.name));
+              const sel = [...cols].map(c => (acols.has(c) ? `"${c}"` : `NULL AS "${c}"`)).join(', ');
+              parts.push(`SELECT ${sel} FROM ${alias}.audit_log`);
+              attached.push(alias);
+            } catch { archivesPartial = true; try { db.exec(`DETACH DATABASE ${alias}`); } catch { /* ignore */ } }
+          });
+        } catch { archivesPartial = true; }
+      }
+      const sql = parts.length > 1
+        ? `SELECT * FROM (${parts.join(' UNION ALL ')}) ORDER BY id ASC`
+        : 'SELECT * FROM audit_log ORDER BY id ASC';
+      const res = auth.verifyAuditChainRows(db.prepare(sql).all());
+      if (archivesPartial) res.archivesPartial = true;
+      return res;
+    } catch (e) {
+      return { ok: false, reason: 'verify_error', error: e && e.message };
+    } finally {
+      for (const a of attached) { try { db.exec(`DETACH DATABASE ${a}`); } catch { /* ignore */ } }
+    }
   });
 }
 

@@ -6,8 +6,9 @@ Unit tests for salvaging a valid date embedded inside noisy OCR text
 (validator.salvage_date + its wiring into validate_and_adjust).
 
 Covers:
-  1. Noisy "2_ 2/4/26bf" -> 02-04-2026: a SINGLE verbatim date in junk is a clean
-     capture and is NOT forced to review (the date already lived in the string)
+  1. Noisy "2_ 2/4/26bf" -> 22-04-2026: a SINGLE date in junk is a clean capture, NOT
+     forced to review (junk stripped; the OCR digit-split "2 2" rejoins to day 22 — see
+     _date_preclean / test_date_preclean; still salvage-tier + review-held, never auto-filed)
   1b. Several dates in the crop -> salvage had to CHOOSE one -> kept in review
   2. A clean date passes through unchanged (no false review)
   3. A non-date string is NOT coerced into a date
@@ -54,10 +55,14 @@ def _run(value, confidence=90):
 def main() -> int:
     failures = 0
 
-    # ── 1. Headline: a SINGLE embedded date is a clean verbatim capture ────────
-    section("1. noisy '2_ 2/4/26bf' is recovered verbatim and NOT forced to review")
+    # ── 1. Headline: a SINGLE embedded date is a clean capture, NOT forced to review ──
+    # NOTE (2026-07-16, _date_preclean): the junk-strip removes '_' -> '2 2/4/26', and the
+    # OCR digit-split rejoin then reads the day as '22' (a single date field is far more likely
+    # '22/4/26' than a stray '2' + '2/4/26'). Still a single candidate -> salvage tier (conf 80),
+    # review-held — never a silent auto-file (Oracle residual (2), 2026-07-16). See test_date_preclean.
+    section("1. noisy '2_ 2/4/26bf' is recovered (OCR-split rejoined) and NOT forced to review")
     r = _run("2_ 2/4/26bf")
-    if not check("value normalised to 02-04-2026 (junk discarded)", r["value"] == "02-04-2026"):
+    if not check("value normalised to 22-04-2026 (junk stripped, '2 2' rejoined to day 22)", r["value"] == "22-04-2026"):
         failures += 1
     if not check("no junk characters survive (digits + hyphens only)",
                  all(c.isdigit() or c == '-' for c in r["value"])):

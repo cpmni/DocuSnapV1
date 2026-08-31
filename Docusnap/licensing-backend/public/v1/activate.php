@@ -32,7 +32,7 @@ try {
     $ip = client_ip();
     $gen = rate_hit($pdo, "activate_ip:$ip", 30, 3600);
     if (!$gen['allowed']) { too_many_requests($gen['retry_after']); return; }
-    if (rate_count($pdo, "activate_fail_ip:$ip") > 12) { too_many_requests(900); return; }
+    if (rate_count($pdo, "activate_fail_ip:$ip", 3600) > 12) { too_many_requests(900); return; }
     $accountHash = hash('sha256', $accountKey); // never store/log the plaintext key
 
     $acc = $pdo->prepare('SELECT id, status FROM accounts WHERE account_key_hash = ?');
@@ -66,6 +66,15 @@ try {
     $expiresAt  = $entitlement['expires_at'];
 
     $pdo->beginTransaction();
+
+    // SEC (seat over-allocation race): take a row lock on the entitlement so concurrent
+    // activations of the SAME entitlement SERIALISE through the seat-cap check below. Without
+    // it, two requests with different fingerprints can both read used = seats_total-1, both pass
+    // the `used >= seatsTotal` gate, and both insert — binding more seats than the account paid
+    // for. The COUNT is not a locking read, and there is no DB-level cap constraint, so this
+    // FOR UPDATE is the serialisation point. The row is known to exist (fetched above); the lock
+    // is released on commit/rollback. Idempotent re-bind of an already-bound fp is unaffected.
+    $pdo->prepare('SELECT id FROM entitlements WHERE id = ? FOR UPDATE')->execute([$entId]);
 
     // Idempotent re-bind: a seat already bound to THIS fingerprint?
     $cur = $pdo->prepare('SELECT id FROM seats WHERE entitlement_id = ? AND fp_hash = ? AND status = "bound"');

@@ -75,9 +75,18 @@ def main():
     # a text-typed ref as free-text (from the mapping's ocr_type) and a drifted
     # absolute read of OCR garbage PASSED — committing "at drawn position" instead of
     # showing the relocation reprocess actually performs (the preview/extraction gap).
+    #
+    # The type now comes from `field_type` — the field's REAL declared type, sent by the caller.
+    # It used to come from the mapping's `ocr_type` column, which was deleted on 2026-08-08 (owner
+    # decision: wire it or delete it) because NO production code read it and three UI surfaces
+    # wrote it with three different vocabularies. `field_type` is strictly more faithful: it is the
+    # same input `engine._seed_field_patterns` receives in the real pipeline. `ocr_type` is still
+    # accepted as a fallback so an older caller, or a mapping row read straight from the DB, keeps
+    # working; absent both, 'text' — exactly what an unset ocr_type resolved to before.
     field_patterns = {}
     if field_key:
-        field_patterns = _seed_field_patterns({}, [{'key': field_key, 'type': mapping.get('ocr_type') or 'text'}])
+        _ftype = mapping.get('field_type') or mapping.get('ocr_type') or 'text'
+        field_patterns = _seed_field_patterns({}, [{'key': field_key, 'type': _ftype}])
 
     # resolve_geometry runs the SAME extractor and ALSO reports where the anchor
     # label located and which target box was actually read (the resolved value

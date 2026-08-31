@@ -26,7 +26,7 @@ foreach (['msstore' => 'Microsoft Store', 'nsis' => 'Direct download (NSIS)'] as
 admin_page_open('App releases');
 admin_nav('releases');
 ?>
-<h1>App releases</h1>
+<?php admin_page_head('releases', 'App releases', 'Publish the in-app update banner — latest version, download URL, minimum supported.'); ?>
 <p class="lead">Tell installed apps that a newer version is available. The app checks this during its
 normal licence check (it never sends its version to the server) and shows a calm, dismissible
 banner linking to the update. Leave <span class="mono">Latest version</span> blank to turn the
