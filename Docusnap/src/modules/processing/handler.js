@@ -476,6 +476,14 @@ function _reconcileEnv(db) {
     if (env.MONEY_SIGN_PARENS === '1' || env.MONEY_SIGN_CR === '1') {
       env.CREDIT_SIGN_COHERENCE = '1';
     }
+    // BUYER-ISSUED CONVENTION NOTE (2026-08-31, gary lever 1; DARK): a buyer-issued PO whose
+    //   issuer resolved via a LEARNED machine path (template_fixed / hint_text_match) stays
+    //   SILENT only when a same-type supplier_name hint (usage >= 3) backs the convention;
+    //   otherwise the field carries a both-parties note and the doc is review-bound. Value
+    //   never rewritten; the 07-12 vendor drop untouched. Env wins both ways for harness arms.
+    if (env.BUYER_ISSUED_CONVENTION_NOTE == null && learning.getSetting(db, 'buyer_issued_convention_note', 'false') === 'true') {
+      env.BUYER_ISSUED_CONVENTION_NOTE = '1';
+    }
     // STRICT MONEY sub-flag of TEMPLATE_FORMAT_FAIL_YIELD (2026-08-30, reggie; DARK): the yield's currency
     //   leg becomes the whole-string `money_strict_shape` (the legacy leg passes '£9 32632.76' as 9.0).
     //   AND-ed with the parent HERE — a sub-flag armed without its parent bridges nothing.

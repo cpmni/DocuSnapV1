@@ -2295,6 +2295,18 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 96 (money sign parens/cr): ${e.message}`); }
   }
 
+  // ── migration 97: the buyer-issued convention note seeded OFF (DARK — gary lever 1,
+  //    2026-08-31: a learned-path buyer fill on a buyer-issued PO stays silent only with
+  //    same-type convention evidence; else a both-parties note, review-bound) ──
+  if (!applied.has(97)) {
+    try {
+      const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      const n = ins.run('buyer_issued_convention_note', 'false').changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (97)').run();
+      console.log(`JS migration 97 applied: buyer-issued convention note seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 97 (buyer_issued_convention_note): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

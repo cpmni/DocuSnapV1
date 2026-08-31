@@ -5584,6 +5584,30 @@ class ExtractionEngine:
         kw_results.pop("supplier_name", None)
         return val
 
+    @staticmethod
+    def _buyer_issued_convention_licensed(resolved, document_slug, hints, accept_norm, min_usage=3):
+        """BUYER-ISSUED CONVENTION LICENCE (gary lever 1, 2026-08-31) — pure. True when a
+        SAME-TYPE `supplier_name` hint for the resolved issuer carries usage_count >= min_usage:
+        the install has confirmed this company as the issuer of THIS document type before, so a
+        silent learned fill is convention-backed. supplier_hints.document_type stores the SLUG
+        (verified on the live DB), so the compare is straight against `document_slug`. The
+        matched template's own confirmed_count would be an alternative licence leg (gary's OR) —
+        deliberately NOT used: hints-only is stricter, and every confirm bumps the hint anyway.
+        min_usage=3 mirrors the 2.5a hint-upgrade floor."""
+        rn = accept_norm(resolved or "")
+        if not rn:
+            return False
+        for h in (hints or []):
+            if h.get("field_key") != "supplier_name":
+                continue
+            if str(h.get("document_type") or "") != str(document_slug or ""):
+                continue
+            if (h.get("usage_count") or 0) < min_usage:
+                continue
+            if accept_norm(h.get("hint_value") or "") == rn:
+                return True
+        return False
+
     def _flag_recipient_caption_issuer(self, results, field_defs, supplier_name):
         """RECIPIENT-CAPTION ISSUER GUARD (flag-only, never rewrites — Oracle-signed
         2026-07-09). When a doc type's IDENTITY field is customer_name (its "Document
@@ -10199,6 +10223,45 @@ class ExtractionEngine:
         results["_needs_review"]         = review_needed
         results["_mode_used"]            = self.mode
         results["_template_id"]          = matched_tmpl.get("id") if matched_tmpl else None
+
+        # ── BUYER-ISSUED CONVENTION NOTE (gary lever 1, 2026-08-31; DARK
+        #    BUYER_ISSUED_CONVENTION_NOTE, default OFF) ────────────────────────────────────────
+        # The 07-12 doctrine fills the BUYER as issuer on a buyer-issued PO — correct by two
+        # Oracle rulings — but warm, the silence is licensed by ANY maturity: a learned path
+        # (template_fixed / hint_text_match) fills with no note even when the install has never
+        # confirmed this company as a PO issuer (the Hard Set warm buyer_issued_po measurement).
+        # When armed: a learned-path fill on a buyer-issued doc stays SILENT only with same-type
+        # convention evidence (the pure licence above); otherwise the field carries a both-parties
+        # note (naming the suppressed vendor when one was recorded) and the doc is review-bound.
+        # VALUE NEVER REWRITTEN — the 07-12 drop stands, the letterhead-scope guard untouched, no
+        # learning writes; one human confirm plants the hint that licenses the rest. The cold
+        # letterhead_prefill path carries its own note @69 and is not in the method tuple.
+        if (os.environ.get("BUYER_ISSUED_CONVENTION_NOTE", "0") != "0" and _buyer_issued):
+            try:
+                _sn_f = results.get("supplier_name")
+                if (isinstance(_sn_f, dict) and _sn_f.get("value")
+                        and not _sn_f.get("validation_note")
+                        and str(_sn_f.get("method") or "") in ("template_fixed", "hint_text_match")
+                        and self._accept_norm(_sn_f["value"]) not in (self.accepted_issuers
+                                                                      | self.accepted_names)):
+                    if not ExtractionEngine._buyer_issued_convention_licensed(
+                            _sn_f["value"], document_slug, hints, self._accept_norm):
+                        _who = _sn_f["value"]
+                        if _suppressed_issuer:
+                            _sn_f["validation_note"] = (
+                                f"This purchase order is on {_who}'s letterhead but names "
+                                f"'{_suppressed_issuer}' as the supplier — confirm which "
+                                "company to file under.")
+                        else:
+                            _sn_f["validation_note"] = (
+                                f"A purchase order usually files under the buyer — please "
+                                f"confirm '{_who}' is the right company for this one.")
+                        results["_needs_review"] = True
+                        self.log(f"  Buyer-issued convention note: '{_who}' filled by "
+                                 f"{_sn_f.get('method')} with no same-type confirm history — "
+                                 "review-bound (value unchanged)")
+            except Exception:
+                pass  # a guard must never break extraction
         # The matched template carries the document type its layout was confirmed
         # under — the only signal that assigns CUSTOM doc types (which have no
         # document_type_keywords to keyword-detect). process_docs.py prefers it.

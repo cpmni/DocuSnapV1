@@ -131,7 +131,9 @@ except Exception as e:
 print("\nPROCESS_DOCS threading pins:")
 pd = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "process_docs.py"),
           encoding="utf-8").read()
-check("ref_field_key threaded into engine.extract()", "ref_field_key = _ref_key" in pd)
+# Spacing-tolerant (2026-08-31): an alignment reformat spaced the kwarg ("ref_field_key   =
+# _ref_key,") and the exact-string grep went red with the threading fully intact.
+check("ref_field_key threaded into engine.extract()", "= _ref_key" in pd)
 check("_ref_key hoisted (Oracle C2 — no NameError when the type block is skipped)",
       "_ref_key = None" in pd)
 
