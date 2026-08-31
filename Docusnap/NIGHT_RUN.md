@@ -141,6 +141,19 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-08-31 · DB ENCRYPTION PIVOTED to code-as-passphrase + CRYPTO CORE COMPLETE (`684de90`, `+ startup`).**
+  Owner requirement (DB backup + printed code resurrects on ANY PC) forced a model change from the
+  random-key+sidecar to **code-as-passphrase** (multiple-ciphers passphrase mode, salt-in-header, 125-bit
+  code). Oracle re-vet: SIGN OFF WITH CONDITIONS (10). BUILT + PINNED under E44: `dbKey.js` (applyKey/
+  applyRekey single pragma choke point, convergence pin), `dbMigrateEncrypt.js` (rekey in DELETE mode,
+  crash matrix + kill-during-rekey), `dbStartup.js` (decision table — the restored-backup row + tripwire),
+  the seam (`setEncryptionKey(code)` + temp_store=MEMORY), `db-crypto-tool`. Pins: dbKey 16, cipher 10
+  (incl. PORTABILITY: lone .db + code opens in a fresh dir), migration 18, startup 6, secretStore 14 —
+  ALL GREEN. .db-recovery/argon2 GONE. Nothing encrypts a live DB yet. **REMAINING (the integration pass —
+  QUEUE):** the whenReady unwrap gate + the Unlock/Recover window + the combined "Keep these safe" dialog
+  (Show/defer/reinforce, admin+DB codes) + slice-3 downgrade tripwire + default-on; then the OWNER drill
+  (encrypt the real DB → restart → unlock) + realdoc-605 + perf + /v1 session. arc doc + oracle_log updated.
+  Repeat if: never re-do the crypto core — do the integration pass.
 - **2026-08-31 · ELECTRON 31.7.7 → 44.0.0 MERGED (`0ed6f20`, from `chore/electron-44`) + pushed.** Merge
   conflicts (package.json/lock) resolved: E44's electron 44 / electron-builder 26 / argon2 0.45.1 / Rung-A/B
   fuses + the encryption dep reconciled to the ciphers fork **^13** (better-sqlite3-multiple-ciphers@13.0.3,
