@@ -2458,3 +2458,28 @@ untouched; OFF byte-identical; pin proven to FAIL with the leg deleted); realdoc
 byte-identical / ON M=7 unchanged, zero accuracy drop, hold-set leavers enumerated + eyeballed;
 Castellan five as fixtures; a clipped-code class into gen_hard_set. Hold-with-fragment becomes
 hold-with-full-value; no new silent file on any traced path.
+## 2026-08-31 — DB-at-rest encryption: KEY-MODEL CHANGE to code-as-passphrase (owner-directed; revising the same-day dual-wrap sign-off) — SIGN OFF WITH CONDITIONS
+Premise CORRECT and simpler than as-built: raw-hexkey + DPAPI/argon2 dual-wrap can't meet the owner's
+"DB backup + printed code resurrects on any PC" (the key is in the sidecar, which backupService never
+exports). Passphrase mode (salt-in-header KDF, code = 125-bit key material) meets it with no sidecar;
+at-rest security is EQUIVALENT (no key in the file; only attack = 2^125 through the cipher KDF — answered
+the owner's "strip the key" Q directly). Honest trade recorded: argon2id(64MB)→PBKDF2, safe ONLY for a
+125-bit RANDOM code — guard against a future user-chosen DB password. Seams caught: (1) the whole premise
+(salt-in-header portability) is pinned NOWHERE — every existing test runs in one dir with a raw hexkey;
+demanded the db-only-to-fresh-dir open-by-code pin. (2) MOST-WORRIED: passphrase representation
+convergence — display-vs-normaliseCode mismatch across rekey/cache/open silently BRICKS the DB and passes
+a naive same-form pin; mandated normalise-at-boundary + a cross-form round-trip pin. (3) the owner's
+PRIMARY case (absent .db-key + ENCRYPTED header = restored backup) is unhandled — loadKey()==null today
+also means "fresh plaintext"; demanded a startup decision table (row 4 = prompt for code, never
+plaintext-open). (4) rekey refused in WAL (the tool's own comment) — migration must journal_mode=DELETE
+before rekey + clean -journal + re-run the crash matrix with a kill-DURING-rekey injection. Pragma swaps
+specified: seam key=; migration hexrekey→rekey/verify key; export-plain hexrekey=''→rekey=''; do NOT
+cache the derived key (re-introduces raw key at rest). Eliminating .db-recovery loses no safety but makes
+"regenerate" a full DB rekey (accept/defer). Combined admin+DB recovery dialog: cryptographically
+independent (admin code hashed in-DB + rotates; DB code static passphrase) — acceptable with distinct
+labels, rotation caveat, and explicit single-point-of-capture acceptance. 10 conditions; gate = rewritten
+pins + realdoc-605 OFF byte-identical/ON zero drop + portability pin + DPAPI-loss drill (admin-reset AND
+new-PC) + crash matrix under rekey. Docs (arc + dbKey header) must be rewritten so no one restores the sidecar.
+BUILD STATUS 2026-08-31: crypto core rewritten to passphrase mode + all pins green under E44 (dbKey 16,
+cipher 10 incl. portability, migration 18 incl. kill-during-rekey + portability, secretStore 14). Remaining:
+whenReady wiring + Unlock window + the combined activation dialog + slice-3 tripwire + the owner-machine gates.

@@ -1,11 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Hermetic tests for lib/dbKey — the whole-DB-at-rest master-key module (2026-08-31, Oracle SIGN-OFF-
- * W/COND). DPAPI/safeStorage is unavailable under plain node, so the DPAPI wrap is exercised through an
- * INJECTED fake safeStorage; argon2 (the recovery wrap) runs for real. A scratch userData dir is used.
- *
- * Run: node src/lib/test_dbkey.js
+ * Hermetic tests for lib/dbKey — the code-as-passphrase recovery-code module (Oracle SIGN-OFF-W/COND
+ * 2026-08-31). DPAPI is exercised through an INJECTED fake safeStorage; a pragma-recording stub tests
+ * the applyKey/applyRekey sequence without the native module. Run: node src/lib/test_dbkey.js
  */
 const fs = require('fs');
 const os = require('os');
@@ -21,90 +19,73 @@ const fakeSS = {
   encryptString: (s) => Buffer.from('DPAPI:' + String(s), 'utf8'),      // reversible, machine-agnostic fake
   decryptString: (b) => Buffer.from(b).toString('utf8').replace(/^DPAPI:/, ''),
 };
+function freshDir() { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'dbkey-')); K.__setDirForTest(d); return d; }
 
-function freshDir() {
-  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'dbkey-'));
-  K.__setDirForTest(d);
-  return d;
+// ── provision + the CONVERGENCE property (Oracle C6) ──────────────────────────
+S.__setSafeStorage(fakeSS);
+let dir = freshDir();
+check('a fresh install has no key cache', K.hasKey() === false && K.loadCode() === null);
+const { recoveryCode } = K.provision();
+check('provision returns a grouped display code (5×5 Crockford)', /^[0-9A-Z]{5}(-[0-9A-Z]{5}){4}$/.test(recoveryCode));
+check('provision wrote .db-key DPAPI-wrapped (ENC1:)', K.hasKey()
+      && S.isEncrypted(fs.readFileSync(path.join(dir, K.KEY_FILE), 'utf8').trim()));
+check('CONVERGENCE: loadCode() == normaliseCode(displayCode) (no display/normalised drift)',
+      K.loadCode() === K.normaliseCode(recoveryCode));
+check('the cached code is a valid normalised code (^[0-9A-Z]{20,}$)', K.isValidNormalised(K.loadCode()));
+
+// ── provision refuses to clobber a live cache ─────────────────────────────────
+let clobber = false; try { K.provision(); } catch { clobber = true; }
+check('provision REFUSES to overwrite an existing key cache', clobber === true);
+
+// ── normaliseCode: idempotent + folds look-alikes + strips separators ─────────
+check('normaliseCode folds O→0 / I,L→1 / U→V, uppercases, strips spaces+dashes',
+      K.normaliseCode('o i l u-ab cd') === '011VABCD');
+check('normaliseCode is IDEMPOTENT', K.normaliseCode(K.normaliseCode(recoveryCode)) === K.normaliseCode(recoveryCode));
+check('isValidNormalised rejects empty / lowercase / too-short', !K.isValidNormalised('') && !K.isValidNormalised('abc') && !K.isValidNormalised('ABC'));
+
+// ── applyKey / applyRekey: pragma order + validation (pragma-recording stub) ──
+function stub() { const calls = []; return { calls, pragma: (s) => calls.push(String(s).replace(/\s+/g, ' ').trim()) }; }
+{
+  const d = stub(); K.applyKey(d, recoveryCode);
+  check('applyKey issues cipher → kdf_iter → key, in order, normalised',
+        d.calls.length === 3 && d.calls[0] === `cipher = '${K.CIPHER}'` && d.calls[1] === `kdf_iter = ${K.KDF_ITER}`
+        && d.calls[2] === `key = '${K.normaliseCode(recoveryCode)}'`);
+}
+{
+  const d = stub(); K.applyRekey(d, recoveryCode);
+  check('applyRekey issues cipher → kdf_iter → rekey, normalised',
+        d.calls[0] === `cipher = '${K.CIPHER}'` && d.calls[2] === `rekey = '${K.normaliseCode(recoveryCode)}'`);
+}
+{
+  let bad = false; try { K.applyKey(stub(), 'nope!'); } catch { bad = true; }
+  check('applyKey REFUSES an invalid code (never interpolates junk into a PRAGMA)', bad === true);
 }
 
-(async () => {
-  // ── provision + normal DPAPI load ──────────────────────────────────────────
-  S.__setSafeStorage(fakeSS);
-  let dir = freshDir();
-  check('a fresh install has no key', K.hasKey() === false && K.loadKey() === null);
-  const { recoveryCode, masterKey } = await K.provision({});
-  check('provision returns a 32-byte master key', Buffer.isBuffer(masterKey) && masterKey.length === 32);
-  check('provision writes .db-key (DPAPI, ENC1:) and .db-recovery', K.hasKey() && K.hasRecovery()
-        && S.isEncrypted(fs.readFileSync(path.join(dir, K.KEY_FILE), 'utf8').trim()));
-  check('the recovery code is a grouped Crockford-base32 string (5×5)', /^[0-9A-Z]{5}(-[0-9A-Z]{5}){4}$/.test(recoveryCode));
-  check('loadKey returns the SAME master key via DPAPI', K.loadKey().equals(masterKey));
+// ── FAIL-CLOSED provision: DPAPI unavailable ⇒ THROW, write NO cache ──────────
+dir = freshDir();
+S.__setSafeStorage(null);
+let failClosed = false; try { K.provision(); } catch { failClosed = true; }
+check('provision FAIL-CLOSED when DPAPI unavailable (throws, writes no cache)', failClosed === true && K.hasKey() === false);
+S.__setSafeStorage(fakeSS);
 
-  // ── provision refuses to clobber a live key ────────────────────────────────
-  let clobberThrew = false;
-  try { await K.provision({}); } catch { clobberThrew = true; }
-  check('provision REFUSES to overwrite an existing key', clobberThrew === true);
+// ── NEVER silently regenerate: a present-but-undecryptable cache THROWS ────────
+dir = freshDir();
+K.provision();
+fs.writeFileSync(path.join(dir, K.KEY_FILE), 'ENC1:not-decryptable-@@@', 'utf8');
+let undec = false; try { K.loadCode(); } catch (e) { undec = (e.code === 'DBKEY_UNDECRYPTABLE'); }
+check('an undecryptable cache THROWS DBKEY_UNDECRYPTABLE (never silent-regenerate)', undec === true);
 
-  // ── recovery: correct code recovers the exact key; wrong code / tamper fail closed ──
-  const recovered = await K.recover(recoveryCode, { rewrapDpapi: false });
-  check('the printed code recovers the EXACT master key', recovered.equals(masterKey));
-  let wrongThrew = false;
-  try { await K.recover('AAAAA-BBBBB-CCCCC-DDDDD-EEEEE', { rewrapDpapi: false }); } catch (e) { wrongThrew = (e.code === 'DBKEY_UNDECRYPTABLE'); }
-  check('a WRONG recovery code fails closed (DBKEY_UNDECRYPTABLE)', wrongThrew === true);
-  let tamperThrew = false;
-  const rp = path.join(dir, K.RECOVERY_FILE);
-  const blob = fs.readFileSync(rp); blob[blob.length - 1] ^= 0xff; fs.writeFileSync(rp, blob);
-  try { await K.recover(recoveryCode, { rewrapDpapi: false }); } catch { tamperThrew = true; }
-  check('a TAMPERED recovery blob fails closed', tamperThrew === true);
+// ── a NON-DPAPI-wrapped (plaintext) cache is refused, not trusted ─────────────
+dir = freshDir();
+fs.writeFileSync(path.join(dir, K.KEY_FILE), 'PLAINTEXTCODE1234567890', 'utf8');   // no ENC1:
+let plainRefused = false; try { K.loadCode(); } catch (e) { plainRefused = (e.code === 'DBKEY_UNDECRYPTABLE'); }
+check('a plaintext (non-ENC1:) cache is REFUSED', plainRefused === true);
 
-  // ── recovery on a NEW machine (no .db-key) re-wraps for DPAPI ───────────────
-  dir = freshDir();
-  await K.provision({});
-  const origKey = K.loadKey();
-  const code2 = (await K.regenerateRecovery(origKey, {})).recoveryCode;   // ceremony: new code, no old-code copy
-  fs.unlinkSync(path.join(dir, K.KEY_FILE));                              // simulate DPAPI-less new profile
-  check('after removing .db-key, loadKey reports absent (not undecryptable)', K.loadKey() === null && K.hasRecovery());
-  const rk = await K.recover(code2, { rewrapDpapi: true });
-  check('recover with the regenerated code returns the key + re-wraps .db-key for DPAPI',
-        rk.equals(origKey) && K.hasKey() && K.loadKey().equals(origKey));
+// ── cacheCode round-trip (used on new-PC recover after a successful open) ─────
+dir = freshDir();
+K.cacheCode('abcde-fghjk-mnpqr-stvwx-yz234');
+check('cacheCode then loadCode returns the normalised code', K.loadCode() === K.normaliseCode('abcde-fghjk-mnpqr-stvwx-yz234'));
 
-  // ── FAIL-CLOSED provision: DPAPI unavailable ⇒ THROW, write NO key (no plaintext leak) ─────
-  dir = freshDir();
-  S.__setSafeStorage(null);
-  let failClosedThrew = false;
-  try { await K.provision({}); } catch { failClosedThrew = true; }
-  check('provision FAIL-CLOSED when DPAPI unavailable (throws, writes no key)',
-        failClosedThrew === true && K.hasKey() === false);
-  S.__setSafeStorage(fakeSS);
-
-  // ── NEVER silently regenerate: a present-but-undecryptable key THROWS, not a fresh key ─────
-  dir = freshDir();
-  await K.provision({});
-  fs.writeFileSync(path.join(dir, K.KEY_FILE), 'ENC1:not-valid-base64-dpapi-@@@', 'utf8');
-  let undecThrew = false;
-  try { K.loadKey(); } catch (e) { undecThrew = (e.code === 'DBKEY_UNDECRYPTABLE'); }
-  check('an undecryptable present key THROWS DBKEY_UNDECRYPTABLE (never silent-regenerate)', undecThrew === true);
-  check('...and the key file is NOT overwritten by loadKey', fs.readFileSync(path.join(dir, K.KEY_FILE), 'utf8').startsWith('ENC1:not-valid'));
-
-  // ── a NON-DPAPI-wrapped (plaintext) key file is refused, not trusted ────────
-  dir = freshDir();
-  await K.provision({});
-  fs.writeFileSync(path.join(dir, K.KEY_FILE), Buffer.alloc(32, 7).toString('base64'), 'utf8');   // no ENC1:
-  let plainRefused = false;
-  try { K.loadKey(); } catch (e) { plainRefused = (e.code === 'DBKEY_UNDECRYPTABLE'); }
-  check('a plaintext (non-ENC1:) key file is REFUSED', plainRefused === true);
-
-  // ── 32-byte assertion on the recovery unwrap ───────────────────────────────
-  check('REC_LEN is the fixed container size (magic+ver+salt+iv+tag+32 = 81)', K.REC_LEN === 4 + 1 + 16 + 12 + 16 + 32);
-
-  // ── normaliseCode maps look-alikes so a hand-typed code still recovers ──────
-  dir = freshDir();
-  const { recoveryCode: rc3, masterKey: mk3 } = await K.provision({});
-  const messy = rc3.toLowerCase().replace(/-/g, ' ');   // lowercase + spaces instead of dashes
-  const rk3 = await K.recover(messy, { rewrapDpapi: false });
-  check('a case/spacing-mangled code still recovers (normaliseCode)', rk3.equals(mk3));
-
-  S.__setSafeStorage(undefined);
-  console.log(`\ndbKey: ${pass} passed, ${fail} failed`);
-  process.exit(fail ? 1 : 0);
-})().catch((e) => { console.error(e); process.exit(1); });
+S.__setSafeStorage(undefined);
+console.log(`\ndbKey: ${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

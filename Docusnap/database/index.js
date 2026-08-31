@@ -5,23 +5,25 @@ const fs   = require('fs');
 const { app } = require('electron');
 
 let _db = null;
-let _encryptionKey = null;   // Buffer(32) | null — set by main BEFORE the first open() when the DB is encrypted
+let _encryptionCode = null;   // the NORMALISED recovery code (passphrase) | null
 
-// Whole-DB-at-rest encryption (2026-08-31, DARK). main unwraps the DPAPI-wrapped master key (src/lib/
-// dbKey.js) and calls this BEFORE the first getDb()/open(). Until then the key is null and open() is
-// byte-identical (plaintext) — the current install path is untouched. A 32-byte Buffer is required;
-// anything else is a programmer error that must fail LOUD rather than silently open plaintext.
-function setEncryptionKey(keyBuf) {
-  if (keyBuf != null && (!Buffer.isBuffer(keyBuf) || keyBuf.length !== 32)) {
-    throw new Error('setEncryptionKey: expected a 32-byte Buffer');
-  }
-  _encryptionKey = keyBuf || null;
+// Whole-DB-at-rest encryption (2026-08-31, code-as-passphrase). main unwraps the DPAPI-cached recovery
+// code (src/lib/dbKey.js loadCode) — or the user types it at the Unlock window — and calls this BEFORE
+// the first getDb()/open(). Until then the code is null and open() is byte-identical (plaintext), so the
+// current install is untouched. The code is normalised + charset-validated here so a mis-typed/garbled
+// value fails LOUD rather than silently opening plaintext or mis-keying.
+function setEncryptionKey(code) {
+  if (code == null) { _encryptionCode = null; return; }
+  const dbKey = require('../src/lib/dbKey');
+  const norm = dbKey.normaliseCode(code);
+  if (!dbKey.isValidNormalised(norm)) throw new Error('setEncryptionKey: expected a valid recovery code');
+  _encryptionCode = norm;
 }
 
 // True once the DB is opened encrypted — callers that COPY the DB (e.g. the merge backup) must then take
 // a KEYED copy (db.backup() refuses a keyed source; VACUUM INTO from the keyed connection stays keyed),
 // never a plaintext one.
-function isEncryptionActive() { return !!_encryptionKey; }
+function isEncryptionActive() { return !!_encryptionCode; }
 
 // ── Open ──────────────────────────────────────────────────────────────────────
 
@@ -31,12 +33,13 @@ function open() {
   const dbDir    = app.getPath('userData');
   const dbPath   = path.join(dbDir, 'docusnap.db');
   _db = new Database(dbPath);
-  // The raw ChaCha20 hexkey MUST precede every other pragma/read (multiple-ciphers contract). Issued
-  // ONLY when a key was set — a plaintext install never reaches this line, so it is byte-identical.
-  // With the multiple-ciphers build absent this pragma would throw, which is the intended loud failure
-  // for a mis-provisioned encrypted install (never a silent plaintext open).
-  if (_encryptionKey) {
-    _db.pragma(`hexkey = '${_encryptionKey.toString('hex')}'`);
+  // The cipher scheme + KDF + passphrase MUST precede every other pragma/read (multiple-ciphers
+  // contract). Issued ONLY when a code was set — a plaintext install never reaches this line, so it is
+  // byte-identical. applyKey is the single choke point for the pragma order + normalisation + charset
+  // validation (src/lib/dbKey.js). temp_store=MEMORY keeps SQLite's temp spills off disk in plaintext.
+  if (_encryptionCode) {
+    require('../src/lib/dbKey').applyKey(_db, _encryptionCode);
+    _db.pragma('temp_store = MEMORY');
   }
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');

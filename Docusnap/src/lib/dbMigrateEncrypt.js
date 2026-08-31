@@ -2,18 +2,19 @@
 /**
  * src/lib/dbMigrateEncrypt.js
  * ---------------------------
- * The one-time, CRASH-SAFE plaintext → encrypted migration for the DB-at-rest arc (slice 2, Oracle
- * SIGN-OFF-W/COND 2026-08-31). gary's manifest state machine — every crash state resolves to a WORKING
- * DB; on ambiguity we keep the SURVIVING PLAINTEXT (data safety over secrecy during the migration only).
+ * The one-time, CRASH-SAFE plaintext → encrypted migration for the DB-at-rest arc (code-as-passphrase;
+ * Oracle SIGN-OFF-W/COND 2026-08-31). gary's manifest state machine — every crash state resolves to a
+ * WORKING DB; on ambiguity we keep the SURVIVING PLAINTEXT (data safety over secrecy during the
+ * migration only).
  *
- * PROVEN primitives (src/lib/test_db_cipher.js + the encprobe series):
- *   • encrypt a plaintext copy in place: open unkeyed → `PRAGMA hexrekey='<hex>'` → checkpoint (NOT
- *     `rekey`, which treats the hex as a KDF passphrase and will not reopen with `hexkey`);
- *   • `db.backup()` REFUSES a keyed source, so the plaintext `.pre-encrypt` safety copy is taken from the
- *     plaintext live DB (works), and any KEYED copy elsewhere uses VACUUM INTO / a byte copy.
+ * PASSPHRASE MODE (multiple-ciphers): the DB is keyed by the printed RECOVERY CODE, KDF salt in the file
+ * header (so the encrypted file is self-sufficient — code + file opens anywhere). The pragma sequence is
+ * OWNED by src/lib/dbKey.js (`applyRekey` to encrypt, `applyKey` to open) so open/migration/tool can
+ * never diverge. `rekey` is REFUSED in WAL mode, so the encrypt step forces `journal_mode = DELETE`
+ * first — which leaves a `-journal` sidecar that every cleanup below must remove.
  *
- * The key is passed in (a 32-byte Buffer) — this module never touches DPAPI, so it is testable under
- * electron-as-node without safeStorage. main/onboarding provisions via src/lib/dbKey.js then calls here.
+ * The CODE is passed in — this module never touches DPAPI, so it is testable under electron-as-node.
+ * main/onboarding provisions via dbKey.js (which caches the code DPAPI-wrapped) then calls here.
  *
  * Files beside the live DB (userData):
  *   docusnap.db              the live DB
@@ -24,7 +25,7 @@
  */
 
 const fs = require('fs');
-const crypto = require('crypto');
+const dbKey = require('./dbKey');
 
 const PHASES = { IDLE: 'idle', BACKUP: 'backup', ENCRYPTING: 'encrypting', VERIFY: 'verify', SWAP: 'swap', DONE: 'done' };
 const SQLITE_MAGIC = 'SQLite format 3';
@@ -36,7 +37,7 @@ function paths(dbPath) {
     work: dbPath + '.encrypting',
     old: dbPath + '.plain-old',
     manifest: dbPath + '.manifest',
-    wal: dbPath + '-wal', shm: dbPath + '-shm',
+    wal: dbPath + '-wal', shm: dbPath + '-shm', journal: dbPath + '-journal',
   };
 }
 
@@ -46,6 +47,8 @@ function _hasMagic(file) {
 }
 function _exists(f) { try { return fs.existsSync(f); } catch { return false; } }
 function _rm(f) { try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch { /* noop */ } }
+// The work file's transient sidecars (WAL from the copy, journal from DELETE-mode rekey).
+function _rmWorkSidecars(P) { _rm(P.work + '-wal'); _rm(P.work + '-shm'); _rm(P.work + '-journal'); }
 
 // Windows can hold a just-closed SQLite file locked for a few ms (AV / lazy handle release), so a rename
 // right after close() intermittently throws EBUSY. Retry a handful of times with a short synchronous spin.
@@ -79,18 +82,15 @@ function _sameFingerprint(a, b) {
   return ka.every(k => b[k] === a[k]);
 }
 
-function _assertKey(key) {
-  if (!Buffer.isBuffer(key) || key.length !== 32) throw new Error('dbMigrateEncrypt: key must be a 32-byte Buffer');
-  return key.toString('hex');
-}
-
 /**
- * Run the migration. `injectCrashAfter` (test-only) = a phase name; the run throws right AFTER that phase's
- * work + manifest write, simulating a power loss. Returns { ok, phasesRun } on success.
+ * Run the migration. `code` = the recovery code (display or normalised). `injectCrashAfter` (test-only) =
+ * a phase name; the run throws right AFTER that phase's work + manifest write, simulating a power loss.
+ * Returns { ok, phasesRun } on success.
  */
-function migrate({ dbPath, key, logger, injectCrashAfter } = {}) {
+function migrate({ dbPath, code, logger, injectCrashAfter } = {}) {
   const Database = require('better-sqlite3');
-  const hex = _assertKey(key);
+  const norm = dbKey.normaliseCode(code);
+  if (!dbKey.isValidNormalised(norm)) throw new Error('dbMigrateEncrypt: invalid recovery code');
   const P = paths(dbPath);
   if (!_exists(P.live)) throw new Error('dbMigrateEncrypt: no live DB to migrate');
   if (!_hasMagic(P.live)) throw new Error('dbMigrateEncrypt: live DB is not plaintext — already encrypted or corrupt (refusing)');
@@ -99,62 +99,61 @@ function migrate({ dbPath, key, logger, injectCrashAfter } = {}) {
   const run = [];
 
   // ── phase BACKUP: fold WAL into the main file, take the plaintext safety copy ─
-  // db.backup() is ASYNC and won't back up a keyed source; a cold fs copy after a TRUNCATE checkpoint +
-  // close is synchronous, consistent (no open connection), and byte-exact for the plaintext source.
+  // A cold fs copy after a TRUNCATE checkpoint + close is synchronous, consistent (no open connection),
+  // and byte-exact for the plaintext source (db.backup() is async AND refuses a keyed source).
   _writeManifest(P.manifest, { phase: PHASES.BACKUP, startedAt: new Date().toISOString() });
   { const src = new Database(P.live); src.pragma('wal_checkpoint(TRUNCATE)'); src.close(); }
   _rm(P.wal); _rm(P.shm);
   _rm(P.pre);
   fs.copyFileSync(P.live, P.pre);
-  // The plaintext safety copy must exist + verify before we touch anything else.
   { const b = new Database(P.pre, { readonly: true }); const ok = b.pragma('integrity_check', { simple: true }); b.close();
     if (ok !== 'ok') throw new Error('dbMigrateEncrypt: pre-encrypt backup failed integrity_check'); }
   run.push(PHASES.BACKUP); crash(PHASES.BACKUP);
 
-  // ── phase ENCRYPTING: copy the plaintext live → work, hexrekey the copy ──────
+  // ── phase ENCRYPTING: copy the plaintext live → work, rekey the copy by passphrase ─
   _writeManifest(P.manifest, { phase: PHASES.ENCRYPTING });
-  _rm(P.work); _rm(P.work + '-wal'); _rm(P.work + '-shm');
+  _rm(P.work); _rmWorkSidecars(P);
   fs.copyFileSync(P.live, P.work);
   {
     const w = new Database(P.work);
-    w.pragma(`hexrekey='${hex}'`);   // raw-key encrypt-in-place (matches PRAGMA hexkey on open)
-    w.pragma('wal_checkpoint(TRUNCATE)');
+    w.pragma('journal_mode = DELETE');   // rekey is REFUSED in WAL mode
+    dbKey.applyRekey(w, norm);           // cipher + kdf_iter + rekey='<normalised-code>' (encrypt in place)
     w.close();
   }
+  _rmWorkSidecars(P);
   run.push(PHASES.ENCRYPTING); crash(PHASES.ENCRYPTING);
 
-  // ── phase VERIFY: encrypted opens with the key + fingerprint matches; NEGATIVE controls ──
+  // ── phase VERIFY: encrypted opens with the code + fingerprint matches; NEGATIVE controls ──
   _writeManifest(P.manifest, { phase: PHASES.VERIFY });
   {
     const live = new Database(P.live, { readonly: true });
     const liveFp = _fingerprint(live); live.close();
 
     const enc = new Database(P.work);
-    enc.pragma(`hexkey='${hex}'`);
+    dbKey.applyKey(enc, norm);
     const integ = enc.pragma('integrity_check', { simple: true });
     const encFp = _fingerprint(enc);
-    enc.pragma('wal_checkpoint(TRUNCATE)');   // fold + drop the verify connection's WAL before we swap
     enc.close();
     if (integ !== 'ok') throw new Error('dbMigrateEncrypt: encrypted copy failed integrity_check');
     if (!_sameFingerprint(liveFp, encFp)) throw new Error('dbMigrateEncrypt: row-count fingerprint mismatch (data loss) — aborting');
 
     // NEGATIVE CONTROL 1: header magic must be ABSENT (not plaintext).
     if (_hasMagic(P.work)) throw new Error('dbMigrateEncrypt: encrypted copy still has the SQLite magic — NOT encrypted');
-    // NEGATIVE CONTROL 2: opening WITHOUT the key must FAIL. `finally`-close so a thrown query never
+    // NEGATIVE CONTROL 2: opening WITHOUT the code must FAIL. finally-close so a thrown query never
     // leaks the handle (a leaked handle locks the file → EBUSY on the swap rename below).
     let openedNoKey = false, n = null;
     try { n = new Database(P.work, { readonly: true }); n.prepare('SELECT COUNT(*) FROM sqlite_master').get(); openedNoKey = true; }
     catch { /* expected — encrypted file rejects an unkeyed read */ }
     finally { if (n) { try { n.close(); } catch { /* noop */ } } }
-    if (openedNoKey) throw new Error('dbMigrateEncrypt: encrypted copy opened WITHOUT the key — encryption not applied');
+    if (openedNoKey) throw new Error('dbMigrateEncrypt: encrypted copy opened WITHOUT the code — encryption not applied');
   }
+  _rmWorkSidecars(P);
   run.push(PHASES.VERIFY); crash(PHASES.VERIFY);
 
   // ── phase SWAP: crash-ordered rename. plain-old ← live, then live ← work ─────
   _writeManifest(P.manifest, { phase: PHASES.SWAP });
-  // fold + drop any live/work WAL/SHM so the swapped files are self-contained + unlocked.
-  _rm(P.wal); _rm(P.shm);
-  _rm(P.work + '-wal'); _rm(P.work + '-shm');
+  _rm(P.wal); _rm(P.shm); _rm(P.journal);
+  _rmWorkSidecars(P);
   _rm(P.old);
   _renameRetry(P.live, P.old);       // (crash here: live missing, old = plaintext → recover old→live)
   _renameRetry(P.work, P.live);      // (crash here: live = encrypted, old = plaintext, manifest=swap → mark done)
@@ -163,18 +162,13 @@ function migrate({ dbPath, key, logger, injectCrashAfter } = {}) {
 
   // ── success: remove the plaintext residues (they would defeat encryption) ────
   _rm(P.old); _rm(P.pre);
-  _rm(P.work + '-wal'); _rm(P.work + '-shm');
   try { logger && logger.info && logger.info('dbMigrateEncrypt: migration complete — DB encrypted'); } catch { /* noop */ }
   return { ok: true, phasesRun: run };
 }
 
 /**
  * Called on startup to resolve an interrupted migration to a WORKING DB. Returns a status string:
- *   'plaintext'            — no migration in progress; live is plaintext (normal pre-encryption).
- *   'encrypted'            — migration done; live is encrypted.
- *   'recovered-encrypted'  — crashed after the swap completed; marked done, cleaned residues.
- *   'rolled-back'          — crashed mid-migration or mid-swap; restored the plaintext live, discarded work.
- *   'ambiguous-kept-plaintext' — an unexpected shape; kept whatever plaintext survives, cleared the attempt.
+ *   'plaintext' · 'encrypted' · 'recovered-encrypted' · 'rolled-back' · 'ambiguous-kept-plaintext'.
  */
 function resolveState({ dbPath, logger } = {}) {
   const P = paths(dbPath);
@@ -185,41 +179,39 @@ function resolveState({ dbPath, logger } = {}) {
   // No manifest: either never migrated (plaintext) or a completed encrypted install (no residue).
   if (!man) {
     if (_exists(P.live) && !liveMagic) return 'encrypted';         // encrypted, migration long done
-    _rm(P.work); _rm(P.work + '-wal'); _rm(P.work + '-shm');       // stray work from an aborted attempt
+    _rm(P.work); _rmWorkSidecars(P);                               // stray work from an aborted attempt
     return 'plaintext';
   }
 
   if (man.phase === PHASES.DONE) {
-    _rm(P.old); _rm(P.pre); _rm(P.work); _rm(P.manifest);
+    _rm(P.old); _rm(P.pre); _rm(P.work); _rmWorkSidecars(P); _rm(P.manifest);
     return 'encrypted';
   }
 
   // Crashed at SWAP — the delicate window. (_hasMagic TRUE = plaintext "SQLite format 3"; FALSE = encrypted.)
   if (man.phase === PHASES.SWAP) {
     if (_exists(P.live) && liveMagic) {
-      // live is still PLAINTEXT → the first rename (live→old) hadn't taken. Discard the encrypted work,
-      // keep plaintext. (If plain-old also somehow exists, the plaintext live is the authority.)
-      _rm(P.work); _rm(P.old); _rm(P.pre); _rm(P.manifest);
+      // live is still PLAINTEXT → the first rename (live→old) hadn't taken. Discard the encrypted work.
+      _rm(P.work); _rmWorkSidecars(P); _rm(P.old); _rm(P.pre); _rm(P.manifest);
       log('crash at swap with plaintext live — discarded encrypted work, kept plaintext');
       return 'rolled-back';
     }
     if (_exists(P.live) && !liveMagic) {
       // live is ENCRYPTED → both renames completed before the DONE write. Finish the transaction.
-      _rm(P.old); _rm(P.pre); _rm(P.manifest);
+      _rm(P.old); _rm(P.pre); _rm(P.work); _rmWorkSidecars(P); _rm(P.manifest);
       log('crash at swap with encrypted live — swap had completed, marked done');
       return 'recovered-encrypted';
     }
     // live MISSING → the first rename happened, the second didn't. Restore plain-old → live.
     if (_exists(P.old) && _hasMagic(P.old)) {
       fs.renameSync(P.old, P.live);
-      _rm(P.work); _rm(P.pre); _rm(P.manifest);
+      _rm(P.work); _rmWorkSidecars(P); _rm(P.pre); _rm(P.manifest);
       log('crash mid-swap, live missing — restored plaintext from plain-old');
       return 'rolled-back';
     }
-    // Nothing usable at live/old — fall back to the pre-encrypt plaintext safety copy.
     if (_exists(P.pre) && _hasMagic(P.pre)) {
       fs.renameSync(P.pre, P.live);
-      _rm(P.work); _rm(P.old); _rm(P.manifest);
+      _rm(P.work); _rmWorkSidecars(P); _rm(P.old); _rm(P.manifest);
       log('crash mid-swap, live+old gone — restored plaintext from pre-encrypt backup');
       return 'ambiguous-kept-plaintext';
     }
@@ -227,8 +219,9 @@ function resolveState({ dbPath, logger } = {}) {
     return 'ambiguous-kept-plaintext';
   }
 
-  // Crashed at BACKUP / ENCRYPTING / VERIFY — live was NEVER touched. Discard work + attempt, keep live.
-  _rm(P.work); _rm(P.work + '-wal'); _rm(P.work + '-shm'); _rm(P.pre); _rm(P.manifest);
+  // Crashed at BACKUP / ENCRYPTING / VERIFY — live was NEVER touched (rekey only ever wrote P.work).
+  // Discard the work (even a half-rekeyed / garbage copy — it is never opened, only removed), keep live.
+  _rm(P.work); _rmWorkSidecars(P); _rm(P.pre); _rm(P.manifest);
   log(`crash at ${man.phase} — live untouched, discarded the attempt (plaintext preserved)`);
   return 'rolled-back';
 }
