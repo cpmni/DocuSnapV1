@@ -101,12 +101,21 @@ and, with no safe route, that item STOPS** — never improvise around a refusal.
 - **2026-08-30 · The deskew retry never fires on a note-only hold** (keys on engine `_needs_review`); its 5/20 heals
   were a sandbox artefact (empty ref/date). Measure how many live held docs have skew ≥ 0.3° and a note-only hold
   before widening the trigger.
-- **2026-08-30 · Tidy the 15 JS pins broken by the mig-93 default flip** ("OFF (default)" sections now start ON in a
-  fresh in-memory DB): `test_company_key_own_scope`, `test_learning_excluded_readers`, `test_put_back_hold`,
-  `test_rewrite_marker_exclusion`, `test_quiet_lane_*` ×3, `test_reprocess_holds_as_lane`, `test_reviewservice`,
-  `test_type_ambiguity_ripple`, `test_activity_strip`, `test_issuer_clear_not_a_correction` (+ the three crashes
-  `test_document_types_aliases`, `test_workflow_ipc`, `test_workflow_snapshot`, and the `stamp-*` wiring red). One-line
-  fix each (state the OFF arm explicitly after `runMigrations`, as done in `test_role_disagreement_refuse.js`).
+- **2026-08-31 · TWO pins still red after the mig-93 tidy (`24fe2a1` greened 14/16) — NOT seed flips, real source drift,
+  need the OWNER's UI intent (do NOT force green):**
+  - **`test_settings_wiring` — a REAL product gap.** The stamp-placement Settings panel (save default stamp
+    position/size: `stamp-section/preview/preview-box/size/size-val/save/reset/msg`) has full renderer wiring in
+    `settings/renderer.js` (`initStampPlacement`, ~line 2733) but NO markup in `settings/index.html` — so the panel
+    never appears; users can't set the default stamp placement from Settings. It is orphaned-but-GUARDED
+    (`initStampPlacement` early-returns on `!stamp-size`, `stampPreviewPaint`/`stampSetMsg` guard too) → no crash, just
+    a dead feature from the 2026-08-28 stamping UI. Resolve either by adding the panel markup or removing the orphaned
+    renderer code. (The `dbenc-print-sheet` id the test also flags is a FALSE POSITIVE — it's minted at runtime via
+    `sheet.id='dbenc-print-sheet'`; the test's mint regex only matches the `id="..."` attribute form.)
+  - **`test_activity_strip` — 3 source-contract pins lag a renderer UI refactor** (all three features still exist,
+    verified): the put-back panel line is now assembled through a `_full` var (not inline `${_asLineFull(ev)}`); the
+    bulk-approval line + the close-X `.ap-close` restyled `position: absolute` → `static`. Re-anchor the pins to the
+    current source once the owner confirms the r18/r20 UI is the intended state (the `absolute`→`static` change wants a
+    visual eyeball).
 - **2026-08-30 · The total-swap class** (garbage zone read WON, no keyword read, only the re-read reconciles) — 0
   stored exhibits; needs the re-read injected before `_reconciliation_pick_total`. Low priority until a census finds one.
 - **2026-08-30 · Money fold in `_corrob_values_agree`** — no measured target (19/20 records already agree); build only
@@ -144,6 +153,25 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-08-31 · Mig-93 test-pin tidy — 14 of 16 greened (`24fe2a1`, test-only, feature branch, NOT pushed).**
+  Setup-only fixes (no assertion/expected value touched), verified green under E44-as-node. 9 genuine mig-93 seed
+  flips (explicit OFF after `runMigrations`, per `test_role_disagreement_refuse.js`); 4 feature/schema drift
+  (`test_workflow_snapshot`/`_ipc` = 08-28 stamping gate → stub `canStamp`/use `acknowledge`; `test_document_types_
+  aliases` = add `settings` to the v42-sim schema; `test_reviewservice` = `review_group_by_letterhead` OFF arm — its
+  "spawn failed" lines are swallowed logs, not failures); 1 brittle-window widen (`test_issuer_clear` 1600→2600, the
+  `if(corrected_value)`→`clearAnchors` invariant re-verified intact). Stamping gate coverage confirmed still green
+  (`test_stamp_workflow_gate`/`test_workflow`/`test_v1_workflow`). **2 left red (moved to QUEUE above):**
+  `test_settings_wiring` (real orphaned stamp-placement-panel gap + a dbenc false-positive) and `test_activity_strip`
+  (UI-refactor drift). **Repeat if:** a future migration flips another switch's default (re-run the suite, state the
+  new OFF arm in the affected pin); do NOT re-touch the 14 fixed here.
+- **2026-08-31 · Realdoc-605 flip gates for the two DARK arcs — NOT RUNNABLE on this machine (owner-machine only).**
+  `template_locate_role_qualifier` (mig 99) + `template_fragment_containment_yield` (mig 100) need the owner's real
+  learned DB (Castellan taught templates). This machine's live `%APPDATA%\ScanFinder\docusnap.db` is a reset TEST DB
+  (50 confirmed, 2 templates, 0 Castellan); the on-disk backups (1668/416 confirmed) also have 0 Castellan; the
+  605-paper corpus DB the 08-30/31 gates used is not present here. Running OFF==ON here would be vacuous (arcs never
+  fire). **Repeat if:** run on the owner's real DB (`db.backup()` copy, `RR_APP_ENV=1`, `OCR_RENDER_DPI=200`, dedup
+  `RR_IDS`) — the harness is `TESTING/_measure/reslice_20260830/_run_docs.js` (add the two `TEMPLATE_*` env keys to its
+  line-37 whitelist, or flip the DB setting true in the ON-arm copy so `_reconcileEnv` bridges it).
 - **2026-08-31 · DB ENCRYPTION — the BOOT + UI INTEGRATION PASS BUILT (`19432cb`, DARK).** eric-lifecycle
   review + Oracle SIGN-OFF-W/COND (a disjoint `.db-migrate-code` redirect that keeps the downgrade tripwire
   byte-identical). BUILT: the whenReady boot gate (plaintext/open-cached/prompt-code/tripwire/migrate),
