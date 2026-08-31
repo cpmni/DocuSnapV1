@@ -23,14 +23,17 @@ and, with no safe route, that item STOPS** — never improvise around a refusal.
   OCR space ("CAD8 32694"), a partial ladder read, or the short-token inversion? One OCR probe of
   the saved slice settles it and decides whether a read-layer slice 2 (untrimmed containment in
   `_pick_fuller_code`) follows the merge-layer yield.
-- **2026-08-31 · DB-AT-REST ENCRYPTION arc (owner ask: the DB is text-editor readable):** eric+gary
-  designs CONVERGED — better-sqlite3-multiple-ciphers as a package alias, ChaCha20 + raw hexkey,
-  DPAPI-wrapped .db-key + a one-time printed RECOVERY KEY on the final setup card (no daily
-  password — login lives inside the DB), gary's crash-safe migration state machine, slices 0-3
-  (dep swap inert → key infra dark → opt-in migrate → default-on fresh). Prior art: the July spike
-  `docs/designs/STAGE6A_ENCRYPTION_SPIKE_2026-07-27.md` + proven `scripts/spike_key_wrap.js`.
-  Oracle round in flight; residuals to rule: audit-archive sqlite files, merge-backup cipher
-  state, alias-vs-named dep, rekey-vs-export. Production Python never opens the DB (verified).
+- **2026-08-31 · DB-AT-REST ENCRYPTION — OWNER-SUPERVISED slices remain (slice 1 core BUILT DARK `e2a0535`):**
+  `docs/designs/DB_ENCRYPTION_ARC_2026-08-31.md` is the runbook. BUILT + pinned this session:
+  `src/lib/dbKey.js` (fail-closed DPAPI wrap + argon2id recovery key + never-regenerate), `secretStore.
+  encryptAtRestStrict`, the gated `database/index.js` `setEncryptionKey`/hexkey seam (inert), dead
+  `src/database.js` deleted. **NEEDS THE OWNER (destabilising / DB-rewriting — do NOT run autonomously):**
+  slice 0 = the dep alias swap `npm:better-sqlite3-multiple-ciphers@^12` + `npm install` + `install-app-deps`
+  + a PACKAGED build boot + a runtime name/cipher pin (every Electron CLOSED — EBUSY); slice 1 tail =
+  the Unlock/Recover window + `main.js` whenReady `loadKey`→`setEncryptionKey`; slice 2 = the crash-safe
+  hexrekey-on-copy migration + the merge-backup keyed copy (`templates/handler.js:600-607`) + the
+  ritual change (SAME commit); slice 3 = default-on fresh + downgrade tripwire + ceremony. Audit
+  archives keyed last. Production Python never opens the DB (verified).
 - **2026-08-31 · FLIP GATE for `template_locate_role_qualifier` (BUILT DARK `e65959c`, mig 99 OFF):**
   the realdoc-605 gate is the remaining flip prerequisite — a `db.backup()` copy of the live DB,
   `RR_APP_ENV=1` + `OCR_RENDER_DPI=200`, OFF (`TEMPLATE_LOCATE_ROLE_QUALIFIER=0`) vs ON arm on the
@@ -138,6 +141,13 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-08-31 · DB-at-rest encryption SLICE 1 CORE BUILT DARK + pinned (`e2a0535`).** `src/lib/dbKey.js`
+  (32-byte master key, fail-closed DPAPI `.db-key`, argon2id `.db-recovery`, never-regenerate) +
+  `secretStore.encryptAtRestStrict` + the gated `database/index.js` hexkey seam (inert) + dead
+  `src/database.js` deleted. `test_dbkey.js` (17) + `test_secretstore.js` (+2) green. Nothing encrypts
+  yet. Repeat if: NEVER re-build slice 1 — the remaining slices (0 dep swap, 1 tail window+wiring, 2
+  migration, 3 default-on) are OWNER-SUPERVISED per `docs/designs/DB_ENCRYPTION_ARC_2026-08-31.md` (the
+  QUEUE item); do those, don't redo this.
 - **2026-08-31 · TEMPLATE_FRAGMENT_CONTAINMENT_YIELD BUILT DARK + Oracle-cycled + pinned (`2bf7609`, mig 100 OFF).**
   The CAD8 ⊂ CAD832694 merge-yield (Castellan delivery_note_0005) — the sanctioned 08-09 successor. A new
   Stage-1 sibling leg after format-fail-yield adopts a confident keyword read that STRICTLY prefix-contains
