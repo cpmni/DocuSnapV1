@@ -1853,6 +1853,11 @@ def _verification_doubt_note_marks():
         (template_mapper._FT_FALLTHROUGH_NOTE, 'exact'),  # read from the surrounding line, not the taught box
         (_SHAPE_TRIM_NOTE, 'exact'),                      # Stage-4.5 trimmed column-bleed to the learned shape
         (_REREAD_NOTE_HEAD, 'prefix'),                    # Stage-4.5 re-read a garble from the page
+        # DELIBERATELY ABSENT (Oracle C3, TEMPLATE_FRAGMENT_CONTAINMENT_YIELD): the fragment-containment
+        # "taught box read X; label read the longer Y" note must NEVER be a verification-doubt mark — its
+        # review-bound safety is the class-F deny-by-default, and adding it here would let a future
+        # doubt-clear flip silently auto-file a value the taught mapping disputed. Pinned False in
+        # tests/test_fragment_containment_yield.py.
     )
 
 
@@ -2931,6 +2936,42 @@ def _stage05_format_fails(value, key, val_type, field_patterns, validation_patte
 # Sub-flag of TEMPLATE_FORMAT_FAIL_YIELD (see _stage05_format_fails' currency leg). Read at call time so
 # a harness can arm it per process; the call site ANDs it with the live parent.
 _FORMAT_FAIL_STRICT_MONEY_ON = os.environ.get("TEMPLATE_FORMAT_FAIL_YIELD_STRICT_MONEY", "0") != "0"
+
+
+# TEMPLATE_FRAGMENT_CONTAINMENT_YIELD (2026-08-31, the CAD8 ⊂ CAD832694 exhibit, Castellan
+# delivery_note_0005 — the sanctioned successor to the 08-09 Q2 rejection; Oracle SIGN-OFF-W/COND
+# C1-C8, DARK). A taught inline CODE read can be TRUNCATED to a prefix by _read_inline_box's
+# one-token split() on a mid-token OCR space ('CAD8 32694' -> 'CAD8'), then committed as a
+# template_mapping with a false shapewarn (the rb_531 class). The fragment PASSES the hard
+# reference_code pattern, so TEMPLATE_FORMAT_FAIL_YIELD above declines (correct-by-design), and
+# BLIND_GEOM_DISAGREE_RECONCILE is scoped anchor_registration EXACTLY. When a confident keyword read
+# STRICTLY PREFIX-CONTAINS the taught fragment, the merge adopts the fuller read + a NEUTRAL
+# both-values note + cap 88 (review-bound). REF-FAMILY ONLY; NEVER currency/total. Byte-identical OFF.
+TEMPLATE_FRAGMENT_CONTAINMENT_YIELD = os.environ.get("TEMPLATE_FRAGMENT_CONTAINMENT_YIELD", "0") != "0"
+_FRAGMENT_YIELD_KW_FLOOR = 85   # the challenger is a seeded inline/anchored keyword read (base 80 +5
+                                # right-direction = 85); below that is unlabelled-noise territory. The
+                                # challenger ALSO passes the hard reference_code pattern + strictly
+                                # prefix-contains the fragment, so those are the real quality gates.
+
+
+def _fragment_contained(fragment, full) -> bool:
+    """True when `fragment` is a STRICT alphanumeric prefix of `full` (v1 — the proven truncation
+    source is _read_inline_box's split()[0], which can only emit prefixes; the endswith mirror has
+    no exhibit and a digit-tail collision exposure, so it is a pinned trade-off). Separator-blind via
+    template_mapper._code_norm ('CAD-832694' vs 'CAD8'), core >= 4 chars so a 1-3 char stub can't
+    hijack a longer code."""
+    a = template_mapper._code_norm(fragment)
+    b = template_mapper._code_norm(full)
+    return bool(a) and len(a) >= 4 and a != b and b.startswith(a)
+
+
+def _fragment_yield_role_is_currency(key, kw_types) -> bool:
+    """Class-F role test (engine.py:4011-4016; C10/C11 + database/index.js:2314): a taught total box
+    drifted onto a neighbour is a MONEY role error owned by the validator/net-misread checks, never a
+    ref-family containment. total_amount + its role aliases + any currency/money/amount-typed field."""
+    if key == "total_amount" or key in (keyword.ROLE_KEY_ALIASES.get("total_amount") or ()):
+        return True
+    return str((kw_types or {}).get(key) or "").lower() in ("currency", "money", "amount")
 
 
 def _penny_reconciles(total_value, results) -> bool:
@@ -8241,6 +8282,34 @@ class ExtractionEngine:
                                             f"mapping read “{existing.get('value')}”, which doesn't match "
                                             f"this field's expected format. Please check.")}
                         continue
+                # TEMPLATE_FRAGMENT_CONTAINMENT_YIELD (see the flag block): a taught mapping read that is
+                # a STRICT prefix FRAGMENT of a confident keyword read of the SAME code (the CAD8 ⊂
+                # CAD832694 split()[0] truncation) — the fragment is format-VALID, so the format-fail leg
+                # above declined. Adopt the fuller keyword read + a NEUTRAL both-values note (no causal
+                # "cut short" — the same-page-longer-code residual adopts wrong-but-noted, accepted +
+                # named) + cap 88, review-bound. REF-FAMILY ONLY (…_number/_no/_ref/reference), NOT date,
+                # not name-like, NEVER currency/total (role test). The note deliberately stays OUT of
+                # _verification_doubt_note_marks (C3) so a future doubt-clear can't auto-file it. method
+                # stays keyword — never re-grant the taught shape-gate exemption.
+                if (TEMPLATE_FRAGMENT_CONTAINMENT_YIELD
+                        and (existing.get("method") or "").startswith("template_mapping")
+                        and key not in date_field_keys
+                        and (_is_ref_field(key) or key.endswith("_ref"))
+                        and not value_quality.is_name_like_field(key)
+                        and not _fragment_yield_role_is_currency(key, _kw_types)
+                        and data.get("method") in ("keyword", "keyword_override")
+                        and data.get("value")
+                        and (data.get("confidence") or 0) >= _FRAGMENT_YIELD_KW_FLOOR
+                        and not _stage05_format_fails(data.get("value"), key, _kw_types.get(key),
+                                                      field_patterns, _ff_vpats)
+                        and _fragment_contained(existing.get("value"), data.get("value"))):
+                    results[key] = {**data,
+                                    "confidence": min((data.get("confidence") or 0), _CONFLICT_CAP),
+                                    "validation_note": (
+                                        f"The taught box read “{existing.get('value')}”; the field's "
+                                        f"label read the longer “{data.get('value')}”. Kept the longer "
+                                        f"read — please confirm.")}
+                    continue
                 continue
             if (key in date_field_keys and existing
                     and validator.parse_date(existing.get("value")) is not None

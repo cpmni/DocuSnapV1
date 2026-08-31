@@ -174,6 +174,8 @@ const BRIDGES = [
   ['format-fail-strict-money-toggle', 'template_format_fail_yield_strict_money', 'TEMPLATE_FORMAT_FAIL_YIELD_STRICT_MONEY'],
   // 2026-08-31 taught-total role-qualifier locate (reggie + 007 → Oracle; seeded OFF by migration 99).
   ['locate-role-qualifier-toggle', 'template_locate_role_qualifier', 'TEMPLATE_LOCATE_ROLE_QUALIFIER'],
+  // 2026-08-31 fragment-containment yield (the CAD8 ⊂ CAD832694 exhibit → Oracle; seeded OFF by migration 100).
+  ['fragment-containment-toggle', 'template_fragment_containment_yield', 'TEMPLATE_FRAGMENT_CONTAINMENT_YIELD'],
 ];
 const handler = (() => {
   try { return fs.readFileSync(path.join(root, 'src/modules/processing/handler.js'), 'utf8'); }

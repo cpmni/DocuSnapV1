@@ -20,8 +20,12 @@ Load-bearing guarantees:
     regression: a correct-but-shapewarn'd ref now PASSES reference_code, so the carve-out never fires on it);
   • a garbled / adjacent-field / digit-free taught read FAILS (returns True);
   • a clipped-but-code-shaped value ("24511"/"19979") PASSES (format-valid, wrong VALUE) — the accepted
-    read-layer residual; a future dev must not "fix" it by restoring L1 or bolting on a merge-layer
-    fuller-code containment swap (both pinned below);
+    read-layer residual; a future dev must not "fix" it by restoring L1. NOTE (2026-08-31): a merge-layer
+    fuller-code containment swap NOW EXISTS as a SEPARATE sanctioned arc (TEMPLATE_FRAGMENT_CONTAINMENT_
+    YIELD, Oracle SIGN-OFF-W/COND — the CAD8 ⊂ CAD832694 exhibit). It only adopts a confident keyword read
+    that STRICTLY PREFIX-CONTAINS the fragment; these standalone clipped values have no such containing
+    challenger, so THIS helper's verdict is UNCHANGED. This helper is not that leg's gate — see
+    tests/test_fragment_containment_yield.py for the merge-leg pin (which carries its own mechanical guard);
   • L3 must NOT false-fire on legitimate regional/credit amounts (-£662.18 / £-662.18 / continental / swiss).
 
 Run: py -3.12 python_backend/tests/test_stage05_format_yield.py
@@ -75,7 +79,9 @@ check("ANTI-REGRESSION PIN: a valid ref 'INV-2026-001' PASSES — a _shapewarn t
       FF("INV-2026-001", "invoice_number", "alphanumeric", FP, VP) is False)
 
 # ── ACCEPTED READ-LAYER RESIDUAL: clipped-but-code-shaped values are format-VALID -> NOT caught ──
-# These stop a future dev from "fixing po_ref" by restoring L1 or adding a merge-layer fuller-code swap:
+# These pin the HELPER's verdict (format-valid -> PASSES). The sanctioned merge-layer containment arc
+# (TEMPLATE_FRAGMENT_CONTAINMENT_YIELD) does NOT change it: it fires only on a confident keyword read that
+# strictly prefix-CONTAINS the fragment, which these standalone clipped values do not have.
 check("ACCEPTED-TRADE-OFF PIN: clipped 'PO-'->'19979' PASSES (format-valid wrong value; read-layer)",
       FF("19979", "po_ref", "alphanumeric", FP, VP) is False)
 check("ACCEPTED-TRADE-OFF PIN: clipped '24511' PASSES (format-valid wrong value; read-layer)",

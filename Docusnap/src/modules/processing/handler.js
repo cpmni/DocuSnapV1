@@ -493,6 +493,14 @@ function _reconcileEnv(db) {
     if (env.TEMPLATE_LOCATE_ROLE_QUALIFIER == null && learning.getSetting(db, 'template_locate_role_qualifier', 'false') === 'true') {
       env.TEMPLATE_LOCATE_ROLE_QUALIFIER = '1';
     }
+    // FRAGMENT-CONTAINMENT YIELD (2026-08-31, the CAD8 ⊂ CAD832694 exhibit → Oracle; DARK): at the Stage-1
+    //   merge, a taught template_mapping reference read that is a STRICT alphanumeric-prefix FRAGMENT of a
+    //   confident (≥85), format-passing keyword read of the SAME code (the _read_inline_box split() truncation)
+    //   yields to the fuller keyword value + a neutral both-values note, capped 88 (review-bound). REF-FAMILY
+    //   only, NEVER currency/total; the note is never a verification-doubt mark. Env wins both ways for arms.
+    if (env.TEMPLATE_FRAGMENT_CONTAINMENT_YIELD == null && learning.getSetting(db, 'template_fragment_containment_yield', 'false') === 'true') {
+      env.TEMPLATE_FRAGMENT_CONTAINMENT_YIELD = '1';
+    }
     // STRICT MONEY sub-flag of TEMPLATE_FORMAT_FAIL_YIELD (2026-08-30, reggie; DARK): the yield's currency
     //   leg becomes the whole-string `money_strict_shape` (the legacy leg passes '£9 32632.76' as 9.0).
     //   AND-ed with the parent HERE — a sub-flag armed without its parent bridges nothing.

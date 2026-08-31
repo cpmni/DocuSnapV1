@@ -888,6 +888,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Keep the whole reference when a taught box read only its start</div>
+                <div class="threshold-sub">When you&rsquo;ve taught the app where a reference or code sits and the taught box read only the first part of it (a code like &ldquo;CAD832694&rdquo; can be read as just &ldquo;CAD8&rdquo; if there&rsquo;s a stray gap), but the app also read the full code from its printed label, the app keeps the longer, complete reading and marks it for you to confirm. Only for reference/code fields, never amounts. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="fragment-containment-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Straighten a tilted page and read it again when a document needs checking</div>
                 <div class="threshold-sub">When a document is already going to Review and its page is tilted by even a fraction of a degree, ScanFinder re-reads it on a straightened copy and keeps the straightened reading only if it comes out clearer — otherwise the original reading stays. It never files anything by itself from a straightened read, and it only ever touches documents that were already going to Review, so it can't change a document that was filing itself cleanly. Adds a little time on tilted scans. Off by default.</div>
               </div>

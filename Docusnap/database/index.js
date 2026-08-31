@@ -2340,6 +2340,19 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 99 (template_locate_role_qualifier): ${e.message}`); }
   }
 
+  // ── migration 100: the fragment-containment yield seeded OFF (DARK — the CAD8 ⊂ CAD832694 exhibit,
+  //    Castellan delivery_note_0005; Oracle SIGN-OFF-W/COND 2026-08-31, the sanctioned successor to the
+  //    08-09 Q2 rejection. Flip only after its own pins + realdoc-605 OFF byte-identical / ON M=7 unchanged
+  //    + the Castellan five fixtures + the clipped-code Hard Set class.) ──
+  if (!applied.has(100)) {
+    try {
+      const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      const n = ins.run('template_fragment_containment_yield', 'false').changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (100)').run();
+      console.log(`JS migration 100 applied: fragment-containment yield seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 100 (template_fragment_containment_yield): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
