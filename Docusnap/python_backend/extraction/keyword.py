@@ -2031,10 +2031,14 @@ def _search_for_label(lines: list[str], label: str,
     # bank so the arm can PROBE a candidate before adopting it), scalar path only for now (the
     # LIST collect path keeps its own caption machinery). Inline env read (the :2014 idiom) so a
     # test can flip it without a module reload. OFF -> the arm below is never entered.
+    # Oracle C2 (2026-08-31): ref/date ONLY — money labels ship right-ONLY by authorial intent
+    # (a bare "Total" is the last column header of every line-items table; boxed totals are their
+    # own future slice with a header guard), and no 'number' bank exists. The arm additionally
+    # honours the label's own directions at the fire site ('below' must be allowed).
     _cell_below = (os.environ.get('KEYWORD_CELL_BELOW', '0') != '0'
                    and not collect
                    and validation is not None
-                   and val_type in ('alphanumeric', 'date', 'currency', 'number'))
+                   and val_type in ('alphanumeric', 'date'))
     for i, line in enumerate(lines):
         line_lower = line.lower()
         m = pattern.search(line_lower)
@@ -2093,17 +2097,32 @@ def _search_for_label(lines: list[str], label: str,
         #      leading-digit class must not gain a new door);
         #   G5 the value line must CARRY column k (a missing cell shifts segments left — refuse,
         #      never adopt a neighbour's value); window = the NEXT line only, never past a blank.
-        if _cell_below:
+        # Oracle C1 (2026-08-31): three trigger discriminators, so the arm fires ONLY on a real
+        # boxed meta row and never touches today's working reads —
+        #   (i)  >=2 column segments on the caption line (a LONE stacked caption stays on the
+        #        shipped below leg at its own base confidence — never downgraded to 85);
+        #   (ii) NO digit anywhere after the label on THIS line (a digit means the value is
+        #        same-line and the right leg owns it — kills the wide-gap pre-emption AND the
+        #        residue/currency-code-skip pre-emptions);
+        #   (iii) the value line must carry EXACTLY as many segments as the caption line (an
+        #        empty cell leaves no trace in the rebuilt text and shifts every later value
+        #        left — same-type steals pass the banks, so alignment is all-or-nothing).
+        if _cell_below and "below" in directions:
             segs_l = _col_segments(line)
             _k = next((idx for idx, (s, e, _t) in enumerate(segs_l) if s <= m.start() < e), None)
             _tail = line[m.end():segs_l[_k][1]] if _k is not None else None
-            if _tail is not None and re.fullmatch(r'[\s:|\-–.#]*', _tail):
+            if (_tail is not None
+                    and re.fullmatch(r'[\s:|\-–.#]*', _tail)
+                    and len(segs_l) >= 2
+                    and not re.search(r'\d', line[m.end():])):
                 _j = i + 1
                 _cand = None
                 if _j < len(lines) and lines[_j].strip():
                     segs_v = _col_segments(lines[_j])
-                    if _k < len(segs_v):
-                        _cand = segs_v[_k][2].strip()
+                    if len(segs_v) == len(segs_l):
+                        # Oracle C3: bare the candidate of cell-border/separator glyphs at BOTH
+                        # ends before any guard — "17-03-2025 |" must not slip G4 on a border.
+                        _cand = segs_v[_k][2].strip().strip(' :|-–.#,;')
                 if _cand:
                     _ok = (not _is_label_line(_cand)
                            and not re.search(r'[A-Za-z]{2,}\s*:', _cand)
@@ -2114,7 +2133,7 @@ def _search_for_label(lines: list[str], label: str,
                         for _p in validation.get('date') or []:
                             _dm = re.search(_p, _cand, re.IGNORECASE)
                             if _dm and _dm.group(0).strip() == _cand:
-                                _ok = False          # G4: a date is not a reference/amount
+                                _ok = False          # G4: a date is not a reference
                                 break
                     if _ok:
                         if trace:

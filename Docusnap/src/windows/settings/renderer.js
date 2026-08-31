@@ -1030,6 +1030,8 @@ for (const [id, keys] of [['template-fixed-supplier-toggle', ['template_fixed_ne
 // three switches the owner is actively evaluating (teach-label-keyword, list-field-scan,
 // hidden-field-drop) — migrate those behind the gate once settled.
 const DEV_SWITCH_IDS = [
+  // 2026-08-31 DARK arcs (Oracle C5: dev-gated until their flips)
+  'keyword-cell-below-toggle', 'money-sign-parens-toggle', 'money-sign-cr-toggle',
   'right-grow-toggle', 'left-clamp-toggle', 'prefix-garble-toggle', 'crosscheck-reconcile-toggle',
   'universal-verify-toggle', 'edge-clean-toggle', 'word-snap-toggle', 'struct-code-read-toggle',
   'warm-ocr-toggle', 'parallel-reprocess-toggle',
