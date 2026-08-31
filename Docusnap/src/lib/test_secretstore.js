@@ -48,6 +48,16 @@ let threw = false;
 try { S.decryptAtRest('ENC1:AAAA'); } catch { threw = true; }
 check('decryptAtRest throws on an encrypted value when safeStorage is unavailable', threw === true);
 
+// ── FAIL-CLOSED strict (the DB-key path): unavailable ⇒ THROW, never write plaintext ──
+S.__setSafeStorage(null);
+let strictThrew = false;
+try { S.encryptAtRestStrict('db-master-key'); } catch { strictThrew = true; }
+check('encryptAtRestStrict THROWS when unavailable (never a plaintext DB key)', strictThrew === true);
+S.__setSafeStorage(fakeSS);
+const strictEnc = S.encryptAtRestStrict('db-master-key');
+check('encryptAtRestStrict encrypts (ENC1:) when available + round-trips',
+      strictEnc.startsWith('ENC1:') && S.decryptAtRest(strictEnc) === 'db-master-key');
+
 // restore the real safeStorage source
 S.__setSafeStorage(undefined);
 

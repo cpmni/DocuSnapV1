@@ -5,6 +5,18 @@ const fs   = require('fs');
 const { app } = require('electron');
 
 let _db = null;
+let _encryptionKey = null;   // Buffer(32) | null — set by main BEFORE the first open() when the DB is encrypted
+
+// Whole-DB-at-rest encryption (2026-08-31, DARK). main unwraps the DPAPI-wrapped master key (src/lib/
+// dbKey.js) and calls this BEFORE the first getDb()/open(). Until then the key is null and open() is
+// byte-identical (plaintext) — the current install path is untouched. A 32-byte Buffer is required;
+// anything else is a programmer error that must fail LOUD rather than silently open plaintext.
+function setEncryptionKey(keyBuf) {
+  if (keyBuf != null && (!Buffer.isBuffer(keyBuf) || keyBuf.length !== 32)) {
+    throw new Error('setEncryptionKey: expected a 32-byte Buffer');
+  }
+  _encryptionKey = keyBuf || null;
+}
 
 // ── Open ──────────────────────────────────────────────────────────────────────
 
@@ -14,6 +26,13 @@ function open() {
   const dbDir    = app.getPath('userData');
   const dbPath   = path.join(dbDir, 'docusnap.db');
   _db = new Database(dbPath);
+  // The raw ChaCha20 hexkey MUST precede every other pragma/read (multiple-ciphers contract). Issued
+  // ONLY when a key was set — a plaintext install never reaches this line, so it is byte-identical.
+  // With the multiple-ciphers build absent this pragma would throw, which is the intended loud failure
+  // for a mis-provisioned encrypted install (never a silent plaintext open).
+  if (_encryptionKey) {
+    _db.pragma(`hexkey = "${_encryptionKey.toString('hex')}"`);
+  }
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');
   // Audit M1 — "deletion isn't erasure". Without secure_delete, a deleted row's pages
@@ -2666,4 +2685,4 @@ function seedDefaults(db) {
   docTypes.seedBuiltInTypes(db);
 }
 
-module.exports = { open, runMigrations };
+module.exports = { open, runMigrations, setEncryptionKey };

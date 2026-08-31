@@ -56,6 +56,21 @@ function encryptAtRest(plaintext, { logger } = {}) {
   }
 }
 
+// FAIL-CLOSED variant (2026-08-31, the DB-at-rest key). The DB master key INVERTS auditKey's
+// availability-over-secrecy calculus: a plaintext key file leaves the whole DB effectively
+// unencrypted, so we must NEVER fall back to plaintext. Throws when OS encryption is unavailable
+// or the encrypt itself fails — the caller (dbKey) must abort the write, never persist a bare key.
+function encryptAtRestStrict(plaintext) {
+  const s = String(plaintext == null ? '' : plaintext);
+  if (!available()) {
+    throw new Error('secretStore: OS encryption unavailable — refusing to write a plaintext DB key (fail-closed)');
+  }
+  try { return MAGIC + _ss().encryptString(s).toString('base64'); }
+  catch (e) {
+    throw new Error('secretStore: encrypt failed — refusing a plaintext DB key write (fail-closed): ' + (e && e.message));
+  }
+}
+
 function decryptAtRest(stored) {
   const s = String(stored == null ? '' : stored);
   if (!s.startsWith(MAGIC)) return s;   // legacy plaintext — pass through unchanged
@@ -69,7 +84,7 @@ function decryptAtRest(stored) {
 function __setSafeStorage(x) { _override = x; }
 
 module.exports = {
-  MAGIC, available, isEncrypted, encryptAtRest, decryptAtRest,
+  MAGIC, available, isEncrypted, encryptAtRest, encryptAtRestStrict, decryptAtRest,
   encrypt: encryptAtRest, decrypt: decryptAtRest,   // aliases matching the injected `secret` shape
   __setSafeStorage,
 };
