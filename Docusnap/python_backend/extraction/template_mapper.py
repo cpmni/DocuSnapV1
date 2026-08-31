@@ -348,6 +348,18 @@ _DATE_CLIP_NUMERIC = re.compile(r'(?<!\d)(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})
 # Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_label_digit_exact.py.
 _LABEL_DIGIT_EXACT_ON = os.environ.get('TEMPLATE_LABEL_DIGIT_EXACT', '0') != '0'
 
+# TEMPLATE_LOCATE_ROLE_QUALIFIER (2026-08-31, reggie stop-vocabulary + 007 placement → Oracle
+# SIGN-OFF-W/COND; DARK). A taught bare-"Total" mapping's `_label_score` scores a boundary-aligned
+# "total" 1.0 — and a SPACE is a boundary, so "Net Total" / "Goods Total" hit at the SAME 1.0 as a
+# clean grand "Total". The totals block genuinely floats per document (two taught rows ~0.035
+# apart), so the exact-score proximity tie-break (or the confirm_value carriers override fed a
+# drifted rigid Net read) locks the WRONG row — the Net line stamped as the invoice total. When
+# armed, `_locate_anchor`/`_locate_in_text_lines` DEMOTE (never veto) role-qualified "Total"
+# occurrences using keyword._total_role_collision verbatim, preferring a clean grand total; an
+# all-role-qualified LOCAL window reports not-found so the caller's page-wide leg runs, and an
+# all-role-qualified PAGE keeps today's pick (byte-identical). Off = byte-identical.
+_LOCATE_ROLE_QUALIFIER_ON = os.environ.get('TEMPLATE_LOCATE_ROLE_QUALIFIER', '0') != '0'
+
 
 # Slice A — agree-branch EDGE-DEBRIS heal (reggie+gary → Oracle SIGN-OFF-W/COND, fork RULED
 # reggie/witness-equality, 2026-08-03 evening — docs/oracle_log.md). The label-tail bleed class:
@@ -3384,6 +3396,42 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
     return {"result": r}
 
 
+# ── Role-qualifier demotion for a bare "Total" locate (TEMPLATE_LOCATE_ROLE_QUALIFIER) ──────────
+# Shared by _locate_anchor (OCR) AND anchor._locate_in_text_lines (born-digital) so the two paths
+# can never diverge. All pure — independently unit-tested.
+_BARE_TOTAL_RE = re.compile(r'(?<![a-z0-9])total(?![a-z0-9])')
+
+
+def _is_bare_total_needle(needle):
+    """The demotion arms ONLY for a needle that is the ambiguous bare "Total" caption, after the
+    SAME edge-caption-punctuation strip _label_score applies (so a taught "Total:" arms). A specific
+    label ("Total Amount", "Grand Total", "Invoice Total") is unambiguous and keeps today's pick."""
+    if not needle:
+        return False
+    core = re.sub(r'^[^a-z0-9#]+|[^a-z0-9#]+$', '', needle.lower())
+    return core == 'total'
+
+
+def _total_line_is_clean(text):
+    """True when a line carries at least one boundary-aligned bare "total" occurrence and NONE of
+    them is role-qualified (a Sub/Net/Goods/Gross Total, or a Total VAT/Tax/Discount/…). REUSES
+    keyword._total_role_collision VERBATIM (the shipped stop-vocabulary) so the locate's role logic
+    can never drift from keyword's own bare-"Total" selection. A line with no boundary-aligned
+    "total" (matched only via ratio()) cannot vouch as a clean total → False."""
+    from extraction import keyword as _kw
+    hay = _normalise(text)
+    hits = list(_BARE_TOTAL_RE.finditer(hay))
+    if not hits:
+        return False
+    return not any(_kw._total_role_collision(hay, m.start(), m.end()) for m in hits)
+
+
+def _prefer_clean_totals(candidates):
+    """From a list of (score, line) candidates, the subset whose line is a clean grand total (see
+    _total_line_is_clean). DEMOTE never veto — the caller falls back to the full set when empty."""
+    return [sl for sl in candidates if _total_line_is_clean(sl[1].get("text", ""))]
+
+
 def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
                    min_search=0.0, capture=None, line_cache=None, confirm_value=None):
     """
@@ -3458,7 +3506,8 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
         return math.hypot(cx - acx, cy - acy)
 
     floor = max(best_score - _SCORE_TIE_EPSILON, (_FUZZY_MATCH_THRESHOLD if needle else 0.0))
-    candidates = [(s, ln) for s, ln in scored if s >= floor]
+    floor_set = [(s, ln) for s, ln in scored if s >= floor]
+    candidates = floor_set
     # VALUE-AGREEMENT: when the caller passes a trustworthy rigid read (confirm_value),
     # prefer the label occurrence whose LINE actually carries that value — even a
     # LOWER-scoring one. A section header "Item Information" scores 1.0 but its
@@ -3474,6 +3523,25 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
                     if s >= _FUZZY_MATCH_THRESHOLD and cv and cv in _normalise(ln.get("text", ""))]
         if carriers:
             candidates = carriers
+    # ROLE-QUALIFIER DEMOTION (TEMPLATE_LOCATE_ROLE_QUALIFIER) — bare "Total" only. Prefer a clean
+    # grand total over a role-qualified one (Net/Sub/Goods Total, Total VAT). DEMOTE never veto.
+    if _LOCATE_ROLE_QUALIFIER_ON and needle and _is_bare_total_needle(needle):
+        clean = _prefer_clean_totals(candidates)
+        if clean:
+            candidates = clean
+        else:
+            # The current set is ALL role-qualified — possibly because the confirm_value carriers
+            # override narrowed us onto the drifted rigid read's OWN Net line. Fall back to the
+            # clean lines of the floor set, ignoring the value-agreement override (Oracle: an armed
+            # needle's all-qualified carrier set must not steal the Net line). If the floor set is
+            # all-qualified too: a LOCAL search reports not-found so the caller's page-wide leg runs;
+            # a PAGE-WIDE search keeps today's pick (an all-"Net Total" page still reads its total).
+            floor_clean = _prefer_clean_totals(floor_set)
+            if floor_clean:
+                candidates = floor_clean
+            elif eff < 1.0:
+                return None
+            # else page-wide all-qualified -> candidates unchanged (byte-identical)
     chosen_score, best = min(candidates, key=lambda sl: (_page_dist(sl[1]), -sl[0]))
 
     # Recover the matched LABEL's own sub-box from the line's word boxes, plus any

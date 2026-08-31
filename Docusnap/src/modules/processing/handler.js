@@ -484,6 +484,15 @@ function _reconcileEnv(db) {
     if (env.BUYER_ISSUED_CONVENTION_NOTE == null && learning.getSetting(db, 'buyer_issued_convention_note', 'false') === 'true') {
       env.BUYER_ISSUED_CONVENTION_NOTE = '1';
     }
+    // LOCATE ROLE-QUALIFIER (2026-08-31, reggie stop-vocabulary + 007 placement → Oracle; DARK): a taught
+    //   bare "Total" mapping's locate (template_mapper._locate_anchor + anchor._locate_in_text_lines) DEMOTES
+    //   role-qualified "Total" occurrences (Net/Sub/Goods Total, Total VAT…) using keyword._total_role_collision,
+    //   preferring a clean grand total so a floated totals block can't steal the Net line onto the invoice
+    //   total. An all-qualified LOCAL window falls through to the page-wide leg; an all-qualified page keeps
+    //   today's pick. Env wins both ways for harness arms.
+    if (env.TEMPLATE_LOCATE_ROLE_QUALIFIER == null && learning.getSetting(db, 'template_locate_role_qualifier', 'false') === 'true') {
+      env.TEMPLATE_LOCATE_ROLE_QUALIFIER = '1';
+    }
     // STRICT MONEY sub-flag of TEMPLATE_FORMAT_FAIL_YIELD (2026-08-30, reggie; DARK): the yield's currency
     //   leg becomes the whole-string `money_strict_shape` (the legacy leg passes '£9 32632.76' as 9.0).
     //   AND-ed with the parent HERE — a sub-flag armed without its parent bridges nothing.

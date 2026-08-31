@@ -2326,6 +2326,20 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 98 (08-31 arcs ON): ${e.message}`); }
   }
 
+  // ── migration 99: the taught-total occurrence-selection fix seeded OFF (DARK — reggie stop-vocabulary
+  //    + 007 placement → Oracle SIGN-OFF-W/COND 2026-08-31; the Net-Total locate steal, owner exhibit
+  //    Castellan credit_note_0008. Flip only AFTER the sweep/discount arcs and its own gates: the
+  //    Castellan/divergence/carriers/twin/vocab pins, Hard Set dual-rendition classes, and realdoc-605
+  //    OFF==ON. Never justified by flipping strict-money.) ──
+  if (!applied.has(99)) {
+    try {
+      const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      const n = ins.run('template_locate_role_qualifier', 'false').changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (99)').run();
+      console.log(`JS migration 99 applied: taught-total role-qualifier locate seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 99 (template_locate_role_qualifier): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

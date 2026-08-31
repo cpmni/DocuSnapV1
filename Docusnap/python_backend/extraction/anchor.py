@@ -2234,7 +2234,8 @@ def _locate_in_text_lines(text_lines, lbox, anchor_label, confirm_value=None):
         cy = ln["y_norm"] + ln["h_norm"] / 2.0
         return math.hypot(cx - acx, cy - acy)
 
-    _tied = [(s, ln) for s, ln in cands if s >= floor]
+    _floor_tied = [(s, ln) for s, ln in cands if s >= floor]
+    _tied = _floor_tied
     # VALUE-AGREEMENT (see template_mapper._locate_anchor): prefer a label occurrence
     # whose line carries the trustworthy rigid read, even if lower-scoring.
     if confirm_value:
@@ -2243,6 +2244,26 @@ def _locate_in_text_lines(text_lines, lbox, anchor_label, confirm_value=None):
                     if s >= tm._FUZZY_MATCH_THRESHOLD and cv and cv in tm._normalise(ln.get("text", ""))]
         if carriers:
             _tied = carriers
+    # ROLE-QUALIFIER DEMOTION (TEMPLATE_LOCATE_ROLE_QUALIFIER) — the born-digital twin of the OCR
+    # path. Prefer a clean grand total over a role-qualified "Total" line. The OCR caller has a
+    # page-wide leg (_locate_for_relocation); born-digital does not, so when the row BAND is all
+    # role-qualified we run the page-wide leg HERE — re-scan the WHOLE text layer for a clean total.
+    if tm._LOCATE_ROLE_QUALIFIER_ON and tm._is_bare_total_needle(needle):
+        clean = tm._prefer_clean_totals(_tied)
+        if clean:
+            _tied = clean
+        else:
+            band_clean = tm._prefer_clean_totals(_floor_tied)
+            if band_clean:
+                _tied = band_clean
+            else:
+                pagewide = [(tm._label_score(needle, tm._normalise(ln.get("text", ""))), ln)
+                            for ln in text_lines]
+                pagewide = [(s, ln) for s, ln in pagewide if s >= tm._FUZZY_MATCH_THRESHOLD]
+                pw_clean = tm._prefer_clean_totals(pagewide)
+                if pw_clean:
+                    _tied = pw_clean
+                # else all-qualified page-wide too -> keep today's band pick (DEMOTE never veto)
     chosen_score, best = min(_tied, key=lambda sl: (_dist(sl[1]), -sl[0]))
 
     label_box = None

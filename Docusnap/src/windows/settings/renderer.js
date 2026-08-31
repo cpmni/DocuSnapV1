@@ -739,6 +739,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Buyer-issued convention note (2026-08-31, gary design): a learned
                          // buyer fill on a PO needs same-type evidence, else a both-parties note.
                          ['buyer-issued-convention-toggle', 'buyer_issued_convention_note'],
+                         // Taught-total role-qualifier locate (2026-08-31, reggie + 007 → Oracle): a
+                         // taught bare-"Total" mapping prefers a clean grand total over a "Net Total".
+                         ['locate-role-qualifier-toggle', 'template_locate_role_qualifier'],
                          // Barcodes (2026-08-26, barry → gary design): the page inventory and the field type.
                          ['barcode-inventory-toggle', 'barcode_inventory'],
                          ['barcode-field-toggle', 'barcode_field'],
@@ -1035,7 +1038,7 @@ for (const [id, keys] of [['template-fixed-supplier-toggle', ['template_fixed_ne
 const DEV_SWITCH_IDS = [
   // 2026-08-31 DARK arcs (Oracle C5: dev-gated until their flips)
   'keyword-cell-below-toggle', 'money-sign-parens-toggle', 'money-sign-cr-toggle',
-  'buyer-issued-convention-toggle',
+  'buyer-issued-convention-toggle', 'locate-role-qualifier-toggle',
   'right-grow-toggle', 'left-clamp-toggle', 'prefix-garble-toggle', 'crosscheck-reconcile-toggle',
   'universal-verify-toggle', 'edge-clean-toggle', 'word-snap-toggle', 'struct-code-read-toggle',
   'warm-ocr-toggle', 'parallel-reprocess-toggle',
