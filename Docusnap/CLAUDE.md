@@ -21,7 +21,30 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-01 (rollout hardening + M=7 resolved): **READ `HANDOVER_2026-09-01.md` FIRST**, then
+## ⏭ LATEST — 2026-09-01 EVENING (rollout day 2 + two gated build plans): **READ `HANDOVER_2026-09-01_EVENING.md`
+FIRST — the fresh session's JOB is to BUILD PLAN A then PLAN B from it.** Branch `feat/teach-side-overnight`,
+**HEAD = origin = `d629b07`, tree clean, ALL PUSHED.** Installer `dist\ScanFinder Setup 2.0.0-r20260901-1838-29adce2.exe`
+(signed; owner rolling out). **⚠ 3 orphaned electron.exe alive (9223 down) — owner must close before any build (EBUSY).**
+**SHIPPED 09-01 pm:** date fix (`26d9960` — filing.parseDate now accepts FULL month names; "July 28, 2026" files) ·
+Help button in the main nav under Settings (`15c5386`+`1fb752c`, Chris-validated) · THREE features built DARK (mig 102)
+then **DEFAULTED ON (mig 103)**: `quiet_reread_silent`, `sweep_inview_countdown` (key-aware `presence.onlyViewerIs`,
+countdown+Stop, put-back on Stop), `accept_field_chars_enabled` (per-type charset allowlist + `extractions.
+charset_flag_meta` {chars,precap} confidence restore — the fc_delta lesson; ASCII-punct-only accept = homoglyph-safe) ·
+toggle-audit r2 (8 more reading-internals SFDEV-hidden; 22 visible) + "Scan Finder" copy fixes · **DESKEW_CORROB census
+GATE MET** (4 GT-verified heals, M=0 — `docs/DESKEW_CORROB_CENSUS_2026-09-01.md`; flip = owner) · **comprehensive error
+logging** (`20eca32` — stage/type/traceback→diaglog, always-on log shape-only, leak fixed) · **watch parity**: DPI fix
+(watch read at a DIFFERENT DPI than import!), RAM/OMP caps, spawn-crash handler (`5b06132`) + **watch separation DARK
+`watch_separate_enabled`** (`29adce2` — splits in the watch folder over the stable set, `_separating` poll-block,
+pre-marked segments = re-import-loop guard pinned, fresh splits HELD; stability debounce untouched; the literal
+watch/import code-merge DEFERRED per Oracle — separate `_watchBatchActive` counter, never co-mingle `_currentBatchProcs`)
+· **Chris round on the build: YES** (`docs/CHRIS_FULL_APP_REVIEW_2026-09-01.md`; warnings all truthful) · 4 Oracle
+verdicts logged (`docs/oracle_log.md` 2026-09-01). **⏭ THE QUEUED JOB: PLAN A (Chris fixes — issuer-ripple teardown +
+supplier_name-only teach-write guard; eric+Oracle C1-C8, C1=server refusal reads the kill switch itself, C2=supplier_name
+ONLY) then PLAN B (Quick Reprocess — `ocr_recipe` stamp + `ocrCacheUsable` + imageless `--reextract` shard + merge
+guards; gary+Oracle C1-C7 BINDING, C1=a contested keep is EXCLUDED from consent/auto-accept, C3=the Quick-batch Full
+fallback omits cached text to earn stamps, C4=preserve prior overall on kept rows; DARK `quick_reprocess_enabled`;
+mig 104 next). Full specs in the EVENING handover.** Prior:
+## (previous) 2026-09-01 (rollout hardening + M=7 resolved): **READ `HANDOVER_2026-09-01.md` FIRST**, then
 `HANDOVER_2026-08-31_NIGHT2.md`. Branch `feat/teach-side-overnight`, **HEAD = origin = `3690e39` — ALL PUSHED**, tree
 clean; nothing running. Installer `dist\ScanFinder Setup 2.0.0-r20260901-0830-11c1598.exe` (signed; owner testing for a
 customer rollout). **NIGHT2 + 09-01 span:** (1) **DESKEW_CORROB_AUTOFILE arc BUILT DARK** (`aa61350`, Oracle C1-C7): a
