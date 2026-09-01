@@ -229,6 +229,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   renameFieldValue:            (scope)   => ipcRenderer.invoke('rename-field-value', scope),
   acceptNameValue:             (p)       => ipcRenderer.invoke('accept-name-value', p),
   acceptIssuer:                (p)       => ipcRenderer.invoke('accept-issuer', p),
+  acceptFieldChars:            (p)       => ipcRenderer.invoke('accept-field-chars', p),
   resolveIssuer:               (p)       => ipcRenderer.invoke('resolve-issuer', p),
   // Tell main the render widget's keyboard focus is now SUSPECT (call right after a native
   // confirm()/alert() returns) so the next text-field press does the real blurWebView() repair
@@ -281,6 +282,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   classFixResolveAsk:   (payload)                                  => ipcRenderer.invoke('class-fix-resolve-ask', payload),
   sweepScopeAccept:     (supplier, typeSlug, accepts, untickedIds) => ipcRenderer.invoke('sweep-scope-accept', { supplier, typeSlug, accepts, untickedIds }),
   sweepScopeUndo:       (docIds)                                   => ipcRenderer.invoke('sweep-scope-undo', { docIds }),
+  sweepInviewFile:      (docId, fingerprint) => ipcRenderer.invoke('sweep-inview-file', { docId, fingerprint }),   // in-view countdown expiry
+  sweepInviewHold:      (docId)              => ipcRenderer.invoke('sweep-inview-hold', { docId }),                // in-view countdown STOP
   notifyReviewComplete:        ()        => ipcRenderer.send('notify-review-complete'),
 
   // ── Zone OCR & learning ──────────────────────────────────────────────────────
@@ -511,6 +514,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   onWatchProgress:     (cb) => ipcRenderer.on('watch-progress',   (_e, m) => cb(m)),
   onDocAutoFiled:      (cb) => ipcRenderer.on('doc-auto-filed',   (_e, info) => cb(info)),
   onScopeAutoFiled:    (cb) => ipcRenderer.on('scope-auto-filed', (_e, info) => cb(info)),   // Slice 1: a sender's ready docs filed by itself
+  onSweepInviewEligible: (cb) => ipcRenderer.on('sweep-inview-eligible', (_e, ev) => cb(ev)),   // in-view auto-file countdown offer (2026-09-01)
   // B1 (activity strip): the review activity ledger — event-id addressed, the renderer never sends doc ids
   getReviewEvents:       ()          => ipcRenderer.invoke('get-review-events'),
   onReviewEvent:         (cb)        => ipcRenderer.on('review-event', (_e, ev) => cb(ev)),

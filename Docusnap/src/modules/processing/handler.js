@@ -1665,6 +1665,17 @@ function buildTrainingArgs(db, configPath, logger = null) {
   try { allAcceptedIssuers = learning.getAcceptedIssuers(db); }
   catch (e) { logger?.warn?.(`[training] accepted issuers load failed: ${e && e.message}`); }
   const acceptedIssuersFile = writeTempJson('acceptedissuers', allAcceptedIssuers);
+  // Operator-accepted CHARSET allowlist (Review "These characters are fine" button, 2026-09-01):
+  // per field-TYPE extra chars the operator vouched are legitimate, so the Stage-4.5 charset flag
+  // never fires for them again. {} by default → the engine subtracts nothing (byte-identical flag).
+  // Gated on accept_field_chars_enabled so it stays DARK until the rollout flip. Guarded for older DBs.
+  let allAcceptedChars = {};
+  try {
+    const _acOn = process.env.ACCEPT_FIELD_CHARS === '1'
+      || (process.env.ACCEPT_FIELD_CHARS !== '0' && learning.getSetting(db, 'accept_field_chars_enabled', 'false') === 'true');
+    if (_acOn) allAcceptedChars = learning.getAcceptedFieldChars(db);
+  } catch (e) { logger?.warn?.(`[training] accepted chars load failed: ${e && e.message}`); }
+  const acceptedCharsFile = writeTempJson('acceptedchars', allAcceptedChars);
   // Supplier hard-identifier registry (slice 1b MATCH, DARK `identifier_registry`): the learned
   // {supplier,kind,value_norm} rows the engine reverse-looks-up to SUGGEST an issuer from a matched
   // VAT/company number. Loaded ONLY when armed — an un-armed install writes [] → the engine no-ops
@@ -1736,6 +1747,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
     '--field-rules-file', fieldRulesFile,
     '--accepted-names-file', acceptedNamesFile,
     '--accepted-issuers-file', acceptedIssuersFile,
+    '--accepted-chars-file', acceptedCharsFile,
     '--identifiers-file', identifiersFile,
     '--config-file',    cfgFile,
   ];
@@ -1771,7 +1783,7 @@ function buildTrainingArgs(db, configPath, logger = null) {
 
   return {
     args,
-    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile, fieldRulesFile, acceptedNamesFile, acceptedIssuersFile, identifiersFile],
+    tempFiles: [fieldsFile, hintsFile, anchorsFile, logosFile, dtFile, formatsFile, templatesFile, overridesFile, fieldRulesFile, acceptedNamesFile, acceptedIssuersFile, acceptedCharsFile, identifiersFile],
   };
 }
 
@@ -2921,6 +2933,7 @@ function register(ctx) {
       candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
       corroboration:     data.corroboration ? JSON.stringify(data.corroboration) : null, // independent method-family agreement (owner principle 2026-08-11)
       suggested_supplier: data.suggested_supplier || null,   // branding cross-check → "Use '<name>'" button
+      charset_flag_meta: data.charset_flag_meta ? JSON.stringify(data.charset_flag_meta) : null, // {chars,precap} for the "these characters are fine" clear (2026-09-01)
     }));
 
     const _emitMerge = (field, decision, oldV, newV) => {
@@ -3636,6 +3649,17 @@ function register(ctx) {
         if (_anyProcessingBusy()) { aborted = true; break; }
         const v = await _evaluateSweepDoc(db, doc, roleKeys, ctx);
         if (v.candidate) candidates.push(v.candidate);
+        else if (v.inviewCountdown) {
+          // DARK sweep_inview_countdown: this eligible doc is open in the local Review preview — don't
+          // file it silently; tell the renderer to run a 5→1 countdown + Stop. The renderer only acts
+          // if THIS doc is the open one; on expiry it calls sweep-inview-file (server re-checks), on
+          // Stop it calls sweep-inview-hold. safeSend is isDestroyed-guarded (no "Object destroyed").
+          try {
+            notifyReview?.('sweep-inview-eligible', {
+              docId: v.inviewCountdown.docId, scope: { supplier: sup, typeSlug: slug },
+              fingerprint: v.inviewCountdown.fingerprint, tier: v.inviewCountdown.tier });
+          } catch { /* best-effort */ }
+        }
         else excluded.push(v.excluded);
       }
     } finally {
@@ -3769,6 +3793,21 @@ function register(ctx) {
     if (_viewers.length) {
       const _me = String((getCurrentUser() || {}).username || '').trim().toLowerCase();
       const _onlyMe = !!_me && _viewers.every(v => String(v.username || '').trim().toLowerCase() === _me);
+      // IN-VIEW AUTO-FILE COUNTDOWN (DARK sweep_inview_countdown, 2026-09-01; eric + Oracle S-O-W/COND):
+      // instead of the hard block, offer a 5→1 countdown + Stop — but ONLY when the SOLE viewer is THIS
+      // local desktop session (never a same-user second machine or a detached-client viewer — the
+      // key-aware onlyViewerIs check) AND the doc is Tier-1 auto-file-eligible. Any remote/second viewer,
+      // or an ineligible doc, keeps the verbatim hard block. OFF (default) → byte-identical.
+      const _cdOn = (ctx && ctx.inviewCountdown !== undefined) ? !!ctx.inviewCountdown
+                  : require('../../../database/modules/learning').getSetting(db, 'sweep_inview_countdown', 'false') === 'true';
+      const _uid = (getCurrentUser() || {}).id;
+      if (_cdOn && _uid != null && presence.onlyViewerIs(doc.id, `desktop:${_uid}`)) {
+        const _rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(doc.id);
+        const _fp = extractionsFingerprint(_rows);
+        const _t1 = trust.isAutoFileEligible(db, doc);
+        if (_t1.eligible) return { inviewCountdown: { docId: doc.id, tier: 1, fingerprint: _fp } };
+        return { excluded: { docId: doc.id, reason: _t1.reason || 'not-eligible' } };   // in-view but ineligible → no countdown
+      }
       return { excluded: { docId: doc.id, reason: _onlyMe ? 'being-viewed-by-you' : 'being-viewed' } };
     }
     const rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(doc.id);
@@ -3920,6 +3959,61 @@ function register(ctx) {
     }
     return { ok: true, filed, dropped };
   }
+
+  // ── IN-VIEW AUTO-FILE COUNTDOWN IPCs (DARK sweep_inview_countdown, 2026-09-01; eric + Oracle) ──
+  // The renderer runs the visible 5→1 countdown; the COMMIT stays server-authoritative here. Both
+  // re-check the setting (a stale renderer can't reach them when off) and are admin/edit gated.
+  // file: re-verify EVERYTHING at commit — still queued, still the sole LOCAL desktop viewer, stored
+  // rows unchanged since the offer (fingerprint), and STILL isAutoFileEligible — then file through the
+  // one shared confirm (via scope_sweep, atomic claim → a concurrent normal sweep just 409s).
+  ipcMain.handle('sweep-inview-file', async (_event, { docId, fingerprint } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const learning = require('../../../database/modules/learning');
+    const trust = require('../../../database/modules/trust');
+    const { extractionsFingerprint } = require('../../services/sweepPredicate');
+    const presence = require('../../services/presenceService').shared();
+    if (learning.getSetting(db, 'sweep_inview_countdown', 'false') !== 'true') return { ok: false, reason: 'disabled' };
+    const id = Number(docId);
+    const doc = id ? documents.getById(db, id) : null;
+    if (!doc || doc.status !== 'needs_review') return { ok: false, reason: 'not-queued' };
+    if (['pending', 'claimed'].includes(String(doc.workflow_status || ''))) return { ok: false, reason: 'workflow-locked' };
+    const u = getCurrentUser() || {};
+    if (u.id == null || !presence.onlyViewerIs(id, `desktop:${u.id}`)) return { ok: false, reason: 'not-sole-local-viewer' };
+    const rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(id);
+    if (extractionsFingerprint(rows) !== String(fingerprint || '')) return { ok: false, reason: 'changed' };   // an edit landed → abort
+    const t1 = trust.isAutoFileEligible(db, doc);
+    if (!t1.eligible) return { ok: false, reason: t1.reason || 'not-eligible' };
+    const dtRow = db.prepare('SELECT * FROM document_types WHERE id = ?').get(doc.document_type_id);
+    if (!dtRow) return { ok: false, reason: 'unknown-type' };
+    const allValues = {};
+    for (const r of rows) allValues[r.field_key] = r.display_value ?? r.raw_value;
+    let res;
+    try {
+      res = await reviewService.confirm(db, u, {
+        document_id: id, allValues, corrections: {}, taught_fields: [],
+        supplier_name: doc.supplier_name, document_type: dtRow.name, document_type_slug: dtRow.slug, bulk: true,
+      }, { via: 'scope_sweep' });
+    } catch (e) { res = { ok: false, code: 'ERROR', error: e && e.message }; }
+    if (res && res.ok) {
+      try { recordReviewEvent(db, { kind: 'self_filed', ids: [id], dropped: [], approved: false,
+        scope: { supplier: doc.supplier_name, typeSlug: dtRow.slug }, undo: { type: 'sweep' } }); } catch {}
+      try { logAudit(db, { action: 'inview_countdown_filed', action_category: 'review', outcome: 'success', metadata: { doc_id: id } }); } catch {}
+      return { ok: true, filed: id };
+    }
+    return { ok: false, reason: (res && res.code) || 'confirm-failed' };
+  });
+  // hold: the user pressed STOP (or navigated away with pending edits) — a durable put-back so the next
+  // sweep won't re-offer it (trust.js refuses 'put-back' for every machine door). A human confirm clears it.
+  ipcMain.handle('sweep-inview-hold', (_event, { docId } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const id = Number(docId);
+    if (!id) return { ok: false, reason: 'bad-args' };
+    try { documents.markPutBack(db, id); } catch (e) { return { ok: false, reason: (e && e.message) || 'error' }; }
+    try { logAudit(db, { action: 'inview_countdown_stopped', action_category: 'review', outcome: 'success', metadata: { doc_id: id } }); } catch {}
+    return { ok: true };
+  });
 
   // ── Slice 1 (2026-08-21, Oracle SIGN-OFF-W/COND S1-C1..C6): SCOPE-LOCAL AUTO-ACCEPT ───────
   // The owner's "confirm a couple more and that sender files itself" — without the remembered
@@ -5696,6 +5790,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       candidates:        data.candidates ? JSON.stringify(data.candidates) : null,   // disambiguation picker
       corroboration:     data.corroboration ? JSON.stringify(data.corroboration) : null, // independent method-family agreement (owner principle 2026-08-11)
       suggested_supplier: data.suggested_supplier || null,   // branding cross-check → "Use '<name>'" button
+      charset_flag_meta: data.charset_flag_meta ? JSON.stringify(data.charset_flag_meta) : null, // {chars,precap} for the "these characters are fine" clear (2026-09-01)
     }));
     learning.insertExtractions(db, docId, rows);
   }

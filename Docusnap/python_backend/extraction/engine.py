@@ -3088,6 +3088,7 @@ class ExtractionEngine:
         # once confirmed once. Empty by default → byte-identical. See _accept_norm().
         self.accepted_names      = set()
         self.accepted_issuers    = set()  # supplier names explicitly marked a valid issuer (button)
+        self.accepted_charset    = {}     # {field-type: set(chars)} operator-vouched chars, per-TYPE (2026-09-01)
         self._identity_conflict  = False  # active flag-only supplier-conflict (set_identity_conflict)
         self._trace              = None  # dev-only trace callback (set per extract())
 
@@ -3277,6 +3278,22 @@ class ExtractionEngine:
         this set never raises the conflict flag — the explicit complement to the automatic
         established-after-N-confirmations fallback. Empty/None → no change (byte-identical)."""
         self.accepted_issuers = {self._accept_norm(n) for n in (names or []) if str(n or "").strip()}
+
+    def set_accepted_chars(self, mapping) -> None:
+        """Load the operator-accepted CHARSET allowlist ({field-type: [chars]}). A char in a type's
+        set is added to that type's effective charset spec, so the Stage-4.5 charset flag ('unexpected
+        characters') never fires for it again. BELT-AND-BRACES garble guard (mirrors the JS accept
+        door, learning.isAcceptableFieldChar): keep ONLY printable ASCII punctuation/symbols (ord
+        32..126, non-alnum, non-space) — a homoglyph/confusable or U+FFFD smuggled into a hand-edited
+        DB can never widen the effective spec. Empty/None → no change (byte-identical)."""
+        reg = {}
+        for tkey, chars in (mapping or {}).items():
+            keep = {c for c in (chars or [])
+                    if isinstance(c, str) and len(c) == 1
+                    and 32 <= ord(c) <= 126 and not c.isspace() and not c.isalnum()}
+            if keep:
+                reg[str(tkey)] = keep
+        self.accepted_charset = reg
 
     def set_supplier_identifiers(self, rows) -> None:
         """Load the supplier hard-identifier registry (slice 1b MATCH, DARK). rows = learned
@@ -9735,6 +9752,15 @@ class ExtractionEngine:
                     _ftype = field_types.get(key)
                     if _ftype not in ('date', 'currency', 'currency_code'):
                         _spec = field_charsets.get(_ftype, field_charsets.get('default'))
+                        # Operator-accepted chars (2026-09-01) — union into the effective spec BEFORE
+                        # the diff, on the SAME resolved spec-key the flag uses. None-safe: a null spec
+                        # means "no constraint" and MUST stay None (never coerce None -> '' — that would
+                        # start constraining a free-text/barcode field). Empty allowlist => byte-identical.
+                        if _spec is not None and self.accepted_charset:
+                            _speckey = _ftype if _ftype in field_charsets else 'default'
+                            _acc = self.accepted_charset.get(_speckey)
+                            if _acc:
+                                _spec = _spec + ''.join(_acc)
                         _bad = format_anomaly_checker.charset_disallowed(str(val), _spec)
                         # Only flag chars that are actually VISIBLE — an invisible control/
                         # zero-width char (OCR noise) must not render as "unexpected characters
@@ -9746,6 +9772,12 @@ class ExtractionEngine:
                                 **data,
                                 'confidence':      min(data.get('confidence') or 0, 70),
                                 'validation_note': "unexpected characters (" + " ".join(_bad_shown) + ") - please verify",
+                                # Structural record for the operator "these characters are fine" clear
+                                # (2026-09-01): the flagged chars + the PRE-cap confidence, so a later
+                                # accept can restore the field's OWN natural confidence (the cap above is
+                                # otherwise destructive — the 08-15 fc_delta lesson). Dropped by
+                                # sanitise? No — it rides in the field dict to file_done and the DB column.
+                                'charset_flag_meta': {'chars': _bad_shown, 'precap': int(data.get('confidence') or 0)},
                             }
                             n_flagged += 1
                             format_anomaly_flagged = True

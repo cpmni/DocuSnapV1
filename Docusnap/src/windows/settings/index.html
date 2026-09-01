@@ -902,6 +902,27 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Re-read held documents quietly in the background (no message, no list shuffle while you work)</div>
+                <div class="threshold-sub">The app already re-reads documents you haven't opened after it learns a layout, at a lower priority than anything you start. When this is on it does so silently &mdash; it hides the &ldquo;quietly re-reading&rdquo; message and stops the review list from re-ordering under you while you're looking at a document (the list catches up when you move to the next one). The one-off &ldquo;confirm once&rdquo; notes on documents whose reading actually changed still appear. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="quiet-reread-silent-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Count down before auto-filing the document you're looking at (with a Stop button)</div>
+                <div class="threshold-sub">Normally a document that's open in front of you is never filed automatically &mdash; but after a &ldquo;Reprocess all&rdquo; the app can finish with one of those documents on screen and it then has to be filed by hand. When this is on, a document you're viewing that's ready to file shows a 5&ndash;4&ndash;3&ndash;2&ndash;1 countdown with a Stop button, then files itself. Editing a field or moving to another document cancels it. Only ever applies to the document on your own screen. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="sweep-inview-countdown-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Let &ldquo;These characters are fine&rdquo; clear the same warning everywhere at once</div>
+                <div class="threshold-sub">When a field is flagged for an unexpected character (say an &amp; in a reference number), one click marks that character as valid for that kind of field. It clears the same warning on every other waiting document flagged for only that character, files the ones that are then ready &mdash; without reprocessing &mdash; and remembers the character so it isn't flagged again. Look-alike or scan-noise characters are refused. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="accept-field-chars-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Straighten a tilted page and read it again when a document needs checking</div>
                 <div class="threshold-sub">When a document is already going to Review and its page is tilted by even a fraction of a degree, ScanFinder re-reads it on a straightened copy and keeps the straightened reading only if it comes out clearer — otherwise the original reading stays. It never files anything by itself from a straightened read, and it only ever touches documents that were already going to Review, so it can't change a document that was filing itself cleanly. Adds a little time on tilted scans. Off by default.</div>
               </div>

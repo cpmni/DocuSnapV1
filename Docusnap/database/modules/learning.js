@@ -12,10 +12,10 @@ function insertExtractions(db, document_id, rows) {
   const stmt = db.prepare(`
     INSERT INTO extractions
       (document_id, field_key, raw_value, display_value,
-       confidence, extraction_method, validation_note, corrected_to, anchor_label, candidates, suggested_supplier, corroboration)
+       confidence, extraction_method, validation_note, corrected_to, anchor_label, candidates, suggested_supplier, corroboration, charset_flag_meta)
     VALUES
       (@document_id, @field_key, @raw_value, @display_value,
-       @confidence, @extraction_method, @validation_note, @corrected_to, @anchor_label, @candidates, @suggested_supplier, @corroboration)
+       @confidence, @extraction_method, @validation_note, @corrected_to, @anchor_label, @candidates, @suggested_supplier, @corroboration, @charset_flag_meta)
   `);
   const insertMany = db.transaction((rows) => {
     // corrected_to is the proposed (not-yet-applied) correction candidate from
@@ -25,7 +25,7 @@ function insertExtractions(db, document_id, rows) {
     // 2026-08-11 — record-only, nothing gates on it). All default to null so callers that
     // don't set them are unaffected — and the null default is REQUIRED (better-sqlite3
     // throws "missing named parameter" without it).
-    for (const row of rows) stmt.run({ document_id, corrected_to: null, anchor_label: null, candidates: null, suggested_supplier: null, corroboration: null, ...row });
+    for (const row of rows) stmt.run({ document_id, corrected_to: null, anchor_label: null, candidates: null, suggested_supplier: null, corroboration: null, charset_flag_meta: null, ...row });
   });
   insertMany(rows);
 }
@@ -1924,6 +1924,54 @@ function removeAcceptedIssuer(db, value) {
   return list;
 }
 
+// ── Operator-accepted CHARSET allowlist (2026-09-01, "These characters are fine") ──────────────
+// The charset policy (engine.py:9734) flags a char outside a field TYPE's allowed set with
+// "unexpected characters (X) - please verify" + a confidence cap. The operator can vouch a char is
+// legitimate for that field TYPE; it is remembered here per field-type so future imports never flag
+// it, and the queued siblings flagged for only-accepted chars are cleared live (review/handler.js).
+// Shape: { "<field-type>": ["&", "#", ...] } as a settings JSON object, keyed on the SAME resolved
+// spec-key the flag used (the field TYPE, or 'default' for an unlisted/typeless field). Fed to the
+// engine via buildTrainingArgs (--accepted-chars-file) exactly like accepted_name_values.
+const ACCEPTED_FIELD_CHARS_KEY = 'accepted_field_chars';
+/** May this single character EVER be added to the charset allowlist? Oracle 2026-09-01 garble guard:
+ *  ONLY printable ASCII punctuation/symbols (codepoint 32..126, non-alnum, non-whitespace). Every
+ *  non-ASCII char is REFUSED — that rejects every homoglyph/confusable class (Cyrillic/Greek letters,
+ *  unicode hyphens/minus U+2010/2011/2212, fullwidth digits) and U+FFFD without needing a confusables
+ *  table — a look-alike can never be accepted to silently mask a real garble. Alphanumerics are never
+ *  charset-flagged in the first place, so accepting one is meaningless and refused too. */
+function isAcceptableFieldChar(ch) {
+  if (typeof ch !== 'string' || Array.from(ch).length !== 1) return false;
+  const cp = ch.codePointAt(0);
+  if (cp < 32 || cp > 126) return false;      // non-printable, DEL, or any non-ASCII (confusable class)
+  if (/\s/.test(ch)) return false;            // whitespace
+  if (/[0-9A-Za-z]/.test(ch)) return false;   // alnum is never flagged — never "accept" it
+  return true;
+}
+function getAcceptedFieldChars(db) {
+  try { const o = JSON.parse(getSetting(db, ACCEPTED_FIELD_CHARS_KEY, '{}') || '{}'); return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {}; }
+  catch { return {}; }
+}
+/** Add a char to the allowlist for a field TYPE (idempotent, garble-guarded). Returns {list, added}.
+ *  `added` is the subset actually accepted (a refused garble char is dropped, not thrown). */
+function addAcceptedFieldChars(db, typeKey, chars) {
+  const key = String(typeKey == null ? 'default' : typeKey).trim() || 'default';
+  const obj = getAcceptedFieldChars(db);
+  const cur = new Set(Array.isArray(obj[key]) ? obj[key] : []);
+  const added = [];
+  for (const ch of (Array.isArray(chars) ? chars : [])) {
+    if (isAcceptableFieldChar(ch) && !cur.has(ch)) { cur.add(ch); added.push(ch); }
+  }
+  if (added.length) { obj[key] = [...cur]; setSetting(db, ACCEPTED_FIELD_CHARS_KEY, JSON.stringify(obj)); }
+  return { list: obj, added };
+}
+/** Remove a char from a field-type's allowlist. Returns the updated object. */
+function removeAcceptedFieldChar(db, typeKey, ch) {
+  const key = String(typeKey == null ? 'default' : typeKey).trim() || 'default';
+  const obj = getAcceptedFieldChars(db);
+  if (Array.isArray(obj[key])) { obj[key] = obj[key].filter(c => c !== ch); setSetting(db, ACCEPTED_FIELD_CHARS_KEY, JSON.stringify(obj)); }
+  return obj;
+}
+
 // Distinct confirmed VALUES learned for a (supplier, doc-type, field) scope — the same final
 // values getFieldFormats learns shapes from (the user's corrected value if they edited, else
 // the extracted display value). Powers the "View learning history" table so a value that
@@ -2308,4 +2356,5 @@ module.exports = {
   getSetting, setSetting,
   getAcceptedNames, addAcceptedName, removeAcceptedName,
   getAcceptedIssuers, addAcceptedIssuer, removeAcceptedIssuer,
+  getAcceptedFieldChars, addAcceptedFieldChars, removeAcceptedFieldChar, isAcceptableFieldChar,
 };

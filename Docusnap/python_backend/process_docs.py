@@ -383,6 +383,7 @@ def main():
     parser.add_argument("--field-rules-file", default=None)
     parser.add_argument("--accepted-names-file", default=None)
     parser.add_argument("--accepted-issuers-file", default=None)
+    parser.add_argument("--accepted-chars-file", default=None)   # 2026-09-01: operator charset allowlist per field-TYPE (DARK)
     parser.add_argument("--identifiers-file", default=None)   # slice 1b: supplier hard-identifier registry (DARK)
     parser.add_argument("--enhance-file",   default=None)
     # Parallel processing: when Electron runs a bounded worker pool, each worker
@@ -528,6 +529,7 @@ def main():
     field_rules    = load_json_arg(None, args.field_rules_file) or []
     accepted_names = load_json_arg(None, args.accepted_names_file) or []
     accepted_issuers = load_json_arg(None, args.accepted_issuers_file) or []
+    accepted_chars = load_json_arg(None, args.accepted_chars_file) or {}   # 2026-09-01: {field-type: [chars]} (DARK; {} ⇒ inert)
     supplier_identifiers = load_json_arg(None, args.identifiers_file) or []   # slice 1b registry (DARK; [] ⇒ inert)
     enhance_params = load_json_arg(None, args.enhance_file)   or None
     reprocess_manifest = load_json_arg(None, args.reprocess_manifest) or {}
@@ -577,6 +579,10 @@ def main():
     # the identity-conflict "Issuer is correct" button (skips the conflict flag). Empty → no change.
     if accepted_issuers:
         engine.set_accepted_issuers(accepted_issuers)
+    # Operator-accepted CHARSET allowlist — per field-TYPE chars the user vouched are legitimate, so the
+    # Stage-4.5 charset flag ("unexpected characters") never fires for them again. Empty {} → no change.
+    if accepted_chars:
+        engine.set_accepted_chars(accepted_chars)
     # Supplier hard-identifier registry (slice 1b MATCH, DARK): reverse-lookup a matched issuer VAT to
     # SUGGEST the sender on a blank-issuer doc. Empty list ⇒ no-op (byte-identical).
     if supplier_identifiers:
@@ -1378,6 +1384,11 @@ def main():
                         # extractions.corroboration by the handler.
                         **({"corroboration": field_corrob[k]}
                            if field_corrob.get(k) else {}),
+                        # Charset-flag record (2026-09-01): {chars, precap} written by the Stage-4.5
+                        # "unexpected characters" flag, so an operator accept can restore the field's
+                        # pre-cap confidence. Additive; absent unless the field was charset-flagged.
+                        **({"charset_flag_meta": v["charset_flag_meta"]}
+                           if v.get("charset_flag_meta") else {}),
                     }
                     for k, v in extractions.items()
                 },

@@ -749,6 +749,13 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // a straighten-recovered field files without asking when 2 independent readings agree
                          // + it matches the learned shape + the raw read wasn't credible. DARK — needs the census.
                          ['deskew-corrob-autofile-toggle', 'deskew_corrob_autofile'],
+                         // Three DARK rollout features (2026-09-01, owner ask → gary+reggie+eric → Oracle):
+                         // quiet the background re-read chatter + defer the queue refresh while viewing;
+                         // the in-view auto-file countdown (local viewer only); the "these characters are
+                         // fine" charset allowlist + live sibling clear/auto-file.
+                         ['quiet-reread-silent-toggle', 'quiet_reread_silent'],
+                         ['sweep-inview-countdown-toggle', 'sweep_inview_countdown'],
+                         ['accept-field-chars-toggle', 'accept_field_chars_enabled'],
                          // Barcodes (2026-08-26, barry → gary design): the page inventory and the field type.
                          ['barcode-inventory-toggle', 'barcode_inventory'],
                          ['barcode-field-toggle', 'barcode_field'],
@@ -1047,6 +1054,9 @@ const DEV_SWITCH_IDS = [
   'keyword-cell-below-toggle', 'money-sign-parens-toggle', 'money-sign-cr-toggle',
   'buyer-issued-convention-toggle', 'locate-role-qualifier-toggle', 'fragment-containment-toggle',
   'deskew-corrob-autofile-toggle',   // 2026-09-01 DARK arc — dev-gated until its census/flip
+  'quiet-reread-silent-toggle',      // 2026-09-01 DARK rollout feature — dev-gated until the owner flips
+  'sweep-inview-countdown-toggle',   // 2026-09-01 DARK rollout feature — dev-gated until the owner flips
+  'accept-field-chars-toggle',       // 2026-09-01 DARK rollout feature — dev-gated until the owner flips
   'right-grow-toggle', 'left-clamp-toggle', 'prefix-garble-toggle', 'crosscheck-reconcile-toggle',
   'universal-verify-toggle', 'edge-clean-toggle', 'word-snap-toggle', 'struct-code-read-toggle',
   'warm-ocr-toggle', 'parallel-reprocess-toggle',

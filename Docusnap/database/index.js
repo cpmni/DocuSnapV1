@@ -2398,6 +2398,32 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 101 (deskew_review_retry_enabled default): ${e.message}`); }
   }
 
+  // ── migration 102: THREE DARK rollout features (2026-09-01, owner ask; gary+reggie+eric →
+  //    Oracle SIGN-OFF-WITH-CONDITIONS). All default OFF — byte-identical until an owner flip.
+  //    (1) quiet_reread_silent — hide the background re-read chatter + defer the queue refresh while
+  //        the user is actively viewing a doc (the lane's priority is unchanged; it is already
+  //        foreground-preempted). See src/windows/review/renderer.js.
+  //    (2) sweep_inview_countdown — replace the hard "being viewed" auto-file block, FOR THE LOCAL
+  //        desktop viewer ONLY, with a 5→1 countdown + Stop on the preview. Remote/second viewers keep
+  //        the verbatim block. See src/modules/processing/handler.js _evaluateSweepDoc.
+  //    (3) accept_field_chars_enabled — the "these characters are fine" charset allowlist (per field
+  //        TYPE) + live sibling note-clear + confidence restore + auto-file, no reprocess. The new
+  //        column extractions.charset_flag_meta carries {chars, precap} so the confidence restore is
+  //        faithful (the note caps confidence at 70 and the pre-cap value is otherwise lost — the
+  //        08-15 fc_delta lesson). Additive/nullable; never compared by the OFF corpus arm. ──
+  if (!applied.has(102)) {
+    try {
+      try { db.exec('ALTER TABLE extractions ADD COLUMN charset_flag_meta TEXT'); }
+      catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }   // idempotent re-run
+      const seed = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      let n = 0;
+      for (const k of ['quiet_reread_silent', 'sweep_inview_countdown', 'accept_field_chars_enabled'])
+        n += seed.run(k, 'false').changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (102)').run();
+      console.log(`JS migration 102 applied: 3 DARK rollout features seeded OFF (${n} setting rows) + extractions.charset_flag_meta`);
+    } catch (e) { console.warn(`  migration 102 (dark rollout features): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

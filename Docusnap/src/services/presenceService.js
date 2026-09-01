@@ -69,6 +69,19 @@ function createPresenceService({ now = () => Date.now(), ttlMs = DEFAULT_TTL_MS 
     return out;
   }
 
+  // Is `key` the SOLE live viewer of a doc? (stale entries swept first). Key-aware — unlike viewers(),
+  // which strips the key — so the in-view auto-file countdown (2026-09-01) can fire ONLY when the one
+  // viewer is THIS local desktop session (`desktop:<uid>`), never a same-user second machine or any
+  // detached-client viewer (whose key is a clientKey). Empty map → false (nobody viewing → the sweep's
+  // normal path applies, no countdown).
+  function onlyViewerIs(docId, key) {
+    const m = docs.get(docId);
+    if (!m) return false;
+    _sweep(m);
+    if (m.size === 0) { docs.delete(docId); return false; }
+    return m.size === 1 && m.has(key);
+  }
+
   // Test/diagnostic aid: total tracked viewers across all docs (after a sweep).
   function _size() {
     let n = 0;
@@ -76,7 +89,7 @@ function createPresenceService({ now = () => Date.now(), ttlMs = DEFAULT_TTL_MS 
     return n;
   }
 
-  return { heartbeat, release, releaseAll, viewers, _size };
+  return { heartbeat, release, releaseAll, viewers, onlyViewerIs, _size };
 }
 
 let _shared = null;

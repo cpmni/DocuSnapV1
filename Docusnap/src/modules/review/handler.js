@@ -719,6 +719,29 @@ function register(ctx) {
     } catch {}
     return { ok: true, accepted: list, cleared };
   });
+  // Operator marks charset-flagged characters as valid ("These characters are fine" button on an
+  // "unexpected characters (X) - please verify" note). Adds the char(s) to the per-field-TYPE charset
+  // allowlist (future imports never flag them), then LIVE-clears the note + restores confidence on
+  // this doc AND every queued sibling flagged for only-accepted chars — no reprocess. The now-eligible
+  // siblings file when the caller runs the normal scope-sweep afterwards (Oracle: reuse the existing
+  // C8 offer→accept path, never a bespoke filer). DARK: gated on accept_field_chars_enabled so a stale
+  // renderer can't reach it when off (the batch_audit refuse-when-off pattern).
+  ipcMain.handle('accept-field-chars', (_e, p) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    if (learning.getSetting(db, 'accept_field_chars_enabled', 'false') !== 'true')
+      return { ok: false, error: 'disabled' };
+    const docId = p && p.docId, fieldKey = p && p.fieldKey;
+    const res = require('../../services/charsetAcceptService').applyCharsetAccept(db, { docId, fieldKey });
+    if (res.ok) {
+      try {
+        logAudit(db, { action: 'field_chars_accepted', action_category: 'learning', outcome: 'success',
+          metadata: { type_key: res.typeKey, chars: res.accepted, doc_id: docId || null,
+                      field_key: fieldKey || null, cleared_docs: (res.clearedDocs || []).length } });
+      } catch {}
+    }
+    return res;
+  });
   // "Use '<name>'" resolve → the operator supplier PIN (Part B). Writes documents.supplier_pin so a
   // REPROCESS forces this supplier (--known-supplier) instead of reverting to the coarse-logo pick. Local
   // to the doc — writes NO logo/hint learning; the pin is cleared on confirm (documents.confirm). The

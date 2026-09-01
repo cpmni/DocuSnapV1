@@ -51,5 +51,16 @@ p.heartbeat(null, { key: 'x' });                 // no doc → ignored
 p.heartbeat(10, { username: 'no-key' });         // no key → ignored
 check('malformed heartbeats ignored', p.viewers(10).length === 0);
 
+// ── onlyViewerIs (the in-view countdown's local-vs-remote discriminator, 2026-09-01) ──
+const q = createPresenceService({ now: () => clock, ttlMs: 60000 });
+q.heartbeat(20, { key: 'desktop:5', username: 'owner' });
+check('onlyViewerIs true when the sole viewer is that key', q.onlyViewerIs(20, 'desktop:5') === true);
+check('onlyViewerIs false for a different key', q.onlyViewerIs(20, 'desktop:9') === false);
+q.heartbeat(20, { key: 'cliRemote', username: 'owner' });    // same user, second machine (a /v1 client)
+check('onlyViewerIs false when a second (remote) viewer is present', q.onlyViewerIs(20, 'desktop:5') === false);
+check('onlyViewerIs false for a doc nobody is viewing', q.onlyViewerIs(999, 'desktop:5') === false);
+clock += 60001;                                              // both stale
+check('onlyViewerIs false once the viewer is reaped', q.onlyViewerIs(20, 'desktop:5') === false);
+
 console.log(`\n${fail === 0 ? 'ALL PASS' : fail + ' FAILED'}`);
 process.exit(fail ? 1 : 0);

@@ -325,6 +325,7 @@ _loadSavedFieldRules();
 // re-run label detection in the chosen direction without redrawing the box.
 let lastTeachCtx     = null;   // { fieldKey, rect, imgW, imgH, scaleX, scaleY, value }
 let activeTab        = 'review';
+let _inviewCd        = null;    // in-view auto-file countdown state (DARK sweep_inview_countdown, 2026-09-01)
 let isAdmin          = false;   // gates the destructive bulk-delete actions (also enforced server-side)
 let canEdit          = false;   // admin OR edit — gates per-row delete (also enforced server-side)
 
@@ -1519,6 +1520,14 @@ window.__farValuedOnly = false;
   try { window.__farValuedOnly = (await window.docusnap.getSetting('far_lowconf_valued_only')) === 'true'; }
   catch { /* stays false — legacy tier */ }
 })();
+
+// "These characters are fine" charset-accept button (accept_field_chars_enabled, DARK 2026-09-01).
+// When OFF the button never renders; the IPC also refuses (defence in depth). OFF = byte-identical.
+let _acceptCharsEnabled = false;
+(async () => {
+  try { _acceptCharsEnabled = (await window.docusnap.getSetting('accept_field_chars_enabled')) === 'true'; }
+  catch { /* stays false */ }
+})();
 document.getElementById('generic-chip')?.addEventListener('click', () => {
   const sel = document.getElementById('doctype-select');
   sel.value = 'general_document';
@@ -2249,6 +2258,13 @@ function renderDeferredList() {
 
 // ── Select document ───────────────────────────────────────────────────────────
 async function selectDoc(doc, opts) {
+  // Quiet-reread quieting (DARK): navigating to another doc is the natural moment to apply a queue
+  // refresh we deferred while the user was reading. Fire-and-forget + guarded (pending flag flips
+  // false first, so the refresh's own re-select can't loop); skipped during a File-All churn.
+  if (_pendingQuietRefresh && !bulkFiling) _flushQuietRefresh();
+  // Navigating away cancels a running in-view countdown (the doc is no longer on screen); fail-safe —
+  // the doc stays in Review, and the next sweep re-offers it once it's un-viewed.
+  if (_inviewCd && (!doc || doc.id !== _inviewCd.docId)) _cancelInviewCountdown();
   // Dismiss a lingering class-fix RECEIPT when the operator moves to another document (bug fix 2026-08-23:
   // it had no close and lingered long after the doc left). The 'ask' phase is a pending decision — leave it;
   // during a File All run (bulkFiling) selectDoc churns, so skip.
@@ -4254,6 +4270,16 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
   const brandingResolveHtml = isBrandingFlag
     ? ` <button type="button" class="branding-resolve-btn" data-key="${key}" data-name="${escHtml(suggestedSupplier)}" title="Set the Document Issuer to the company the letterhead reads. Saved when you confirm this document.">Use “${escHtml(suggestedSupplier)}”</button>`
     : '';
+  // "These characters are fine" — for a field flagged by the charset policy ("unexpected characters
+  // (X) - please verify"). One click marks the char(s) valid for this field TYPE, clears the note +
+  // restores confidence here AND on every queued sibling flagged for only-accepted chars (no
+  // reprocess), and the newly-eligible siblings file on the next sweep. DARK: only rendered when
+  // accept_field_chars_enabled is on. The label NAMES the chars (never affirm blind — the garbled-
+  // issuer convention); the IPC refuses any non-ASCII/garble char so a homoglyph can't be accepted.
+  const _csFlag = !!note && !isApplied && /^unexpected characters \((.+)\) - please verify$/.exec(note || '');
+  const charsetAcceptHtml = (_acceptCharsEnabled && _csFlag)
+    ? ` <button type="button" class="charset-accept-btn" data-key="${key}" title="Tell Scan Finder these characters are legitimate for this kind of field, so it stops flagging them here and on future documents.">✓ ${escHtml(_csFlag[1])} ${/\s/.test(_csFlag[1].trim()) ? 'are' : 'is'} fine</button>`
+    : '';
   // "⑂ Resolve" — when the engine emitted >=2 distinct candidate readings for a flagged NAME field,
   // offer a one-click picker (openResolveOverlay) instead of leaving the operator to retype. v1 scope:
   // name-like fields only (the backend already excludes supplier_name + non-name fields).
@@ -4280,7 +4306,7 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
       // 2026-08-24): the inline "Use …"/"Keep …" accept buttons truncate to unreadable stubs, and the
       // picker shows every reading in full (with the suggestion merged in — see the click handler). So
       // suppress the inline accept/keep pair on a resolvable field and render only Resolve.
-      ? `<div class="field-note">${escHtml(note || '')}${resolvable ? resolveHtml : `${acceptHtml}${nameAcceptHtml}${issuerAcceptHtml}${brandingResolveHtml}`}</div>`
+      ? `<div class="field-note">${escHtml(note || '')}${resolvable ? resolveHtml : `${acceptHtml}${nameAcceptHtml}${issuerAcceptHtml}${brandingResolveHtml}${charsetAcceptHtml}`}</div>`
       : '';
   // Anchor provenance: only for anchor-based extraction sources, and only when a
   // label was captured. Other methods (keyword, template, llm, manual) show nothing.
@@ -4630,6 +4656,37 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
           issuerAcceptBtn.disabled = false;
         }
       } catch { issuerAcceptBtn.disabled = false; }
+    });
+  }
+
+  // "✓ … is fine" — persist the char(s) to the per-field-TYPE charset allowlist, clear the note +
+  // restore confidence on this doc AND queued siblings (server-side, no reprocess), then refresh the
+  // queue and run the normal sweep so the now-eligible siblings file through the existing offer path.
+  const charsetAcceptBtn = row.querySelector('.charset-accept-btn');
+  if (charsetAcceptBtn) {
+    charsetAcceptBtn.addEventListener('click', async () => {
+      charsetAcceptBtn.disabled = true;
+      try {
+        const res = await window.docusnap.acceptFieldChars({ docId: currentDoc?.id, fieldKey: key });
+        if (res && res.ok) {
+          charsetAcceptBtn.textContent = "✓ Saved — won't flag these again";
+          const noteEl = row.querySelector('.field-note');
+          if (noteEl) noteEl.remove();
+          clearFieldWarning(row);
+          const ex = (currentDoc?.extractions || []).find(e => e.field_key === key);
+          if (ex) ex.validation_note = null;
+          validateConfirm();
+          // Reflect the cleared siblings + let the normal sweep file the now-eligible ones.
+          try { _refreshQueueFromBroadcast?.(); } catch {}
+          try { _runQueueSweep?.({ via: 'charset-accept' }); } catch {}
+        } else if (res && res.error === 'unreadable-characters') {
+          charsetAcceptBtn.disabled = false;
+          charsetAcceptBtn.textContent = '✗ Can’t accept — please correct the value';
+          charsetAcceptBtn.title = 'One of these characters is not a normal keyboard symbol (it may be a look-alike or scan noise). Correct the value instead of accepting it.';
+        } else {
+          charsetAcceptBtn.disabled = false;
+        }
+      } catch { charsetAcceptBtn.disabled = false; }
     });
   }
 
@@ -9370,13 +9427,38 @@ async function _refreshQueueFromBroadcast() {
     if (queue.length) selectDoc(queue[0]);
   }
 }
+// ── QUIET-READ QUIETING (quiet_reread_silent, DARK 2026-09-01; eric + Oracle) ──────────────────────
+// When on: hide the ambient "quietly re-reading" hint, and DEFER the background-origin list refresh
+// while the user is actively viewing a doc (so the queue doesn't reorder under them mid-task). The
+// background lane's PRIORITY is unchanged (already foreground-preempted); the "— confirm once." holds
+// are untouched (a re-read that CHANGED a value still surfaces). Flushed on navigate/confirm/focus.
+// Oracle: the deferred events never target the OPEN doc (the lane excludes presence viewers), and a
+// stale action on a just-filed row is caught by reviewService's atomic claim (409) — so deferring is
+// renderer-only and safe. OFF (default) = byte-identical: _deferOrRefresh calls the refresh inline.
+let _quietSilent = false;
+(async () => {
+  try { _quietSilent = (await window.docusnap.getSetting('quiet_reread_silent')) === 'true'; }
+  catch { /* stays false */ }
+})();
+let _pendingQuietRefresh = false;
+function _isActivelyViewing() { return !!currentDoc && activeTab === 'review'; }
+async function _deferOrRefresh() {
+  if (_quietSilent && _isActivelyViewing()) { _pendingQuietRefresh = true; return; }
+  try { await _refreshQueueFromBroadcast(); } catch {}
+}
+async function _flushQuietRefresh() {
+  if (!_pendingQuietRefresh) return;
+  _pendingQuietRefresh = false;
+  try { await _refreshQueueFromBroadcast(); } catch {}
+}
+window.addEventListener('focus', () => { _flushQuietRefresh(); });
 // Slice 1: the server filed a sender's ready documents by itself after a human confirm. Refresh the
 // LIST + receipt bar (never the open document — the pass skipped anything being viewed), then re-ask
 // the queue sweep so OTHER senders' offers still surface as a bar (the pass answered
 // 'auto-accept-running' to any sweep that landed mid-filing).
 window.docusnap.onScopeAutoFiled?.(async () => {
   if (bulkFiling || _batchActive) return;
-  try { await _refreshQueueFromBroadcast(); } catch {}
+  try { await _deferOrRefresh(); } catch {}
   try { await refreshAutoCommittedBar(); } catch {}
   try { await _runQueueSweep(); } catch {}
 });
@@ -9390,6 +9472,7 @@ let _quietRefreshTimer = null;
 function _renderQuietHint() {
   const el = document.getElementById('quiet-reread-hint');
   if (!el) return;
+  if (_quietSilent) { el.style.display = 'none'; el.innerHTML = ''; return; }   // DARK quieting: no ambient chatter
   const live = [..._quietJobs.values()].filter(j => j.state !== 'done');
   if (!live.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
   const j = live[0];
@@ -9409,7 +9492,7 @@ function _renderQuietHint() {
 }
 function _quietRefreshList() {
   if (_quietRefreshTimer) return;
-  _quietRefreshTimer = setTimeout(async () => { _quietRefreshTimer = null; try { await _refreshQueueFromBroadcast(); } catch {} }, 1000);
+  _quietRefreshTimer = setTimeout(async () => { _quietRefreshTimer = null; try { await _deferOrRefresh(); } catch {} }, 1000);
 }
 window.docusnap.onQuietReprocess?.(async (ev) => {
   if (!ev || !ev.jobId) return;
@@ -9417,7 +9500,7 @@ window.docusnap.onQuietReprocess?.(async (ev) => {
   if (ev.type === 'job_start')    { j.supplier = ev.supplier || j.supplier; j.total = ev.total || 0; j.done = ev.done || 0; j.state = 'running'; if (ev.reason) j.reason = ev.reason; }   // r20 card 5: the hint names the real trigger
   if (ev.type === 'doc_done')     { j.done = ev.done ?? (j.done + 1); j.total = ev.total || j.total; _quietRefreshList(); }
   if (ev.type === 'job_deferred') { j.state = 'deferred'; }
-  if (ev.type === 'job_done')     { j.state = 'done'; _quietJobs.delete(ev.jobId); _renderQuietHint(); try { await _refreshQueueFromBroadcast(); } catch {} try { await _runQueueSweep({ via: 'quiet' }); } catch {} return; }
+  if (ev.type === 'job_done')     { j.state = 'done'; _quietJobs.delete(ev.jobId); _renderQuietHint(); try { await _deferOrRefresh(); } catch {} try { await _runQueueSweep({ via: 'quiet' }); } catch {} return; }
   _quietJobs.set(ev.jobId, j);
   _renderQuietHint();
 });
@@ -9427,6 +9510,67 @@ window.docusnap.onQuietReprocess?.(async (ev) => {
     if (st && st.running) { _quietJobs.set(st.running.id, { ...st.running, state: st.running.state || 'running' }); _renderQuietHint(); }
   } catch {}
 })();
+
+// ── IN-VIEW AUTO-FILE COUNTDOWN (DARK sweep_inview_countdown, 2026-09-01; eric + Oracle S-O-W/COND) ─
+// The server offers 'sweep-inview-eligible' when the open doc is auto-file-eligible AND this is the
+// sole LOCAL desktop viewer. Show a visible 5→1 countdown + STOP on the preview; on expiry file it
+// (server re-checks setting/viewer/fingerprint/eligibility → a mid-countdown edit changes the
+// fingerprint and the file aborts), on STOP hold it (durable put-back). Cancelled the instant the
+// user touches a field, navigates to another doc, or the window unloads. OFF (default) → the server
+// never emits the event, so this whole block is inert (byte-identical).
+function _cancelInviewCountdown() {
+  if (!_inviewCd) return;
+  try { clearInterval(_inviewCd.timer); } catch {}
+  try { _inviewCd.el?.remove(); } catch {}
+  _inviewCd = null;
+}
+async function _inviewFileNow() {
+  const cd = _inviewCd; if (!cd) return;
+  _cancelInviewCountdown();
+  try {
+    const res = await window.docusnap.sweepInviewFile(cd.docId, cd.fingerprint);
+    if (res && res.ok) { _pendingQuietRefresh = false; try { await _refreshQueueFromBroadcast(); } catch {} }
+    // not-ok (e.g. 'changed' after an edit, or lost eligibility) → the doc just stays in Review.
+  } catch {}
+}
+async function _inviewHold() {
+  const cd = _inviewCd; if (!cd) return;
+  _cancelInviewCountdown();
+  try { await window.docusnap.sweepInviewHold(cd.docId); } catch {}
+}
+function _startInviewCountdown(ev) {
+  if (!ev || !ev.docId) return;
+  if (!currentDoc || currentDoc.id !== ev.docId) return;    // only for the doc actually on screen (presence race)
+  if (_inviewCd && _inviewCd.docId === ev.docId) return;     // already counting this one
+  _cancelInviewCountdown();
+  const panel = document.getElementById('doc-panel');
+  if (!panel) return;
+  const el = document.createElement('div');
+  el.id = 'inview-countdown';
+  el.setAttribute('style', 'position:absolute;top:52px;left:50%;transform:translateX(-50%);z-index:60;'
+    + 'display:flex;align-items:center;gap:10px;padding:9px 16px;border-radius:var(--r-pill,999px);'
+    + 'background:var(--surface,#fff);border:1px solid var(--accent2,#2f6fe0);color:var(--text,#1b1f2a);'
+    + 'box-shadow:0 6px 24px rgba(0,0,0,.22);font-size:13px;');
+  el.innerHTML = '<span>This document will file itself in</span>'
+    + '<b class="ivc-num" style="font-family:var(--mono,monospace);font-size:18px;min-width:14px;text-align:center">5</b>'
+    + '<button type="button" class="ivc-stop" style="border:1px solid var(--border2,#d2d8e4);background:var(--surface2,#eef1f7);'
+    + 'color:var(--text,#1b1f2a);border-radius:var(--r-sm,9px);padding:5px 12px;cursor:pointer;font-size:12.5px">Stop</button>';
+  panel.appendChild(el);
+  el.querySelector('.ivc-stop').addEventListener('click', () => { _inviewHold(); });
+  _inviewCd = { docId: ev.docId, fingerprint: ev.fingerprint, remaining: 5, timer: null, el };
+  _inviewCd.timer = setInterval(() => {
+    if (!_inviewCd) return;
+    _inviewCd.remaining -= 1;
+    if (_inviewCd.remaining <= 0) { _inviewFileNow(); return; }
+    const n = _inviewCd.el?.querySelector('.ivc-num'); if (n) n.textContent = String(_inviewCd.remaining);
+  }, 1000);
+}
+window.docusnap.onSweepInviewEligible?.((ev) => { try { _startInviewCountdown(ev); } catch {} });
+// Cancel the moment a field is touched — an unsaved edit is invisible to the server's fingerprint
+// re-check, so the machine countdown must stand down (capture phase, synchronous, before any debounce).
+document.addEventListener('input',   (e) => { if (_inviewCd && e.target && e.target.classList && e.target.classList.contains('field-input')) _cancelInviewCountdown(); }, true);
+document.addEventListener('focusin', (e) => { if (_inviewCd && e.target && e.target.classList && e.target.classList.contains('field-input')) _cancelInviewCountdown(); }, true);
+window.addEventListener('beforeunload', () => { _cancelInviewCountdown(); });
 window.docusnap.onReviewCountChanged((n) => {
   // Keep the authoritative badge count fresh even while a filtered view is active (bug fix 2026-08-23):
   // a bulk put-back fires this with the true count, so the badge is right the moment the user returns.
