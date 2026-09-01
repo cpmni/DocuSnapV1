@@ -985,6 +985,11 @@ let _reprocessStatus = { running: false, total: 0, done: 0, failed: 0, pendingCo
 // batch's own docIds ∩ the shared auto-file predicate. Server-authoritative — the accept IPC takes
 // NO payload; a renderer can accept or ignore the offer, never widen it (Oracle 2026-08-12 C1).
 let _reprocessOffer = null;
+// Quick Reprocess (2026-09-01; Oracle C1): doc ids CONTESTED by the current imageless batch — an
+// image-family stored read disagreed with the cached text, so the stored value was kept but the doc
+// must be held out of THIS run's consent offer AND scope auto-accept (Quick must never file what Full
+// would hold). Run-scoped: reset when a batch starts; consulted by the offer builder + auto-accept.
+let _reprocessContested = new Set();
 // ANY OCR/extraction work is in flight — a batch (import / reprocess-all) OR a single reprocess.
 // Used to SERIALISE heavy work: starting a second reprocess while one is running oversubscribes
 // the CPU (every worker + the single proc OCR at once) and can race two merges into the same doc,
@@ -1270,10 +1275,28 @@ function _shadowStaleDropEnabled() {
 }
 let _mergeFlagDb = null;   // set by applyReprocessResult before merging; pure tests leave it null
 
-function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hiddenKeys = null) {
+// A stored read whose VALUE came from the page IMAGE (a crop, a registration/mapping relocation, a
+// draw-tool zone) — the exact reads an imageless (--reextract) run cannot reproduce, because it never
+// sees the pixels. Quick's merge preserves these against a differing text-derived value. Kept in step
+// with the reextract merge's own image-family set (mergeReextractRows) and the taught-key list.
+function _isImageFamilyMethod(m) {
+  const s = String(m || '');
+  return /^anchor_crop/.test(s) || s === 'anchor_registration' || /^template_mapping/.test(s) || s === 'ocr_region';
+}
+
+function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hiddenKeys = null, opts = {}) {
   const existingMap = {};
   for (const e of existing) existingMap[e.field_key] = e;
   const trace = (field, decision, oldV, newV) => { if (onTrace) onTrace(field, decision, oldV, newV); };
+  // Quick Reprocess (2026-09-01; gary → Oracle C1/C4/C6/C7). On an IMAGELESS run the fresh value is
+  // text-only; a field whose stored read was TAUGHT or came from the page image must not be silently
+  // overwritten by a text guess. `stats.imagelessKept` counts every such keep (drives the C4 overall
+  // preserve); `contestedOut` collects the image-family keeps whose fresh value DIFFERS (drives the C1
+  // consent/auto-accept exclusion + trace). A taught key ABSTAINS silently (operator-blessed).
+  const _imageless   = opts.imageless === true;
+  const _taughtKeys  = opts.taughtKeys || null;
+  const _contestedOut = Array.isArray(opts.contestedOut) ? opts.contestedOut : null;
+  const _stats       = opts.stats || null;
 
   const mergedRows = newRows.map(row => {
     const ex = existingMap[row.field_key];
@@ -1360,6 +1383,24 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hidd
       trace(row.field_key, 'kept_lane_hold', ex.display_value, row.display_value);
       return { ...row, validation_note: fresh && !keep.includes(fresh) ? `${keep} ${fresh}` : keep,
                corrected_to: row.corrected_to || ex.corrected_to || null };
+    }
+    // IMAGELESS PRESERVE (Quick Reprocess). The fresh value is text-only; if it DIFFERS from a stored
+    // taught / image-family read, the stored read wins (a --reextract cannot re-derive it). A taught key
+    // abstains silently; a non-taught image-family keep is CONTESTED (the doc is then held out of this
+    // run's consent + auto-accept so Quick never files what Full would hold — Oracle C1). fresh == stored
+    // needs no guard (the values agree). An UN-annotated empty already returned above via kept_existing.
+    if (_imageless && ex.display_value && row.display_value != null
+        && String(row.display_value).trim() !== String(ex.display_value).trim()) {
+      const _taught = !!(_taughtKeys && _taughtKeys.has(row.field_key));
+      const _imgFam = _isImageFamilyMethod(ex.extraction_method);
+      if (_taught || _imgFam) {
+        if (_stats) _stats.imagelessKept = (_stats.imagelessKept || 0) + 1;
+        if (!_taught && _imgFam && _contestedOut) _contestedOut.push({ field: row.field_key, old: ex.display_value, new: row.display_value });
+        trace(row.field_key, _taught ? 'kept_imageless_taught' : 'kept_imageless_contested', ex.display_value, row.display_value);
+        return { ...row, raw_value: ex.raw_value, display_value: ex.display_value, confidence: ex.confidence,
+                 extraction_method: ex.extraction_method, validation_note: ex.validation_note || null,
+                 corrected_to: ex.corrected_to || null, corroboration: ex.corroboration || null };
+      }
     }
     if (ex.display_value) trace(row.field_key, 'used_new', ex.display_value, row.display_value);
     return row;
@@ -1463,6 +1504,30 @@ function admitReextractPick(unpinBlank, storedTemplateId, pickId) {
   if (pickId == null) return false;
   if (!unpinBlank) return true;
   return pickId !== (storedTemplateId || null);
+}
+
+// The known-template id an imageless (--reextract) run should be TOLD, resolved from a document's
+// stored identity. EXACT shared implementation for the single-doc fast path (_reextractFastCore) and
+// the Quick-batch imageless partition — factored out so the two cannot drift (C2). The stored link
+// WINS unless the blank-supplier-unpin collision class applies; a null/unpinned link is re-identified
+// by fingerprint and admitted only when it DIFFERS from the stale stored id. `doc`:
+// { template_id, supplier_name, logo_phash, logo_detail_hash, document_type_slug, ocr_text }.
+function reextractKnownTemplateId(db, templates, doc) {
+  const _unpinBlank = process.env.REEXTRACT_UNPIN_BLANK_SUPPLIER !== '0'
+    && !String(doc.supplier_name || '').trim();
+  let knownTemplateId = _unpinBlank ? null : (doc.template_id || null);
+  if (!knownTemplateId && (!_unpinBlank || process.env.REEXTRACT_BLANK_REIDENTIFY !== '0')) {
+    try {
+      const m = templates.identifyByFingerprint(db, {
+        logo_phash: doc.logo_phash, ocr_text: doc.ocr_text,
+        document_type_slug: doc.document_type_slug, logo_detail_hash: doc.logo_detail_hash,
+      });
+      if (m && admitReextractPick(_unpinBlank, doc.template_id, m.template.id)) {
+        knownTemplateId = m.template.id;
+      }
+    } catch { /* no match → keyword-only re-extract */ }
+  }
+  return knownTemplateId;
 }
 
 function mergeReextractRows(existing, newExtractions, anchoredKeys = new Set(), opts = {}) {
@@ -3052,12 +3117,71 @@ function register(ctx) {
     } catch { /* resolver failure ⇒ no drop ⇒ today's behaviour */ }
 
     _mergeFlagDb = db;    // stale-shadow-drop flag resolves against THIS db (pure tests leave it null)
-    const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge, _hiddenKeys);
 
+    // QUICK REPROCESS imageless merge guards (2026-09-01; gary → Oracle C1/C4/C6/C7). Keyed on the
+    // Python `imageless:true` flag (never a JS guess): a text-only run cannot re-derive a taught or
+    // image-derived read, so the merge preserves those and — for a non-taught image-family field whose
+    // fresh text DIFFERS — CONTESTS the doc (held out of this run's consent + auto-accept).
     const learning = require('../../../database/modules/learning');
-    const _supBlanked = supplierColumnBlanked(mergedRows);
+    const _imageless = result.imageless === true;
+    let _taughtKeys = null;
+    if (_imageless) {
+      try {
+        const _idRow = db.prepare('SELECT d.supplier_name, dt.slug AS slug FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.id = ?').get(docId) || {};
+        _taughtKeys = new Set(learning.getTaughtFieldKeys(db, {
+          supplier_name: _idRow.supplier_name || result.supplier_name || '',
+          document_type: _idRow.slug || null,
+        }).map(r => r.field_key));
+      } catch { /* no anchors → nothing abstains */ }
+    }
+    const _contested = [];
+    const _mergeStats = { imagelessKept: 0 };
+    const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge, _hiddenKeys,
+      { imageless: _imageless, taughtKeys: _taughtKeys, contestedOut: _contested, stats: _mergeStats });
+
+    // C7: an imageless run never blanks a stored supplier (the logo identity arm never runs, so a
+    // text-only blank read must not NULL the column). C4: when a guard kept ≥1 stored image/taught read,
+    // keep the doc's PRIOR overall — the imageless engine scores those kept reads as 0, which would
+    // otherwise mass-hold the best-taught suppliers.
+    const _supBlanked = _imageless ? false : supplierColumnBlanked(mergedRows);
+    let _overallToStore = result.overall_confidence || null;
+    if (_imageless && _mergeStats.imagelessKept > 0) {
+      try {
+        const _po = db.prepare('SELECT overall_confidence FROM documents WHERE id = ?').get(docId);
+        if (_po && _po.overall_confidence != null) _overallToStore = _po.overall_confidence;
+      } catch {}
+    }
+    // C1: a contested imageless doc is excluded from THIS run's consent offer + scope auto-accept, and
+    // named in a trace + the log (no user-facing note — the value is kept, the exclusion is run-scoped).
+    if (_imageless && _contested.length) {
+      try { _reprocessContested.add(docId); } catch {}
+      for (const c of _contested) {
+        try { routeTrace({ type: 'trace', doc: filename, event: 'reprocess_imageless_contested',
+                           field: c.field, old: c.old ?? null, new: c.new ?? null }); } catch {}
+      }
+      logger?.log?.(`  Quick imageless: doc ${docId} held (image-family field disagreed with the cached text) — ${_contested.map(c => c.field).join(', ')}`);
+    }
     const _expect = opts && opts.expect;
     const _preserveAck = !!(opts && opts.preserveAck);
+    // IDENTITY-COLUMN guards for an imageless run (C6, the destructive seam): the plain assigns below
+    // would WIPE the stored logo/template identity with the nulls a text-only run returns. Compute the
+    // params in JS so the SQL — and every NON-imageless path — stays byte-identical: preserve
+    // logo_phash/logo_detail_hash UNCONDITIONALLY (Quick can never re-derive a logo), and preserve
+    // template_id/keyword_fingerprint when the fresh value is null (a text run may legitimately re-derive
+    // a keyword fingerprint, so a non-null fresh value still wins).
+    let _templateIdP = result.template_id || null;
+    let _logoPhashP  = result.logo_phash || null;
+    let _logoDetailP = result.logo_detail_hash || null;
+    let _kwFpP       = result.keyword_fingerprint ? JSON.stringify(result.keyword_fingerprint) : null;
+    if (_imageless) {
+      try {
+        const s = db.prepare('SELECT logo_phash, logo_detail_hash, template_id, keyword_fingerprint FROM documents WHERE id = ?').get(docId) || {};
+        _logoPhashP  = s.logo_phash ?? null;
+        _logoDetailP = s.logo_detail_hash ?? null;
+        if (_templateIdP == null) _templateIdP = s.template_id ?? null;
+        if (_kwFpP == null)       _kwFpP = s.keyword_fingerprint ?? null;
+      } catch {}
+    }
     const _updateDoc = () => db.prepare(
       `UPDATE documents SET
          overall_confidence  = ?,
@@ -3074,12 +3198,12 @@ function register(ctx) {
          review_acknowledged_at = CASE WHEN ? THEN review_acknowledged_at ELSE NULL END
        WHERE id = ?`
     ).run(
-      result.overall_confidence || null,
+      _overallToStore,
       reprocDocTypeId,
-      result.template_id        || null,
-      result.logo_phash         || null,
-      result.logo_detail_hash   || null,
-      result.keyword_fingerprint ? JSON.stringify(result.keyword_fingerprint) : null,
+      _templateIdP,
+      _logoPhashP,
+      _logoDetailP,
+      _kwFpP,
       _supBlanked ? 1 : 0,
       result.supplier_name      || null,
       result.ocr_text           || null,
@@ -3527,20 +3651,7 @@ function register(ctx) {
     // is the collision re-arriving and stays unpinned. The engine's known-id honour path is
     // the already-sanctioned imageless route (suggestion-only downstream: fill-only merge +
     // operator confirm; reextract never auto-files).
-    const _unpinBlank = process.env.REEXTRACT_UNPIN_BLANK_SUPPLIER !== '0'
-      && !String(doc.supplier_name || '').trim();
-    let knownTemplateId = _unpinBlank ? null : (doc.template_id || null);
-    if (!knownTemplateId && (!_unpinBlank || process.env.REEXTRACT_BLANK_REIDENTIFY !== '0')) {
-      try {
-        const m = templates.identifyByFingerprint(db, {
-          logo_phash: doc.logo_phash, ocr_text: doc.ocr_text,
-          document_type_slug: doc.document_type_slug, logo_detail_hash: doc.logo_detail_hash,
-        });
-        if (m && admitReextractPick(_unpinBlank, doc.template_id, m.template.id)) {
-          knownTemplateId = m.template.id;
-        }
-      } catch { /* no match → keyword-only re-extract */ }
-    }
+    const knownTemplateId = reextractKnownTemplateId(db, templates, doc);
 
     const existing = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId);
 
@@ -3830,6 +3941,9 @@ function register(ctx) {
     const trust = require('../../../database/modules/trust');
     const { evaluateSweepConsistency, extractionsFingerprint } = require('../../services/sweepPredicate');
     const presence = require('../../services/presenceService').shared();
+    // Quick Reprocess C1: a doc this run contested (a stored image-family read disagreed with the
+    // cached text) is held out of every auto-file path until a Full re-read clears it.
+    if (_reprocessContested.has(doc.id)) return { excluded: { docId: doc.id, reason: 'quick-imageless-contested' } };
     // A document someone has open is never filed under them. When that someone is the ACTOR (the owner had
     // #1742 open in Review while the pass ran — 2026-08-27) the receipt must say so instead of "someone":
     // reason 'being-viewed-by-you' → "you have it open in Review — confirm it from there".
@@ -4110,6 +4224,7 @@ function register(ctx) {
     const candidates = [];
     for (const d of rows) {
       if (!eligibleIds.has(d.id)) continue;
+      if (_reprocessContested.has(d.id)) continue;   // Quick Reprocess C1: never auto-accept a contested doc
       if (candidates.length >= SWEEP_CAP) break;
       candidates.push({ docId: d.id, tier: 1, fingerprint: extractionsFingerprint(fpStmt.all(d.id)) });
     }
@@ -4511,7 +4626,7 @@ function register(ctx) {
     for (const d of docs) {
       try {
         if (wfLockSvc.hasActiveWorkflowLock(db, d.docId)) { lockedSkipped++; continue; }
-        const row = db.prepare('SELECT working_path, template_id, ocr_text, status, confirmed_at, supplier_pin, supplier_name FROM documents WHERE id = ?').get(d.docId);
+        const row = db.prepare('SELECT working_path, template_id, ocr_text, ocr_recipe, logo_phash, logo_detail_hash, status, confirmed_at, supplier_pin, supplier_name FROM documents WHERE id = ?').get(d.docId);
         const srcFile = (row && row.working_path && fs.existsSync(row.working_path))
           ? row.working_path
           : path.join(d.folderPath || '', d.filename || '');
@@ -4554,7 +4669,18 @@ function register(ctx) {
           // deskew would gate deskew OFF and serve raw text (silent no-op). Kill switch DESKEW_CACHE_FAST=0.
           ...(!enh && row && row.ocr_text && row.ocr_text.trim() ? { ocr_text: row.ocr_text } : {}),
         };
-        nameToDoc[tmpName] = { docId: d.docId, filename: d.filename, existing, via: d.via || null };   // via: which lane arm selected it (Q3: 'layout')
+        // Quick Reprocess (2026-09-01): the row-like ocrCacheUsable partitions on — the stored full-page
+        // text, its provenance stamp, and whether an active template enhance means crops read on enhanced
+        // pixels (which Quick's imageless path would skip). Additive; the quiet lane ignores it.
+        nameToDoc[tmpName] = { docId: d.docId, filename: d.filename, existing, via: d.via || null,
+          cache: { ocr_text: row && row.ocr_text, ocr_recipe: row && row.ocr_recipe, enhance_active: !!enh },
+          // C2: the doc's OWN stored identity (pin-independent) so the Quick partition can pre-resolve a
+          // template by fingerprint for the imageless run — mirroring _reextractFastCore exactly. pinDiff
+          // docs are excluded from that fill (their manifest is deliberately re-detect-by-pin).
+          pinDiff: _pinDiff,
+          identity: { template_id: (row && row.template_id) || null, supplier_name: (row && row.supplier_name) || null,
+                      logo_phash: (row && row.logo_phash) || null, logo_detail_hash: (row && row.logo_detail_hash) || null,
+                      document_type_slug: (dtRow && dtRow.slug) || null, ocr_text: row && row.ocr_text } };   // via: which lane arm selected it (Q3: 'layout')
         tmpNames.push(tmpName);
         logAudit(db, { action: 'reprocess', target_type: 'document', target_id: d.docId,
           document_id: d.docId, outcome: 'success', metadata: { batch: true, ...(auditMeta || {}) } });
@@ -4563,11 +4689,15 @@ function register(ctx) {
     return { manifest, nameToDoc, tmpNames, lockedSkipped };
   }
   function _runReprocessShard({ db, tmpDir, shard, manifestFile, trainingArgs, reprMode, diagOn, deskewAll, deskewMinAngle,
-                                threadCap, label, extraEnv, track, onFileDone, onMsg }) {
+                                threadCap, label, extraEnv, track, onFileDone, onMsg, reextract }) {
     return new Promise((resolve) => {
       const filesFile = writeTempJson('rbfiles', shard);
       const scriptArgs = ['--folder', tmpDir, '--tesseract', tesseractPath(), '--mode', reprMode,
         '--files-file', filesFile, '--reprocess-manifest', manifestFile, ...trainingArgs];
+      // Quick Reprocess (2026-09-01): the usable shard runs imageless — reuse the cached full-page
+      // text from the per-doc manifest, render NO pages, skip the per-field crop OCR. Never combined
+      // with --deskew-pages (a straighten needs the pixels; deskewAll forces the whole batch Full).
+      if (reextract) scriptArgs.push('--reextract');
       if (deskewAll) scriptArgs.push('--deskew-pages', '--deskew-min-angle', String(deskewMinAngle));   // C3: straighten pages tilted past the operator's floor before reading (Python no-ops below it / on born-digital)
       if (traceWanted(diagOn)) {
         scriptArgs.push('--trace');
@@ -4658,6 +4788,44 @@ function register(ctx) {
       return { success: true, done: 0, failed: 0, lockedSkipped };
     }
 
+    // QUICK REPROCESS partition (2026-09-01; gary → Oracle C3). Only when the caller asked for Quick,
+    // the DARK switch is on, and this is NOT a straighten-all batch (a straighten needs the pixels).
+    // Each staged doc whose stored OCR is still valid for today's pipeline runs IMAGELESS (--reextract,
+    // reusing its cached text); the rest fall back to Full — and inside a Quick batch a Full-fallback
+    // doc has its cached text STRIPPED from the manifest, forcing ONE honest re-OCR that earns it a
+    // recipe stamp so it can go Quick next time (this is what makes legacy self-heal true). deskewAll /
+    // switch-off / no-quick ⇒ the partition is skipped entirely and every doc runs Full exactly as before.
+    const ocrCache = require('./ocrCache');
+    const quickOn = !!(opts && opts.quick) && !deskewAll
+                    && learning2.getSetting(db, 'quick_reprocess_enabled', 'false') === 'true';
+    let quickNames = [], fullNames = tmpNames;
+    const quickReasons = {};   // tmpName -> refusal reason (the C3 census arm + trace)
+    if (quickOn) {
+      const current = ocrCache.currentOcrRecipe(db);
+      quickNames = []; fullNames = [];
+      for (const tn of tmpNames) {
+        const nd = nameToDoc[tn];
+        const v = ocrCache.ocrCacheUsable((nd && nd.cache) || null, current);
+        if (v.usable) {
+          quickNames.push(tn);
+          // C2: the imageless engine cannot run live Stage-0 logo identification (no page image), so
+          // pre-resolve the template by fingerprint EXACTLY as the single-doc fast path does. The stored
+          // link wins for a bound doc (byte-identical to today's staging); a null-template / blank-supplier
+          // doc may gain a fingerprint pick. pinDiff docs keep their staged re-detect-by-pin manifest.
+          if (manifest[tn] && !nd.pinDiff) {
+            try { manifest[tn].known_template_id = reextractKnownTemplateId(db, templates2, nd.identity); } catch {}
+          }
+        } else {
+          fullNames.push(tn);
+          if (manifest[tn]) delete manifest[tn].ocr_text;   // C3: force one honest re-OCR to earn a stamp
+          quickReasons[tn] = v.reason;
+        }
+      }
+      logger?.log?.(`[quick-reprocess] ${quickNames.length} reuse cached OCR, ${fullNames.length} fall back to full re-read`);
+    } else if (opts && opts.quick && deskewAll) {
+      logger?.log?.('[quick-reprocess] straighten-all batch → whole batch runs Full (a straighten needs the page pixels)');
+    }
+
     const manifestFile = writeTempJson('rbmanifest', manifest);
     let concurrency = parseInt(learning2.getSetting(db, 'processing_concurrency', String(defaultConcurrency())), 10);
     if (!Number.isFinite(concurrency)) concurrency = 1;
@@ -4668,7 +4836,14 @@ function register(ctx) {
     // low-core machine never actually reaches 10; a high-core box with a high concurrency setting now
     // uses it (was throttled to 5). threadCap = cores/shards keeps the pool from thrashing.
     concurrency = Math.max(1, Math.min(10, concurrency));
-    const shards  = partitionRoundRobin(tmpNames, Math.min(concurrency, tmpNames.length));
+    // Two shard GROUPS: the imageless Quick group (reextract) and the Full group. In a non-Quick batch
+    // quickNames is empty and fullNames === every doc, so this reduces to today's single Full group with
+    // an identical round-robin partition (byte-identical). Each group is capped at `concurrency` shards
+    // and the groups run SEQUENTIALLY, so total live workers never exceed the cap.
+    const _mkShards = (names) => partitionRoundRobin(names, Math.min(concurrency, names.length || 1)).filter(s => s.length);
+    const shardGroups = [];
+    if (quickNames.length) shardGroups.push({ reextract: true,  shards: _mkShards(quickNames) });
+    if (fullNames.length)  shardGroups.push({ reextract: false, shards: _mkShards(fullNames) });
     // Per-worker thread cap — from the CONFIGURED concurrency, never the per-run shard count
     // (see _reprocessThreadCap: identical Tesseract threading across single/small/full
     // reprocess is what keeps a boundary glyph reading the SAME on every path). Still bounds
@@ -4682,6 +4857,7 @@ function register(ctx) {
     // id list). A new batch starting overwrites any unconsumed prior offer — fail-safe: those docs
     // simply stay queued (pinned in test_reprocess_autocommit.js).
     _reprocessOffer = null;
+    _reprocessContested = new Set();   // Quick Reprocess C1: fresh run, fresh contested set
     _reprocessStatus = { running: true, total: tmpNames.length, done: 0, failed: 0, pendingCompletion: false,
                          docIds: Object.values(nameToDoc).map(n => n.docId) };
     mirrorReprocess({ type: 'start', total: tmpNames.length });
@@ -4696,9 +4872,9 @@ function register(ctx) {
     const _holdsBatch = _holdsOn ? _holds.newBatch() : null;
     let _holdsRel = { released: [], held: [] };
 
-    const runShard = (shard) => _runReprocessShard({
+    const runShard = (shard, reextract) => _runReprocessShard({
       db, tmpDir, shard, manifestFile, trainingArgs, reprMode, diagOn, deskewAll, deskewMinAngle, threadCap,
-      label: 'reprocess-batch',
+      label: 'reprocess-batch', reextract,
       track: (p) => _currentBatchProcs.push(p),
       onFileDone: (msg) => {
         const nd = nameToDoc[msg.original_filename] || nameToDoc[msg.filename];
@@ -4718,7 +4894,11 @@ function register(ctx) {
     });
 
     try {
-      await Promise.all(shards.map(runShard));
+      // Groups run sequentially (Quick then Full) so live workers never exceed `concurrency`; within a
+      // group the shards run in parallel. A non-Quick batch has exactly one group (Full) — today's path.
+      for (const g of shardGroups) {
+        await Promise.all(g.shards.map(s => runShard(s, g.reextract)));
+      }
     } finally {
       // r19 N1 (P1 C4): release the reliable first-fills BEFORE the batch stops counting as busy — a
       // confirm-debounce sweep or the F2b offer must see the final rows, never the provisional ones.
@@ -4736,7 +4916,9 @@ function register(ctx) {
       try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
       cleanupFiles([manifestFile, ...shardFiles, ...tempFiles]);
     }
-    return { success: true, done, failed, lockedSkipped };
+    // quickCount / fullFallbackCount drive the dialog summary ("N reused cached text, M re-read in full").
+    return { success: true, done, failed, lockedSkipped,
+             quick: quickOn, quickCount: quickNames.length, fullFallbackCount: (quickOn ? fullNames.length : 0) };
   });
 
   // Live "Reprocess All" status — a Review window that was closed mid-batch reads this on reopen to
@@ -4806,7 +4988,8 @@ function register(ctx) {
           .map(id => documents.getById(db, id))
           .filter(d => d && d.status === 'needs_review'
                     && !['pending', 'claimed'].includes(String(d.workflow_status || '')));
-        const candidates = trust.autoFileEligibleIds(db, rows);
+        // Quick Reprocess C1: drop any doc this run contested — it must not be offered for one-click filing.
+        const candidates = trust.autoFileEligibleIds(db, rows).filter(id => !_reprocessContested.has(id));
         if (candidates.length) {
           _reprocessOffer = { docIds: candidates };
           out.offerIds = candidates;   // display only — accept takes NO payload

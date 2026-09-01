@@ -6327,6 +6327,55 @@ function showIssuerBlankChoice(name) {
   });
 }
 
+// Quick Reprocess (2026-09-01, DARK quick_reprocess_enabled). A 3-way choice at the "Reprocess all"
+// door — reuse each page's already-read text (fast), read every document in full, or cancel. Native
+// confirm() can only do two. Returns 'quick' | 'full' | 'cancel'. `fileLine` = the same self-files
+// honesty sentence the plain confirm shows.
+function showReprocessModeChoice(count, scopeLabel, fileLine) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (done) return; done = true; document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); };
+    const ov = document.createElement('div');
+    ov.setAttribute('data-help-ignore', '');
+    Object.assign(ov.style, { position: 'fixed', inset: '0', background: 'rgba(8,10,15,.72)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '99999', padding: '24px' });
+    const box = document.createElement('div');
+    Object.assign(box.style, { width: 'min(500px,94vw)', background: 'var(--surface)', border: '1px solid var(--border2)',
+      borderRadius: '12px', padding: '20px', boxShadow: '0 18px 50px rgba(0,0,0,.5)', color: 'var(--text)' });
+    const h = document.createElement('div');
+    h.textContent = `Re-read ${count} document${count === 1 ? '' : 's'} (${scopeLabel})?`;
+    Object.assign(h.style, { fontSize: '15px', fontWeight: '600', marginBottom: '10px' });
+    const p = document.createElement('div');
+    p.style.cssText = 'font-size:13px;line-height:1.5;color:var(--muted);margin-bottom:16px';
+    // Honest about what each mode does: Quick reuses the stored page text and skips re-reading the
+    // images (so taught / stamped fields keep their values, and anything whose scan settings changed
+    // since it was read is re-read in full automatically); Full re-reads every document the usual way.
+    // NOT "Full reads everything fresh from the page" — Full still reuses cached page text today.
+    p.innerHTML = `<strong>Quick</strong> reuses the text already read from each page and skips re-reading the `
+                + `images — fastest. Fields taught by drawing a box keep their current values; any document whose `
+                + `scan settings changed since it was read is re-read in full for you.<br><br>`
+                + `<strong>Full</strong> re-reads every document the usual way — slower, but it re-checks the fields `
+                + `read from the page image.<br><br>${fileLine || ''}`;
+    const foot = document.createElement('div');
+    Object.assign(foot.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' });
+    const cancel = document.createElement('button'); cancel.className = 'btn'; cancel.textContent = 'Cancel'; cancel.style.marginRight = 'auto';
+    const full = document.createElement('button'); full.className = 'btn'; full.textContent = 'Full re-read';
+    const quick = document.createElement('button'); quick.className = 'btn'; quick.textContent = 'Quick (recommended)';
+    Object.assign(quick.style, { background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--bg)', fontWeight: '500' });
+    cancel.onclick = () => finish('cancel');
+    full.onclick = () => finish('full');
+    quick.onclick = () => finish('quick');
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); finish('cancel'); } };
+    document.addEventListener('keydown', onKey, true);
+    ov.addEventListener('click', (e) => { if (e.target === ov) finish('cancel'); });
+    foot.append(cancel, full, quick);
+    box.append(h, p, foot);
+    ov.append(box);
+    document.body.append(ov);
+    quick.focus();
+  });
+}
+
 // ── Confirm ───────────────────────────────────────────────────────────────────
 // Confirm + file the CURRENT document. Shared by the single Confirm button and
 // the bulk "File All Ready" action so both go through the exact same path.
@@ -9097,7 +9146,22 @@ async function runReprocessBatch(docs, scopeLabel, opts = {}) {
   const _fileLine = _selfFiles
     ? `Re-reading updates the details. Because this sender already files by itself, anything that re-reads clean will file straight away — you'll see it in the activity strip with a Put back.${_holdsLine}`
     : `Re-reading updates the details; it doesn't file anything by itself — documents that come out ready still file through Confirm, File All Ready, or the sender's own auto-file once it's learned.${_holdsLine}`;
-  if (!opts.preConfirmed
+  // Quick Reprocess (DARK quick_reprocess_enabled): when ON — and not a straighten-all batch (a
+  // straighten needs the page pixels, so it is always a Full re-read) — offer Quick vs Full vs Cancel
+  // instead of the single confirm. OFF ⇒ the exact confirm() below runs, byte-identical to today.
+  let _quick = false;
+  let _quickChoiceMade = false;
+  if (!opts.preConfirmed) {
+    let _quickOn = false;
+    try { _quickOn = (await window.docusnap.getSetting('quick_reprocess_enabled')) === 'true'; } catch {}
+    if (_quickOn && !deskewSessionOn) {
+      const choice = await showReprocessModeChoice(docs.length, scopeLabel, _fileLine);
+      if (choice === 'cancel') return;
+      _quick = (choice === 'quick');
+      _quickChoiceMade = true;
+    }
+  }
+  if (!opts.preConfirmed && !_quickChoiceMade
       && !confirm(`Re-read all ${docs.length} document${docs.length === 1 ? '' : 's'} (${scopeLabel}) from their pages? `
              + `Values the documents re-read may replace what's shown now, and this can take a while. `
              + `Documents you've already confirmed and filed are not touched.\n\n`
@@ -9125,6 +9189,7 @@ async function runReprocessBatch(docs, scopeLabel, opts = {}) {
 
   const total = docs.length;
   let done = 0, failed = 0;
+  let _quickSummary = null;   // { quickCount, fullFallbackCount } when the batch ran Quick
 
   // Batched reprocess: ONE bounded pool of Python workers (server-side, honouring
   // processing_concurrency) reprocesses the whole queue — each worker handles a
@@ -9143,10 +9208,11 @@ async function runReprocessBatch(docs, scopeLabel, opts = {}) {
   try {
     const res = await window.docusnap.reprocessBatch(
       docs.map(d => ({ docId: d.id, folderPath: d.folder_path, filename: d.original_filename })),
-      { deskewAll: !!deskewSessionOn, deskewMinAngle }   // C4: force straightened READS (past the operator's angle floor) for the whole batch when the session toggle is on (covers Reprocess All + Reprocess-this-sender, which both route here)
+      { deskewAll: !!deskewSessionOn, deskewMinAngle, quick: _quick }   // C4: force straightened READS (past the operator's angle floor) for the whole batch when the session toggle is on (covers Reprocess All + Reprocess-this-sender, which both route here); quick: reuse cached OCR where valid
     );
     done   = (res && res.done)   || 0;
     failed = (res && res.failed) || 0;
+    _quickSummary = (res && res.quick) ? { quickCount: res.quickCount || 0, fullFallbackCount: res.fullFallbackCount || 0 } : null;
     lockedSkipped = (res && res.lockedSkipped) || 0;
     // Refused because a single reprocess (or another batch) is already running — clear the
     // just-shown banner and explain, rather than leaving "Reprocessing 0 of N…" stuck.
@@ -9199,10 +9265,14 @@ async function runReprocessBatch(docs, scopeLabel, opts = {}) {
   // Slice 1 Stage E: locked docs are skipped (never silently rewritten under an approver) —
   // say so, or the skip reads as a miscount.
   const lockedText = lockedSkipped ? ` · ${lockedSkipped} skipped (in an approval workflow)` : '';
+  // Quick summary: how many reused stored text vs re-read in full (only when the batch ran Quick).
+  const quickText = (_quickSummary && (_quickSummary.quickCount || _quickSummary.fullFallbackCount))
+    ? ` · ${_quickSummary.quickCount} reused stored text${_quickSummary.fullFallbackCount ? `, ${_quickSummary.fullFallbackCount} re-read in full` : ''}`
+    : '';
   const summary = (stopped
     ? `Stopped — ${done} reprocessed`
     : (failed ? `Completed — ${done} OK, ${failed} failed`
-              : `Completed ${done} of ${total}`)) + lockedText;
+              : `Completed ${done} of ${total}`)) + lockedText + quickText;
   banner.classList.add('done');
   banner.textContent = summary;
   setTimeout(() => {

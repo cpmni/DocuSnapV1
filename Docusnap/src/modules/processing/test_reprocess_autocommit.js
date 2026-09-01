@@ -70,7 +70,9 @@ console.log('5. server-owned offer: scope, gates, consume-once');
 check('batch records its own docIds at start (post-lock-filter nameToDoc)',
       /docIds: Object\.values\(nameToDoc\)\.map\(n => n\.docId\)/.test(handler));
 check('a new batch clears any unconsumed offer (fail-safe overwrite)',
-      /_reprocessOffer = null;\s*\n\s*_reprocessStatus = \{ running: true/.test(handler));
+      // the Quick-reprocess contested-set reset (Oracle C1) sits in the SAME batch-start reset block,
+      // between the offer-null and the status assignment — allow it here (behaviour unchanged).
+      /_reprocessOffer = null;[\s\S]{0,160}_reprocessStatus = \{ running: true/.test(handler));
 {
   const h = handler.slice(handler.indexOf("ipcMain.handle('consume-reprocess-completion'"));
   const consume = h.slice(0, h.indexOf('ipcMain.handle(', 10));

@@ -759,6 +759,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Watch folder splits multi-doc PDFs the same as manual import (DARK; owner
                          // flips after a soak — the wrong-boundary auto-file risk is unmeasured).
                          ['watch-separate-toggle', 'watch_separate_enabled'],
+                         // Quick Reprocess: reuse each page's stored OCR text at "Reprocess all" (DARK,
+                         // 2026-09-01; owner flips after the warmed-copy parity gate).
+                         ['quick-reprocess-toggle', 'quick_reprocess_enabled'],
                          // Barcodes (2026-08-26, barry → gary design): the page inventory and the field type.
                          ['barcode-inventory-toggle', 'barcode_inventory'],
                          ['barcode-field-toggle', 'barcode_field'],
@@ -1061,6 +1064,7 @@ const DEV_SWITCH_IDS = [
   'sweep-inview-countdown-toggle',   // 2026-09-01 rollout feature — default ON (mig 103), dev escape hatch
   'accept-field-chars-toggle',       // 2026-09-01 rollout feature — default ON (mig 103), dev escape hatch
   'watch-separate-toggle',           // 2026-09-01 watch separation parity — DARK until an owner soak
+  'quick-reprocess-toggle',          // 2026-09-01 Quick Reprocess — DARK until the warmed-copy parity gate
   // 2026-09-01 toggle-audit round 2 (owner: "some user-side toggles are unnecessary"): eight technical
   // reading-internal flags gated behind SFDEV — customer-invisible, values unchanged. Barcodes and the
   // Learning-Repair sub-toggles stay customer-visible (owner's pick).
