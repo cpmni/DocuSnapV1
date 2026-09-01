@@ -1090,6 +1090,19 @@ const DEV_SWITCH_IDS = [
   'quiet-reread-kw-select-toggle', 'quiet-reread-on-ready-toggle', 'fingerprint-seed-support-toggle', 'quiet-reread-on-layout-toggle',
   'fixed-seed-fragment-garble-toggle', 'fixed-seed-debris-wide-toggle', 'identity-suggest-canonical-toggle', 'review-group-by-letterhead-toggle',
   'type-ambiguity-waiver-toggle', 'type-ambiguity-ripple-toggle', 'review-activity-strip-toggle',
+  // 2026-09-01 gate-sweep (owner: "non-customer switches gated behind SFDEV"). Technical reading-internals
+  // wired from ~2026-08-13 onward that ship ON (migs 70/89/93/98) but were never added here, so a customer
+  // could see + toggle them on the Processing tab. Hiding them changes NO value (they stay ON), only
+  // visibility. EXCLUDES the owner-parked-visible switches (teach-label / list-field / hidden-field /
+  // deskew-review-retry) and genuine customer features (light-text, barcodes, learning-repair, straighten-on-import).
+  'xcheck-demote-toggle', 'recon-demote-toggle', 'name-demote-toggle', 'verification-doubt-clear-toggle',
+  'letterhead-prefill-toggle', 'type-election-title-toggle', 'machine-confirms-toggle',
+  'autofile-gate-unify-toggle', 'far-valued-only-toggle', 'shadow-stale-drop-toggle', 'corrob-autofile-toggle',
+  'identity-scope-post-repair-toggle', 'identity-near-match-keep-toggle', 'identity-hold-siblings-toggle',
+  'buyer-issued-scope-toggle', 'buyer-issued-letterhead-toggle', 'name-lex-low-distinct-toggle',
+  'issuer-near-match-confirm-toggle', 'identity-geom-fuzzy-toggle', 'quiet-reread-on-ready-templated-toggle',
+  'quiet-reread-ff-reliability-toggle', 'trust-role-disagreement-toggle', 'reprocess-holds-toggle',
+  'putback-refile-toggle', 'logo-detail-immune-toggle',
 ];
 function _applyDevSwitchVisibility(unlocked, revealGate){
   for (const id of DEV_SWITCH_IDS){
