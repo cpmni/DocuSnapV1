@@ -2355,18 +2355,23 @@ function register(ctx) {
     proc.on('error', () => done(null));
   });
 
-  async function _separateBatchDocuments(folderPath, templatesFile, log, onPhase, parallelism, slipsOn, trace) {
+  async function _separateBatchDocuments(folderPath, templatesFile, log, onPhase, parallelism, slipsOn, trace, onlyFiles = null) {
     let pdfs = [];
     try {
       pdfs = fs.readdirSync(folderPath, { withFileTypes: true })
         .filter(e => e.isFile() && path.extname(e.name).toLowerCase() === '.pdf')
         .map(e => e.name);
-    } catch { return 0; }
-    if (!pdfs.length) return 0;
+    } catch { return { separated: 0, rewrites: [], consumed: [] }; }
+    // onlyFiles (watch parity, 2026-09-01): restrict to the EXPLICIT stable-file set — never glob a
+    // polled folder (a half-written PDF must never be split). Manual import passes null (whole folder).
+    if (onlyFiles) pdfs = pdfs.filter(n => onlyFiles.has(n));
+    if (!pdfs.length) return { separated: 0, rewrites: [], consumed: [] };
 
     const segScript   = path.join(path.dirname(backendScript()), 'segment_docs.py');
     const splitScript = path.join(path.dirname(backendScript()), 'pdf_splitter.py');
     let separated = 0, done = 0, next = 0;
+    const rewrites = [];   // [{ original, segments:[basename,…] }] — a multi-doc PDF that was split
+    const consumed = [];   // [basename,…] — a file that was ONLY separator sheets (nothing to import)
 
     // Bounded parallelism for the detection pre-pass. Each detection spawns Tesseract
     // (itself multithreaded), so cap each worker's OpenMP threads to cores/P to keep
@@ -2402,6 +2407,7 @@ function register(ctx) {
             const keepDir = path.join(folderPath, SEPARATED_DIR);
             fs.mkdirSync(keepDir, { recursive: true });
             fs.renameSync(filePath, path.join(keepDir, name));
+            consumed.push(name);
             log?.(`${name} contained only separator sheets — nothing to import (kept in ${SEPARATED_DIR})`);
           } catch {
             // Not movable → it imports as a normal (junk) doc and lands in Review — visible, never silent.
@@ -2432,6 +2438,7 @@ function register(ctx) {
           continue;
         }
         separated += 1;
+        rewrites.push({ original: name, segments: made.map(f => path.basename(f)) });
         if (plan.separators) {
           log?.(`${name} — ${plan.separators} separator sheet(s) found · ${made.length} document(s) imported · sheets removed · original kept safe`);
           trace?.({ ev: 'slip_split', file: name, separators: plan.separators, payloads: plan.payloads, made: made.length });
@@ -2441,7 +2448,7 @@ function register(ctx) {
       }
     }
     await Promise.all(Array.from({ length: Math.min(P, pdfs.length) }, worker));
-    return separated;
+    return { separated, rewrites, consumed };
   }
 
   // ── Process folder ──────────────────────────────────────────────────────────
@@ -2716,11 +2723,12 @@ function register(ctx) {
         // Tesseract parallelism, so a low-RAM box must not oversubscribe it either.
         const sepP = Math.max(1, Math.min(os.cpus().length || 1, 6, ramConcurrencyCap()));
         try {
-          const n = await _separateBatchDocuments(folderPath, templatesFile,
+          const sepRes = await _separateBatchDocuments(folderPath, templatesFile,
             (text, level) => mirror(event.sender, 'process-progress', { type: 'log', text, level: level || '' }),
             (text) => mirror(event.sender, 'process-progress', { type: 'log', text, phase: true }),
             sepP, slipsOn,
             (ev) => mirror(event.sender, 'process-trace', ev));
+          const n = (sepRes && sepRes.separated) || 0;   // richer return {separated,rewrites,consumed}; import re-scans, so only the count is used
           if (n) logger?.log(`[separation] separated ${n} multi-document PDF(s) before processing`);
         } catch (e) {
           logger?.warn(`[separation] pre-pass failed (continuing without split): ${e.message}`);
