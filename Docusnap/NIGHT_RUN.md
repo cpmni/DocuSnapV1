@@ -6,7 +6,7 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
-## TONIGHT — armed 2026-09-01 NIGHT (owner "going to bed"): #1 + #2 combined + a full SECURITY AUDIT
+## TONIGHT — ✅ DONE 2026-09-01 NIGHT (see the DONE ledger): #1 + #2 combined + a full SECURITY AUDIT
 **Owner order:** combine the two suggested night jobs — (#1) the Quick Reprocess INTEGRATION GATE on a
 self-built warm sandbox DB, and (#2) a Chris sandboxed round on the newest surfaces — then do a full
 security audit (licensing + overall + raw-OCR-at-rest + a known-flaw sweep for Electron/Node.js/JS,
@@ -217,6 +217,20 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-09-01 NIGHT · #1 Quick-Reprocess gate + #2 Chris round + a FULL pre-release SECURITY AUDIT — ALL
+  DONE.** (a) Recovered + finished the crashed Plan B (merge pin 68, `7a8b797`). (b) **Security audit**
+  (`docs/SECURITY_REVIEW_2026-09-01.md`, eric+dep-researcher+gary+Oracle): code security strong; 3 safe
+  fixes shipped + pinned (`a6ff457`, pin 17); release-gate items LOGGED for the owner (code-sign installer =
+  the one no-doc-workaround blocker; plaintext-DB disclosure = Oracle "opt-in + loud BitLocker posture, NOT
+  default-on"; honest binned-doc copy; node-forge de-escalated to hygiene). (c) **Quick-Reprocess gate**:
+  emit fixture 8/8 on real Python (`2469c97`); Oracle SIGN-OFF-W/COND (the C1×C4 pixel-heal seam → dialog
+  disclosure `2c25a6c`); 5-arm flip gate written for the owner's real DB (`docs/QUICK_REPROCESS_GATE_2026-09-01.md`),
+  DARK/OFF. (d) **Chris round** (`docs/CHRIS_FULL_APP_REVIEW_2026-09-01_NIGHT.md`): verdict YES; the Quick
+  dialog copy + DB-encryption ceremony landed; 6 cards (top = teach-box plausible-word garble still stands
+  up "Apply to N" — diagnosed as a real out-of-scope gap in Plan A's name-quality guard, needs a
+  letterhead-MATCH card; #5 diag-log = dev artifact, resolved). All in `HANDOVER_2026-09-02.md`. Nothing
+  pushed, nothing flipped. **Repeat if:** never re-run — the follow-ups are the owner's approval-class
+  decisions (signing/disclosure/push) + the Quick-Reprocess real-DB flip gate + building any Chris card.
 - **2026-08-31 NIGHT2 · [owner ask] CORROBORATED-STRAIGHTEN AUTO-FILE arc BUILT DARK + unit-pinned (Oracle
   SIGN-OFF-W/COND C1-C7).** `docs/designs/DESKEW_CORROB_AUTOFILE_2026-08-31.md`. A straighten-CHANGED field
   skips its "confirm once" hold and auto-files ONLY when it is a VERIFIED corroborated rescue: ≥2 independent
