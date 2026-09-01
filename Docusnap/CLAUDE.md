@@ -44,665 +44,176 @@ ONLY) then PLAN B (Quick Reprocess — `ocr_recipe` stamp + `ocrCacheUsable` + i
 guards; gary+Oracle C1-C7 BINDING, C1=a contested keep is EXCLUDED from consent/auto-accept, C3=the Quick-batch Full
 fallback omits cached text to earn stamps, C4=preserve prior overall on kept rows; DARK `quick_reprocess_enabled`;
 mig 104 next). Full specs in the EVENING handover.** Prior:
-## (previous) 2026-09-01 (rollout hardening + M=7 resolved): **READ `HANDOVER_2026-09-01.md` FIRST**, then
-`HANDOVER_2026-08-31_NIGHT2.md`. Branch `feat/teach-side-overnight`, **HEAD = origin = `3690e39` — ALL PUSHED**, tree
-clean; nothing running. Installer `dist\ScanFinder Setup 2.0.0-r20260901-0830-11c1598.exe` (signed; owner testing for a
-customer rollout). **NIGHT2 + 09-01 span:** (1) **DESKEW_CORROB_AUTOFILE arc BUILT DARK** (`aa61350`, Oracle C1-C7): a
-straighten-CHANGED field auto-files (skips its "confirm once" hold) ONLY as a VERIFIED corroborated rescue — ≥2
-independent page families incl. a KEYWORD witness agree (`_corrob_licensed_keyword`), matches its learned skeleton
-(engine `_shape_ok`), AND the raw `was` was not credible (empty/skeleton-False — Oracle C4: the straightened corrob
-record is BLIND to the raw pass). Option A = Python skip in `_deskew_retry_apply_holds`, `isAutoFileEligible`
-untouched; nested under `corroboration_autofile`. Pin `test_deskew_corrob_autofile.py` 12, import smoke 14/14, OFF
-byte-identical. **DO NOT FLIP** — owner-machine census from the COLD import state (the retry fires only in the warming
-phase; a reprocess of now-warm docs reads clean). SFDEV toggle `deskew-corrob-autofile-toggle`. Design
-`docs/designs/DESKEW_CORROB_AUTOFILE_2026-08-31.md`. (2) **BATCH-IMPORT CRASH FIX** (`40ef134`, eric+oscar+Oracle):
-RAM-aware worker cap + `runWorker` spawn-failure resilience (silent crash = unhandled `error` on the only spawn with
-no handler); pin `test_import_concurrency_cap.js` + smoke `TESTING/_measure/import_crash_smoke.js`. (3) **Quick-check
-dropdown focus fix** (`b95ccf5`, E44 native-select — `_baOpen` now arms the proven focus edge). (4) **minimise/docked
-windows stop popping back** (`cb29ffb` — the 12s createWindow backstop force-showed on `!isVisible()`, which a
-minimised/docked window also reports; guarded on `_revealed`+`!isMinimized()`). (5) **`deskew_review_retry_enabled`
-default-ON for fresh installs** (mig 101, `ae6d20f`). (6) **TOGGLE AUDIT** (`11c1598`): fresh-install config = the
-owner's validated production set (customer ON · DARK arcs OFF+gated · dev/telemetry/diag locked · onboarding on); gated
-25 technical reading-internal toggles behind SFDEV (shipped ON but were customer-visible). (7) **M=7 DATE CLASS = a
-MEASUREMENT ARTIFACT, not a bug:** 007 rendered + main verified — the app reads the dates CORRECTLY; #1453/#1649/#364
-were POISONED GT (now corrected in `Desktop\ScanFinder Test Corpus\ground_truth.json` + a `.poisoned-bak`). Oracle: DO
-NOTHING on code (reggie's page-witness guard = the WRONG-LAYER twin of Gate A `FILING_SANITY_PAGE_MATCH_V2`, which
-false-flagged ~7× in Chris r7). `trust_role_disagreement_refuse` (#1423's disagreement class) is ALREADY default-ON
-(mig 93, not "DARK"). **Traps:** never name-kill electron (the packaged app runs alongside; electron≠ScanFinder); a dev
-`npm start` locks repo node_modules → EBUSY the native rebuild (close it first); `git commit -F` only (backticks in
-`-m` shell-substitute). Prior:
-## (previous) 2026-08-31 (DB-encryption integration pass): **READ `HANDOVER_2026-08-31_NIGHT.md` FIRST.** Branch
-`feat/teach-side-overnight`, **HEAD `2aaf6a3` (code `19432cb` + docs `2aaf6a3`), origin at `c183792` — 5 commits UNPUSHED** (owner pushes).
-**THE DB-ENCRYPTION INTEGRATION PASS IS BUILT (`19432cb`, DARK/inert — plaintext boot byte-identical; do NOT
-rebuild).** eric-lifecycle-reviewed + Oracle SIGN-OFF-W/COND (a DISJOINT `.db-migrate-code` arm keeping the
-downgrade tripwire byte-identical). BUILT: the `main.js` whenReady boot gate (5 actions:
-plaintext/open-cached/prompt-code/tripwire/migrate) before the first `getDb()`; the Unlock/Recover window
-(`src/windows/unlock/`, closes via `app.exit(0)` — the pre-key boot has no tray/before-quit and `getDb()`
-throws on the unkeyed DB); the tripwire (`showErrorBox`+`app.exit(1)`, never opens plaintext); the
-sender-scoped `unlock-recover` IPC (read-write verify); the **opt-in Settings→Advanced ceremony** (mint →
-masked code Show/Copy/Print → typed "I HAVE SAVED IT" → arm → relaunch); `dbKey.mintCode`/`armMigration`/
-`loadMigrateCode`/`clearMigrateCode`; `dbStartup` migrate row + C1 self-heal; `dbBootMigrate.js` (fail-toward-
-plaintext, pinned). Pins green under E44: `test_db_startup` 6→11, `test_db_boot_migrate` 18. **REMAINING =
-OWNER-machine only:** the migration DRILL (`db.backup()` first → click "Turn on encryption" → confirm →
-relaunch → silent open; delete `.db-key` → Unlock by code), the DPAPI-loss + DOWNGRADE drills (restore
-`.pre-encrypt` → must LOUD-tripwire), packaged-boot + gate-5b on E44, perf<10% + verifyAuditChain//v1,
-realdoc-605 OFF byte-identical. **DEFAULT-ON = DEFERRED (owner); opt-in only. The first "Turn on encryption"
-click IS the drill — it encrypts the live DB (crash-safe).** Prior NIGHT (crypto core):
-**Dev app RUNNING on ELECTRON 44** (live PLAINTEXT DB, mig 100). All three EVENING build-specs got built +
-Electron 44 merged + DB encryption pivoted, in one session: **(1)** `TEMPLATE_LOCATE_ROLE_QUALIFIER`
-(`e65959c`, DARK mig 99, the Net-Total locate steal — demote role-qualified 'total' in `_locate_anchor` +
-the born-digital twin; `test_locate_role_qualifier.py`) · **(2)** `TEMPLATE_FRAGMENT_CONTAINMENT_YIELD`
-(`2bf7609`, DARK mig 100, CAD8⊂CAD832694 — a Stage-1 sibling leg adopts a keyword read that strictly
-prefix-contains a taught fragment, ref-family/never-money, cap 88 + neutral note; `test_fragment_
-containment_yield.py`) — **both DARK/OFF, flip gates (realdoc-605) queued.** · **(3) ELECTRON 31.7.7 → 44
-MERGED** (`0ed6f20` from `chore/electron-44`; **Node 24**, better-sqlite3-multiple-ciphers **^13**, argon2
-0.45.1, Rung-A/B fuses) — re-gated (crypto suites + real-DB read) + PUSHED; **owner still owes** a packaged
-boot + gate-5b on the MERGED tree; `client/`+`cert-tool/` need `npm install` if built. · **(4) DB-AT-REST
-ENCRYPTION — pivoted to CODE-AS-PASSPHRASE, crypto core COMPLETE + pinned** (`684de90`+`a683975`): the
-printed 125-bit RECOVERY CODE *is* the key (multiple-ciphers passphrase mode, `cipher=chacha20`, pinned
-`kdf_iter`, salt-in-DB-header) so **a lone `docusnap.db` copy + the code opens on any PC** (the owner's
-requirement, pinned twice). `.db-key` = a no-prompt DPAPI cache of the code only; `.db-recovery`/argon2
-GONE. Files: `dbKey.js` (the `applyKey`/`applyRekey` pragma choke point) · `dbMigrateEncrypt.js`
-(crash-safe, rekey in DELETE mode) · `dbStartup.js` (the decision table, Oracle C4) · seam
-(`setEncryptionKey(code)`+`temp_store=MEMORY`) · `db-crypto-tool.js`. Pins all green under E44 (dbKey 16 ·
-cipher 10 · migration 18 · startup 6 · secretStore 14). `src/database.js` DELETED. **Oracle SIGN-OFF-W/COND
-(10 conditions) at the foot of `docs/oracle_log.md`; full spec `docs/designs/DB_ENCRYPTION_ARC_2026-08-31.md`.**
-**REMAINING = the INTEGRATION pass** (do NOT rebuild the crypto core): the whenReady unwrap gate + the
-Unlock/Recover window + the combined "Keep these safe" dialog (Show/defer/reinforce, admin+DB codes) +
-slice-3 tripwire/default-on + the OWNER migration drill. **Owner decisions logged:** regenerate-code =
-DEFERRED (it's a full re-encrypt); email-the-code OUT; SMTP for non-secret workflow notifications = a
-future barry feature. **DB encryption is INERT** (no key set → plaintext, byte-identical). Prior EVENING:
-**(previous) 2026-08-31 EVENING: `HANDOVER_2026-08-31_EVENING.md`** (the three build specs — now built). **THE DAY:** the adversarial night run (Hard Set 400 PDFs, 0 wrong
-would-files, Chris YES) → teach-first practice run + 20-page User Guide (Chris r2 YES ×2) → **ALL THREE Hard
-Set cards BUILT+Oracle-cycled+GATED+FLIPPED live, then mig 98 (`0ddd268`) force-defaults the six gated
-switches ON everywhere** (never strict-money) → live import demo 20/20 fills + clean purge → **Terms FINAL**
-(`127ec74`, LEGAL_VERSION 2026-08-31) → installer `dist\ScanFinder Setup 2.0.0-r20260831-1247-0ddd268.exe`
-(owner testing on machine 2) → **three afternoon designs, all Oracle S-O-W/COND, NOTHING BUILT — the next
-session's job on the owner's pick:** (1) `TEMPLATE_LOCATE_ROLE_QUALIFIER` (Net-Total locate steal — demote
-role-qualified 'Total' occurrences via keyword's `_total_role_collision` vocab INSIDE `_locate_anchor` + a
-page-wide leg; carriers-override + born-digital-twin gaps conditioned); (2) `TEMPLATE_FRAGMENT_CONTAINMENT_
-YIELD` (CAD8⊂CAD832694 — a merge leg adopting a ≥85 format-valid keyword read that strictly prefix-contains
-a shapewarn'd mapping fragment; ref-family only, NEVER money, always noted; the sanctioned successor to the
-08-09 Q2 rejection); (3) **DB-at-rest encryption** (mc-fork alias + DPAPI `.db-key` + printed Recovery Key,
-hexrekey-on-copy migration, slices 0-3; four seam ship-blockers conditioned incl. secretStore's fail-open
-write). Verdicts+conditions = the three 08-31 entries at the foot of `docs/oracle_log.md`. **Traps refreshed:**
-builds need EVERY electron closed (EBUSY); NEVER taskkill by cmdline substring (self-match killed the owner's
-app — recovered); Start-Transcript beats Start-Process redirects for detached runners; `@N%` trace badges =
-page-Y not confidence; APPDATA can be empty in electron-as-node children. Prior:
-## (previous) 2026-08-31 NIGHT (the adversarial-corpus night run): **READ `HANDOVER_2026-08-31_MORNING.md` FIRST.**
-Branch `feat/teach-side-overnight`, night commits `1e1461f` (gen) · `1cbaad3` (scorer) · `1590d03` (scorer fixes +
-score report) · `363dd26` (class cards) · `6ba8782` (Chris) · wrap, **NOT pushed** (owner reviews then pushes).
-**PIPELINE UNTOUCHED — no switch flipped, no live-DB/app/Desktop write; everything ran on a `db.backup()` copy.**
-Built + scored the **Hard Set** (`Desktop\Hard Set\`, 10 classes × 20 × digital+scan, 7 synthetic issuers,
-`stress_test/gen_hard_set.py` + `score_hard_set.js`): **600 doc-arm scores, wrong+would-file = 0 everywhere** —
-every wrong read flagged or EMPTY-held (`below-floor` honest). Chris (fresh sandbox 9223, 60 docs): 0 cold
-auto-files, File All truthfully 0, **teach-heals-boxed-cells CONFIRMED** (one Thornfield lesson → 8 sibling dates,
-3 paper styles, 0 bleed), verdict YES — `docs/CHRIS_FULL_APP_REVIEW_2026-08-31.md`. Three DARK card designs await
-the owner's pick (`docs/designs/HARD_SET_CLASS_CARDS_2026-08-31.md`): **oscar** — boxed label-above-value cells:
-Stage-1's right-leg steals the NEIGHBOUR cell's caption (keyword.py:2062-2139), below leg unreached + column-blind;
-cell-below arm, cap 85; **`ref_role_digit_gate` is the ONLY guard against cold-committing "Date" as ref @95**;
-**reggie** — credit-sign: `£-x` heals (MONEY_SIGN_CAPTURE) but `-£x`/parens/trail/`CR` die at keyword
-`_clean_value` (all flagged; arm 2 dead on keyword reads — `raw_value` never set); **gary** — the 7 warm
-buyer_issued_po "silent-wrong" reads are the **07-12 doctrine working** (issuer = letterhead buyer; GT flaw —
-dual-accept), real residual = warm silence licensed by ANY maturity (convention-licensed-silence design). GT flaws
-to fix before re-use: thermal invoice→receipt, buyer dual-accept, component signs. Scorer traps pinned in
-`docs/HARD_SET_REPORT_2026-08-31.md` (synthetic doc id must be TRUTHY or the would-file lane dies silently;
-EMPTY≠SILENT). NIGHT_RUN.md ledger updated (TONIGHT cleared, 5 DONE entries, 5 new queue items — top: GT fixes,
-"ready" language war, heading-words-in-ref presentation). Sandbox LEFT RUNNING 9223 (PID 36960). **NEEDS OWNER
-(morning): pick which card(s) to build (my ranking oscar → reggie → gary); vet Chris cards 1+2; Receipt preset
-decision; then push.** **DAY-2 (owner asked, then slept): practice run reworked TEACH-FIRST** (`3e47cd4` + r2
-fixes — teach sim of the real 3 Invoice details → import → Review-as-CORRECTION type-over; tour cards 4/5/6
-reframed) **+ the full 20-page USER GUIDE rebuild** (`2a9b4d7` — 5 new pages where-things-go/export/approvals/
-learning/admin, 5 old-voice rewrites, manifest re-pointed, `check:help` fully green 153 keys, `test_help_nav`
-ALL PASS) — **Chris round 2 on sandbox2 (PID 33988, LEFT RUNNING): BOTH VERDICTS YES**, his 4 build-defect
-cards fixed same night (Esc soft-lock, done-row dupe, 3-detail parity, teach-intro label copy), help-mode
-one-shot = owner choice in pendingfeatures; teach/index.html intro now says value-only-label-found-for-you.
-RESTART the live app to load tutorial/tour/help. **DAY-2 LATE MORNING: ALL THREE CARDS BUILT DARK +
-ORACLE-CYCLED + GATED** (`docs/designs/DARK_ARCS_GATES_2026-08-31.md` = the evidence dossier; verdicts in
-`docs/oracle_log.md`): `keyword_cell_below` (`ece65b1`+`829afed`, SEND BACK→C1-C6; Hard Set boxed ref/date
-0-15→85-100%, realdoc-605 byte-identical) · `money_sign_parens`/`money_sign_cr` (`9dd5139`+`e0fe39d`,
-S-O-W/COND; C1 = either capture FORCES CREDIT_SIGN_COHERENCE in `_reconcileEnv`, pinned
-`test_money_sign_coupling.js`; credit totals 24→65%, realdoc byte-identical) · `buyer_issued_convention_note`
-(`5d1dd84`+`f72eee5`, S-O-W/COND; 'logo' in the tuple; stripped-warm 7/7 noted, live unchanged, 0 unlicensed
-live POs). Migs 95-96-97 seed all OFF; dev-gated rows in DEV_SWITCH_IDS. **TERMS FINAL (`127ec74`)**:
-LEGAL_VERSION 2026-08-31, draft banner gone, product-fit additions (device release, MoR refunds, min-version
-updates, third-party notices, docs-stay-yours, General/assignment). **Installer built:** `dist\ScanFinder Setup
-2.0.0-r20260831-0918-127ec74.exe` (owner testing on a second machine). Traps refreshed: the build needs EVERY
-electron closed (better-sqlite3 EBUSY on the ABI rebuild), and NEVER kill processes matched by command-line
-substring (the query matches your own shell — it took the owner's app down; relaunched, nothing lost). Prior:
-## (previous) 2026-08-30 NIGHT: **READ `HANDOVER_2026-08-30_NIGHT.md` FIRST.** Branch `feat/teach-side-overnight`,
-**HEAD `91ca11b`** (two commits after `0ff8b42`: `fccaf55` Python arc, `91ca11b` settings/JS/docs), **NOT pushed**
-(owner reviews then pushes). Uncommitted: `CLAUDE.md` only. **THE RE-SLICE ARC IS BUILT, DARK, ORACLE-SIGNED (C1-C14 applied) — but its two premises were FALSIFIED
-by measurement first:** the product ladder reads Nordwind 0023's taught total box as **`29,242.76` @90 (a format-VALID
-garble)**, not `£9 32632.76`; and **DPI is not the lever — vertical headroom is** (pad 0 fails at 200-600 DPI; a padded
-PSM-7 re-read DEGRADES clean zones; **R8 = pad 0.5×h, no upscale, 20 px white border, PSM 6 + in-band line pick = 20/20
-incl. 0023 @92**). So the sweep became a **WITNESS-PRODUCER**: `reslice_witness_sweep` (engine stage 4.7, TOTALS only)
-re-reads the taught zone on a noted, penny-reconciled total and injects an AGREEING read as a `mapping`-family ledger
-candidate so the signed `_demote_recon_total_corroborated_note` can release the note; commits nothing; not review-bound
-(Oracle). Also DARK: `corrob_discount_invalid_witness` (currency-only record hygiene; JS role refusal scans
-`disagree ∪ discounted`), `template_format_fail_yield_strict_money` (**never flip in this arc** — it pre-empts the
-sweep's release path, C10/C11). **Deskew retry dead guard FIXED:** `raw2["_needs_review"]=True` held nothing (`autofile_
-gate_unify` is ON on every mig-93 install) → per-field "Read differently after straightening — was X, now Y — confirm
-once." (+ emptied fields, + `corrected_to`); and the retry NEVER fires on a note-only hold (keys on engine
-`_needs_review`) — its 5/20 heals were a sandbox artefact (empty ref/date). **Gate MET:** Nordwind OFF vs pre-edit baseline
-0/20 diffs; ON = 0023 released, 19 byte-identical; **full realdoc four-arm A/B (off/sweep/discount/all) on ONE PAPER PER
-DOCUMENT × 605 (the owner: "most docs are dupes" — 1,940 files = 618 byte-distinct = 605 papers; `RR_IDS` from
-`_dedup_ids.py`) at 200 DPI with the app env: accuracy + fill identical on every field, M = 7 UNCHANGED (baseline wrong
-would-files — the leading-digit date class + two poisoned GT rows), would-file 570 → 571 (#1840 = 0023), 1 fire, 0 wrong
-releases; discount arm byte-identical (inert on today's reader).** Full Python + JS suites: every red (9 + 20)
-reproduces on `0ff8b42`. **Flip order: sweep → discount → never strict-money.** **OWNER CONVENTION (08-30): repo `NIGHT_RUN.md` = the
-overnight test/check QUEUE + DONE ledger — add anything worth testing/checking as you notice it; at the end of every
-night run move the work to DONE with its result + "repeat only if"; never repeat DONE work unless that condition
-holds. "Going to bed" = start the newest `docs/designs/NIGHT_RUN_*.md` at once.** **⏭ NEXT SESSION'S JOB (owner-queued,
-prompt written): the ADVERSARIAL TEST CORPUS night run — paste `docs/designs/NIGHT_RUN_2026-08-31_ADVERSARIAL_CORPUS.md`
-(build `stress_test/gen_hard_set.py` — 10 classes × digital + scan renditions — score cold/warm with
-`score_hard_set.js`, advisor class cards, `/christest` on the scan set, handover; NO pipeline fixes unless DARK +
-Oracle + realdoc-605 gated).** RESTART
-for mig 94 + the three dev-gated Processing rows. Pre-existing red: `test_settings_wiring.js` stamp-* ids. Traps: the
-`!= '0'` idiom (harness OFF arm = explicit `'0'`); `money_strict_shape` accepts a rejoinable space-split (`£9 242 76`)
-by contract; `git show HEAD:Docusnap/<path>`; `buildTrainingArgs(db, () => cfg).args`. Prior:
-## (previous) 2026-08-30 DAY: **READ `HANDOVER_2026-08-30.md`.** Branch `feat/teach-side-overnight`, **HEAD `0ff8b42`,
-NOT pushed** (owner reviews then pushes). Uncommitted: only `CLAUDE.md`. **Dev app RUNNING** (I relaunched `npm start` on the
-real DB). **NEXT SESSION'S JOB = the CORROBORATION RE-SLICE ARC** (owner APPROVED) — read
-`docs/designs/CORROB_RESLICE_SWEEP_2026-08-30.md`: **fix #1** discount a format-INVALID corroboration witness (small — clears
-the Nordwind-0023 total flag, since keyword already read `2,363.76` + it reconciles), then **fix #2** the owner's capped
-corroboration-gated **re-slice sweep** for total/ref/date (higher-DPI zone RE-RENDER + PSM/binarise/£-strip/straighten ladder,
-STOP on corroboration, adopt only then, ≤~4-6 tries, review-bound). oscar/reggie/007 → Oracle → DARK switch → OFF/ON census.
-**SHIPPED this session (all NOT pushed):** (1) **deskew re-read PIVOTED + shipped `4607cc6`** (DARK `DESKEW_REVIEW_RETRY` /
-setting `deskew_review_retry_enabled`, floor 0.3°): a 200-DPI census FALSIFIED the field-scoped slice arm (fired 0× — the
-garbled names read 88-96%, never *withheld*) so it was REMOVED (`ocr/deskew_reread.py` + its pin gone, `engine.py` back to
-single-pass); replaced by a **review-bound whole-page straighten retry** in `process_docs.py` (after `engine.extract`, only on
-a doc already `_needs_review` + page skew ≥ floor, re-OCR straightened, adopt WHOLE only if `_overall_confidence` strictly
-higher, forced `needs_review` — never auto-files a straightened read, can't demote a clean auto-file). Gate: **5/20 Nordwind
-identities healed, 0 regressions**; pin `test_deskew_review_retry.py` 13/13; withhold path unchanged. (2) **Settings toggle
-`8333023`** (standard visible Processing row) + `deskew_review_retry_enabled` set TRUE on the live DB for testing — **RESTART to
-see the toggle**; behaviour already active (handler reads the setting live at spawn). (3) **Live-DB switch audit:** all **148**
-mig-93 "should be on" switches already ON, `dev_switches_unlocked` already true (dev switches visible in Processing) — nothing
-to flip. **CORRECTED stale claim:** the mid-session "every Nordwind ref/date is empty (template gap)" was a SANDBOX artifact
-(`scratchpad/live_e44gate.db` lacks the owner's live learning) — on the live app they fill; NOT a defect. **Traps:** the
-`!= '0'` switch idiom reads an EMPTY string as ON (a switch-A/B OFF arm must be explicit `'0'`); harness must set
-`OCR_RENDER_DPI=200` (product DPI; harness defaults 300); `git commit -F <file>` ONLY. **The Electron 44 upgrade (PR #12) is
-DONE + VM-confirmed** — no longer the pending job. Prior:
-## (previous) 2026-08-29: **READ `HANDOVER_2026-08-29.md`.** Branch `feat/teach-side-overnight`, **HEAD `59923ed`,
-PUSHED (in sync with origin; git auth now works via GCM/credential-manager)**. Uncommitted: `CLAUDE.md` + **three report
-docs left for owner review**. ⏭ **NEXT SESSION'S PRIMARY JOB = execute the ELECTRON 31.7.7 → 41 UPGRADE** per
-`docs/ELECTRON_41_UPGRADE_PLAN.md` — **Oracle SIGN-OFF-WITH-CONDITIONS** (conditions are the "⚖ Oracle gate" block at the
-top of that doc): a mandatory BLOCKING **gate 5b (in-place DPAPI continuity)** — launch the E41 build against a `db.backup()`
-copy of a real **E31-written** `%APPDATA%\ScanFinder` via `--user-data-dir`, assert `verifyAuditChain` ok + `canStamp` true +
-NO `tamper_detected` + LAN pinned-CA handshake (the audit-HMAC key + LAN TLS keys are the ONLY DPAPI blobs; the licence token
-is a JWS, so the gate can't break it); NEVER run gates against the LIVE profile; diff test-failure SIGNATURES not names;
-worktree only; the `argon2` source-build is the likely gate-1 failure; also bump `client/` + `cert-tool/`. Oracle suggests
-targeting **newest-supported (44) over 41** for runway — owner's call. **SHIPPED THIS SESSION (all pushed):** (1) themes
-**Light Festive + Spooky** + seasonal revisions (`c4d1033`, `589b93e`; core + client; new `patterns/festive-light.svg` +
-`spooky.svg`); (2) **PHP licensing admin console — full redesign** (Warm-Archive left-sidebar chrome `2c54c11` with
-`admin_nav()` neutered; dashboard `40bc2b6`; section-page `admin_page_head()`/`admin_chips()` `59923ed`; `--accent-ink`
-invisible-toggle fix `c094c4d`; **2FA now OPTIONAL by default** `dc178be` — `admin_2fa_required()` reads opt-in
-`LICENSING_ADMIN_REQUIRE_2FA`, the owner's choice to fix a deploy-time lockout; a **KNOWN security downgrade**, see the audit).
-Owner deployed to IONOS. **SECURITY AUDIT** (5 agents + Oracle) → `docs/SECURITY_REVIEW_2026-08-28.md` (UNCOMMITTED, sensitive):
-top item = **no document-level access control** (HIGH; CRITICAL for multi-user/LAN; **single-user desktop SAFE** — app runs as
-the logged-in user; `doctype_grants` scaffold in `accessService.js` unbuilt — one fix across read+enumerate+write, both
-transports); local-DB licence-forgery **impossible**; website login **sound**; **NO LLM → prompt-injection N/A**; A1 = the
-`/v1` client login doesn't enforce the forced temp-password reset the core does. **CHRIS vet** →
-`docs/CHRIS_FULL_APP_REVIEW_2026-08-29.md` (UNCOMMITTED): verdict **YES**, 8 cards (top = first-batch "Sender not identified"
-wall; CHRISBOT is same-buyer-skewed). Chris sandbox LEFT RUNNING: core CDP **9223**, client **9224** (user Sam). **Traps:**
-`git commit -F <file>` only; Electron-as-Node prints nothing unless wrapped; licensing backend is a SEPARATE deploy (owner
-uploads code, NEVER `keys/`); PHP lint `C:\wamp64\bin\php\php8.0.30\php.exe -l`. Prior:
-## (previous) 2026-08-28 NIGHT: **READ `HANDOVER_2026-08-28_NIGHT.md` FIRST.** The **WORKFLOW + STAMPING redesign is BUILT
-end-to-end** (slices 0–4) and live in the core app AND the detached client — design + Oracle conditions in
-`docs/designs/WORKFLOW_STAMPING_REDESIGN_2026-08-28.md` (**§9 authoritative**). Owner smoke-tested it: "works, needs some
-tuning (later)." Branch `feat/teach-side-overnight`, **11 commits `eba2ef2` … `86de7d7`, NOT pushed** (owner reviews then
-pushes), tree clean. Both apps RUNNING on the latest code (dev `npm start` core on the real DB + `electron client`).
-**Stamping =** a per-user `can_stamp` permission that is a SIGNED grant on the DPAPI audit chain (NO flippable column;
-`stampPermission.canStamp` is FAIL-CLOSED + verifies `verifyAuditChain` at check-time; a forged INSERT → refused +
-`tamper_detected`), an append-only `stamp_events` record (source+artifact SHA-256 + a cross-linked signed audit row, original
-PDF never touched, CUMULATIVE, prints No.N + date/time), click-to-place in Search + the client. Approve/reject now need
-`can_stamp`; ROUTING is NOT gated (a standard user sends for approval) but you **can't route FOR APPROVAL to a non-stamper**
-(`RECIPIENT_CANNOT_STAMP`). Residual: tamper-EVIDENT not tamper-PROOF vs the core PC's own admin (accepted). Pins:
-`test_stamp_permission.js`, `test_stamp_service.js`, `test_stamp_workflow_gate.js`, `test_workflow.js`, `test_v1_workflow.js`
-(all green). Also: Search preview zoom pixelation FIXED — root cause was `will-change:transform` cached-layer upscaling +
-`object-fit` (NOT DPI); matched the Review viewer's CSS (`d27ac26`), render scale 6, controls moved to top. **Help voice
-rewrite PARKED** (Quick start + Teach rewritten + voice signed off "perfect"; the rest in `pendingfeatures.md`). **First
-actions:** owner reviews + pushes; owner's client-UI tuning; optional Settings "Integrity check" (Oracle §5.3, deferred);
-resume help. **Traps:** `git commit -F <file>` ONLY (here-string + `<<EOF` heredoc both break); restart mechanic (kill
-dev-start node + electron PIDs individually, relaunch via `Start-Process cmd -ArgumentList '/c','npm start'` +
-`-RedirectStandardOutput`, NOT an embedded `1>` redirect) — full list in the handover. Prior:
-## (previous) 2026-08-28 DAY: **`HANDOVER_2026-08-28.md`** — export (Home → CSV/`.xlsx`/JSON) + memory-inventory + help
-slice 1 + two Pelican extraction fixes (`5430bed`, both `ref_prefix_confusable_adopt_length_note` +
-`tier_a_date_plausibility` flipped ON in the live DB). Superseded by tonight's build.
-## (context) 2026-08-27 NIGHT2 → 08-28: **`HANDOVER_2026-08-27_NIGHT2.md`** — the owner's §7 night prompt is BUILT —
-2 commits `ce4c7f5` (EXPORT: Home "Export data" → CSV/`.xlsx`/JSON of confirmed doc data; new dependency-free
-`src/lib/xlsxWriter.js` so the 4-dep tree + licence gate stay untouched) + `d2cf9fe` (MEMORY INVENTORY: Settings →
-Learning is now READ-ONLY click-to-browse, typed tools preserved under "Advanced"), NOT pushed. barry+bob+eric → Oracle
-SIGN-OFF-W/COND, all conditions applied; 4 pins green. **Then 2026-08-28 owner-feedback follow-ups (same branch, NOT
-pushed):** `b04f202` export gains a **Document-date** range beside Date-filed + a clearer Options layout + exported
-dates follow **Settings → Processing "Date format (region)"** (`region_date_order`); `6da3f96` audit-log "View" buttons
-right-aligned; `8b3a35d` **HELP SYSTEM rebuild slice 1** — plain-speak SPINE + Check pages (teach-first) + a
-"User Guide…" Home menu item + rebuilt `help-nav.js` manifest + deep-link pin (per
-`docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md`, D1–D11 at recommended defaults). **OWNER MORNING: (1) QUIT + RELAUNCH the live app
-(a full restart — I killed it by accident with a broad `Stop-Process -Name electron`, restarted it on 9222 but on an
-EARLIER commit; tonight's main-process changes + the 3 pending fixes load only on a fresh start; the classifier then
-blocked me from restarting again, correctly); (2) OPEN A REAL `.xlsx` IN EXCEL — the hand-rolled writer's pin is a Node unzip that does
-NOT certify Excel; (3) render-smoke export + memory-inventory + help; (4) read the guide's Quick start + Teach and SIGN
-OFF THE VOICE (plan D11) before help slices 2–3.** **2026-08-28 LIVE session (owner testing): export UI polish
-(`b27c356`/`083c8e8` opt-in defaults + responsive count + even cards; `b04f202` document-date range + region date
-format), audit View right-align (`6da3f96`), and TWO DARK extraction fixes `5430bed` (gary+007→Oracle SIGN-OFF-W/COND)
-for the Pelican `PI`→`P1` confusable class: `ref_prefix_confusable_adopt_length_note` (route the ref-length note to the
-P adopt arm) + `tier_a_date_plausibility` (an implausible authoritative date — a date-shaped ref — loses Tier-A to the
-mapping). FOCUSED gate (157 Pelican docs, 200 DPI): 5 ref + 20 date heals, 0 regressions, +20 wouldFile. OWNER FLIP
-after a restart: set both settings true + Reprocess; the full-corpus M=0 head pass was STOPPED mid-run (duplicate-heavy
-corpus) — `scratchpad/rr_gate_full.cmd` finishes it if wanted. See `HANDOVER_2026-08-27_NIGHT2.md` §5c.** Deferred
-(`pendingfeatures.md`): export presets/PDF-copy/long-format; Learning Repair v2 editor+canvas; help slices 2–3 +
-screenshots; 007's own-reference-collision date guard (next arc). Prior:
-## (previous) 2026-08-27 NIGHT: **`HANDOVER_2026-08-27_NIGHT.md` — its §7 was the OWNER'S NIGHT PROMPT (export
-feature + memory-inventory rebuild), now BUILT above; §3 light-text realdoc gate still open.**
-Branch `feat/teach-side-overnight`, 14 code commits `48de395` … `a62edbd` (+ docs), NOT pushed. **Live app RUNNING on CDP 9222
-on `5b4bf27` (mig 92 applied 20:26; owner turned `ocr_light_text_recovery` ON ~20:45) — the last three main-process fixes need a
-restart; Chris sandbox 9223 DOWN.** Late finds: **Gate-C v2 never saw the sender** (`5f66276`; the gate ran before
-`results._supplier_name` was written → the backed I/1 tolerance never fired in production); **the harness has always run at
-300 DPI while the product runs 200** — at 200 the corpus reads date 96.9 / ref 98.7 with 23 wrong would-files (vs 99.1 / 14
-at 300) → owner decision on `ocr_dpi`; a junk old DATE vs a valid read is a fill, not a "Read differently" (`d2ee3a7`); the
-zero-filed receipt + "being viewed by someone" = the owner (`a62edbd`); the serial pass on the owner's live re-import:
-34/37 → with the slot ladder 36/37 expected. Owner: *"surely ref, date and supplier must
-be required by nature?? continue with the queued items."* **(1) `48de395` THE ROLES ARE REQUIRED BY NATURE** (Oracle S-O-W/COND):
-the shared doc-type editor's CREATE road wrote `required=0` on the identity/ref/date fields it supplied (every seeded type has 1)
-and the edit toggle is LOCKED + `updateField` refuses it — so the evening's "tick required" remedy was IMPOSSIBLE; the SCORER
-(`overall_confidence`: required fields ELSE every field, unread = 0) fell to every field and one unread List field held every
-Castellan worksheet at 81 < 95 (the 07-27 Northgate 72% cap = same class). Fix = `document_types.assertStructuralRequired` at
-every writer (ensureStructuralRoles / updateType re-point / backup restore) + **mig 92** + an unconditional startup heal; scorer
-unchanged. Gate: 165 worksheets OFF→ON would-file 43→164, 0 value diffs, 0 wrong gained. Custom types' roles now get the S3-C5 +
-first-fill holds. **Owner: restart, then Reprocess the held Castellan worksheets.** **(2) `5b4bf27` LIGHT-TEXT RECOVERY, DARK
-`ocr_light_text_recovery`** (oscar + 007 → Oracle S-O-W/COND): a threshold-200 → PSM 3 supplementary full-page read merged only
-where PSM-3/PSM-6 left nothing, placed INTO the base rows, `med_h` frozen, `words_out["words"]` stays base-only (`light_words`
-carries the recovered ones), digit tokens need conf ≥ 80. **Recipe: FOUR levels {200,210,220,230} — a level sweep on the owner's own scans showed NO single level reads every
-serial (one value's conf swung 8→90→64→92 across 200/205/215/220 on the same page); the union reads all ten values on four
-exhibits, a digit-bearing string needs two agreeing levels (the one garble appeared at one level only).** Real pipeline on the
-owner's docs 11/13/1504 with the switch ON: serial_number fills on all three (`keyword_list` @85). **Switch still OFF on the live DB** (a CDP flip was refused by
-the tool's classifier) — the owner turns it on in Settings → Processing → "Also read faint small print on scans"; a re-import
-then shows the serials; already-filed docs keep their old text until re-read; scanned-page OCR time roughly triples. **FLIP conditions (not built): the corroboration exclusion for light-line keyword reads,
-an `ocr_recipe` stamp + ONE `ocrCacheUsable` predicate (a plain Reprocess reuses `ocr_text` — a flip heals nothing until
-re-OCR), the `vat_reg_not_amount` dependency.** Gates (realdoc at **`OCR_RENDER_DPI=200` — the harness never mirrors
-`_ocrDpiEnv`**, + the census) → handover §3. Help-system work now logged in `pendingfeatures.md`. **Traps:** Electron-as-Node
-prints nothing from the PowerShell tool (wrap in `cmd /c` + redirect); copy the live DB with `db.backup()`, never a file copy.
+## Prior sessions — 2026-08-15 → 2026-09-01 DAY (collapsed 2026-09-01 EVENING; every block is preserved VERBATIM in `docs/session-log.md` under "Archived from CLAUDE.md at the 2026-09-01 EVENING compaction", in its named `HANDOVER_*.md`, and as `git show f51b721:Docusnap/CLAUDE.md`)
+> Grep the matching `HANDOVER_*.md` (or `docs/session-log.md`) before re-touching anything a recent
+> session built. The durable per-feature facts (commits, kill switches, gates, follow-ups) live in
+> `MEMORY.md` + `memory/project_*.md`.
 
-## (previous) 2026-08-27 EVENING: `HANDOVER_2026-08-27_EVENING.md`
-Branch `feat/teach-side-overnight`, **HEAD `cab9fbc`** (code `38d5af2`; 17 commits ahead, NOT pushed). **Live app RUNNING on
-CDP 9222 on this code; Chris sandbox on 9223.** Shipped: the List-field Review PILLS slice (Oracle SIGN-OFF-W/COND, all ten
-conditions; pins 27+41+8 green; census debris 478→0) + **Chris r8's TOP card fixed the same evening** (the ⊕ label picker's
-nearest token "No" became a doc-type keyword and filed the JOB SHEET number as the serial → ONE `cleanCaption` shared by
-⊕/wizard/IPC; a generic tail is EXTENDED to the page phrase "Serial No" or REFUSED on all three roads). **THE REAL BLOCKER,
-measured:** scanned worksheets' grey 7.5-pt "Serial No: …" lines are NOT recognised by Tesseract at 200/300 DPI in any PSM
-(`probe_ocr_loss.py`) but a **threshold-200 pass recovers them at conf 90–93** (`probe_contrast.py`, `band_scan_200.png`) →
-**NEXT ARC = a light-text supplementary pass in `reconstruct_page_text` (DARK switch, oscar/007 → Oracle, gates in the
-handover §2).** Also: Service Worksheet has NO required fields, so the unread List field scores 0 and every Castellan
-worksheet HOLDS at overall 81 < 95 — **FIXED the same night (mig 92): the roles are required by nature — the editor's create road never set the flag and the toggle is LOCKED, so "tick required" was impossible; the writers now assert it + a startup heal. Owner: restart, then Reprocess the 96.**
-Help-system rebuild PLAN written (`docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md`; eleven owner decisions, D11 first;
-the help window is NOT modal; the Mailbox is live). New harness lever: `RR_IDS=…` reprocesses only those confirmed docs on the
-untouched live DB. **Traps:** the shell guard refuses any command containing `Remove-Item` + a quoted spaced path (the whole
-command never runs); `git commit -F <file>` only; Electron-as-Node argv[2]; never "focus" the realdoc harness by demoting docs
-on a copy (un-graduates every scope).
+**Switch ledger for this span (verified at the source in `database/index.js`, 2026-09-01):**
+- **ON by default now:** mig 89 → `position_teach_nudge` · `issuer_sibling_fill` (the 08-26 "stays DARK"
+  note is STALE) · `issuer_suggest_on_blank_confirm`; mig 91 (live flips) → `corrob_verification_doubt_clear`
+  · `learning_exclude_docs` · `learning_repair_console` · `learning_repair_forget` · `barcode_inventory` ·
+  `barcode_field` · `template_buyer_issued_letterhead_scope`; mig 92 roles required by nature; mig 93
+  `trust_role_disagreement_refuse`; mig 98 (UPSERT-forced) → `keyword_cell_below` · `money_sign_parens` ·
+  `money_sign_cr` · `buyer_issued_convention_note` · `reslice_witness_sweep` · `corrob_discount_invalid_witness`;
+  mig 101 `deskew_review_retry_enabled`; mig 103 → `quiet_reread_silent` · `sweep_inview_countdown` ·
+  `accept_field_chars_enabled`.
+- **DARK — flip only with the named gate:** `deskew_corrob_autofile` (census MET 09-01, owner's call) ·
+  `watch_separate_enabled` (needs a live soak) · `template_locate_role_qualifier` mig 99 +
+  `template_fragment_containment_yield` mig 100 (realdoc-605 gates queued) · `identifier_registry` (needs a
+  REAL-customer-VAT corpus + M=0 + Oracle) · `name_dominant_snap` + `branding_strip_reg_boilerplate` (corpus
+  OFF==ON + Oracle) · `sweep_retrigger_on_view_release` (Oracle-signed, UNBUILT) · `quiet_reread_on_ready_templated`
+  (cannot help an all-generic name) · DB encryption default-ON (owner drills first).
+- **NEVER flip:** `template_format_fail_yield_strict_money` (Oracle C10/C11 — pre-empts the sweep's release
+  path) · `trust_company_key_own_scope` (holds 45 of the owner's docs) · `deskew_on_import` (WRONG LAYER).
 
-## (previous) 2026-08-27 DAY (Chris round 6 fixes): `HANDOVER_2026-08-27_DAY.md`
-Branch `feat/teach-side-overnight`, resumed from `6787291`; **code commit `d6c1f17`** (+ docs commits after it; 8+ commits
-ahead of origin, NOT pushed — owner reviews then pushes).
-Owner: "read the handover and continue … continue with chris's fixes". **Built + pinned (every behaviour change DARK):**
-**Card 1 HIGH** = a `buyer_issued` PO template (fingerprint = the OWNER's name+address) won the WHOLE-PAGE text arm at 7/9 on
-three other suppliers' papers (those words print in every BILL TO block; doc 6 untyped — "GOODS DELIVERY NOTE" is one extra
-real word → no trusted heading → the type-scope guard had nothing to refuse on; roads = the quiet lane's kw selector + a single
-Reprocess) → **`template_buyer_issued_letterhead_scope`**: a marked template is recognised by TEXT only over the LETTERHEAD band
-(`template_matcher.header_band_text` = the fingerprint harvest's own truncation, ONE helper; JS twin
-`branding_fingerprint.headerBandText`) in `_match_by_keywords`, the rescue arm, the JS mirror (`findByKeywordFingerprint` →
-lane selector + wizard/graduation-link/reextract roads), plus a go-forward HEAL on the engine honour path
-(`sticky_binding_declined reason='letterhead'`). **Oracle SEND BACK → corrected:** `_identity_refuses` stays WHOLE-PAGE
-(configuration B — a PO taught with the counterparty as issuer — prints its identity below the band). Gates ALL MET: refactor 0
-diffs/1242 docs; 0 empty bands / 0 <0.75 among the 113 PO docs; **realdoc OFF vs ON byte-identical on 1242 docs (would-file
-1168→1168, 0 wrong gained, per-template counts identical)**; **fired path on a fresh Chris sandbox: the lane selected nobody
-(`done_ids ""` vs r6 `"4,2"`), Reprocess did not re-badge, IMPORT 200 → 0 inbound docs on the PO template** — flip = owner's call.
-**Card 3** the Import chip asks the ONE predicate (`review_hold`; engine `needs_review` = required-empty OR field<70 ≠
-`isAutoFileEligible`). **Card 5** no Use/Keep when the page vouches for neither value. **Card 6** no countdown at 0 confirms.
-**Card 7** stale verdict dropped on type/issuer change; Delete All → "Queue cleared — N in the recycle bin" (STICKY messages —
-Chris r7c caught the one-shot being consumed before the delete's IPC re-render); empty panel clears ⊕/Teach; an unsaved type
-change shows a neutral "Type changed to X — check the fields" lead (his card A). Chris r7c: card 7 (a)(b)(d) FIXED as seen,
-(c) re-fixed; new vet cards A2/B/C/D/E in `pendingfeatures.md`. **Card 2** verified: `trust_role_disagreement_refuse` is ON live, was OFF in his sandbox — no code. Pins:
-`test_chris_r6_ui_cards.js`, `test_buyer_issued_letterhead_scope.py` 43, `test_buyer_issued_scope.js` §4 (28), wiring rows.
-**LIST FIELD = TEACH ITS CAPTION (built ~14:30, owner spec):** the wizard keeps a List field teachable; one value box → the
-caption beside it → a preview of every value that caption collects on the page → at save the NEW IPC `teach-list-caption`
-(Admin+Edit, list-typed only) writes it as an ADDITIVE doc-type-wide `field_label_overrides` row ("if it isn't already there");
-no box stored; the taught doc files with all the previewed values. A List field's LABEL alone ("Serial Number") never matches
-a printed "Serial No:" — the caption teach is what makes it collect. The Review ⊕ road does the same (a `{listCaption}`
-record in `pendingAnchors` → `teach-list-caption` at confirm; the field is filled with every value the caption collects,
-`shared/listCaption.js` = the ONE preview). Pin `test_teach_auto_field_rows.js` (34). **REVIEW PILLS (pm; panel barry/gary/
-reggie/eric/bob/Chris-lens → Oracle SIGN-OFF-W/COND, all ten conditions built):** a List field's box in Review is now PILLS over
-the hidden store input (the ONE value confirm reads / the ONE `corrections` writer; every mutation dispatches its `input`
-event; state reaches the pills via CSS sibling combinators) — click-to-edit, ✕ with ↺ put-back, "+ One it missed" = the ⊕
-caption teach (merge rule current ∪ (preview − (original − current))), "Edit as text", "Undo changes", "N found on this
-document". A pill edit teaches THIS DOCUMENT ONLY (no hint — `_isListTypedField` skips in `saveCorrections` +
-`replantConfirmHints`); three guards refuse a field RULE on a list key (`showFieldRuleMenu`, `save-field-rule`, engine
-field_rules). Collector: union across TAUGHT captions in page order, collect-only tail bound (`LIST_CAPTION_TAIL_BOUND`),
-code digit gate + caption-vocab arm (`LIST_ELEMENT_DIGIT_GATE`), LONGEST CAPTION WINS PER LINE, own-label-only seed for a
-list-typed ref-role field. Pins `test_list_field_scan.py` 27 · `test_list_field_pills.js` 34 · `test_list_field_learning_skip.js`
-8; census: one taught caption debris 478→0, no shape loses a serial. Residual: a taught caption + the own-label seed do NOT
-union (teach both spellings). **Chris r8 → FIXED same evening:** the ⊕ label picker's nearest token ("No") became a doc-type
-keyword and filed the JOB number as the serial → ONE `cleanCaption` shared by ⊕/wizard/IPC, a generic tail is EXTENDED to the
-page phrase ("Serial No") or REFUSED on all three roads. **TWO FINDINGS FOR THE OWNER (not code):** (1) your scanned Castellan
-worksheets' page text has NO "Serial No:" lines (OCR row-rebuild loss; the born-digital twin has them) → caption teach collects
-nothing on scans → OCR arc queued; (2) adding the List field to Service Worksheet (no required fields → every field scored,
-unread = 0) sank every Castellan worksheet to overall 81 < floor 95 → **all 96 now HOLD; remedy = tick *required* on
-Issuer/Date/Reference for that type** (system fix → Oracle). **App must be restarted for the pills.** QUEUED (owner): a complete HELP SYSTEM overhaul plan
-(teach-then-import is now the recommended route; quick start; plain speak; screenshot markers) + a Help button on the Home
-screen menu.
-**LIVE FLIPS 13:35 (owner: "flip the switches and start the app"):** `corrob_verification_doubt_clear`, `learning_exclude_docs`,
-`learning_repair_console`, `learning_repair_forget`, `barcode_inventory`, `barcode_field`, `template_buyer_issued_letterhead_scope`
-set `true` on the live DB by direct UPSERT (no audit rows — see the handover); app restarted on CDP 9222, **DB at mig 91** (mig 89
-also defaulted `issuer_sibling_fill` + `position_teach_nudge` + `issuer_suggest_on_blank_confirm` ON). Owner still owes the class-F
-live heal check (Reprocess SuperStore 31901 with SFDEV trace → `corrob_note_resolve cls=F`). **Traps:** quote `-File` paths inside the
-`Start-Process` argument; a dropped advisor resumes via SendMessage; a detached suite reads pins mid-edit (version-skew reds).
+Newest first:
+- **09-01 DAY** → `HANDOVER_2026-09-01.md` + `HANDOVER_2026-08-31_NIGHT2.md` — DESKEW_CORROB_AUTOFILE built DARK
+  (`aa61350`, Oracle C1-C7; Option A = Python skip in `_deskew_retry_apply_holds`, `isAutoFileEligible` untouched;
+  design `docs/designs/DESKEW_CORROB_AUTOFILE_2026-08-31.md`; pin `test_deskew_corrob_autofile.py` 12); batch-import
+  crash fix `40ef134` (RAM-aware worker cap + `runWorker` spawn-failure handler; `test_import_concurrency_cap.js`);
+  Quick-check dropdown focus `b95ccf5`; minimised/docked pop-back `cb29ffb` (guard on `_revealed`+`!isMinimized()`);
+  TOGGLE AUDIT `11c1598` (25 reading-internal toggles SFDEV-gated); **M=7 date class = POISONED GT, not a bug**
+  (007 rendered; GT corrected in `Desktop\ScanFinder Test Corpus\ground_truth.json` + `.poisoned-bak`; Oracle DO
+  NOTHING — reggie's page-witness guard = the WRONG-LAYER twin of Gate A `FILING_SANITY_PAGE_MATCH_V2`).
+- **08-31 NIGHT (DB encryption + Electron 44)** → `HANDOVER_2026-08-31_NIGHT.md` — **CODE-AS-PASSPHRASE** crypto
+  core (`684de90`+`a683975`: the printed 125-bit recovery code IS the key, chacha20, salt-in-header — a lone
+  `docusnap.db` + the code opens anywhere; `.db-key` = DPAPI no-prompt cache only; `dbKey.js` `applyKey`/`applyRekey`
+  choke point · `dbMigrateEncrypt.js` · `dbStartup.js` decision table · `db-crypto-tool.js`; `src/database.js`
+  DELETED) + the INTEGRATION pass `19432cb` (whenReady boot gate: plaintext/open-cached/prompt-code/tripwire/migrate;
+  Unlock/Recover window `src/windows/unlock/` closes via `app.exit(0)`; tripwire `showErrorBox`+`app.exit(1)`;
+  `unlock-recover` IPC; opt-in Settings→Advanced ceremony over a DISJOINT `.db-migrate-code`; `dbBootMigrate.js`
+  fail-toward-plaintext). INERT until a key exists. REMAINING = owner drills (migration, DPAPI-loss, downgrade
+  tripwire, packaged boot, gate-5b, perf). Owner: regenerate-code DEFERRED; email-the-code OUT. Spec
+  `docs/designs/DB_ENCRYPTION_ARC_2026-08-31.md` + Oracle 10 conditions. Same night: `TEMPLATE_LOCATE_ROLE_QUALIFIER`
+  `e65959c` (mig 99, Net-Total locate steal) · `TEMPLATE_FRAGMENT_CONTAINMENT_YIELD` `2bf7609` (mig 100, CAD8⊂CAD832694,
+  ref-family never money) · **Electron 31.7.7 → 44 MERGED** `0ed6f20` (Node 24, better-sqlite3-multiple-ciphers ^13,
+  argon2 0.45.1; `client/`+`cert-tool/` need `npm install`). Plan + gates: `docs/ELECTRON_41_UPGRADE_PLAN.md` (gate 5b
+  DPAPI continuity — the `Local State` trap).
+- **08-31 EVENING** → `HANDOVER_2026-08-31_EVENING.md` — mig 98 force-defaults the six gated switches ON; **Terms
+  FINAL** `127ec74` (LEGAL_VERSION 2026-08-31); the three afternoon designs (now built above). Traps: builds need EVERY
+  electron closed (EBUSY); NEVER taskkill by cmdline substring (self-match killed the owner's app); Start-Transcript
+  beats Start-Process redirects; `@N%` trace badges = page-Y not confidence; APPDATA can be empty in electron-as-node.
+- **08-31 NIGHT (Hard Set) + DAY-2** → `HANDOVER_2026-08-31_MORNING.md` — adversarial corpus `Desktop\Hard Set\`
+  (10 classes × 20 × digital+scan; `stress_test/gen_hard_set.py` + `score_hard_set.js`; 600 scores, wrong+would-file 0);
+  three class cards BUILT DARK → gated → flipped (mig 98): `keyword_cell_below` `ece65b1`+`829afed` (boxed
+  label-above-value cells; `ref_role_digit_gate` = the ONLY guard against cold-committing "Date" as ref @95) ·
+  `money_sign_parens`/`money_sign_cr` `9dd5139`+`e0fe39d` (C1: either capture FORCES `CREDIT_SIGN_COHERENCE`, pinned
+  `test_money_sign_coupling.js`) · `buyer_issued_convention_note` `5d1dd84`+`f72eee5`; dossier
+  `docs/designs/DARK_ARCS_GATES_2026-08-31.md`. GT flaws to fix before re-use: thermal invoice→receipt, buyer
+  dual-accept, component signs; scorer trap: synthetic doc id must be TRUTHY. DAY-2: teach-first practice run
+  `3e47cd4` + 20-page User Guide `2a9b4d7` (`check:help` 153 keys, `test_help_nav`); Chris r2 YES ×2.
+- **08-30 NIGHT** → `HANDOVER_2026-08-30_NIGHT.md` — re-slice arc premises FALSIFIED by measurement (0023's box reads
+  `29,242.76` @90, a format-VALID garble; **DPI is not the lever — vertical headroom is**: R8 = pad 0.5×h, 20 px border,
+  PSM 6, no upscale) → `reslice_witness_sweep` (engine stage 4.7, TOTALS only, a WITNESS-PRODUCER for the signed
+  `_demote_recon_total_corroborated_note`; commits nothing) + `corrob_discount_invalid_witness`; deskew retry DEAD
+  GUARD fixed (`raw2["_needs_review"]=True` held nothing → per-field "Read differently after straightening — confirm
+  once."; never fires on a note-only hold); four-arm A/B on ONE PAPER PER DOCUMENT × 605 identical, M=7 unchanged.
+  **OWNER CONVENTION:** repo `NIGHT_RUN.md` = the overnight test QUEUE + DONE ledger; "going to bed" = start the newest
+  `docs/designs/NIGHT_RUN_*.md` at once. Traps: the `!= '0'` idiom reads EMPTY as ON (an OFF arm must be explicit
+  `'0'`); `money_strict_shape` accepts a rejoinable space-split by contract; `buildTrainingArgs(db, () => cfg).args`.
+- **08-30 DAY** → `HANDOVER_2026-08-30.md` — deskew re-read PIVOTED `4607cc6` (`DESKEW_REVIEW_RETRY` /
+  `deskew_review_retry_enabled`, floor 0.3°: a review-bound WHOLE-PAGE straighten retry in `process_docs.py`, adopt
+  only if `_overall_confidence` strictly higher, forced `needs_review`; the field-scoped slice arm FALSIFIED + REMOVED;
+  5/20 Nordwind heals; `test_deskew_review_retry.py` 13); live-DB audit: all 148 mig-93 switches ON. Harness must set
+  `OCR_RENDER_DPI=200` (product DPI; harness defaults 300).
+- **08-29** → `HANDOVER_2026-08-29.md` — themes Light Festive + Spooky (`c4d1033`, `589b93e`); PHP licensing admin
+  console redesign (`2c54c11`…`59923ed`; **2FA OPTIONAL by default `dc178be` = a KNOWN security downgrade**, opt-in
+  `LICENSING_ADMIN_REQUIRE_2FA`); SECURITY AUDIT `docs/SECURITY_REVIEW_2026-08-28.md` (sensitive; top = no
+  document-level access control — single-user desktop SAFE, `doctype_grants` scaffold in `accessService.js` unbuilt;
+  licence forgery impossible; NO LLM → prompt-injection N/A; A1 = the `/v1` login skips the forced temp-password
+  reset); Chris YES `docs/CHRIS_FULL_APP_REVIEW_2026-08-29.md`. Traps: licensing backend is a SEPARATE deploy (owner
+  uploads code, NEVER `keys/`); PHP lint `C:\wamp64\bin\php\php8.0.30\php.exe -l`.
+- **08-28 NIGHT** → `HANDOVER_2026-08-28_NIGHT.md` — **WORKFLOW + STAMPING redesign BUILT** slices 0-4 (`eba2ef2`…
+  `86de7d7`; `docs/designs/WORKFLOW_STAMPING_REDESIGN_2026-08-28.md` §9 authoritative): `can_stamp` = a SIGNED grant on
+  the DPAPI audit chain (`stampPermission.canStamp` FAIL-CLOSED, verifies `verifyAuditChain`; forged INSERT → refused +
+  `tamper_detected`), append-only `stamp_events` (source+artifact SHA-256, original PDF untouched, cumulative No.N),
+  click-to-place in Search + client; approve/reject need `can_stamp`; routing ungated but `RECIPIENT_CANNOT_STAMP`;
+  tamper-EVIDENT not -PROOF vs the core PC's admin. Search preview zoom fix `d27ac26` (`will-change:transform` +
+  `object-fit`, NOT DPI). Pins `test_stamp_permission/service/workflow_gate`, `test_workflow`, `test_v1_workflow`.
+  Restart mechanic: kill dev-start node + electron PIDs individually; relaunch `Start-Process cmd -ArgumentList
+  '/c','npm start'` + `-RedirectStandardOutput`.
+- **08-28 DAY / 08-27 NIGHT2** → `HANDOVER_2026-08-28.md` / `HANDOVER_2026-08-27_NIGHT2.md` — EXPORT `ce4c7f5` (Home →
+  CSV/`.xlsx`/JSON, dependency-free `src/lib/xlsxWriter.js`; `b04f202` document-date range + dates follow
+  `region_date_order`); MEMORY INVENTORY read-only `d2cf9fe`; help slice 1 `8b3a35d` (plan
+  `docs/designs/HELP_SYSTEM_REBUILD_PLAN_2026-08-27.md`); Pelican `PI`→`P1` fixes `5430bed`
+  (`ref_prefix_confusable_adopt_length_note` + `tier_a_date_plausibility`, flipped ON live). Owner owes: open a real
+  `.xlsx` in Excel (the pin is a Node unzip, not Excel certification).
+- **08-27 NIGHT** → `HANDOVER_2026-08-27_NIGHT.md` — **ROLES REQUIRED BY NATURE** `48de395` (mig 92,
+  `assertStructuralRequired` at every writer + startup heal; the editor's create road wrote `required=0` so the scorer
+  fell to every field — Castellan 81 < 95); **LIGHT-TEXT RECOVERY** DARK `ocr_light_text_recovery` `5b4bf27`
+  (threshold levels {200,210,220,230} → PSM 3 supplementary read merged only where base left nothing; digit strings
+  need two agreeing levels; scanned OCR time ~3×; flip conditions: corroboration exclusion for light-line reads,
+  the `ocr_recipe` stamp + `ocrCacheUsable` = PLAN B, `vat_reg_not_amount` dependency); Gate-C v2 never saw the sender
+  `5f66276`; the harness always ran 300 DPI vs product 200. Traps: Electron-as-Node prints nothing from PowerShell
+  (wrap `cmd /c` + redirect); copy the live DB with `db.backup()`, never a file copy.
+- **08-27 EVENING / DAY** → `HANDOVER_2026-08-27_EVENING.md` / `HANDOVER_2026-08-27_DAY.md` — List-field Review
+  PILLS (Oracle ten conditions; `shared/listCaption.js` = the ONE preview; a pill edit teaches THIS DOC ONLY; pins
+  `test_list_field_scan.py` 27 · `test_list_field_pills.js` 34 · `test_list_field_learning_skip.js` 8); **LIST FIELD =
+  TEACH ITS CAPTION** (`teach-list-caption` IPC → additive `field_label_overrides`; a label alone never matches
+  "Serial No:"); Chris r8 `cleanCaption` (ONE helper shared by ⊕/wizard/IPC; generic tail EXTENDED or REFUSED); Chris
+  r6 cards `d6c1f17` incl. `template_buyer_issued_letterhead_scope` (`template_matcher.header_band_text` ONE helper,
+  JS twin `branding_fingerprint.headerBandText`; `_identity_refuses` stays WHOLE-PAGE; realdoc byte-identical 1242);
+  grey 7.5-pt "Serial No" lines unread at 200/300 DPI in any PSM but threshold-200 recovers @90-93 (→ light-text arc).
+  Traps: the shell guard refuses `Remove-Item` + a quoted spaced path; `RR_IDS=…` reprocesses only those docs on the
+  untouched live DB; never "focus" realdoc by demoting docs on a copy.
+- **08-27 MORNING (autonomous overnight)** → `HANDOVER_2026-08-27_MORNING.md` — CLASS F `corrob_verification_doubt_clear`
+  (Oracle C1-C4; corpus gate 24/24 correct; flip order `corrob_note_recompute_fc` first); landmark box snap `9861d37`;
+  targeted field re-slice = WRONG LAYER (a stored-row write poisons the re-read holds); LEARNING REPAIR v2 (mig 90
+  `documents.learning_excluded_at` + ONE predicate `machine_vias.learningExcludedSql` in 17 readers; `learning_repair_
+  console` / `learning_repair_forget` + exact-row Undo); BARCODES (`barcode_inventory` zxingcpp, mig 91
+  `document_barcodes`; `barcode_field` type, Stage 1.5); Chris YES `docs/CHRIS_FULL_APP_REVIEW_2026-08-26.md` + `d0d74fb`.
+  Trap: `_fold_shape` makes every digits-only skeleton `#` — LENGTH-BLIND.
+- **08-26 NIGHT / DAY** → `HANDOVER_2026-08-26_NIGHT.md` / `HANDOVER_2026-08-26.md` — Chris R5 cards 1-6 (mig 89);
+  supplier hard-identifier registry slices 1a+1b DARK `identifier_registry` (`d811cce`; learn VAT/company-no at
+  confirm → `suggested_supplier`); `issuer_sibling_fill` C2 corrected (`brandingFp.convergesByBranding(src,sib,0.80)`,
+  NOT raw `keywordOverlap` — asymmetric + name-token inflated; census 0/1,250,932 cross-supplier convergences);
+  put-back tooltip kind-aware. Vet cards (unbuilt): draw-a-box nudge, buyer-issued-PO steer, cold-batch expectation.
+- **08-25** → `HANDOVER_2026-08-25.md` — Quick-check grid front-end `c1d5c08`; two DARK detection arcs `d687f31`
+  (`name_dominant_snap` ≤1-edit legal-suffix slip; `branding_strip_reg_boilerplate`); **invalid-date SILENT MISFILE
+  fixed at EVERY door** on `filing.normaliseDate` (`200e68d`+`97d3527`: `reviewService.confirm` pre-claim refuse,
+  `_autoFileDoc` hold, `batchAuditService.validateEdit`, renderer `validateConfirm`; gary+Oracle's renderer-only
+  idea was a FIG LEAF — looser than the folder builder); Quick-check re-file slug fix; dev-code leak; Empty bin
+  orphaned `.metadata/*.xml`. Pins `test_normalise_date_predicate.js` 16.
+- **08-24 OVERNIGHT** → `HANDOVER_2026-08-24.md` — Pelican-565 corroboration fix `9c21ed6` (fold bare anchor→keyword
+  in the LOCAL `_corrob_bucket`; kill `CORROB_ANCHOR_AS_KEYWORD=0`; +2 heals, 0 wrong); Chris fixes `33a9f6b` /
+  `670ffc7` / `81719c1`; **presence heartbeat is DEAD — a leaky 60s beat, NOT a mid-edit guard**; vet queue incl.
+  `sweep_retrigger_on_view_release` (Oracle-signed DARK, unbuilt; window-close-mid-edit trade-off).
+- **08-23 EVENING** → `HANDOVER_2026-08-23_EVENING.md` — live test on a FRESH wiped DB (`0b62235`): activity-strip UX;
+  `putback_refile_on_file_all` (mig 87 `refile_declined_at`+`putback_refiled_at`; `isAutoFileEligible({bypassPutBack})`
+  on the explicit click only); tab badge = DB count; `logo_detail_veto_single_supplier_immune` (a MARGINAL rival >48
+  suppressed, a DECISIVE ≤48 still vetoes); realdoc byte-identical.
+- **08-23 OVERNIGHT (Chris r17→r20, ~60 commits)** → `HANDOVER_2026-08-23_MORNING.md` + `HANDOVER_2026-08-23.md` +
+  `docs/CHRIS_FULL_APP_REVIEW_2026-08-23.md` — **the IDENTITY UNFREEZE class** `11ca0ba` (type-wide judge → per
+  template by dominance; `scripts/refreeze-template-identity-20260823.js`); holds that never rendered `99b90f1`;
+  garble/fragment `72a75bd`/`875a433`/`9ae6c2b`; READY arm `740a243` DARK; FIRST-FILL RELIABILITY hold `371ef2d`
+  (`quiet_reread_first_fill_reliability_hold`, K=1); **put back sticks** `19e91b0`+`061ca82` (mig 86 `put_back_at`,
+  only a human claim clears); date-aware corroboration compare `6b77f30` (`FIELD_CORROBORATION_DATE_FOLD` — `_cmp_norm`
+  was separator-blind, so NO date was ever corroborated) + `trust_role_disagreement_refuse`; `trust_company_key_own_
+  scope` DARK `69a65de`; `src/modules/processing/rereadHolds.js` = ONE road `5979bdc`; File All ONE classifier
+  `0929e33`. Verdict: 73 filed, 0 wrong by the app. Traps: `core.autocrlf=true` → CRLF on disk (tests normalise;
+  patch scripts `newline=""`); bash heredocs strip a backslash level (use the Write tool); hand-rolled test schemas
+  lack mig columns; `chris-the-customer` is not a registered agent type (spawn general-purpose + Read the persona).
+- **08-22 NIGHT** → `docs/designs/TYPE_SPLIT_AND_ACTIVITY_STRIP_PLAN_2026-08-22.md` + `HANDOVER_2026-08-22_EVENING.md`
+  — garbled-issuer arc `c5a4050` (`template_fixed_seed_fragment_garble`, `identity_suggest_canonical`,
+  `review_group_by_letterhead`; census 16,809 pairs → 0 keeps); type-split arc A1 `40f47e3` name-precedence BUG · A2
+  `type_ambiguity_unsupported_waiver` (decided in the engine) · A3 `type_split_confirm_gate` · A4 mig 85 catalog
+  `title_aliases` · A5 `heading_absent_census.py` (the printed type banner is DROPPED from page text on 105/416 docs;
+  a blind top-band grey OCR recovers 18/18 — its own arc) · A6 `type_ambiguity_ripple`; activity strip B1
+  `src/lib/reviewEvents.js` ledger + B2 `review_activity_strip`; B3 (retire the tiles) = Oracle SEND BACK.
+- **08-15 (the corroboration auto-file arc)** → `HANDOVER_2026-08-15.md` + `memory/project_corrob_autofile_arc_
+  20260815.md` — **the DB already knows the answer:** ONE predicate `_corrobLicensed` (≥2 independent PAGE families
+  {mapping,crop,keyword}, memory+hint EXCLUDED as near-circular) AND value==dominant-confirmed; trust.js
+  `critfield_corrob_floor_relax` + `vacuous_corrected_to_ignore` (`1d1cdab`); engine `_resolve_corroborated_notes` as
+  `_d4` in the recompute guard (`cb69795`; arms A-E fail-toward-Review); **`corrob_note_recompute_fc` = THE LINCHPIN**
+  (`3f64c10`: the stale `fc_delta` made EVERY note-demoter COSMETIC — note cleared, penalty stayed); mig 69 all OFF,
+  mig 70 defaults the reading switches ON for new installs (except `deskew_on_import`) + 8 corrob switches SFDEV-gated.
+  Honest limit: the arms clear notes/adopt values but do NOT raise overall past the floor (14/17 held = below-floor);
+  Pelican graduation blocked by recent corrections (by design). Chris: `auto_file_threshold` unset → 100% → 0/200 cold
+  auto-files (owner-vet #1). B follow-up RESOLVED 08-16 as a code-vintage artifact — do NOT chase `mergeReprocessRows`.
+  The hold-siblings FIRST-BATCH regression (gate the mark on "a prior frozen identity existed AND differs") was the
+  approved next fix — check the 08-16+ handovers for its status before touching `template_identity_hold_siblings`.
 
-## (previous) 2026-08-27 MORNING (the autonomous overnight run): `HANDOVER_2026-08-27_MORNING.md`
-Branch `feat/teach-side-overnight`, **HEAD `b0e94f4` (+ the handover docs commit), 7 commits LOCAL/NOT pushed** (owner reviews then pushes). Built while
-the owner slept, every switch DARK (default OFF), each advisor→Oracle→pins→gate: **(1) CLASS F** the general
-"corroboration clears a please-check note" rule (`corrob_verification_doubt_clear`; Oracle C1-C4 in code; **corpus gate
-PASSED NON-VACUOUSLY on the owner's DB: 24 edge-cut notes cleared, all 24 correct — the SuperStore 3190x class — would-file
-1168→1192, 0 wrong gained, M 12 unchanged**; flip order enforced: `corrob_note_recompute_fc` first); **(2) landmark box snap**
-committed `9861d37` (+pin); **(3) targeted field re-slice → gary+oscar: WRONG LAYER** (full-page OCR already cached on a
-reprocess; a field-only write poisons the re-read holds; cheaper lever = flip `quiet_reread_on_layout`); **(4) LEARNING
-REPAIR v2** — the old forget was a HALF-forget (the live-derived model kept counting): mig 90 `documents.learning_excluded_at`
-+ ONE predicate `machine_vias.learningExcludedSql` in 17 readers (default ON, inert until stamped) · `learningScopeService`
-selector (`learning_repair_console`) · `learningRepairService.forgetScope` + exact-row Undo (`learning_repair_forget`; C1
-retract-once stamps, C2 shared-template refusal, C5 lane reason `repair`) — a HUMAN confirm clears both stamps; **(5)
-BARCODES** — `barcode_inventory` (zxingcpp per OCR page, mig 91 `document_barcodes`, search) + `barcode_field` (a
-"Barcode / QR code" field type whose ONE writer is the decode, Stage 1.5, LIST-style ownership skips, confirm-once note);
-**(6) LIST field audited = properly implemented for inline repeated captions** (column layout = element 1 only, documented);
-`;` in an element now refused. **Full suite: every red is pre-existing except two source pins updated (`8cb80ac`).**
-**OWNER DECISIONS (ranked in the handover):** flip F after the SFDEV live heal of 31901 · the three Learning-Repair UX
-defaults + whole-sender forget · flip the layout arm vs fund a quick-read pill · the barcode symbology/role/required Qs ·
-barry's sweep (PDF text layer — may the filed PDF differ from the original? · exact-dup skip · accountant export). **Chris's
-round (CHRISBOT 472 docs, fresh sandbox CDP 9223 PID 3060, new switches armed): 279 filed, 0 wrong company, 0 wrong type,
-149 by itself (warm batch 116/200 vs 98 last round), every scary button truthful, "Start fresh"+Undo clear, verdict YES.**
-His two cards on tonight's code FIXED (`d0d74fb`: barcode row renders when none found + never the Date role; console
-exact-scope suspects + honest "N filed · none still teaching"). VET QUEUE: Card 1 HIGH — a buyer-issued-PO teach re-badged
-three other suppliers' papers as Bramblewood POs @95 with "Nothing looks wrong" (held; `template_buyer_issued_type_scope`
-was ON and didn't stop it → detection arc); Card 2 wrong date @94 no warning (scanned statement); Card 3 Import table
-"Ready" vs Review holding; Cards 5-7 + the Settings "Processing wall" (wants Recommended/Advanced). Report + triage:
-`docs/CHRIS_FULL_APP_REVIEW_2026-08-26.md` + the handover foot. Trap: `_fold_shape` makes every digits-only skeleton `#` — LENGTH-BLIND.
-
-## (previous) 2026-08-26 NIGHT (identifier-registry arc + Chris R5 cards + switch inventory/flip): `HANDOVER_2026-08-26_NIGHT.md`
-Branch `feat/teach-side-overnight`, **HEAD `f2349f9`, commits LOCAL/NOT pushed** (owner reviews then pushes).
-**⏭ THE FRESH SESSION IS TO BUILD THREE FEATURES — top of queue in the handover:** (1) **CLASS F** — one general
-"corroboration clears a verification-doubt note" rule (gary-AUDITED, NOT built; edge-cut 31901 exhibit; the rule
-must LIFT the field to 90 not just pop the note; allowlist + ≥2-distinct-family + shape-pass + deny-by-default
-seam; `pendingfeatures.md:51`); (2) **LANDMARK BOX SNAP** — ✅ BUILT this session, UNCOMMITTED in
-`settings/renderer.js addLandmarkFromRect` — just add a pin + commit, don't rebuild; (3) **TARGETED FIELD
-RE-SLICE** after a ⊕ teach — DESIGN-STAGE (needs advisor+Oracle). Shipped this session: Chris R5 cards 1-6
-(`position_teach_nudge`+`issuer_suggest_on_blank_confirm` now DEFAULT-ON via **mig 89**, live DB flipped),
-row-badge→classify(), quiet-lane 2 workers, and the **supplier hard-identifier registry slices 1a+1b DARK**
-(`identifier_registry` — learn VAT/company-no at confirm, match→suggested_supplier; Oracle SIGN-OFF-W/COND, do
-NOT flip until a REAL-customer-VAT corpus + M=0 + Oracle ratify — the synthetic corpus can't test checksum
-precision). Switch inventory: only 6 DARK remain. `d811cce`=features, `f2349f9`=mig 89.
-
-## (previous) 2026-08-26 DAY (resumed a mid-task C2 revision → Oracle re-vet → gate met): `HANDOVER_2026-08-26.md`
-Branch `feat/teach-side-overnight`. The prior session left a half-finished, un-vetted WIDENING of the
-`issuer_sibling_fill` **C2** safety on disk. That session finished + gated it (folded into commit `d811cce`).
-- **The correction (`issuerSiblingFillService.js`):** the mid-task widening (logo≤13 OR `keywordOverlap≥0.60`)
-  was buggy (dead keyword arm: `_KW_MIN=KEYWORD_THRESHOLD=75` vs a 0..1 fraction; un-threaded fingerprint) AND
-  changed an Oracle-signed safety with no re-vet. **Oracle re-vet = SEND BACK → corrected in place:** the
-  keyword arm now uses the app's ONE same-template comparator `brandingFp.convergesByBranding(src,sib,0.80)`
-  (distinctive tokens, ≥3 shared floor, SYMMETRIC ratio) — NOT raw `keywordOverlap` (which the premise falsely
-  claimed "mirrors handler.js:1635"; that 0.60 is an AND-guard on top of logo≤13, and raw overlap re-opens the
-  two-senders-same-garble collision: asymmetric + name-token inflated). Logo arm stays ≤13. Added a
-  mature-sibling identity re-check (`supplierNamesDisjoint(C, establishedIdentity(...))`). `reviewService.js`
-  now threads the parsed `keyword_fingerprint` array into the pre-claim `src` capture.
-- **GATE MET (owner may flip DARK→on):** census **0 / 1,250,932** cross-supplier convergences on the owner's
-  1668-doc backup (87.1% same-supplier); PIN h2 with a measured RED-on-old(1.00/0.83 admit)/GREEN-on-new
-  (0.375/0.625 refuse) proof; Chris R4 Saltmarsh fired 0→17; Chris R5 full 452-doc CHRISBOT run = 215 filed,
-  **0 wrong-company misfiles**, every bad read HELD (leak-checked: nothing left the sandbox).
-- **Also fixed Chris Card 6** (`renderer.js`): the Put-back tooltip/dialog said "copies already written to your
-  filing folder" on an in-Review sibling-fill/class-fix undo where NOTHING was filed — now kind-aware.
-- **Vet queue (Chris R4/R5, NONE safety, NOT built):** Card 1 draw-a-box-nudge (typing teaches identity not
-  field POSITION — Pelican 41-blank pileup) · Card 2 buyer-issued-PO steer · Card 3 cold-batch expectation ·
-  Card 4 no-sender Unknown-Company scatter · draft Terms (legal). **`issuer_sibling_fill` stays DARK.**
-
-## (previous) 2026-08-25 (resumed after an accidental close: mid-task arcs + a full Chris fix loop): **READ `HANDOVER_2026-08-25.md` FIRST**
-Branch `feat/teach-side-overnight`, **origin at `034a3ad`, 13 commits AHEAD + LOCAL/NOT pushed** (owner reviews then
-pushes). The session was closed mid-commit; I read the 08-24 handover, committed the uncommitted mid-build work,
-then ran the loop Chris→fix→Chris→(recommendation)fix→Chris. **(1) Resumed + committed 3 DARK/OFF-inert arcs:**
-`c1d5c08` the Quick-check grid FRONT-END (UI half of `eef96bd`); `d687f31` two DARK detection arcs
-(`name_dominant_snap` — a ≤1-edit legal-suffix slip "…Lid"→"…Ltd" silent-adopts + auto-files; and
-`branding_strip_reg_boilerplate` — strip {vat,reg,registered,company} so a wrong logo-collision supplier can't win
-own_ratio on a "VAT Reg…" line, doc-732). **BOTH detection arcs are OWNER-VET-QUEUE — DARK, need corpus OFF==ON +
-Oracle before any flip.** **(2) Chris fix loop (3 rounds, `docs/CHRIS_FULL_APP_REVIEW_2026-08-25.md`):** round 1
-→ 7 cards, strong yes; rounds 2+3 verified fixes live, zero regressions. **FIXED (`200e68d`+`97d3527`):**
-- **Card 1 (HIGH) invalid-date SILENT MISFILE** — a present-but-unparseable date-ROLE value passed the
-  empty-required Confirm gate and filed to `Company/Unknown Year/Unknown Month` with no signal. **gary + Oracle
-  both WRONG-LAYER:** the renderer-only + `validation_patterns` idea was a FIG LEAF (looser than `filing.parseDate`
-  — passes "15/12/202","15/12/25",slash-ISO,full-month; false-blocks OCR-spaced). Fix gates on `filing.normaliseDate`
-  (the EXACT folder-builder parser) at EVERY door: `reviewService.confirm` (pre-claim refuse → interactive toast /
-  File-All skip / /v1), `_autoFileDoc` (hold → closes the conf-100/`strict_100_autofile`-off auto-file hole),
-  `batchAuditService.validateEdit` (aligned — was the same fig leaf), renderer `validateConfirm` (early pre-block via
-  `_parseDrawnDate`). Pins: `test_normalise_date_predicate.js` (16, both sides), `test_reviewservice.js` (refusal
-  replaces the old "left as typed" pin), `test_batch_audit_correct.js`.
-- **Card 3 (MOD-HIGH)** Quick-check re-file renamed `Invoice.…`→`Document.…` (`getWithExtractions`→`getById` SELECT *
-  has no `type_slug` → null slug → builder fell back to "Document"): resolve slug from `document_type_id` via
-  `doctypes.getAll`. **Card 5** Cards leaked dev codes (`_baFieldMeta` drops method). **Card 7** Empty bin orphaned
-  the `.metadata/*.xml` (`_purgeOne` removes it). **Card A** (round-2) OCR-spaced date showed a spurious "Not a valid
-  date" while filing fine — the on-blur `fieldValidationError` now accepts what `_parseDrawnDate` accepts (agrees with
-  button+builder; only relaxes).
-**Card-1 corpus gate NOT run** — the fixes are confirm/file-time only, don't touch the extraction/`isAutoFileEligible`
-READ path `realdoc_regression` measures (byte-identical by construction); predicate pinned 16/16. **OWNER VET QUEUE
-(not built):** the 2 DARK detection arcs · Card 2 Terms "NOT YET IN FORCE"/[SOLICITOR:] (legal) · Card 4
-letterhead-name-over-abstain (census+Oracle; same class as `branding_strip_reg_boilerplate`) · Card 6 stale
-queue-row refresh · grid↔activity-strip flip coupling · green-pill/red-note cosmetic pairing. **Sandbox LEFT RUNNING**
-CDP 9223 PID 19928 (`chris`/`plumber2026`, newest code).
-
-## (previous) 2026-08-24 OVERNIGHT (autonomous: corroboration fix + a Chris round): `HANDOVER_2026-08-24.md`
-Branch `feat/teach-side-overnight`, **origin at `034a3ad`, 4 overnight commits AHEAD + LOCAL/NOT pushed** (owner
-reviews then pushes). Ran while the owner slept. **(1) `9c21ed6` the Pelican-565 corroboration fix** (Oracle
-SIGN-OFF-W/COND): the record discarded a genuine independent mapping/crop agreement when the winner was bare
-`anchor` (the full-page text/keyword-family reader) — fold bare anchor→keyword in the LOCAL `_corrob_bucket`
-(shared bucket untouched; fraud stays closed by same-family skip; `agree_strong` closes the r19-unmask seam so a
-bare-anchor line never masks a keyword-regex dissent). Kill `CORROB_ANCHOR_AS_KEYWORD=0`. 26 pins green; realdoc
-A/B +2 correct heals, 0 new wrong, M_type=0. Go-forward: held docs reprocess to heal. **(2) Chris full vet** →
-strong yes; fixed **#6** (`33a9f6b`, "anchor"→"label" copy) + **#3** (`670ffc7`, the orphaned-doc-while-twins-
-auto-file: below-floor+graduated hold panel now guides to Reprocess, not "lower the bar"; + honest presence
-comments — the desktop heartbeat is DEAD, presence is a leaky 60s beat, NOT a mid-edit guard) + **Card 2**
-(`81719c1`, the nudge pointed "tools rail" → repointed under "This document"). Chris re-verify: #6 + #3 FIXED live.
-**OWNER VET QUEUE (not built):** #1 Terms "NOT YET IN FORCE"/[SOLICITOR:] notes (legal, your domain) · #2
-first-batch-all-hold (the misfile-safety arc — biggest friction, biggest risk) · **#3-A** the ZERO-CLICK orphan
-fix (Oracle-signed DARK `sweep_retrigger_on_view_release` — re-trigger the quiet-reread LANE on doc-close only;
-has a window-close-mid-edit trade-off to weigh) · #4 hold-summary double-counts one field (needs below-threshold
-field-KEY plumbing from getReviewQueue) · #5/Card 1 OCR misses a printed date/banner issuer (the 007/oscar arc) ·
-Card 3 clipped teach-box commits an invalid date with no warning. Sandbox left running on CDP 9223.
-
-## (previous) 2026-08-23 EVENING (live test on a FRESH wiped DB): `HANDOVER_2026-08-23_EVENING.md`
-Branch `feat/teach-side-overnight`, **HEAD `0b62235`, 63 commits ahead, NOT pushed.** The owner wiped the live DB
-and ran a hands-on session; ONE commit built the fixes (all OFF byte-identical, Oracle-gated): **(1)** activity-strip
-UX (two-line chips, ✕/click-to-close, always-a-receipt File All incl. 0-filed; `reviewEvents` dedups `dropped`);
-**(2)** put-back re-file via File All (`putback_refile_on_file_all`, **mig 87** `refile_declined_at`+`putback_refiled_at`)
-— a glanced-then-put-back doc re-files on the explicit click when it STILL passes the strict predicate
-(`isAutoFileEligible({bypassPutBack})`), never via any machine path; undo-loop hard-holds; **(3)** two bugs (tab badge
-was `queue.length`→DB count; class-fix bar ✕ + clears on doc change); **(4)** detail-veto single-supplier immunity
-(`logo_detail_veto_single_supplier_immune`) — the 256-bit veto crops top-left + hashes a wordmark LETTER, false-
-abstaining a dist-2 lock (Oakhaven 543/544); a call-site helper suppresses it ONLY for a corroborated single-supplier
-lock tripped by a MARGINAL rival (>48), a DECISIVE rival (≤48, doc-193/buyer) still vetoes. **Verified:** 543/544 →
-template 2 on the real app; realdoc A/B OFF-vs-ON byte-identical (supplier 100%, 0 new wrong-supplier, M_type=0);
-all targeted+related suites green. **Live fresh DB** = `%APPDATA%\ScanFinder\docusnap.db` (mig 87, app running, all
-new switches ON except `trust_company_key_own_scope`). **Deferred:** 531 (skew/coarse near-miss); the 12 wrong-date
-auto-files (leading-digit date class — next accuracy arc); notification consolidation; the 5 garble/type-split vet
-switches. **The overnight re-freeze/flip owner-owed items are MOOT (DB was wiped).**
-
-## (previous) 2026-08-23 OVERNIGHT (Chris rounds 17→20 fix loop): `HANDOVER_2026-08-23_MORNING.md`
-(the standard wrap: verification state, first actions, deferred conditions), then `HANDOVER_2026-08-23.md`
-(its OWNER STEPS + the switch table), then `docs/CHRIS_FULL_APP_REVIEW_2026-08-23.md` (rounds 18/19/20 verbatim +
-triage tables). Branch `feat/teach-side-overnight`, **~60 commits ahead, NOT pushed** (owner's standing rule).
-**Round 20 verdict: the wrong-date self-file class is FIXED as seen — 73 filed, 0 wrong by the app, every wrong
-read Chris could provoke was held with the right value one click away; Ironbridge/Larkspur waited for their
-confirms.** Six new DARK switches (table in the handover); do NOT flip `trust_company_key_own_scope` live (holds 45
-of the owner's docs). Owner owes: the re-freeze script on the live DB; the flip order; the r20 vet cards.
-Round 17 (fresh sandbox, every switch ON) → 8 cards → agents → Oracle-gated → one commit each
-(`99b90f1` … `740a243`, table in `docs/CHRIS_FULL_APP_REVIEW_2026-08-22.md` "Round 17 TRIAGE"); rounds 18–20
-ran on the fixes. Headlines:
-- **THE IDENTITY UNFREEZE CLASS (`11ca0ba`, a bug, no switch):** `_fieldsWithMultipleConfirmedValues` judged
-  the company key TYPE-WIDE — ≥2 distinct confirmed suppliers on a TYPE unfroze EVERY template's identity at
-  its next write (the "Gay" / "DOCUMENT" folders). Now per template by DOMINANCE (`templates.getDominantSupplier`);
-  a NULL-over-frozen write is loud (warn + audit `template_identity_unfrozen`). **Owner step:**
-  `node scripts/refreeze-template-identity-20260823.js --apply --templates-dir <repo templates/>` on the live DB
-  (dry run found 5: Silverbeck, Veltrix, Castellan, Harrowgate, Nordwind; realdoc base vs re-frozen = identical, M=0).
-- **Holds that never rendered (`99b90f1`):** the refused-confirm return dropped `nearMatch`/`typeSplit`. Rider
-  `320433f`: one kept slip no longer silences the type-split ask ('mixed' needs ≥2 of the second type); a blank
-  issuer is 'missing', never 'ready' (`issuer_blank`).
-- **Garble/fragment (`72a75bd`, `875a433`, `9ae6c2b`):** wide debris leg DARK `template_fixed_debris_wide`;
-  JUNK kind of the letterhead suggestion; `hasTemplate` requires the template's identity to BE the scope;
-  the near-match SUB-RUN arm (`name_proximity.tokenSubrunIdentity`) asks with the full name first.
-- **Review UX (`e9106aa`, `2cf5f26`):** tile yields under the strip + derives from status/door; File All
-  records ONE bulk chip (ledger key `approved|bulk`, merge into the newest SAME-KEY event in the gap);
-  import banner self-heals; Reprocess copy; "Sent back from Search"; `markUndone` + "Already back in Review.".
-- **OWNER CARD 1 — THE READY ARM (`740a243`, DARK `quiet_reread_on_ready_templated`):** at the ready crossing
-  the lane also re-reads the scope's OWNED-template held docs with `overall_confidence < scopeTrust().floor`
-  (layout-arm guards + the C3.3 hold "Read after learning — confirm once."). **Cannot help an all-generic
-  name (DS) — skipped + audited; tell the owner.** `_ownedTemplateRows` is the shared population query.
-- **ROUND 18 → the fix loop continued (one commit each, Oracle-gated):** A1 **a wrong date self-filed** (447: blank
-  at import, first-filled by the teach-time re-read, swept at the ready crossing) → `371ef2d` the FIRST-FILL
-  RELIABILITY hold (DARK `quiet_reread_first_fill_reliability_hold`): hold every first-fill at merge, release at
-  `_finish` unless the box proved unreliable in that job (K=1 `FIRST_FILL_UNRELIABLE_K`; witnesses = S3-C5 / loss /
-  engine yield); the "— confirm once." family now survives the READY arm (`_ownedTemplateRows`) and a same-value
-  Reprocess (`mergeReprocessRows`, `REPROCESS_CARRY_LANE_HOLD=0` kills); S3-C5 rows carry `corrected_to = was`.
-  A3 **Put back must stick** → `19e91b0`+`061ca82` mig 86 `documents.put_back_at` (stamped by every human "look
-  again" door — `deconfirmDocument`/requeue; the ONE predicate refuses `'put-back'`; a machine via is refused
-  pre-claim `PUT_BACK`; only a human claim clears; the auto accept files as "Auto-filed (after your confirms)").
-  A4 `7b8c8e1` the `confirm-review` IPC whitelist dropped `typeSplit`. A2/A6/5/7/copy `8b5ae1a`, A7 `615263c`.
-  Census `TESTING/_measure/first_fill_reliability_census.js`: DS 0 held, Copperfield held, K=1≈K=2.
-- **ROUND 19 → (04:00–04:40):** A2/A3/A4 FIXED; A1 fixed on the lane road but **four wrong dates self-filed via the
-  manual "Reprocess N"** (N1) and **Ironbridge filed 18 on zero confirms** (N2). **THE MEASUREMENT THAT MATTERED:** the
-  corroboration record called EVERY date a "disagreement" (`_cmp_norm` is separator-blind: `17-12-2026` vs
-  `17/12/2026`) → no date was ever corroborated and the keyword family's CORRECT read on the four wrong rows was
-  invisible → `6b77f30` date-aware compare (`FIELD_CORROBORATION_DATE_FOLD`) + the every-road `docTrustGate`
-  refusal `disagreeing-read:<role>` (DARK `trust_role_disagreement_refuse`). N2 mechanism: the TYPE-wide
-  `supplier_name` group was `constant` at 2 names (Copperfield + Ironbridge's own wizard confirm) → `69a65de`
-  DARK `trust_company_key_own_scope` (a company key never borrows the type's names; the badge and the gate agree).
-  P1 `5979bdc` **`src/modules/processing/rereadHolds.js` = ONE road for re-read holds** (the lane delegates; the
-  manual batch + single-doc Reprocess write the same holds, DARK `reprocess_holds_as_lane`; C1: the S3-C5 baseline
-  is the row's TYPE-VALID `corrected_to` else its display — never offer 'INV-29273' on a date). P3 `9dc7bf4` the
-  layout arm re-reads noted docs (a new box is new evidence); N4/N5/N6/N8 `67aef42` + `65ff83d`. **Realdoc on the
-  owner's copy (current app env): 381/416, M=1 (#413, a leading-digit date with no page witness — the next arc);
-  the ON arm holds 45 more via `trust_company_key_own_scope` (do not flip) and exactly 1 via the disagreement
-  refusal. The 389→381 "drift" was BISECTED: the round-17 HEAD reproduces 381/M=1 — tonight's code is exonerated.**
-- **ROUND 20 → `0929e33` File All's loop skips on the ONE classifier (it filed the 9 put-back docs its dialog
-  excluded); the identity never gets a one-click Use of its old garble; no duplicate S3-C5 note; `8bc3f32` the lane
-  hint carries the job reason. Verdict: 73 filed, 0 wrong by the app.**
-**Traps this session:** `core.autocrlf=true` → renderer.js etc. are CRLF on disk (tests slicing `
-}
-` must
-normalise; patch scripts must open with `newline=""`); bash heredocs strip a backslash level (write tests with
-the Write tool); hand-rolled test schemas lack mig columns (`pragma_table_info`); the `chris-the-customer`
-agent type was NOT registered — spawn general-purpose + Read the persona file. Pre-existing reds unchanged:
-`test_authoritative_anchor`, `test_v1_contract`, `test_doctype_surface_parity`, `test_teach_multipage`;
-Python `test_identity_fusion` + 6 script-style.
-
-
-## (previous) 2026-08-22 NIGHT: **READ `docs/designs/TYPE_SPLIT_AND_ACTIVITY_STRIP_PLAN_2026-08-22.md` FIRST**
-(the plan + the STATUS table at its foot), then `HANDOVER_2026-08-22_EVENING.md`. Branch `feat/teach-side-overnight`,
-HEAD `44b6661`, NOT pushed. Three arcs landed tonight, every switch DARK unless stated:
-- **The garbled-issuer arc `c5a4050`** (a one-line box over a stacked wordmark read `NOCUMENT` and minted a sender):
-  `template_fixed_seed_fragment_garble` (P4 tolerates one edit per ≥6-char READ token; band leg never fuzzed),
-  `identity_suggest_canonical` (the "Letterhead may read X" note now carries X in `suggested_supplier` → the
-  branding button; the Stage-4.5 token repair `Use "DOCUMENT"` is cleared), `review_group_by_letterhead` (a garble
-  groups under its letterhead company + a confirm-time hold). Adversarial census 16,809 pairs → 0 keeps.
-- **The type-split arc** (17 Nordwind quotes held by Fix A after ONE mis-confirm bore a purchase_order rival):
-  A1 `40f47e3` name-precedence BUG FIX (a template took the machine's pre-confirm read as its name) · A2 `e2fa804`
-  `type_ambiguity_unsupported_waiver` — decided ENTIRELY in the engine (process_docs' B1 block is skipped on a
-  reprocess of a typed doc), realdoc M=0/M_type=0, would-auto-file 389→410 · A3 `c67f8e1` `type_split_confirm_gate`
-  ON (asks once: "Nordwind files as Quote (24 so far). File this one as a Purchase Order?"; the wizard asks BEFORE
-  it promotes) · A4 `a4cbd84` catalog `title_aliases` + **mig 85** (Quote → Quotation/Estimate …; with A4 alone the
-  live copy's held quote resolved clean) · A5 `7fdfa80` `heading_absent_census.py`: on the owner's DB the printed
-  type banner is DROPPED from page text on 105/416 docs and a blind top-band grey OCR recovers 18/18 @96 — NOT a
-  colour mechanism; fix = its own arc · A6 `7fdfa80` `type_ambiguity_ripple` (rides the quiet lane).
-- **The activity strip** (the top-left tiles re-total `recent_auto_filed` and never expire): B1 `3676415`
-  `src/lib/reviewEvents.js` ledger (merge-in-place per batch, `review_events` PROTECTED, four doors incl. the human
-  File N, event-id IPC, chunked honest undo) · B2 `44b6661` `review_activity_strip` — chips above the document,
-  newest left, click-anywhere closes the panel only · B3 (retire the tiles) = Oracle SEND BACK, not started.
-**Owed:** a Chris round with the new switches ON; then the new-install flips. **Owner remedy for Nordwind:** delete
-template 12 → retype doc 135 as Quote → Reprocess 17 — or just restart (mig 85) and Reprocess.
-**Pre-existing reds:** `test_teach_multipage.js` (its own comment matches its regex), `test_authoritative_anchor`,
-`test_v1_contract`, `test_doctype_surface_parity`; Python `test_identity_fusion` + 6 script-style. **Trap:** this
-checkout is `core.autocrlf=true` — any source-contract test slicing on `
-}
-` must normalise CRLF first; Python
-`open(p,'w')` patch scripts and bash heredocs both mangle backslashes — use the Write/Edit tools for test files.
-
-## (historical) 2026-08-15: **READ `HANDOVER_2026-08-15.md` FIRST.** HEAD **`717058b`**, 11 commits
-**PUSHED to origin**, tree clean. The corroboration arc shipped + validated; owner flipped all reading
-switches on their live DB and made it the new-install DEFAULT (mig 70); Chris re-ran on the new defaults.
-**⏭ TOP OF QUEUE (owner said "yes, build it"): the hold-siblings FIRST-BATCH REGRESSION.** Chris's re-run:
-`template_identity_hold_siblings` (now DEFAULT-ON via mig 70) fires on a FIRST teach, not just a genuine
-identity CHANGE — after teaching 10 fresh, ALL 200 imports carry "the sender for this layout was changed to
-'X' — confirm it here too" @70 (`template_fixed`), and **File All Ready offers 0** (first night filed 154 in
-one click). **FIX (approved, NOT built):** gate the hold-siblings mark on "a prior frozen identity existed AND
-differs", never a first teach (`template_identity_hold_siblings` read in `templates.js` + bridged
-`TEMPLATE_IDENTITY_HOLD_SIBLINGS`); + run a DRAWN-box teach control (Chris used typed-locate → freezes
-fixed_value from 1 confirm, the young-identity trigger; first night he drew boxes, no such note); and/or don't
-count the sender-confirm note as a File-All blocker. **MIG 70:** new installs default all reading switches ON
-except `deskew_on_import` (arc keys UPSERT-forced true; others INSERT OR IGNORE); the 8 corrob switches
-SFDEV-gated (`DEV_SWITCH_IDS`). **Chris re-run WINS vs first night:** Oakhaven slash-drop FIXED (20/20),
-false "net disagrees" gone, trailing-period + `]` fixed, Pelican I/1 better (~55% correct), **mature auto-file
-~55%→~93.5%.** Chris's buyer-issued mis-teach (Quillstone as issuer on a Bramblewood PO) → filed under
-Quillstone, NO bleed, containment held. Live-DB backup: `TESTING/_measure/live_backup_20260815_autofile_arc.db`.
-**THE FINDING (owner's intuition, PROVEN): the DB already knows the answer.** `extractions.corroboration`
-records which independent method families read the same value; the confirmed corpus records the dominant
-value/prefix. But `trust.js isAutoFileEligible` refuses UNCONDITIONALLY on any note/`corrected_to` and on a
-ref/date <88. 20 held docs → 7 classes (A inferred-co · B I/1 invoice# · C corroborated-total · D `]`→1
-account · E name-suggestion · F ref-not-on-page · G ref<88), each DB-answerable except F.
-**BUILT (workflow `ws8i3wjq1`: 6-reader map → design → Oracle SIGN-OFF-W/COND; ALL DEFAULT OFF, migration 69):**
-ONE predicate — `_corrobLicensed` (≥2 independent PAGE families {mapping,crop,keyword}, memory+hint EXCLUDED as
-near-circular) AND value==dominant-confirmed. **Gate (`1d1cdab`, trust.js):** `critfield_corrob_floor_relax`
-(G — clears the 88 floor iff licensed + learned-shape match; Oracle seam: crop+mapping are common-mode, the
-shape match is the 2nd leg) · `vacuous_corrected_to_ignore` (B — a `corrected_to`==`display_value` no-op stops
-flagging, null-safe). **Engine (`cb69795`):** `_resolve_corroborated_notes` wired as `_d4` in the `_d1|_d2|_d3`
-recompute guard — THE KEY PLACEMENT: a cleared note there ALSO drops its `overall_confidence` penalty, so the
-doc clears the floor on reprocess (a stored-row clear can't — the penalty is baked at extraction). Arms
-A/B/C/D/E each gated + fail-toward-Review; `_corrob_licensed` mirrors trust.js (pinned cross-language).
-**Remediation (`scripts/remediate-corrob-queue-20260815.js`):** stored-row backlog delivery (dry-run default).
-**VALIDATED on the REAL pipeline (Chris mature-reprocess, 7141316): the arms CLEAR NOTES + ADOPT VALUES
-correctly, ZERO misfiling** — Chris filed 7, all correct. **⚠ CORRECTION to an earlier over-claim: the
-`verify_heal.py` "≥10/20" was WRONG** — it omitted the engine's format-confidence penalty (`fc_delta`) AND
-assumed graduation. The HONEST measurement (real `isAutoFileEligible` over the mature sandbox, arms ON): of
-17 still-held docs, **only 3 are `flagged` (a note the arms can clear); 14 are `below-floor`** — a CONFIDENCE
-DEFICIT (overall 76–85 < floor; Pelican floor 100 = NOT graduated), NOT a note. **The arms clear notes/adopt
-values; they do NOT raise overall_confidence past the floor.** So the arc auto-files docs held ONLY by a note
-AT ≥floor confidence (a minority); the Pelican I/1 (oc 84) + most Silverbeck (oc 77) stay held by below-floor
-regardless of the note-clear. **The bigger backlog lever is SEPARATE from this arc: why a CORRECT Pelican
-invoice reads at overall 84 (the fc_delta format penalty), and Pelican not being graduated (floor 100).**
-**33 new pins green; whole suite 483/494 = the 11 documented pre-existing reds, ZERO new. OFF is inert by
-construction.** **The fix's real value: correctness (right value/folder, no spurious flag) — NOT a big
-backlog auto-file jump. OWED before any live default-ON flip: the OFF==ON md5 corpus arm + Oracle ratify.**
-**THE "overall-84" PENALTY — DIAGNOSED + FIXED (`3f64c10`, `corrob_note_recompute_fc`, DEFAULT OFF):** a
-CORRECT Pelican invoice reads 84 because its `invoice_number` note is counted as a format MISMATCH by
-`format_consistency_delta` (−12). Clearing the note SHOULD lift it, but the demoter recompute guard REUSED
-the STALE `fc_delta` → **every note-demoter (these arms AND the shipped recon/name/xcheck slices) was
-COSMETIC** (note cleared, penalty stayed). The fix recomputes the delta off POST-demote results when armed
-(verified: 1716 84→96). **THE LINCHPIN — it is what makes note-demotes actually reduce the review pile.**
-**BUT Pelican still won't auto-file:** `scopeTrust`=`{floor:100, reason:'recent-correction', corrections:3}`
-— graduation is blocked by recent corrections (by-design safety), so 96<100→held. To auto-file the Pelican
-I/1 docs, BOTH must happen: (1) the fc flip (84→96) AND (2) the scope must GRADUATE (recent corrections age
-out). corroboration_autofile can't rescue it (Pelican invoice_number is single-method → `independent_agree:false`).
-**CHRIS ROUND 2026-08-15 ran** (`docs/CHRIS_FULL_APP_REVIEW_2026-08-15.md`; fresh sandbox CDP 9223, 7 switches
-ON, SINGLE+IMPORT+IMPORT2 per TEACH_ORDER). **A fresh install has NO confirmed history, so the corroboration
-arms are largely inert there** — his run measures the teach/import UX + base rate + detection issues. **Wave 1:
-0/200 auto-file** — `auto_file_threshold` unset → defaults to **100%** while taught reads land 87–95%, so every
-CORRECT read sits in Review (File-All-Ready then files 154/200 in one click). **Wave 2 (after that manual batch
-GRADUATED the suppliers): ~55% auto-file, correct folders.** **OWNER-VET QUEUE (nothing implemented):**
-**#1 the 100% default files nothing out of the box — default ~90 or prompt after the first batch (bigger than
-this arc, orthogonal to it).** #2 buyer-issued PO steers "Document Issuer" at the OWN letterhead (Quillstone PO
-= Bramblewood letterhead — the known buyer-issued class). #3 Pelican I→1 + ⊕ can't fix an OCR misread
-(re-reads same pixels) — CONFIRMS class B; the app already computes the "wider reading" it only warns about.
-#4 Oakhaven slash-drop flags 19/20 on a cosmetic "/" (the separator class). #5 stale recycle-bin view (recurs).
-Chris CONFIRMED the round-4/5 recycle-bin fixes (Empty bin deletes PDFs; restore returns page-intact).
-**CHRIS ROUND 2 (owner asked to re-run under REAL config): a SANITIZED COPY of the live DB (1258 confirmed,
-all 30 owner flags + 7 fix flags ON, paths repointed + leak-checked, users cleared). Reprocessed the 24 held
-docs → filed 7, ALL correct, ZERO misfiling.** Method fingerprints prove A/C/D/E fired on the real pipeline
-(`+corrob_clear`×22, `+snap_corrob`×2, `+name_corrob_adopt`×4, `template_identity_corroborated`×4). **B FOLLOW-UP — RESOLVED 2026-08-16 as a NON-BUG (code-vintage artifact):** the mature-sandbox batch
-reprocess ran 15:56; the B fix (`7141316`) was committed 19:00 — the batch simply ran the OLD leg.
-Env/args parity across all 3 spawn paths verified; `mergeReprocessRows` is INNOCENT (used_new stores
-the fresh row wholesale). The "trace mergeReprocessRows" lead was FALSE — do not chase it again.
-Verdict: never filed a wrong value/folder — tidy the note copy and it's an unconditional yes.
 
 ## Prior sessions — 2026-08-01 → 08-14 (collapsed 2026-08-15; full detail in each `HANDOVER_*.md`, the `docs/session-log.md` verbatim archive, and the `MEMORY.md` index)
 > These per-session state blocks were stacking up and bloating this file. Each is preserved IN FULL in
