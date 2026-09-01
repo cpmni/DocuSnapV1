@@ -212,14 +212,56 @@ def _deskew_retry_apply_holds(raw_results, straightened_results):
 # by the handler, never re-attempted) then force-exits, escaping the wedged call —
 # instead of stalling the whole batch forever. The remaining files stay in the intake
 # folder and are picked up on the next run / watch scan.
-_watch = {"name": None, "started": 0.0}
+_watch = {"name": None, "started": 0.0, "stage": None}
 
 def _mark_file(name):
     _watch["name"] = name
     _watch["started"] = time.monotonic()
+    _watch["stage"] = "start"
+
+def _mark_stage(stage):
+    # Best-effort per-file progress marker so a failure/timeout can name WHERE it died
+    # (render | ocr | extract | validate | emit). Cheap string write; never throws.
+    _watch["stage"] = stage
 
 def _clear_file():
     _watch["name"] = None
+    _watch["stage"] = None
+
+
+def _build_error_payload(name, exc, stage=None, timeout_s=None):
+    """Comprehensive, redaction-aware error record for a failed file (2026-09-01). Both the manual
+    import and the watch folder funnel through this, so the extra detail is parity-free. Defensive:
+    any failure BUILDING the payload falls back to today's minimal shape — logging an error must never
+    itself abort the batch. The full traceback is TRUNCATED and is only ever routed to the sensitive
+    diagnostic log on the JS side (never the always-on log — see handler._handleFileMessage)."""
+    base = {
+        "type": "file_done", "success": False, "status": "error",
+        "original_filename": name,
+    }
+    try:
+        if timeout_s is not None:
+            base["error"] = f"processing timed out after {int(timeout_s)}s (skipped to protect the batch)"
+            base["stage"] = "timeout"
+            base["timeout_s"] = int(timeout_s)
+            if stage:
+                base["stage_at_timeout"] = str(stage)
+        else:
+            base["error"] = str(exc) if exc is not None else "unknown error"
+            base["error_type"] = type(exc).__name__ if exc is not None else "Unknown"
+            if stage:
+                base["stage"] = str(stage)
+            try:
+                import traceback as _tb
+                tb = _tb.format_exc()
+                if tb and tb.strip() and tb.strip() != "NoneType: None":
+                    base["traceback"] = tb[-2000:]   # last ~2KB — enough for the failing frames
+            except Exception:
+                pass
+    except Exception:
+        # payload enrichment failed — keep the minimal shape (name/error already set above)
+        base.setdefault("error", "error (detail unavailable)")
+    return base
 
 def _start_file_watchdog(timeout_s: float):
     if not timeout_s or timeout_s <= 0:
@@ -230,9 +272,7 @@ def _start_file_watchdog(timeout_s: float):
             name = _watch["name"]
             if name is not None and (time.monotonic() - _watch["started"]) > timeout_s:
                 try:
-                    emit({"type": "file_done", "success": False, "status": "error",
-                          "original_filename": name,
-                          "error": f"processing timed out after {int(timeout_s)}s (skipped to protect the batch)"})
+                    emit(_build_error_payload(name, None, stage=_watch.get("stage"), timeout_s=timeout_s))
                 except Exception:
                     pass
                 try: sys.stdout.flush()
@@ -692,6 +732,7 @@ def main():
                 # reprocess costs once OCR is cached). An empty cache trips the non-empty guard below.
                 ocr_text, page_images = (_cached or ''), []
             else:
+                _mark_stage("read")   # render + OCR (the slow native calls the watchdog guards)
                 ocr_text, page_images = extract_text_and_images(
                     filepath, _enh, born_digital=args.born_digital, engine=ocr_engine,
                     cached_text=(_cached if (_cached and _cached.strip()) else None),
@@ -1161,6 +1202,7 @@ def main():
                 identity_shadow = args.identity_shadow,
                 barcodes        = _bc,               # page barcode inventory (None ⇒ no decode ran)
             )
+            _mark_stage("extract")
             raw_extractions = engine.extract(
                 ocr_text      = ocr_text,
                 page_images   = page_images,
@@ -1404,13 +1446,7 @@ def main():
             })
 
         except Exception as exc:
-            emit({
-                "type":              "file_done",
-                "success":           False,
-                "status":            "error",
-                "original_filename": filepath.name,
-                "error":             str(exc),
-            })
+            emit(_build_error_payload(filepath.name, exc, stage=_watch.get("stage")))
         finally:
             _clear_file()   # disarm the watchdog between files (only an in-progress file can time out)
 

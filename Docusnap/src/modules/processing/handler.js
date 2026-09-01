@@ -5664,6 +5664,25 @@ async function ensureWorkingCopyAsync(fs, path, inboxDir, srcPath, docId, origin
   }
 }
 
+// Comprehensive per-file error record, split by sensitivity (2026-09-01). Pure + exported so the
+// redaction contract is pinnable. `logLine` is SHAPE ONLY (enums/ids) for the always-on log — it must
+// never carry the filename or the error text (the logger only redacts quoted values + Windows paths).
+// `summary` (human, for the DB error_message) and `diag` (full, for the sensitive diaglog) carry detail.
+function formatFileError(msg) {
+  const m = msg || {};
+  const errType = m.error_type || (m.stage === 'timeout' ? 'Timeout' : 'Error');
+  const summary = `${m.stage ? m.stage + ' · ' : ''}${errType}: ${m.error || 'unknown error'}`;
+  const logLine = `File failed: stage=${m.stage || '?'} type=${errType}`;
+  const diag = {
+    ev: 'file_error', filename: m.original_filename || null, stage: m.stage || null,
+    error_type: m.error_type || null, error: m.error || null,
+    page_index: (m.page_index != null ? m.page_index : null),
+    timeout_s: (m.timeout_s != null ? m.timeout_s : null),
+    traceback: m.traceback || null, disposition: 'Errors',
+  };
+  return { logLine, summary, diag };
+}
+
 function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun = true) {
   if (msg.type === 'file_begin') {
     logger?.log(`File begin: ${msg.filename}`);
@@ -5673,7 +5692,13 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
   _bumpActivity();   // one document finished (import or watch) — advance the Review activity bar
 
   if (!msg.success) {
-    logger?.err(`File failed: ${msg.original_filename || '?'} — ${msg.error || 'unknown error'}`);
+    // Comprehensive error logging (2026-09-01). SHAPE ONLY on the always-on log — no filename, no
+    // error text: the logger only redacts quoted values + Windows paths, so a bare filename or a
+    // value-bearing exception string ("invalid literal: INV-12345") would leak. The full detail
+    // (filename, message, stage, page, truncated traceback, timeout) goes to the DB error_message
+    // + the sensitive, admin-gated diaglog below. Shared by manual import AND watch (parity).
+    const _fe = formatFileError(msg);
+    logger?.err(_fe.logLine);
     // Persist a "stuck" record instead of silently dropping the failure, so the
     // doc is VISIBLE (a launchpad surface) and reprocessable — previously a failed
     // file left no DB row at all.
@@ -5687,11 +5712,15 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
         status:            'error',
       });
       docId = ins.lastInsertRowid;
-      documents.update(db, docId, { error_message: msg.error || 'unknown error' });
+      documents.update(db, docId, { error_message: _fe.summary });
       msg.db_id = docId;
     } catch (e) {
       logger?.warn(`Could not record failed document ${msg.original_filename || '?'}: ${e.message}`);
     }
+    // Full structured record -> the sensitive, admin-gated diagnostic log (off by default; it
+    // already swallows its own errors). The only sink carrying the filename + truncated traceback +
+    // page/timeout — never the always-on log. Best-effort.
+    try { diaglog.write({ ..._fe.diag, doc_id: docId }); } catch { /* diaglog never throws; guard anyway */ }
     // Give the stuck doc a VERIFIED working copy (so it's reprocessable even if the
     // source later vanishes) and drain its original into an Errors/ subfolder —
     // same model as success → Processed/ — so it isn't re-pulled on the next run.
@@ -6170,6 +6199,7 @@ module.exports = {
   killAll,
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
+  formatFileError,
   flushPendingDrains: _flushPendingDrains,
   // Slice 1 (2026-08-21): the human-confirm trigger for the scope-local auto-accept. A no-op until
   // register() has bound it (and while `scope_sweep_auto_accept` is dark).
