@@ -6221,6 +6221,7 @@ module.exports = {
   _resolveDetectedType,      // mig-51 detected-type-nudge pins (test_detected_type_nudge.js)
   _reprocessGenericAdopt,
   _autoTitleEnv,             // Auto-Title spawn env (shared with the watch batch)
+  _ocrDpiEnv,                // OCR render-DPI spawn env — the watch MUST read at the same DPI as import (2026-09-01)
   _anchorCropEnv,            // crop opt-in spawn env: right-grow + label left-clamp (shared with the watch batch)
   _reconcileEnv,             // extraction-reconcile opt-in spawn env: prefix-garble adopt (shared with the watch batch)
   drainOriginalToFolder,

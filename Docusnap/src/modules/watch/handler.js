@@ -300,7 +300,9 @@ function _drainQueue(db) {
 
   let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', String(processing.defaultConcurrency())), 10);
   if (!Number.isFinite(concurrency)) concurrency = 1;
-  concurrency = Math.max(1, Math.min(processing.maxConcurrency(), concurrency));   // core-aware, matches manual import
+  // core-aware AND RAM-capped — matches manual import (the 08-31 OOM fix). Without the RAM cap an
+  // overnight watch on a low-spec box oversubscribed memory exactly as the manual path used to.
+  concurrency = Math.max(1, Math.min(processing.maxConcurrency(), processing.ramConcurrencyCap(), concurrency));
 
   const files  = _queue.splice(0, _queue.length);   // take the whole current queue
   const shards = processing.partitionRoundRobin(files, Math.min(concurrency, files.length));
@@ -375,8 +377,24 @@ async function _processBatch(db, filenames) {
     // fires for detection-None docs, so typed watch imports are untouched). The crop
     // right-grow opt-in rides here too (both default OFF → byte-identical env).
     const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
-      { windowsHide: true, env: { ...process.env, ...processing._autoTitleEnv(db), ...processing._anchorCropEnv(db), ...processing._reconcileEnv(db) } });
+      { windowsHide: true, env: { ...process.env,
+        ...processing._autoTitleEnv(db),
+        ...processing._ocrDpiEnv(db),                              // read at the SAME DPI as manual import (parity)
+        ...processing._anchorCropEnv(db), ...processing._reconcileEnv(db),
+        OMP_THREAD_LIMIT: String(processing._reprocessThreadCap(db)) } });  // cap Tesseract threads per shard (no thrash)
     _liveProcs.add(proc);   // track for quit-time kill (untracked on close below)
+    // Async spawn-failure resilience (the 08-31 crash class): an EAGAIN/ENOMEM/EMFILE failure fires
+    // 'error' asynchronously — with no handler it re-raises as an uncaughtException and the app exits
+    // silently. Resolve the batch instead; the staged files stay in the watch folder for the next poll.
+    let _spawnFailed = false;
+    proc.on('error', (err) => {
+      _spawnFailed = true;
+      _liveProcs.delete(proc);
+      _log('err', `[watch] worker spawn failed — will retry next poll: ${err && err.message}`);
+      try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+      try { processing.cleanupTempFiles(tempFiles); } catch {}
+      resolve();
+    });
     let buf = '';
 
     proc.stdout.on('data', (data) => {
@@ -415,6 +433,7 @@ async function _processBatch(db, filenames) {
     });
 
     proc.on('close', (code) => {
+      if (_spawnFailed) return;   // 'error' already handled cleanup + resolve
       _liveProcs.delete(proc);
       try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
       processing.cleanupTempFiles(tempFiles);
