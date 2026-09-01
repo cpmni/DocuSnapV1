@@ -3069,6 +3069,7 @@ function register(ctx) {
          keyword_fingerprint = ?,
          supplier_name       = CASE WHEN ? THEN NULL ELSE COALESCE(?, supplier_name) END,
          ocr_text            = COALESCE(?, ocr_text),
+         ocr_recipe          = COALESCE(?, ocr_recipe),
          detected_type_name  = ?,
          review_acknowledged_at = CASE WHEN ? THEN review_acknowledged_at ELSE NULL END
        WHERE id = ?`
@@ -3082,6 +3083,9 @@ function register(ctx) {
       _supBlanked ? 1 : 0,
       result.supplier_name      || null,
       result.ocr_text           || null,
+      // Quick Reprocess (mig 104): COALESCE, not plain assign — a fresh full-OCR reprocess (cache
+      // invalid) re-stamps; a cached-text reuse and a --reextract omit it and must KEEP the old stamp.
+      result.ocr_recipe ? JSON.stringify(result.ocr_recipe) : null,
       // Plain assignment, NOT COALESCE: null must actually CLEAR the stamp. COALESCE here would
       // make the suggestion permanent — it would survive the very act of adding the type.
       reprocDetectedName,
@@ -5835,9 +5839,17 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
     ocr_text:           msg.ocr_text      || null,
     page_count:         msg.page_count    || null,
     detected_type_name: detectedTypeName,
+    // OCR provenance stamp (Quick Reprocess, mig 104): present ONLY when this run PRODUCED the
+    // full-page text (Python omits it on a cached-text reuse and a --reextract). NULL = legacy.
+    ocr_recipe:         msg.ocr_recipe ? JSON.stringify(msg.ocr_recipe) : null,
   });
 
   const docId = docResult.lastInsertRowid;
+  // Update the "current tesseract engine" marker whenever a fresh recipe carries one, so the
+  // JS-side ocrCache.currentOcrRecipe (which never spawns tesseract) can compare versions. Best-effort.
+  if (msg.ocr_recipe && msg.ocr_recipe.tess) {
+    try { learning.setSetting(db, 'ocr_pipeline_tess', String(msg.ocr_recipe.tess)); } catch {}
+  }
 
   if (msg.extractions) {
     const rows = Object.entries(msg.extractions).map(([key, data]) => ({

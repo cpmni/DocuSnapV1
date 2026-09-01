@@ -50,6 +50,23 @@ def _deskew_retry_should_run(enabled, needs_review, deskew_pages, reextract, has
     auto-file — and never on an already-deskewed run or a reprocess (--reextract), and never with no pages."""
     return bool(enabled) and bool(needs_review) and not deskew_pages and not reextract and bool(has_pages)
 
+def _ocr_recipe_emit_keys(reextract, cached_text, born_digital, bd_used) -> dict:
+    """Which of {ocr_recipe, imageless} the file_done emit carries (Quick Reprocess, 2026-09-01;
+    gary → Oracle C3). Pure + unit-pinned so a future dev cannot quietly stamp a recipe onto text
+    this run did not produce (which would let Quick reuse stale OCR):
+      * fresh text produced this run (a render/OCR or a born-digital read, i.e. NOT a --reextract and
+        NOT a non-empty cached-text reuse) -> the runtime-actual recipe;
+      * a --reextract (imageless) run -> {'imageless': True} so the merge applies its no-image guards;
+      * a cached-text reuse -> neither key (the stored recipe already describes that text)."""
+    produced = (not reextract) and not (cached_text and str(cached_text).strip())
+    if produced:
+        from ocr.tesseract import current_ocr_recipe_meta
+        return {"ocr_recipe": current_ocr_recipe_meta(bool(born_digital), bool(bd_used))}
+    if reextract:
+        return {"imageless": True}
+    return {}
+
+
 def _deskew_retry_adopt(base_overall, retry_overall) -> bool:
     """Adopt the STRAIGHTENED read only if it scores a strictly HIGHER overall confidence. A confident
     garble reads high, so a tie or a drop keeps the raw read (no regression)."""
@@ -1372,8 +1389,26 @@ def main():
             # Always send to review queue — user confirms each document
             status = "needs_review"
 
+            # OCR RECIPE STAMP (Quick Reprocess, 2026-09-01; gary → Oracle C3/C6). Emit the recipe
+            # ONLY when THIS run actually PRODUCED the full-page text — a fresh OCR render or a
+            # born-digital text-layer read. NEVER on a cached-text reuse (the stored recipe already
+            # describes that text, and no pixels were read) and NEVER on a --reextract (no render at
+            # all). Built from runtime-actual values inside current_ocr_recipe_meta, not re-read from
+            # settings. A --reextract emit instead carries `imageless: true` so the handler's merge
+            # applies its no-image guards (a text-only run cannot refresh a logo/mapping-derived value).
+            # Both keys ABSENT on a cached-text reprocess ⇒ that emit is byte-identical to before.
+            try:
+                _recipe_kv = _ocr_recipe_emit_keys(
+                    getattr(args, 'reextract', False), _cached,
+                    getattr(args, 'born_digital', False),
+                    any(p == 'born_digital' for p in (_provenance or [])))
+            except Exception as _re:                # a stamp is best-effort — never fail a good extract for it
+                log(f"  ocr_recipe: skipped ({_re})", "warn")
+                _recipe_kv = {}
+
             emit({
                 "type":               "file_done",
+                **_recipe_kv,
                 "success":            True,
                 "status":             status,
                 "page_rotations":     _rotations,   # per-page clockwise° for the caller to rotate the filed PDF

@@ -13,18 +13,18 @@ function safeQ(db, sql) { try { return db.prepare(sql).get(); } catch { return n
 function insert(db, { original_filename, folder_path, document_type_id,
                       supplier_name, overall_confidence, status,
                       template_id, logo_phash, logo_detail_hash, keyword_fingerprint,
-                      ocr_text, page_count, detected_type_name }) {
+                      ocr_text, page_count, detected_type_name, ocr_recipe }) {
   return db.prepare(`
     INSERT INTO documents
       (original_filename, folder_path, document_type_id,
        supplier_name, overall_confidence, status,
        template_id, logo_phash, logo_detail_hash, keyword_fingerprint, ocr_text, page_count,
-       detected_type_name)
+       detected_type_name, ocr_recipe)
     VALUES
       (@original_filename, @folder_path, @document_type_id,
        @supplier_name, @overall_confidence, @status,
        @template_id, @logo_phash, @logo_detail_hash, @keyword_fingerprint, @ocr_text, @page_count,
-       @detected_type_name)
+       @detected_type_name, @ocr_recipe)
   `).run({
     original_filename, folder_path,
     document_type_id:    document_type_id    || null,
@@ -38,6 +38,7 @@ function insert(db, { original_filename, folder_path, document_type_id,
     ocr_text:            ocr_text            || null,
     page_count:          page_count          || null,
     detected_type_name:  detected_type_name  || null,   // mig 51 — set ONLY when the detected type isn't installed
+    ocr_recipe:          ocr_recipe          || null,   // mig 104 — Quick Reprocess OCR provenance stamp (NULL = legacy)
   });
 }
 

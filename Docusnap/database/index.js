@@ -2441,6 +2441,23 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 103 (rollout features ON): ${e.message}`); }
   }
 
+  // ── migration 104: QUICK REPROCESS (2026-09-01, owner ask; gary → Oracle SIGN-OFF-W/COND C1-C7). ──
+  //    documents.ocr_recipe stamps HOW the stored full-page text was produced (dpi / light levels / born-
+  //    digital / pipeline rev / tesseract version) so a later "Quick" reprocess can prove the cached OCR
+  //    is still valid and skip the render+crop pass. GO-FORWARD only: NULL = legacy (never stamped) and
+  //    ocrCacheUsable treats NULL as "not reusable", so no backfill is needed. The feature ships DARK —
+  //    `quick_reprocess_enabled` seeded 'false' (absent OR 'false' == OFF for every reader); the Quick/Full
+  //    dialog and the imageless partition are inert until the owner flips it. SFDEV-gated toggle.
+  if (!applied.has(104)) {
+    try {
+      try { db.exec('ALTER TABLE documents ADD COLUMN ocr_recipe TEXT'); }
+      catch (e) { if (!/duplicate column/i.test(e.message)) throw e; }
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('quick_reprocess_enabled', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (104)').run();
+      console.log('JS migration 104 applied: documents.ocr_recipe + quick_reprocess_enabled (DARK)');
+    } catch (e) { console.warn(`  migration 104 (quick reprocess): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

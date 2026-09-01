@@ -51,6 +51,48 @@ def _resolve_render_dpi():
 _RENDER_DPI    = _resolve_render_dpi()   # PDF pages rasterised at this DPI; told to Tesseract via --dpi
 
 
+# ── OCR PIPELINE REVISION (Quick Reprocess, 2026-09-01; gary → Oracle C6) ──────────────────────────
+# A stamp on the full-page text stored with each document (documents.ocr_recipe). "Quick" reprocess
+# reuses that stored text and skips the render + per-field crop OCR — but ONLY when the pipeline that
+# produced it is still the pipeline that runs today. This integer is that contract.
+#
+# BUMP IT (by 1) WHENEVER a change could alter the full-page OCR TEXT for the same pixels, e.g.:
+#   * the render path or default DPI clamp (_resolve_render_dpi), the PSM/OEM config strings,
+#     word→line grouping / column-break handling, born-digital line extraction, deskew defaults,
+#     the light-text recovery merge rule, or the tesseract traineddata shipped in vendor/.
+# Do NOT bump for changes that only affect PARSING of already-extracted text (date order, number
+# format, field regexes) — those are not OCR. The JS mirror ocrCache.OCR_PIPELINE_REV must move in
+# lockstep; test_ocr_cache_usable.js + tests/test_reextract_recipe.py FAIL on a one-sided bump.
+OCR_PIPELINE_REV = 1
+
+
+def get_tesseract_version() -> str:
+    """The tesseract engine version, captured mechanically for the OCR recipe stamp (never hand-typed).
+    A different engine version can read the same pixels differently, so it is a cache invalidator.
+    Best-effort: any failure returns '' (an empty stamp ⇒ ocrCacheUsable treats the recipe as unusable,
+    the fail-safe direction)."""
+    try:
+        return str(pytesseract.get_tesseract_version())
+    except Exception:
+        return ""
+
+
+def current_ocr_recipe_meta(bd_enabled: bool, bd_used: bool) -> dict:
+    """The recipe describing HOW the full-page text produced THIS run was read, from RUNTIME-ACTUAL
+    values (Oracle C3/C6) — the DPI actually rendered, the light levels actually run — never re-read
+    from settings at reprocess time. Called ONLY when fresh text was produced this run (never on a
+    cached-text reuse or a --reextract; the caller enforces that). `light` is null when the light-text
+    recovery pass did not run, else the list of levels it ran — so an OFF→ON flip is a visible change."""
+    return {
+        "dpi":     _resolve_render_dpi(),                                  # the DPI clamp actually in force now
+        "light":   (_light_levels() if _light_text_enabled() else None),   # runtime-actual light levels, or null when off
+        "bd":      bool(bd_enabled),                                        # born-digital text-layer path armed this run
+        "bd_used": bool(bd_used),                                          # ≥1 page's text actually came from the text layer
+        "rev":     OCR_PIPELINE_REV,
+        "tess":    get_tesseract_version(),
+    }
+
+
 def _words_from_data(data) -> list:
     """image_to_data DICT -> [(left, top, w, h, text, conf)]. Skips empty tokens + bad rows."""
     words = []
