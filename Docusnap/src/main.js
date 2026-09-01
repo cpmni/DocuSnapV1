@@ -758,7 +758,8 @@ function createWindow(name, options, htmlFile) {
   applyWindowState(win, name, options);   // maximize by default / restore the user's last size
 
   if (manageShow) {
-    win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show(); });
+    let _revealed = false;
+    win.once('ready-to-show', () => { if (!win.isDestroyed()) { _revealed = true; win.show(); } });
     // Backstop: never leave a window stuck hidden if ready-to-show never fires
     // (e.g. a renderer error) — reveal anyway after a grace period. Kept GENEROUS
     // (12s, was 2s): the 2s window was measured from construction (before loadFile),
@@ -766,7 +767,13 @@ function createWindow(name, options, htmlFile) {
     // cold disk cache) it pre-empted ready-to-show and revealed a not-yet-painted,
     // text-less shell. ready-to-show still reveals promptly on a normal run; this only
     // extends how long we wait before force-showing a genuinely-wedged renderer.
-    setTimeout(() => { if (!win.isDestroyed() && !win.isVisible()) win.show(); }, 12000);
+    // GUARD (2026-09-01): only force-show a window whose ready-to-show NEVER fired, and
+    // NEVER one the user minimised — a minimised window reports isVisible()===false on
+    // Windows, so the old bare `!isVisible()` check popped a just-minimised window back
+    // up ~12s after it opened ("windows randomly pop up again after I minimise them").
+    setTimeout(() => {
+      if (!_revealed && !win.isDestroyed() && !win.isVisible() && !win.isMinimized()) win.show();
+    }, 12000);
   }
 
   win.loadFile(path.join(__dirname, 'windows', name, 'index.html'));
