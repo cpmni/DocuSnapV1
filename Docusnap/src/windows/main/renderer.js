@@ -1673,6 +1673,10 @@ document.getElementById('menu-user-guide')?.addEventListener('click', () => {
   userMenu.classList.remove('open');
   window.docusnap.openHelpWindow('home');   // the guide's Home / path-picker page
 });
+// Left-rail Help button — same action as the account-menu "User Guide…" (opens the guide's Home page).
+document.getElementById('btn-help')?.addEventListener('click', () => {
+  window.docusnap.openHelpWindow('home');
+});
 document.getElementById('menu-welcome')?.addEventListener('click', () => {
   userMenu.classList.remove('open');
   window.docusnap.openWelcome?.();
