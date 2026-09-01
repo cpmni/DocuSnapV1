@@ -54,6 +54,7 @@ let _watchFolder  = null;
 let _tracked      = new Map();   // filename -> { size, mtimeMs, lastChangeAt, state }
 let _queue        = [];          // filenames accepted, awaiting their turn
 let _inFlight     = 0;           // count of _processFile workers currently running
+let _separating   = false;       // a separation pre-pass is in flight — blocks the poll + drain re-entry (2026-09-01)
 const _liveProcs  = new Set();   // live watch Python child procs — for quit-time kill
 
 // ── Pure stability-decision logic ────────────────────────────────────────────
@@ -98,6 +99,34 @@ function classifyPoll(prev, stat, now, stabilityDelayMs) {
     return { action: 'stable', record: { ...prev, state: 'processing' } };
   }
   return { action: 'wait', record: prev };
+}
+
+// ── Pure separation→tracked fold (watch separation parity, 2026-09-01) ────────
+// Fold a separation result into the stable-file list + the tracked map. PURE (no fs/timer/IPC) so the
+// re-import-loop guard is unit-pinnable. For each SPLIT original: drop it from the list + its tracked
+// entry, and add each segment to the list AND pre-mark it 'processing' in `tracked` — so once the poll
+// resumes it classifies the segment (now sitting in the watch folder) as in-flight, never a fresh
+// arrival to re-queue (the re-import loop this guards). A CONSUMED original (only separator sheets) is
+// just dropped. Returns the expanded list to process. `now` stamps the pre-marked records.
+function applySeparationToTracked(files, tracked, rewrites, consumed, now) {
+  const bySeg = new Map();
+  for (const r of (rewrites || [])) bySeg.set(r.original, r.segments || []);
+  const consumedSet = new Set(consumed || []);
+  const out = [];
+  for (const f of files) {
+    if (consumedSet.has(f)) { tracked.delete(f); continue; }
+    const segs = bySeg.get(f);
+    if (segs && segs.length) {
+      tracked.delete(f);
+      for (const s of segs) {
+        tracked.set(s, { size: 0, mtimeMs: 0, lastChangeAt: now, state: 'processing' });
+        out.push(s);
+      }
+    } else {
+      out.push(f);
+    }
+  }
+  return out;
 }
 
 function _log(level, msg) {
@@ -173,6 +202,7 @@ function stopForQuit() {
 // ── Poll: detect new/changed files, advance stability timers ─────────────────
 function _poll(db) {
   if (!_watchFolder) return;
+  if (_separating) return;   // a separation pre-pass is rewriting the folder — don't detect mid-split
 
   let entries;
   try {
@@ -223,7 +253,7 @@ function _poll(db) {
   // finishes), so a set that stabilises together never sharded across the workers at once — it
   // looked single-threaded even on a multi-core box. Batching a pass's stable files into one
   // drain lets partitionRoundRobin fan the whole set over `processing_concurrency` immediately.
-  if (newlyStable > 0) _drainQueue(db);
+  if (newlyStable > 0) _drainQueue(db).catch(e => _log("err", `[watch] drain error: ${e && e.message}`));
 
   // Files that vanished before becoming stable (moved/deleted by something
   // else) — drop their tracking so a later file with the same name is
@@ -243,7 +273,7 @@ function _poll(db) {
   // backlog as soon as the manual batch finishes (or a worker frees up).
   // _drainQueue no-ops when the queue is empty, a batch is still running, or the
   // worker pool is full, so this is cheap when there's nothing to do.
-  _drainQueue(db);
+  _drainQueue(db).catch(e => _log('err', `[watch] drain error: ${e && e.message}`));
 }
 
 // ── Batched parallel processing — mirrors the manual folder-import worker pool ──
@@ -261,7 +291,7 @@ function _poll(db) {
 // happens on the staged temp copy, so the split parts don't exist back in the watch folder,
 // which would strand the original and re-import it) — deferred. For now: drop MULTI-document
 // PDFs into a MANUAL import (which splits them); single-document scans are the watch's use case.
-function _drainQueue(db) {
+async function _drainQueue(db) {
   if (!_watchFolder || _queue.length === 0) return;
 
   const processing = require('../processing/handler');
@@ -296,7 +326,7 @@ function _drainQueue(db) {
   // workers, each Python process handling MANY files → the cold-start is paid once per
   // worker, not once per file. A batch already in flight (_inFlight>0) defers to the next
   // tick (files that land meanwhile just queue for the following batch).
-  if (_inFlight > 0) return;
+  if (_inFlight > 0 || _separating) return;
 
   let concurrency = parseInt(learning.getSetting(db, 'processing_concurrency', String(processing.defaultConcurrency())), 10);
   if (!Number.isFinite(concurrency)) concurrency = 1;
@@ -304,25 +334,49 @@ function _drainQueue(db) {
   // overnight watch on a low-spec box oversubscribed memory exactly as the manual path used to.
   concurrency = Math.max(1, Math.min(processing.maxConcurrency(), processing.ramConcurrencyCap(), concurrency));
 
-  const files  = _queue.splice(0, _queue.length);   // take the whole current queue
+  let files = _queue.splice(0, _queue.length);   // take the whole current queue
+
+  // ── Separation parity (DARK watch_separate_enabled, 2026-09-01) ──────────────────────────────
+  // Split multi-document PDFs IN THE WATCH FOLDER over the EXPLICIT stable set, before sharding — the
+  // same pre-pass manual import runs. `_separating` blocks the poll (and drain re-entry) for the whole
+  // span, so a segment written mid-pass can never be re-detected between the split and the pre-mark.
+  // Segments land in the watch folder (working-copy + drain resolve); the split original moves to
+  // .sf_separated_originals/ (a subfolder the non-recursive poll ignores). Fresh segments are HELD for
+  // review on this unattended path (a wrong-but-clean boundary must not auto-file with nobody watching).
+  let heldNames = null;
+  if (files.length && learning.getSetting(db, 'watch_separate_enabled', 'false') === 'true') {
+    _separating = true;
+    try {
+      const sep = await processing.separateFiles(db, _watchFolder, files, _log);
+      if (sep && ((sep.rewrites && sep.rewrites.length) || (sep.consumed && sep.consumed.length))) {
+        files = applySeparationToTracked(files, _tracked, sep.rewrites, sep.consumed, Date.now());
+        heldNames = new Set();
+        for (const r of (sep.rewrites || [])) for (const s of (r.segments || [])) heldNames.add(s);
+        if (sep.separated) _log('log', `[watch] separated ${sep.separated} multi-document PDF(s) — ${files.length} document(s) to process`);
+      }
+    } catch (e) { _log('err', `[watch] separation failed (processing whole files): ${e && e.message}`); }
+    finally { _separating = false; }
+  }
+  if (!files.length) return;   // everything was consumed (only separator sheets)
+
   const shards = processing.partitionRoundRobin(files, Math.min(concurrency, files.length));
   _inFlight = shards.length;
   try { processing.beginWatchActivity(files.length); } catch {}   // Review "importing" bar (reprocess paused)
   for (const shard of shards) {
-    _processBatch(db, shard)
+    _processBatch(db, shard, heldNames)
       .catch(e => _log('err', `[watch] batch processing error — ${e.message}`))
       .finally(() => {
         for (const f of shard) { const rec = _tracked.get(f); if (rec) rec.state = 'done'; }
         _inFlight--;
         if (_inFlight === 0) {
           try { processing.endWatchActivity(); } catch {}   // watch idle — clear the Review bar
-          _drainQueue(db);   // whole batch done — pick up anything that arrived
+          _drainQueue(db).catch(e => _log("err", `[watch] drain error: ${e && e.message}`));   // whole batch done — pick up anything that arrived
         }
       });
   }
 }
 
-async function _processBatch(db, filenames) {
+async function _processBatch(db, filenames, heldNames = null) {
   const { spawn, pythonExe, pythonArgs, tesseractPath, backendScript,
           configPath, notifyMainWindow } = _ctx;
   const processing = require('../processing/handler');
@@ -410,7 +464,10 @@ async function _processBatch(db, filenames) {
           // at the real watch-folder path, not the isolated temp dir, so
           // documents.folder_path keeps resolving to a persistent location (preview,
           // confirm, reprocess, the processed-folder move all join folder_path + filename).
-          setImmediate(() => processing.handleFileMessage(db, msg, watchFolder, notifyMainWindow, _ctx.logger));
+          // A freshly-split segment is HELD for review (autoFileRun=false) — the unattended watch path
+          // must not auto-file a wrong-but-clean split boundary to the wrong folder (Oracle owner fork).
+          const _autoFileRun = !(heldNames && msg.type === 'file_done' && heldNames.has(msg.original_filename));
+          setImmediate(() => processing.handleFileMessage(db, msg, watchFolder, notifyMainWindow, _ctx.logger, _autoFileRun));
           if (msg.type === 'log') {
             if      (msg.level === 'err')  _log('err',  `[watch] Python: ${msg.text}`);
             else if (msg.level === 'warn') _log('warn', `[watch] Python: ${msg.text}`);
@@ -511,6 +568,7 @@ module.exports = {
   // Exported for direct unit testing of the stability/debounce decision —
   // see classifyPoll's own comment for why it's kept pure and side-effect-free.
   classifyPoll,
+  applySeparationToTracked,   // pure — pins the re-import-loop guard (segments pre-marked 'processing')
   SUPPORTED_EXTENSIONS,
   STABILITY_DELAY_MS,
 };

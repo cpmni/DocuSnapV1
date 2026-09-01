@@ -1002,6 +1002,7 @@ let _scheduleScopeAutoAcceptImpl = null;
 let _autoAcceptInflightProbe = () => false;
 let _quietLaneImpl = null;                 // Slice 3: the quiet re-read lane (bound in register())
 let _readyProbeImpl = null;                // P2 'ready' trigger (bound in register())
+let _separateFilesImpl = null;             // watch separation parity (bound in register(); 2026-09-01)
 let _scheduleReadyRereadImpl = null;
 let _scheduleTypeSplitRereadImpl = null;   // A6
 const _typeSplitRippleOn = (db) => process.env.TYPE_AMBIGUITY_RIPPLE === '1'
@@ -2450,6 +2451,37 @@ function register(ctx) {
     await Promise.all(Array.from({ length: Math.min(P, pdfs.length) }, worker));
     return { separated, rewrites, consumed };
   }
+
+  // Watch-parity entry (2026-09-01): run the SAME separation pre-pass the manual import runs, but over
+  // an EXPLICIT stable-file list (never globbing the polled watch folder) and IN the watch folder (so
+  // segments land where handleFileMessage's working-copy + drain already resolve). Resolves the SAME
+  // gates import uses (auto_separate_enabled + templates, or filing-slips). Returns {separated,rewrites,
+  // consumed}; the caller updates its tracked set from rewrites/consumed. Bound to _separateFilesImpl.
+  async function separateFiles(db, folder, fileList, log) {
+    const learn = require('../../../database/modules/learning');
+    const autoSep = learn.getSetting(db, 'auto_separate_enabled', 'true') === 'true';
+    const slipsOn = process.env.FILING_SLIPS !== '0'
+      && learn.getSetting(db, 'filing_slips_enabled', 'false') === 'true';
+    if (!autoSep && !slipsOn) return { separated: 0, rewrites: [], consumed: [] };
+    let built = null, templatesFile = null;
+    try {
+      built = buildTrainingArgs(db, configPath, logger);
+      const i = built.args.indexOf('--templates-file');
+      if (i >= 0) templatesFile = built.args[i + 1];
+    } catch (e) { logger?.warn?.(`[separate] training-args failed: ${e && e.message}`); }
+    const tf = (autoSep && templatesFile) ? templatesFile : null;   // heuristic arm needs templates; slips arm is template-less
+    if (!tf && !slipsOn) { if (built) cleanupTempFiles(built.tempFiles); return { separated: 0, rewrites: [], consumed: [] }; }
+    const sepP = Math.max(1, Math.min(os.cpus().length || 1, 6, ramConcurrencyCap()));
+    try {
+      return await _separateBatchDocuments(folder, tf,
+        (text, level) => log?.(level || 'log', `[separate] ${text}`),
+        (text) => log?.('log', `[separate] ${text}`),
+        sepP, slipsOn, null, new Set(fileList));
+    } finally {
+      if (built) cleanupTempFiles(built.tempFiles);
+    }
+  }
+  _separateFilesImpl = separateFiles;
 
   // ── Process folder ──────────────────────────────────────────────────────────
   ipcMain.handle('process-folder', async (event, folderPath, opts) => {
@@ -6243,6 +6275,8 @@ module.exports = {
   // Watch-folder activity → the Review "documents are being imported" bar (file bumps happen
   // automatically via handleFileMessage). beginWatchActivity(total) on drain, endWatchActivity() when idle.
   beginWatchActivity: (total) => _beginActivity('watch', total),
+  // Watch separation parity (2026-09-01): run the import separation pre-pass over an explicit stable set.
+  separateFiles: (db, folder, fileList, log) => (_separateFilesImpl ? _separateFilesImpl(db, folder, fileList, log) : Promise.resolve({ separated: 0, rewrites: [], consumed: [] })),
   endWatchActivity:   ()      => _endActivity('watch'),
   // Shared with the watch-folder handler so it can batch + shard its queue exactly like a
   // manual import (one Python process per shard of MANY files, not one process per file).
