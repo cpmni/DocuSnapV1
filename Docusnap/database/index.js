@@ -2424,6 +2424,23 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 102 (dark rollout features): ${e.message}`); }
   }
 
+  // ── migration 103: the three 2026-09-01 rollout features default ON (owner: "flip them on, they need
+  //    to be defaults"). Each is built + pinned + OFF-byte-identical, and deskew_corrob's sibling census
+  //    is met (docs/DESKEW_CORROB_CENSUS_2026-09-01.md). UPSERT-FORCED past mig 102's 'false' seed (the
+  //    mig-96→98 seed-OFF-then-force-ON pattern) so existing installs + fresh installs both get them.
+  //    They stay SFDEV-gated (DEV_SWITCH_IDS) — customer-invisible defaults with a dev escape hatch, not
+  //    new customer switches. ──
+  if (!applied.has(103)) {
+    try {
+      const up = db.prepare(`INSERT INTO settings (key, value) VALUES (?, 'true')
+                             ON CONFLICT(key) DO UPDATE SET value='true'`);
+      const keys = ['quiet_reread_silent', 'sweep_inview_countdown', 'accept_field_chars_enabled'];
+      for (const key of keys) up.run(key);
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (103)').run();
+      console.log(`JS migration 103 applied: ${keys.length} rollout feature(s) defaulted ON`);
+    } catch (e) { console.warn(`  migration 103 (rollout features ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

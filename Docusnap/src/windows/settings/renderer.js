@@ -1054,9 +1054,14 @@ const DEV_SWITCH_IDS = [
   'keyword-cell-below-toggle', 'money-sign-parens-toggle', 'money-sign-cr-toggle',
   'buyer-issued-convention-toggle', 'locate-role-qualifier-toggle', 'fragment-containment-toggle',
   'deskew-corrob-autofile-toggle',   // 2026-09-01 DARK arc — dev-gated until its census/flip
-  'quiet-reread-silent-toggle',      // 2026-09-01 DARK rollout feature — dev-gated until the owner flips
-  'sweep-inview-countdown-toggle',   // 2026-09-01 DARK rollout feature — dev-gated until the owner flips
-  'accept-field-chars-toggle',       // 2026-09-01 DARK rollout feature — dev-gated until the owner flips
+  'quiet-reread-silent-toggle',      // 2026-09-01 rollout feature — default ON (mig 103), dev escape hatch
+  'sweep-inview-countdown-toggle',   // 2026-09-01 rollout feature — default ON (mig 103), dev escape hatch
+  'accept-field-chars-toggle',       // 2026-09-01 rollout feature — default ON (mig 103), dev escape hatch
+  // 2026-09-01 toggle-audit round 2 (owner: "some user-side toggles are unnecessary"): eight technical
+  // reading-internal flags gated behind SFDEV — customer-invisible, values unchanged. Barcodes and the
+  // Learning-Repair sub-toggles stay customer-visible (owner's pick).
+  'hidden-field-drop-toggle', 'identity-conflict-toggle', 'name-wordness-toggle', 'list-field-scan-toggle',
+  'teach-label-keyword-toggle', 'reprocess-autocommit-toggle', 'auto-title-toggle', 'tpl-ocr-auto-toggle',
   'right-grow-toggle', 'left-clamp-toggle', 'prefix-garble-toggle', 'crosscheck-reconcile-toggle',
   'universal-verify-toggle', 'edge-clean-toggle', 'word-snap-toggle', 'struct-code-read-toggle',
   'warm-ocr-toggle', 'parallel-reprocess-toggle',
