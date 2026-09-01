@@ -1661,6 +1661,11 @@ app.whenReady().then(() => {
       return true;
     }
     ctx.reviewTraceActive = false;
+    // SECURITY (2026-09-01 pre-release audit, gary R3): toggling the trace console OFF must also remove
+    // the cropped document-image slices it wrote — the same cleanup the dev-inspector window does on
+    // close (:1643) and before-quit does (:1694). Without this they lingered in the system temp dir for
+    // the rest of the session. Best-effort (clearDevSlices swallows per-file errors).
+    clearDevSlices();
     return true;
   });
   // Read-only state getter (boolean) — no mutation. Login/role-gated (§4a #3) to keep the

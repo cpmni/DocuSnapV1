@@ -1059,8 +1059,8 @@ npm run build      # → dist\ScanFinder Setup <ver>-r<rev>.exe  (rev = scripts/
 Dev uses `py -3.12 script.py`, packaged uses bundled Python venv.
 Tesseract hardcoded to `C:\Program Files\Tesseract-OCR\tesseract.exe` in dev.
 
-**Build notes**: electron-builder pinned **`^24.13.3`** (verify with
-`require('electron-builder/package.json').version`). Don't re-add the legacy `win.sign`/
+**Build notes**: electron-builder pinned **`26.15.3`** (bumped in the E44 upgrade; supports the
+`build.electronFuses` key — verify with `require('electron-builder/package.json').version`). Don't re-add the legacy `win.sign`/
 `win.signingHashAlgorithms` keys. MSIX/Store SKU → `MSIX_SETUP.md`; a test `.appx`
 (`electron-builder --win appx`, placeholder `SixMileSoftware.ScanFinder`/`CN=Six Mile Software`)
 REQUIRES **Windows Developer Mode ON** — electron-builder extracts `winCodeSign` via SYMLINKS which

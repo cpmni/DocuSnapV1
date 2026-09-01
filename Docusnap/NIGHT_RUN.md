@@ -6,34 +6,18 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
-## TONIGHT — armed 2026-08-31 NIGHT2 (owner "going to bed"): the CORROBORATED-STRAIGHTEN AUTO-FILE arc + a thorough night
-**Owner ask (Pelican invoice exhibit, trace screenshot):** after straightening, invoice_date (07-06-2026) and
-invoice_number (PI/26/7656) each read by BOTH keyword AND anchor at rx 100% — clear corroboration + regex match —
-yet held with "Read differently after straightening — confirm once." Owner: corroboration + regex should be ENOUGH
-to AUTO-FILE; no need for the message. Investigate → design DARK → advisor+Oracle gate → build DARK → then the
-thorough night below.
+## TONIGHT — armed 2026-09-01 NIGHT (owner "going to bed"): #1 + #2 combined + a full SECURITY AUDIT
+**Owner order:** combine the two suggested night jobs — (#1) the Quick Reprocess INTEGRATION GATE on a
+self-built warm sandbox DB, and (#2) a Chris sandboxed round on the newest surfaces — then do a full
+security audit (licensing + overall + raw-OCR-at-rest + a known-flaw sweep for Electron/Node.js/JS,
+addressing anything found before full release). Full prompt: **`docs/designs/NIGHT_RUN_2026-09-01_NIGHT.md`**.
+Advisors consulted tonight: gary (gate design + raw-OCR-at-rest), eric (Electron attack surface), a
+security researcher (dependency/CVE sweep), Oracle (blast-radius adjudication). Deliverables: `docs/
+SECURITY_REVIEW_2026-09-01.md`, the gate report, `docs/CHRIS_FULL_APP_REVIEW_<date>.md`, `HANDOVER_2026-09-02.md`.
 
-**FINDINGS (investigated):**
-- The retry places `_DESKEW_CHANGED_NOTE` (`process_docs.py:70`, applied ~:126-136) on EVERY straighten-CHANGED field;
-  `isAutoFileEligible` refuses ANY note at every floor → the doc holds. That is the charter ("never silently
-  auto-files a straightening-CHANGED value").
-- The straightened read DOES carry per-field corroboration: engine `_corroboration_emit` (`process_docs.py:1197`)
-  → attached as `extractions.corroboration` (:1314). So the ≥2-independent-page-family agreement IS recorded.
-- The auto-file machinery already defines "licensed corroboration": `_corrobLicensed` (`trust.js:550`) = independent
-  agreement RECORDED across ≥2 PAGE families {mapping,crop,keyword} (memory/hint EXCLUDED), NO disagreement — gated
-  under `corroboration_autofile` / `critfield_corrob_floor_relax` (08-15 arc).
-- **The exhibit is self-proving BOTH ways:** invoice_date is a clean empty→corroborated-value (no other note) →
-  should auto-file. invoice_number ALSO carries a SEPARATE "Read differently after LEARNING — was 'PO-29444'"
-  disagreement note (a poisoned learned dominant = the doc's "Your PO"), which would independently hold it → should
-  STAY held. So a design that only skips the DESKEW note when corroborated+valid AND no other blocking note handles
-  both correctly, no special-casing.
-- **DESIGN SKETCH (for the advisor gate):** DARK sub-switch under `corroboration_autofile`; in the deskew note-apply
-  step, SKIP the `_DESKEW_CHANGED_NOTE` on a changed field IFF (a) its straightened corroboration is LICENSED (reuse
-  the `_corrobLicensed` logic, cross-language-pinned via `test_corroboration_emit.py`), AND (b) the value passes its
-  format/validation (regex + learned shape), AND (c) the field carries no OTHER blocking note (the learning
-  disagreement stays). Never touches `deskew_on_import` (import-straighten stays ruled OFF). Gate: realdoc OFF==ON
-  byte-identical except the enumerated corroborated-straighten heals, 0 new wrong auto-files, the invoice_number
-  class STAYS held. gary+reggie→Oracle; build DARK; Chris sandboxed vet; do NOT flip/push/ship (owner approves).
+(The prior TONIGHT arc — CORROBORATED-STRAIGHTEN AUTO-FILE — is DONE: built DARK `aa61350`, census MET
+2026-09-01, see the DONE ledger. Flip is the owner's call.)
+
 **Standing autonomy protocol (owner, 2026-08-30, applies to every night):** runs on auto — never waits for the
 owner; agents free (advisors + Oracle, parallel when independent); **Chris ALWAYS sandboxed** (a COPY of the
 corpus, never the live app/DB/Desktop originals; cards logged, never implemented that night); **anything needing

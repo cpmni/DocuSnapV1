@@ -23,7 +23,14 @@ const path = require('path');
 const crypto = require('crypto');
 const { createClient } = require('./apiClient');
 
-const ALLOW_SELF_SIGNED = process.env.SCANFINDER_CLIENT_ALLOW_SELF_SIGNED === '1';
+// TLS-verification escape hatch — dev ONLY. SECURITY (2026-09-01 pre-release audit, eric C-4): this must
+// be IGNORED in a packaged customer build, the same discipline the core app applies to its own security
+// env-switches (src/main.js remote-debug lockout, processing/handler.js SF_REALPATH_CONTAINMENT — both
+// gated on !isPackaged so a boundary can't be turned off by an env var a launcher/GPO/attacker can set).
+// Without the `!app.isPackaged` gate this env disabled CA verification (rejectUnauthorized:false) on real
+// customer traffic → MITM of the session token + document images. The one-shot TOFU CA bootstrap
+// (apiClient `insecure`) is a SEPARATE, intended path and is unaffected.
+const ALLOW_SELF_SIGNED = !app.isPackaged && process.env.SCANFINDER_CLIENT_ALLOW_SELF_SIGNED === '1';
 let win = null;
 let serverConfig = null;   // { host, port, tls } | null
 let client = null;         // rebuilt whenever the server changes
@@ -54,6 +61,32 @@ function buildClient(c) {
     clientId: getClientId(), hostname: os.hostname(),
   });
 }
+
+// SECURITY (2026-09-01 pre-release audit, eric C-3): app-level navigation lockdown, mirroring the core app
+// (src/main.js web-contents-created + lib/navGuard). The client had NONE, so a compromised / HTML-injected
+// renderer could window.open('file://…') or set location off-tree — keeping the privileged preload but
+// losing the per-page CSP. Deny every new window (hand a genuine http(s) link to the OS browser instead),
+// block any navigation/redirect whose target is not a file:// under the client's own renderer dir, and
+// refuse <webview>. Self-contained (src/lib/navGuard is not bundled in the client's asar). No env kill
+// switch — a security boundary must not be switchable off. The initial loadFile is not a "navigation".
+const _clientAppRoot = path.normalize(path.join(__dirname, 'renderer')).toLowerCase();
+function _isClientInApp(targetUrl) {
+  try {
+    const u = new URL(targetUrl);
+    if (u.protocol !== 'file:') return false;                          // http(s)/data/etc. never in-app
+    const fsPath = require('url').fileURLToPath(u);                    // decodes %20 etc.
+    return path.normalize(fsPath).toLowerCase().startsWith(_clientAppRoot);
+  } catch { return false; }                                            // unparseable → deny
+}
+app.on('web-contents-created', (_e, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    try { const u = new URL(url); if (u.protocol === 'https:' || u.protocol === 'http:') shell.openExternal(u.href); } catch { /* noop */ }
+    return { action: 'deny' };
+  });
+  contents.on('will-navigate',  (e, url) => { if (!_isClientInApp(url)) e.preventDefault(); });
+  contents.on('will-redirect',  (e, url) => { if (!_isClientInApp(url)) e.preventDefault(); });
+  contents.on('will-attach-webview', (e) => e.preventDefault());       // no <webview> anywhere
+});
 
 function createWindow() {
   win = new BrowserWindow({
