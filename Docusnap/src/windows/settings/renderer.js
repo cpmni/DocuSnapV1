@@ -745,6 +745,10 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Fragment-containment yield (2026-08-31, the CAD8 ⊂ CAD832694 exhibit → Oracle):
                          // a taught reference read that is a prefix fragment of a fuller keyword read yields.
                          ['fragment-containment-toggle', 'template_fragment_containment_yield'],
+                         // Corroborated-straighten auto-file (2026-09-01, owner ask → Oracle SIGN-OFF-W/COND):
+                         // a straighten-recovered field files without asking when 2 independent readings agree
+                         // + it matches the learned shape + the raw read wasn't credible. DARK — needs the census.
+                         ['deskew-corrob-autofile-toggle', 'deskew_corrob_autofile'],
                          // Barcodes (2026-08-26, barry → gary design): the page inventory and the field type.
                          ['barcode-inventory-toggle', 'barcode_inventory'],
                          ['barcode-field-toggle', 'barcode_field'],
@@ -1042,6 +1046,7 @@ const DEV_SWITCH_IDS = [
   // 2026-08-31 DARK arcs (Oracle C5: dev-gated until their flips)
   'keyword-cell-below-toggle', 'money-sign-parens-toggle', 'money-sign-cr-toggle',
   'buyer-issued-convention-toggle', 'locate-role-qualifier-toggle', 'fragment-containment-toggle',
+  'deskew-corrob-autofile-toggle',   // 2026-09-01 DARK arc — dev-gated until its census/flip
   'right-grow-toggle', 'left-clamp-toggle', 'prefix-garble-toggle', 'crosscheck-reconcile-toggle',
   'universal-verify-toggle', 'edge-clean-toggle', 'word-snap-toggle', 'struct-code-read-toggle',
   'warm-ocr-toggle', 'parallel-reprocess-toggle',

@@ -895,6 +895,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Auto-file a straightened read that two independent readings agree on</div>
+                <div class="threshold-sub">When straightening a tilted scan recovers a field that was unreadable, two independent readings agree on the new value, and it matches the shape the app has learned for that field, file it without asking. A value the app had previously read as something else (a real disagreement) still waits for your confirmation. Off by default &mdash; needs a full accuracy check before turning on.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="deskew-corrob-autofile-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Straighten a tilted page and read it again when a document needs checking</div>
                 <div class="threshold-sub">When a document is already going to Review and its page is tilted by even a fraction of a degree, ScanFinder re-reads it on a straightened copy and keeps the straightened reading only if it comes out clearer — otherwise the original reading stays. It never files anything by itself from a straightened read, and it only ever touches documents that were already going to Review, so it can't change a document that was filing itself cleanly. Adds a little time on tilted scans. Off by default.</div>
               </div>
