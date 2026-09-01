@@ -6351,9 +6351,17 @@ function showReprocessModeChoice(count, scopeLabel, fileLine) {
     // images (so taught / stamped fields keep their values, and anything whose scan settings changed
     // since it was read is re-read in full automatically); Full re-reads every document the usual way.
     // NOT "Full reads everything fresh from the page" — Full still reuses cached page text today.
+    // ORACLE-MANDATED DISCLOSURE (2026-09-01 §3 C4): Quick reuses the FIRST read and does NOT re-check
+    // the page-image heals — straightening a tilted page, recovering faint text, or a field you have
+    // newly taught. On the clean-corpus M=0 arm this class is invisible (every pass reads the same), so
+    // the ONLY thing standing between "reuse the stale image value" and "silently refile it" is this
+    // sentence steering a page that needs a fresh look to Full. Do not weaken it.
     p.innerHTML = `<strong>Quick</strong> reuses the text already read from each page and skips re-reading the `
-                + `images — fastest. Fields taught by drawing a box keep their current values; any document whose `
+                + `images — fastest. Fields taught by drawing a box keep their current values, and any document whose `
                 + `scan settings changed since it was read is re-read in full for you.<br><br>`
+                + `Quick does <strong>not</strong> re-check the things that need a fresh look at the page image — `
+                + `straightening a tilted scan, recovering faint text, or a field you've just taught. If a document `
+                + `might need that, choose <strong>Full</strong> to re-read the pages.<br><br>`
                 + `<strong>Full</strong> re-reads every document the usual way — slower, but it re-checks the fields `
                 + `read from the page image.<br><br>${fileLine || ''}`;
     const foot = document.createElement('div');
