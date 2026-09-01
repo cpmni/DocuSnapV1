@@ -30,7 +30,6 @@ for (const bad of [
   '15/12/202',          // right-clipped year (3 digits) — loose \d{2,4} passes, builder can't
   '15/12/25',           // 2-digit year — loose passes, builder needs 4
   '2025/12/15',         // slash-ISO — renderer/loose accept, builder ISO is dash-only
-  '15 August 2024',     // full month name — loose accepts, builder wants 3-letter
   '12-2025',            // single separator (month/year only)
   '15-12',              // single separator (day/month only)
   'Date: 15/12/2025',   // label prefix — substring-valid, anchored parser refuses
@@ -43,6 +42,11 @@ eq('accept 15/12/2025',                normaliseDate('15/12/2025'),      '15-12-
 eq('accept 3/8/2012',                  normaliseDate('3/8/2012'),        '03-08-2012');
 eq('accept ISO 2012-08-03',            normaliseDate('2012-08-03'),      '03-08-2012');
 eq('accept text month Aug 03 2012',    normaliseDate('Aug 03 2012'),     '03-08-2012');
+// FULL month names must file (2026-09-01: teach read "July 28, 2026" was refused → Unknown Year/
+// Month; the central parser now accepts every month form validator.py + the review renderer accept).
+eq('accept full month "July 28, 2026"', normaliseDate('July 28, 2026'),  '28-07-2026');
+eq('accept full month "15 August 2024"', normaliseDate('15 August 2024'), '15-08-2024');
+eq('accept "3 September 2025"',          normaliseDate('3 September 2025'), '03-09-2025');
 eq('accept OCR-split "1 5/12/2025"',   normaliseDate('1 5/12/2025'),     '15-12-2025');
 eq('accept OCR-spaced "15 / 12 / 2025"', normaliseDate('15 / 12 / 2025'), '15-12-2025');
 

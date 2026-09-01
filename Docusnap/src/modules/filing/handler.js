@@ -378,15 +378,19 @@ function parseDate(raw) {
   // YYYY-MM-DD
   m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
-  // MMM DD YYYY or DD MMM YYYY (text month)
-  m = s.match(/^([A-Za-z]{3})\s+(\d{1,2}),?\s+(\d{4})$/);
+  // MMM DD YYYY or DD MMM YYYY (text month — abbreviated OR full name: "Jul"/"July").
+  // Month is matched 3..9 letters and keyed on its first three (slice(0,3)) so the ONE
+  // central parser accepts every month form validator.py (%B/%b) and the review renderer
+  // (_matchStrictDate, {3,9}) already accept — a full-month date printed on a doc ("July
+  // 28, 2026") must FILE, not land in Unknown Year/Month. Numeric paths above unchanged.
+  m = s.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})$/);
   if (m) {
-    const mo = MONTHS[m[1].toLowerCase()];
+    const mo = MONTHS[m[1].slice(0, 3).toLowerCase()];
     if (mo !== undefined) return new Date(parseInt(m[3]), mo, parseInt(m[2]));
   }
-  m = s.match(/^(\d{1,2})\s+([A-Za-z]{3}),?\s+(\d{4})$/);
+  m = s.match(/^(\d{1,2})\s+([A-Za-z]{3,9}),?\s+(\d{4})$/);
   if (m) {
-    const mo = MONTHS[m[2].toLowerCase()];
+    const mo = MONTHS[m[2].slice(0, 3).toLowerCase()];
     if (mo !== undefined) return new Date(parseInt(m[3]), mo, parseInt(m[1]));
   }
   return null;
