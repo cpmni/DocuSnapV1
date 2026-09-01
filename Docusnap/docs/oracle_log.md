@@ -2483,3 +2483,51 @@ new-PC) + crash matrix under rekey. Docs (arc + dbKey header) must be rewritten 
 BUILD STATUS 2026-08-31: crypto core rewritten to passphrase mode + all pins green under E44 (dbKey 16,
 cipher 10 incl. portability, migration 18 incl. kill-during-rekey + portability, secretStore 14). Remaining:
 whenReady wiring + Unlock window + the combined activation dialog + slice-3 tripwire + the owner-machine gates.
+## 2026-09-01 — THREE ROLLOUT FEATURES (quiet_reread_silent · sweep_inview_countdown · accept_field_chars_enabled; gary+reggie+eric consensus) — SIGN OFF WITH CONDITIONS (all applied; mig 102 DARK → mig 103 default-ON)
+F1 renderer-only defer of the quiet-lane list refresh (flush on nav/confirm/focus; premise corrected —
+it does NOT fix the 60s presence-TTL leak, which stays open); F2 replaces the being-viewed hard block
+FOR THE SOLE LOCAL DESKTOP VIEWER only via a NEW key-aware presence.onlyViewerIs (the username-based
+_onlyMe admits same-user-second-machine), 5→1 countdown + Stop→markPutBack, expiry re-checks
+setting/viewer/fingerprint/eligibility then files via the ONE confirm writer; the inviewCountdown
+verdict carries no .candidate so _sweepAcceptCore can never silently file it; cancel-on-edit
+synchronous; keep sweep_retrigger_on_view_release dark (same seam, don't enable both). F3 charset
+accept: restore the field's OWN pre-cap confidence (new extractions.charset_flag_meta {chars,precap} —
+the 08-15 fc_delta lesson: a note-clear without the restore is cosmetic), JS overall recompute as a
+faithful LOWER BOUND (no boost, no exclude_keys, max(stored,·) — proven ≤ a real reprocess), garble
+guard = printable-ASCII-punctuation-only acceptance (rejects every homoglyph class incl. U+2010/2212
++ U+FFFD without a confusables table), legacy meta-NULL rows hold (no recompute), sibling auto-file
+via the NORMAL sweep offer path (C8 — never a bespoke filer). Pins: accepted-chars py 11 · charset
+service 26 · onlyViewerIs; OFF byte-identical; owner-run before flip: realdoc-605 M=0 + the F3
+reprocess-agreement arm. mig 103 defaulted all three ON for the rollout (owner order).
+## 2026-09-01 — WATCH PARITY (watch folder through the same import pipeline + comprehensive error logging; eric+gary consensus) — SIGN OFF WITH CONDITIONS, RE-STAGED; Slice-2 proc-registry mechanism SEND BACK
+Premise understated three PRE-EXISTING watch bugs that outrank separation: (1) no async spawn-error
+handler (the 08-31 uncaughtException crash class, unfixed on watch); (2) no RAM/OMP caps; (3) watch
+omits _ocrDpiEnv — a SILENT DPI/accuracy parity break (watch read at a different DPI than import).
+Mandated staging: Slice 3 logging → 1a hardening → 1 separation (DARK) → DEFER the shared-core
+refactor. SEND BACK co-mingling watch procs into _currentBatchProcs (process-folder wholesale-resets
+it → orphans live watch procs; use a separate _watchBatchActive counter when the refactor comes).
+Separation must run IN THE WATCH FOLDER over the EXPLICIT stable set (resolves the BLOCKER-2a
+strand/re-import objection); the _tracked pre-mark must be race-safe (poll blocked for the whole
+separation span); wrong-boundary clean-split can auto-file (corpus can't reach it) → freshly-split
+WATCH segments held for review (owner fork, taken); error logging: always-on line = stage·type ONLY
+(logger scrub misses bare filenames + value-bearing exception text — both leak), full detail →
+diaglog, traceback NEVER to the always-on log; stage tracker in the orchestrator (engine byte-identical).
+BUILD 2026-09-01: slices 3+1a+1 shipped (20eca32, 5b06132, f50afa5, 29adce2), pins 13+16+10 green,
+watch_separate_enabled DARK; Slice 2 deferred as its own arc.
+## 2026-09-01 — CHRIS r-09-01 FIXES (stale garble ripple after correction + clipped-teach overwrite; eric design) — SIGN OFF WITH CONDITIONS (build awaits owner go)
+F1: teardown-on-input (named helper, ALSO called from _applyTeachValue which emits no input event) +
+_updateSenderFieldsBtn from the input handler + a plausibility guard at offerIssuerRipple's head +
+defence-in-depth refusal in apply-issuer-ripple. Premise trimmed: the blur doorway already self-heals
+most paths — the stale bar survives only retype-of-dataset.original / bulk / mid-edit; the teardown is
+the fix, the predicate is defence-in-depth (NOCUMENT-class single-token garbles PASS the predicate by
+the BP/IBM immunity — don't claim the class closed). C1 BLOCKER the server-side refusal must itself
+read teach_issuer_plausibility_warn (the IPC gate doesn't cover a direct learning.* call); C2 BLOCKER
+scope the F2 write-guard to supplier_name ONLY (the predicate's FP profile is unmeasured on
+address/customer keys AND speakIssuerTeach only runs for supplier_name — elsewhere the decline would
+silently lie); C3 teardown from _applyTeachValue; C4 amend the warn-only contract comments + annotate
+test_issuer_plausibility as load-bearing; C5 ONE checkIssuerRead result threaded; C6 refusal returns a
+reason surfaced on the bar; C7 decline-path hygiene (no corrections write/.corrected/note churn on a
+declined junk read — atomic decision); C8 the teardown is NOT behind the kill switch. Gate: pure-module
+pins both polarities (one must FAIL pre-fix) + source-contract test (dead-guard trap) + realdoc
+byte-identical BY CONSTRUCTION (renderer/confirm-time; state in the commit) + a Chris re-verify of both
+exhibits + OFF-arm smoke.
