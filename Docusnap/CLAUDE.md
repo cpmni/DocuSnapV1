@@ -21,7 +21,34 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-08-31 (DB-encryption integration pass): **READ `HANDOVER_2026-08-31_NIGHT.md` FIRST.** Branch
+## ⏭ LATEST — 2026-09-01 (rollout hardening + M=7 resolved): **READ `HANDOVER_2026-09-01.md` FIRST**, then
+`HANDOVER_2026-08-31_NIGHT2.md`. Branch `feat/teach-side-overnight`, **HEAD = origin = `3690e39` — ALL PUSHED**, tree
+clean; nothing running. Installer `dist\ScanFinder Setup 2.0.0-r20260901-0830-11c1598.exe` (signed; owner testing for a
+customer rollout). **NIGHT2 + 09-01 span:** (1) **DESKEW_CORROB_AUTOFILE arc BUILT DARK** (`aa61350`, Oracle C1-C7): a
+straighten-CHANGED field auto-files (skips its "confirm once" hold) ONLY as a VERIFIED corroborated rescue — ≥2
+independent page families incl. a KEYWORD witness agree (`_corrob_licensed_keyword`), matches its learned skeleton
+(engine `_shape_ok`), AND the raw `was` was not credible (empty/skeleton-False — Oracle C4: the straightened corrob
+record is BLIND to the raw pass). Option A = Python skip in `_deskew_retry_apply_holds`, `isAutoFileEligible`
+untouched; nested under `corroboration_autofile`. Pin `test_deskew_corrob_autofile.py` 12, import smoke 14/14, OFF
+byte-identical. **DO NOT FLIP** — owner-machine census from the COLD import state (the retry fires only in the warming
+phase; a reprocess of now-warm docs reads clean). SFDEV toggle `deskew-corrob-autofile-toggle`. Design
+`docs/designs/DESKEW_CORROB_AUTOFILE_2026-08-31.md`. (2) **BATCH-IMPORT CRASH FIX** (`40ef134`, eric+oscar+Oracle):
+RAM-aware worker cap + `runWorker` spawn-failure resilience (silent crash = unhandled `error` on the only spawn with
+no handler); pin `test_import_concurrency_cap.js` + smoke `TESTING/_measure/import_crash_smoke.js`. (3) **Quick-check
+dropdown focus fix** (`b95ccf5`, E44 native-select — `_baOpen` now arms the proven focus edge). (4) **minimise/docked
+windows stop popping back** (`cb29ffb` — the 12s createWindow backstop force-showed on `!isVisible()`, which a
+minimised/docked window also reports; guarded on `_revealed`+`!isMinimized()`). (5) **`deskew_review_retry_enabled`
+default-ON for fresh installs** (mig 101, `ae6d20f`). (6) **TOGGLE AUDIT** (`11c1598`): fresh-install config = the
+owner's validated production set (customer ON · DARK arcs OFF+gated · dev/telemetry/diag locked · onboarding on); gated
+25 technical reading-internal toggles behind SFDEV (shipped ON but were customer-visible). (7) **M=7 DATE CLASS = a
+MEASUREMENT ARTIFACT, not a bug:** 007 rendered + main verified — the app reads the dates CORRECTLY; #1453/#1649/#364
+were POISONED GT (now corrected in `Desktop\ScanFinder Test Corpus\ground_truth.json` + a `.poisoned-bak`). Oracle: DO
+NOTHING on code (reggie's page-witness guard = the WRONG-LAYER twin of Gate A `FILING_SANITY_PAGE_MATCH_V2`, which
+false-flagged ~7× in Chris r7). `trust_role_disagreement_refuse` (#1423's disagreement class) is ALREADY default-ON
+(mig 93, not "DARK"). **Traps:** never name-kill electron (the packaged app runs alongside; electron≠ScanFinder); a dev
+`npm start` locks repo node_modules → EBUSY the native rebuild (close it first); `git commit -F` only (backticks in
+`-m` shell-substitute). Prior:
+## (previous) 2026-08-31 (DB-encryption integration pass): **READ `HANDOVER_2026-08-31_NIGHT.md` FIRST.** Branch
 `feat/teach-side-overnight`, **HEAD `2aaf6a3` (code `19432cb` + docs `2aaf6a3`), origin at `c183792` — 5 commits UNPUSHED** (owner pushes).
 **THE DB-ENCRYPTION INTEGRATION PASS IS BUILT (`19432cb`, DARK/inert — plaintext boot byte-identical; do NOT
 rebuild).** eric-lifecycle-reviewed + Oracle SIGN-OFF-W/COND (a DISJOINT `.db-migrate-code` arm keeping the
