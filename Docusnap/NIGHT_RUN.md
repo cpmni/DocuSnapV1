@@ -147,10 +147,27 @@ and, with no safe route, that item STOPS** — never improvise around a refusal.
 - **2026-08-31 · Rock-bottom heading-guess issuers ("BILL TO"/"SHIP TO") → route to "Sender not
   identified" instead of minting a company** (Chris card 5; the issuer note already fires — this is a
   routing threshold question).
-- **2026-08-30 · The baseline 7 wrong auto-files (M = 7 / 605, 1.2 %) — the leading/garbled-digit DATE class**
-  (#953, #1423, #1453, #1649 + the poisoned-GT #364; suppliers #331, #1092). Silent misfiles a customer never sees;
-  the biggest remaining extraction risk. Needs: trace each, class card (reggie + 007), a witness-style guard.
-  Covered partly by the Hard Set's `edge_date` class — read that result before designing.
+- **2026-09-01 · M=7 DATE subset RESOLVED — a MEASUREMENT ARTIFACT, not a bug (reggie + 007 → Oracle DO NOTHING on
+  code).** Traced all 5 date exemplars on the real pipeline; 007 RENDERED the scans + main VERIFIED the #1453 crop
+  (prints "18-01-2025", clean glyphs). Findings: #1453/#1649 are POISONED GT — the app reads the page CORRECTLY
+  (18-01-2025 / 24-08-2026) at 98%, the stored GT (08/04) is a stale confirm (decisive: sibling #1908 prints the
+  identical 18-01-2025 with a CORRECT GT; 40/42 Silverbeck read==GT). #364 = poisoned GT (year 9687). #953/#1423 =
+  already HELD by the year-plausibility note (Gate B of `_flag_filing_value_sanity`, year-only); #1423's correct date
+  was also read by keyword + WON. So NO genuine silent-wrong-date auto-file remains on the current pipeline (proven
+  for the 605-corpus/200-DPI; HYPOTHESIS for unseen templates). **Oracle: DO NOT build reggie's page-witness guard**
+  (WRONG-LAYER — it's the date twin of `FILING_SANITY_PAGE_MATCH_V2`/Gate A, which false-flagged ~7× in Chris r7 and
+  still ships OFF; re-imports a measured false-hold class for near-zero catch). **NEEDS THE OWNER: (1) DATA FIX FIRST**
+  — correct the poisoned GT in `Desktop\ScanFinder Test Corpus\ground_truth.json`: #1453→18-01-2025, #1649→24-08-2026,
+  #364→its true year (render it); else they score as regressions in any gate. **(2) FLIP `trust_role_disagreement_refuse`**
+  (config only, already built DARK) — the safe date cross-witness rule (fires only on a populated page-family disagree,
+  so #1453 still auto-files correctly; catches #1423's class). Gate (high blast radius — shared auto-file gate):
+  current HEAD, `RR_APP_ENV=1`, `OCR_RENDER_DPI=200`, **date-fold ON** (verified default), GT FIXED FIRST: M=0, zero
+  would-file loss beyond accepted holds, a **NON-VACUITY** assert (the census SELECT threads `corroboration` AND the
+  refusal FIRES on #1423/#413 — a green from an un-threaded overlay is worthless), report the over-hold delta. Full
+  ruling: the a3a6061693e4213cd Oracle transcript. **Repeat if:** a future measurement surfaces a REAL silent-wrong-date
+  (year-on-page, box wrong, NO independent page family produced a competing read) → then a targeted second date-zone
+  OCR (a real witness), not an absence-flag — its own oscar/007 + Oracle pass.
+  Suppliers #331/#1092 (the two SUPPLIER errors in M=7) are a SEPARATE class — not covered here.
 - **2026-08-30 · AUDIT of every shipped "never auto-files / review-bound / held" claim against the REAL gate** with
   `autofile_gate_unify` ON: the deskew retry's `_needs_review=True` was a dead guard (found by accident). Enumerate
   every writer that relies on `_needs_review` or on a doc-level flag instead of a field NOTE, and test each with
