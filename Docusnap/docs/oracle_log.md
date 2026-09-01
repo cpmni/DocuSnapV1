@@ -2531,3 +2531,29 @@ declined junk read — atomic decision); C8 the teardown is NOT behind the kill 
 pins both polarities (one must FAIL pre-fix) + source-contract test (dead-guard trap) + realdoc
 byte-identical BY CONSTRUCTION (renderer/confirm-time; state in the commit) + a Chris re-verify of both
 exhibits + OFF-arm smoke.
+## 2026-09-01 — QUICK REPROCESS (owner ask: full vs quick Reprocess All reusing the first pass; gary design) — SIGN OFF WITH CONDITIONS C1-C7 (build awaits owner go)
+Premise corrected twice: Reprocess All ALREADY reuses cached ocr_text (manifest :4551) — the real cost
+is render + per-field crop OCR; the true "half run" is the sanctioned imageless --reextract, batch-wired.
+gary's destructive-seam find CONFIRMED (applyReprocessResult plain-assigns template_id/logo_phash/
+detail_hash → an unguarded imageless merge WIPES stored identity) but his list was incomplete (also
+overall_confidence + the _supBlanked supplier-NULL arm) and one claim internally FALSE (legacy NULL-stamp
+docs would NEVER self-heal — Full reuses cached text too, so they'd never earn a stamp). Architecture
+signed: per-doc documents.ocr_recipe STAMP (not a watermark; {dpi,light,bd,bd_used,rev+tesseract-version},
+emitted ONLY when full-page text was PRODUCED this run), ONE ocrCacheUsable module at the three hand-offs,
+Quick = reprocess-batch partitions by the predicate → --reextract shard + silent per-doc Full fallback,
+DARK quick_reprocess_enabled, no hybrid/early-exit in v1. BINDING: C1 a contested keep (stored image-family
+value vs a differing fresh text read) EXCLUDES the doc from that run's consent offer + scope auto-accept
+(else Quick silently FILES what Full would HOLD — the trust_role_disagreement_refuse doorway never sees
+the dissent; the realdoc "zero value divergences" tolerance is blind to it by construction); C2 stored
+template binding WINS — fresh identifyByFingerprint fills only null-template + blank-supplier-unpin
+(mirror _reextractFastCore exactly; a JS flip has MORE authority imageless than under Full); C3 the
+Quick-batch Full-fallback shard OMITS manifest ocr_text so a NULL/stale-stamp doc gets ONE honest re-OCR
+that earns its stamp (makes self-heal true + finally delivers the 08-27 light-text flip-heal condition;
+its text diffs are a named census arm); C4 preserve the PRIOR overall_confidence when the imageless guard
+kept >=1 stored row (the imageless engine scores kept mapping reads as 0 → mass-hold on the best-taught
+suppliers); C5 the Quick-vs-Full gate compares BINDINGS (template_id/supplier/type), hold sets,
+isAutoFileEligible + would-file parity + Quick idempotence — not just values; C6 tesseract version
+mechanically in the recipe, runtime-actual values, rev bump-checklist + cross-language pin that FAILS on
+a one-sided bump; C7 pin the imageless merge never NULLs a stored supplier. Deviating from C1-C4 = back
+to the Oracle. auto_rotate correctly a NON-invalidator (rotation baked into the working copy at import);
+Quick honestly cannot mint a logo identity or run pixel heals (held, never silently wrong).
