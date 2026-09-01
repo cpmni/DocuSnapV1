@@ -1478,6 +1478,21 @@ function _updateSenderFieldsBtn() {
     : `Change what's read from this sender's documents`;
 }
 
+// Issuer-ripple TEARDOWN (Chris 2026-09-01 card 1; eric → Oracle C3/C8). The "Apply “X” to N & re-read"
+// bar, the `rippleOffered` memo that suppresses a repeat offer, and the "Change what's read from X"
+// heading are all derived from the issuer value at the moment it was offered. When the operator
+// retypes the issuer (a branding garble corrected back to the real name, or any edit) every one of
+// those is STALE — the old bar still offers the garble to the siblings. ONE named teardown, called
+// from the supplier_name input handler and from _applyTeachValue (the "Use X" road), scoped to the
+// row. Deliberately NOT behind the plausibility kill switch (C8): a stale offer is wrong for a
+// plausible retype too — the next blur re-offers for the NEW value through offerIssuerRipple.
+function _teardownIssuerRipple(row) {
+  if (!row) return;
+  try { row.querySelectorAll('.ripple-bar').forEach(b => b.remove()); } catch {}
+  try { delete row.dataset.rippleOffered; } catch {}
+  try { _updateSenderFieldsBtn(); } catch {}
+}
+
 // Generic Document chip: one click = pick the General Document type via the normal
 // change path (field list updates, staged teaching rules apply — no side channel).
 window.__genericFallbackOn = false;
@@ -4410,7 +4425,10 @@ function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, 
     updateTotalsVerifiedBadge();   // live-update the "mathematically verified" total badge
     // Re-scope the "position taught" dots when the ISSUER is corrected — they're (supplier + type)-
     // scoped, so a new/other supplier changes which learned positions apply (debounced re-query).
-    if (key === 'supplier_name') _scheduleTaughtRefreshForIssuer();
+    // The sibling-ripple bar + its offered-name memo + the "Change what's read from X" heading were
+    // derived from the PREVIOUS value — tear them down on every edit (Chris 09-01 card 1; the blur
+    // below re-offers for the new value when it is plausible).
+    if (key === 'supplier_name') { _teardownIssuerRipple(row); _scheduleTaughtRefreshForIssuer(); }
   });
 
   // Immediate regex/type validation on focus-out. Synchronous + warn-only: it sets
@@ -5305,9 +5323,33 @@ async function runZoneOcr(rect, fieldKey) {
     // (region-aware). Used for the input value, the correction, and the learned anchor value.
     const text   = rawText ? await normalizeDrawnValue(fieldKey, rawText) : rawText;
 
+    // ISSUER DRAWN-READ GUARD (Chris 2026-09-01 card 2; eric → Oracle C2/C5/C7). A clipped box over
+    // the letterhead read a garble and OVERWROTE a correct issuer already in the field. For
+    // `supplier_name` ONLY (C2 — not _isNameLikeField: customer_name and every other key write exactly
+    // as before) ask the plausibility predicate ONCE (C5 — the same result is threaded to
+    // speakIssuerTeach below, no second IPC) and let the pure decision say whether the read may
+    // replace a NON-EMPTY prior. A blank field still takes the read (the predicate is warning-only
+    // there); with the kill switch OFF the IPC answers implausible:false and the write is today's.
+    // The decline is ATOMIC (C7): the whole write block below — value, .corrected, corrections,
+    // note dismiss, re-validate, focus repair — is skipped as one; the position anchor still stages
+    // (a box is evidence about WHERE) and the read is offered as "Use “X”" on the readout bar.
+    let _issuerCheck = null;
+    let _replace = !!text;
+    if (text && fieldKey === 'supplier_name') {
+      const _docIdAtRead = currentDoc?.id;
+      const _priorInput  = document.querySelector(`.field-input[data-key="${fieldKey}"]`);
+      const _prior       = _priorInput ? _priorInput.value : '';
+      try { const r = await window.docusnap.checkIssuerRead?.(text); _issuerCheck = r || null; } catch { _issuerCheck = null; }
+      if (_docIdAtRead !== currentDoc?.id) return;   // the document changed under the await — never teach onto the new one
+      _replace = window.IssuerTeachDecision.shouldDrawnReadReplaceField({
+        read: text, priorValue: _prior, implausible: !!(_issuerCheck && _issuerCheck.implausible), fieldKey,
+      });
+    }
+    const _declined = !!text && !_replace;
+
     if (text) {
       const input = document.querySelector(`.field-input[data-key="${fieldKey}"]`);
-      if (input) {
+      if (input && _replace) {
         const orig = input.dataset.original;
         input.value = text;
         input.classList.add('corrected');
@@ -5342,7 +5384,9 @@ async function runZoneOcr(rect, fieldKey) {
       // TALL-BOX teach method: the drawn box read 2+ lines, so this value WRAPS — auto-stage a
       // multiline_continue rule (silent) for free-text/name-like fields, so future wrapping
       // scans are joined. The right-click "This field can wrap" toggle is the explicit alternative.
-      if (boxes && boxes.lines >= 2 && _isNameLikeField(fieldKey)) {
+      // Skipped on a declined issuer read (_replace false only there — see the guard above): staging
+      // a wrap rule off a garble we chose NOT to write would be the same non-atomic leak C7 forbids.
+      if (_replace && boxes && boxes.lines >= 2 && _isNameLikeField(fieldKey)) {
         _stageMultilineRule(fieldKey, { silent: true });
         try { showToast('Looks like this value wraps onto the next line — wrapping enabled, saved on Confirm.', 'ok'); } catch {}
       }
@@ -5376,8 +5420,9 @@ async function runZoneOcr(rect, fieldKey) {
           // flagged nothing, and became two output folders; round 4's `B8ramblewood Joinery Ltd`
           // passes any shape check by construction and still cost twelve filed files. Both
           // questions are now asked, and the answer goes on the PERSISTENT bar rather than a toast
-          // the next call destroys. Warning only: the teach stays staged and nothing is blocked.
-          await speakIssuerTeach(fieldKey, text);
+          // the next call destroys. Warning only: the teach stays staged and nothing is blocked —
+          // EXCEPT the card-2 decline above, which kept the prior value and now offers "Use “X”".
+          await speakIssuerTeach(fieldKey, text, { implausible: !!(_issuerCheck && _issuerCheck.implausible), checked: !!_issuerCheck, declined: _declined });
         } else if (_isListFieldKey(fieldKey)) {
           // LIST field ⊕ (owner 2026-08-27): the box's job was to find the CAPTION. Stage the caption
           // (a doc-type-wide keyword at confirm — never a dead box), fill the field with EVERY value
@@ -5386,6 +5431,10 @@ async function runZoneOcr(rect, fieldKey) {
         } else {
           showAnchorReadout(detected, text);   // show which anchor was picked + the Left/Above toggle
         }
+      } else if (_declined) {
+        // The frame changed mid-read (teach dropped) but the issuer read was DECLINED — say so and
+        // keep the "Use “X”" offer; a silent decline would look like a draw that did nothing.
+        await speakIssuerTeach(fieldKey, text, { implausible: !!(_issuerCheck && _issuerCheck.implausible), checked: !!_issuerCheck, declined: true });
       } else if (_isListFieldKey(fieldKey)) {
         delete pendingAnchors[fieldKey];   // no caption read → nothing to teach for a list (a box would be dead)
         showTeachMessage(`&#9888; I read <span class="ar-val">${escHtml(text)}</span> but no caption beside it — a list is taught by its `
@@ -5964,6 +6013,9 @@ function _applyTeachValue(fieldKey, value) {
     dismissServerNote(row, fieldKey);
     const msg = fieldValidationError(fieldKey, input.value);
     if (msg) setFieldWarning(row, input, msg); else clearFieldWarning(row, input);
+    // This road writes the input WITHOUT an `input` event, so the issuer-ripple teardown the input
+    // handler runs never fires here — run it explicitly (Oracle C3: every issuer writer tears down).
+    if (fieldKey === 'supplier_name') _teardownIssuerRipple(row);
   }
   if (lastTeachCtx && lastTeachCtx.fieldKey === fieldKey) lastTeachCtx.value = value;
   return true;
@@ -5974,11 +6026,32 @@ function _applyTeachValue(fieldKey, value) {
 // this customer already files under. Shape can never catch `B8ramblewood Joinery Ltd`; proximity
 // to a known name can. Asked of the ONE shared comparison the write guard uses, so the sentence on
 // screen and the decision in the database cannot disagree.
-async function speakIssuerTeach(fieldKey, text) {
+//
+// `opts` (Chris 09-01 card 2, Oracle C5): the caller that already asked check-issuer-read threads
+// its ONE result here (`checked:true` + `implausible`) so this never asks twice; `declined:true`
+// means the read was NOT written into the field (a non-empty prior was kept) and the bar must
+// offer the read back as a "Use “X”" action instead of implying it is staged.
+async function speakIssuerTeach(fieldKey, text, opts = {}) {
+  const _opts = opts && typeof opts === 'object' ? opts : {};
+  const declined = _opts.declined === true;
   let implausible = false, nm = null;
-  try { const r = await window.docusnap.checkIssuerRead(text); implausible = !!(r && r.implausible); } catch {}
+  if (_opts.checked === true) implausible = _opts.implausible === true;
+  else { try { const r = await window.docusnap.checkIssuerRead(text); implausible = !!(r && r.implausible); } catch {} }
   try { nm = await window.docusnap.checkIdentityNearMatch({ value: text, templateId: currentDoc?.template_id || null }); } catch {}
   const read = `I read <span class="ar-val">${escHtml(text)}</span> from your box.`;
+  const kept = declined
+    ? ` I kept <span class="ar-val">${escHtml(_currentIssuerValue().trim())}</span> in the field.`
+    : '';
+  // The "use the read anyway" action, only offered when the read was declined (otherwise it is
+  // already in the field). Goes through _applyTeachValue, the same road the near-match "Use" takes.
+  const useReadAction = {
+    label: `Use "${text}"`, onClick: () => {
+      if (_applyTeachValue(fieldKey, text)) {
+        showTeachMessage(`${read} Using it as this layout's company name when you confirm.`, { warn: true });
+        _refreshTaughtForType().catch(() => {});
+      }
+    },
+  };
   if (nm && nm.near) {
     // Tier A names how many documents already use the name; Tier B (a fresh install, where the only
     // record of the correct spelling is the sender's own frozen layout) names the layout instead.
@@ -5990,7 +6063,7 @@ async function speakIssuerTeach(fieldKey, text) {
         ? `&#9888; ${read} That is part of `
         : `&#9888; ${read} That is <strong>${nm.distance === 1 ? 'one character' : nm.distance + ' characters'}</strong> different from `)
       + `${_known}. `
-      + `Two spellings would file this sender into two folders.`,
+      + `Two spellings would file this sender into two folders.${kept}`,
       { warn: true, actions: [
         { label: `Use "${nm.existing}"`, kind: 'primary', onClick: () => {
             if (_applyTeachValue(fieldKey, nm.existing)) {
@@ -5998,7 +6071,9 @@ async function speakIssuerTeach(fieldKey, text) {
               _refreshTaughtForType().catch(() => {});
             }
           } },
-        { label: 'Keep what I read', onClick: () => {
+        // When the read was declined "keep" would keep NOTHING (it never went in) — offer it back instead.
+        declined ? useReadAction
+                 : { label: 'Keep what I read', onClick: () => {
             showTeachMessage(`${read} Kept as read &mdash; this sender will file separately from `
               + `<span class="ar-val">${escHtml(nm.existing)}</span>.`, { warn: true });
           } },
@@ -6006,6 +6081,14 @@ async function speakIssuerTeach(fieldKey, text) {
     return;
   }
   if (implausible) {
+    if (declined) {
+      // Card 2: the drawn read did NOT replace the value already in the field. Say what was kept,
+      // and hand the read back as a one-click "Use" so a real-but-odd name is one click away.
+      showTeachMessage(`&#9888; ${read} That doesn't look like a company name, so${kept} Draw it again, `
+                       + `type the name yourself, or use what I read anyway.`,
+                       { warn: true, actions: [{ ...useReadAction, kind: 'primary' }] });
+      return;
+    }
     showTeachMessage(`&#9888; ${read} That doesn't look like a company name. Draw it again, or type the name in the field yourself.`,
                      { warn: true });
     return;
@@ -7708,6 +7791,13 @@ function getRawPageBase64(page = currentPage) {
 async function offerIssuerRipple(srcDocId, name, row) {
   if (!srcDocId || !name || !window.docusnap.findIssuerSiblings) return;
   document.querySelector('.ripple-bar')?.remove();
+  // Never offer to ripple an IMPLAUSIBLE read to the siblings (Chris 09-01 card 1: a branding garble
+  // stood up "Apply “NOCUMENT” to 12"). Both doorways (the blur handler + the branding "Use X" button)
+  // land here, so the ONE guard sits at the head. With the kill switch OFF the IPC answers
+  // implausible:false and the offer is exactly today's. The IPC handler refuses too (defence in depth).
+  let implausible = false;
+  try { const r = await window.docusnap.checkIssuerRead?.(name); implausible = !!(r && r.implausible); } catch {}
+  if (!window.IssuerTeachDecision.shouldOfferIssuerRipple({ read: name, implausible })) return;
   const res = await window.docusnap.findIssuerSiblings(srcDocId, name);
   const siblings = (res && res.siblings) || [];
   if (!siblings.length) return;
@@ -7736,7 +7826,14 @@ async function offerIssuerRipple(srcDocId, name, row) {
       // pinned doc, so a later reprocess re-derives X even for a doc we choose not to re-read now.
       const pinIds = [srcDocId, ...siblingIds];
       const out = await window.docusnap.applyIssuerRipple(pinIds, name);
-      if (!out || out.ok !== true) { apply.textContent = 'Could not apply'; return; }
+      if (!out || out.ok !== true) {
+        // A refusal is never mute (Oracle C6): the handler's reason (e.g. "that name doesn't look like
+        // a company") replaces the sibling count, and "Not now" comes back so the bar is never stuck.
+        apply.textContent = 'Could not apply';
+        if (out && out.reason) label.textContent = String(out.reason);
+        dismiss.disabled = false;
+        return;
+      }
       bar.remove();
       // Re-read the siblings through the SAME batched rail Reprocess-this-sender uses; the pins make
       // the engine read them as this supplier (operator_pin @75 + "confirm to file" note — never

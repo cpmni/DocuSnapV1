@@ -25,6 +25,12 @@
  *
  * The accepted miss is pinned too (check 7), so it is a recorded trade-off and not a surprise.
  *
+ * LOAD-BEARING FROM 2026-09-01 (Chris cards 1+2). This predicate no longer only adds a sentence: its
+ * verdict now decides whether a drawn issuer read overwrites a non-empty field
+ * (src/windows/review/issuerTeachDecision.js) and whether `apply-issuer-ripple` will pin the value
+ * across many documents. So the BP/IBM/3M/H&M immunity (checks 3-5) is now protecting a real WRITE
+ * path — a false positive there would refuse a correct short name, not merely nag it. Keep those green.
+ *
  *   ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe database/modules/test_issuer_plausibility.js
  */
 const learning = require('./learning');

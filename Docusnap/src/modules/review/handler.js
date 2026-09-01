@@ -283,10 +283,20 @@ function register(ctx) {
   // rather than letting the teach surfaces grow their own copy — this repo already carries four
   // spellings of a ref predicate and a warning about the fifth.
   //
-  // WARNING ONLY. It never blocks a confirm, rewrites a value or rejects a teach. Kill switch:
-  // setting `teach_issuer_plausibility_warn` = 'false'. DEFAULT ON, mirroring
-  // `teach_typed_value_locate` — nothing is persisted or changed by it, it only adds a sentence,
-  // and the defect it answers files documents into junk folders silently.
+  // WARNING ONLY on the READ side. This IPC never blocks a confirm, rewrites a value or rejects a
+  // teach — it only answers "does this look like a company?" for the sentence on screen. Kill switch:
+  // setting `teach_issuer_plausibility_warn` = 'false'. DEFAULT ON, mirroring `teach_typed_value_locate`.
+  //
+  // NEW CONSUMERS (Chris 2026-09-01 cards 1+2; eric → Oracle C1/C2/C6). The SAME predicate now feeds
+  // two renderer DECISIONS via src/windows/review/issuerTeachDecision.js — a drawn read that this
+  // predicate flags does NOT overwrite a non-empty Document Issuer (shouldDrawnReadReplaceField), and
+  // an implausible read is not offered to the siblings (shouldOfferIssuerRipple). Those live in the
+  // renderer and are advisory (the value is offered back as "Use X"). The ONE place the predicate is
+  // load-bearing on the WRITE side is the `apply-issuer-ripple` handler below, which refuses to pin an
+  // implausible issuer across many documents (C1 — it reads the SAME kill switch itself so the OFF arm
+  // is a true global off). The immunity list in learning.issuerReadLooksImplausible (BP/IBM/3M/H&M) is
+  // therefore now load-bearing: a real short name must not be refused — pinned in
+  // database/modules/test_issuer_plausibility.js + src/windows/review/test_issuer_teach_decision.js.
   ipcMain.handle('check-issuer-read', (_e, value) => {
     requireLogin();
     try {
@@ -788,6 +798,24 @@ function register(ctx) {
     const value = p && typeof p.value === 'string' ? p.value.trim() : '';
     const ids = Array.isArray(p && p.docIds) ? p.docIds.map(Number).filter(Number.isInteger) : [];
     if (!value || !ids.length) return { ok: false, error: 'missing-value-or-docs' };
+    // DEFENCE IN DEPTH (Chris 2026-09-01 card 1; Oracle C1/C6). The renderer's offer-guard already
+    // refuses to raise this bar for an implausible read, but the server is the last word: it would be
+    // a real misfire to PIN a garble ("NOCUMENT") across up to 100 documents. Refuse it here, reading
+    // the SAME kill switch the check-issuer-read IPC reads (C1 — so `teach_issuer_plausibility_warn`
+    // = 'false' is a true global off, not a renderer-only one), and return a human `reason` the bar
+    // shows in place of the sibling count (C6 — a refusal is never mute). A single-doc resolve-issuer
+    // is untouched: that is the operator naming ONE sender, not fanning a read across many.
+    try {
+      if (learning.getSetting(db, 'teach_issuer_plausibility_warn', 'true') !== 'false'
+          && learning.issuerReadLooksImplausible(value)) {
+        try {
+          logAudit(db, { action: 'supplier_ripple_refused', action_category: 'learning',
+            outcome: 'refused', metadata: { value, doc_ids: ids.slice(0, 100) } });
+        } catch {}
+        return { ok: false, error: 'implausible-issuer',
+                 reason: "That name doesn't look like a company — check the Document Issuer field before applying it to the others." };
+      }
+    } catch { /* a failed check must never refuse a real ripple — fall through */ }
     let applied = 0;
     // Same single-doc write as resolve-issuer, per document: a PIN only — no logo/hint learning,
     // cleared on confirm, and the engine keeps a pinned read review-bound ('operator_pin' + note).

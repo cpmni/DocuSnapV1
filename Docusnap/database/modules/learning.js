@@ -125,8 +125,18 @@ function _vqTokenGood(tok) {
 // KNOWN MISS, stated rather than tuned away: a garble whose tokens are individually word-shaped
 // (`RENN ERNE, Nh`) scores 0.67 and passes. Tightening the floor to catch it costs real names.
 //
-// WARNING ONLY. It must never block a confirm, rewrite a value, or reject a teach — the app's
-// review-not-reject posture, and the same posture the EMPTY-issuer note already takes.
+// WARNING ONLY on the READ side (the sentence on screen). It must never block a confirm or reject a
+// confirm — the app's review-not-reject posture, and the same posture the EMPTY-issuer note takes.
+//
+// TWO WRITE-ADJACENT CONSUMERS added 2026-09-01 (Chris cards 1+2; eric → Oracle C1/C2). This
+// predicate now decides (a) whether a drawn Document-Issuer read may OVERWRITE a non-empty field
+// value — via src/windows/review/issuerTeachDecision.js shouldDrawnReadReplaceField, which keeps the
+// prior value and offers the read back as "Use X" (advisory, not a hard reject); and (b) whether the
+// review handler's `apply-issuer-ripple` will PIN the value across many documents (a hard refuse, the
+// one true block — because fanning a garble across 100 docs is a real misfire, not a nag). BECAUSE of
+// (a)+(b) the single-token IMMUNITY below (BP / IBM / 3M / H&M) is now load-bearing on a write path:
+// a real short company name must still pass. Do not tighten the floor to catch a garble without
+// re-checking those pins (test_issuer_plausibility.js + review/test_issuer_teach_decision.js).
 function issuerReadLooksImplausible(value) {
   const t = String(value == null ? '' : value).trim();
   if (!t) return false;                       // empty is the OTHER guard's job, and it has one
