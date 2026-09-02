@@ -21,30 +21,32 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-01 EVENING (rollout day 2 + two gated build plans): **READ `HANDOVER_2026-09-01_EVENING.md`
-FIRST — the fresh session's JOB is to BUILD PLAN A then PLAN B from it.** Branch `feat/teach-side-overnight`,
-**HEAD = origin = `d629b07`, tree clean, ALL PUSHED.** Installer `dist\ScanFinder Setup 2.0.0-r20260901-1838-29adce2.exe`
-(signed; owner rolling out). **⚠ 3 orphaned electron.exe alive (9223 down) — owner must close before any build (EBUSY).**
-**SHIPPED 09-01 pm:** date fix (`26d9960` — filing.parseDate now accepts FULL month names; "July 28, 2026" files) ·
-Help button in the main nav under Settings (`15c5386`+`1fb752c`, Chris-validated) · THREE features built DARK (mig 102)
-then **DEFAULTED ON (mig 103)**: `quiet_reread_silent`, `sweep_inview_countdown` (key-aware `presence.onlyViewerIs`,
-countdown+Stop, put-back on Stop), `accept_field_chars_enabled` (per-type charset allowlist + `extractions.
-charset_flag_meta` {chars,precap} confidence restore — the fc_delta lesson; ASCII-punct-only accept = homoglyph-safe) ·
-toggle-audit r2 (8 more reading-internals SFDEV-hidden; 22 visible) + "Scan Finder" copy fixes · **DESKEW_CORROB census
-GATE MET** (4 GT-verified heals, M=0 — `docs/DESKEW_CORROB_CENSUS_2026-09-01.md`; flip = owner) · **comprehensive error
-logging** (`20eca32` — stage/type/traceback→diaglog, always-on log shape-only, leak fixed) · **watch parity**: DPI fix
-(watch read at a DIFFERENT DPI than import!), RAM/OMP caps, spawn-crash handler (`5b06132`) + **watch separation DARK
-`watch_separate_enabled`** (`29adce2` — splits in the watch folder over the stable set, `_separating` poll-block,
-pre-marked segments = re-import-loop guard pinned, fresh splits HELD; stability debounce untouched; the literal
-watch/import code-merge DEFERRED per Oracle — separate `_watchBatchActive` counter, never co-mingle `_currentBatchProcs`)
-· **Chris round on the build: YES** (`docs/CHRIS_FULL_APP_REVIEW_2026-09-01.md`; warnings all truthful) · 4 Oracle
-verdicts logged (`docs/oracle_log.md` 2026-09-01). **⏭ THE QUEUED JOB: PLAN A (Chris fixes — issuer-ripple teardown +
-supplier_name-only teach-write guard; eric+Oracle C1-C8, C1=server refusal reads the kill switch itself, C2=supplier_name
-ONLY) then PLAN B (Quick Reprocess — `ocr_recipe` stamp + `ocrCacheUsable` + imageless `--reextract` shard + merge
-guards; gary+Oracle C1-C7 BINDING, C1=a contested keep is EXCLUDED from consent/auto-accept, C3=the Quick-batch Full
-fallback omits cached text to earn stamps, C4=preserve prior overall on kept rows; DARK `quick_reprocess_enabled`;
-mig 104 next). Full specs in the EVENING handover.** Prior:
-## Prior sessions — 2026-08-15 → 2026-09-01 DAY (collapsed 2026-09-01 EVENING; every block is preserved VERBATIM in `docs/session-log.md` under "Archived from CLAUDE.md at the 2026-09-01 EVENING compaction", in its named `HANDOVER_*.md`, and as `git show f51b721:Docusnap/CLAUDE.md`)
+## ⏭ LATEST — 2026-09-02 EVENING (watch/import unification built + soak gate set up): **READ
+`HANDOVER_2026-09-02_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`, **HEAD = origin = `696b4bf`,
+tree clean, ALL PUSHED.** No build this session (renderer/JS + tests only; last installer is 09-02 DAY's
+`…-1023-bac4e90.exe`, UNSIGNED — a rebuild is owed to ship the renderer fixes).
+**SHIPPED this session:** (1) **File-up-to-N RETRIES** on a transient sweep refusal (`566ec1e`, renderer) —
+up to 5×1.2s on `busy`/`quiet-lane-active`/`not-ready` before the honest message, so one click files even
+mid re-read; the busy-LEAK worry is CLOSED (traced quietLane `markScopeActive` pairing — every `finally`
+branch clears the scope; no stuck flag). (2) **WATCH/IMPORT UNIFICATION steps 1+2** (`3953b8f` manual,
+`898c70e` watch) — a PURE `processing.buildWorkerCommand(db, opts) → {scriptArgs, env}` both arrivals now
+share, BYTE-IDENTICAL (Layer A self-equality + the unchanged `test_import_concurrency_cap.js` pins;
+`_reprocessThreadCap`>=1 so no OMP 0-edge on watch); BLOCKING deskew seam — the builder NEVER emits
+`--deskew-pages` for `arrival:'watch'` at any setting (Oracle §4). Gate `stress_test/import_watch_parity.js`
+(Layer A + negative control + deskew seam + §E call-site pin) ALL GREEN. **DEFERRED owner-gated:** the OMP
+conc==1 convergence (its own commit + a watch-conc==1 realdoc M=0), the realdoc WATCH M=0 before a
+build/rollout, and the `runTrackedWorker` lifecycle extraction (need the real Castellan DB / change live
+watch reads). (3) **`watch_separate_enabled` SOAK GATE SET UP** (`696b4bf`) — the higher-value watch/manual
+parity win: analyzer `stress_test/watch_separate_soak.js` (mines `processing.log` → PASS/FAIL/INCONCLUSIVE
+on loop/loss/error), protocol `docs/designs/WATCH_SEPARATE_SOAK_GATE_2026-09-02.md`, pin
+`test_watch_separation.js` extended to 17 (re-import guard + no-loss + held-set = segments). Owner runs the
+soak (sandbox); flip approval-class. **⏭ Next-session owner decisions:** run the watch-separate soak · the
+unification's owner-gated tail (watch M=0 + OMP conc==1). **Prior (still-open specs live in these):** 09-02
+DAY `HANDOVER_2026-09-02_DAY.md` (the unification SPEC + Oracle §6 conditions; shipped `bac4e90` page-scaled
+timeout, `85ca2db` live watch status, `ddb7b53` honest File-all message; the anchor-wins-over-corrob EXHIBIT)
+· 09-01 EVENING `HANDOVER_2026-09-01_EVENING.md` (Plan A/B specs — Chris fixes + Quick Reprocess) ·
+09-01 NIGHT `HANDOVER_2026-09-02.md` (built Plan B `7a8b797`; SECURITY AUDIT; Quick-Reprocess DARK gate).
+## Prior sessions — 2026-08-15 → 2026-09-02 DAY (collapsed 2026-09-01 EVENING + 2026-09-02 EVENING; every block is preserved VERBATIM in `docs/session-log.md` under "Archived from CLAUDE.md at the 2026-09-01 EVENING compaction", in its named `HANDOVER_*.md`, and as `git show f51b721:Docusnap/CLAUDE.md`)
 > Grep the matching `HANDOVER_*.md` (or `docs/session-log.md`) before re-touching anything a recent
 > session built. The durable per-feature facts (commits, kill switches, gates, follow-ups) live in
 > `MEMORY.md` + `memory/project_*.md`.
@@ -59,7 +61,8 @@ mig 104 next). Full specs in the EVENING handover.** Prior:
   mig 101 `deskew_review_retry_enabled`; mig 103 → `quiet_reread_silent` · `sweep_inview_countdown` ·
   `accept_field_chars_enabled`.
 - **DARK — flip only with the named gate:** `deskew_corrob_autofile` (census MET 09-01, owner's call) ·
-  `watch_separate_enabled` (needs a live soak) · `template_locate_role_qualifier` mig 99 +
+  `watch_separate_enabled` (soak GATE SET UP `696b4bf` — `docs/designs/WATCH_SEPARATE_SOAK_GATE_2026-09-02.md`
+  + analyzer; owner runs the soak) · `template_locate_role_qualifier` mig 99 +
   `template_fragment_containment_yield` mig 100 (realdoc-605 gates queued) · `identifier_registry` (needs a
   REAL-customer-VAT corpus + M=0 + Oracle) · `name_dominant_snap` + `branding_strip_reg_boilerplate` (corpus
   OFF==ON + Oracle) · `sweep_retrigger_on_view_release` (Oracle-signed, UNBUILT) · `quiet_reread_on_ready_templated`
@@ -68,6 +71,18 @@ mig 104 next). Full specs in the EVENING handover.** Prior:
   path) · `trust_company_key_own_scope` (holds 45 of the owner's docs) · `deskew_on_import` (WRONG LAYER).
 
 Newest first:
+- **09-02 DAY** → `HANDOVER_2026-09-02_DAY.md` — the WATCH/IMPORT UNIFICATION spec (eric+gary → Oracle
+  SIGN-OFF-W/COND §6, the binding conditions the 09-02 EVENING build followed); shipped `bac4e90` (watch/import
+  per-file timeout scales with page count — the 34-page scan no longer dead-letters), `85ca2db` (live watch
+  status: elapsed+pages+step), `ddb7b53` (File-up-to-N honest "still finishing" message). The
+  anchor-wins-over-corroboration EXHIBIT (`make`=Ricoh lost to a drifted taught `anchor_crop`) logged in
+  `pendingfeatures.md` — DARK + census before any flip.
+- **09-01 EVENING** → `HANDOVER_2026-09-01_EVENING.md` — Plan A (Chris fixes: issuer-ripple teardown +
+  supplier_name-only teach-write guard; eric+Oracle C1-C8) + Plan B (Quick Reprocess: `ocr_recipe` stamp +
+  `ocrCacheUsable` + imageless `--reextract` shard; gary+Oracle C1-C7) SPECS; both later built (Plan B
+  `7a8b797`, DARK `quick_reprocess_enabled` mig 104). Rollout day 2: full-month dates `26d9960`, Help in main
+  nav, mig 102/103 (3 features DARK→ON), watch DPI/caps/spawn parity `5b06132`, watch separation DARK
+  `29adce2`. Installer `…-1838-29adce2.exe`.
 - **09-01 DAY** → `HANDOVER_2026-09-01.md` + `HANDOVER_2026-08-31_NIGHT2.md` — DESKEW_CORROB_AUTOFILE built DARK
   (`aa61350`, Oracle C1-C7; Option A = Python skip in `_deskew_retry_apply_holds`, `isAutoFileEligible` untouched;
   design `docs/designs/DESKEW_CORROB_AUTOFILE_2026-08-31.md`; pin `test_deskew_corrob_autofile.py` 12); batch-import
