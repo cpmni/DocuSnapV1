@@ -7519,10 +7519,22 @@ document.getElementById('sweep-consent-bar')?.addEventListener('click', async (e
     if (!accepts.length) return;
     s.phase = 'filing'; renderSweepConsentBar();
     let res = null;
-    try { res = await window.docusnap.sweepScopeAccept?.(s.supplier, s.typeSlug, accepts, [...s.unticked]); } catch {}
+    try { res = await window.docusnap.sweepScopeAccept?.(s.supplier, s.typeSlug, accepts, [...s.unticked]); }
+    catch (e) { res = { ok: false, reason: 'error', error: e && e.message }; }
     if (!res || !res.ok) {
       s.phase = 'offer'; renderSweepConsentBar();
-      showToast('Couldn\'t file those documents — please try again.', 'warn');
+      // Say WHY, not a generic scare (2026-09-02, owner-reported: hitting File-All while a re-read was
+      // still finishing showed "Couldn't file … try again" — the server had refused with reason 'busy'/
+      // 'quiet-lane-active', a TRANSIENT state that clears on its own; the old copy read as a real
+      // failure). A transient refusal gets an honest "still finishing — try again in a moment"; anything
+      // else keeps the generic message. Log the reason so a future report carries it.
+      const _r = String((res && res.reason) || '');
+      try { console.warn('[sweep-accept] refused:', _r, (res && res.error) || ''); } catch {}
+      const _transient = _r === 'busy' || _r === 'quiet-lane-active' || _r === 'not-ready';
+      showToast(_transient
+        ? 'Scan Finder is still finishing reading your documents — give it a moment, then try again.'
+        : (_r === 'license' ? 'Filing is unavailable — check your licence.'
+        : 'Couldn\'t file those documents — please try again.'), 'warn');
       return;
     }
     s.phase = 'done'; s.filed = res.filed || []; s.dropped = res.dropped || [];
