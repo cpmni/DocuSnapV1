@@ -176,6 +176,8 @@ const BRIDGES = [
   ['locate-role-qualifier-toggle', 'template_locate_role_qualifier', 'TEMPLATE_LOCATE_ROLE_QUALIFIER'],
   // 2026-08-31 fragment-containment yield (the CAD8 ⊂ CAD832694 exhibit → Oracle; seeded OFF by migration 100).
   ['fragment-containment-toggle', 'template_fragment_containment_yield', 'TEMPLATE_FRAGMENT_CONTAINMENT_YIELD'],
+  // 2026-09-02 high-variance format-flag suppression (Print Tracker make/model/serial → Oracle; seeded OFF by migration 105).
+  ['format-variance-relax-toggle', 'format_variance_relax', 'FORMAT_VARIANCE_RELAX'],
 ];
 const handler = (() => {
   try { return fs.readFileSync(path.join(root, 'src/modules/processing/handler.js'), 'utf8'); }

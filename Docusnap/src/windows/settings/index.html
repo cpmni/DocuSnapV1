@@ -895,6 +895,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Don&rsquo;t flag &ldquo;format differs&rdquo; on fields whose values naturally vary a lot</div>
+                <div class="threshold-sub">Some fields have no single &ldquo;usual&rdquo; look &mdash; a make, a model, or a serial number changes shape from one manufacturer to the next. On those fields the &ldquo;format differs from the usual &mdash; please verify&rdquo; note is just noise. When this is on, the app stops showing that note for fields whose confirmed history is genuinely varied, while still catching a likely one-character misread (a letter read as a look-alike digit, or the reverse) and offering the value you confirmed before. Amounts, dates, and reference/invoice/account numbers are never affected. Off by default &mdash; needs a full accuracy check before turning on.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="format-variance-relax-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Auto-file a straightened read that two independent readings agree on</div>
                 <div class="threshold-sub">When straightening a tilted scan recovers a field that was unreadable, two independent readings agree on the new value, and it matches the shape the app has learned for that field, file it without asking. A value the app had previously read as something else (a real disagreement) still waits for your confirmation. Off by default &mdash; needs a full accuracy check before turning on.</div>
               </div>

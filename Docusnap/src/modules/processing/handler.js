@@ -511,6 +511,16 @@ function _reconcileEnv(db) {
     if (env.TEMPLATE_FRAGMENT_CONTAINMENT_YIELD == null && learning.getSetting(db, 'template_fragment_containment_yield', 'false') === 'true') {
       env.TEMPLATE_FRAGMENT_CONTAINMENT_YIELD = '1';
     }
+    // FORMAT-VARIANCE RELAX (2026-09-02, reggie + gary → Oracle SIGN-OFF-W/COND; DARK): the Stage-4.5
+    //   "format differs from the usual" shape flag is noise on HIGH-VARIANCE text fields (make/model/
+    //   serial vary by manufacturer — no usual format to differ from). When a text field's confirmed
+    //   history has >=3 length-aware shape families / >=8 confirms / no >=50% dominant, the engine's own
+    //   text-read shape flag is suppressed — but a single letter<->digit OCR SLIP off a confirmed value
+    //   still flags + offers that value. Mapper DERIVED rungs stay review-bound (C1); ref-role/structured
+    //   fields untouched (Q2). Env wins both ways for arms.
+    if (env.FORMAT_VARIANCE_RELAX == null && learning.getSetting(db, 'format_variance_relax', 'false') === 'true') {
+      env.FORMAT_VARIANCE_RELAX = '1';
+    }
     // STRICT MONEY sub-flag of TEMPLATE_FORMAT_FAIL_YIELD (2026-08-30, reggie; DARK): the yield's currency
     //   leg becomes the whole-string `money_strict_shape` (the legacy leg passes '£9 32632.76' as 9.0).
     //   AND-ed with the parent HERE — a sub-flag armed without its parent bridges nothing.

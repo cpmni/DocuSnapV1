@@ -31,6 +31,20 @@ from typing import Optional
 # engine.py refuses the STRONG auto-apply tier for them.
 _LOW_DISTINCT_NAME_LEX = os.environ.get('NAME_LEXICON_LOW_DISTINCT', '0') != '0'
 
+# HIGH-VARIANCE FORMAT SUPPRESSION (2026-09-02, reggie + gary → Oracle SIGN-OFF-W/COND; DARK,
+# DEFAULT OFF, byte-identical off). The learned-shape "format differs from the usual" flag is
+# CORRECT for a field with a real dominant format (invoice/PO/account numbers) but pure NOISE
+# for a field whose confirmed history varies WILDLY (make/model/serial — every manufacturer a
+# different structure, so there is no "usual format" to differ from). When ON, the ENGINE's own
+# text-field shape flag is suppressed on such a field — but a single letter<->digit OCR SLIP off
+# a confirmed value STILL flags (and offers the confirmed value). Oracle conditions honoured at
+# the CALLERS, not here: this module only exposes the two PURE predicates, so check_value stays
+# byte-identical and the mapper's DERIVED rungs (Oracle C1) keep their review cap.
+_FORMAT_VARIANCE_RELAX = os.environ.get('FORMAT_VARIANCE_RELAX', '0') == '1'
+_VARIANCE_MIN_FAMILIES = 3               # >= this many LENGTH-AWARE shape families (shape_families)
+_VARIANCE_MIN_CONFIRMS = 8               # ...backed by >= this many confirmed documents in total
+_VARIANCE_DOMINANT     = 0.50            # ...and NO family holding >= this share ("no usual format")
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from extraction.validator import parse_date, parse_amount
 from extraction.ocr_corrector import LETTER_TO_DIGIT
@@ -575,6 +589,74 @@ def check_value(value: str, format_entry: dict) -> Optional[dict]:
     return None
 
 
+# ── High-variance format suppression predicates (FORMAT_VARIANCE_RELAX) ───────
+# Both PURE and side-effect free. The gating lives at the engine caller (Oracle
+# C1/C3: gate the terminal WRITE, never an early return in check_value), so these
+# only answer the two questions the caller needs.
+
+def _has_no_usual_format(format_entry) -> bool:
+    """True when the confirmed history is HIGH-VARIANCE — there is no single 'usual
+    format' to differ from: at least _VARIANCE_MIN_FAMILIES LENGTH-AWARE shape families
+    (shape_families, via shape_signature — deliberately NOT the length-blind _fold_shape,
+    so different-length serials do not collapse into one family), backed by at least
+    _VARIANCE_MIN_CONFIRMS confirmed documents, with NO family holding a
+    _VARIANCE_DOMINANT-or-greater share.
+
+    FAIL-TOWARD-FLAGGING (Oracle C2): any missing / thin signal -> False (keep the flag).
+    Reads the families view already attached by build_format_class_index, and recomputes
+    from value_counts only when it is present."""
+    fe = format_entry or {}
+    fams = fe.get('shape_families')
+    if not fams:
+        vc = fe.get('value_counts')
+        fams = shape_families(vc) if vc else None
+    if not fams or len(fams) < _VARIANCE_MIN_FAMILIES:
+        return False
+    total = sum(int(f.get('count') or 0) for f in fams)
+    if total < _VARIANCE_MIN_CONFIRMS:
+        return False
+    top = max((int(f.get('count') or 0) for f in fams), default=0)
+    if total <= 0 or (top / total) >= _VARIANCE_DOMINANT:
+        return False
+    return True
+
+
+def _is_letter_digit_confusable(a: str, b: str) -> bool:
+    """True when `a` and `b` are a LETTER/DIGIT OCR-confusable pair (exactly one letter
+    and one digit, mapped to each other by _DIGIT_OCR_SUBST). digit<->digit and
+    letter<->letter both return False, so '...006' vs '...008' is never a slip."""
+    if a.isalpha() and b.isdigit():
+        return _DIGIT_OCR_SUBST.get(a) == b or _DIGIT_OCR_SUBST.get(a.swapcase()) == b
+    if b.isalpha() and a.isdigit():
+        return _DIGIT_OCR_SUBST.get(b) == a or _DIGIT_OCR_SUBST.get(b.swapcase()) == a
+    return False
+
+
+def near_miss_confirmed(value: str, format_entry) -> Optional[str]:
+    """A same-LENGTH, single-SUBSTITUTION slip off a CONFIRMED scope value where the one
+    differing position is a letter<->digit OCR confusable. Returns the confirmed value to
+    suggest, else None. Substitution-only (no insert/delete); the retained slip-catch the
+    variance suppression keeps (Oracle C5). Needs the confirmed literals — reads value_counts
+    (threaded onto fmt_entry by build_format_class_index); absent -> None (nothing to offer)."""
+    v = (value or '').strip()
+    if not v:
+        return None
+    vc = (format_entry or {}).get('value_counts') or {}
+    best = None
+    best_n = -1
+    for conf, n in vc.items():
+        c = (conf or '').strip()
+        if not c or c == v or len(c) != len(v):
+            continue
+        diffs = [i for i in range(len(v)) if v[i] != c[i]]
+        if len(diffs) != 1:
+            continue
+        i = diffs[0]
+        if _is_letter_digit_confusable(v[i], c[i]) and int(n or 0) > best_n:
+            best, best_n = c, int(n or 0)
+    return best
+
+
 # ── Digits-only OCR cleanup + correction proposal (Stage 2) ──────────────────
 
 # Reuse the extractor's existing OCR confusable map (l/I→1, O→0, S→5, …) rather
@@ -857,6 +939,11 @@ def build_format_class_index(formats_data: list) -> dict:
             fams = shape_families(vcounts)
             if fams:
                 fmt = {**fmt, 'shape_families': fams}
+        # Confirmed literals for the high-variance suppression's near-miss leg
+        # (FORMAT_VARIANCE_RELAX). Additive VIEW — no existing consumer reads it; absent
+        # when there are no counts, so near_miss_confirmed fails toward offering nothing.
+        if vcounts:
+            fmt = {**fmt, 'value_counts': dict(vcounts)}
         # Dominant learned SEPARATOR (reggie) — carries the raw '-'/'.'/'/' the fold erases, so
         # Stage 4.5 can flag a MISREAD separator ("PO.20011" where history is uniformly "PO-…").
         # Additive: absent unless one separator dominates a non-numeric structured code.

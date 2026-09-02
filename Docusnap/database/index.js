@@ -2458,6 +2458,20 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 104 (quick reprocess): ${e.message}`); }
   }
 
+  // ── migration 105: high-variance format-flag suppression seeded OFF (DARK — the Print Tracker
+  //    make/model/serial noise; reggie + gary → Oracle SIGN-OFF-W/COND 2026-09-02. Suppresses the
+  //    Stage-4.5 "format differs from the usual" flag on the engine's own text reads of a field whose
+  //    confirmed history has no usual format; keeps the single letter<->digit slip-catch. Flip only
+  //    after the 605-corpus OFF-vs-ON gate (M=0, zero accuracy drop, two-sided non-vacuity).) ──
+  if (!applied.has(105)) {
+    try {
+      const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
+      const n = ins.run('format_variance_relax', 'false').changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (105)').run();
+      console.log(`JS migration 105 applied: format-variance relax seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 105 (format_variance_relax): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

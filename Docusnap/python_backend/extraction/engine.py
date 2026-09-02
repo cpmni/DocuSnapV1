@@ -2948,6 +2948,13 @@ _FORMAT_FAIL_STRICT_MONEY_ON = os.environ.get("TEMPLATE_FORMAT_FAIL_YIELD_STRICT
 # STRICTLY PREFIX-CONTAINS the taught fragment, the merge adopts the fuller read + a NEUTRAL
 # both-values note + cap 88 (review-bound). REF-FAMILY ONLY; NEVER currency/total. Byte-identical OFF.
 TEMPLATE_FRAGMENT_CONTAINMENT_YIELD = os.environ.get("TEMPLATE_FRAGMENT_CONTAINMENT_YIELD", "0") != "0"
+
+# FORMAT_VARIANCE_RELAX (2026-09-02, reggie + gary → Oracle SIGN-OFF-W/COND; DARK). Suppress the
+# Stage-4.5 "format differs from the usual" shape flag on this engine's OWN text-field reads when
+# the field's confirmed history is high-variance (no usual format — make/model/serial). The single
+# letter<->digit slip-catch survives; the mapper's DERIVED rungs and the structured/ref branch are
+# untouched (Oracle C1/Q2). Byte-identical OFF. See format_anomaly_checker._has_no_usual_format.
+_FORMAT_VARIANCE_RELAX = os.environ.get("FORMAT_VARIANCE_RELAX", "0") == "1"
 _FRAGMENT_YIELD_KW_FLOOR = 85   # the challenger is a seeded inline/anchored keyword read (base 80 +5
                                 # right-direction = 85); below that is unlabelled-noise territory. The
                                 # challenger ALSO passes the hard reference_code pattern + strictly
@@ -10072,6 +10079,28 @@ class ExtractionEngine:
                         # supplier shape. (Restores 0cbafb8's intent WITHOUT starving identity of
                         # the name_lexicon repair/truncation net — R2.)
                         if key in _IDENTITY_FIELD_KEYS:
+                            continue
+                        # HIGH-VARIANCE SUPPRESSION (FORMAT_VARIANCE_RELAX, DARK). A text field
+                        # whose confirmed history has NO single usual format — make/model/serial,
+                        # whose structure changes by manufacturer — has no shape to "differ" from,
+                        # so the shape flag is pure noise. Suppress it here (this ENGINE text write
+                        # only; the mapper's DERIVED rungs keep their review cap — Oracle C1 — and
+                        # the structured/ref branch below is untouched — Oracle Q2). STILL catch a
+                        # single letter<->digit OCR SLIP off a confirmed value: flag it and offer
+                        # the confirmed literal (Oracle C5, never auto-applied). Fail-toward-
+                        # flagging: _has_no_usual_format is False on any thin/absent signal.
+                        if _FORMAT_VARIANCE_RELAX \
+                                and format_anomaly_checker._has_no_usual_format(fmt_entry):
+                            _nm = format_anomaly_checker.near_miss_confirmed(str(val), fmt_entry)
+                            if _nm:
+                                results[key] = {
+                                    **data,
+                                    'confidence':      min(data.get('confidence') or 0, 70),
+                                    'corrected_to':    _nm,
+                                    'validation_note': f"looks like a misread — did you mean '{_nm}'? please verify",
+                                }
+                                n_flagged += 1
+                                format_anomaly_flagged = True
                             continue
                         results[key] = {
                             **data,
