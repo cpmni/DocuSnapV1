@@ -229,12 +229,36 @@ def _deskew_retry_apply_holds(raw_results, straightened_results):
 # by the handler, never re-attempted) then force-exits, escaping the wedged call —
 # instead of stalling the whole batch forever. The remaining files stay in the intake
 # folder and are picked up on the next run / watch scan.
-_watch = {"name": None, "started": 0.0, "stage": None}
+# The watchdog budget SCALES WITH PAGE COUNT (2026-09-02). A flat timeout false-killed legitimately large
+# multi-page scans: a 34-page A4 scan needs ~340s at ~10s/page and was dead-lettered to Errors on every
+# run (owner-reported). The base (`--file-timeout`) stays the FLOOR for a 1-page doc — byte-identical to
+# today — and each extra page adds `_FILE_TIMEOUT_PER_PAGE_S`, so a big scan gets room to finish while a
+# genuinely wedged native call is still force-killed (just later, on a big doc). page_count<=1 => budget==base.
+_FILE_TIMEOUT_PER_PAGE_S = 20.0
+_watch = {"name": None, "started": 0.0, "stage": None, "base": 0.0, "budget": 0.0}
 
-def _mark_file(name):
+def _probe_page_count(filepath) -> int:
+    """Cheap page count for the watchdog budget — OPENS (never renders) a PDF. Non-PDF (single image) or
+    any failure -> 1 (the base budget = today's behaviour). Never throws."""
+    try:
+        if str(getattr(filepath, "suffix", "")).lower() == ".pdf":
+            import pypdfium2 as _pdfium
+            _d = _pdfium.PdfDocument(str(filepath))
+            try:
+                return max(1, len(_d))
+            finally:
+                try: _d.close()
+                except Exception: pass
+    except Exception:
+        pass
+    return 1
+
+def _mark_file(name, page_count: int = 1):
     _watch["name"] = name
     _watch["started"] = time.monotonic()
     _watch["stage"] = "start"
+    base = _watch.get("base", 0.0) or 0.0
+    _watch["budget"] = (base + _FILE_TIMEOUT_PER_PAGE_S * max(0, int(page_count) - 1)) if base > 0 else 0.0
 
 def _mark_stage(stage):
     # Best-effort per-file progress marker so a failure/timeout can name WHERE it died
@@ -283,13 +307,15 @@ def _build_error_payload(name, exc, stage=None, timeout_s=None):
 def _start_file_watchdog(timeout_s: float):
     if not timeout_s or timeout_s <= 0:
         return
+    _watch["base"] = float(timeout_s)   # the per-file FLOOR; _mark_file scales it by page count
     def _loop():
         while True:
             time.sleep(1.0)
             name = _watch["name"]
-            if name is not None and (time.monotonic() - _watch["started"]) > timeout_s:
+            budget = _watch.get("budget") or timeout_s   # page-scaled; falls back to base if unset
+            if name is not None and (time.monotonic() - _watch["started"]) > budget:
                 try:
-                    emit(_build_error_payload(name, None, stage=_watch.get("stage"), timeout_s=timeout_s))
+                    emit(_build_error_payload(name, None, stage=_watch.get("stage"), timeout_s=budget))
                 except Exception:
                     pass
                 try: sys.stdout.flush()
@@ -705,7 +731,7 @@ def main():
     _start_file_watchdog(getattr(args, "file_timeout", 0.0))
 
     for filepath in files:
-        _mark_file(filepath.name)   # arm the per-file watchdog for this file
+        _mark_file(filepath.name, _probe_page_count(filepath))   # arm the watchdog; budget scales with pages
         emit({"type": "file_begin", "filename": filepath.name})
         _trace_state["doc"] = filepath.name
 
