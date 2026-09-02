@@ -3,10 +3,73 @@
 > Running backlog. When a feature/fix is discussed but NOT implemented right away, add it here with
 > the notes/details agreed + anything pertinent (symptom, code pointers, the fix direction, gates,
 > and any advisor rulings). Newest at top of each section. Remove an item when it ships (note the commit).
+> **Source of truth for what is FLIPPED/SHIPPED = the switch ledger in `CLAUDE.md` (verified at the
+> source) + `docs/oracle_log.md`. A 2026-09-02 cleanup pass removed entries confirmed complete against
+> that ledger; the removed set is listed at the bottom under "✅ Cleared 2026-09-02".**
 
 ---
 
-## 2026-08-28 — WORKFLOW + STAMPING REDESIGN (design complete, Oracle SIGN-OFF-W/COND; awaiting owner sign-off + build)
+## 2026-09-01 NIGHT — SECURITY AUDIT recommendations (owner ask; `docs/SECURITY_REVIEW_2026-09-01.md`, Oracle-adjudicated)
+Pre-full-release audit (eric + a dependency researcher + gary + Oracle + licensing). **DONE tonight** (safe,
+Oracle-signed, pinned `src/test_security_audit_20260901.js` 17, commit `a6ff457`): R3 trace-console clears
+its cropped-image slices on toggle-OFF · C-4 client `ALLOW_SELF_SIGNED` gated to `!app.isPackaged` (MITM
+close-out) · C-3 client app-level navigation lockdown · C-8 CLAUDE.md electron-builder version. **OPEN
+(owner approval-class — do NOT auto-build):**
+- **C-1 CODE-SIGN the installer/binary — the ONE release blocker with no documentation workaround on a
+  direct/NSIS channel** (unsigned also makes the asar-integrity fuse + unpacked-`.node` protection
+  meaningless). Oracle exception: if MS Store is the SOLE channel, the Store signs it → satisfied. → owner
+  decides the channel.
+- **R1 PLAINTEXT-DB disclosure.** The DB holds every doc's full OCR text in plaintext (encryption arc built
+  but DARK). Oracle §2: **ship opt-in encryption + a LOUD BitLocker posture — NOT default-on** (default-on
+  undrilled code-as-passphrase = unbounded silent DATA-LOSS > bounded exfil). Add a visible Security panel
+  disclosing plaintext. The blocker is the *silent* form.
+- **R2 honest binned-doc retention copy** (Oracle promoted to fix-before-release): a soft-deleted doc keeps
+  its plaintext original in `%APPDATA%\ScanFinder\inbox` + its `ocr_text` row until Empty Bin, unsaid — fix
+  the copy at least ("original kept until you Empty Bin"), optional age-purge.
+- **D-1 `node-forge` 1.3.1 → `^1.4.0`** (Oracle de-escalated to free hygiene — NOT reachable, licence+TLS
+  use Node native crypto; one-line, non-breaking, does not gate release).
+- **D-3 add a CVE prebuild gate** (`npm audit --omit=dev --audit-level=high` + `pip-audit`/`osv-scanner` on
+  `vendor/python`). **C-2 verify the fuses in the packaged artifact** (`npx @electron/fuses read`, owner box).
+- Acceptable-with-doc (schedule): native PDF/image decoders (contained, keep vendor/python patched); the
+  pre-existing TOFU-enrollment MITM on the detached client (pairing-integrity check before the CLIENT ships);
+  filed-output plaintext by design (document BitLocker posture); verify WAL encryption once R1 ships.
+
+## 2026-09-01 NIGHT — Chris sandboxed-round cards (`docs/CHRIS_FULL_APP_REVIEW_2026-09-01_NIGHT.md`; verdict YES; owner vet)
+Implement nothing without the owner's go.
+- **#1 (top harm) — teach-box clip → plausible-word issuer garble still stands up "Apply to N".** Diagnosed
+  at source: Plan A's ripple guard (`offerIssuerRipple` renderer.js:7855-7857 → `checkIssuerRead` →
+  `shouldOfferIssuerRipple`) works AS SCOPED (catches obvious garbles like "NOCUMENT") but
+  `issuerReadLooksImplausible` is a "does this look like a company?" NAME-QUALITY gate, so a plausible-word
+  clip ("lorthgate Textiles") passes and gets a green tick + one-click "Apply to 19". **New card = a
+  LETTERHEAD-MATCH signal**: caution when the taught issuer doesn't match the company name the app can
+  already read on that page's branding, before the green tick + "Apply to N". Needs design (reggie/eric →
+  Oracle). NOT a Plan A bug.
+- **#2 the "needs a quick check" banner goes stale** — doesn't refresh after a teach raises a field's
+  confidence 69%→90% (Reprocess-Quick cleared it); it also appears to be what blocks those docs bulk-filing.
+- **#3 the check summary double-counts** — "1 low confidence AND 1 formatting check" when both are on the
+  SAME field; reword ("1 field needs a look — low confidence AND flagged").
+- **#4 "ready" is overloaded** — activity "19 more ready to file" vs group head "2 more to file by itself";
+  one word per concept ("waiting for you to confirm" vs "will file on its own once learned").
+- **#6 binned-doc detail hides ref/date** when deciding whether to restore — show the known ref/date on
+  binned items.
+- (#5 diagnostic-log-on = dev-harness artifact, RESOLVED, no action — `dev-start.js` forces the env; the
+  packaged default is OFF.)
+
+## 2026-09-01 NIGHT — Quick Reprocess FLIP GATE (DARK `quick_reprocess_enabled`; `docs/QUICK_REPROCESS_GATE_2026-09-01.md`)
+Built + pinned (merge 68, Python recipe 20, emit fixture 8/8 on real pixels), Oracle SIGN-OFF-W/COND; the
+pixel-heal seam it caught is disclosed in the dialog (`2c25a6c`). **Remaining before flip (owner decision):
+run the 5-arm gate (A OFF-identical / B Quick-vs-Full M=0 / C idempotence / D C3 self-heal / E C1 contested)
+on a `db.backup()` of your REAL Castellan DB** — the only place the load-bearing pixel-heal→auto-file class
+is measurable. Stays OFF until Arm B runs there. Slice 2 (retrofit `ocrCacheUsable` onto today's
+unconditional cache reuse) still deferred (own switch + census).
+
+---
+
+## 2026-08-28 — WORKFLOW + STAMPING REDESIGN — ✅ BUILT 2026-08-28 NIGHT (`eba2ef2`…`86de7d7`)
+**STATUS (2026-09-02 cleanup): BUILT + PINNED** — signed-grant `can_stamp` on the DPAPI audit chain,
+append-only `stamp_events`, `/v1` + client parity; see `project_workflow_stamping_redesign_20260828.md` +
+`HANDOVER_2026-08-28_NIGHT.md`. The "awaiting build / NOTHING built" text below is the pre-build DESIGN
+record, kept for reference. Any residual = a later slice; the core redesign shipped DARK/add-on-gated.
 **Design doc:** `docs/designs/WORKFLOW_STAMPING_REDESIGN_2026-08-28.md` (raw notes `scratchpad/workflow_redesign_notes.md`). Advisors: current-state map + eric (security) + barry (UX) + Oracle (vet). NOTHING built.
 **Owner asks:** one "Send or stamp…" button in Search → a popup (Send-to-someone / Stamp-it-yourself / History) that fixes the "1 feature or 2?" busy corner; stamping promoted to first-class (today it's only a side-effect of approve/reject); user places the stamp by clicking whitespace; REMOVE the Settings 3×3 `stamp_placement` card, REPLACE with a custom stamp-type catalog (creatable); a new per-user STAMP PERMISSION (Settings→Users) "not easily flipped by a DB edit"; Search defaults to the stamped version + "view original"; full detached-client parity.
 **Two invariants:** routing-only-to-intended-recipient (already solid — validated active recipients, actor-scoped views, to_user_id gates, both transports); immutable+attributable stamps (who/what/when).
@@ -233,15 +296,6 @@ overlay instead of drawing (the inventory has the boxes). Size ≈ engine 40 lin
   a list match is a witness never a trump) · 6 LIST finish. Rejected/deferred with reasons in the round notes:
   email-in, print driver (Send-To shortcut + drag-drop instead), tags, retention, handwriting, TWAIN.
 
-## 2026-08-26 — ONE general "corroboration clears a verification-doubt note" rule (class F) — ✅ BUILT DARK 2026-08-26 NIGHT
-**Built** (`CORROB_VERIFICATION_DOUBT_CLEAR` / `corrob_verification_doubt_clear`, DEFAULT OFF; Oracle SIGN-OFF-W/COND,
-`docs/oracle_log.md` 2026-08-26 NIGHT): allowlist of write-site constants, ≥2 distinct page families + un-noted
-witness, exact learned skeleton (+ the length leg the pin found), totals/currency refused, re-read mark needs a
-keyword witness, flip-order guard in `_reconcileEnv`. 39 pins. **OWED before flip (owner): the C5 gate** — the
-held-queue census on a DB copy (docs whose note is an allowlisted mark → reprocess with F ON → eyeball every `cls=F`
-clear), the SFDEV live heal of SuperStore 31901, the clip positive control. The audited entry below is kept for the
-record.
-
 ## 2026-08-26 — TARGETED field re-slice after a ⊕ box teach (skip the full re-OCR) — owner idea — ⚠ ADVISORS: WRONG LAYER (2026-08-26 NIGHT)
 **gary + oscar (independent, converged):** the premise is partly STALE — on a reprocess the full-page OCR is ALREADY
 skipped (cached `ocr_text`, `handler.js:4125`); what re-runs is render + every crop stage + Stage 2/4/4.5, so a
@@ -272,70 +326,6 @@ holds), OFF byte-identical, must land the SAME value a full reprocess would (pin
 sample). Pointers: `python_backend/ocr/region.py` (zone-OCR), `python_backend/extraction/template_mapper.py`
 (absolute-target read), `src/modules/processing/rereadHolds.js` + `quietLane.js` (the re-read road it would
 join), `documents.working_path`/`ocr_text`. Advisor+Oracle before build. NOT built.
-
----
-
-## 2026-08-26 — Manual-landmark boxes don't SNAP to the words (owner-spotted) — ✅ SHIPPED `9861d37`
-**Shipped 2026-08-26 NIGHT:** `addLandmarkFromRect` now runs the shared `BoxSnap.snapBoxToWords` under the
-same `template_box_word_snap` gate as the mapping path, fail-closed to the drawn box; pinned in
-`test_settings_wiring.js`. (Entry kept for the record; remove on the next sweep.)
-**Symptom (screenshot):** Settings → Templates → "Manual landmarks (advanced)" on the SuperStore sample —
-the drawn landmark boxes (Rate / Bill / INVOICE / Discount / Quantity) sit LOOSE/offset from the printed
-words rather than snapping tight to them. The owner: *"the boxes don't snap to the values as expected."*
-**Likely cause:** the MAPPING-box draw path word-snaps to the printed words (shared `BoxSnap.snapBoxToWords`,
-`settings/renderer.js` ~3977-4025, `snap*` gated by `template_box_word_snap`, default ON — added 2026-08-10),
-but the MANUAL-LANDMARK draft path (`tplLandmarkDraft` / `renderLandmarkList` :3192 / `redrawTplCanvas`,
-draw handler ~3179-3283) does NOT run that snap — so a hand-drawn landmark stays loose and stores/displays
-loose. Secondary possibility to rule out: the landmark OVERLAY in `redrawTplCanvas` uses a slightly different
-norm→pixel transform than the doc render (a scale/frame offset), which would show even a well-stored box as
-misaligned. **Fix direction:** apply the same `BoxSnap.snapBoxToWords` tighten to a freshly-drawn landmark box
-(mirror the mapping-box snap at ~3977-4025 — same `template_box_word_snap` gate, snap in the straightened
-frame), AND verify the landmark overlay transform matches the doc render. Landmarks re-locate by WORDS at read
-time, so a word-tight box also improves registration. Pointers: `src/windows/settings/renderer.js` (~3179-3283
-landmark draw, ~3977-4025 mapping snap), `src/windows/shared/boxSnap.js`, `template_landmarks` table. Low risk
-(admin viewer only; no filing impact). NOT built.
-
----
-
-## 2026-08-26 — ONE general "corroboration clears a verification-doubt note" rule (class F) — audited
-**Owner-spotted exhibit:** SuperStore invoice_number **31901** held @78% by "*The taught box's edge cuts through
-the printed value… the fuller reading could not be verified*" — yet `template_mapping_edgecut`=31901 AND
-`keyword`=31901 (two independent PAGE families agree). Owner: *"clear corroboration here — why won't it clear?
-are there OTHER messages that should be demoted so we aren't whacking 1 at a time?"*
-**AUDITED (gary, 2026-08-26 — full table in the round notes).** `engine.py:_resolve_corroborated_notes` has 6
-note-clear classes (A-E,P); NONE covers this class. The general answer:
-- **Bucket (b) — SHOULD clear on genuine ≥2-family agreement but has NO rule (the whack-a-mole set):**
-  `_EDGE_CUT_NOTE` (template_mapper:524; written :1915/:2460/:3374) · `_FT_FALLTHROUGH_NOTE` "read from the
-  surrounding line rather than the taught box" (:784/:1105) · `_NAME_GROW_NOTE` (:582/:3335, name-risk — gate
-  separately) · the value-already-rewritten-clean family ("corrected to the learned format…/trimmed to the
-  expected format…/re-read from the page… please verify"; anchor:1638/1647, engine:9272/6729).
-- **ONE general rule retires them all (not case-by-case) — new class F, DARK env:** clear a note iff (1) its
-  MARK ∈ an allowlist `_VERIFICATION_DOUBT_NOTE_MARKS` (bucket-b marks, MIRRORED to write sites à la
-  classFixService CLEARABLE_NOTE_MARKS so a reword goes inert) AND (2) `_corrob_licensed(rec)` — ≥2 DISTINCT
-  page families {mapping,crop,keyword} agree on the committed value, none disagreeing AND (3) the value passes
-  its LEARNED SHAPE (`format_anomaly_checker.check_value`; NO shape → refuse, fail-closed) AND (4) licensed on
-  FAMILY AGREEMENT alone, NOT value==dominant (an invoice# is unique per doc) AND (5, recommended) the agreeing
-  witness is UN-noted (Oracle-B3 `noted` bit — else a flag-only @70 read stands in as the 2nd family).
-- **The seam keeps bucket (c) safe (3 layers, verified):** distinct-family requirement + same-family skip
-  (`engine.py:1800`/`:4172`) — a self-agreeing common-mode misread can NEVER license (answers the owner's
-  worry); the shape-pass leg auto-excludes every "format differs"/shape-mismatch note; the allowlist is
-  DENY-BY-DEFAULT so disagreement / invalid-date / identity/type / "couldn't-confirm-anywhere" (Fix A) /
-  sign+reconciliation notes are never sweepable. Keep DISAGREEMENT notes in their own `_d1`-style arm (witness-
-  sides-with-committed + dissent recorded), NEVER in F. Keep TOTALS in `_d2` (oracle_log:737 — F must not
-  co-arm with the recon-total demoter).
-- **⚠ CORRECTION to the earlier draft of this entry:** clearing the note does NOT drop the per-FIELD confidence
-  CAP — only the OVERALL format penalty (the recompute guard). The edge-cut caps invoice_number ≤70
-  (template_mapper:2458/1914) and `trust.js:1104-1120 weak-critical-field` reads the FIELD confidence directly
-  (70<88 → still held). **So class F must ALSO LIFT the field to 90** (like `_d1` `_CROSSCHECK_CORROB_CONF`),
-  not just pop the note — matters doubly for a NON-critical capped code field (account_no) that
-  `critfield_corrob_floor_relax` doesn't cover.
-- **Gate:** DEFAULT-OFF env; OFF==ON byte-identical; realdoc M=0 + zero per-field accuracy drop; PINS — F clears
-  `_EDGE_CUT_NOTE` + lifts to 90 on a 2-family agreement/shape-pass; a SINGLE-family (or disagreeing, or
-  shape-failing) record KEEPS the hold; the allowlist↔write-site mirror; a genuine clip (box VXS986 vs page
-  VXS98624, families DISAGREE) stays in review. Harness can't bit-reproduce the live edge-cut misread → prove
-  no-regression on the corpus, watch the actual heal on the live doc via SFDEV before flip. Advisor+Oracle
-  before flip. Pointers: `engine.py:1800/3517/4101/9974-10005/1084`, `template_mapper.py:524/582/784/2458`,
-  `trust.js:1055-1064/1104-1120`, `classFixService.js:60-65`.
 
 ---
 
@@ -4665,3 +4655,23 @@ Gate: cold + warm scoring per class; every silent-wrong is a NEW class card for 
 ## 2026-08-31 — Chris round-2 cards (practice run + guide vet)
 - Help-mode persistence: closing a "?" popup silently ends help mode; next click fires the real control. Options: keep mode until the "?" is toggled off, or say "Help mode off" on close. [Chris r2 card 4, owner choice - one-shot may be deliberate]
 - Export window: the live preview/row-count did not render on an EMPTY install (0 confirmed docs) - check the empty-state, show "0 rows" rather than nothing. [Chris r2 truth-table, unverified on a populated install]
+
+---
+
+## ✅ Cleared 2026-09-02 (cleanup pass — confirmed complete against the CLAUDE.md switch ledger)
+Removed as done/live (git + oracle_log preserve the detail):
+- **Manual-landmark boxes don't SNAP** — SHIPPED `9861d37` (the entry itself said "remove on the next sweep").
+- **"corroboration clears a verification-doubt note" (class F)** ×2 (the BUILT-DARK entry + its audit
+  companion) — `corrob_verification_doubt_clear` is FLIPPED ON (mig 91, per the CLAUDE.md ledger), so the
+  "OWED before flip" note was stale.
+- **Workflow + Stamping redesign** — marked BUILT in place (`eba2ef2`…`86de7d7`), not removed (a later slice
+  may remain).
+
+**HONEST NOTE on this file:** it is long mostly because the work is genuinely still open, NOT because it is
+full of removable completed items. On inspection most entries are either NOT BUILT (designed/deferred) or
+**BUILT DARK awaiting a flip gate** (the flip is the pending work — e.g. `deskew_corrob_autofile`,
+`watch_separate_enabled`, `template_locate_role_qualifier`, `template_fragment_containment_yield`,
+`identifier_registry`, `quick_reprocess_enabled` — all still OFF per the ledger). Only a handful of truly
+shipped-and-flipped items lingered, and those are cleared above. A deeper archival pass (moving every
+decided REFUSED / WRONG-LAYER record out to an archive file) is worth doing as a deliberate joint session so
+no genuinely-pending sub-item is lost — many "shipped" entries still carry open sub-parts.
