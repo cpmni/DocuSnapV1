@@ -9,6 +9,19 @@
 
 ---
 
+## 2026-09-02 — CORROBORATION IGNORED: a drifted taught anchor beats ≥2 agreeing witnesses (owner-reported exhibit)
+Full detail + trace facts in `HANDOVER_2026-09-02_DAY.md` ("NEW EXHIBIT"). Doc `4_split_p3.pdf` (Print
+Tracker): `make` should be "Ricoh" (`template_mapping`@90% + `keyword`@85% AGREE), but a TAUGHT `anchor_crop`
+drifted to the Model row, read "MP C4504ex" @85%, and WON by authority precedence — corroboration did not
+protect the correct value (crop/inline anchors are deliberately EXEMPT from the `BLIND_GEOM_DISAGREE_RECONCILE`
+witness reconcile; only `anchor_registration` is reconciled). `make`/`model` collided on one value. DESIGN Q:
+reconcile/demote a taught-anchor read that BOTH disagrees with ≥2 independent witnesses AND collides with
+another field's value — WITHOUT breaking the re-teach exemption that exemption exists for. gary/reggie/007 →
+Oracle; DARK + a census (taught-anchor reads that disagree with ≥2 witnesses) before any flip. Evidence:
+`Desktop\Demo Docs\docusnap - Copy.db` + `processing - Copy.log`. Owner's standing "encode
+corroboration/independence of method family" direction; this is the ANCHOR-WINS-OVER-CORROB class (not a
+note-demote).
+
 ## 2026-09-01 NIGHT — SECURITY AUDIT recommendations (owner ask; `docs/SECURITY_REVIEW_2026-09-01.md`, Oracle-adjudicated)
 Pre-full-release audit (eric + a dependency researcher + gary + Oracle + licensing). **DONE tonight** (safe,
 Oracle-signed, pinned `src/test_security_audit_20260901.js` 17, commit `a6ff457`): R3 trace-console clears
