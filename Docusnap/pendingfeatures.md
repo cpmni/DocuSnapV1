@@ -120,6 +120,37 @@ near-miss + charset + confident-correction legs are what keep that. reggie (dive
 predicate, JS↔py aligned) + gary (checker seam + backward-compat + the census + a PIN) → Oracle. DARK +
 census (0 lost TRUE flags on real formatted refs; the make/model/serial noise gone). Related to but distinct
 from the clipping/anchor-wins arc above (same Print Tracker make/model, different mechanism).
+**ADVISOR CONSENSUS 2026-09-02 (reggie + gary; Oracle vetting).** ONE choke point (gary, verified):
+`format_anomaly_checker.check_value` — engine (`:10034`, flags nest under `if anomaly:`) AND the mapper's
+`_SHAPE_WARN_NOTE` (via `_check_learned_format`==`check_value`, import `template_mapper.py:44`, writes
+`:1262`/`:1893`) AND `_shape_consents` all route through it, so gating ONE leg (the SHAPE leg,
+`format_anomaly_checker.py:566-573`) governs all four write sites. The charset/impossible (`:550-556`) +
+date/currency (`:534-548`) legs return BEFORE the shape leg, so relaxing only the shape leg keeps every
+garble net. CHANGE: in the shape leg, when `_FORMAT_VARIANCE_RELAX and _has_no_usual_format(fmt_entry)` →
+`near_miss_confirmed` first (return anomaly + suggestion on a slip), else `return None` (suppress). Thread
+`value_counts` into `fmt_entry` in `build_format_class_index` (additive; near-miss needs the literals —
+FAIL-TOWARD-FLAGGING if absent). DARK flag `FORMAT_VARIANCE_RELAX` (`=='1'`) + `_reconcileEnv` bridge +
+Settings toggle + `test_settings_wiring` BRIDGE row + migration seeds false; OFF byte-identical.
+- **reggie predicate `_has_no_usual_format`:** ≥3 LENGTH-AWARE shape families (`shape_families:341`, NOT the
+  length-blind `_fold_shape`), ≥8 confirms (`_SHAPE_ACCEPT_ABS`), no family ≥50% share. Fires on
+  make/model/serial; a real invoice/po number folds to ONE dominant family → never fires.
+- **reggie near-miss `near_miss_confirmed`:** same-LENGTH + exactly ONE differing char + that position a
+  LETTER↔DIGIT confusable (reuse `_DIGIT_OCR_SUBST` symmetrised). Substitution-only; digit↔digit EXCLUDED
+  (so '…006' vs '…008' is not a false slip). Returns the confirmed value to suggest.
+- **gary SEAM (Oracle-worthy):** suppressing the note ALSO lifts its conf-cap-70 + the `format_anomaly_flagged`
+  bump → a clean new serial/model becomes AUTO-FILE-ELIGIBLE (owner intent); upstream credibility gates
+  (`_crop_is_credible`, ref-code gate, OCR floor, `template_mapper.py:1160-1208`) still reject a garbled crop
+  before shape. DOMINANT REGRESSION: if `_has_no_usual_format` over-fires on a real ref, a garbled ref
+  auto-files — census assertion "0 removed flags on ref-role `*_number`/account/vat/po fields" catches it
+  (Oracle Q2: maybe a positive scope guard — never suppress a field that is a ref_field_key role). Narrow
+  column-bleed-trim residual (`extract_accepted_shape:10089` skipped) — census-checked. Python-only; JS
+  coupling = the note STRING only (keep stable; register any new near-miss string in `test_stale_note_matcher`).
+- **Gate:** 605-corpus OFF vs ON, `RR_APP_ENV=1`, `OCR_RENDER_DPI=200`, dedup `RR_IDS`, M=0 + zero accuracy
+  drop; NON-VACUITY: make/model/serial flags DISAPPEAR + a real invoice_number flag SURVIVES + a single-digit
+  slip STILL flags. PINs (`test_format_anomaly_variance.py`, RED-first): high-variance suppressed · dominant
+  still flags · near-miss still flags · charset survives · length-aware diversity · OFF byte-identical.
+  Owner check: reprocess an exhibit with `--trace`, confirm the note is the shape leg (`:10079`/`:10176`/
+  `_SHAPE_WARN`), not the charset leg (`:9823`). Build DARK; FLIP later.
 
 ## 2026-09-01 NIGHT — SECURITY AUDIT recommendations (owner ask; `docs/SECURITY_REVIEW_2026-09-01.md`, Oracle-adjudicated)
 Pre-full-release audit (eric + a dependency researcher + gary + Oracle + licensing). **DONE tonight** (safe,
