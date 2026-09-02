@@ -56,15 +56,28 @@ fixes, SHIP B→A:
   (strips non-alnum), so the junk `)` + space are ALREADY tolerated — B's only blockers are DARK + the
   ref-family scope. Cap 88, review-bound, method stays keyword. Cold-start: history-gated → inert cold. reggie
   + gary.
-- **(A) READ root — ship SECOND (cold-safe + auto-file; bigger blast radius).** CORRECTION: `_abs_edge_guard`'s
-  code branch ALREADY right-grows a clipped code (`template_mapper.py:3311-3319`); the gap is SCOPE, not
-  capability — reached only for `val_type in _SNAP_VAL_TYPES` (`{alphanumeric,reference_code,date}`, gate
-  `2387-2389`), so free-text `model` never enters. Widen with a SEPARATE conjunct on the SAME
-  `_value_is_code_shaped` (do NOT broaden `_SNAP_VAL_TYPES` — the free-text over-grab class). Cold-safe
-  (no-history grow → `_shape_consents=='none'` → FLAGGED ≤70, never silent-clean), `shape_mode='ignore'` (no
-  learned-shape veto). 007: detection MARGINAL for a hairline clip (overhang floor `max(0.004,0.6g)` +
-  inside-fraction cap 0.95, `_find_edge_cut_words:2977-2980`); a free-text MULTI-TOKEN grow needs a
-  RIGHT-NEIGHBOUR GAP TEST (absent). oscar (PSM 7, +0.004 pad, upscale) + 007 (geometry).
+- **(A) READ root — DEFERRED (Oracle: build DARK, FLIP DEFERRED; NOT NEEDED for the exhibit — B heals it;
+  bigger blast radius). NOT YET BUILT.** `_abs_edge_guard`'s code branch ALREADY right-grows a clipped code
+  (`template_mapper.py:3311-3319`); the gap is SCOPE, not capability — reached only for `val_type in
+  _SNAP_VAL_TYPES` (`{alphanumeric,reference_code,date}`, gate `2387-2389`), so free-text `model` never enters.
+  Widen with a SEPARATE conjunct behind a NEW DARK flag (`TEMPLATE_CODE_EDGE_GROW`) gated on the SAME
+  `_value_is_code_shaped` (do NOT broaden `_SNAP_VAL_TYPES` — the free-text over-grab class). Oracle CONDITIONS:
+  · **A-C1** add a RIGHT-NEIGHBOUR GAP TEST — `_find_edge_cut_words` (`2946-2992`) returns only the cut word,
+    not the gap beyond it; a free-text multi-token grow must refuse if the next row-band word starts within
+    ~<0.8·g of the cut word's far edge (else it swallows the neighbour column).
+  · **A-C2** the "cold-safe → always flags" claim is FALSE: line `3380` `(witness_ok and consent=='none')`
+    CLEAN-commits (no cap/flag) via the snap-union witness. For the free-text code leg force FLAG-ONLY
+    (≤70) — thread a `code_grow` flag so the clean-heal branch (`3380-3383`) is skipped and it always takes
+    the flagged path (`3389-3396`); a `refused` sub-token teach still stands down silently.
+  · **A-C3** census STRICTER than B's — B does NOT backstop an A over-grow (if A grows PAST the truth,
+    existing⊄keyword so B no-ops). Enumerate every `_edgegrow` CLEAN commit; each must equal history else an
+    M candidate.
+  · **A-C4** SEPARATE scope conjunct; share ONE `_value_is_code_shaped` (move it to `template_mapper.py`,
+    engine imports it) but A must independently satisfy A-C1/A-C2 so B's helper can't silently arm A.
+  · 007: detection MARGINAL for a hairline clip (overhang floor `max(0.004,0.6g)` + inside-fraction cap 0.95,
+    `_find_edge_cut_words:2977-2980`) — a box that bisects the last glyph won't fire; a sensitivity revisit is
+    its own sub-decision. oscar recipe: PSM 7, +0.004 pad, upscale. NON-VACUITY: needs a direct integration
+    test (the 605 corpus never fires Stage-0.5 mapping).
 - **A/B seam (verified):** sequential, no race. A clean-heals → existing==keyword → `_fragment_contained` False
   → B no-ops. A partial-grows → B backstops. A over-grows WRONG + clean-commits → B does NOT catch → A's
   census STRICTER. Both share ONE `_value_is_code_shaped`.
