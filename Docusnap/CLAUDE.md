@@ -21,31 +21,39 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-02 EVENING (watch/import unification built + soak gate set up): **READ
-`HANDOVER_2026-09-02_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`, **HEAD = origin = `696b4bf`,
-tree clean, ALL PUSHED.** No build this session (renderer/JS + tests only; last installer is 09-02 DAY's
-`…-1023-bac4e90.exe`, UNSIGNED — a rebuild is owed to ship the renderer fixes).
-**SHIPPED this session:** (1) **File-up-to-N RETRIES** on a transient sweep refusal (`566ec1e`, renderer) —
-up to 5×1.2s on `busy`/`quiet-lane-active`/`not-ready` before the honest message, so one click files even
-mid re-read; the busy-LEAK worry is CLOSED (traced quietLane `markScopeActive` pairing — every `finally`
-branch clears the scope; no stuck flag). (2) **WATCH/IMPORT UNIFICATION steps 1+2** (`3953b8f` manual,
-`898c70e` watch) — a PURE `processing.buildWorkerCommand(db, opts) → {scriptArgs, env}` both arrivals now
-share, BYTE-IDENTICAL (Layer A self-equality + the unchanged `test_import_concurrency_cap.js` pins;
-`_reprocessThreadCap`>=1 so no OMP 0-edge on watch); BLOCKING deskew seam — the builder NEVER emits
-`--deskew-pages` for `arrival:'watch'` at any setting (Oracle §4). Gate `stress_test/import_watch_parity.js`
-(Layer A + negative control + deskew seam + §E call-site pin) ALL GREEN. **DEFERRED owner-gated:** the OMP
-conc==1 convergence (its own commit + a watch-conc==1 realdoc M=0), the realdoc WATCH M=0 before a
-build/rollout, and the `runTrackedWorker` lifecycle extraction (need the real Castellan DB / change live
-watch reads). (3) **`watch_separate_enabled` SOAK GATE SET UP** (`696b4bf`) — the higher-value watch/manual
-parity win: analyzer `stress_test/watch_separate_soak.js` (mines `processing.log` → PASS/FAIL/INCONCLUSIVE
-on loop/loss/error), protocol `docs/designs/WATCH_SEPARATE_SOAK_GATE_2026-09-02.md`, pin
-`test_watch_separation.js` extended to 17 (re-import guard + no-loss + held-set = segments). Owner runs the
-soak (sandbox); flip approval-class. **⏭ Next-session owner decisions:** run the watch-separate soak · the
-unification's owner-gated tail (watch M=0 + OMP conc==1). **Prior (still-open specs live in these):** 09-02
-DAY `HANDOVER_2026-09-02_DAY.md` (the unification SPEC + Oracle §6 conditions; shipped `bac4e90` page-scaled
-timeout, `85ca2db` live watch status, `ddb7b53` honest File-all message; the anchor-wins-over-corrob EXHIBIT)
-· 09-01 EVENING `HANDOVER_2026-09-01_EVENING.md` (Plan A/B specs — Chris fixes + Quick Reprocess) ·
-09-01 NIGHT `HANDOVER_2026-09-02.md` (built Plan B `7a8b797`; SECURITY AUDIT; Quick-Reprocess DARK gate).
+## ⏭ LATEST — 2026-09-02 NIGHT (autonomous queue + two Print-Tracker exhibits, advisor→Oracle): **READ
+`HANDOVER_2026-09-02_NIGHT.md` FIRST.** Branch `feat/teach-side-overnight`, **HEAD = origin = `6a9bc26`,
+tree clean, ALL PUSHED.** No build (renderer/JS + Python + tests + docs; last installer 09-02 DAY's
+`…-1023-bac4e90.exe`, UNSIGNED — rebuild still owed).
+**SHIPPED (all DARK/safe):** (1) reprocess **one "— confirm once." per field** (`09e446a`, renderer) — a manual
+reprocess of a straighten-CHANGED field no longer stacks two confirm-once notes; `rereadHolds.holdFirstFills`
+skips a second confirm-once when one already stands; pin §5. (2) **raw_value on keyword money reads**
+(`32ae95b`, Python) arms `credit_sign_note` arm 2 on keyword totals (was dead — keyword set no raw_value);
+LIVE (CREDIT_SIGN_COHERENCE forced by mig-98 parens/cr); pin `test_keyword_raw_value_credit_sign.py`; **census
+RAN → PASS on safety** (0 value diffs + 0 false flags on 487 COLD-DB docs, arm2 armed). (3) **SFDEV gate
+integrity pin** (`8584e16`) — toggle-hygiene sweep found NO switch qualifying for DO-NOT-USE (the 3 "NEVER
+flip" all already gated/parked); `test_settings_wiring.js` now pins `DEV_SWITCH_IDS` (0 dead/0 dup/0 leaked,
+138 gated). (4) **Fix B** (`eb67c47`, Python DARK) — fragment-containment yield admits **code-shaped** fields
+via a **KNOWN-SET anchor** (challenger confirmed-before, incumbent NOT = clip): the fix for the clipped-`model`
+exhibit (`Ecosys PA2600cw)` @90 beat correct `…cwx` @85 because a Stage-0.5 mapping outranks keyword
+UNCONDITIONALLY). Oracle SIGN-OFF-W/COND — caught a ship-blocker (the spaced value made the *dominant* anchor
+inert → switched to known-set). Widens `TEMPLATE_FRAGMENT_CONTAINMENT_YIELD` (mig 100, still DARK); FIRING +
+anti-collision + non-vacuity pins; RED-first. FLIP = re-run the mig-100 census on the WIDENED predicate + a
+WARM-DB live-confirm.
+**DESIGNED + Oracle-signed, NOT built:** (a) **format-flag high-variance suppression** (`6a9bc26`,
+SIGN-OFF-W/COND) — the "format differs from the usual"/"manually mapped value differs" flag is noise on
+make/model/serial; ONE choke point `format_anomaly_checker.check_value` shape leg, relax when
+`_has_no_usual_format` (≥3 length-aware families, ≥8 confirms, no ≥50%), keep a near-miss slip-catch; Oracle
+C1 per-rung (mapper DERIVED rungs stay review-bound), C2 fail-safe, C3 preserve trim, DARK
+`FORMAT_VARIANCE_RELAX`. **RECOMMENDED next build.** (b) **Fix A** read-layer edge-grow (`1972792`,
+flip-deferred) — doesn't heal the exhibit (B does).
+**⏭ Next:** build the format-flag arc · owner `SELECT type FROM fields WHERE key='model'` (settles Fix A) ·
+owner Fix-B flip gate (WARM DB). **GIT NEAR-MISS this session** (caught+fixed): a stray stash pop staged a
+reversion of the pushed `keyword.py` raw_value change — re-check `git status` after any RED-first stash.
+**Prior (still-open specs live in these):** 09-02 EVENING `HANDOVER_2026-09-02_EVENING.md` (watch/import
+unification steps 1+2 `3953b8f`/`898c70e`; `watch_separate_enabled` soak gate `696b4bf`; File-up-to-N retries
+`566ec1e` — owner-gated tails: watch M=0 + OMP conc==1, run the soak) · 09-02 DAY `HANDOVER_2026-09-02_DAY.md`
+(unification SPEC; `bac4e90`/`85ca2db`/`ddb7b53`; the anchor-wins EXHIBIT).
 ## Prior sessions — 2026-08-15 → 2026-09-02 DAY (collapsed 2026-09-01 EVENING + 2026-09-02 EVENING; every block is preserved VERBATIM in `docs/session-log.md` under "Archived from CLAUDE.md at the 2026-09-01 EVENING compaction", in its named `HANDOVER_*.md`, and as `git show f51b721:Docusnap/CLAUDE.md`)
 > Grep the matching `HANDOVER_*.md` (or `docs/session-log.md`) before re-touching anything a recent
 > session built. The durable per-feature facts (commits, kill switches, gates, follow-ups) live in

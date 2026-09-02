@@ -240,6 +240,16 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-09-02 · raw_value credit-sign census (owner ran) — PASS on safety.** Harness
+  `TESTING/_measure/credit_sign_census/` (A/B via a single-file checkout of `keyword.py` at `32ae95b^`).
+  Ran 487 money-type corpus docs on `C:\temp\docusnap.db` (arm 2 armed — `credit_sign_coherence`/
+  `money_sign_parens`/`money_sign_cr` all `true`, mig 104). Result: **0 committed-value diffs (additive
+  confirmed) + 0 new arm-2 flags** → no false positives on the real corpus; the corpus carries no
+  bracketed/CR/trailing-minus total read via keyword (no positive control here — efficacy is proven by the
+  unit/integration pin `test_keyword_raw_value_credit_sign.py`, all 3 notations fire). Caveat: it was the
+  COLD reset test DB (4 confirmed); arm 2 is learning-independent so the false-flag result stands, but a
+  WARM real-DB run is the fully representative check. **Repeat if:** run on a `db.backup()` of the WARM live
+  DB for full representativeness, OR the money reader / `_NEG_MARKERS` change.
 - **2026-09-02 · Toggle hygiene sweep — audited, NO switch qualifies for removal/DO-NOT-USE; added the
   gate-integrity PIN instead.** Verdict per the owner rule ([[feedback_bad_toggle_hygiene]]): a DO-NOT-USE
   move needs PROVEN harm (failed gate / wrong-value exhibit / Oracle SEND BACK), not a seam/install reason.
