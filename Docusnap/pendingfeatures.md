@@ -91,6 +91,18 @@ beats a corroborated correct value" theme as the anchor-drift exhibit above; dis
 unconditional-mapping-authority, not anchor DRIFT).
 
 ## 2026-09-02 — SUPPRESS the "format differs from the usual" flag on HIGH-VARIANCE fields (owner ask)
+**✅ BUILT DARK 2026-09-02 NIGHT (`adaa531`, flag `FORMAT_VARIANCE_RELAX`, mig 105 seeds OFF).** Per-caller
+gate at the engine TEXT-branch write (Oracle C1 — `check_value` byte-identical, mapper DERIVED rungs keep
+their cap; structured/ref branch untouched, Q2). Two PURE predicates in `format_anomaly_checker`:
+`_has_no_usual_format` (≥3 length-aware shape families via `shape_families`, ≥8 confirms, no ≥50% dominant;
+fail-toward-flagging) + `near_miss_confirmed` (same-length single letter↔digit slip off a confirmed value;
+digit↔digit/letter↔letter excluded). `value_counts` threaded onto the fmt entry. Pin
+`test_format_anomaly_variance.py` (29, RED-first). Settings toggle SFDEV-gated + bridge + wiring row.
+**REMAINING = the FLIP GATE (owner): the 605-corpus OFF-vs-ON run** (`RR_APP_ENV=1`, `OCR_RENDER_DPI=200`,
+dedup `RR_IDS`, M=0 + zero accuracy drop; NON-VACUITY: make/model/serial flags DISAPPEAR + a real
+invoice_number flag SURVIVES + a single-digit slip STILL flags) on a WARM DB. Design below (as built).
+
+
 The format-anomaly / learned-shape flag ("format differs from the usual — please verify" · the taught twin
 "manually mapped value differs from the usual format") is CORRECT for fields with a real dominant format
 (account/invoice/PO numbers) but pure NOISE for fields whose confirmed history varies WILDLY — there is no
