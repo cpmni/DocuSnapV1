@@ -1380,6 +1380,44 @@ function setWatchCardProcessing() {
   body.innerHTML = `Processing…<br><span class="wf-path">${n} document${n === 1 ? '' : 's'} done this run</span>`;
 }
 
+// LIVE watch status (2026-09-02, owner-reported "the bottom message looks stagnant"): the status line
+// used to react ONLY to file_begin/file_done, so a single large scan (a 34-page doc takes minutes) sat
+// frozen on "processing…" the whole time. Track the in-flight file + a 1s ticker so the line MOVES —
+// elapsed time, page count (from the file_pages emit), and a friendly current step (from Python's stage
+// logs). Purely a display improvement; drives no processing.
+let _watchFileName = null, _watchFileStart = 0, _watchFilePages = 0, _watchFileStep = '', _watchTicker = null;
+function _watchFriendlyStep(text) {
+  const t = String(text || '').toLowerCase();
+  if (/page[- ]?rotat|straighten|deskew|render/.test(t)) return 'preparing the pages…';
+  if (/\bocr\b|reading|read page/.test(t))               return 'reading the pages…';
+  if (/barcode/.test(t))                                  return 'checking barcodes…';
+  if (/document type|detected type|classif/.test(t))      return 'identifying the document…';
+  if (/stage 1|keyword|found\b/.test(t))                  return 'finding the details…';
+  if (/stage 4|validat|checking/.test(t))                 return 'checking the details…';
+  return _watchFileStep || 'processing…';   // keep the last known step for noise lines
+}
+function _fmtElapsed(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+}
+function _renderWatchStatus() {
+  if (running || !_watchFileName || !logStatus) return;   // a manual run owns the strip
+  const pages = _watchFilePages > 1 ? ` · ${_watchFilePages} pages` : '';
+  const elapsed = ` · ${_fmtElapsed(Date.now() - _watchFileStart)}`;
+  const step = _watchFileStep ? ` · ${_watchFileStep}` : '';
+  logStatus.textContent = `Watch folder — reading “${_watchFileName}”${pages}${elapsed}${step}`;
+}
+function _startWatchTicker(name) {
+  _watchFileName = name; _watchFileStart = Date.now(); _watchFilePages = 0; _watchFileStep = '';
+  clearInterval(_watchTicker);
+  _watchTicker = setInterval(_renderWatchStatus, 1000);   // the line MOVES every second, even mid-OCR
+  _renderWatchStatus();
+}
+function _stopWatchTicker() {
+  clearInterval(_watchTicker); _watchTicker = null; _watchFileName = null;
+}
+
 function handleWatchProgress(msg) {
   _lastWatchActivity = Date.now();   // gates the dashboard's heavy refresh while a watch import runs
   // ALWAYS count watch docs in the cumulative Session Stats — even while a manual
@@ -1416,16 +1454,21 @@ function handleWatchProgress(msg) {
   logPanel.classList.add('visible');
   switch (msg.type) {
     case 'file_begin':
-      logStatus.textContent = 'Watch folder — processing…';
+      _startWatchTicker(msg.filename);   // live: elapsed + pages + step, refreshed every second
       appendLog(`[Watch] → ${msg.filename}`);
       break;
+    case 'file_pages':
+      _watchFilePages = msg.pages || 0;  // now the status can say "34 pages" instead of a frozen "processing…"
+      _renderWatchStatus();
+      break;
     case 'file_done':
+      _stopWatchTicker();
       if (msg.success) appendLog(`[Watch]   ✓ ${msg.original_filename || ''} → ${msg.new_filename || 'filed'}`, 'ok');
       else             appendLog(`[Watch]   ✗ ${msg.original_filename || ''}: ${msg.error || 'error'}`, 'err');
       logStatus.textContent = 'Watch folder — idle';
       break;
     case 'log':
-      if (msg.text) appendLog(`[Watch] ${msg.text}`, msg.level || '');
+      if (msg.text) { _watchFileStep = _watchFriendlyStep(msg.text); _renderWatchStatus(); appendLog(`[Watch] ${msg.text}`, msg.level || ''); }
       break;
     // per-file 'start' (total:1) is noise for a continuous watcher — ignored
   }
