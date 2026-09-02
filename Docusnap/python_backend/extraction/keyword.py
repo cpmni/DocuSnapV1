@@ -1493,6 +1493,7 @@ def extract_fields(ocr_text: str, field_keys: list[str],
                 continue
 
             value, direction = found
+            _raw_matched = value            # pre-clean matched text — arms the credit-sign arm 2 (below)
             # The whole per-value pipeline lives in _post_label_value (shared with the LIST
             # collect path, 2026-08-11) — strip/currency/validate/clean/digit-gate, unchanged.
             value = _post_label_value(value, field_key, fp, role_caption, pk)
@@ -1509,7 +1510,7 @@ def extract_fields(ocr_text: str, field_keys: list[str],
                 # auto-file floor — one human confirm converts it to learning.
                 conf = min(conf, 85)
 
-            results[field_key] = {
+            _row = {
                 "value":      value,
                 "confidence": min(95, conf),
                 # Admin label override (Settings → Advanced) gets distinct
@@ -1518,6 +1519,18 @@ def extract_fields(ocr_text: str, field_keys: list[str],
                 "method":     "keyword_override" if is_override else "keyword",
                 "label":      label_text,
             }
+            # CREDIT_SIGN_COHERENCE arm 2 (validator.credit_sign_note) reads the total field's
+            # raw_value to catch a negative marker the money cleaner dropped ('(160.32)', '160.32-',
+            # 'CR', '£-160.32'). Keyword money reads never set raw_value, so arm 2 was DEAD on them —
+            # a mis-typed credit note whose notation the read layer does not parse got no sign note.
+            # Preserve the pre-clean matched text on a currency read to arm it. Gated behind the same
+            # flag so OFF stays byte-identical (no new key on any field). This only reaches the markers
+            # that survive the label search into _raw_matched (reggie/Oracle: shrinks — not closes —
+            # the uncaught class to whatever the search already trimmed).
+            if (fp.get("validation") == 'currency' and _raw_matched is not None
+                    and os.environ.get('CREDIT_SIGN_COHERENCE', '0') != '0'):
+                _row["raw_value"] = _raw_matched
+            results[field_key] = _row
             break  # found for this field, move to next
 
     return _drop_generic_caption_steals(results)

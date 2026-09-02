@@ -27,6 +27,20 @@ scratch/sandbox, implementing a Chris card); **anything dangerous goes to the ag
 and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
+- **2026-09-02 · [census, real corpus] `raw_value` on keyword money reads is LIVE, not DARK** — the
+  keyword mint now preserves the pre-clean matched text as `raw_value` on a currency read (gated behind
+  `CREDIT_SIGN_COHERENCE`), arming validator arm 2 on keyword totals (was dead — keyword reads set no
+  `raw_value`). But `CREDIT_SIGN_COHERENCE` is FORCED ON by `money_sign_parens`/`money_sign_cr` (mig-98
+  default-ON, handler.js:486), so this is a LIVE detection change: keyword totals whose raw text carries
+  an unparsed negative marker (bare trailing minus `160.32-`, or a parens/CR the sign-capture declined)
+  now draw arm 2's sign note → review-bound, auto-file blocked. VALUES never change (purely additive; the
+  fix mirrors what anchor/snap reads already do). Unit+integration pinned green
+  (`test_keyword_raw_value_credit_sign.py`; OFF byte-identical). **The owed gate:** census the real corpus
+  for NEW false arm-2 flags — how many CORRECT totals carry an incidental `_NEG_MARKERS` hit in their
+  matched text (a table rule / dot-leader past the SEAM3 guard, a column-bled 'CR')? Run OFF vs ON on the
+  `db.backup()` copy (`RR_APP_ENV=1`, `OCR_RENDER_DPI=200`, dedup `RR_IDS`): assert 0 value diffs, enumerate
+  the new sign-notes, human-eyeball each as a TRUE mis-typed-credit catch vs a false flag. Repeat if: the
+  money reader or `_NEG_MARKERS` change.
 - **2026-09-02 · [FLIP GATE, owner-machine] `watch_separate_enabled` SOAK** — the higher-value watch/manual
   parity win (a bundled multi-doc PDF splits on manual but imports WHOLE on watch until this flips). Built DARK
   `29adce2`, unit-pinned (`test_watch_separation.js` 17: re-import guard + no-loss + held-set = segments). The
