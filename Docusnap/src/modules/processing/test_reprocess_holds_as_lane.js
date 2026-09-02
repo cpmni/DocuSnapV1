@@ -17,6 +17,8 @@
  *   §4 the handler wiring (source contract): the switch (default OFF, env 1/0), onFileDone → onDocMerged
  *      via 'manual', release BEFORE `_currentBatchProcs = []`, the single-doc call via 'manual-single',
  *      the Settings toggle, the dialog copy
+ *   §5 one confirm-once sentence per field: a manual reprocess of a straighten-CHANGED field never stacks
+ *      a second "— confirm once." on top of the engine's straighten note (owner 2026-08-30 exhibit)
  *
  *   ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron src/modules/processing/test_reprocess_holds_as_lane.js
  */
@@ -146,6 +148,28 @@ const rend = read(path.join(ROOT, 'src', 'windows', 'review', 'renderer.js'));
 check('the Reprocess dialog defines "clean" when the switch is on (C6)', /A value that reads differently from before is kept for you to check — the previous value is one click away\./.test(rend) && /getSetting\('reprocess_holds_as_lane'\)/.test(rend));
 const ql = read(path.join(__dirname, 'quietLane.js'));
 check('the lane delegates to the SAME module (one road)', /require\('\.\/rereadHolds'\)\.create\(/.test(ql) && !/function _holdChangedReads\(db, docId, existing\) \{/.test(ql));
+
+console.log('\n§5 one confirm-once sentence per field (owner 2026-08-30: a straighten note + a manual via note stacked TWO "— confirm once.")');
+// invoice_date BLANK before → a straighten reprocess FIRST-FILLS it, and the engine already wrote its own
+// "— confirm once." note on the fresh row (as _DESKEW_CHANGED_NOTE does, incl. the was='' fill direction).
+// The manual via's first-fill note must NOT stack a second confirm-once on top.
+const STRAIGHTEN = "Read differently after straightening — was '', now '10-02-2025' — confirm once.";
+const dD = mk('Delta Straighten Ltd', [{ key: 'supplier_name', value: 'Delta Straighten Ltd' }, { key: 'invoice_number', value: 'DS-9' }]);   // date blank
+existing = snapshot(dD);
+db.prepare('DELETE FROM extractions WHERE document_id = ?').run(dD);
+for (const r2 of [{ key: 'supplier_name', value: 'Delta Straighten Ltd' }, { key: 'invoice_number', value: 'DS-9' }, { key: 'invoice_date', value: '10-02-2025', note: STRAIGHTEN }])
+  db.prepare('INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method, validation_note) VALUES (?, ?, ?, ?, 94, ?, ?)').run(dD, r2.key, r2.value, r2.value, 'template_mapping', r2.note || null);
+holds.onDocMerged(db, holds.newBatch(), { docId: dD, existing, via: 'manual-single' });
+const noteD = ext(dD, 'invoice_date').validation_note || '';
+check('the engine straighten note survives (the field is still held)', noteD.includes(STRAIGHTEN));
+check('the manual via note is NOT stacked on top (no "Read again at your request")', !/Read again at your request/.test(noteD));
+check('exactly ONE "— confirm once." sentence on the field', (noteD.match(/— confirm once\./g) || []).length === 1);
+// control: a first-fill with NO pre-existing note still gets the via's single confirm-once note
+const dC = mk('Delta Straighten Ltd', [{ key: 'supplier_name', value: 'Delta Straighten Ltd' }, { key: 'invoice_number', value: 'DS-10' }]);
+existing = snapshot(dC); setRows(dC, base('Delta Straighten Ltd', 'DS-10', '11-02-2025'));
+holds.onDocMerged(db, holds.newBatch(), { docId: dC, existing, via: 'manual-single' });
+const noteC = ext(dC, 'invoice_date').validation_note || '';
+check('control: a first-fill with no prior note gets exactly one confirm-once (the via note)', /Read again at your request — confirm once\./.test(noteC) && (noteC.match(/— confirm once\./g) || []).length === 1);
 
 console.log(fails ? `\nFAILED: ${fails}` : '\nALL PASS');
 process.exit(fails ? 1 : 0);

@@ -37,6 +37,9 @@ const NOTES = {
 };
 const YIELD_RE = /^Kept the read value .* — (the taught|a taught) /;
 const S3C5_RE = /Read differently after learning/;
+// The trailing sentence shared by every member of the "— confirm once." lane-hold family
+// (NOTES.*, RELIABILITY_NOTE, and the engine's straighten note _DESKEW_CHANGED_NOTE).
+const CONFIRM_ONCE = '— confirm once.';
 
 function _norm(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, ' ').toLowerCase(); }
 
@@ -129,7 +132,14 @@ function create(deps = {}) {
       if (ok) continue;                                          // ≥2 page families — the fill stands
       const note = noteText || NOTES.layout;
       const prior = String(after[key].validation_note || '').trim();
-      if (!prior.includes(note)) upd.run(prior ? `${prior} ${note}` : note, docId, key);
+      // One confirm-once sentence per field (owner 2026-08-30 exhibit: a manual reprocess of a
+      // straighten-CHANGED field carried TWO stacked "— confirm once." sentences — the engine's
+      // straighten note plus this via note). If the field already carries a member of the
+      // "— confirm once." family it is already held; a second confirm-once note only adds noise.
+      // The hold still stands (held.push below is unchanged; the reliability path stays permanently
+      // held by the pre-existing note, which is correct for a straighten-changed field).
+      const alreadyHeldOnce = note.includes(CONFIRM_ONCE) && prior.includes(CONFIRM_ONCE);
+      if (!prior.includes(note) && !alreadyHeldOnce) upd.run(prior ? `${prior} ${note}` : note, docId, key);
       held.push({ key, now });
     }
     return held;
