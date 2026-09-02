@@ -7518,20 +7518,32 @@ document.getElementById('sweep-consent-bar')?.addEventListener('click', async (e
       .map(c => ({ docId: c.docId, fingerprint: c.fingerprint }));
     if (!accepts.length) return;
     s.phase = 'filing'; renderSweepConsentBar();
+    // The offer shouldn't dead-end on a TRANSIENT refusal (2026-09-02, owner-reported: hitting File-All
+    // while a quiet re-read was still finishing showed "Couldn't file … try again" — the server had
+    // refused 'busy'/'quiet-lane-active', which clears on its own within seconds as the quiet lane drains
+    // chunk-by-chunk). Rather than make the user re-click, retry briefly in place: each accept is a cheap
+    // server-guarded no-op until the scope is idle (no side effects on a transient refusal), so polling is
+    // harmless. Bounded (~6s) so a genuinely stuck state still falls through to the honest message.
+    const _isTransient = (r) => { const x = String(r || ''); return x === 'busy' || x === 'quiet-lane-active' || x === 'not-ready'; };
+    const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
     let res = null;
-    try { res = await window.docusnap.sweepScopeAccept?.(s.supplier, s.typeSlug, accepts, [...s.unticked]); }
-    catch (e) { res = { ok: false, reason: 'error', error: e && e.message }; }
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (_sweepState !== s || s.phase !== 'filing') return;   // dismissed / superseded mid-wait — abandon quietly
+      try { res = await window.docusnap.sweepScopeAccept?.(s.supplier, s.typeSlug, accepts, [...s.unticked]); }
+      catch (e) { res = { ok: false, reason: 'error', error: e && e.message }; }
+      if ((res && res.ok) || !_isTransient(res && res.reason)) break;   // done, or a hard refusal — stop retrying
+      try { console.warn('[sweep-accept] still finishing, retrying:', String((res && res.reason) || '')); } catch {}
+      await _sleep(1200);
+    }
     if (!res || !res.ok) {
+      if (_sweepState !== s) return;   // bar gone while we waited
       s.phase = 'offer'; renderSweepConsentBar();
-      // Say WHY, not a generic scare (2026-09-02, owner-reported: hitting File-All while a re-read was
-      // still finishing showed "Couldn't file … try again" — the server had refused with reason 'busy'/
-      // 'quiet-lane-active', a TRANSIENT state that clears on its own; the old copy read as a real
-      // failure). A transient refusal gets an honest "still finishing — try again in a moment"; anything
-      // else keeps the generic message. Log the reason so a future report carries it.
+      // Say WHY, not a generic scare. A transient refusal that outlasted the retries gets an honest
+      // "still finishing — try again in a moment"; anything else keeps the generic message. Log the
+      // reason so a future report carries it.
       const _r = String((res && res.reason) || '');
       try { console.warn('[sweep-accept] refused:', _r, (res && res.error) || ''); } catch {}
-      const _transient = _r === 'busy' || _r === 'quiet-lane-active' || _r === 'not-ready';
-      showToast(_transient
+      showToast(_isTransient(_r)
         ? 'Scan Finder is still finishing reading your documents — give it a moment, then try again.'
         : (_r === 'license' ? 'Filing is unavailable — check your licence.'
         : 'Couldn\'t file those documents — please try again.'), 'warn');
