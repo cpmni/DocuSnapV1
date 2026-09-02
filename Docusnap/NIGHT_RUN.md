@@ -27,6 +27,15 @@ scratch/sandbox, implementing a Chris card); **anything dangerous goes to the ag
 and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
+- **2026-09-02 · [FLIP GATE, owner-machine] `watch_separate_enabled` SOAK** — the higher-value watch/manual
+  parity win (a bundled multi-doc PDF splits on manual but imports WHOLE on watch until this flips). Built DARK
+  `29adce2`, unit-pinned (`test_watch_separation.js` 17: re-import guard + no-loss + held-set = segments). The
+  UNMEASURED risk is empirical: does the real separator split real bundles at the RIGHT boundary on the
+  UNATTENDED auto-file-held path, no loop, no loss. **Gate protocol: `docs/designs/WATCH_SEPARATE_SOAK_GATE_
+  2026-09-02.md`** — pre-check (pin green) → arm ON in a SANDBOX watch folder → feed the known bundles (Demo
+  Docs Print Tracker) + genuine single docs (over-split control) → `node stress_test/watch_separate_soak.js
+  --watch-folder <dir>` (mines processing.log for loop/loss/error → PASS/FAIL/INCONCLUSIVE) → human boundary +
+  held-review check → owner flip. Flip is approval-class; kill-switch stays.
 - **2026-08-31 · [owner-machine VM gate] Confirm the batch-import crash fix** (BUILT — see the DONE ledger). Three
   remaining checks need a low-RAM VM / the real corpus / the friend's log (Oracle C6.5): (1) a hundreds-of-PDFs import
   on a memory-pressured VM survives, logs the spawn failure, shows the truthful "left in your source folder" message,

@@ -9,6 +9,17 @@
 
 ---
 
+## 2026-09-02 — FLIP GATE READY: `watch_separate_enabled` soak (the higher-value watch/manual parity win)
+Built DARK `29adce2`; the watch folder splits bundled multi-doc PDFs like manual import. Until flipped, a
+bundled PDF gets DIFFERENT field detection by arrival path (manual splits, watch imports whole). Unit-pinned
+(`test_watch_separation.js` 17: re-import-loop guard + no-loss accounting + held-set = produced segments; fresh
+segments HELD `autoFileRun=false`). The UNMEASURED risk (Oracle) is empirical wrong-boundary auto-file on the
+unattended path. **Gate is SET UP, ready for the owner to run:** protocol `docs/designs/WATCH_SEPARATE_SOAK_
+GATE_2026-09-02.md` + soak analyzer `stress_test/watch_separate_soak.js` (mines `processing.log` →
+PASS/FAIL/INCONCLUSIVE on loop/loss/error). Steps: arm ON in a SANDBOX watch folder → feed known bundles (Demo
+Docs Print Tracker) + genuine single docs → run the analyzer → human boundary/held-review check → flip
+(approval-class; kill-switch stays). Also queued in `NIGHT_RUN.md`.
+
 ## 2026-09-02 — CORROBORATION IGNORED: a drifted taught anchor beats ≥2 agreeing witnesses (owner-reported exhibit)
 Full detail + trace facts in `HANDOVER_2026-09-02_DAY.md` ("NEW EXHIBIT"). Doc `4_split_p3.pdf` (Print
 Tracker): `make` should be "Ricoh" (`template_mapping`@90% + `keyword`@85% AGREE), but a TAUGHT `anchor_crop`

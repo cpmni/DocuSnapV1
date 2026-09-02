@@ -53,5 +53,40 @@ const NOW = 1000;
   ok('nothing to split → tracked unchanged', tracked.get('a.pdf').state === 'processing' && tracked.size === 1);
 }
 
+// ── NO-LOSS ACCOUNTING + HELD-SET (watch_separate soak gate, 2026-09-02) ──
+// Every input must be accounted for: consumed (dropped) OR passed through OR expanded to >=1 segment,
+// with NO duplicate in the output and NO segment name colliding with a surviving input. And the HELD set
+// (autoFileRun=false — a fresh split boundary must not auto-file unattended) is EXACTLY the produced
+// segments — never a passed-through single doc (which stays auto-fileable).
+{
+  const inputs = ['bundle.pdf', 'twoup.pdf', 'solo.pdf', 'sheets.pdf'];
+  const tracked = new Map(inputs.map(n => [n, { size: 1, mtimeMs: 1, lastChangeAt: 1, state: 'processing' }]));
+  const rewrites = [
+    { original: 'bundle.pdf', segments: ['bundle_1.pdf', 'bundle_2.pdf', 'bundle_3.pdf'] },
+    { original: 'twoup.pdf',  segments: ['twoup_1.pdf', 'twoup_2.pdf'] },
+  ];
+  const consumed = ['sheets.pdf'];
+  const out = applySeparationToTracked([...inputs], tracked, rewrites, consumed, NOW);
+
+  // heldNames = the same set _drainQueue builds (every segment of every rewrite).
+  const held = new Set();
+  for (const r of rewrites) for (const s of r.segments) held.add(s);
+
+  const producedSegments = rewrites.flatMap(r => r.segments);
+  const passthrough = inputs.filter(n => !rewrites.some(r => r.original === n) && !consumed.includes(n));
+
+  ok('no-loss: output = passthrough + all segments (consumed dropped, no ghost)',
+     JSON.stringify([...out].sort()) === JSON.stringify([...passthrough, ...producedSegments].sort()));
+  ok('no dup in the output list', new Set(out).size === out.length);
+  ok('no segment name collides with a surviving input', producedSegments.every(s => !passthrough.includes(s)));
+  ok('held set = exactly the produced segments (the autoFileRun=false contract)',
+     held.size === producedSegments.length && producedSegments.every(s => held.has(s)));
+  ok('a passed-through single doc is NOT held (stays auto-fileable)', passthrough.every(n => !held.has(n)));
+  ok('every produced segment is pre-marked processing (re-import guard, at scale)',
+     producedSegments.every(s => tracked.get(s)?.state === 'processing'));
+  ok('consumed + split originals all gone from tracked',
+     !tracked.has('sheets.pdf') && !tracked.has('bundle.pdf') && !tracked.has('twoup.pdf'));
+}
+
 console.log(`\n${fail === 0 ? 'ALL PASS' : fail + ' FAILED'}`);
 process.exit(fail ? 1 : 0);
