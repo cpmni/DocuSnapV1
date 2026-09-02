@@ -117,5 +117,26 @@ console.log('\n§D trace/slice-dir contract — --slice-dir only when the caller
   check('wantTrace + no sliceDir (mkdir failed): --trace but NO --slice-dir', t2.scriptArgs.includes('--trace') && !t2.scriptArgs.includes('--slice-dir'));
 }
 
+console.log('\n§E CALL-SITE parity (CURRENT state) — the real threadCaps each caller ships today');
+{
+  // Manual single-worker path: importThreadCap = requestedConcurrency<=1 ? 0 : _reprocessThreadCap(db).
+  // At concurrency==1 that is 0 (uncapped). Watch always passes _reprocessThreadCap(db) (>=1). So the ONE
+  // remaining real divergence is OMP_THREAD_LIMIT at conc==1 — deliberately DEFERRED to the owner-gated
+  // step-c convergence (it changes live watch reads; needs a watch-conc==1 realdoc M=0 arm). This section
+  // PINS that the ONLY difference is that single env key, so a future dev sees exactly what step c closes
+  // and the day it lands this flips to "env equal EXACTLY".
+  learning.setSetting(db, 'processing_concurrency', '1');
+  const importThreadCap = 0;                                   // conc==1 rule
+  const watchThreadCap = H._reprocessThreadCap(db);            // watch's current always-cap (>=1)
+  const m = H.buildWorkerCommand(db, { ...baseOpts, threadCap: importThreadCap, pyFolder: 'C:/Import',   filesFile: null, arrival: 'manual' });
+  const w = H.buildWorkerCommand(db, { ...baseOpts, threadCap: watchThreadCap,  pyFolder: 'C:/WatchTmp', filesFile: null, arrival: 'watch'  });
+  check('watch threadCap is >=1 (never 0 → OMP always set on watch today)', watchThreadCap >= 1);
+  check('scriptArgs still equal EXCEPT --folder', eqArr(stripFolder(m.scriptArgs), stripFolder(w.scriptArgs)));
+  const diffKeys = [...new Set([...Object.keys(m.env), ...Object.keys(w.env)])].filter(k => m.env[k] !== w.env[k]);
+  check('the ONLY env divergence is OMP_THREAD_LIMIT (the deferred conc==1 convergence — step c)',
+        diffKeys.length === 1 && diffKeys[0] === 'OMP_THREAD_LIMIT');
+  check('manual conc==1 leaves OMP UNSET; watch sets it', !('OMP_THREAD_LIMIT' in m.env) && w.env.OMP_THREAD_LIMIT === String(watchThreadCap));
+}
+
 console.log(fails ? `\nFAIL — ${fails} check(s) failed` : '\nPASS — all parity checks green');
 process.exit(fails ? 1 : 0);

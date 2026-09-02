@@ -421,21 +421,26 @@ async function _processBatch(db, filenames, heldNames = null) {
 
   await new Promise((resolve) => {
     const py = pythonExe();
-    const scriptArgs = [
-      '--folder',    tmpDir,
-      '--tesseract', tesseractPath(),
-      '--mode',      procMode,
-      ...trainingArgs,
-    ];
-    // AUTO_TITLE env rides the watch batch too (slice 4 — the engine seam still only
-    // fires for detection-None docs, so typed watch imports are untouched). The crop
-    // right-grow opt-in rides here too (both default OFF → byte-identical env).
+    // Worker command from the SHARED buildWorkerCommand (watch/import unification, 2026-09-02) so a doc
+    // reads IDENTICALLY whether it arrived via the watch folder or a manual import — the whole point of the
+    // arc. Byte-identical to the prior inline construction (proven by stress_test/import_watch_parity.js
+    // Layer A: given equal inputs the two arrivals' commands differ only in --folder). The env still rides
+    // the same four opt-in blocks (AUTO_TITLE, the SAME OCR DPI as import, crop right-grow, reconcile).
+    //   arrival:'watch' fences off deskew — the builder NEVER emits --deskew-pages on the unattended,
+    //     auto-filing watch path, at any deskew_on_import value (Oracle §4 BLOCKING seam).
+    //   filesFile null — watch runs ONE worker over the staged temp dir (no shard enumeration).
+    //   wantTrace false — no dev trace/slice stream on the headless path.
+    //   threadCap stays watch's OWN _reprocessThreadCap (>=1 always) — BYTE-IDENTICAL to before. Converging
+    //     it onto import's rule (unset/uncapped at concurrency==1) is a SEPARATE owner-gated commit: it
+    //     changes live watch reads (Tesseract LSTM thread nondeterminism) and needs a watch-conc==1 realdoc
+    //     M=0 arm. Do NOT fold it in here.
+    const { scriptArgs, env } = processing.buildWorkerCommand(db, {
+      pyFolder: tmpDir, tesseract: tesseractPath(), filesFile: null, mode: procMode,
+      threadCap: processing._reprocessThreadCap(db), wantTrace: false, sliceDir: null,
+      trainingArgs, arrival: 'watch',
+    });
     const proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
-      { windowsHide: true, env: { ...process.env,
-        ...processing._autoTitleEnv(db),
-        ...processing._ocrDpiEnv(db),                              // read at the SAME DPI as manual import (parity)
-        ...processing._anchorCropEnv(db), ...processing._reconcileEnv(db),
-        OMP_THREAD_LIMIT: String(processing._reprocessThreadCap(db)) } });  // cap Tesseract threads per shard (no thrash)
+      { windowsHide: true, env });
     _liveProcs.add(proc);   // track for quit-time kill (untracked on close below)
     // Async spawn-failure resilience (the 08-31 crash class): an EAGAIN/ENOMEM/EMFILE failure fires
     // 'error' asynchronously — with no handler it re-raises as an uncaughtException and the app exits
