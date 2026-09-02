@@ -86,9 +86,11 @@ check("guards: template_mapping incumbent + NOT a date key",
       '(existing.get("method") or "").startswith("template_mapping")' in _slice
       and "key not in date_field_keys" in _slice)
 check("guards: REF-FAMILY (_is_ref_field or _ref) + NOT name-like + NOT a currency role",
-      '(_is_ref_field(key) or key.endswith("_ref"))' in _slice
+      '_is_ref_field(key) or key.endswith("_ref")' in _slice
       and "not value_quality.is_name_like_field(key)" in _slice
       and "not _fragment_yield_role_is_currency(key, _kw_types)" in _slice)
+check("guards: the code-shaped OR-disjunct wires _code_shaped_containment_ok into the scope gate (Oracle B-C1)",
+      "or self._code_shaped_containment_ok(key, existing.get(\"value\"), data.get(\"value\"), supplier_name, document_slug)" in _slice)
 check("guards: challenger is keyword/keyword_override, has a value, conf >= _FRAGMENT_YIELD_KW_FLOOR",
       'data.get("method") in ("keyword", "keyword_override")' in _slice
       and "_FRAGMENT_YIELD_KW_FLOOR" in _slice)
@@ -103,6 +105,50 @@ check("note is NEUTRAL (no causal 'cut short'): names BOTH values, 'Kept the lon
       and "Kept the longer" in _slice and "cut short" not in _slice)
 check("_FRAGMENT_YIELD_KW_FLOOR == 85 and _CONFLICT_CAP == 88 (review-bound, below auto-file)",
       E._FRAGMENT_YIELD_KW_FLOOR == 85 and E._CONFLICT_CAP == 88)
+
+# ── Oracle 2026-09-02 revised B-C1: code-shaped, high-variance-safe admission (KNOWN-SET anchor) ──
+CS = E._value_is_code_shaped
+check("code-shaped: 'Ecosys PA2600cwx' (mixed token, internal space) qualifies", CS("Ecosys PA2600cwx") is True)
+check("code-shaped: 'CAD832694' qualifies (existing ref exhibit, mixed)", CS("CAD832694") is True)
+check("code-shaped REJECTS prose 'Widget Assembly' (no mixed token)", CS("Widget Assembly") is False)
+check("code-shaped REJECTS word+bare-number 'Order 5'", CS("Order 5") is False)
+check("code-shaped REJECTS pure-number '2500'", CS("2500") is False)
+check("code-shaped REJECTS empty/None", CS("") is False and CS(None) is False)
+
+# FIRING test (NON-VACUITY — Oracle: the 605 corpus is DOUBLY blind here: it never fires Stage-0.5
+# template_mapping AND carries no high-variance model GT, so this is the ONLY automated gate that can
+# fail on the owner's bug). Drives the REAL decision method through a set_formats-populated engine on
+# the owner's LITERAL spaced value 'Ecosys PA2600cwx'.
+eng = E.ExtractionEngine()
+eng.set_formats([{
+    'field_key': 'model', 'supplier_name': 'Print Tracker', 'document_type': 'print_tracker',
+    'value_counts': {'Ecosys PA2600cwx': 3, 'TASKalfa 3252ci': 2, 'MP C4504ex': 1},   # HIGH-VARIANCE: no dominant
+    'confirmed_count': 6,
+}])
+ok = eng._code_shaped_containment_ok('model', 'Ecosys PA2600cw)', 'Ecosys PA2600cwx', 'Print Tracker', 'print_tracker')
+check("FIRING: the exhibit fires — clip incumbent 'Ecosys PA2600cw)' (NOT known) + known-good challenger "
+      "'Ecosys PA2600cwx' on a HIGH-VARIANCE scope with NO dominant (dominant anchor would be inert)", ok is True)
+check("FIRING: _fragment_contained agrees on the exhibit (the whole B decision holds end-to-end)",
+      ok and E._fragment_contained('Ecosys PA2600cw)', 'Ecosys PA2600cwx') is True)
+import extraction.ocr_corrector as _OC   # noqa: E402
+check("NON-VACUITY CONTRAST: the OLD dominant anchor is INERT on this high-variance scope (why Oracle "
+      "ruled KNOWN-SET, not dominant) — lookup_dominant returns None here",
+      _OC.lookup_dominant(eng.dominant_index, 'model', 'Print Tracker', 'print_tracker') is None)
+
+# ANTI-COLLISION PIN (Oracle): a scope that confirmed BOTH the shorter and the longer value.
+eng2 = E.ExtractionEngine()
+eng2.set_formats([{
+    'field_key': 'model', 'supplier_name': 'Acme', 'document_type': 'acme_type',
+    'value_counts': {'PA2600cw': 4, 'PA2600cwx': 3}, 'confirmed_count': 7,
+}])
+check("ANTI-COLLISION: incumbent == a KNOWN shorter value ('PA2600cw') -> B STANDS DOWN (mapping kept)",
+      eng2._code_shaped_containment_ok('model', 'PA2600cw', 'PA2600cwx', 'Acme', 'acme_type') is False)
+check("ANTI-COLLISION: same scope, incumbent is the NON-known clip ('PA2600c') -> B FIRES",
+      eng2._code_shaped_containment_ok('model', 'PA2600c', 'PA2600cwx', 'Acme', 'acme_type') is True)
+check("KNOWN-SET: an UNKNOWN challenger (never confirmed) -> B stands down (not a random longer code)",
+      eng2._code_shaped_containment_ok('model', 'PA2600c', 'PA2600zzz9', 'Acme', 'acme_type') is False)
+check("SCOPE: a different supplier scope does not resolve the value -> stands down",
+      eng._code_shaped_containment_ok('model', 'Ecosys PA2600cw)', 'Ecosys PA2600cwx', 'Other Co', 'print_tracker') is False)
 
 print()
 if FAILED:

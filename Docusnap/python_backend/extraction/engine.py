@@ -2974,6 +2974,37 @@ def _fragment_yield_role_is_currency(key, kw_types) -> bool:
     return str((kw_types or {}).get(key) or "").lower() in ("currency", "money", "amount")
 
 
+def _value_is_code_shaped(v) -> bool:
+    """True when a value carries a MODEL/PART-number signature: >=1 whitespace-delimited token that is
+    purely alphanumeric AND MIXES letters with digits ('PA2600cwx', 'CAD832694'). Scopes the
+    fragment-containment yield (B) beyond ref-family KEYS to code-shaped VALUES on a non-ref field
+    (e.g. 'model' = 'Ecosys PA2600cwx') WITHOUT admitting prose ('Widget Assembly' — no mixed token),
+    a pure-number prefix collision ('250' -> '2500' — '250' not mixed) or word+bare-number ('Order 5').
+    Multi-token / internal-space tolerant by construction (reggie 2026-09-02; Oracle-ruled)."""
+    for tok in str(v or "").split():
+        core = re.sub(r'^[^A-Za-z0-9]+|[^A-Za-z0-9]+$', '', tok)   # edge-strip punctuation
+        if re.fullmatch(r'[A-Za-z0-9]+', core) and any(c.isdigit() for c in core) \
+                and any(c.isalpha() for c in core):
+            return True
+    return False
+
+
+def _value_in_confirmed_set(confirmed_counts_index, field_key, value, supplier_name, document_slug) -> bool:
+    """True when _cmp_norm(value) is a CONFIRMED literal for this (supplier -> doc-type) scope, read
+    from confirmed_counts_index (keys already _cmp_norm'd; WHITESPACE-TOLERANT, unlike the dominant
+    index which drops spaced values). Mirrors is_known_value's supplier-first-then-doctype resolution
+    so a high-variance field with NO dominant (model: one printer per email) still resolves. Fail-closed."""
+    nk = _cmp_norm(value)
+    if not nk or not confirmed_counts_index:
+        return False
+    s = (supplier_name or '').lower().strip()
+    dt = (document_slug or '').lower().strip()
+    bucket = confirmed_counts_index.get((s, dt, field_key))
+    if bucket is None:
+        bucket = confirmed_counts_index.get(('', dt, field_key))
+    return bool(bucket) and nk in bucket
+
+
 def _penny_reconciles(total_value, results) -> bool:
     """PENNY-EXACT reconcile of `total_value` against the money ROLES read from the page (the re-slice
     witness sweep's trigger leg). `validator.total_reconciles`' ±2 % is a FLAG tolerance — under it a
@@ -5004,6 +5035,18 @@ class ExtractionEngine:
         self.label_overrides = overrides or []
         if self.label_overrides:
             self.log(f"  Keyword label overrides: {len(self.label_overrides)} loaded")
+
+    def _code_shaped_containment_ok(self, field_key, existing_value, data_value, supplier_name, document_slug):
+        """The code-shaped, high-variance-safe admission for the fragment-containment yield (B) —
+        Oracle 2026-09-02 revised B-C1 (KNOWN-SET membership, NOT dominant, which is guaranteed-inert
+        on a high-variance field). Admits a NON-ref code-shaped value ONLY when the CHALLENGER (the
+        keyword read of this page) is a known-good confirmed literal for the scope AND the INCUMBENT
+        (the taught mapping read) is NOT known — i.e. the incumbent is a clip artifact, not a real
+        value. The incumbent-not-known guard closes the both-in-known collision (a scope that confirmed
+        BOTH 'PA2600cw' and 'PA2600cwx': if the shorter is itself confirmed the mapping is kept)."""
+        return (_value_is_code_shaped(data_value)
+                and _value_in_confirmed_set(self.confirmed_counts_index, field_key, data_value, supplier_name, document_slug)
+                and not _value_in_confirmed_set(self.confirmed_counts_index, field_key, existing_value, supplier_name, document_slug))
 
     def _make_format_lookup(self, supplier_name, document_slug):
         """Per-field learned-format lookup used by the qualification gates: try
@@ -8311,7 +8354,13 @@ class ExtractionEngine:
                 if (TEMPLATE_FRAGMENT_CONTAINMENT_YIELD
                         and (existing.get("method") or "").startswith("template_mapping")
                         and key not in date_field_keys
-                        and (_is_ref_field(key) or key.endswith("_ref"))
+                        and (_is_ref_field(key) or key.endswith("_ref")
+                             # code-shaped NON-ref (model/part) — Oracle 2026-09-02 revised B-C1: admit
+                             # when the challenger is a confirmed known-good literal for the scope AND the
+                             # incumbent is NOT known (a clip artifact). Whitespace-tolerant, so a
+                             # high-variance field with no dominant (model) still heals. Cap 88 + note
+                             # keep it review-bound; ref-family disjunct byte-identical when this is False.
+                             or self._code_shaped_containment_ok(key, existing.get("value"), data.get("value"), supplier_name, document_slug))
                         and not value_quality.is_name_like_field(key)
                         and not _fragment_yield_role_is_currency(key, _kw_types)
                         and data.get("method") in ("keyword", "keyword_override")

@@ -33,6 +33,81 @@ Oracle; DARK + a census (taught-anchor reads that disagree with ≥2 witnesses) 
 corroboration/independence of method family" direction; this is the ANCHOR-WINS-OVER-CORROB class (not a
 note-demote).
 
+### 2026-09-02 (owner-reported TWIN) — a CLIPPED taught MAPPING beats a correct keyword + DB value
+Doc `2_split_p24.pdf` (Print Tracker), field `model`. Trace: `template_mapping "Ecosys PA2600cw)" @90% WON`
+vs `keyword_override "Ecosys PA2600cwx" @85% LOST` ("lost — lower confidence 85% < 90%"). The taught
+ABSOLUTE mapping box was drawn SHORT; a later, longer value overflows it, so the read clips the trailing
+glyph and its cut edge OCRs as junk (`…cw` + cut `x` → `…cw)`). The CORRECT `Ecosys PA2600cwx` was read by
+keyword AND exists in confirmed DB history — but the clipped 90% mapping won on raw confidence and no arbiter
+caught it. TWO linked root causes:
+**ADVISOR CONSENSUS 2026-09-02 (oscar + 007 + reggie + gary; Oracle vetting).** ROOT (gary, verified): NOT a
+confidence contest — a Stage-0.5 `template_mapping` incumbent outranks `keyword_override` UNCONDITIONALLY
+(`engine.py:8234` branch → bare `continue` at `8330`; the keyword-authority path at `8347` is unreachable for a
+mapping incumbent), so "lost 85%<90%" is a red herring. The clipped READ is the root harm. `model` is
+FREE-TEXT (007: committed `Ecosys PA2600cw)` @90 fails `_crop_is_credible` coverage 0.56<0.8 for a TYPED field
+→ committed as free-text; decisive check `SELECT type FROM fields WHERE key='model'`). TWO complementary
+fixes, SHIP B→A:
+- **(B) MERGE net — ship FIRST (fail-toward-review, cheap, warm scope).** Additive OR on
+  `TEMPLATE_FRAGMENT_CONTAINMENT_YIELD` scope conjunct (`engine.py:8314`): admit a code-shaped NON-ref field
+  ONLY when the keyword == the scope's confirmed-dominant literal — `_value_is_code_shaped(v)` (a
+  whitespace-delimited token purely alnum AND mixing letters+digits — 'PA2600cwx'/'CAD832694'; rejects prose /
+  pure-number / word+number) AND `_kw_equals_confirmed_dominant(key,val)` (`_cmp_norm` == the 2.5d dominant
+  literal, ≥5 count/≥80% share). CORRECTION to the earlier note: `_fragment_contained` uses `_code_norm`
+  (strips non-alnum), so the junk `)` + space are ALREADY tolerated — B's only blockers are DARK + the
+  ref-family scope. Cap 88, review-bound, method stays keyword. Cold-start: history-gated → inert cold. reggie
+  + gary.
+- **(A) READ root — ship SECOND (cold-safe + auto-file; bigger blast radius).** CORRECTION: `_abs_edge_guard`'s
+  code branch ALREADY right-grows a clipped code (`template_mapper.py:3311-3319`); the gap is SCOPE, not
+  capability — reached only for `val_type in _SNAP_VAL_TYPES` (`{alphanumeric,reference_code,date}`, gate
+  `2387-2389`), so free-text `model` never enters. Widen with a SEPARATE conjunct on the SAME
+  `_value_is_code_shaped` (do NOT broaden `_SNAP_VAL_TYPES` — the free-text over-grab class). Cold-safe
+  (no-history grow → `_shape_consents=='none'` → FLAGGED ≤70, never silent-clean), `shape_mode='ignore'` (no
+  learned-shape veto). 007: detection MARGINAL for a hairline clip (overhang floor `max(0.004,0.6g)` +
+  inside-fraction cap 0.95, `_find_edge_cut_words:2977-2980`); a free-text MULTI-TOKEN grow needs a
+  RIGHT-NEIGHBOUR GAP TEST (absent). oscar (PSM 7, +0.004 pad, upscale) + 007 (geometry).
+- **A/B seam (verified):** sequential, no race. A clean-heals → existing==keyword → `_fragment_contained` False
+  → B no-ops. A partial-grows → B backstops. A over-grows WRONG + clean-commits → B does NOT catch → A's
+  census STRICTER. Both share ONE `_value_is_code_shaped`.
+- **Gate (both):** 605-corpus OFF vs ON, `RR_APP_ENV=1`, `OCR_RENDER_DPI=200`, dedup `RR_IDS`, M=0 + zero
+  per-field accuracy drop. B: every fire capped ≤88 AND adopted == confirmed-dominant (structurally M=0). A:
+  every `_edgegrow` CLEAN commit must equal history else an M candidate. Non-vacuity: the Print Tracker `model`
+  heal fires. PINs: B — a free-text field whose longer keyword ≠ confirmed-dominant is NOT adopted; A — a cold
+  no-history grow FLAGS not clean-commits (2026-08-03 overrule). Both stay DARK after build; FLIP is later.
+Evidence: owner live Review trace (screenshot 2026-09-02 17:39). Same Print Tracker family + same "authority
+beats a corroborated correct value" theme as the anchor-drift exhibit above; distinct mechanism (mapping CLIP +
+unconditional-mapping-authority, not anchor DRIFT).
+
+## 2026-09-02 — SUPPRESS the "format differs from the usual" flag on HIGH-VARIANCE fields (owner ask)
+The format-anomaly / learned-shape flag ("format differs from the usual — please verify" · the taught twin
+"manually mapped value differs from the usual format") is CORRECT for fields with a real dominant format
+(account/invoice/PO numbers) but pure NOISE for fields whose confirmed history varies WILDLY — there is no
+"usual format" to differ from. Owner exhibits (Print Tracker, 2026-09-02 screenshot): `make` flagged (Ricoh
+vs Kyocera), `model` flagged @70% ("TASKalfa 3252ci" vs "Ecosys PA2600cwx" — formats change by range),
+`reference_number` @78% (a serial that differs by manufacturer). Emitters (verified): `engine.py:10030/
+10110/10126` (text fields not name-like, not identity) + `engine.py` code-shape path below + the taught
+`template_mapper._SHAPE_WARN_NOTE` (line 113).
+**Ask:** when a (field, type[, scope]) has had a number of WILDLY DIFFERENT values confirmed manually,
+turn the shape-conformance flag OFF for that field — BUT still catch genuine mishaps (single-digit/char
+SLIPS): prompt + learn. Precedent to generalize: the CLEAN-NAME RELAX (`engine.py:10001-10016`) already
+suppresses the flag for name-like fields with NO learned stable-prefix (the confirmed values don't share a
+common shape). This arc widens that to ANY field whose confirmed history is high-variance.
+**Design shape (for the advisors):**
+- (1) a SHAPE-DIVERSITY signal from `fmt_entry` (the field's learned shapes + counts): "no usual format"
+  when the confirmed set has ≥K distinct shape classes / no shape holds a dominant share (mirror the
+  name_match `<3 distinct` gate, `format_anomaly_checker.py:763`). TRAP: `_fold_shape` is LENGTH-BLIND
+  (memory `project_overnight_20260826`) — different-length serials fold to one `#` skeleton, so the
+  diversity measure must be LENGTH-aware, not just the folded skeleton, or it will misjudge digit serials.
+- (2) when high-variance → `check_value` returns NO anomaly for a mere shape mismatch (suppress the flag) at
+  BOTH text (engine) and code (engine + `_SHAPE_WARN_NOTE`) sites.
+- (3) KEEP the useful catches regardless of variance: charset/impossible-value checks, `propose_correction`
+  (confident OCR-confusable repair), `propose_sep_fix`, AND a NEAR-MISS leg — value is edit-distance-1 from
+  a CONFIRMED scope value → flag + offer the confirmed value (the single-digit slip the owner wants kept).
+**Seam / risk:** do NOT blanket-suppress — the flag's real job is catching a garbled ref/serial; the retained
+near-miss + charset + confident-correction legs are what keep that. reggie (diversity + edit-distance-1
+predicate, JS↔py aligned) + gary (checker seam + backward-compat + the census + a PIN) → Oracle. DARK +
+census (0 lost TRUE flags on real formatted refs; the make/model/serial noise gone). Related to but distinct
+from the clipping/anchor-wins arc above (same Print Tracker make/model, different mechanism).
+
 ## 2026-09-01 NIGHT — SECURITY AUDIT recommendations (owner ask; `docs/SECURITY_REVIEW_2026-09-01.md`, Oracle-adjudicated)
 Pre-full-release audit (eric + a dependency researcher + gary + Oracle + licensing). **DONE tonight** (safe,
 Oracle-signed, pinned `src/test_security_audit_20260901.js` 17, commit `a6ff457`): R3 trace-console clears
