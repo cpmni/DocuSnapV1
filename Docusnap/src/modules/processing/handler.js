@@ -884,6 +884,65 @@ function _reconcileEnv(db) {
   } catch { return {}; }
 }
 
+// ── Shared worker COMMAND builder (watch/import unification, 2026-09-02; Oracle SIGN-OFF-W/COND) ──
+// THE PARITY GUARANTEE: field detection is per-file independent (ExtractionEngine.extract() resets
+// every per-run ledger at the top of each call), so what a worker READS is fully determined by its
+// {scriptArgs, env}. Both the MANUAL import pool and the WATCH batch build their worker command from
+// THIS one pure function, so a doc reads identically regardless of arrival path. Pure: no spawn, no
+// side effects (the caller does any slice-dir mkdir and passes the resulting sliceDir).
+//   arrival: 'manual' | 'watch' — the ONLY thing it changes is the deskew seam (below).
+//   threadCap: the already-decided OMP cap (0 = leave Tesseract uncapped). Callers own the decision;
+//     import's rule is `requestedConcurrency <= 1 ? 0 : _reprocessThreadCap(db)`. (Converging watch
+//     onto that rule at concurrency==1 is a separate, owner-gated commit — it changes live watch reads
+//     and needs a watch-conc==1 realdoc M=0 arm — so today each caller still passes its own value.)
+// SEAM (Oracle 2026-09-02, BLOCKING): --deskew-pages is ARRIVAL-SCOPED and OFF for watch, and must
+// NOT be derived from `deskew_on_import` for the watch arrival. Deriving it from the setting means the
+// day the owner ever flips deskew_on_import, the unified command would silently propagate a coordinate-
+// frame change onto the UNATTENDED, AUTO-FILING watch path — fail-toward-silent-wrong-file, strictly
+// worse than the fenced-off import case. The correct posture here is ANTI-parity. (Deskew-on-watch, if
+// ever wanted, is its own owner-gated DARK arc.)
+function buildWorkerCommand(db, {
+  pyFolder, tesseract, filesFile = null, mode,
+  threadCap = 0, wantTrace = false, sliceDir = null,
+  trainingArgs = [], arrival = 'manual',
+} = {}) {
+  const learning = require('../../../database/modules/learning');
+  const scriptArgs = [
+    '--folder',    pyFolder,
+    '--tesseract', tesseract,
+    '--mode',      mode,
+    ...trainingArgs,
+  ];
+  if (filesFile) scriptArgs.push('--files-file', filesFile);
+  if (arrival !== 'watch') {
+    // STRAIGHTEN ON IMPORT (setting `deskew_on_import`, DEFAULT OFF, still UNRULED — see the manual
+    // worker's long note): import-arrival only. NEVER for watch (the seam above).
+    // STRAIGHTEN ON IMPORT (setting `deskew_on_import`, DEFAULT OFF, still UNRULED — measured strictly
+    // monotone on a jittered 140-doc corpus 2026-08-09 but at import a read can AUTO-FILE, so a flip
+    // needs the Oracle pass + a realdoc arm). Import-arrival ONLY; NEVER watch (the seam above).
+    try {
+      if (learning.getSetting(db, 'deskew_on_import', 'false') === 'true') {
+        const floor = parseFloat(learning.getSetting(db, 'deskew_on_import_min_angle', '0.2'));
+        scriptArgs.push('--deskew-pages', '--deskew-min-angle',
+                        String(Number.isFinite(floor) ? Math.min(5, Math.max(0.2, floor)) : 0.2));
+      }
+    } catch { /* setting unreadable -> off, import unchanged */ }
+  }
+  if (wantTrace) {
+    scriptArgs.push('--trace');
+    if (sliceDir) scriptArgs.push('--slice-dir', sliceDir);   // caller mkdir'd it; absent => --trace with no slices
+  }
+  const env = {
+    ...process.env,
+    ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
+    ..._autoTitleEnv(db),
+    ..._ocrDpiEnv(db),
+    ..._anchorCropEnv(db),
+    ..._reconcileEnv(db),
+  };
+  return { scriptArgs, env };
+}
+
 // Coerce the stored processing_mode to a value the backend accepts. A stale/legacy value
 // (e.g. an old "light", or one from a restored settings backup) must never reach
 // process_docs.py's --mode and break the whole batch on an arg-parse error.
@@ -2666,58 +2725,20 @@ function register(ctx) {
         resolve(code);
       };
       const py = pythonExe();
-      const scriptArgs = [
-        '--folder',    folderPath,
-        '--tesseract', tesseractPath(),
-        '--mode',      procMode,
-        ...trainingArgs,
-      ];
-      if (filesFile) scriptArgs.push('--files-file', filesFile);
-      // STRAIGHTEN ON IMPORT (setting `deskew_on_import`, DEFAULT OFF — owner-observed 2026-08-09).
-      // The operator noticed that values wrong on import come back CORRECT after "Straighten +
-      // Reprocess", and the measurement backed it: 140 scanned documents, identical flags, the only
-      // difference being this argument —
-      //     customer 88 ok/52 wrong -> 140/0     date 116/21 -> 140/0      po_ref 17/3 -> 20/0
-      //     issuer   88/49 -> 112/28             ref  107/29 -> 120/20     total 81/33 -> 96/24
-      // ZERO lanes regressed. That matters because detection-time deskew was PARKED on the grounds
-      // that it is not monotone; on this corpus it was strictly monotone.
-      // ⚠ IT IS STILL DEFAULT OFF AND UNRULED. Deskew changes the coordinate frame every taught box
-      // and anchor is read in, and at IMPORT (unlike reprocess) a read can AUTO-FILE — so a
-      // non-monotone case here files a wrong value silently rather than routing to review. The
-      // measured corpus is deliberately jittered and may overstate the gain. Do not flip this
-      // without the Oracle pass and a realdoc arm.
-      // Python skips born-digital and confident-upright pages, so it is inert where it cannot help.
-      try {
-        if (learning.getSetting(db, 'deskew_on_import', 'false') === 'true') {
-          const floor = parseFloat(learning.getSetting(db, 'deskew_on_import_min_angle', '0.2'));
-          scriptArgs.push('--deskew-pages', '--deskew-min-angle',
-                          String(Number.isFinite(floor) ? Math.min(5, Math.max(0.2, floor)) : 0.2));
-        }
-      } catch { /* setting unreadable -> off, import unchanged */ }
-      // Emit the dev trace stream + capture OCR slices while the hidden inspector
-      // is open OR diagnostic logging is on (so the diagnostic file gets the full
-      // per-stage trace + crop bboxes even with no window). Slice dir is created
-      // on demand and cleaned by main.
-      if (traceWanted(diagOn)) {
-        scriptArgs.push('--trace');
-        try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
-      }
-
-      // Cap Tesseract's OpenMP threads per worker. Tesseract IS internally
-      // multithreaded (OpenMP) and by default grabs ~all cores PER PROCESS — so N
-      // parallel workers each spawn ~cores threads (≈ N×cores) and thrash an
-      // oversubscribed CPU (the real reason a 10-worker Reprocess All crawled). The
-      // worker POOL is the parallelism; per-process OMP threading fights it. Capping
-      // to cores/workers (threadCap) keeps total threads ≈ cores. threadCap=0 (the
-      // single-worker path) leaves Tesseract free to use every core for the one proc.
-      const env = {
-        ...process.env,
-        ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
-        ..._autoTitleEnv(db),
-        ..._ocrDpiEnv(db),
-        ..._anchorCropEnv(db),
-        ..._reconcileEnv(db),
-      };
+      // Worker command built by the SHARED buildWorkerCommand (watch/import unification, 2026-09-02) so
+      // a doc reads identically regardless of arrival path. Byte-identical to the prior inline construction.
+      // The slice-dir mkdir is a side effect kept HERE (the builder is pure): --slice-dir is emitted only
+      // when the dir was created, matching the old code. threadCap is the CONFIGURED-derived OMP cap
+      // (0 on the single-worker path = uncapped; import's rule lives at the call site). deskew_on_import
+      // rides the 'manual' arrival — import-fenced by design (still DEFAULT OFF and UNRULED; a flip needs
+      // the Oracle pass + a realdoc arm, since at import a read can AUTO-FILE).
+      let sliceDir = null;
+      const wantTrace = traceWanted(diagOn);   // dev inspector open OR diagnostic logging on
+      if (wantTrace) { try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); sliceDir = ctx.devSliceDir; } catch {} }
+      const { scriptArgs, env } = buildWorkerCommand(db, {
+        pyFolder: folderPath, tesseract: tesseractPath(), filesFile, mode: procMode,
+        threadCap, wantTrace, sliceDir, trainingArgs, arrival: 'manual',
+      });
       let proc;
       try {
         proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
@@ -6459,6 +6480,7 @@ module.exports = {
   _ocrDpiEnv,                // OCR render-DPI spawn env — the watch MUST read at the same DPI as import (2026-09-01)
   _anchorCropEnv,            // crop opt-in spawn env: right-grow + label left-clamp (shared with the watch batch)
   _reconcileEnv,             // extraction-reconcile opt-in spawn env: prefix-garble adopt (shared with the watch batch)
+  buildWorkerCommand,        // watch/import unification (2026-09-02): the ONE pure {scriptArgs,env} builder both arrivals share
   drainOriginalToFolder,
   _filedDocsInFolder,
   _recordDrain, _takeDrainTally,   // drain-tally pins (test_drain_tally.js — Oracle C1)
