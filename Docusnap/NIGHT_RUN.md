@@ -240,6 +240,21 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-09-02 · Toggle hygiene sweep — audited, NO switch qualifies for removal/DO-NOT-USE; added the
+  gate-integrity PIN instead.** Verdict per the owner rule ([[feedback_bad_toggle_hygiene]]): a DO-NOT-USE
+  move needs PROVEN harm (failed gate / wrong-value exhibit / Oracle SEND BACK), not a seam/install reason.
+  The three "NEVER flip" switches are all already handled: `template_format_fail_yield_strict_money` is
+  dev-gated (DEV_SWITCH_IDS) + dark-by-SEAM (Oracle C10/C11 — memory says a seam-dark switch STAYS dark,
+  not DO-NOT-USE, until a census proves it harmful); `trust_company_key_own_scope` has NO settings UI at all
+  (env/DB only, customer-invisible); `deskew_on_import` is DELIBERATELY customer-visible (owner-parked) with
+  honest "not yet recommended" copy. The Oracle SEND BACKs on record all became rebuilds, not shipping bad
+  toggles. **Integrity audit of the SFDEV gate (`DEV_SWITCH_IDS` in settings/renderer.js): 138 gated, 0 dead
+  entries, 0 duplicates, 0 leaked reading-internals** (the 22 un-gated toggles are all deliberate customer
+  features / UI / licensing — the documented exclusions). Locked it in: `test_settings_wiring.js` now pins
+  the gate — every entry names a real toggle, no dups, and every un-gated toggle is on a declared
+  customer-facing allowlist (a new un-gated reading toggle now fails the pin). RED-first verified. **Repeat
+  if:** a census ever PROVES a specific switch harmful (then it goes to a DO-NOT-USE group / removal), or the
+  gate pin newly fails (a dev added a toggle without gating or allowlisting it — classify it).
 - **2026-09-01 NIGHT · #1 Quick-Reprocess gate + #2 Chris round + a FULL pre-release SECURITY AUDIT — ALL
   DONE.** (a) Recovered + finished the crashed Plan B (merge pin 68, `7a8b797`). (b) **Security audit**
   (`docs/SECURITY_REVIEW_2026-09-01.md`, eric+dep-researcher+gary+Oracle): code security strong; 3 safe

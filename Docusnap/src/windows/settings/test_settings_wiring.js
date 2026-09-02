@@ -262,5 +262,51 @@ for (const [id, key, consumer] of SETTING_SWITCHES) {
         /x_norm:\s*box\.x_norm/.test(pushed) && !/x_norm:\s*norm\.x_norm/.test(pushed));
 }
 
+// ── DEV_SWITCH_IDS gate integrity (toggle-hygiene sweep, 2026-09-02) ────────────────────────────
+// The SFDEV gate that hides the reading-internal switches from customers is a LIST in renderer.js
+// (`DEV_SWITCH_IDS`), applied at runtime by `_applyDevSwitchVisibility` (adds `.dev-switch`, the CSS
+// hides it). Two silent failure shapes:
+//   • a gated id that no longer names a real toggle (a rename left a DEAD entry) — the gate no-ops
+//     for it, and the switch it MEANT to hide may now be visible under a new id;
+//   • a NEW reading-internal toggle added to index.html but NOT to DEV_SWITCH_IDS — it LEAKS to
+//     customers on the Processing tab (the exact class the 2026-09-01 gate-sweeps closed).
+// This pins both. The visible (un-gated) set is an explicit ALLOWLIST of the DELIBERATELY
+// customer-facing toggles (owner picks: file/watch/auto-file/separation/printing settings, the
+// owner-parked reading features — light-text, barcodes, learning-repair, straighten-on-import,
+// deskew-review-retry — plus UI/licensing/diagnostics). A new toggle that is neither gated nor
+// allowlisted fails here, forcing a conscious "gate it or declare it customer-facing" decision.
+{
+  const ds = js.slice(js.indexOf('const DEV_SWITCH_IDS = ['), js.indexOf('];', js.indexOf('const DEV_SWITCH_IDS = [')));
+  const devIds = [...ds.matchAll(/'([a-z0-9-]+-toggle)'/g)].map(m => m[1]);
+  const devSet = new Set(devIds);
+  const htmlToggleIds = [...html.matchAll(/id="([a-z0-9-]+-toggle)"/g)].map(m => m[1]);
+
+  const dead = devIds.filter(id => !ids.has(id));
+  check(`every DEV_SWITCH_IDS entry names a real toggle (${devIds.length} gated)`
+        + (dead.length ? ` — DEAD: ${dead.join(', ')}` : ''), dead.length === 0);
+
+  const seen = new Set(), dup = [];
+  for (const id of devIds) { if (seen.has(id)) dup.push(id); else seen.add(id); }
+  check(`no duplicate DEV_SWITCH_IDS entries${dup.length ? ` — DUP: ${dup.join(', ')}` : ''}`, dup.length === 0);
+
+  // Deliberately customer-visible toggles (NOT reading-internals hidden behind SFDEV).
+  const VISIBLE_ALLOWLIST = new Set([
+    // Files & filing / processing customer settings
+    'keep-originals-toggle', 'watch-folder-toggle', 'auto-file-toggle', 'multiline-toggle',
+    'auto-rotate-toggle', 'auto-separate-toggle', 'filing-slips-toggle', 'printing-toggle',
+    'generic-fallback-toggle',
+    // Owner-parked reading FEATURES (customer-facing on purpose; see the DEV_SWITCH_IDS comments)
+    'light-text-recovery-toggle', 'deskew-review-retry-toggle', 'deskew-import-toggle',
+    'barcode-inventory-toggle', 'barcode-field-toggle',
+    'learning-repair-console-toggle', 'learning-repair-forget-toggle',
+    // UI / licensing / diagnostics
+    'help-mode-toggle', 'close-to-tray-toggle', 'wf-addon-toggle', 'client-api-toggle',
+    'diag-toggle', 'telemetry-toggle',
+  ]);
+  const leaked = htmlToggleIds.filter(id => !devSet.has(id) && !VISIBLE_ALLOWLIST.has(id));
+  check(`every un-gated toggle is a declared customer-facing switch (no leaked reading-internal)`
+        + (leaked.length ? ` — LEAKED: ${leaked.join(', ')}` : ''), leaked.length === 0);
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll settings-wiring pins passed');
 process.exit(fails ? 1 : 0);
