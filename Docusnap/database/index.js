@@ -2554,6 +2554,21 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 109 (format_variance_relax_ref_inline): ${e.message}`); }
   }
 
+  // ── migration 110: TEST-BUILD force-ON of format_variance_relax_ref_inline (2026-09-03; same pattern +
+  //    caveat as mig 108). FORCE-flips (UPSERT) the box-drift disagreement suppression ON so the owner's
+  //    test DB heals doc121 on reprocess. Exact-confirmed-literal + non-credible-rigid ONLY, so a wrong/
+  //    never-confirmed read or a credible competing read is still HELD, never auto-filed. ⚠ TEST-ONLY /
+  //    REVERSIBLE: revert (or gate) before ANY customer build and run the WARM-DB census (each clean-
+  //    commit equals that document's OWN prior-confirmed value; realdoc M=0 + zero accuracy drop). ──
+  if (!applied.has(110)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('format_variance_relax_ref_inline', 'true')
+                  ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (110)').run();
+      console.log('JS migration 110 applied: TEST-BUILD force-ON format_variance_relax_ref_inline (revert + WARM-DB census before customer build)');
+    } catch (e) { console.warn(`  migration 110 (format_variance_relax_ref_inline force-ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
