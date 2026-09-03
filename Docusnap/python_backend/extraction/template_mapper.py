@@ -41,7 +41,8 @@ from extraction.anchor import _crop_is_credible, _repair_single_token, clean_cro
 # And the SAME learned-format check Stage 4.5 uses, so the failsafe below judges a
 # value against the shape this field has historically taken on this template
 # (learned from confirmed docs) — label- and field-key-agnostic, one source of truth.
-from extraction.format_anomaly_checker import check_value as _check_learned_format
+from extraction.format_anomaly_checker import (check_value as _check_learned_format,
+                                               value_is_confirmed_literal)
 
 try:
     import pytesseract
@@ -137,6 +138,19 @@ _CODE_CROSSCHECK_TYPES = frozenset({'alphanumeric', 'reference_code'})
 # predicate is created. Refusing returns the standard (None, False, False), i.e. the rung falls
 # through to the next one and ultimately to Stages 1/2; it never asserts a value of its own.
 _STAGE05_REF_CODE_GATE = os.environ.get('STAGE05_REF_CODE_GATE', '0') != '0'
+
+# FORMAT_VARIANCE_RELAX_REF (2026-09-03, gary + Oracle C1a; DARK, DEFAULT OFF, byte-identical off).
+# A DERIVED-rung read (registration / single-label relocation, shape_mode='flag') that FAILS the
+# learned-SHAPE check but is an EXACT confirmed in-scope literal is NOISE, not a wrong-column bleed:
+# a human already accepted this exact value for this field. On a HIGH-VARIANCE ref/serial (make/
+# model/device serial — no usual format), the accepted `shapes` set is count-gated, so a previously-
+# confirmed value whose fold-shape is a sub-quorum minority re-flags on every re-import. Suppress the
+# shape_warn ONLY for that exact-confirmed-literal case. A never-confirmed value KEEPS the flag + cap
+# + review (the ref is the filename token — fail-toward-review; Oracle C1a). NOTE: clearing shape_warn
+# drops BOTH the confidence cap AND the note (_mapping_result), so the value may auto-file — which is
+# why the gate is exact-confirmed-literal ONLY (docTrustGate's coarse _codeish does NOT re-catch a
+# code-class ref bleed). Uses the '== "1"' idiom (empty string reads OFF).
+_FORMAT_VARIANCE_RELAX_REF = os.environ.get('FORMAT_VARIANCE_RELAX_REF', '0') == '1'
 
 # TEMPLATE_CURRENCY_EDGE_GROW (kill switch, DEFAULT OFF — owner-reported 2026-08-09).
 # Money is the ONE field type whose taught box is sized to a SAMPLE VALUE rather than to a
@@ -1218,6 +1232,17 @@ def _gate_value(text, val_type, field_key, validation_patterns, format_lookup,
             and _format_rejects(text, field_key, format_lookup)):
         if shape_mode == 'flag':
             shape_warn = True
+            # FORMAT_VARIANCE_RELAX_REF (Oracle C1a): a shape-miss on an EXACT confirmed in-scope
+            # literal is noise, not a bleed — pass it unflagged (drops the cap+note in _mapping_result,
+            # so the value commits at native confidence). A never-confirmed value stays flagged +
+            # review-bound. Byte-identical OFF. value_counts absent -> not a literal -> flag kept.
+            if _FORMAT_VARIANCE_RELAX_REF:
+                try:
+                    _entry = format_lookup(field_key) if format_lookup else None
+                except Exception:
+                    _entry = None
+                if _entry and value_is_confirmed_literal(str(text), _entry):
+                    shape_warn = False
         else:
             return None, False, False
     return text, salvaged, shape_warn

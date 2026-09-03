@@ -48,6 +48,7 @@ _VARIANCE_DOMINANT     = 0.50            # ...and NO family holding >= this shar
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from extraction.validator import parse_date, parse_amount
 from extraction.ocr_corrector import LETTER_TO_DIGIT
+from extraction.text_normalise import normalise_for_tokens
 
 
 # ── Format class labels ───────────────────────────────────────────────────────
@@ -655,6 +656,27 @@ def near_miss_confirmed(value: str, format_entry) -> Optional[str]:
         if _is_letter_digit_confusable(v[i], c[i]) and int(n or 0) > best_n:
             best, best_n = c, int(n or 0)
     return best
+
+
+def value_is_confirmed_literal(value, format_entry) -> bool:
+    """True when `value` (compare-normalised) EXACTLY equals a CONFIRMED in-scope literal — a
+    key of value_counts a human already accepted for THIS (supplier, doctype, field). Used by the
+    mapper's FORMAT_VARIANCE_RELAX_REF gate (Oracle C1a, 2026-09-03): a learned-SHAPE miss on such
+    a value is NOISE, not a wrong-column bleed — the string itself is a known-good value for the
+    field (the re-import case, where a previously-confirmed value's fold-shape is a sub-quorum
+    minority in the count-gated `shapes` set). DISTINCT from near_miss_confirmed, which offers a
+    CORRECTION for a value one confusable off a confirmed literal; this admits the EXACT value.
+    Compare via the shared deterministic normaliser (NFKC/dash/case/ws) so a re-read that differs
+    only cosmetically still matches — the DECISION only, never the stored value. value_counts
+    absent -> False (fail-toward-flagging). Pure/deterministic."""
+    v = normalise_for_tokens(value)
+    if not v:
+        return False
+    vc = (format_entry or {}).get('value_counts') or {}
+    for conf in vc:
+        if normalise_for_tokens(conf) == v:
+            return True
+    return False
 
 
 # ── Digits-only OCR cleanup + correction proposal (Stage 2) ──────────────────

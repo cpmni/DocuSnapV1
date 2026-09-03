@@ -2503,6 +2503,24 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 106 (test-build toggle enablement): ${e.message}`); }
   }
 
+  // ── migration 107: FORMAT_VARIANCE_RELAX_REF seeded OFF (DARK — the Print Tracker reference_number
+  //    re-import noise; gary + Oracle C1a 2026-09-03). The mapper DERIVED-rung "manually mapped value
+  //    differs from the usual format" warn is noise on a HIGH-VARIANCE ref/serial when the read is an
+  //    EXACT confirmed in-scope literal (a value a human already accepted for this field). When ON, the
+  //    warn is suppressed for that exact-literal case ONLY; a never-confirmed value keeps the flag +
+  //    review (the ref is the filename token — fail-toward-review). DELIBERATELY NOT in mig 106's
+  //    TEST_ON force-ON list: clearing the warn drops the cap+note (the value may auto-file) and
+  //    docTrustGate's coarse _codeish does NOT re-catch a code-class ref bleed, so this removes a
+  //    ref-shape veto path and stays dark until its OWN census (value diffs 0 + no held->auto-file on a
+  //    NON-confirmed shape-mismatch; an exact-confirmed-literal held->auto-file is the allowed win). ──
+  if (!applied.has(107)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('format_variance_relax_ref', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (107)').run();
+      console.log(`JS migration 107 applied: format-variance relax (ref) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 107 (format_variance_relax_ref): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

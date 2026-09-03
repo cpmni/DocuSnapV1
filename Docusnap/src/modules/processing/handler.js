@@ -521,6 +521,17 @@ function _reconcileEnv(db) {
     if (env.FORMAT_VARIANCE_RELAX == null && learning.getSetting(db, 'format_variance_relax', 'false') === 'true') {
       env.FORMAT_VARIANCE_RELAX = '1';
     }
+    // FORMAT-VARIANCE RELAX (REF) (2026-09-03, gary + Oracle C1a; DARK): a taught template-mapping
+    //   DERIVED-rung read of a ref/serial field that fails the learned-SHAPE check but is an EXACT
+    //   confirmed in-scope literal is noise (the re-import case — a value confirmed before whose
+    //   fold-shape is a sub-quorum minority in the count-gated shapes set). Suppress its "manually
+    //   mapped value differs from the usual format" warn ONLY for that exact-confirmed value. A
+    //   never-confirmed value keeps the flag + review (the ref is the filename token — fail-toward-
+    //   review). SEPARATE sub-flag from format_variance_relax (that arc is engine-text-only; Oracle
+    //   C1/Q2 excluded the mapper rungs + ref fields). Env wins both ways for harness arms.
+    if (env.FORMAT_VARIANCE_RELAX_REF == null && learning.getSetting(db, 'format_variance_relax_ref', 'false') === 'true') {
+      env.FORMAT_VARIANCE_RELAX_REF = '1';
+    }
     // STRICT MONEY sub-flag of TEMPLATE_FORMAT_FAIL_YIELD (2026-08-30, reggie; DARK): the yield's currency
     //   leg becomes the whole-string `money_strict_shape` (the legacy leg passes '£9 32632.76' as 9.0).
     //   AND-ed with the parent HERE — a sub-flag armed without its parent bridges nothing.
