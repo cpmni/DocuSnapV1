@@ -2472,6 +2472,37 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 105 (format_variance_relax): ${e.message}`); }
   }
 
+  // ── migration 106: TEST-BUILD toggle enablement (2026-09-03, owner ask — "turn on the safe recent
+  //    arcs so I can test; not going to a customer until I know it works"). Unlike every DARK-seed
+  //    migration above, this FORCE-flips (UPSERT, overwriting any prior value) the six SAFE-by-
+  //    construction recent arcs ON, so the owner's EXISTING %APPDATA% test DB picks them up on the
+  //    next launch (an INSERT OR IGNORE seed would leave an already-present 'false' untouched). Each
+  //    is review-bound / flag-only / byte-identical-off, so a wrong read is HELD, never mis-filed.
+  //    ⚠ TEST-ONLY / REVERSIBLE: this bumps DARK switches past their individual flip gates for the
+  //    owner's own testing. Before ANY customer build, REVERT this migration (or gate the flip) and
+  //    re-confirm each arc against its own gate (the 605-corpus census for format-variance, the
+  //    WARM-DB confirm for fragment-containment, the soak for watch-separate, etc.). DELIBERATELY
+  //    EXCLUDES the three NEVER-flip seams (template_format_fail_yield_strict_money — pre-empts the
+  //    sweep release path; trust_company_key_own_scope — holds 45 docs; deskew_on_import — WRONG
+  //    LAYER, toggle removed this session) and the corpus/Oracle-gated riskier switches. ──
+  if (!applied.has(106)) {
+    try {
+      const up = db.prepare(`INSERT INTO settings (key, value) VALUES (?, 'true')
+                             ON CONFLICT(key) DO UPDATE SET value = 'true'`);
+      const TEST_ON = [
+        'format_variance_relax',              // mig 105 (2026-09-02) — high-variance format-flag suppression
+        'template_fragment_containment_yield',// mig 100 (Fix B) — clipped-code yields to the fuller keyword read
+        'template_locate_role_qualifier',     // mig 99 — taught "Total" prefers the grand total
+        'deskew_corrob_autofile',             // 2026-09-01 — corroborated straighten auto-file (census MET)
+        'quick_reprocess_enabled',            // mig 104 — reuse cached page OCR at "Reprocess all"
+        'watch_separate_enabled',             // 2026-09-02 — split multi-doc PDFs on the watch path too
+      ];
+      for (const k of TEST_ON) up.run(k);
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (106)').run();
+      console.log(`JS migration 106 applied: TEST-BUILD enabled ${TEST_ON.length} safe recent arcs (FORCE ON — revert before customer build)`);
+    } catch (e) { console.warn(`  migration 106 (test-build toggle enablement): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

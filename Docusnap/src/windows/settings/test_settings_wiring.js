@@ -228,9 +228,7 @@ const SETTING_SWITCHES = [
   // Taught label becomes the keyword (migrations 61+62): the gate is a settings read at the two
   // teach WRITE sites; the processing handler is the higher-traffic consumer to pin.
   ['teach-label-keyword-toggle', 'teach_label_becomes_keyword', 'src/modules/processing/handler.js'],
-  // Straighten-on-import: read directly where the import worker is spawned (a CLI FLAG to the
-  // extractor, not an env bridge), so the consumer to pin is the processing handler itself.
-  ['deskew-import-toggle', 'deskew_on_import', 'src/modules/processing/handler.js'],
+  // deskew-import-toggle REMOVED 2026-09-03 (owner: proved WRONG LAYER) — no UI, setting stays OFF.
   // Corroboration-driven auto-file resolution — the two GATE-side switches (2026-08-15 held-queue
   // arc). Both are settings reads inside trust.js isAutoFileEligible (env wins both directions for
   // harness arms); critfield_corrob_floor_relax is additionally nested under corroboration_autofile.
@@ -298,7 +296,8 @@ for (const [id, key, consumer] of SETTING_SWITCHES) {
     'auto-rotate-toggle', 'auto-separate-toggle', 'filing-slips-toggle', 'printing-toggle',
     'generic-fallback-toggle',
     // Owner-parked reading FEATURES (customer-facing on purpose; see the DEV_SWITCH_IDS comments)
-    'light-text-recovery-toggle', 'deskew-review-retry-toggle', 'deskew-import-toggle',
+    // (deskew-import-toggle REMOVED 2026-09-03 — proved WRONG LAYER, no UI any more)
+    'light-text-recovery-toggle', 'deskew-review-retry-toggle',
     'barcode-inventory-toggle', 'barcode-field-toggle',
     'learning-repair-console-toggle', 'learning-repair-forget-toggle',
     // UI / licensing / diagnostics

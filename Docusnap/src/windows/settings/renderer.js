@@ -843,7 +843,9 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // vat_no's shipped format is UK-only, so a non-UK supplier reads empty and
                          // a correctly typed number is warned against (2026-08-10).
                          ['vat-eu-formats-toggle', 'vat_eu_formats'],
-                         ['deskew-import-toggle', 'deskew_on_import'],
+                         // deskew-import-toggle REMOVED 2026-09-03 (owner: proved it does not work —
+                         // WRONG LAYER standing ruling). The setting stays seeded OFF with no UI to
+                         // enable it; the handler's `deskew_on_import` guard is now permanently dead.
                          // NOT an extraction switch and NOT bridged through _reconcileEnv: the
                          // auto-file gate is JS-side, so database/modules/trust.js reads this key
                          // itself, once per document. That also means it takes effect on the next
