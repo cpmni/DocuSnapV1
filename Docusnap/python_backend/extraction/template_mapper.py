@@ -152,6 +152,26 @@ _STAGE05_REF_CODE_GATE = os.environ.get('STAGE05_REF_CODE_GATE', '0') != '0'
 # code-class ref bleed). Uses the '== "1"' idiom (empty string reads OFF).
 _FORMAT_VARIANCE_RELAX_REF = os.environ.get('FORMAT_VARIANCE_RELAX_REF', '0') == '1'
 
+# FORMAT_VARIANCE_RELAX_REF_INLINE (2026-09-03, gary + Oracle SIGN-OFF-W/COND; SIBLING of the arc
+# above, NOT a leg — DARK, DEFAULT OFF, byte-identical off). The parent arc lives in _gate_value, but
+# the Print-Tracker exhibit's flag is minted at a SECOND choke point that BYPASSES _gate_value:
+# _pick_fuller_code's `inline_disagree_flag` (the absolute drawn-box read is garbage, the label-anchored
+# INLINE read RECOVERED the value, they disagree -> commit inline but flag "verify"). That is a
+# PROVENANCE-uncertainty checkpoint, not a shape flag; when the recovered inline value is an EXACT
+# confirmed in-scope literal, history corroborates the recovery at the VALUE level -> commit CLEAN.
+# BINDING GUARD (Oracle R2): fire ONLY when the RIGID dissent is NON-CREDIBLE (rigid_conf present AND
+# below _INLINE_DISAGREE_RIGID_CREDIBLE_FLOOR). A CODE crop gets no free-text conf floor, so a CREDIBLE
+# rigid read of THIS doc's OWN value that loses the conf race to an inline reading a DIFFERENT confirmed
+# serial must STAY flagged (the human catches a wrong-device filing) — the exact-literal predicate alone
+# does not separate that case. Sibling flag (independent kill/census from the parent) — never AND-ed
+# with it. Clearing the flag drops the cap+note so the value may auto-file: exact-confirmed-literal +
+# non-credible-rigid are the sole barriers (docTrustGate _codeish does NOT re-catch a code-class bleed).
+_FORMAT_VARIANCE_RELAX_REF_INLINE = os.environ.get('FORMAT_VARIANCE_RELAX_REF_INLINE', '0') == '1'
+# A rigid CODE read at/above this mean word-confidence is a CREDIBLE competing read: never drop the
+# disagreement flag over it (Oracle R2). Garbage/drifted box reads sit far below (doc121 rigid=44,
+# doc138 rigid=51); a genuine device-row read sits ~80+. rigid_conf None (test stubs) => not eligible.
+_INLINE_DISAGREE_RIGID_CREDIBLE_FLOOR = 70.0
+
 # TEMPLATE_CURRENCY_EDGE_GROW (kill switch, DEFAULT OFF — owner-reported 2026-08-09).
 # Money is the ONE field type whose taught box is sized to a SAMPLE VALUE rather than to a
 # fixed-width code, and it is RIGHT-ALIGNED in a totals column — so a longer value grows LEFTWARD,
@@ -1622,6 +1642,30 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
             return committed
     if rigid_conf is not None and inline_conf is not None and inline_conf <= rigid_conf:
         return None
+    # FORMAT_VARIANCE_RELAX_REF_INLINE (Oracle SIGN-OFF-W/COND, C1a predicate at the box-drift site).
+    # The disagreement flag below is a PROVENANCE-uncertainty checkpoint (rigid garbage, inline
+    # RECOVERED). An EXACT confirmed in-scope literal removes that uncertainty at the VALUE level — the
+    # recovered string is character-identical to a value a human accepted for THIS (supplier,doctype,
+    # field), so history corroborates the recovery. Commit CLEAN (drops the cap+note -> may auto-file).
+    # BINDING GUARD (Oracle R2): only when the RIGID dissent is NON-CREDIBLE — a credible competing rigid
+    # read of THIS doc's own value must never be overturned into an auto-file of a DIFFERENT confirmed
+    # serial the inline slid onto (a wrong-device filing the human should catch). A non-literal recovery
+    # (doc138 RFHO738865, letter-O misread) or absent value_counts KEEPS flag+cap+review. Byte-identical
+    # OFF. Placed strictly inside the flagged branch (after the conf-race guard above), so it can only
+    # convert an existing flag -> clean; it never overturns a keep-rigid, clip_commit, or credible read.
+    if (_FORMAT_VARIANCE_RELAX_REF_INLINE and field_key is not None and format_lookup is not None
+            and rigid_conf is not None and rigid_conf < _INLINE_DISAGREE_RIGID_CREDIBLE_FLOOR):
+        try:
+            _entry = format_lookup(field_key)
+        except Exception:
+            _entry = None
+        if _entry and value_is_confirmed_literal(str(inline_val), _entry):
+            committed = _mapping_result(inline_val, True, False, False, anchor,
+                                        val_type=val_type, geom=inline_geom)
+            committed["_heal"] = "inline_disagree_literal"       # distinct census marker (vs clip_commit)
+            if inline_geom is not None:                          # diag-only trace marker
+                committed["inline_literal_from"] = rigid_text
+            return committed
     flagged = _mapping_result(inline_val, True, False, False, anchor, shape_warn=True,
                               val_type=val_type, geom=inline_geom)
     flagged["_heal"] = "inline_disagree_flag"                    # census marker

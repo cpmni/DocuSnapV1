@@ -532,6 +532,14 @@ function _reconcileEnv(db) {
     if (env.FORMAT_VARIANCE_RELAX_REF == null && learning.getSetting(db, 'format_variance_relax_ref', 'false') === 'true') {
       env.FORMAT_VARIANCE_RELAX_REF = '1';
     }
+    // FORMAT_VARIANCE_RELAX_REF_INLINE (2026-09-03; gary + Oracle SIGN-OFF-W/COND). SIBLING of the arc
+    //   above (independent kill/census, never AND-ed): the SAME exact-confirmed-literal predicate at a
+    //   SECOND choke point that bypasses _gate_value — _pick_fuller_code's box-drift disagreement flag
+    //   (rigid box garbage, inline RECOVERED the value). Suppress that flag ONLY when the inline value is
+    //   an exact confirmed literal AND the rigid dissent is non-credible (Oracle R2 guard, in Python).
+    if (env.FORMAT_VARIANCE_RELAX_REF_INLINE == null && learning.getSetting(db, 'format_variance_relax_ref_inline', 'false') === 'true') {
+      env.FORMAT_VARIANCE_RELAX_REF_INLINE = '1';
+    }
     // STRICT MONEY sub-flag of TEMPLATE_FORMAT_FAIL_YIELD (2026-08-30, reggie; DARK): the yield's currency
     //   leg becomes the whole-string `money_strict_shape` (the legacy leg passes '£9 32632.76' as 9.0).
     //   AND-ed with the parent HERE — a sub-flag armed without its parent bridges nothing.

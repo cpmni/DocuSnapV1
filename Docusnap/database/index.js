@@ -2537,6 +2537,23 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 108 (format_variance_relax_ref force-ON): ${e.message}`); }
   }
 
+  // ── migration 109: format_variance_relax_ref_INLINE seeded OFF (2026-09-03, gary + Oracle SIGN-OFF-
+  //    W/COND). SIBLING of mig 107 (independent flag): the SAME exact-confirmed-literal suppression at a
+  //    SECOND choke point that bypasses _gate_value — _pick_fuller_code's box-drift disagreement flag
+  //    (rigid drawn-box read garbage, label-anchored INLINE read RECOVERED the value). Heals the
+  //    Print-Tracker exhibit doc121 (rigid '10RARNNNAD'@44, inline '1984800049'@96) that mig 107 could
+  //    NOT reach. Oracle R2 guard (in Python) keeps a CREDIBLE competing rigid read flagged. DARK; its
+  //    OWN WARM-DB census is OWED (each clean-commit == that DOC's own prior-confirmed value; realdoc
+  //    M=0). Clearing the flag drops cap+note (may auto-file) — exact-literal + non-credible-rigid are
+  //    the sole barriers. ──
+  if (!applied.has(109)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('format_variance_relax_ref_inline', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (109)').run();
+      console.log(`JS migration 109 applied: format-variance relax (ref INLINE / box-drift disagreement) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 109 (format_variance_relax_ref_inline): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
