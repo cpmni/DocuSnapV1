@@ -2587,6 +2587,21 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 111 (filing_sanity_ref_corrob_soften): ${e.message}`); }
   }
 
+  // ── migration 112: TEST-BUILD force-ON of filing_sanity_ref_corrob_soften (2026-09-03; same pattern +
+  //    caveat as mig 108/110). FORCE-flips (UPSERT) the truthful-soft-note ON so the owner's test DB shows
+  //    doc196 the honest note on reprocess. It only REWORDS a note the doc already carries (auto-file
+  //    unchanged), so this is the safest of the three test force-ONs — but ⚠ TEST-ONLY / REVERSIBLE: revert
+  //    (or gate) before ANY customer build and run its gate (RED-first mirror pin + realdoc M=0 + WARM-DB
+  //    census against INDEPENDENT GT). Requires filing_value_sanity_flags ON to have any effect. ──
+  if (!applied.has(112)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('filing_sanity_ref_corrob_soften', 'true')
+                  ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (112)').run();
+      console.log('JS migration 112 applied: TEST-BUILD force-ON filing_sanity_ref_corrob_soften (revert + gate before customer build)');
+    } catch (e) { console.warn(`  migration 112 (filing_sanity_ref_corrob_soften force-ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
