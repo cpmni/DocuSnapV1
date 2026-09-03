@@ -1914,6 +1914,20 @@ def _one_confusable_diff(a, b) -> bool:
     return diffs == 1
 
 
+def _same_length_one_glyph(a, b) -> bool:
+    """True iff `a` and `b` are the same length and differ in EXACTLY ONE position — WITHOUT the
+    known-confusable requirement of `_one_confusable_diff`. Used ONLY by the Gate-C corroboration
+    SOFTEN (FILING_SANITY_REF_CORROB_SOFTEN): the doc196 slip is `5`<->`8`, an UNBACKED pair (5 and 8
+    live in different `_PREFIX_CONFUSE_CLASSES`), so an `_one_confusable_diff`-based test would fail to
+    fire on the exhibit — the whole point of this helper is to admit an unbacked one-glyph page slip.
+    It is safe to be this loose ONLY behind the soften's other clauses (an exact confirmed literal that
+    two independent read families agree on, and no clip container); NEVER call it as a standalone gate."""
+    a = str(a); b = str(b)
+    if len(a) != len(b):
+        return False
+    return sum(1 for ca, cb in zip(a, b) if ca != cb) == 1
+
+
 # ── P adopt lane (REF_PREFIX_CONFUSABLE_ADOPT; reggie design → Oracle SIGN-OFF-W/COND 2026-08-16,
 # owner-directed: "if the data shows PI is a consistent value, then P1 is a likely misdetection").
 # The note tail is the SHARED CONSTANT between the prefix-outlier writer and the P lane's matcher —
@@ -1932,6 +1946,18 @@ _REF_LENGTH_WITNESS_NOTE_MARK = "references usually have"         # witness form
 # and the matcher goes INERT rather than quietly matching a class it was never reviewed against.
 # (The third, `_PAD_CODE_DISAGREE_MARK`, is owned by template_mapper and read from there.)
 _FILING_SANITY_ABSENT_MARK = "doesn't appear on this page as written"
+# FILING_SANITY_REF_CORROB_SOFTEN (2026-09-03; reggie+gary+Oracle SIGN-OFF-W/COND, C1 = keep review-bound).
+# When the Gate-C "absent" trigger fires on a reference that (1) two INDEPENDENT read families agree on,
+# (2) is an EXACT confirmed in-scope literal, and (3) the full-page pass disagrees with only by a SAME-LENGTH
+# one-glyph slip, and (4) is NOT a clip of a longer printed token — the value visibly IS on the page and the
+# scary "doesn't appear on this page as written" text is both false and alarming (owner: "how can it claim it
+# isn't there?"). We swap it for a TRUTHFUL note that names both readings. Its MARK is DISTINCT from the
+# absent-mark (the three absent-note consumers must NOT match it), and — this is the whole safety — it is
+# STILL a validation_note, so trust.isAutoFileEligible keeps the doc REVIEW-BOUND: auto-file behaviour is
+# byte-identical, the mirror (true value = the minority spelling) is HELD for a human, never silently filed.
+_FILING_SANITY_SOFTEN_MARK = "please confirm the reference before filing"
+_FILING_SANITY_SOFTEN_NOTE = ("This reference reads as '{}' where it is labelled, but the full-page text "
+                              "reads it as '{}' — " + _FILING_SANITY_SOFTEN_MARK + ".")
 _FILING_SANITY_ABSENT_NOTE = ("'{}' " + _FILING_SANITY_ABSENT_MARK
                               + " — please check the reference before filing.")
 
@@ -6445,6 +6471,65 @@ class ExtractionEngine:
                 except Exception: pass
             return False   # judgment failure keeps the v1 verdict — fail toward the flag
 
+    def _ref_corrob_soften(self, results, ref_field_key, rv, page, sup, slug):
+        """FILING_SANITY_REF_CORROB_SOFTEN (reggie+gary+Oracle SIGN-OFF-W/COND, 2026-09-03). Called ONLY
+        after Gate C has decided a reference is "absent" from the page. Returns the SAME-LENGTH one-glyph
+        page-witness form (the string to name in the truthful soft note) when the absence is provably a
+        full-page OCR glyph slip on a value that is really printed — else None (keep Gate C's scary note).
+
+        This does NOT auto-file anything and does NOT edit a value: the caller keeps a validation_note
+        either way, so the doc stays review-bound (Oracle C1). It only decides WHICH note the operator
+        sees. Four clauses, ALL required (Oracle C2/C3):
+          1. CORROBORATION — >=2 INDEPENDENT page families ({winner}∪agree ∩ _CORROB_PAGE_FAMILIES) and
+             independent_agree; derived ON-DEMAND (the emit is not on `results` yet at Gate-C time, but
+             self._field_candidates is final for the ref field here — last writer engine.py ~9401; the
+             only post-Gate-C append is TOTALS-only). Read emit[ref_field_key] ONLY (Oracle C4).
+          2. CONFIRMED LITERAL — rv is an exact confirmed in-scope literal (machine-confirms excluded in
+             prod). This is what licenses admitting a PREFIX-position slip (Oracle C3): a never-confirmed
+             value keeps the scary note. NOTE the coupling — do not relax clause 2 without re-guarding the
+             prefix (a DN->IN confusion).
+          3. SAME-LENGTH ONE-GLYPH DISSENT (positive presence) — at least one disagreeing PAGE family whose
+             value is a same-length exactly-one-glyph variant of rv (the proof the value is printed, one
+             glyph misread; UNBACKED via _same_length_one_glyph — 5<->8 is unbacked).
+          4. NO CLIP CONTAINER (Oracle C2, ORTHOGONAL to 3 — a longer clip token can coexist with a
+             same-length variant) — no same-line sepless join PROPERLY contains sepless-rv at greater
+             length (preserves the VXS986 ⊂ VXS98624 catch Gate C ships for).
+        Any exception -> None (fail toward Gate C's flag)."""
+        try:
+            emit = self._build_corroboration_emit(results) or {}
+            rec = emit.get(ref_field_key)
+            if not isinstance(rec, dict):
+                return None
+            # (1) corroboration agency
+            fams = ({rec.get('winner_family')} | set(rec.get('agree') or [])) & _CORROB_PAGE_FAMILIES
+            if not (rec.get('independent_agree') is True and len(fams) >= 2):
+                return None
+            # (2) exact confirmed in-scope literal
+            lk = self._make_format_lookup(sup, slug)
+            entry = lk(ref_field_key) if lk else None
+            if not (entry and format_anomaly_checker.value_is_confirmed_literal(rv, entry)):
+                return None
+            # (3) a same-length one-glyph PAGE-family dissent (the witness the soft note names)
+            rv_sl = _strip_all_alnum(rv)
+            witness = None
+            for d in (rec.get('disagree') or []):
+                if not isinstance(d, dict) or d.get('family') not in _CORROB_PAGE_FAMILIES:
+                    continue
+                dv = str(d.get('value') or '')
+                if dv and _same_length_one_glyph(rv_sl, _strip_all_alnum(dv)):
+                    witness = dv
+                    break
+            if witness is None:
+                return None
+            # (4) NOT a clip of a longer printed token
+            for joined, _n in _sepless_line_windows(page):
+                js = _strip_all_alnum(joined)
+                if len(js) > len(rv_sl) and rv_sl and rv_sl in js:
+                    return None
+            return witness
+        except Exception:
+            return None
+
     def _flag_filing_value_sanity(self, results, ref_field_key, date_field_keys, ocr_text,
                                   supplier_name=None, document_slug=None):
         """FILING_VALUE_SANITY_FLAGS (kill switch, DEFAULT OFF — Chris round 3, 2026-08-09).
@@ -6514,6 +6599,16 @@ class ExtractionEngine:
                 if rv and len(rv) >= 4:
                     toks = {t.strip('.,;:()[]{}"\'').casefold() for t in re.split(r'\s+', page)}
                     _absent = rv.casefold() not in toks
+                    # THE SCOPE KEY (2026-08-27, the Pelican 'PI/26/9687' exhibit): this gate runs BEFORE
+                    # extract() writes results['_supplier_name'] (line ~9896), so reading it late handed an
+                    # EMPTY supplier — the index lookup missed and the backed one-glyph tolerance never fired
+                    # in production. Take the caller's resolved scope like the other prefix readers do, then
+                    # the supplier FIELD's value, then the late mirror. Hoisted out of the v2 branch (2026-09-03)
+                    # so BOTH v2 and the corrob-soften share ONE resolution — byte-identical for v2.
+                    _sup_v = results.get('supplier_name')
+                    _sup = (supplier_name or results.get('_supplier_name')
+                            or (_sup_v.get('value') if isinstance(_sup_v, dict) else None) or '')
+                    _slug = document_slug or results.get('_document_slug') or ''
                     # PAGE-MATCH V2 (FILING_SANITY_PAGE_MATCH_V2, DEFAULT OFF, mig-72 seed; gary →
                     # Oracle S-O-W/C 2026-08-16, blocking condition A1 applied). The v1 exact-token
                     # test treats the full-page pass as ground truth, but the page pass carries its
@@ -6523,30 +6618,37 @@ class ExtractionEngine:
                     # v2 re-tests absence with (1) sepless same-line joins and (2) a prefix-region
                     # backed-confusable tolerance; see _page_match_v2. FLAG-ONLY either way.
                     if _absent and os.environ.get('FILING_SANITY_PAGE_MATCH_V2', '0') != '0':
-                        # THE SCOPE KEY (2026-08-27, the Pelican 'PI/26/9687' exhibit): this gate runs BEFORE
-                        # extract() writes results['_supplier_name'] (line ~9896), so reading it here handed
-                        # leg 2 an EMPTY supplier — the index lookup missed and the backed one-glyph tolerance
-                        # never fired in production (trace: leg=exit why=unbacked dominant=null on a scope
-                        # with 139/140 'PI/…' confirms). Take the caller's resolved scope like the other
-                        # prefix readers do, then the supplier FIELD's value, then the late mirror.
-                        _sup_v = results.get('supplier_name')
-                        _sup = (supplier_name or results.get('_supplier_name')
-                                or (_sup_v.get('value') if isinstance(_sup_v, dict) else None) or '')
-                        _slug = document_slug or results.get('_document_slug') or ''
                         _absent = not self._page_match_v2(page, rv, ref_field_key, str(_sup), str(_slug))
                     if _absent:
-                        # Say what the page DID read (owner 2026-08-27: "the text is literally there on the page —
-                        # how can the software claim it isn't?"): the page pass had 'P1/26/9687' where the box read
-                        # 'PI/26/9687'. Naming the page form turns a contradiction into a one-glance I/1 question.
-                        # The MARK stays intact (three consumers match it as a substring).
-                        _near = _nearest_confusable_page_token(page, rv)
-                        _txt = (f"'{rv}' {_FILING_SANITY_ABSENT_MARK} — the page reads it as '{_near}' — "
-                                f"please check the reference before filing.") if _near \
-                            else _FILING_SANITY_ABSENT_NOTE.format(rv)
-                        if _note(ref_field_key, _txt):
-                            self._t('filing_sanity_ref_absent', field=ref_field_key, value=rv, page_form=_near or None)
-                            self.log(f"  Filing sanity: {ref_field_key} '{rv}' not printed on the "
-                                     f"page as a whole token — flagged for review")
+                        # FILING_SANITY_REF_CORROB_SOFTEN (2026-09-03; reggie+gary → Oracle SIGN-OFF-W/COND,
+                        # C1 = REVIEW-BOUND). When the "absent" value is a corroborated confirmed literal whose
+                        # only page disagreement is a same-length one-glyph slip (not a clip), the value IS on
+                        # the page — the scary "doesn't appear as written" note is false and alarming. Swap it
+                        # for a TRUTHFUL note naming both readings. It is STILL a validation_note, so the doc
+                        # stays REVIEW-BOUND (trust.isAutoFileEligible unchanged — the mirror, where the TRUE
+                        # value is the minority spelling, is HELD for a human, never silently filed). DARK
+                        # (default OFF) → byte-identical; non-soften cases keep the scary note verbatim.
+                        _witness = (self._ref_corrob_soften(results, ref_field_key, rv, page, str(_sup), str(_slug))
+                                    if os.environ.get('FILING_SANITY_REF_CORROB_SOFTEN', '0') != '0' else None)
+                        if _witness:
+                            _txt = _FILING_SANITY_SOFTEN_NOTE.format(rv, _witness)
+                            if _note(ref_field_key, _txt):
+                                self._t('filing_sanity_ref_corrob_soften', field=ref_field_key, value=rv, page_form=_witness)
+                                self.log(f"  Filing sanity: {ref_field_key} '{rv}' — corroborated confirmed "
+                                         f"literal, full-page slip '{_witness}': softened, kept in review")
+                        else:
+                            # Say what the page DID read (owner 2026-08-27: "the text is literally there on the page —
+                            # how can the software claim it isn't?"): the page pass had 'P1/26/9687' where the box read
+                            # 'PI/26/9687'. Naming the page form turns a contradiction into a one-glance I/1 question.
+                            # The MARK stays intact (three consumers match it as a substring).
+                            _near = _nearest_confusable_page_token(page, rv)
+                            _txt = (f"'{rv}' {_FILING_SANITY_ABSENT_MARK} — the page reads it as '{_near}' — "
+                                    f"please check the reference before filing.") if _near \
+                                else _FILING_SANITY_ABSENT_NOTE.format(rv)
+                            if _note(ref_field_key, _txt):
+                                self._t('filing_sanity_ref_absent', field=ref_field_key, value=rv, page_form=_near or None)
+                                self.log(f"  Filing sanity: {ref_field_key} '{rv}' not printed on the "
+                                         f"page as a whole token — flagged for review")
 
             # ── Gate B ────────────────────────────────────────────────────────────────────
             for key in date_keys:

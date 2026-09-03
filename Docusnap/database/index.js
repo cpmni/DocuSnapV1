@@ -2569,6 +2569,24 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 110 (format_variance_relax_ref_inline force-ON): ${e.message}`); }
   }
 
+  // ── migration 111: filing_sanity_ref_corrob_soften seeded OFF (2026-09-03; reggie+gary → Oracle
+  //    SIGN-OFF-W/COND, C1 review-bound). Gate C's "'X' doesn't appear on this page as written" note is
+  //    FALSE + alarming when the reference is a corroborated (>=2 independent read families) EXACT confirmed
+  //    literal whose only page disagreement is a same-length ONE-GLYPH full-page slip (not a clip) — the
+  //    value IS on the page, the full-page OCR just misread a glyph (doc196: crop+mapping '752923124N3M2',
+  //    full-page '782923124N3M2', 5<->8 unbacked so v2 can't heal). This arc swaps that note for a TRUTHFUL
+  //    one naming both readings; it STAYS a validation_note, so the doc is REVIEW-BOUND (auto-file byte-
+  //    identical — the mirror is HELD for a human, never silently filed). Separate kill switch from the
+  //    variance-relax arcs. DARK; its OWN gate is OWED (RED-first mirror pin + realdoc M=0 + WARM-DB census
+  //    scored against INDEPENDENT GT, prod flags asserted). ──
+  if (!applied.has(111)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('filing_sanity_ref_corrob_soften', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (111)').run();
+      console.log(`JS migration 111 applied: filing_sanity_ref_corrob_soften (Gate-C truthful soft note) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 111 (filing_sanity_ref_corrob_soften): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

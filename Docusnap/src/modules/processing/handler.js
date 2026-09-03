@@ -287,6 +287,12 @@ function _reconcileEnv(db) {
     //    '$'-mid-run witness (the reg's own misread '5') folds instead of disarming the guard.
     //    Money sign capture: a '-' immediately before a matched amount is kept at the mint.
     if (learning.getSetting(db, 'filing_sanity_page_match_v2', 'false') === 'true') env.FILING_SANITY_PAGE_MATCH_V2 = '1';
+    // FILING_SANITY_REF_CORROB_SOFTEN (2026-09-03; reggie+gary → Oracle SIGN-OFF-W/COND, C1 review-bound).
+    //    Gate C's "doesn't appear on this page as written" note is FALSE + alarming when the reference is a
+    //    corroborated (>=2 independent read families) EXACT confirmed literal whose only page disagreement is
+    //    a same-length one-glyph full-page slip (not a clip). Swap it for a TRUTHFUL note naming both readings
+    //    — STILL a note, so the doc stays review-bound (auto-file byte-identical). DARK, default OFF.
+    if (learning.getSetting(db, 'filing_sanity_ref_corrob_soften', 'false') === 'true') env.FILING_SANITY_REF_CORROB_SOFTEN = '1';
     if (learning.getSetting(db, 'vat_reg_symbol_confusable', 'false') === 'true') env.VAT_REG_SYMBOL_CONFUSABLE = '1';
     if (learning.getSetting(db, 'money_sign_capture', 'false') === 'true') env.MONEY_SIGN_CAPTURE = '1';
     // The linchpin (2026-08-15): a demoted note is no longer a format mismatch, so its -12

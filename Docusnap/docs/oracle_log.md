@@ -2557,3 +2557,44 @@ mechanically in the recipe, runtime-actual values, rev bump-checklist + cross-la
 a one-sided bump; C7 pin the imageless merge never NULLs a stored supplier. Deviating from C1-C4 = back
 to the Oracle. auto_rotate correctly a NON-invalidator (rotation baked into the working copy at import);
 Quick honestly cannot mint a logo identity or run pixel heals (held, never silently wrong).
+
+## 2026-09-03 — FORMAT_VARIANCE_RELAX_REF_INLINE (box-drift disagreement flag, exact confirmed literal)
+Verdict: **SIGN OFF WITH CONDITIONS.** `_pick_fuller_code:1625` `inline_disagree_flag` is a SECOND choke
+point minting the "manually mapped value differs" note that BYPASSES `_gate_value` — the parent arc
+(mig 107) could not reach the Print Tracker exhibit (doc121: rigid box garbage `10RARNNNAD`@44, inline
+recovered `1984800049`@96, flagged the disagreement). Fix = same C1a exact-confirmed-literal predicate at
+that site → commit CLEAN. Premise + completeness verified at source (only `:1625` bypasses `_gate_value`;
+`:1820`/`:1895` carry the parent arc via `_gate_value`, `:1952` read-only). BINDING conditions:
+(1) **rigid-credibility guard** — never drop the flag over a CREDIBLE competing rigid read (`rigid_conf`
+present AND < 70); closes R2 (a credible box read of THIS doc's own value losing the conf-race to an
+inline reading a DIFFERENT confirmed serial → wrong-device auto-file); doc121 rigid=44 unaffected.
+(2) pin the R2 negative + the doc138 letter-O near-miss + the doc121 heal. (3) census asserts each
+clean-commit == that DOC's OWN prior-confirmed value (not "any literal"). (4) WARM-DB census,
+machine-confirm-excluded, realdoc M=0. Sibling flag (independent kill/census), default OFF.
+Built `238e13a` (all 4 conditions honoured; guard floor 70) + test force-ON `cd1121f` (mig 110). Pin
+`test_pick_fuller_code_literal.py` 16/16.
+
+## 2026-09-03 — FILING_SANITY_REF_CORROB_SOFTEN (Gate-C absent-note → truthful soft note on a corroborated confirmed literal; reggie+gary+main)
+Verdict: **SIGN OFF WITH CONDITIONS (C1 ship-blocking).** Gate C's "'752…' doesn't appear on this page as
+written" false-alarms doc196 (crop+mapping read the confirmed literal `752…`; full-page pass slipped one
+glyph to `782…`; `5↔8` unbacked so v2 can't heal). Ledger final at Gate C (last `_remember_candidates`
+:9401; post-Gate-C append :4654 TOTALS-only; ref winner immutable) ⇒ on-demand `_build_corroboration_emit`
+SOUND. **C1 (ship-blocker):** do NOT ship plain `_absent=False` (auto-files the FILENAME token over the sole
+whole-page reader — crop+mapping on a boxed ref are the same LOCATED BOX, the documented "two preps agreed
+on wrong P1" 5:1 same-pixel class; the mirror true=`782` minority / crop+mapping common-mode `8→5` to
+confirmed-literal `752` is geometrically identical to doc196 and undistinguishable; variance-relax already
+dropped the shape-cap so Gate C is the LAST checkpoint). Take the INLINE credibility-guard analog OR keep
+review-bound. **OWNER CHOSE review-bound (lighter checkpoint).** IMPLEMENTED = Oracle §6 fallback: replace
+the scary absent-note with a TRUTHFUL non-alarming note, keep it review-bound (a note still blocks auto-file
+in trust.js — so auto-file behaviour is byte-identical; the mirror is HELD with an honest "we read 752 here,
+782 elsewhere — confirm which" note, never silently filed). C2 keep clauses 3 AND 4 (orthogonal — a longer
+clip-container can coexist with a same-length one-glyph variant). C3 exactly-ONE glyph, prefix NOT barred
+(doc196 slip at index 1) but that admission is safe ONLY because clause 2 (exact confirmed literal) holds —
+pin the coupling. C4 read `emit.get(ref_field_key)` only. C5 gate: RED-first MIRROR pin (true=782 ⇒ held,
+never auto-filed) + heal doc196 (soft note) + CLIP still scary + never-confirmed still scary + uncorroborated
+still scary + Gate A/B untouched + fail-closed on FIELD_CORROBORATION_EMIT=0 + source-order pin (:9401
+last-writer, :2947 blind-geom scope); census scored against INDEPENDENT GT (the "own prior-confirmed value"
+criterion is circular) with prod flags asserted (`learning_exclude_machine_confirms`+`autofile_gate_unify`
+ON); realdoc M=0 (auto-file unchanged by construction). Mig 111 (109/110 = the INLINE sibling). Separate kill
+switch, DARK. Oracle caught: corrob "independence" is same-located-box for this geometry; census circularity;
+the machine-confirm-exclusion dependency.
