@@ -240,6 +240,17 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-09-03 NIGHT · Reference-flag family (3 arcs) + watch db_id fix + Chris audit — owner order on AUTO.**
+  Owner chose the LIGHTER checkpoint for the Gate-C reference note. Built DARK behind kill switches (all LOCAL,
+  unpushed for revert): (1) `FILING_SANITY_REF_CORROB_SOFTEN` `661cd2a` mig 111/112 — Gate C's "doesn't appear
+  on this page" rewritten to a TRUTHFUL note, doc STAYS review-bound (soft note still blocks auto-file → Oracle
+  C1 satisfied by construction; the same-located-box MIRROR is HELD, never silently filed); reggie+gary→Oracle
+  SIGN-OFF-W/COND; pin `test_filing_sanity_ref_corrob_soften.py` 14/14 RED-first; page-match v2 25/25. (2) sibling
+  `FORMAT_VARIANCE_RELAX_REF_INLINE` `238e13a` mig 109/110 (box-drift, doc121 heals; pin 16/16). (3) watch db_id
+  fix `205143a` (split rows open the right doc + show Filed; pin `test_watch_row_dbid_sync.js`). Chris ran
+  sandboxed (port 9223). REVERT LEDGER + flip gates: **`HANDOVER_2026-09-03_NIGHT.md`**.
+  **Repeat if:** never as-is — the flip gate (revert test migs 108/110/112 + WARM-DB census vs INDEPENDENT GT,
+  realdoc M=0) is OWED on the owner's live corpus before any customer build.
 - **2026-09-02 · raw_value credit-sign census (owner ran) — PASS on safety.** Harness
   `TESTING/_measure/credit_sign_census/` (A/B via a single-file checkout of `keyword.py` at `32ae95b^`).
   Ran 487 money-type corpus docs on `C:\temp\docusnap.db` (arm 2 armed — `credit_sign_coherence`/
