@@ -2521,6 +2521,22 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 107 (format_variance_relax_ref): ${e.message}`); }
   }
 
+  // ── migration 108: TEST-BUILD force-ON of format_variance_relax_ref (2026-09-03, owner ask — "flip
+  //    it on and start"; same pattern + caveat as mig 106). FORCE-flips (UPSERT) the ref-shape-warn
+  //    suppression ON so the owner's existing test DB picks it up. It is exact-confirmed-literal ONLY
+  //    (a value a human already accepted), so a wrong/never-confirmed read is still HELD, never auto-
+  //    filed — but this arc removes a ref-shape veto path, so it is a SEPARATE migration from mig 106
+  //    and its own census is still OWED. ⚠ TEST-ONLY / REVERSIBLE: revert (or gate) before ANY customer
+  //    build and run the census (value diffs 0 + no held->auto-file on a NON-confirmed shape-mismatch). ──
+  if (!applied.has(108)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('format_variance_relax_ref', 'true')
+                  ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (108)').run();
+      console.log('JS migration 108 applied: TEST-BUILD force-ON format_variance_relax_ref (revert + census before customer build)');
+    } catch (e) { console.warn(`  migration 108 (format_variance_relax_ref force-ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
