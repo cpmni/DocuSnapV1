@@ -472,7 +472,23 @@ async function _processBatch(db, filenames, heldNames = null) {
           // A freshly-split segment is HELD for review (autoFileRun=false) — the unattended watch path
           // must not auto-file a wrong-but-clean split boundary to the wrong folder (Oracle owner fork).
           const _autoFileRun = !(heldNames && msg.type === 'file_done' && heldNames.has(msg.original_filename));
-          setImmediate(() => processing.handleFileMessage(db, msg, watchFolder, notifyMainWindow, _ctx.logger, _autoFileRun));
+          if (msg.type === 'file_done') {
+            // Persist SYNCHRONOUSLY so msg.db_id is stamped BEFORE the mirror below — the main window's
+            // results row needs the doc id to open THAT document (not the first in the queue) and to flip
+            // to "Filed (auto)" when the deferred auto-file lands (markRowFiled matches on data-doc-id).
+            // handleFileMessage's sync leg does the DB persist + db_id (better-sqlite3 is sync); it returns
+            // a PROMISE for the heavy tail (working copy / drain / auto-file), which we let run. Wrapping
+            // the WHOLE call in setImmediate — as this did — mirrored the row BEFORE db_id existed, so
+            // every watch-split row opened doc #1 and never showed "Filed". Mirrors the manual import path.
+            try {
+              const io = processing.handleFileMessage(db, msg, watchFolder, notifyMainWindow, _ctx.logger, _autoFileRun);
+              if (io && typeof io.then === 'function') io.catch((e) => _log('err', `[watch] file IO: ${e && e.message}`));
+            } catch (e) {
+              _log('err', `[watch] handleFileMessage failed: ${msg.original_filename || '?'} — ${e && e.message}`);
+            }
+          } else {
+            setImmediate(() => processing.handleFileMessage(db, msg, watchFolder, notifyMainWindow, _ctx.logger, _autoFileRun));
+          }
           if (msg.type === 'log') {
             if      (msg.level === 'err')  _log('err',  `[watch] Python: ${msg.text}`);
             else if (msg.level === 'warn') _log('warn', `[watch] Python: ${msg.text}`);
