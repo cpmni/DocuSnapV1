@@ -178,3 +178,156 @@ def read_money_witness(page, box, committed_value, read_lines_fn: Optional[Calla
         except Exception:
             continue
     return None
+
+
+# ── CODE re-slice witness + positional consensus (2026-09-04; gary integration → Oracle Phase 2, ─────────
+# REVIEW-BOUND). For a single-token REFERENCE/serial box whose crop read disagrees with the full-page
+# read at exactly one same-length position, produce INDEPENDENT-RECIPE re-reads to break the tie. The
+# engine has only the 200-DPI bitmap (no higher-DPI re-render), so independence comes from a DIFFERENT
+# BINARISATION (007's #1 lever for a 5<->8 / 0<->O stroke-topology flip) — NOT a re-read of the same
+# grayscale (a duplicate vote) and NOT a pixel shift (LSTM-normalised away). numpy (BSD-3) + scipy.ndimage
+# (BSD-3), both already shipped; no new dependency. The witnesses NEVER enter _field_candidates — a
+# reference is a filing key, and the corroboration record must stay byte-identical (Oracle Q3); only the
+# separate pixel-source consensus below reads them.
+import numpy as _np
+
+_CODE_MAX_DEFAULT = 2
+_CODE_TOKEN_RE = re.compile(r"[0-9A-Za-z][0-9A-Za-z\-/]{2,}")
+
+
+def code_witness_max() -> int:
+    try:
+        n = int(os.environ.get("CODE_WITNESS_MAX", str(_CODE_MAX_DEFAULT)) or _CODE_MAX_DEFAULT)
+    except (TypeError, ValueError):
+        n = _CODE_MAX_DEFAULT
+    return max(1, min(n, 2))
+
+
+def _otsu_binarise(gray):
+    """Global Otsu threshold -> a 0/255 'L' image. Pure numpy. Changes a glyph's stroke TOPOLOGY (whether
+    the thin loop-closing stroke of an 8 survives), the lever that can flip a 5<->8 the grayscale ladder
+    fixed one way."""
+    a = _np.asarray(gray.convert("L"), dtype=_np.uint8)
+    if a.size == 0:
+        return gray
+    hist = _np.bincount(a.ravel(), minlength=256).astype(_np.float64)
+    total = float(a.size)
+    idx = _np.arange(256, dtype=_np.float64)
+    wB = _np.cumsum(hist)
+    wF = total - wB
+    sumB = _np.cumsum(idx * hist)
+    sum_all = float(_np.dot(idx, hist))
+    with _np.errstate(divide="ignore", invalid="ignore"):
+        mB = _np.where(wB > 0, sumB / wB, 0.0)
+        mF = _np.where(wF > 0, (sum_all - sumB) / wF, 0.0)
+    between = wB * wF * (mB - mF) ** 2
+    t = int(_np.argmax(between))
+    return Image.fromarray(_np.where(a > t, 255, 0).astype(_np.uint8), mode="L")
+
+
+def _adaptive_binarise(gray, block_frac=0.5, C=8):
+    """Local adaptive-mean threshold via a vectorised box filter (scipy.ndimage.uniform_filter). A
+    genuinely DIFFERENT threshold regime than global Otsu (a second, independent recipe)."""
+    a = _np.asarray(gray.convert("L"), dtype=_np.float64)
+    h, w = a.shape
+    if h < 3 or w < 3:
+        return gray
+    from scipy import ndimage as _ndi
+    size = max(3, int(block_frac * min(h, w)))
+    size |= 1  # odd window
+    local_mean = _ndi.uniform_filter(a, size=size, mode="reflect")
+    return Image.fromarray(_np.where(a > (local_mean - C), 255, 0).astype(_np.uint8), mode="L")
+
+
+def _read_code_token(img, read_lines_fn, psm):
+    """One image_to_data pass -> (dominant code token, per-word conf) or (None, None)."""
+    text, mean_c, min_c, _lines = read_lines_fn(img, psm)
+    toks = _CODE_TOKEN_RE.findall(text or "")
+    if not toks:
+        return None, None
+    tok = max(toks, key=len)
+    conf = min_c if (min_c and min_c > 0) else mean_c
+    return tok, conf
+
+
+def read_code_witnesses(page, box, read_lines_fn, k=2):
+    """Up to k INDEPENDENT-RECIPE re-reads of a single-token CODE box -> [{value, conf, recipe_key}].
+    read_lines_fn = anchor._read_lines_full (one image_to_data pass, per-WORD conf; per-char is not
+    trustworthy — Oracle C4). Reuses the measured R8 crop (pad 0.5xh, 20px white border, NO upscale).
+    Deterministic; never raises; [] on a tiny/blank crop. Commits nothing — a WITNESS producer."""
+    out = []
+    try:
+        crop, _band = _crop_padded(page, box, 0.5, 0.5)
+        if crop is None:
+            return out
+        base = prep(crop)
+        recipes = [("otsu", _otsu_binarise), ("adaptive", _adaptive_binarise)][:max(1, min(int(k), 2))]
+        for name, fn in recipes:
+            try:
+                img = fn(base)
+                val, conf = _read_code_token(img, read_lines_fn, 8)
+                if not val:
+                    val, conf = _read_code_token(img, read_lines_fn, 7)
+                if val:
+                    out.append({"value": val, "conf": float(conf or 0.0), "recipe_key": name})
+            except Exception:
+                continue
+    except Exception:
+        return []
+    return out[:k]
+
+
+def quantize_box(box, ndp=2):
+    try:
+        return (round(float(box["x_norm"]), ndp), round(float(box["y_norm"]), ndp),
+                round(float(box["w_norm"]), ndp), round(float(box["h_norm"]), ndp))
+    except (TypeError, KeyError, ValueError):
+        return None
+
+
+def source_key(box, recipe_key=None, dpi=200):
+    """Pixel-source identity for the positional consensus (Oracle Q3 — independence is the PIXEL SOURCE,
+    not the method family). Same crop-rect + same recipe -> same key (crop and mapping of one taught box
+    collapse to ONE vote); each binarisation witness is a NEW source; a region-less read (box None, the
+    full-page text pass) is the single ('page','text-pass') source."""
+    if not box:
+        return ("page", "text-pass")
+    q = quantize_box(box)
+    if q is None:
+        return ("page", "text-pass")
+    return (q, int(dpi), recipe_key or "gray-ladder")
+
+
+def positional_consensus(voters):
+    """Pure. voters = [{value, conf, source_key}]. Return the consensus string iff, after keeping the
+    highest-conf read per DISTINCT source_key: (1) >= 3 distinct sources; (2) all reads EQUAL length;
+    (3) every position has a STRICT majority glyph (> half the sources); (4) the assembled string EQUALS
+    at least one voter's read (NEVER a synthesised novel token). Else None. A REVIEW-BOUND decision only
+    — the caller keeps a note + <=70 cap; it NEVER auto-files (Oracle Phase 2)."""
+    best = {}
+    for v in (voters or []):
+        sk = v.get("source_key")
+        val = (v.get("value") or "").strip()
+        if sk is None or not val:
+            continue
+        if sk not in best or float(v.get("conf") or 0) > float(best[sk].get("conf") or 0):
+            best[sk] = {"value": val, "conf": float(v.get("conf") or 0)}
+    reads = list(best.values())
+    if len(reads) < 3:
+        return None
+    if len({len(r["value"]) for r in reads}) != 1:
+        return None
+    n = len(reads)
+    L = len(reads[0]["value"])
+    result = []
+    for i in range(L):
+        counts = {}
+        for r in reads:
+            ch = r["value"][i]
+            counts[ch] = counts.get(ch, 0) + 1
+        ch, c = max(counts.items(), key=lambda kv: kv[1])
+        if c * 2 <= n:            # not a strict majority
+            return None
+        result.append(ch)
+    s = "".join(result)
+    return s if any(r["value"] == s for r in reads) else None
