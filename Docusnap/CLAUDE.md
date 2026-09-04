@@ -21,9 +21,13 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-04 LATE (confusion-precedence 2a BUILT at a RELOCATED site): **READ
-`HANDOVER_2026-09-04_LATE.md` FIRST.** HEAD `4fed950`, 3 commits LOCAL (`54d473f` feat · `0ad3cf9` docs ·
-`4fed950` chore; last pushed `8d26532`). **2a = DARK `confusion_precedence` (mig 119, seed OFF, NO force-ON twin),
+## ⏭ LATEST — 2026-09-04 LATE (confusion-precedence 2a BUILT at a RELOCATED site + FORMAT_CLASS_JOIN + import
+messaging): **READ `HANDOVER_2026-09-04_LATE.md` FIRST (incl. its ADDENDUM).** HEAD `c8baa68`; pushed through
+`85bf8d0`; LOCAL after that: `12e5176` (import strip says grabbed/checking/splitting) · `f12b952`
+**FORMAT_CLASS_JOIN** (DARK `format_class_join`, mig 120; Oracle C1-C11 — a MIXED-code scope no longer loses its
+whole format entry to `classify_format`'s 3-newest unanimity rule; the entry's loss had silently disarmed EVERY
+confirmed-literal arc for Print Tracker; a joined entry has NO `shapes`, consents review-bound only, never
+clears class F, flags never blanks) · `c8baa68` docs. App running with ALL of today's switches ON. **2a = DARK `confusion_precedence` (mig 119, seed OFF, NO force-ON twin),
 REVIEW-BOUND, inert on the owner's DB (5 correction rows).** `engine._apply_confusion_precedence` runs AFTER
 Gate C … D1 and BEFORE the boost (Oracle O1) — NOT the leg-b site: **the Stage-4.5 text branch is unreachable for
 every ref-role field of a ref-NAMED type, so RESOLVE_REF_NEAR_MISS / RESOLVE_REF_POSITIONAL NEVER executed on the

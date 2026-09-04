@@ -145,3 +145,38 @@ passes it (the page reads `1625802868` too); D1 doesn't fire (letter vs digit). 
   `docs/oracle_log.md` (2026-09-04 late entry).
 - Memory: `memory/project_confusion_precedence_20260904.md` (new) + the family file
   `memory/project_ref_variance_relax_20260903.md`.
+
+---
+## ADDENDUM (later the same afternoon) — two more arcs, all LOCAL, app restarted with everything ON
+HEAD = `c8baa68`. Commits after the wrap: `12e5176` feat(import) · `f12b952` feat(extraction) · `c8baa68` docs. Tree clean.
+Dev app RESTARTED on this code with `format_class_join` + `confusion_precedence` + the six family arcs all `true`
+(max migration 120 on disk; migs 119/120 seeded `0 row` because the switches were pre-armed).
+
+### `12e5176` — import messaging: "grabbed / checking / splitting" before processing (owner ask)
+`_separateBatchDocuments` now emits a QUIET per-file "Checking “X” for multiple documents… (k/N)" (status line only,
+`quiet` flag honoured by the main renderer) and a LOUD "Splitting “X” — N documents found, separating them before
+processing…" (or "Removing N separator sheet(s) from “X”…") BEFORE the splitter runs. Watch path: those lines only
+ever reached processing.log (no `file_begin` yet, ticker silent) — the drain now mirrors them to `watch-progress`
+and the strip shows them; the "file stable — accepted" pickup is mirrored as "Picked up “X” — accepted for
+processing". Pins green: split_plan, watch_separation, watch_row_dbid_sync, import_watch_parity.
+
+### `f12b952` — FORMAT_CLASS_JOIN (DARK `format_class_join`, mig 120) — Oracle SIGN-OFF-W/COND C1-C11
+**The owner's doc262 exhibit** ("edge cuts the value … fuller reading could not be verified" on a plainly-printed
+`752923124N3M2`): the mapper HAD re-read it correctly (`_edge_cut_relocate`); consent failed because the scope had NO
+format entry — `classify_format` needs the 3 NEWEST confirmed values to agree on a class, else FREETEXT, and the
+index DROPS a FREETEXT non-name entry. Today's confirms put a pure-digit serial beside alnum ones → the Print
+Tracker `reference_number` entry vanished → EVERY confirmed-literal arc (RELAX_REF/_INLINE, both Gate-C softens,
+leg-b, 2a, `_has_no_usual_format`) + the consent ladder went silently inert for that sender; the morning pins stayed
+green on a baked 19-value order (vacuous). Built per Oracle: the join admission in `build_format_class_index`
+(distinct-set class, name-field exclusion, separators over the distinct set, NO `shapes` key, length-aware
+`shape_families`, no `support`, supplier-scoped only); `_shape_consents` 'joined' tier (review-bound; literal or a
+≥3-doc family); `_JOINED_LITERAL_NOTE` (truthful) at the relocate + grow; engine class-F refusal, keep-and-flag,
+fc_delta exclusion. Pin `test_format_class_join.py` 51 (RED-first on the LIVE order). Census tool
+`python_backend/tools/format_join_census.py` (live: 1 scope joins, hard lines clean, coverage 19/23). E2E: doc262 →
+`752923124N3M2` @85 + the TRUTHFUL Gate-C soften note (review-bound by design — 752 AND 782 are both confirmed
+literals on this install); doc146 (no dissent) OFF==ON identical.
+**Owed before FLIP (pendingfeatures):** the corpus census + realdoc M=0 + blanked-field/flag deltas (C11: revert
+the TEST force-ON migs first); the UNANIMOUS-by-accident twin (own slice); Stage 4.5 hard-nulling an exact
+confirmed literal (own slice); Learning-Repair remediation of the rubber-stamped `1625802868` (docs 176/210) and
+`782923124N3M2` (doc 92).
+**Push:** none of `12e5176`/`f12b952`/`c8baa68` pushed (owner has not asked).
