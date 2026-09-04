@@ -10464,8 +10464,12 @@ class ExtractionEngine:
                             # UNAMBIGUOUS, PRE-FILL the confirmed value (was_corrected) instead of only
                             # suggesting it — KEEPING a dedicated note + the <=70 cap so the doc stays
                             # REVIEW-BOUND (never auto-files; the mirror/ambiguous cases refuse and fall
-                            # through to the suggestion below). Reference role only (this is the ref/serial
-                            # variance branch). Byte-identical when the flag is off.
+                            # through to the suggestion below). Byte-identical when the flag is off.
+                            # ⚠ REACHABILITY (verified 2026-09-04, Oracle O6b): this text branch EXCLUDES every
+                            # ref-role field of a ref-NAMED type (text_field_keys drops _is_ref_field keys), so
+                            # leg-b/leg-a below never execute on a `reference`-typed `reference_number` — only
+                            # on a text-typed, non-ref-named custom key. Relocation beside
+                            # _apply_confusion_precedence = its own commit (pendingfeatures.md 2026-09-04).
                             _ua = (format_anomaly_checker.unambiguous_near_miss(str(val), fmt_entry)
                                    if _RESOLVE_REF_NEAR_MISS else None)
                             if _ua and _ua != str(val):

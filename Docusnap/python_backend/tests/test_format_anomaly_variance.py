@@ -147,7 +147,9 @@ if guard:
     # Window widened 900 -> 4200 (2026-09-04): the RESOLVE_REF_NEAR_MISS (leg-b) AND RESOLVE_REF_POSITIONAL
     # (leg-a) blocks now sit between the guard and the near_miss_confirmed suggestion (still followed by the
     # text-write below), so the slip-catch is further down but structurally unchanged.
-    tail = src[guard.start():guard.start() + 4200]
+    # 4200 -> 4800 (2026-09-04 late): the Oracle O6b REACHABILITY comment at the leg-b site (this text branch
+    # excludes every ref-role field of a ref-named type) added ~500 chars before the slip-catch. Comment-only.
+    tail = src[guard.start():guard.start() + 4800]
     check("engine: the guard calls near_miss_confirmed (the retained slip-catch)",
           'near_miss_confirmed' in tail)
     check("engine: the guard suppresses via a bare continue (no unconditional flag write)",
