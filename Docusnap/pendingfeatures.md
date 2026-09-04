@@ -9,6 +9,84 @@
 
 ---
 
+## 2026-09-04 — RELOCATE leg-b / leg-a (RESOLVE_REF_NEAR_MISS / RESOLVE_REF_POSITIONAL): wired at a site the REF ROLE never reaches
+FACTS (verified at source, gary + Oracle 2026-09-04): both resolvers sit inside the Stage-4.5 text branch
+`if key in text_field_keys:` (engine.py ~:10318); `text_field_keys` = text-typed AND `not _is_ref_field(key)`
+(`*_number` / `*_no` / `*reference*`), so EVERY ref-role field of a ref-NAMED type (Print Tracker `reference_number`,
+type `reference`) never enters — leg-a's `key == ref_field_key` test there is self-contradictory. Their predicate
+pins (19/20/13) are green = the "dead guard greens every test" class; the 09-04 "doc196 proof: leg-a runs" was
+vacuous (identical outcome whether or not it ran); doc138's heal came from Stage 2.5b (`+corrected`). Leg-b IS
+reachable for a text-typed, non-ref-named custom key (`serial`, `asset_tag`) — pin THAT exact claim, not "never".
+**LIVE EXHIBIT (e2e, 2026-09-04):** doc176 fresh read `1625802868` @95 `anchor_crop_relocated`, NO note,
+needs_review FALSE, overall 100 — one BACKED glyph (6<->G) from the human-confirmed `1G25802868` = exactly leg-b's
+singleton-ball case; unresolved at the dead site → an AUTO-FILE CANDIDATE carrying a misread serial (the class the
+family exists to catch). FIX DIRECTION (Oracle R4 + gary Q5): a SEPARATE commit, treated as a NEW feature (never
+executed on a ref field → no production history): one `_resolve_code_reads` pass beside 2a's site
+(`engine._apply_confusion_precedence`, after D1 / before the boost) running leg-b → leg-a → 2a in precedence order,
+each behind its own flag; add REACHABILITY assertions (a `reference`-typed ref-named key fires) to
+`test_resolve_ref_near_miss.py` / `test_ref_positional_consensus.py` / `test_resolve_ref_positional_wiring.py`;
+its own realdoc M=0 + a constructed census; leg-b must ALSO write neither corrected_to nor was_corrected (Oracle O2
+— today it writes both) and honour the machine-literal union. 2a's empty-ball and leg-b's singleton-ball are
+provably disjoint, so 2a cannot pre-empt leg-b in the interim. O6b (comment-only, done in `HANDOVER_2026-09-04_LATE.md`'s
+session): the false "Reference role only" comments at the dead site corrected.
+
+## 2026-09-04 — STAGE 2.5b REWRITES A REFERENCE SILENTLY AT UP TO CONF 95 (found while siting confusion-precedence 2a; gary Q4)
+FACTS (traced): `engine.py:9725-9770` Stage 2.5b → `ocr_corrector.correct_extraction` (`derive_template` :123-195 =
+the most-common-LENGTH family, a position fixed to a category at >=80% weight; `try_correct` :200-277 LETTER_TO_DIGIT /
+DIGIT_TO_UPPER) rewrites a same-length read per position and writes `confidence = min(95, conf+boost)` with NO
+validation_note and NO corrected_to, method `+corrected`. `trust.js isAutoFileEligible` (:1049-1073) inspects only
+validation_note / a differing corrected_to — `+corrected` is invisible to the gate — so a MACHINE-rewritten reference
+(the filename token) can auto-file at the 95 graduated floor. `+corrected` is in NONE of the `getFieldFormats`
+exclusion clauses (`learning.js:1549-1609`) → with `learning_exclude_machine_confirms` OFF it would also feed the very
+template that produced it. Guards that DO exist: `is_known_value` (never rewrite a confirmed literal) + the >=80%-weight
+position fix + list/barcode skips. Live exhibit: doc138 `RFHO738865` → `RFH0738865` @95 `anchor_crop_relocated+corrected`
+(right answer, but only Gate-C's history-soften note held it). DESIGN Q (advisor→Oracle, NOT built): should a 2.5b
+rewrite of the REF ROLE carry a note / cap like 2a does (review-bound), or a census first (how often is a 2.5b ref
+rewrite wrong)? Contrast = 2a, which is the same idea but noted, capped and both-forms. Related: leg-b/leg-a
+(`RESOLVE_REF_NEAR_MISS`/`RESOLVE_REF_POSITIONAL`) are wired at a site the ref role never reaches — see
+`HANDOVER_2026-09-04_LATE.md` (relocation = its own commit with REACHABILITY pins).
+
+## 2026-09-04 — WEBSITE DOWNLOAD TICKER + ANALYTICS (owner ask: "how many downloads … by date periods and location")
+barry brainstorm (advisory; nothing built). **Facts found:** the marketing site source is NOT in this repo — it is a
+static homepage on the SAME IONOS webspace as licensing, deployed manually, currently STALE, with NO server logs
+folder (`HANDOVER_2026-08-18.md` OPS block); IONOS CDN (Cloudflare-powered) is ON for scanfinder.co.uk and the
+licensing subdomain is proxied `DYNAMIC` (never cached); GPTBot was the majority of ~250 visitors (bot filtering is
+not optional); `admin/releases.php:52` already assumes `https://scanfinder.co.uk/download`; the backend already has
+`client_ip()`/`rate_hit()` (`lib/ratelimit.php`), `db()`/`audit_event()`, CSRF-gated admin pages + nav array
+(`lib/admin_auth.php:502-512`), and `Build-IonosDeploy.ps1` recopies `public/*`+`lib/*` (a new file lands with no
+script edit). Privacy precedent to copy: `v1/diagnostics.php:8` ("client_ip() … NEVER stored on a row").
+**PREREQUISITE (owner, 5 min, load-bearing twice):** dump `REMOTE_ADDR`, `CF-Connecting-IP`, `CF-IPCountry`,
+`X-Forwarded-For` on the live licensing host — `ratelimit.php:22-26` reads REMOTE_ADDR only; if PHP now sees the
+Cloudflare EDGE IP, geo-IP would resolve to a PoP AND the existing F-03 rate limiter is bucketing many clients into
+a few edge IPs (a pre-existing degradation, independent of this feature).
+**Recommended MVP (L2, ~3 h collection + ~4 h dashboard):** (1) tracked REDIRECT endpoint `public/dl.php` +
+`.htaccess` `RewriteRule ^dl/(nsis|msstore|client)/?$ dl.php?c=$1 [L,QSA]` — count "download STARTS", 302 to the
+real installer (never stream through PHP: range requests, memory limits); (2) table `download_events`
+(occurred_at UTC, channel, version read live from `releases`, country CHAR(2), referrer HOST only, sanitised
+`source`, `ua_class` never the raw UA, `visitor_key` = sha256(daily_salt‖ip‖ua)[:16], `is_counted`,
+`exclude_reason` ∈ bot_ua|dedupe_30m|prefetch|head) — RAW IP NEVER STORED; (3) country from `CF-IPCountry` if the
+header survives the IONOS CDN, else DB-IP IP-to-Country Lite (CC BY 4.0, free for commercial use, attribution
+"IP geolocation by DB-IP" on the site) as a CSV → MySQL range table refreshed by the planned cron; REJECT ip-api
+free tier (non-commercial + ships the visitor IP to a third party); MaxMind GeoLite2 = workable but EULA/key strings;
+(4) bots/HEAD/prefetch/30-min dupes FLAGGED not deleted (re-derivable; show "1,240 hits · 812 counted");
+(5) `admin/downloads.php` behind `require_admin()`: chips today/7d/30d/all, 90-day inline-SVG by-day chart (no
+CDN — the console must not phone out), by-country, by-version, by-referrer, excluded breakdown, uniques PER DAY
+only; degrade-gracefully guard from `admin/diagnostics.php:13-15`; (6) the site's Download button → the counter
+URL (batch with the overdue site redeploy + privacy-page section + DB-IP attribution).
+**NEXT after MVP = the FUNNEL panel** (downloads → `device_registrations` trial_start → `entitlements`
+activations, as COHORT RATES per period, never per-person joins; one-line caveat "not matched to the same people").
+**Deliberately NOT in v1:** public-facing ticker (build the plumbing — static JSON written by cron, admin settings
+`public_ticker_enabled` OFF / `public_ticker_min` ~500 / round DOWN "1,200+" — but ship DARK: a small number is
+worse than none); MS Store API (type the Partner Center monthly figure into a `channel_stats` form, shown BESIDE
+the tracked figure labelled "reported by Microsoft" — units differ: installs vs download starts); region/city geo
+(country only); third-party analytics (Plausible ≈ £8/mo composes later; GA4 off-brand). **GDPR:** legitimate
+interests, no cookie/localStorage → no consent banner; privacy page must add a "Website and downloads" section
+(what/what-not/why/12-month raw retention then aggregates/IONOS+Cloudflare+Polar roles/objection email); the
+honest follow-ons it forces: `audit_events.ip` is retained indefinitely (`db.php:70`) → add a nightly prune with a
+stated window; the CDN processes visitor IPs regardless. **Gate before build:** bob/eric on the PHP + deploy seam
+→ Oracle. Sequencing: collection slice BEFORE any public download link is announced (a launch already run cannot
+be measured), dashboard within the week, ticker when the threshold is crossed.
+
 ## 2026-09-02 — FLIP GATE READY: `watch_separate_enabled` soak (the higher-value watch/manual parity win)
 Built DARK `29adce2`; the watch folder splits bundled multi-doc PDFs like manual import. Until flipped, a
 bundled PDF gets DIFFERENT field detection by arrival path (manual splits, watch imports whole). Unit-pinned
