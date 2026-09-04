@@ -9,6 +9,23 @@
 
 ---
 
+## 2026-09-04 — FORMAT_CLASS_JOIN follow-ups (built DARK `format_class_join`, mig 120; Oracle C1-C11 in `docs/oracle_log.md`)
+The format model is ORDER-SHAPED, not evidence-shaped: `classify_format` classes a scope from its 3 NEWEST confirmed
+values (unanimity else FREETEXT; `_SAMPLE_SIZE=3` of a pool of 5). The join fixes the MIXED direction (entry dropped).
+STILL OPEN, own flag + census: **(1) the UNANIMOUS-by-accident twin** — three digits-only serials as the newest three
+⇒ the whole scope narrows to DIGITS_ONLY ⇒ every lettered serial is a `severity:'high'` charset violation ⇒ Stage 4.5
+HARD-NULL (`engine.py` withhold branch; `_xsupplier` False). Fix direction (gary/Oracle): derive the coarse class
+from the values BACKING the count-gated shapes (self-consistent, order-free, poison-resistant) — moves every scope,
+so it is NOT this arc. **(2) Stage 4.5 hard-nulls an EXACT confirmed literal** on any non-joined shaped scope (the
+withhold branch has no `value_is_confirmed_literal` exemption, unlike the mapper's `_gate_value` C1a) — one
+predicate: keep-and-flag instead of null; separate fail-toward-review improvement, own census. **(3) Flip gate for
+the join** (before any customer build): `python_backend/tools/format_join_census.py` over the 605-doc CORPUS payload
+(live payload done: 1 scope joins, hard lines clean) + realdoc M=0 + zero per-field drop + the BLANKED-FIELD delta
+(must be 0) + a FLAG delta; Oracle C11: revert the TEST force-ON migs first so the census measures a signed
+combination. **(4) Learning-Repair remediation on the owner's DB** (not code): docs 176/210 confirmed `1625802868`
+(a 6↔G misread of `1G25802868`), doc 92 confirmed `782923124N3M2` (a 5↔8 misread of `752923124N3M2`) — these
+rubber-stamps are what reordered the sample AND make 752/782 "both confirmed" (every resolver refuses by design).
+
 ## 2026-09-04 — RELOCATE leg-b / leg-a (RESOLVE_REF_NEAR_MISS / RESOLVE_REF_POSITIONAL): wired at a site the REF ROLE never reaches
 FACTS (verified at source, gary + Oracle 2026-09-04): both resolvers sit inside the Stage-4.5 text branch
 `if key in text_field_keys:` (engine.py ~:10318); `text_field_keys` = text-typed AND `not _is_ref_field(key)`
