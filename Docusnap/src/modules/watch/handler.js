@@ -241,6 +241,9 @@ function _poll(db) {
         break;
       case 'stable':
         _log('log', `[watch] file stable for ${STABILITY_DELAY_MS / 1000}s — accepted for processing: ${entry.name}`);
+        // The "grabbed" moment, shown on the main window's strip (owner ask 2026-09-04) — before any
+        // separation or file_begin, so the operator sees the pickup, not a silent gap.
+        try { _ctx?.notifyMainWindow?.('watch-progress', { type: 'log', text: `Picked up “${entry.name}” — accepted for processing`, phase: true }); } catch {}
         _queue.push(entry.name);
         newlyStable++;
         break;
@@ -347,7 +350,14 @@ async function _drainQueue(db) {
   if (files.length && learning.getSetting(db, 'watch_separate_enabled', 'false') === 'true') {
     _separating = true;
     try {
-      const sep = await processing.separateFiles(db, _watchFolder, files, _log);
+      // Mirror the pre-pass's "checking / splitting" phase lines to the main window's strip (owner ask
+      // 2026-09-04): _log reaches processing.log only, and no file_begin has fired yet, so without this the
+      // strip sits idle for the whole separation. meta = { phase, quiet } from _separateBatchDocuments.
+      const _sepLog = (level, text, meta) => {
+        _log(level, text);
+        try { _ctx?.notifyMainWindow?.('watch-progress', { type: 'log', text, level: level === 'log' ? '' : level, ...(meta || {}) }); } catch {}
+      };
+      const sep = await processing.separateFiles(db, _watchFolder, files, _sepLog);
       if (sep && ((sep.rewrites && sep.rewrites.length) || (sep.consumed && sep.consumed.length))) {
         files = applySeparationToTracked(files, _tracked, sep.rewrites, sep.consumed, Date.now());
         heldNames = new Set();

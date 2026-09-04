@@ -1151,7 +1151,9 @@ function handleProgress(msg) {
       break;
 
     case 'log':
-      appendLog(msg.text, msg.level || '');
+      // `quiet` (2026-09-04): a status-line-only phase update (the per-file "Checking “X” for multiple
+      // documents…" of the separation pre-pass) — moves the headline without adding a log row per file.
+      if (!msg.quiet) appendLog(msg.text, msg.level || '');
       // Pre-processing phase updates (e.g. the document-separation pre-pass that runs
       // before the first 'start') surface in the headline status + activity line so
       // the user sees real progress instead of a frozen "Starting…".
@@ -1468,7 +1470,18 @@ function handleWatchProgress(msg) {
       logStatus.textContent = 'Watch folder — idle';
       break;
     case 'log':
-      if (msg.text) { _watchFileStep = _watchFriendlyStep(msg.text); _renderWatchStatus(); appendLog(`[Watch] ${msg.text}`, msg.level || ''); }
+      if (msg.text) {
+        // Separation PRE-PASS (2026-09-04, owner ask): "grabbed / checking / splitting" lines arrive BEFORE any
+        // file_begin, so no ticker is running and _renderWatchStatus would stay silent. Show them on the
+        // status line directly (strip the internal "[separate] " tag); `quiet` = status only, no log row.
+        if (msg.phase && !_watchFileName) {
+          logStatus.textContent = `Watch folder — ${String(msg.text).replace(/^\[separate\]\s*/, '')}`;
+          setWatchLight('processing');
+        } else {
+          _watchFileStep = _watchFriendlyStep(msg.text); _renderWatchStatus();
+        }
+        if (!msg.quiet) appendLog(`[Watch] ${msg.text}`, msg.level || '');
+      }
       break;
     // per-file 'start' (total:1) is noise for a continuous watcher — ignored
   }

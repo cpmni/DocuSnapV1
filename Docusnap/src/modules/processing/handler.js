@@ -2610,6 +2610,11 @@ function register(ctx) {
         if (i >= pdfs.length) return;
         const name = pdfs[i];
         const filePath = path.join(folderPath, name);
+        // Owner ask (2026-09-04): say WHICH document has been grabbed and is being examined / split, so the
+        // strip doesn't sit on a frozen "Preparing…" while a bundle is separated before processing. The
+        // per-file "checking" line is QUIET (status line only — a 200-doc batch must not add 200 log rows);
+        // the SPLITTING line below is loud (it is the event the operator cares about).
+        onPhase?.(`Checking “${name}” for multiple documents… (${i + 1}/${pdfs.length})`, { quiet: true });
         const det = await runPyJson(segScript,
           buildSegmentArgs({ filePath, templatesFile, tesseract: tesseractPath(), slips: slipsOn }), env);
         done += 1;
@@ -2637,6 +2642,14 @@ function register(ctx) {
 
         // plan.action === 'split' — ranges already EXCLUDE separator-sheet pages; with
         // sheets present ONE output is legal (the REWRITE case: doc + trailing sheet).
+        // Announce the split BEFORE it runs (the splitter can take seconds on a long scan).
+        {
+          const _expected = String(plan.ranges || '').split(',').filter(Boolean).length;
+          const _msg = (plan.separators && _expected <= 1)
+            ? `Removing ${plan.separators} separator sheet(s) from “${name}” before processing…`
+            : `Splitting “${name}” — ${_expected} documents found, separating them before processing…`;
+          onPhase?.(_msg);
+        }
         const split  = await runPyJson(splitScript,
           ['--file', filePath, '--ranges', plan.ranges, '--outdir', folderPath], env);
         const made   = (split && split.success && Array.isArray(split.files))
@@ -2693,7 +2706,9 @@ function register(ctx) {
     try {
       return await _separateBatchDocuments(folder, tf,
         (text, level) => log?.(level || 'log', `[separate] ${text}`),
-        (text) => log?.('log', `[separate] ${text}`),
+        // phase updates carry meta ({ phase:true, quiet? }) so the watch drain can mirror them to the
+        // main window's strip (the plain _log only reaches processing.log) — owner ask 2026-09-04.
+        (text, meta) => log?.('log', `[separate] ${text}`, { phase: true, ...(meta || {}) }),
         sepP, slipsOn, null, new Set(fileList));
     } finally {
       if (built) cleanupTempFiles(built.tempFiles);
@@ -2937,7 +2952,8 @@ function register(ctx) {
         try {
           const sepRes = await _separateBatchDocuments(folderPath, templatesFile,
             (text, level) => mirror(event.sender, 'process-progress', { type: 'log', text, level: level || '' }),
-            (text) => mirror(event.sender, 'process-progress', { type: 'log', text, phase: true }),
+            // meta = { quiet } — a status-line-only phase update (no log row); see _separateBatchDocuments.
+            (text, meta) => mirror(event.sender, 'process-progress', { type: 'log', text, phase: true, ...(meta || {}) }),
             sepP, slipsOn,
             (ev) => mirror(event.sender, 'process-trace', ev));
           const n = (sepRes && sepRes.separated) || 0;   // richer return {separated,rewrites,consumed}; import re-scans, so only the count is used
