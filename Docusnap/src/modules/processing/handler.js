@@ -534,6 +534,13 @@ function _reconcileEnv(db) {
     if (env.RESOLVE_REF_NEAR_MISS == null && learning.getSetting(db, 'resolve_ref_near_miss', 'false') === 'true') {
       env.RESOLVE_REF_NEAR_MISS = '1';
     }
+    // RESOLVE_REF_POSITIONAL (2026-09-04; gary → Oracle Phase 2, REVIEW-BOUND). Leg-a of the single-glyph
+    //   ref resolver: on a same-length one-position disagreement, re-read the taught box under a different
+    //   binarisation and take a per-position majority across >=3 distinct pixel sources — pre-fills the
+    //   consensus, review-bound (dedicated <=70-capped note; never auto-files).
+    if (env.RESOLVE_REF_POSITIONAL == null && learning.getSetting(db, 'resolve_ref_positional', 'false') === 'true') {
+      env.RESOLVE_REF_POSITIONAL = '1';
+    }
     // FORMAT-VARIANCE RELAX (REF) (2026-09-03, gary + Oracle C1a; DARK): a taught template-mapping
     //   DERIVED-rung read of a ref/serial field that fails the learned-SHAPE check but is an EXACT
     //   confirmed in-scope literal is noise (the re-import case — a value confirmed before whose

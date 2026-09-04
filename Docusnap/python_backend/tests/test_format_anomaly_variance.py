@@ -144,10 +144,10 @@ guard = re.search(
 check("engine: the text-branch variance guard exists (_FORMAT_VARIANCE_RELAX and _has_no_usual_format)",
       guard is not None)
 if guard:
-    # Window widened 900 -> 2600 (2026-09-04): the RESOLVE_REF_NEAR_MISS leg-b block now sits between the
-    # guard and the near_miss_confirmed suggestion (still followed by the text-write below), so the
-    # slip-catch is further down but structurally unchanged.
-    tail = src[guard.start():guard.start() + 2600]
+    # Window widened 900 -> 4200 (2026-09-04): the RESOLVE_REF_NEAR_MISS (leg-b) AND RESOLVE_REF_POSITIONAL
+    # (leg-a) blocks now sit between the guard and the near_miss_confirmed suggestion (still followed by the
+    # text-write below), so the slip-catch is further down but structurally unchanged.
+    tail = src[guard.start():guard.start() + 4200]
     check("engine: the guard calls near_miss_confirmed (the retained slip-catch)",
           'near_miss_confirmed' in tail)
     check("engine: the guard suppresses via a bare continue (no unconditional flag write)",

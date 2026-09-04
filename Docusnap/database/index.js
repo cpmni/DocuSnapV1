@@ -2634,6 +2634,24 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 114 (resolve_ref_near_miss force-ON): ${e.message}`); }
   }
 
+  // ── migration 115: resolve_ref_positional seeded OFF (2026-09-04; gary integration → Oracle Phase 2,
+  //    REVIEW-BOUND). Leg-a of the single-glyph reference resolver: on a same-length one-position
+  //    disagreement between a reference's distinct PIXEL sources, re-read the taught box under a DIFFERENT
+  //    BINARISATION (Otsu/adaptive — an independent recipe; the engine has no higher-DPI render) and take
+  //    a per-position majority across >=3 distinct pixel sources; PRE-FILL the consensus. Edits the value
+  //    but keeps a dedicated <=70-capped note -> REVIEW-BOUND (never auto-files; the witnesses stay OUT of
+  //    the corroboration record so it is byte-identical — Oracle Q3). DARK; auto-file is a separate
+  //    census-gated step (constructed adversarial GT; the auto-file bar additionally needs >=2 distinct
+  //    crop-rects + the unique-confirmed-literal exclusion — same-box binarisations are common-mode). ──
+  if (!applied.has(115)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('resolve_ref_positional', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (115)').run();
+      console.log(`JS migration 115 applied: resolve_ref_positional (binarisation re-slice + positional consensus) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 115 (resolve_ref_positional): ${e.message}`); }
+  }
+
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

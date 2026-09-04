@@ -2997,6 +2997,20 @@ _REF_RESOLVE_NOTE_MARK = "corrected against a confirmed reference"   # unique; N
 _REF_RESOLVE_NOTE = ("Cross-check: read as '{}', but this sender has a confirmed reference '{}' one "
                      "OCR-confusable character away — " + _REF_RESOLVE_NOTE_MARK
                      + "; please confirm once before filing.")
+
+# RESOLVE_REF_POSITIONAL (2026-09-04, gary integration → Oracle Phase 2, REVIEW-BOUND, DEFAULT OFF). Leg-a
+# of the single-glyph ref resolver: when the ref's distinct PIXEL sources disagree at one same-length
+# position, re-read the taught box under a DIFFERENT BINARISATION (independent recipe — the engine has no
+# higher-DPI render) and take a per-position majority across >=3 distinct pixel sources
+# (reslice.positional_consensus). Witnesses live in self._code_witnesses, NOT _field_candidates, so the
+# corroboration record stays byte-identical (Oracle Q3). Edits the value but KEEPS a dedicated <=70-capped
+# note (distinct non-sweepable mark) -> REVIEW-BOUND; NEVER auto-files (auto-file needs the constructed
+# adversarial census). Inert until >=3 recipe-distinct sources exist; byte-identical OFF.
+_RESOLVE_REF_POSITIONAL = os.environ.get("RESOLVE_REF_POSITIONAL", "0") == "1"
+_REF_POSITIONAL_NOTE_MARK = "corrected after re-reading the reference"   # unique; NOT in any note-clearer set
+_REF_POSITIONAL_NOTE = ("Cross-check: read as '{}', but re-reading this reference under a different image "
+                        "setting agreed on '{}' — " + _REF_POSITIONAL_NOTE_MARK
+                        + "; please confirm once before filing.")
 _FRAGMENT_YIELD_KW_FLOOR = 85   # the challenger is a seeded inline/anchored keyword read (base 80 +5
                                 # right-direction = 85); below that is unlabelled-noise territory. The
                                 # challenger ALSO passes the hard reference_code pattern + strictly
@@ -4719,6 +4733,70 @@ class ExtractionEngine:
             except Exception:
                 pass
             return 0   # a witness aid — must never break extraction
+
+    def _ref_positional_value(self, key):
+        """Leg-a of the single-glyph ref resolver (RESOLVE_REF_POSITIONAL, Phase 2, REVIEW-BOUND). Return
+        the per-position-majority CONSENSUS string for `key` when its distinct PIXEL sources disagree at
+        one same-length position and >=3 distinct sources (after binarisation re-slice witnesses) agree —
+        else None. Called inline in the Stage-4.5 ref branch; the caller writes it REVIEW-BOUND (value +
+        a dedicated <=70-capped note) and NEVER auto-files. Witnesses are stored in self._code_witnesses,
+        NOT _field_candidates, so the corroboration record is byte-identical (Oracle Q3). Any failure ->
+        None (fail toward the existing note)."""
+        try:
+            from extraction import reslice as _rs, anchor as _an
+            cands = self._field_candidates.get(key) or []
+            if not cands:
+                return None
+            geom = (getattr(self, '_s05_read_geom', None) or {}).get(key)
+            mbox = ({'x_norm': geom[0], 'y_norm': geom[1], 'w_norm': geom[2], 'h_norm': geom[3]}
+                    if geom and len(geom) == 4 else None)
+            voters, has_box = [], False
+            for c in cands:
+                v = str(c.get('value') or '').strip()
+                if not v:
+                    continue
+                fam = _corrob_record_bucket(c.get('stage'), c.get('method'))
+                fam = fam[0] if fam else None
+                if fam in ('mapping', 'crop'):
+                    cbox = c.get('box') if isinstance(c.get('box'), dict) else mbox
+                    if not cbox:
+                        continue
+                    voters.append({'value': v, 'conf': c.get('confidence') or 0,
+                                   'source_key': _rs.source_key(cbox, 'gray-ladder')})
+                    has_box = True
+                elif fam == 'keyword':
+                    voters.append({'value': v, 'conf': c.get('confidence') or 0,
+                                   'source_key': _rs.source_key(None)})
+            # Need a crop box to re-slice AND >=2 distinct real sources that DISAGREE at one same-length
+            # position (the class this targets); anything else -> leave to the existing note.
+            if not has_box or not mbox:
+                return None
+            real_keys = {vv['source_key'] for vv in voters}
+            real_vals = {vv['value'] for vv in voters}
+            if len(real_keys) < 2 or len(real_vals) < 2:
+                return None
+            _vs = list(real_vals)
+            if any(len(x) != len(_vs[0]) for x in _vs):
+                return None
+            pages = getattr(self, '_s05_pages', None)
+            mappings = getattr(self, '_s05_mappings', None) or []
+            m = next((mm for mm in mappings if mm.get('field_key') == key), None)
+            page_idx = int((m or {}).get('page_number') or 0)
+            if not pages or page_idx < 0 or page_idx >= len(pages) or pages[page_idx] is None:
+                return None
+            wits = _rs.read_code_witnesses(pages[page_idx], mbox, _an._read_lines_full,
+                                           k=_rs.code_witness_max())
+            if not hasattr(self, '_code_witnesses') or self._code_witnesses is None:
+                self._code_witnesses = {}
+            self._code_witnesses[key] = wits
+            for w in wits:
+                wv = str(w.get('value') or '').strip()
+                if wv:
+                    voters.append({'value': wv, 'conf': w.get('conf') or 0,
+                                   'source_key': _rs.source_key(mbox, w.get('recipe_key'))})
+            return _rs.positional_consensus(voters)
+        except Exception:
+            return None
 
     def _build_corroboration_emit(self, results):
         """OWNER PRINCIPLE (2026-08-11): "the rungs should CORROBORATE, not merely compete."
@@ -7563,6 +7641,7 @@ class ExtractionEngine:
         self._s05_pages = None
         self._s05_read_geom = {}
         self._reslice_witness = {}
+        self._code_witnesses = {}   # leg-a binarisation re-slice witnesses (kept OUT of the corrob ledger)
         results      = {}
         field_keys   = [f["key"] for f in field_defs]
         # Straighten-arc frame election (C1: computed ONCE, the SAME list feeds every crop
@@ -10232,6 +10311,30 @@ class ExtractionEngine:
                                 format_anomaly_flagged = True
                                 if self._trace:
                                     try: self._t('ref_near_miss_resolved', field=key, value=_ua, read=str(val))
+                                    except Exception: pass
+                                continue
+                            # LEG-A POSITIONAL RESOLVER (RESOLVE_REF_POSITIONAL, DARK): leg-b did not resolve
+                            # (ambiguous/unbacked/short). If the ref-role field's distinct PIXEL sources
+                            # disagree at one same-length position, a binarisation re-slice + per-position
+                            # majority across >=3 sources PRE-FILLS the consensus — REVIEW-BOUND (dedicated
+                            # <=70-capped note; never auto-files; witnesses stay out of the corrob record).
+                            _pc = (self._ref_positional_value(key)
+                                   if (_RESOLVE_REF_POSITIONAL and key == ref_field_key) else None)
+                            if _pc and _pc != str(val):
+                                results[key] = {
+                                    **data,
+                                    'value':           _pc,
+                                    'raw_value':       data.get('raw_value', val),
+                                    'confidence':      min(data.get('confidence') or 0, 70),
+                                    'was_corrected':   True,
+                                    'corrected_to':    _pc,
+                                    'validation_note': _REF_POSITIONAL_NOTE.format(str(val), _pc),
+                                    'method':          (str(data.get('method') or '') + '+ref_positional'),
+                                }
+                                n_flagged += 1
+                                format_anomaly_flagged = True
+                                if self._trace:
+                                    try: self._t('ref_positional_resolved', field=key, value=_pc, read=str(val))
                                     except Exception: pass
                                 continue
                             _nm = format_anomaly_checker.near_miss_confirmed(str(val), fmt_entry)
