@@ -21,10 +21,21 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-04 (the REFERENCE-FLAG FAMILY + the confusion-precedence design): **READ
-`HANDOVER_2026-09-04.md` FIRST** (and `HANDOVER_2026-09-03.md` / `_NIGHT.md` for the run-up). Branch
-`feat/teach-side-overnight`, **HEAD = `4e9230d`; 15 commits LOCAL/UNPUSHED** (last pushed = `13fa3a9`, the
-parent arc only — kept local for revertibility). Tree clean. No installer. Dev app running with ALL
+## ⏭ LATEST — 2026-09-04 LATE (confusion-precedence 2a BUILT at a RELOCATED site): **READ
+`HANDOVER_2026-09-04_LATE.md` FIRST.** HEAD `4fed950`, 3 commits LOCAL (`54d473f` feat · `0ad3cf9` docs ·
+`4fed950` chore; last pushed `8d26532`). **2a = DARK `confusion_precedence` (mig 119, seed OFF, NO force-ON twin),
+REVIEW-BOUND, inert on the owner's DB (5 correction rows).** `engine._apply_confusion_precedence` runs AFTER
+Gate C … D1 and BEFORE the boost (Oracle O1) — NOT the leg-b site: **the Stage-4.5 text branch is unreachable for
+every ref-role field of a ref-NAMED type, so RESOLVE_REF_NEAR_MISS / RESOLVE_REF_POSITIONAL NEVER executed on the
+exhibit** (dead-guard class; the morning "proven e2e" claims for leg-b/leg-a were vacuous). Writes NO
+corrected_to/was_corrected (O2); refusal-side union of machine-confirmed literals + from-glyph attestation (O3);
+pins 34/41/17/7/11 + consumer pin 3. **LIVE EXHIBIT:** doc176 fresh read `1625802868` @95 clean, needs_review
+false — one backed glyph from confirmed `1G25802868` = leg-b's case, unresolved → auto-file candidate; relocation
+= its own commit (`pendingfeatures.md`). Also logged: Stage 2.5b silent @95 ref rewrite; barry's website
+download-ticker MVP (owner ask; prerequisite = the CF-header check on the licensing host).
+## Prior — 2026-09-04 morning (the REFERENCE-FLAG FAMILY + the confusion-precedence design): **READ
+`HANDOVER_2026-09-04.md`** (and `HANDOVER_2026-09-03.md` / `_NIGHT.md` for the run-up). Branch
+`feat/teach-side-overnight`; that wrap ended at `8d26532` PUSHED. No installer. Dev app running with ALL
 reference-flag arcs force-ON.
 **BUILT this session — the reference-flag family** (all DARK + a TEST force-ON pair, all REVIEW-BOUND —
 nothing auto-files a corrected ref; migs 107–118; each pinned + proven end-to-end on a live doc):
