@@ -2651,6 +2651,20 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 115 (resolve_ref_positional): ${e.message}`); }
   }
 
+  // ── migration 116: TEST-BUILD force-ON of resolve_ref_positional (2026-09-04; same pattern + caveat as
+  //    mig 108/110/112/114). FORCE-flips (UPSERT) leg-a ON so the owner's test DB pre-fills the pixel
+  //    consensus on a disagreeing reference. Review-bound (note + <=70 cap), never silently files. Requires
+  //    format_variance_relax ON (high-variance ref branch). ⚠ TEST-ONLY / REVERSIBLE: revert (or gate)
+  //    before ANY customer build; auto-file relaxation needs its own constructed-adversarial census. ──
+  if (!applied.has(116)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('resolve_ref_positional', 'true')
+                  ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (116)').run();
+      console.log('JS migration 116 applied: TEST-BUILD force-ON resolve_ref_positional (revert + census before customer build)');
+    } catch (e) { console.warn(`  migration 116 (resolve_ref_positional force-ON): ${e.message}`); }
+  }
+
 
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
