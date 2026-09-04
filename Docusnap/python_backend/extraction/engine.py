@@ -1958,6 +1958,15 @@ _FILING_SANITY_ABSENT_MARK = "doesn't appear on this page as written"
 _FILING_SANITY_SOFTEN_MARK = "please confirm the reference before filing"
 _FILING_SANITY_SOFTEN_NOTE = ("This reference reads as '{}' where it is labelled, but the full-page text "
                               "reads it as '{}' — " + _FILING_SANITY_SOFTEN_MARK + ".")
+# FILING_SANITY_REF_HISTORY_SOFTEN (2026-09-04; Oracle SIGN-OFF-W/COND, extends the mig-111 live soften).
+# The live soften needs >=2 live page families to AGREE on the committed value; but when the correct value
+# came from a `+corrected` adopt with NO live agreement (every reader read the page's confusable form), the
+# live path can't fire. This HISTORY path swaps the scary "doesn't appear" note for the SAME truthful soft
+# note when rv is an EXACT confirmed literal whose only page form is a BACKED one-glyph confusable (O<->0,
+# S<->5…) AND that page form is not itself confirmed AND rv is the UNIQUE confirmed literal one backed-glyph
+# from it (C1 unambiguity — closes the two-confirmed-neighbours case). Auto-file-NEUTRAL (a note either way;
+# trust.js blocks on any note); note-text-only. Reuses the (non-sweepable) soften note; DARK, own switch.
+_FILING_SANITY_REF_HISTORY_SOFTEN = os.environ.get("FILING_SANITY_REF_HISTORY_SOFTEN", "0") == "1"
 _FILING_SANITY_ABSENT_NOTE = ("'{}' " + _FILING_SANITY_ABSENT_MARK
                               + " — please check the reference before filing.")
 
@@ -6624,6 +6633,22 @@ class ExtractionEngine:
         except Exception:
             return None
 
+    def _history_soften_ok(self, rv, near, entry):
+        """Oracle C1 (FILING_SANITY_REF_HISTORY_SOFTEN): the page form `near` must NOT itself be a confirmed
+        literal, AND rv must be the UNIQUE confirmed literal one BACKED one-glyph confusable from `near` — so
+        the soft note can never reassure a human toward the wrong one of two rival serials. Pure; any failure
+        -> False (keep the scary note)."""
+        try:
+            if not near or not format_anomaly_checker.value_is_confirmed_literal(rv, entry):
+                return False
+            if format_anomaly_checker.value_is_confirmed_literal(near, entry):
+                return False                      # near is itself a confirmed serial -> ambiguous
+            vc = (entry or {}).get('value_counts') or {}
+            hits = [str(conf) for conf in vc if conf and _one_confusable_diff(str(conf), str(near))]
+            return len(hits) == 1 and hits[0].strip().casefold() == str(rv).strip().casefold()
+        except Exception:
+            return False
+
     def _flag_filing_value_sanity(self, results, ref_field_key, date_field_keys, ocr_text,
                                   supplier_name=None, document_slug=None):
         """FILING_VALUE_SANITY_FLAGS (kill switch, DEFAULT OFF — Chris round 3, 2026-08-09).
@@ -6736,13 +6761,38 @@ class ExtractionEngine:
                             # 'PI/26/9687'. Naming the page form turns a contradiction into a one-glance I/1 question.
                             # The MARK stays intact (three consumers match it as a substring).
                             _near = _nearest_confusable_page_token(page, rv)
-                            _txt = (f"'{rv}' {_FILING_SANITY_ABSENT_MARK} — the page reads it as '{_near}' — "
-                                    f"please check the reference before filing.") if _near \
-                                else _FILING_SANITY_ABSENT_NOTE.format(rv)
-                            if _note(ref_field_key, _txt):
-                                self._t('filing_sanity_ref_absent', field=ref_field_key, value=rv, page_form=_near or None)
-                                self.log(f"  Filing sanity: {ref_field_key} '{rv}' not printed on the "
-                                         f"page as a whole token — flagged for review")
+                            # HISTORY-CORROBORATED SOFTEN (Oracle SIGN-OFF-W/COND 2026-09-04): the live soften
+                            # did NOT fire (no >=2 live families agree — the correct value came from a +corrected
+                            # adopt), but rv is an EXACT confirmed literal whose only page form is a BACKED
+                            # one-glyph confusable (_near), that form is not itself confirmed, and rv is the
+                            # UNIQUE confirmed literal one backed-glyph from it (C1) — so it matches history.
+                            # Swap to the SAME truthful soft note (still a note -> review-bound; auto-file
+                            # byte-identical). C5: only when the value is SETTLED (no off-page corrected_to
+                            # divergence) so the renderer's _neitherOnPage suppression stays moot.
+                            _dref = results.get(ref_field_key) if isinstance(results.get(ref_field_key), dict) else {}
+                            _ct = str(_dref.get('corrected_to') or '').strip()
+                            _hist = False
+                            if (_near and _FILING_SANITY_REF_HISTORY_SOFTEN and (not _ct or _ct == rv)):
+                                try:
+                                    _lk = self._make_format_lookup(str(_sup), str(_slug))
+                                    _ent = _lk(ref_field_key) if _lk else None
+                                except Exception:
+                                    _ent = None
+                                _hist = bool(_ent) and self._history_soften_ok(rv, _near, _ent)
+                            if _hist:
+                                _txt = _FILING_SANITY_SOFTEN_NOTE.format(rv, _near)
+                                if _note(ref_field_key, _txt):
+                                    self._t('filing_sanity_ref_history_soften', field=ref_field_key, value=rv, page_form=_near)
+                                    self.log(f"  Filing sanity: {ref_field_key} '{rv}' — confirmed literal, backed "
+                                             f"one-glyph page slip '{_near}' (history): softened, kept in review")
+                            else:
+                                _txt = (f"'{rv}' {_FILING_SANITY_ABSENT_MARK} — the page reads it as '{_near}' — "
+                                        f"please check the reference before filing.") if _near \
+                                    else _FILING_SANITY_ABSENT_NOTE.format(rv)
+                                if _note(ref_field_key, _txt):
+                                    self._t('filing_sanity_ref_absent', field=ref_field_key, value=rv, page_form=_near or None)
+                                    self.log(f"  Filing sanity: {ref_field_key} '{rv}' not printed on the "
+                                             f"page as a whole token — flagged for review")
 
             # ── Gate B ────────────────────────────────────────────────────────────────────
             for key in date_keys:

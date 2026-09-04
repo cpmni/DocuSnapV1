@@ -293,6 +293,11 @@ function _reconcileEnv(db) {
     //    a same-length one-glyph full-page slip (not a clip). Swap it for a TRUTHFUL note naming both readings
     //    — STILL a note, so the doc stays review-bound (auto-file byte-identical). DARK, default OFF.
     if (learning.getSetting(db, 'filing_sanity_ref_corrob_soften', 'false') === 'true') env.FILING_SANITY_REF_CORROB_SOFTEN = '1';
+    // FILING_SANITY_REF_HISTORY_SOFTEN (2026-09-04; Oracle SIGN-OFF-W/COND). Extends the soften to the
+    //   HISTORY path: when a confirmed-literal reference's only page form is a BACKED one-glyph confusable
+    //   (O<->0, S<->5…) and there's no live agreement (the value came from a +corrected adopt), swap the
+    //   scary "doesn't appear" note for the truthful soft one. Auto-file-neutral (still a note). Own switch.
+    if (learning.getSetting(db, 'filing_sanity_ref_history_soften', 'false') === 'true') env.FILING_SANITY_REF_HISTORY_SOFTEN = '1';
     if (learning.getSetting(db, 'vat_reg_symbol_confusable', 'false') === 'true') env.VAT_REG_SYMBOL_CONFUSABLE = '1';
     if (learning.getSetting(db, 'money_sign_capture', 'false') === 'true') env.MONEY_SIGN_CAPTURE = '1';
     // The linchpin (2026-08-15): a demoted note is no longer a format mismatch, so its -12

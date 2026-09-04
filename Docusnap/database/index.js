@@ -2665,6 +2665,22 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 116 (resolve_ref_positional force-ON): ${e.message}`); }
   }
 
+  // ── migration 117: filing_sanity_ref_history_soften seeded OFF (2026-09-04; Oracle SIGN-OFF-W/COND).
+  //    Extends the mig-111 soften to the HISTORY path: when the live soften can't fire (no >=2 live page
+  //    families agree — the correct value came from a +corrected adopt) but the committed reference is an
+  //    EXACT confirmed literal whose ONLY page form is a BACKED one-glyph confusable (O<->0, S<->5…), that
+  //    form is not itself confirmed, and the literal is the UNIQUE confirmed value one backed-glyph from it
+  //    (C1 unambiguity), swap the scary "doesn't appear on this page" note for the truthful soft one.
+  //    Auto-file-NEUTRAL (a note either way -> review-bound); note-text-only. Separate kill switch. ──
+  if (!applied.has(117)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('filing_sanity_ref_history_soften', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (117)').run();
+      console.log(`JS migration 117 applied: filing_sanity_ref_history_soften (Gate-C soft note on confirmed-literal + backed page slip) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 117 (filing_sanity_ref_history_soften): ${e.message}`); }
+  }
+
+
 
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
