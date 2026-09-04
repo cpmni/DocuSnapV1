@@ -46,20 +46,15 @@ fake2 = types.SimpleNamespace(_field_candidates={'reference_number': [
 check("2 disagreeing sources but NO crop box (no read_geom) -> None (can't re-slice)",
       engine.ExtractionEngine._ref_positional_value(fake2, 'reference_number') is None)
 
-print("\n4. source-order / wiring pins (engine.py)")
+print("\n4. wiring pins (engine.py) — RELOCATED to _apply_ref_resolvers (2026-09-04 late; the full set lives in test_ref_resolvers_wiring.py)")
 src = open(os.path.join(os.path.dirname(__file__), '..', 'extraction', 'engine.py'), encoding='utf-8').read()
-i_legb = src.find('_ua = (format_anomaly_checker.unambiguous_near_miss')
-i_lega = src.find('_pc = (self._ref_positional_value(key)')
-i_nm   = src.find('_nm = format_anomaly_checker.near_miss_confirmed')
-check("leg-a runs AFTER leg-b and BEFORE the near_miss suggestion", 0 < i_legb < i_lega < i_nm)
-check("leg-a is gated on the flag AND the ref role", '_RESOLVE_REF_POSITIONAL and key == ref_field_key' in src)
-_seg = src[i_lega:i_nm]
-check("leg-a writes value=_pc + was_corrected + caps <=70 + keeps the dedicated note + tags method",
-      "'value':           _pc" in _seg and "'was_corrected':   True" in _seg
-      and "min(data.get('confidence') or 0, 70)" in _seg
-      and "_REF_POSITIONAL_NOTE.format" in _seg and "'+ref_positional'" in _seg)
-check("only writes when the consensus DIFFERS from the committed read (_pc != str(val))",
-      "if _pc and _pc != str(val):" in _seg)
+_seg = src[src.find('def _apply_ref_resolvers'):src.find('def _apply_confusion_precedence')]
+check("leg-a is gated on the flag AND the ref role inside the relocated pass", '_RESOLVE_REF_POSITIONAL and key == ref_field_key' in _seg)
+check("leg-a is a SUGGESTION: corrected_to + <=70 + the dedicated note; no was_corrected, no method suffix (Oracle C2/S3)",
+      "'corrected_to':    pc" in _seg and "_REF_POSITIONAL_NOTE.format(sval, pc)" in _seg
+      and "'was_corrected'" not in _seg and "+ref_positional" not in _seg)
+check("only writes when the consensus DIFFERS from the committed read", "if pc and pc != sval:" in _seg)
+check("the old text-branch site is gone", '_pc = (self._ref_positional_value(key)' not in src)
 check("witnesses are reset per-doc and kept OUT of the corroboration ledger",
       "self._code_witnesses = {}" in src and "self._code_witnesses[key] = wits" in src)
 

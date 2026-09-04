@@ -770,8 +770,10 @@ process_docs.py → ExtractionEngine.extract()
              the learned-agreement boost + needs_review — NOT the leg-b text-branch site, which
              `text_field_keys` makes unreachable for every ref-role field of a ref-NAMED type
              (leg-b/leg-a RESOLVE_REF_NEAR_MISS/POSITIONAL never executed on the exhibit — their
-             relocation is a separate commit). REVIEW-BOUND: value+display_value corrected,
-             raw_value kept, conf<=70 (vs the 88 critical floor), a both-forms note whose MARK no
+             relocation landed the same evening — see below). REVIEW-BOUND: value+display_value
+             corrected, raw_value kept IN-ENGINE ONLY (the import path persists raw_value from
+             `value` — processing/handler.js — so the both-forms NOTE is the only durable record of
+             the raw read), conf<=70 (vs the 88 critical floor), a both-forms note whose MARK no
              clearer matches, method `+confusion_resolved`; deliberately NO corrected_to / NO
              was_corrected (the renderer badge + reprocess/batch-audit read those as a HUMAN act)
              and NOT a getFieldFormats exclusion marker (the arc self-disarms: an accepted
@@ -782,6 +784,23 @@ process_docs.py → ExtractionEngine.extract()
              test_confusion_precedence_wiring.py (REACHABILITY on a `reference`-typed ref-named
              key) + database/modules/test_field_confusions.js /
              test_confusion_no_row_on_accept.js / test_confusion_autofile_hold.js.
+             SINGLE-GLYPH REFERENCE RESOLVERS, RELOCATED (2026-09-04 late; gary → Oracle SEND-BACK→
+             SIGN-OFF-W/COND C1-C11; `engine._apply_ref_resolvers`, called immediately BEFORE
+             `_apply_confusion_precedence`): RESOLVE_REF_NEAR_MISS (leg-b) + RESOLVE_REF_POSITIONAL
+             (leg-a) were wired inside the Stage-4.5 text branch, which `text_field_keys` makes
+             unreachable for every ref-role field of a ref-named type (plus the label-confirmed /
+             already-noted / variance gates) — they never executed on the exhibit, and the old
+             `''` doc-type fallback could have proposed ANOTHER supplier's literal. Now: same site
+             and deny set as 2a, SUPPLIER entry only; v1 = a SUGGESTION (value = the raw read,
+             `corrected_to` = the proposal, conf<=70, a note naming both forms + the glyph pair +
+             the target's confirm count; never was_corrected, never a method suffix — a suffix broke
+             the corroboration record's exact family match). leg-b: `unambiguous_near_miss` over the
+             casefolded human ∪ MACHINE literal union (refusal), a HUMAN-attested target (licensing),
+             backed slip, from-glyph attestation; no support floor by design (the note states the
+             count). leg-a: ref role only, never on a confirmed literal, its own flag + flip (may
+             ask, never answer). mig 121 forces both settings OFF (a relocated feature is a new
+             feature). Guarded by tests/test_ref_resolvers_wiring.py + test_resolve_ref_near_miss.py
+             + database/modules/test_ref_resolver_autofile_hold.js.
   Stage 4.6: CANDIDATE OVERRIDE (Phase 3, DEFAULT-OFF — commit b58ef06): a gated
              post-merge resolver (engine._resolve_candidates) that may prefer a
              clearly-more-credible RETAINED candidate over the merge winner. An additive

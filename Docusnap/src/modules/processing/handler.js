@@ -1808,9 +1808,27 @@ function buildTrainingArgs(db, configPath, logger = null) {
   // (env wins both ways for harness arms, else the setting) so OFF is byte-identical INCLUDING the training
   // payload. Provisional groups are skipped (set_formats strips them before the index is built anyway).
   try {
-    const _cpOn = process.env.CONFUSION_PRECEDENCE === '1'
-               || (process.env.CONFUSION_PRECEDENCE == null
-                   && learning.getSetting(db, 'confusion_precedence', 'false') === 'true');
+    const _armed = (k, s) => process.env[k] === '1'
+                   || (process.env[k] == null && learning.getSetting(db, s, 'false') === 'true');
+    const _cpOn = _armed('CONFUSION_PRECEDENCE', 'confusion_precedence');
+    const _nmOn = _armed('RESOLVE_REF_NEAR_MISS', 'resolve_ref_near_miss');
+    if ((_cpOn || _nmOn) && allFormats.length) {
+      // Oracle O3a / leg-b C4 — the REFUSAL-side literal union, built ONCE here so Python never reads the
+      // machine channel itself: keys(value_counts) ∪ keys(machine_value_counts) (the latter present only when
+      // learning_exclude_machine_confirms is armed; otherwise machine confirms already sit in value_counts).
+      // Attached to EVERY supplier-scoped solid group whenever EITHER consumer is armed (2a's confusion_correct
+      // and leg-b's unambiguous_near_miss both read it; 2a is inert without facts regardless). The
+      // classFixService mirrored rule: a refusal test may use the fullest evidence there is; a licensing test
+      // may use human-attested evidence only (value_counts stays the licensing precondition in both). Third
+      // production consumer of machine_value_counts — justified + pinned in test_machine_confirm_learning.js
+      // (keep this the ONLY occurrence in this file).
+      for (const g of allFormats) {
+        if (!g.provisional && (g.supplier_name || '').trim()) {
+          g.confusion_literals = [...new Set([...Object.keys(g.value_counts || {}),
+                                              ...Object.keys(g.machine_value_counts || {})])];
+        }
+      }
+    }
     if (_cpOn && allFormats.length) {
       const _byKey = new Map(allFormats.map(g => [`${g.supplier_name || ''}|${g.document_type}|${g.field_key}`, g]));
       let _nMerged = 0;
@@ -1818,15 +1836,6 @@ function buildTrainingArgs(db, configPath, logger = null) {
         const g = _byKey.get(`${c.supplier_name}|${c.document_type}|${c.field_key}`);
         if (g && !g.provisional && Array.isArray(c.confusions) && c.confusions.length) {
           g.confusions = c.confusions;
-          // Oracle O3a — the REFUSAL-side literal union, built ONCE here so Python never reads the machine
-          // channel itself: keys(value_counts) ∪ keys(machine_value_counts) (the latter present only when
-          // learning_exclude_machine_confirms is armed; otherwise machine confirms already sit in value_counts).
-          // The classFixService mirrored rule: a refusal test may use the fullest evidence there is; a
-          // licensing test may use human-attested evidence only (value_counts stays the licensing
-          // precondition inside confusion_correct). Third production consumer of machine_value_counts —
-          // justified + pinned in test_machine_confirm_learning.js.
-          g.confusion_literals = [...new Set([...Object.keys(g.value_counts || {}),
-                                              ...Object.keys(g.machine_value_counts || {})])];
           _nMerged++;
         }
       }

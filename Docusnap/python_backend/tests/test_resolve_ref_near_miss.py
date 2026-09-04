@@ -54,7 +54,7 @@ check("two confirmed BACKED neighbours (best_n trap) -> None (not the higher-cou
       fac.unambiguous_near_miss('AB1234567X', E(**{'AB1234567I': 9, 'AB123456TX': 2})) is None)
 
 print("\n4. The resolver note is NOT sweepable by any note-clearer (Oracle bilingual condition)")
-note = engine._REF_RESOLVE_NOTE.format('7B2923124N3M2', '782923124N3M2')
+note = engine._REF_RESOLVE_NOTE.format('7B2923124N3M2', '782923124N3M2', 'B→8; confirmed 4 times before')
 check("Python: _is_verification_doubt_note(note) is False (arm-F allowlist)",
       engine._is_verification_doubt_note(note) is False)
 # JS classFixService.CLEARABLE_NOTE_MARKS — parsed live so a JS reword is caught here too
@@ -68,17 +68,27 @@ check("JS: no CLEARABLE_NOTE_MARK is a substring of the resolver note",
 check("no known arm/near-miss PREFIX starts the note",
       not any(note.startswith(p) for p in ('unexpected characters', 'Suggested name correction:', 'looks like a misread')))
 
-print("\n5. Source-order / wiring pins (engine.py)")
-src = open(os.path.join(os.path.dirname(__file__), '..', 'extraction', 'engine.py'), encoding='utf-8').read()
-i_leg = src.find('_ua = (format_anomaly_checker.unambiguous_near_miss')
-i_nm  = src.find('_nm = format_anomaly_checker.near_miss_confirmed')
-check("leg-b runs BEFORE the near_miss suggestion", 0 < i_leg < i_nm)
-check("leg-b is gated on _RESOLVE_REF_NEAR_MISS", 'if _RESOLVE_REF_NEAR_MISS else None' in src)
-_seg = src[i_leg:i_nm]
-check("leg-b sets value=_ua + was_corrected + caps <=70 + keeps the dedicated note + tags method",
-      "'value':           _ua" in _seg and "'was_corrected':   True" in _seg
-      and "min(data.get('confidence') or 0, 70)" in _seg
-      and "_REF_RESOLVE_NOTE.format" in _seg and "'+ref_resolved'" in _seg)
+print("\n5. The machine-literal UNION + human licensing + attestation (RELOCATION, Oracle C3/C5 — 2026-09-04 late)")
+# Refusal reads the fullest evidence (human ∪ MACHINE literals via `confusion_literals`); licensing stays human.
+def EU(lits, **counts):
+    return {'value_counts': dict(counts), 'confusion_literals': list(lits)}
+check("a MACHINE literal one edit from the read makes the ball size 2 -> None",
+      fac.unambiguous_near_miss('AB1234567X', EU(['AB1234567I', 'AB123456TX'], **{'AB1234567I': 4})) is None)
+check("a machine-ONLY target (not in value_counts) -> None (no human attestation — the deliberate dead zone)",
+      fac.unambiguous_near_miss('1625802868', EU(['1G25802868', 'ZZ9999999999'], **{'ZZ9999999999': 1})) is None)
+check("no confusion_literals -> identical to the value_counts-only behaviour (fallback)",
+      fac.unambiguous_near_miss('7B2923124N3M2', uniq) == '782923124N3M2')
+check("casefold: a lower-case confirmed literal still licenses (T->7 backed slip), returned in ORIGINAL case",
+      fac.unambiguous_near_miss('AB123456TX', E(**{'ab1234567x': 4})) == 'ab1234567x')
+check("two case-variants of the target in value_counts -> None (case-ambiguous)",
+      fac.unambiguous_near_miss('AB123456TX', E(**{'ab1234567x': 4, 'AB1234567X': 1})) is None)
+check("FROM-GLYPH ATTESTATION: a known literal carrying the READ's glyph at the diff position -> None",
+      fac.unambiguous_near_miss('1625802868', E(**{'1G25802868': 2, '1725802868': 1})) is None)
+check("…and the same read with no such literal -> the heal ('1G25802868')",
+      fac.unambiguous_near_miss('1625802868', E(**{'1G25802868': 2, 'RFH0738865': 9})) == '1G25802868')
+check("the wiring lives in _apply_ref_resolvers (see test_ref_resolvers_wiring.py); the old text-branch site is gone",
+      'def _apply_ref_resolvers' in open(os.path.join(os.path.dirname(__file__), '..', 'extraction', 'engine.py'), encoding='utf-8').read()
+      and '_ua = (format_anomaly_checker.unambiguous_near_miss' not in open(os.path.join(os.path.dirname(__file__), '..', 'extraction', 'engine.py'), encoding='utf-8').read())
 check("flag default OFF (byte-identical off)", engine._RESOLVE_REF_NEAR_MISS is False)
 
 print(f"\n{'ALL PASS' if _F == 0 else str(_F) + ' FAILED'}  ({_P} ok)")

@@ -3003,8 +3003,13 @@ _FORMAT_VARIANCE_RELAX = os.environ.get("FORMAT_VARIANCE_RELAX", "0") == "1"
 # CLEARABLE_NOTE_MARKS) so a doubt-clear can never sweep it and silently auto-file — pinned bilingually.
 _RESOLVE_REF_NEAR_MISS = os.environ.get("RESOLVE_REF_NEAR_MISS", "0") == "1"
 _REF_RESOLVE_NOTE_MARK = "corrected against a confirmed reference"   # unique; NOT in any note-clearer set
+# RELOCATED + re-shaped 2026-09-04 late (gary → Oracle SEND-BACK→SIGN-OFF-W/COND C1-C11): both legs now run in
+# _apply_ref_resolvers (beside confusion-precedence, AFTER every page-witness gate) as SUGGESTIONS — the value
+# stays the raw read, `corrected_to` carries the proposal, <=70 cap, a note that names both forms, the glyph
+# pair and how many times the target was confirmed (C6); never was_corrected, never a method suffix (S3: a
+# suffix broke the corroboration record's family match). Third placeholder = the evidence detail.
 _REF_RESOLVE_NOTE = ("Cross-check: read as '{}', but this sender has a confirmed reference '{}' one "
-                     "OCR-confusable character away — " + _REF_RESOLVE_NOTE_MARK
+                     "OCR-confusable character away ({}) — " + _REF_RESOLVE_NOTE_MARK
                      + "; please confirm once before filing.")
 
 # CONFUSION_PRECEDENCE (2026-09-04, reggie + gary → Oracle SIGN-OFF-W/COND A1-A4; the 2a MEDIUM tier, REVIEW-BOUND,
@@ -6662,6 +6667,120 @@ class ExtractionEngine:
         except Exception:
             return None
 
+    def _apply_ref_resolvers(self, results, field_defs, supplier_name, document_slug, ref_field_key):
+        """The single-glyph REFERENCE resolvers, RELOCATED (2026-09-04 late; gary → Oracle SEND-BACK→SIGN-OFF-W/COND
+        C1-C11) from the Stage-4.5 text branch — a site `text_field_keys` made unreachable for every ref-role
+        field of a ref-NAMED type (and doubly so via the label-confirmed / already-noted / variance gates), so
+        RESOLVE_REF_NEAR_MISS (leg-b) and RESOLVE_REF_POSITIONAL (leg-a) never executed on the exhibit and could,
+        via the old `''` doc-type fallback, have proposed ANOTHER supplier's literal. This pass runs beside
+        confusion-precedence: AFTER every page-witness gate (Gate C … S-A/S-B/prefix-outlier/D1 judged the RAW
+        read) and BEFORE the learned-agreement boost; precedence leg-b → leg-a → 2a (a leg's note makes 2a skip;
+        leg-b's singleton ball and 2a's empty ball are disjoint by construction).
+
+        v1 IS A SUGGESTION, NOT A PRE-FILL (Oracle C2): the committed value stays the RAW read; the proposal rides
+        `corrected_to` (the existing near-miss affordance — the operator gets "Use …" / keep buttons), the field
+        is capped <=70, and a dedicated note names BOTH forms, the glyph pair and how many times the target was
+        confirmed (C6). Never `was_corrected`, never a method suffix (S3: a suffix breaks the corroboration
+        record's exact family match). Three independent auto-file gates result: the note, the differing
+        corrected_to, and the cap vs the 88 critical floor. An ACCEPTED suggestion writes a `corrections` row —
+        deliberately: that row is the fact substrate confusion-precedence mines (a pre-fill would starve it).
+          leg-b (`_RESOLVE_REF_NEAR_MISS`): any code-like field the 2a deny set admits, SUPPLIER entry only;
+            `format_anomaly_checker.unambiguous_near_miss` — singleton casefolded ball over the human ∪ machine
+            literals, a HUMAN-attested target, backed slip, from-glyph attestation (C3). No support floor by
+            design (the note states the count; a floor would make the arc inert on its own exhibit — pinned).
+          leg-a (`_RESOLVE_REF_POSITIONAL`): the ref role only, only if leg-b did not fire on it, never on a value
+            that IS a confirmed literal; `_ref_positional_value` (binarisation re-slice + >=3-source consensus).
+            It may ASK, never answer — DARK behind its own flag with its own flip decision (C11).
+        Returns True when it wrote a suggestion (the caller ORs it into review_needed). Best-effort."""
+        if not (_RESOLVE_REF_NEAR_MISS or _RESOLVE_REF_POSITIONAL):
+            return False
+        if not self.format_class_index or not document_slug or not supplier_name:
+            return False
+        fired = False
+        try:
+            s_lower  = (supplier_name or '').lower().strip()
+            dt_lower = (document_slug or '').lower().strip()
+            if not s_lower:
+                return False                     # own-supplier literals only — never a ('') cross-supplier proposal
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            _list_keys = getattr(self, '_list_field_keys', ()) or ()
+            _bar_keys  = getattr(self, '_barcode_field_keys', ()) or ()
+            for key, data in list(results.items()):
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                val = data.get('value')
+                if not val or not isinstance(val, str):
+                    continue
+                if key in _IDENTITY_FIELD_KEYS or key in _list_keys or key in _bar_keys:
+                    continue
+                if value_quality.is_name_like_field(key) or type_by_key.get(key) in _CODE_FIELD_SKIP_TYPES:
+                    continue
+                if str(data.get('validation_note') or '').strip() or data.get('corrected_to'):
+                    continue                     # one note per field — an earlier, more specific gate already spoke
+                m = str(data.get('method') or '')
+                if m == 'anchor_crop_crosscheck':
+                    continue
+                if any(x in m for x in ('override', 'template_fixed', 'manual', 'operator_pin')):
+                    continue                     # user-set literals are never second-guessed
+                sval = str(val).strip()
+                if not sval or any(ch.isspace() for ch in sval) or not any(ch.isdigit() for ch in sval):
+                    continue
+                fe = self.format_class_index.get((s_lower, dt_lower, key))   # SUPPLIER entry only, never the '' twin
+                if not fe or not fe.get('value_counts'):
+                    continue
+                # ── leg-b: unambiguous near-miss of a HUMAN-confirmed literal ─────────────────────────────
+                if _RESOLVE_REF_NEAR_MISS:
+                    L = format_anomaly_checker.unambiguous_near_miss(sval, fe)
+                    if L and L != sval:
+                        p = next((i for i in range(len(sval)) if sval[i] != L[i]), 0)
+                        n_conf = int((fe.get('value_counts') or {}).get(L) or 0)
+                        detail = f"{sval[p]}→{L[p]}; '{L}' confirmed {n_conf} time{'s' if n_conf != 1 else ''} before"
+                        results[key] = {
+                            **data,
+                            'confidence':      min(int(data.get('confidence') or 0), 70),
+                            'corrected_to':    L,
+                            'validation_note': _REF_RESOLVE_NOTE.format(sval, L, detail),
+                        }
+                        fired = True
+                        self.log(f"  Ref resolver (leg-b): {key} read '{sval}' — suggesting confirmed '{L}' "
+                                 f"({detail}) — held for review")
+                        if self._trace:
+                            try:
+                                self._t('ref_near_miss_resolved', field=key, read=sval, suggested=L, pos=p,
+                                        confirmed=n_conf)
+                            except Exception:
+                                pass
+                        continue
+                # ── leg-a: per-position consensus across >=3 pixel sources (ref role only) ─────────────────
+                if _RESOLVE_REF_POSITIONAL and key == ref_field_key:
+                    if format_anomaly_checker.value_is_confirmed_literal(sval, fe):
+                        continue                 # never second-guess a confirmed literal
+                    pc = self._ref_positional_value(key)
+                    if pc and pc != sval:
+                        # Post-correction shape sanity (refusal-only) — knowingly dead on a FORMAT_CLASS_JOIN entry
+                        # (no `shapes` key by Oracle C3); do not restore it by re-attaching shapes there.
+                        if fe.get('shapes') \
+                                and format_anomaly_checker.check_value(pc, fe) is not None \
+                                and format_anomaly_checker.check_value(sval, fe) is None:
+                            continue
+                        results[key] = {
+                            **data,
+                            'confidence':      min(int(data.get('confidence') or 0), 70),
+                            'corrected_to':    pc,
+                            'validation_note': _REF_POSITIONAL_NOTE.format(sval, pc),
+                        }
+                        fired = True
+                        self.log(f"  Ref resolver (leg-a): {key} read '{sval}' — re-read consensus suggests "
+                                 f"'{pc}' — held for review")
+                        if self._trace:
+                            try:
+                                self._t('ref_positional_resolved', field=key, read=sval, suggested=pc)
+                            except Exception:
+                                pass
+        except Exception:
+            return fired
+        return fired
+
     def _apply_confusion_precedence(self, results, field_defs, supplier_name, document_slug):
         """CONFUSION PRECEDENCE 2a (2026-09-04; reggie + gary → Oracle SIGN-OFF-W/COND A1-A4 + O1-O9; DARK,
         mig 119; REVIEW-BOUND). This sender's own HUMAN `corrections` are an independent modality: when the
@@ -6679,8 +6798,9 @@ class ExtractionEngine:
         ref-NAMED type (`text_field_keys` excludes `_is_ref_field`), which is why leg-b/leg-a never executed on the
         exhibit — 2a is the family's FIRST live arc and its safety case stands alone.
 
-        Writes value/display_value + raw_value (the misread stays searchable) + the cap + the note + method
-        `+confusion_resolved`. Deliberately NEITHER `corrected_to` NOR `was_corrected` (Oracle O2, ship-blocking):
+        Writes value/display_value + raw_value (in-engine/trace only — the import path persists raw_value FROM
+        `value`, processing/handler.js, so the NOTE is the only durable record of the raw read) + the cap + the
+        note + method `+confusion_resolved`. Deliberately NEITHER `corrected_to` NOR `was_corrected` (Oracle O2, ship-blocking):
         the renderer's green "auto-corrected" badge keys on value==corrected_to with a tooltip that would be false
         here, and processing/handler.js + batchAuditService read corrected_to/was_corrected as a HUMAN act.
         `+confusion_resolved` is deliberately NOT a getFieldFormats exclusion marker (gary G4): an accepted
@@ -10468,59 +10588,9 @@ class ExtractionEngine:
                         # flagging: _has_no_usual_format is False on any thin/absent signal.
                         if _FORMAT_VARIANCE_RELAX \
                                 and format_anomaly_checker._has_no_usual_format(fmt_entry):
-                            # LEG-B RESOLVER (RESOLVE_REF_NEAR_MISS, DARK): when the near-miss target is
-                            # UNAMBIGUOUS, PRE-FILL the confirmed value (was_corrected) instead of only
-                            # suggesting it — KEEPING a dedicated note + the <=70 cap so the doc stays
-                            # REVIEW-BOUND (never auto-files; the mirror/ambiguous cases refuse and fall
-                            # through to the suggestion below). Byte-identical when the flag is off.
-                            # ⚠ REACHABILITY (verified 2026-09-04, Oracle O6b): this text branch EXCLUDES every
-                            # ref-role field of a ref-NAMED type (text_field_keys drops _is_ref_field keys), so
-                            # leg-b/leg-a below never execute on a `reference`-typed `reference_number` — only
-                            # on a text-typed, non-ref-named custom key. Relocation beside
-                            # _apply_confusion_precedence = its own commit (pendingfeatures.md 2026-09-04).
-                            _ua = (format_anomaly_checker.unambiguous_near_miss(str(val), fmt_entry)
-                                   if _RESOLVE_REF_NEAR_MISS else None)
-                            if _ua and _ua != str(val):
-                                results[key] = {
-                                    **data,
-                                    'value':           _ua,
-                                    'raw_value':       data.get('raw_value', val),
-                                    'confidence':      min(data.get('confidence') or 0, 70),
-                                    'was_corrected':   True,
-                                    'corrected_to':    _ua,
-                                    'validation_note': _REF_RESOLVE_NOTE.format(str(val), _ua),
-                                    'method':          (str(data.get('method') or '') + '+ref_resolved'),
-                                }
-                                n_flagged += 1
-                                format_anomaly_flagged = True
-                                if self._trace:
-                                    try: self._t('ref_near_miss_resolved', field=key, value=_ua, read=str(val))
-                                    except Exception: pass
-                                continue
-                            # LEG-A POSITIONAL RESOLVER (RESOLVE_REF_POSITIONAL, DARK): leg-b did not resolve
-                            # (ambiguous/unbacked/short). If the ref-role field's distinct PIXEL sources
-                            # disagree at one same-length position, a binarisation re-slice + per-position
-                            # majority across >=3 sources PRE-FILLS the consensus — REVIEW-BOUND (dedicated
-                            # <=70-capped note; never auto-files; witnesses stay out of the corrob record).
-                            _pc = (self._ref_positional_value(key)
-                                   if (_RESOLVE_REF_POSITIONAL and key == ref_field_key) else None)
-                            if _pc and _pc != str(val):
-                                results[key] = {
-                                    **data,
-                                    'value':           _pc,
-                                    'raw_value':       data.get('raw_value', val),
-                                    'confidence':      min(data.get('confidence') or 0, 70),
-                                    'was_corrected':   True,
-                                    'corrected_to':    _pc,
-                                    'validation_note': _REF_POSITIONAL_NOTE.format(str(val), _pc),
-                                    'method':          (str(data.get('method') or '') + '+ref_positional'),
-                                }
-                                n_flagged += 1
-                                format_anomaly_flagged = True
-                                if self._trace:
-                                    try: self._t('ref_positional_resolved', field=key, value=_pc, read=str(val))
-                                    except Exception: pass
-                                continue
+                            # (The RESOLVE_REF_NEAR_MISS / RESOLVE_REF_POSITIONAL legs that briefly sat here were
+                            # RELOCATED to _apply_ref_resolvers on 2026-09-04: this text branch excludes every
+                            # ref-role field of a ref-named type, so they never executed on the exhibit.)
                             _nm = format_anomaly_checker.near_miss_confirmed(str(val), fmt_entry)
                             if _nm:
                                 results[key] = {
@@ -10725,6 +10795,9 @@ class ExtractionEngine:
         # boost (which skips noted fields, so the cap can never be re-lifted) + needs_review. Returns True when it
         # wrote a correction; ORed into review_needed below (results['_needs_review'] is assigned unconditionally
         # there — a direct write here would be dead, and validator.needs_review never reads a note).
+        # ── SINGLE-GLYPH REFERENCE RESOLVERS, relocated (DARK per leg; SUGGESTION-shaped; Oracle C1-C11) ── the
+        # same site and the same reasoning as 2a below; precedence leg-b → leg-a → 2a by call order.
+        _rc_fired = self._apply_ref_resolvers(results, field_defs, supplier_name, document_slug, ref_field_key)
         _cp_fired = self._apply_confusion_precedence(results, field_defs, supplier_name, document_slug)
 
         # ── LEARNED-AGREEMENT CONFIDENCE BOOST ────────────────────────────────
@@ -10836,7 +10909,7 @@ class ExtractionEngine:
         # Stage 4.5 confidence caps (≤45) will always trigger needs_review via
         # the per-field threshold check.  The OR guard covers the edge case
         # where a flagged field is not listed in field_defs.
-        review_needed = validator.needs_review(results, field_defs) or format_anomaly_flagged or _cp_fired
+        review_needed = validator.needs_review(results, field_defs) or format_anomaly_flagged or _cp_fired or _rc_fired
 
         results["_supplier_name"]        = supplier_name
         results["_document_type"]        = document_type

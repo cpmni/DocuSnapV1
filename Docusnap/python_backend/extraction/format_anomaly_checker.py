@@ -704,42 +704,60 @@ def _within_edit1(a: str, b: str) -> bool:
 
 def unambiguous_near_miss(value, format_entry, min_len: int = 10):
     """Leg (b) of the single-glyph REFERENCE resolver (reggie + gary + Oracle SIGN-OFF-W/COND
-    2026-09-04, v1 REVIEW-BOUND). Return the confirmed in-scope literal L that `value` should be
-    corrected TO — but ONLY when the correction is UNAMBIGUOUS, so it can never snap toward the wrong
-    one of two rival serials. HARDENS near_miss_confirmed, which count-ranks (`best_n`) and would pick
-    the higher-count neighbour of two — the 752/782 booby-trap. Snap iff ALL hold:
+    2026-09-04; RELOCATED + re-signed 2026-09-04 late as a SUGGESTION, Oracle C2-C6). Return the
+    human-confirmed in-scope literal L that `value` is one BACKED OCR slip away from — but ONLY when the
+    correction is UNAMBIGUOUS, so it can never point toward the wrong one of two rival serials. HARDENS
+    near_miss_confirmed, which count-ranks (`best_n`) and would pick the higher-count neighbour of two —
+    the 752/782 booby-trap. Returns L iff ALL hold:
       • `value` has >= min_len alphanumeric chars (a short code collides too easily);
-      • the CONFIRMED value_counts ball {c : editdist(value, c) <= 1} is a SINGLETON {L} — so `value`
-        is NOT itself a confirmed literal (it would sit in the ball at distance 0) AND exactly one
-        confirmed value lies within one edit (no rival to snap the wrong way);
+      • the KNOWN ball {c : editdist(value, c) <= 1}, taken CASEFOLDED over the REFUSAL set (human ∪
+        MACHINE-confirmed literals — `confusion_literals`, falling back to value_counts keys; Oracle O3a/
+        C5), is a SINGLETON — so `value` is not itself known, and exactly one known literal lies within
+        one edit (no rival, human OR machine, to point the wrong way);
+      • that singleton resolves to exactly ONE HUMAN-confirmed literal in value_counts (original case) —
+        a machine-only neighbour carries no human attestation (refuse); two case-variants are ambiguous
+        (refuse). LICENSING stays human-attested; REFUSAL uses the fullest evidence;
       • L is a SAME-LENGTH single substitution of `value` whose one differing position is a BACKED
         letter<->digit OCR confusable (an unbacked digit<->digit slip like 5<->8 is more likely a
-        genuinely different serial -> refuse; this is why doc196 is never touched here).
+        genuinely different serial -> refuse; this is why doc196 is never touched here);
+      • FROM-GLYPH ATTESTATION (Oracle C3, the O3b twin): NO known literal of the same length carries the
+        READ's glyph at the differing position — if the family admits that glyph there (a digit at pos 1
+        beside `1G25802868`'s 'G'), the read may be a genuinely different device: refuse.
     Else None (fail-toward-review). Pure/deterministic; value_counts absent -> None."""
     v = (value or '').strip()
     if len(re.sub(r'[^0-9A-Za-z]', '', v)) < int(min_len):
         return None
-    vc = (format_entry or {}).get('value_counts') or {}
+    fe = format_entry or {}
+    vc = fe.get('value_counts') or {}
     if not vc:
         return None
+    lits = _confusion_refusal_literals(fe)
+    v_cf = v.casefold()
     ball = []
-    for conf in vc:
-        c = (conf or '').strip()
-        if not c:
-            continue
-        if _within_edit1(v, c):          # includes c == v at distance 0
+    for c in lits:
+        if _within_edit1(v_cf, c):       # includes c == v at distance 0
             ball.append(c)
             if len(ball) > 1:
-                return None              # >1 confirmed literal within one edit -> ambiguous, refuse
+                return None              # >1 known literal within one edit -> ambiguous, refuse
     if len(ball) != 1:
         return None
-    L = ball[0]
-    if L == v or len(L) != len(v):       # value is itself confirmed, or the sole neighbour is an indel
+    L_cf = ball[0]
+    if L_cf == v_cf or len(L_cf) != len(v):   # value is itself known, or the sole neighbour is an indel
         return None
-    diffs = [i for i in range(len(v)) if v[i] != L[i]]
+    # resolve the casefolded singleton back to the HUMAN-confirmed literal (original case)
+    origs = {str(k).strip() for k in vc if str(k or '').strip().casefold() == L_cf}
+    if len(origs) != 1:
+        return None                      # 0 = machine-only (no human attestation); >1 = case-ambiguous
+    L = next(iter(origs))
+    diffs = [i for i in range(len(v)) if v_cf[i] != L_cf[i]]     # casefolded diff (a case-only difference is not a slip)
     if len(diffs) != 1:
         return None
-    return L if _is_letter_digit_confusable(v[diffs[0]], L[diffs[0]]) else None
+    p = diffs[0]
+    if not _is_letter_digit_confusable(v[p], L[p]):
+        return None
+    if _confusion_from_attested(len(v), p, v[p], lits):
+        return None                      # the family admits the read's glyph at that position -> refuse
+    return L
 
 
 def value_is_confirmed_literal(value, format_entry) -> bool:
@@ -1245,11 +1263,14 @@ def build_format_class_index(formats_data: list) -> dict:
         _conf = entry.get('confusions')
         if vcounts and isinstance(_conf, list) and _conf:
             fmt = {**fmt, 'confusions': list(_conf)}
-            # The REFUSAL-side literal union (human ∪ machine confirmed), built beside the facts in
-            # handler.js (Oracle O3a) — consumed only by confusion_correct's ball/attestation/break checks.
-            _lits = entry.get('confusion_literals')
-            if isinstance(_lits, list) and _lits:
-                fmt = {**fmt, 'confusion_literals': list(_lits)}
+        # The REFUSAL-side literal union (human ∪ machine confirmed), built in handler.js (Oracle O3a) —
+        # consumed by confusion_correct's AND unambiguous_near_miss's ball/attestation/break checks.
+        # Attached INDEPENDENTLY of `confusions` (Oracle C4 of the leg-b relocation): leg-b needs the union
+        # on every supplier-scoped group, not only fact-bearing ones. Refusal-only — value_counts stays the
+        # licensing precondition in both consumers.
+        _lits = entry.get('confusion_literals')
+        if vcounts and isinstance(_lits, list) and _lits:
+            fmt = {**fmt, 'confusion_literals': list(_lits)}
         # Dominant learned SEPARATOR (reggie) — carries the raw '-'/'.'/'/' the fold erases, so
         # Stage 4.5 can flag a MISREAD separator ("PO.20011" where history is uniformly "PO-…").
         # Additive: absent unless one separator dominates a non-numeric structured code.

@@ -2728,6 +2728,22 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 120 (format_class_join): ${e.message}`); }
   }
 
+  // ── migration 121: resolve_ref_near_miss + resolve_ref_positional FORCED OFF (2026-09-04 late; gary →
+  //    Oracle SIGN-OFF-W/COND C8). The two single-glyph reference resolvers were RELOCATED from a site the ref
+  //    role could never reach (the Stage-4.5 text branch) to a live pass beside confusion-precedence, and
+  //    re-shaped as SUGGESTIONS (value untouched + corrected_to + note + <=70 cap). A relocated feature is a
+  //    NEW feature and must not be born force-ON: this UPSERT discharges the TEST force-ON migs 114/116 on every
+  //    install (the owner re-arms by an explicit settings write for a test session). ──
+  if (!applied.has(121)) {
+    try {
+      for (const k of ['resolve_ref_near_miss', 'resolve_ref_positional']) {
+        db.prepare(`INSERT INTO settings (key, value) VALUES (?, 'false') ON CONFLICT(key) DO UPDATE SET value = 'false'`).run(k);
+      }
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (121)').run();
+      console.log('JS migration 121 applied: resolve_ref_near_miss + resolve_ref_positional forced OFF (relocated as SUGGESTIONS — a new feature is born DARK; discharges the TEST force-ON migs 114/116)');
+    } catch (e) { console.warn(`  migration 121 (ref resolvers OFF): ${e.message}`); }
+  }
+
 
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
