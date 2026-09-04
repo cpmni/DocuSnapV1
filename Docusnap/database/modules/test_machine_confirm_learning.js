@@ -171,8 +171,14 @@ console.log('7. structural pins — the shared sentinel set (three consumers, on
   // justified here, and in particular so nobody quietly wires this into a licensing index. The
   // 2026-08-19 Oracle ruling SENT BACK exactly that (see test_prefix_amplification_invariant.py:
   // amplifying `prefix_index` silences the outlier guard on the prefix it exists to catch).
-  check('machine_value_counts is consumed ONLY by the refusal side (emit + classFixService); a '
-        + 'third consumer must be justified, and must never be a licensing index',
+  // THIRD CONSUMER (2026-09-04, Oracle O3a/O3d — CONFUSION PRECEDENCE 2a): processing/handler.js
+  // buildTrainingArgs builds `confusion_literals` = keys(value_counts) ∪ keys(machine_value_counts) ONCE at
+  // the facts merge, so format_anomaly_checker.confusion_correct can REFUSE on the fullest evidence (the
+  // edit-1 ball, the from-glyph attestation, the break-check — a machine-confirmed genuine serial such as
+  // W2S8745899 must read as SEEN). Same mirrored rule as classFixService: refusal-side only; value_counts
+  // (human-attested) stays the LICENSING precondition — asserted at the source below. Never a licensing index.
+  check('machine_value_counts is consumed ONLY by the refusal side (emit + classFixService + the 2a literal '
+        + 'union in processing/handler.js); a further consumer must be justified, and must never be a licensing index',
         (() => {
           const roots = ['database/modules', 'src', 'python_backend/extraction'];
           const repo = path.join(__dirname, '..', '..');
@@ -189,7 +195,17 @@ console.log('7. structural pins — the shared sentinel set (three consumers, on
             }
           };
           for (const r of roots) scan(path.join(repo, r));
-          return hits === 2;   // learning.js's emit + classFixService's refusal-side union
+          return hits === 3;   // learning.js's emit + classFixService's refusal-side union + handler.js's 2a literal union
+        })());
+  check('2a: value_counts (human-attested) remains the LICENSING precondition of confusion_correct — the machine '
+        + 'union can only widen REFUSAL (source pin on format_anomaly_checker.py)',
+        (() => {
+          const src = fs.readFileSync(path.join(__dirname, '..', '..', 'python_backend', 'extraction', 'format_anomaly_checker.py'), 'utf8');
+          const i = src.indexOf('def confusion_correct(');
+          const body = i >= 0 ? src.slice(i, i + 4000) : '';
+          return /if not facts or not vc:\s*\n\s*return None/.test(body)         // licensing precondition first
+              && !/machine_value_counts/.test(src)                                  // Python never reads the channel
+              && /_confusion_refusal_literals\(fe\)/.test(body);                    // refusals use the union
         })());
 }
 

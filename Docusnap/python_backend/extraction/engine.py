@@ -3007,6 +3007,29 @@ _REF_RESOLVE_NOTE = ("Cross-check: read as '{}', but this sender has a confirmed
                      "OCR-confusable character away — " + _REF_RESOLVE_NOTE_MARK
                      + "; please confirm once before filing.")
 
+# CONFUSION_PRECEDENCE (2026-09-04, reggie + gary → Oracle SIGN-OFF-W/COND A1-A4; the 2a MEDIUM tier, REVIEW-BOUND,
+# DEFAULT OFF, mig 119). This sender's own HUMAN `corrections` history is an independent modality: when the operator
+# corrected the SAME glyph at the SAME position of same-length serials on >=3 documents (>=2 distinct values, no
+# opposing correction — format_anomaly_checker.confusion_correct), a fresh NEVER-SEEN read carrying that glyph there
+# is PRE-FILLED with the human-attested form — but KEPT review-bound: <=70 cap + a dedicated BOTH-FORMS note (A3)
+# + corrected_to, so trust.js holds it (never auto-files; the HIGH auto-file tier is a separate census-gated
+# design — Oracle H1-H5). Facts are SUPPLIER-scoped only (A1); an accepted pre-fill writes NO corrections row (A4,
+# pinned) and a human edit back to the read is the counter that kills the fact (self-heal). The note MARK is
+# distinct from every note-clearer (arms A-P, _is_verification_doubt_note, classFixService CLEARABLE_NOTE_MARKS).
+_CONFUSION_PRECEDENCE = os.environ.get("CONFUSION_PRECEDENCE", "0") == "1"
+_CONFUSION_NOTE_MARK = "corrected from this sender's past corrections"   # unique; NOT in any note-clearer set
+# Oracle O8: name both forms, the evidence and its size, the action — and say the corrected value has NOT been
+# seen before (that is 2a's precondition; it is what separates it from every other auto-correct in the app).
+_CONFUSION_NOTE = ("Read as '{}'; corrected to '{}' because you made the same {}→{} correction on {} documents "
+                   "from this sender — " + _CONFUSION_NOTE_MARK + ". This exact value has not been seen "
+                   "before — please check it against the page before filing.")
+# The house deny set for code-field reconciles (Oracle O5): the SAME set the four code-field reconciles
+# (_reconcile_clipped_suffix and siblings) each carry as a local `_skip_types` — fields whose value has its OWN
+# normaliser/checksum and must never be glyph-corrected. Kept as a module constant for 2a; pinned EQUAL to those
+# locals by tests/test_confusion_precedence_wiring.py so the two can't drift.
+_CODE_FIELD_SKIP_TYPES = frozenset({'date', 'currency', 'number', 'percentage', 'email', 'iban', 'vat_gb',
+                                    'postcode_uk', 'ip_address', 'mac_address', 'currency_code', 'website'})
+
 # RESOLVE_REF_POSITIONAL (2026-09-04, gary integration → Oracle Phase 2, REVIEW-BOUND, DEFAULT OFF). Leg-a
 # of the single-glyph ref resolver: when the ref's distinct PIXEL sources disagree at one same-length
 # position, re-read the taught box under a DIFFERENT BINARISATION (independent recipe — the engine has no
@@ -6632,6 +6655,105 @@ class ExtractionEngine:
             return witness
         except Exception:
             return None
+
+    def _apply_confusion_precedence(self, results, field_defs, supplier_name, document_slug):
+        """CONFUSION PRECEDENCE 2a (2026-09-04; reggie + gary → Oracle SIGN-OFF-W/COND A1-A4 + O1-O9; DARK,
+        mig 119; REVIEW-BOUND). This sender's own HUMAN `corrections` are an independent modality: when the
+        operator corrected the SAME glyph at the SAME position of same-length codes on >=3 documents (>=2 distinct
+        values, no opposing correction — the facts learning.getFieldConfusions mines, thresholds owned by
+        format_anomaly_checker.confusion_correct), a fresh NEVER-SEEN read carrying that glyph there is corrected
+        to the human-attested form — and KEPT review-bound: <=70 cap + a both-forms note (O8) that no note-clearer
+        matches, so trust.js holds it at every floor (the note) AND below the 88 critical floor (the cap).
+
+        PLACEMENT IS LOAD-BEARING (Oracle O1): after `_flag_digit_disagreement` and before the learned-agreement
+        boost, so EVERY page-witness gate (Gate C, suffix/blind-geometry reconciles, S-A/S-B, prefix-outlier, D1)
+        has already judged the RAW read — a note from any of them makes 2a skip (fail toward the more specific
+        note), and 2a fires only on a value that passed every gate cleanly: the genuinely silent class it exists
+        for. NOT the leg-b site (engine text branch): that branch is unreachable for every ref-role field of a
+        ref-NAMED type (`text_field_keys` excludes `_is_ref_field`), which is why leg-b/leg-a never executed on the
+        exhibit — 2a is the family's FIRST live arc and its safety case stands alone.
+
+        Writes value/display_value + raw_value (the misread stays searchable) + the cap + the note + method
+        `+confusion_resolved`. Deliberately NEITHER `corrected_to` NOR `was_corrected` (Oracle O2, ship-blocking):
+        the renderer's green "auto-corrected" badge keys on value==corrected_to with a tooltip that would be false
+        here, and processing/handler.js + batchAuditService read corrected_to/was_corrected as a HUMAN act.
+        `+confusion_resolved` is deliberately NOT a getFieldFormats exclusion marker (gary G4): an accepted
+        pre-fill writes no corrections row (A4, pinned) and its value then enters value_counts, so the next
+        identical read falls INSIDE the confirmed ball and 2a refuses — the arc self-disarms and hands the case
+        to leg-b. Overriding a label-confirmed (`template_mapping*` / anchor_crop_relocated) read is a PINNED
+        decision (Oracle O6): a teach fixes the position, not the value, and the result is review-bound.
+
+        Returns True when it wrote a correction — the caller ORs that into `review_needed`, because
+        results['_needs_review'] is assigned unconditionally later (a direct write here would be dead) and
+        validator.needs_review tests confidence < threshold (70 is not < 70) and never reads a note.
+        Best-effort: never breaks extraction."""
+        if not _CONFUSION_PRECEDENCE or not self.format_class_index or not document_slug or not supplier_name:
+            return False
+        fired = False
+        try:
+            s_lower  = (supplier_name or '').lower().strip()
+            dt_lower = (document_slug or '').lower().strip()
+            if not s_lower:
+                return False                     # A1: own-supplier facts only — never a ('') cross-supplier fact
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            _list_keys = getattr(self, '_list_field_keys', ()) or ()
+            _bar_keys  = getattr(self, '_barcode_field_keys', ()) or ()
+            for key, data in list(results.items()):
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                val = data.get('value')
+                if not val or not isinstance(val, str):
+                    continue
+                # House deny set (Oracle O5): identity keys (the learning scope key), lists, barcodes, name-like
+                # fields, and every type with its own normaliser/checksum (dates, money, MAC/IP/IBAN/VAT/postcode…).
+                if key in _IDENTITY_FIELD_KEYS or key in _list_keys or key in _bar_keys:
+                    continue
+                if value_quality.is_name_like_field(key) or type_by_key.get(key) in _CODE_FIELD_SKIP_TYPES:
+                    continue
+                if str(data.get('validation_note') or '').strip() or data.get('corrected_to'):
+                    continue                     # one note per field — an earlier, more specific gate already spoke
+                m = str(data.get('method') or '')
+                if m == 'anchor_crop_crosscheck':
+                    continue                     # the crosscheck-outlier restore keys on method EQUALITY — never suffix it
+                if any(x in m for x in ('override', 'template_fixed', 'manual', 'operator_pin')):
+                    continue                     # user-set literals are never machine-rewritten
+                sval = str(val).strip()
+                if not sval or any(ch.isspace() for ch in sval) or not any(ch.isdigit() for ch in sval):
+                    continue                     # the code-literal rule (ocr_corrector): one token, carries a digit
+                fe = self.format_class_index.get((s_lower, dt_lower, key))   # A1: SUPPLIER entry only, never _make_format_lookup's '' fallback
+                if not fe or not fe.get('confusions'):
+                    continue
+                out = format_anomaly_checker.confusion_correct(sval, fe)
+                if not out or out.get('value') == sval:
+                    continue
+                # Post-correction shape sanity (gary; refusal-only, asymmetric): if the READ satisfied the
+                # scope's learned shape and the CORRECTION does not, the shape model outranks the glyph fact.
+                if fe.get('shapes') \
+                        and format_anomaly_checker.check_value(out['value'], fe) is not None \
+                        and format_anomaly_checker.check_value(sval, fe) is None:
+                    continue
+                results[key] = {
+                    **data,
+                    'value':           out['value'],
+                    'display_value':   out['value'],
+                    'raw_value':       data.get('raw_value') or sval,
+                    'confidence':      min(int(data.get('confidence') or 0), 70),
+                    'validation_note': _CONFUSION_NOTE.format(sval, out['value'], out['from'], out['to'],
+                                                              out['support_docs']),
+                    'method':          m + '+confusion_resolved',
+                }
+                fired = True
+                self.log(f"  Confusion precedence: {key} '{sval}' → '{out['value']}' (pos {out['pos']} "
+                         f"{out['from']}→{out['to']}, {out['support_docs']} prior corrections) — held for review")
+                if self._trace:
+                    try:
+                        self._t('confusion_resolved', field=key, read=sval, value=out['value'], pos=out['pos'],
+                                support=out['support_docs'], **{'from': out['from'], 'to': out['to']})
+                    except Exception:
+                        pass
+        except Exception:
+            return fired
+        return fired
 
     def _history_soften_ok(self, rv, near, entry):
         """Oracle C1 (FILING_SANITY_REF_HISTORY_SOFTEN): the page form `near` must NOT itself be a confirmed
@@ -10582,6 +10704,12 @@ class ExtractionEngine:
         # byte-identical) and BEFORE the boost/needs_review for the same reasons.
         self._rescue_identity_from_scope(results, field_defs, supplier_name,
                                          document_slug, hints)
+        # ── CONFUSION PRECEDENCE 2a (DARK, review-bound; Oracle O1 PLACEMENT IS LOAD-BEARING) ── AFTER every
+        # page-witness gate above has judged the RAW read (a note from any of them makes it skip) and BEFORE the
+        # boost (which skips noted fields, so the cap can never be re-lifted) + needs_review. Returns True when it
+        # wrote a correction; ORed into review_needed below (results['_needs_review'] is assigned unconditionally
+        # there — a direct write here would be dead, and validator.needs_review never reads a note).
+        _cp_fired = self._apply_confusion_precedence(results, field_defs, supplier_name, document_slug)
 
         # ── LEARNED-AGREEMENT CONFIDENCE BOOST ────────────────────────────────
         # A value that is CONSISTENT with a well-supported learned format for its scope is
@@ -10689,7 +10817,7 @@ class ExtractionEngine:
         # Stage 4.5 confidence caps (≤45) will always trigger needs_review via
         # the per-field threshold check.  The OR guard covers the edge case
         # where a flagged field is not listed in field_defs.
-        review_needed = validator.needs_review(results, field_defs) or format_anomaly_flagged
+        review_needed = validator.needs_review(results, field_defs) or format_anomaly_flagged or _cp_fired
 
         results["_supplier_name"]        = supplier_name
         results["_document_type"]        = document_type

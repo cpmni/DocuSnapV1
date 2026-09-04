@@ -753,6 +753,35 @@ process_docs.py → ExtractionEngine.extract()
              change (classify_format/check_value/propose_correction untouched); the
              foundation for a later candidate-override phase (not yet wired). Guarded
              by tests/test_shape_match_score.py.
+             CONFUSION PRECEDENCE 2a (2026-09-04, reggie+gary → Oracle SIGN-OFF-W/COND A1-A4 +
+             O1-O9; DARK `confusion_precedence`, mig 119; `engine._apply_confusion_precedence`):
+             this sender's own HUMAN `corrections` (learning.getFieldConfusions → per-scope facts
+             {len,pos,from,to,support_docs,support_values,counter}, SUPPLIER-scoped only, merged
+             onto the format groups in buildTrainingArgs ONLY when armed, threaded onto fmt_entry
+             by build_format_class_index) correct a NEVER-SEEN code read toward the human-attested
+             form via format_anomaly_checker.confusion_correct: >=10 alnum, EMPTY casefolded edit-1
+             ball over human ∪ machine literals (`confusion_literals`, refusal-side only —
+             value_counts stays the licensing precondition), BACKED letter<->digit fact with
+             >=3 docs / >=2 values / counter==0, no from-glyph attestation (a known literal
+             carrying `from` at `pos` kills the fact — the S-family beside the 5-family), no
+             break onto another literal, exactly ONE position. PLACEMENT IS LOAD-BEARING: called
+             AFTER Gate C / suffix + blind-geometry reconciles / S-A / prefix-outlier / S-B / D1
+             (every page-witness gate judges the RAW read; any note makes 2a skip) and BEFORE
+             the learned-agreement boost + needs_review — NOT the leg-b text-branch site, which
+             `text_field_keys` makes unreachable for every ref-role field of a ref-NAMED type
+             (leg-b/leg-a RESOLVE_REF_NEAR_MISS/POSITIONAL never executed on the exhibit — their
+             relocation is a separate commit). REVIEW-BOUND: value+display_value corrected,
+             raw_value kept, conf<=70 (vs the 88 critical floor), a both-forms note whose MARK no
+             clearer matches, method `+confusion_resolved`; deliberately NO corrected_to / NO
+             was_corrected (the renderer badge + reprocess/batch-audit read those as a HUMAN act)
+             and NOT a getFieldFormats exclusion marker (the arc self-disarms: an accepted
+             pre-fill writes no corrections row, the confirmed value enters value_counts, the
+             next identical read sits inside the ball). Returns a bool ORed into review_needed
+             (validator.needs_review never reads a note; results['_needs_review'] is assigned
+             unconditionally later). Guarded by tests/test_confusion_precedence.py +
+             test_confusion_precedence_wiring.py (REACHABILITY on a `reference`-typed ref-named
+             key) + database/modules/test_field_confusions.js /
+             test_confusion_no_row_on_accept.js / test_confusion_autofile_hold.js.
   Stage 4.6: CANDIDATE OVERRIDE (Phase 3, DEFAULT-OFF — commit b58ef06): a gated
              post-merge resolver (engine._resolve_candidates) that may prefer a
              clearly-more-credible RETAINED candidate over the merge winner. An additive

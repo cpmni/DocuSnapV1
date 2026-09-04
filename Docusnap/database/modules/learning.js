@@ -1695,6 +1695,82 @@ function getFieldFormats(db, opts) {
     }));
 }
 
+// ── CONFUSION PRECEDENCE 2a reducer (2026-09-04; reggie+gary → Oracle SIGN-OFF-W/COND A1-A4; DARK,
+// mig 119 `confusion_precedence`). Mine the HUMAN `corrections` table into per-scope OCR-confusion FACTS:
+//   { len, pos, from, to, support_docs, support_values, counter }
+// from same-length corrections that differ at EXACTLY ONE position ("at position 3 of a 10-char serial,
+// 'O' was corrected to '0'"). A correction row is a human act — machine confirms never write one
+// (reviewService `if (!_via)`), so no machine-confirm exclusion is needed (the getFieldFormats C2 carve-out
+// says the same). Same spine as getFieldFormats: confirmed documents only, the learning exclusion respected,
+// the LATEST correction per (document, field) (MAX(c.id) — "last confirm wins"), keyed by the document's
+// CURRENT supplier + doc-type slug so the keys match the format groups Python indexes.
+//   A1: SUPPLIER-SCOPED GROUPS ONLY — never the '' doc-type twin getFieldFormats also emits. A global
+//       O<->0 fact is trivially true and would license cross-supplier bleed; Python's engine additionally
+//       refuses the '' fallback entry (_xsupplier).
+//   A2 is applied in PYTHON (format_anomaly_checker.confusion_correct owns the >=3 docs / >=2 values /
+//       counter==0 thresholds) — this emits RAW facts so one place owns the bar; `backed` (letter<->digit)
+//       is Python's too (the confusable table lives there).
+//   A4: NO method-based exclusion (corrections has no method column; the extractions.extraction_method
+//       join SURVIVES a human override so it would tag a genuine counter-edit as arc-backed and drop the
+//       self-heal). The loop is closed by NO-ROW-ON-ACCEPT instead: an accepted pre-fill writes nothing
+//       here, so support never counts the arc's own output. `counter` = documents holding the OPPOSITE fact
+//       (len,pos,to,from) in the same scope — a human counter-edit is the self-heal.
+// Consumed by processing/handler.js buildTrainingArgs (merged onto the format groups by
+// supplier|doctype|field) → the Python index. Guarded by test_field_confusions.js.
+const CONFUSION_FACT_CAP = 100;   // per scope, highest support first — bounds the training-file payload
+
+function getFieldConfusions(db) {
+  let rows;
+  try {
+    rows = db.prepare(`
+      SELECT c.document_id, d.supplier_name, dt.slug AS document_type, c.field_key,
+             c.original_value, c.corrected_value
+      FROM corrections c
+      JOIN documents d ON d.id = c.document_id
+      LEFT JOIN document_types dt ON dt.id = d.document_type_id
+      WHERE d.status = 'confirmed'${learningExcludedSql(db)}
+        AND c.id = (SELECT MAX(c2.id) FROM corrections c2
+                     WHERE c2.document_id = c.document_id AND c2.field_key = c.field_key)
+        AND c.original_value IS NOT NULL AND c.corrected_value IS NOT NULL
+    `).all();
+  } catch { return []; }
+  const groups = new Map();
+  for (const r of rows) {
+    const supplier = String(r.supplier_name || '').trim();
+    const docType  = r.document_type || '';
+    if (!supplier || supplier === '__global__' || !docType || !r.field_key) continue;   // A1: supplier-scoped only
+    const o = String(r.original_value).trim(), c = String(r.corrected_value).trim();
+    if (!o || !c || o === c || o.length !== c.length) continue;   // a retype/clip/no-op is not a glyph fact
+    let pos = -1;
+    for (let i = 0; i < o.length; i++) {
+      if (o[i] !== c[i]) { if (pos >= 0) { pos = -2; break; } pos = i; }
+    }
+    if (pos < 0) continue;                                         // 0 or >1 differing positions
+    const gk = `${supplier}|${docType}|${r.field_key}`;
+    let g = groups.get(gk);
+    if (!g) groups.set(gk, g = { supplier_name: supplier, document_type: docType, field_key: r.field_key, facts: new Map() });
+    const fk = `${o.length}|${pos}|${o[pos]}|${c[pos]}`;
+    let f = g.facts.get(fk);
+    if (!f) g.facts.set(fk, f = { len: o.length, pos, from: o[pos], to: c[pos], docs: new Set(), values: new Set() });
+    f.docs.add(r.document_id);
+    f.values.add(c);
+  }
+  const out = [];
+  for (const g of groups.values()) {
+    const confusions = [];
+    for (const f of g.facts.values()) {
+      const rev = g.facts.get(`${f.len}|${f.pos}|${f.to}|${f.from}`);
+      confusions.push({ len: f.len, pos: f.pos, from: f.from, to: f.to,
+                        support_docs: f.docs.size, support_values: f.values.size,
+                        counter: rev ? rev.docs.size : 0 });
+    }
+    confusions.sort((a, b) => b.support_docs - a.support_docs || a.pos - b.pos);
+    out.push({ supplier_name: g.supplier_name, document_type: g.document_type, field_key: g.field_key,
+               confusions: confusions.slice(0, CONFUSION_FACT_CAP) });
+  }
+  return out;
+}
+
 // Which fields for this (supplier, document_type) have a learned format of
 // digits-only — used by Review to warn before confirming a non-digit value on
 // such a field. Mirrors the digits_only branch of the Python classifier
@@ -2358,7 +2434,7 @@ module.exports = {
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   detailCrossPlantCloser: _detailCrossPlantCloser,   // exported for the detail-backfill script's final anti-poison check (2026-07-23)
-  getFieldFormats, getDigitsOnlyFields,
+  getFieldFormats, getFieldConfusions, getDigitsOnlyFields,
   getRecoverySummary, getRecoveryDetail, getMemoryInventory, resetAllLearning,
   resetToFreshInstall, getLearningFootprintForDocuments,
   clearFieldAnchorsForScope, clearSupplierHintsForScope, clearCorrectionsForScope,

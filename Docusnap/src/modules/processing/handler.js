@@ -546,6 +546,14 @@ function _reconcileEnv(db) {
     if (env.RESOLVE_REF_POSITIONAL == null && learning.getSetting(db, 'resolve_ref_positional', 'false') === 'true') {
       env.RESOLVE_REF_POSITIONAL = '1';
     }
+    // CONFUSION_PRECEDENCE (2026-09-04; reggie+gary → Oracle SIGN-OFF-W/COND A1-A4). 2a MEDIUM tier of the
+    //   confusion-precedence feature: the engine corrects a NEVER-SEEN serial toward the human-attested form
+    //   when this sender's own `corrections` history shows the same glyph corrected at the same position on
+    //   >=3 documents (facts mined by learning.getFieldConfusions, merged in buildTrainingArgs) — REVIEW-BOUND
+    //   (<=70 cap + a both-forms note; never auto-files). Env wins both ways for harness arms.
+    if (env.CONFUSION_PRECEDENCE == null && learning.getSetting(db, 'confusion_precedence', 'false') === 'true') {
+      env.CONFUSION_PRECEDENCE = '1';
+    }
     // FORMAT-VARIANCE RELAX (REF) (2026-09-03, gary + Oracle C1a; DARK): a taught template-mapping
     //   DERIVED-rung read of a ref/serial field that fails the learned-SHAPE check but is an EXACT
     //   confirmed in-scope literal is noise (the re-import case — a value confirmed before whose
@@ -1785,6 +1793,38 @@ function buildTrainingArgs(db, configPath, logger = null) {
   let allFormats = [];
   try { allFormats = learning.getFieldFormats(db, { includeProvisional: true }); }   // Python consent channel only
   catch (e) { logger?.warn?.(`[training] getFieldFormats failed: ${e && e.message}`); }
+  // CONFUSION PRECEDENCE 2a (2026-09-04; reggie+gary → Oracle SIGN-OFF-W/COND A1-A4; DARK
+  // `confusion_precedence`, mig 119): merge the per-scope HUMAN-confusion facts (learning.getFieldConfusions —
+  // supplier-scoped groups only, A1) onto the matching format group by supplier|doctype|field so they ride the
+  // existing formats file into format_anomaly_checker.build_format_class_index. Mined ONLY when the arc is armed
+  // (env wins both ways for harness arms, else the setting) so OFF is byte-identical INCLUDING the training
+  // payload. Provisional groups are skipped (set_formats strips them before the index is built anyway).
+  try {
+    const _cpOn = process.env.CONFUSION_PRECEDENCE === '1'
+               || (process.env.CONFUSION_PRECEDENCE == null
+                   && learning.getSetting(db, 'confusion_precedence', 'false') === 'true');
+    if (_cpOn && allFormats.length) {
+      const _byKey = new Map(allFormats.map(g => [`${g.supplier_name || ''}|${g.document_type}|${g.field_key}`, g]));
+      let _nMerged = 0;
+      for (const c of learning.getFieldConfusions(db)) {
+        const g = _byKey.get(`${c.supplier_name}|${c.document_type}|${c.field_key}`);
+        if (g && !g.provisional && Array.isArray(c.confusions) && c.confusions.length) {
+          g.confusions = c.confusions;
+          // Oracle O3a — the REFUSAL-side literal union, built ONCE here so Python never reads the machine
+          // channel itself: keys(value_counts) ∪ keys(machine_value_counts) (the latter present only when
+          // learning_exclude_machine_confirms is armed; otherwise machine confirms already sit in value_counts).
+          // The classFixService mirrored rule: a refusal test may use the fullest evidence there is; a
+          // licensing test may use human-attested evidence only (value_counts stays the licensing
+          // precondition inside confusion_correct). Third production consumer of machine_value_counts —
+          // justified + pinned in test_machine_confirm_learning.js.
+          g.confusion_literals = [...new Set([...Object.keys(g.value_counts || {}),
+                                              ...Object.keys(g.machine_value_counts || {})])];
+          _nMerged++;
+        }
+      }
+      if (_nMerged) logger?.log?.(`[training] confusion facts merged onto ${_nMerged} supplier-scoped format group(s)`);
+    }
+  } catch (e) { logger?.warn?.(`[training] getFieldConfusions failed: ${e && e.message}`); }
   // Admin keyword label overrides (per-installation; merged onto the shipped
   // patterns at processing time, scoped to the doc-type slug). Guarded so an
   // older DB without migration 19 still processes (just with no overrides).

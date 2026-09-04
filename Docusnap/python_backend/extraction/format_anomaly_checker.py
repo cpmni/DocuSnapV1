@@ -744,6 +744,115 @@ def value_is_confirmed_literal(value, format_entry) -> bool:
     return False
 
 
+# ── CONFUSION PRECEDENCE 2a (2026-09-04; reggie + gary → Oracle SIGN-OFF-W/COND A1-A4; DARK) ────────
+# Human corrections are an INDEPENDENT modality: when the operator has corrected the SAME glyph at the
+# SAME position of same-length serials for this (supplier, doctype, field) on several documents, a fresh
+# read carrying that glyph there is more likely the known OCR confusion than a genuinely new serial.
+# The facts arrive on fmt_entry['confusions'] (learning.getFieldConfusions, SUPPLIER-SCOPED groups only —
+# A1) as RAW rows {len, pos, from, to, support_docs, support_values, counter}; the thresholds live HERE so
+# one place owns them (a future HIGH tier re-derives them in trust.js — Oracle H2 parity).
+_CONFUSION_MIN_DOCS = 3      # A2: >= 3 DISTINCT documents corrected the same (len,pos,from->to)
+_CONFUSION_MIN_VALUES = 2    # A2: … producing >= 2 DISTINCT corrected values (not one serial re-imported)
+
+
+def _confusion_breaks_confirmed(length: int, pos: int, frm: str, to: str, literals) -> bool:
+    """True when applying (pos, frm->to) to SOME known literal yields ANOTHER known literal — i.e. both forms
+    are real serials in this scope (the 752/782 class), so the fact is poison: refuse it. `literals` is the
+    CASEFOLDED refusal set (human ∪ machine confirmed — Oracle O3a/O3c); frm/to are compared casefolded too."""
+    keys = set(literals or ())
+    f, t = frm.casefold(), to.casefold()
+    for a in keys:
+        if len(a) == length and a[pos] == f and (a[:pos] + t + a[pos + 1:]) in keys:
+            return True
+    return False
+
+
+def _confusion_from_attested(length: int, pos: int, frm: str, literals) -> bool:
+    """Oracle O3b — FROM-GLYPH ATTESTATION: True when ANY known literal of this length legitimately carries
+    `frm` at `pos`. Then the glyph is a real member of this sender's serial family there (an 'S'-prefixed
+    family beside a '5' one), and a (pos, frm->to) fact is poison for the UNSEEN siblings the per-value ball
+    can never reach (`W2S9999999` is in no channel). Kills the fact, not just the value."""
+    f = frm.casefold()
+    return any(len(a) == length and a[pos] == f for a in (literals or ()))
+
+
+def _confusion_refusal_literals(fe) -> set:
+    """The REFUSAL-side literal set (Oracle O3a, the classFixService mirrored rule: 'a refusal test may use the
+    fullest evidence there is; a licensing test may use human-attested evidence only'). `confusion_literals` is
+    the human-confirmed keys UNION the machine-confirmed channel, built ONCE in processing/handler.js at the
+    merge so this module never reads that channel itself (the consumer-count pin in
+    test_machine_confirm_learning.js scans for its name — keep it out of this file); absent (unit fixtures,
+    exclusion OFF) -> value_counts keys. CASEFOLDED (O3c) so a differently-cased literal cannot escape the ball."""
+    lits = fe.get('confusion_literals')
+    src = lits if isinstance(lits, (list, tuple, set)) and lits else (fe.get('value_counts') or {}).keys()
+    return {str(k).strip().casefold() for k in src if k and str(k).strip()}
+
+
+def confusion_correct(value, format_entry, min_len: int = 10):
+    """The 2a MEDIUM tier (REVIEW-BOUND — the engine caps conf<=70 + writes a both-forms note). Return
+    {'value': corrected, 'pos', 'from', 'to', 'support_docs'} when EXACTLY ONE position of `value` should be
+    corrected per the scope's human-confusion facts, else None (fail-toward-review). Fires iff ALL hold:
+      • `value` has >= min_len alphanumerics; the entry carries `confusions` AND `value_counts` — value_counts is
+        the LICENSING precondition (human-attested evidence must exist; Oracle O3d), even though refusals below
+        read the fuller human ∪ machine set (_confusion_refusal_literals);
+      • the known edit-1 ball around `value` is EMPTY (casefolded) — never touch a known pre-value, and a known
+        rival within one edit is leg-b's (unambiguous_near_miss) or ambiguity's territory, not ours. A corrected
+        value one substitution from a read outside every known ball is therefore guaranteed NEVER-SEEN;
+      • a fact qualifies only when: same length, value[pos] == from, BACKED letter<->digit (5<->8 never —
+        _is_letter_digit_confusable), support_docs >= _CONFUSION_MIN_DOCS, support_values >= _CONFUSION_MIN_VALUES,
+        counter == 0 (one opposing human correction kills it — the self-heal), NO known literal of that length
+        carries `from` at `pos` (_confusion_from_attested, O3b — the S-family beside the 5-family), and it would
+        not map a known literal onto another known literal (_confusion_breaks_confirmed);
+      • exactly ONE position qualifies and it has exactly ONE target glyph (v1 = single-glyph; >1 position or
+        conflicting targets -> refuse).
+    Pure/deterministic; malformed fact rows are skipped, never raised."""
+    v = (value or '').strip()
+    if len(re.sub(r'[^0-9A-Za-z]', '', v)) < int(min_len):
+        return None
+    fe = format_entry or {}
+    facts = fe.get('confusions') or []
+    vc = fe.get('value_counts') or {}
+    if not facts or not vc:
+        return None                              # licensing precondition: human-attested evidence must exist
+    lits = _confusion_refusal_literals(fe)
+    v_cf = v.casefold()
+    for c in lits:
+        if _within_edit1(v_cf, c):
+            return None                          # known literal, or a known rival within one edit
+    by_pos: dict = {}
+    for f in facts:
+        if not isinstance(f, dict):
+            continue
+        try:
+            L = int(f.get('len')); p = int(f.get('pos'))
+            a = str(f.get('from') or ''); b = str(f.get('to') or '')
+            docs = int(f.get('support_docs') or 0)
+            vals = int(f.get('support_values') or 0)
+            counter = int(f.get('counter') or 0)
+        except Exception:
+            continue
+        if L != len(v) or p < 0 or p >= len(v) or len(a) != 1 or len(b) != 1:
+            continue
+        if v[p] != a or not _is_letter_digit_confusable(a, b):
+            continue
+        if docs < _CONFUSION_MIN_DOCS or vals < _CONFUSION_MIN_VALUES or counter != 0:
+            continue
+        if _confusion_from_attested(L, p, a, lits) or _confusion_breaks_confirmed(L, p, a, b, lits):
+            continue
+        slot = by_pos.setdefault(p, {})
+        slot[b] = max(slot.get(b, 0), docs)
+    if len(by_pos) != 1:
+        return None
+    p, targets = next(iter(by_pos.items()))
+    if len(targets) != 1:
+        return None
+    b, docs = next(iter(targets.items()))
+    corrected = v[:p] + b + v[p + 1:]
+    if corrected == v:
+        return None
+    return {'value': corrected, 'pos': p, 'from': v[p], 'to': b, 'support_docs': docs}
+
+
 # ── Digits-only OCR cleanup + correction proposal (Stage 2) ──────────────────
 
 # Reuse the extractor's existing OCR confusable map (l/I→1, O→0, S→5, …) rather
@@ -1031,6 +1140,17 @@ def build_format_class_index(formats_data: list) -> dict:
         # when there are no counts, so near_miss_confirmed fails toward offering nothing.
         if vcounts:
             fmt = {**fmt, 'value_counts': dict(vcounts)}
+        # CONFUSION PRECEDENCE 2a facts (learning.getFieldConfusions → merged in buildTrainingArgs onto
+        # SUPPLIER-scoped groups only, A1). Additive VIEW read only by confusion_correct, which also needs
+        # value_counts (the ball + break checks) — so attach only beside them; absent -> the arc is inert.
+        _conf = entry.get('confusions')
+        if vcounts and isinstance(_conf, list) and _conf:
+            fmt = {**fmt, 'confusions': list(_conf)}
+            # The REFUSAL-side literal union (human ∪ machine confirmed), built beside the facts in
+            # handler.js (Oracle O3a) — consumed only by confusion_correct's ball/attestation/break checks.
+            _lits = entry.get('confusion_literals')
+            if isinstance(_lits, list) and _lits:
+                fmt = {**fmt, 'confusion_literals': list(_lits)}
         # Dominant learned SEPARATOR (reggie) — carries the raw '-'/'.'/'/' the fold erases, so
         # Stage 4.5 can flag a MISREAD separator ("PO.20011" where history is uniformly "PO-…").
         # Additive: absent unless one separator dominates a non-numeric structured code.

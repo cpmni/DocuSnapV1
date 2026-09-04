@@ -2695,6 +2695,21 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 118 (filing_sanity_ref_history_soften force-ON): ${e.message}`); }
   }
 
+  // ── migration 119: confusion_precedence seeded OFF (2026-09-04; reggie+gary → Oracle SIGN-OFF-W/COND A1-A4).
+  //    CONFUSION PRECEDENCE 2a: mine this sender's own HUMAN `corrections` into per-scope OCR-confusion facts
+  //    ("at position 3 of a 10-char serial, 'O' was corrected to '0' on >=3 documents / >=2 distinct values, no
+  //    counter-correction") and correct a NEVER-SEEN serial toward the human-attested form — REVIEW-BOUND
+  //    (<=70 cap + a both-forms note + corrected_to; never auto-files; the HIGH auto-file tier is a separate
+  //    census-gated design). Supplier-scoped facts only; an accepted pre-fill writes NO corrections row (A4), a
+  //    human counter-edit is the self-heal. DARK: seed OFF, byte-identical until flipped. ──
+  if (!applied.has(119)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('confusion_precedence', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (119)').run();
+      console.log(`JS migration 119 applied: confusion_precedence (2a review-bound human-confusion correction) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 119 (confusion_precedence): ${e.message}`); }
+  }
+
 
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
