@@ -2602,6 +2602,23 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 112 (filing_sanity_ref_corrob_soften force-ON): ${e.message}`); }
   }
 
+  // ── migration 113: resolve_ref_near_miss seeded OFF (2026-09-04; reggie+gary → Oracle SIGN-OFF-W/COND,
+  //    v1 REVIEW-BOUND). Leg-b of the single-glyph reference resolver: when a reference read is one BACKED
+  //    OCR-confusable character off EXACTLY ONE confirmed in-scope literal (unambiguous ball, len>=10),
+  //    PRE-FILL that confirmed value instead of only suggesting it — but keep a dedicated note + a <=70
+  //    confidence cap, so the doc stays REVIEW-BOUND (trust.js refuses auto-file on any note AND the cap
+  //    holds it below the 88 critical floor). The ambiguous case (two confirmed serials one glyph apart,
+  //    e.g. 752/782) and any unbacked slip REFUSE and fall through to the existing suggestion — doc196 is
+  //    never touched. DARK; leg-a per-position majority + the re-slice witness + ANY auto-file are DEFERRED
+  //    to a census-gated Phase 2 (constructed adversarial GT). ──
+  if (!applied.has(113)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('resolve_ref_near_miss', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (113)').run();
+      console.log(`JS migration 113 applied: resolve_ref_near_miss (unambiguous confirmed-literal pre-fill) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 113 (resolve_ref_near_miss): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

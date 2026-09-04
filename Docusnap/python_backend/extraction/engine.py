@@ -2981,6 +2981,22 @@ TEMPLATE_FRAGMENT_CONTAINMENT_YIELD = os.environ.get("TEMPLATE_FRAGMENT_CONTAINM
 # letter<->digit slip-catch survives; the mapper's DERIVED rungs and the structured/ref branch are
 # untouched (Oracle C1/Q2). Byte-identical OFF. See format_anomaly_checker._has_no_usual_format.
 _FORMAT_VARIANCE_RELAX = os.environ.get("FORMAT_VARIANCE_RELAX", "0") == "1"
+
+# RESOLVE_REF_NEAR_MISS (2026-09-04, reggie + gary + Oracle SIGN-OFF-W/COND; leg-b of the single-glyph
+# ref resolver, v1 REVIEW-BOUND, DEFAULT OFF). Co-located at the near_miss_confirmed site so it inherits
+# that block's min(conf,70) cap. When the near-miss target is UNAMBIGUOUS (exactly one confirmed literal
+# within one edit, a backed same-length OCR slip, len>=10 — format_anomaly_checker.unambiguous_near_miss),
+# PRE-FILL the confirmed value instead of only SUGGESTING it, but KEEP a dedicated note and the <=70 cap:
+# trust.js refuses auto-file on any validation_note AND the cap keeps the field below the 88 critical
+# floor, so the doc stays REVIEW-BOUND (belt+suspenders, Oracle). Auto-file is a separate census-gated
+# Phase 2 (leg-a per-position majority + the re-slice witness are DEFERRED). The note MARK is deliberately
+# distinct from every note-clearer (arms A-P, _is_verification_doubt_note's allowlist, classFixService
+# CLEARABLE_NOTE_MARKS) so a doubt-clear can never sweep it and silently auto-file — pinned bilingually.
+_RESOLVE_REF_NEAR_MISS = os.environ.get("RESOLVE_REF_NEAR_MISS", "0") == "1"
+_REF_RESOLVE_NOTE_MARK = "corrected against a confirmed reference"   # unique; NOT in any note-clearer set
+_REF_RESOLVE_NOTE = ("Cross-check: read as '{}', but this sender has a confirmed reference '{}' one "
+                     "OCR-confusable character away — " + _REF_RESOLVE_NOTE_MARK
+                     + "; please confirm once before filing.")
 _FRAGMENT_YIELD_KW_FLOOR = 85   # the challenger is a seeded inline/anchored keyword read (base 80 +5
                                 # right-direction = 85); below that is unlabelled-noise territory. The
                                 # challenger ALSO passes the hard reference_code pattern + strictly
@@ -10193,6 +10209,31 @@ class ExtractionEngine:
                         # flagging: _has_no_usual_format is False on any thin/absent signal.
                         if _FORMAT_VARIANCE_RELAX \
                                 and format_anomaly_checker._has_no_usual_format(fmt_entry):
+                            # LEG-B RESOLVER (RESOLVE_REF_NEAR_MISS, DARK): when the near-miss target is
+                            # UNAMBIGUOUS, PRE-FILL the confirmed value (was_corrected) instead of only
+                            # suggesting it — KEEPING a dedicated note + the <=70 cap so the doc stays
+                            # REVIEW-BOUND (never auto-files; the mirror/ambiguous cases refuse and fall
+                            # through to the suggestion below). Reference role only (this is the ref/serial
+                            # variance branch). Byte-identical when the flag is off.
+                            _ua = (format_anomaly_checker.unambiguous_near_miss(str(val), fmt_entry)
+                                   if _RESOLVE_REF_NEAR_MISS else None)
+                            if _ua and _ua != str(val):
+                                results[key] = {
+                                    **data,
+                                    'value':           _ua,
+                                    'raw_value':       data.get('raw_value', val),
+                                    'confidence':      min(data.get('confidence') or 0, 70),
+                                    'was_corrected':   True,
+                                    'corrected_to':    _ua,
+                                    'validation_note': _REF_RESOLVE_NOTE.format(str(val), _ua),
+                                    'method':          (str(data.get('method') or '') + '+ref_resolved'),
+                                }
+                                n_flagged += 1
+                                format_anomaly_flagged = True
+                                if self._trace:
+                                    try: self._t('ref_near_miss_resolved', field=key, value=_ua, read=str(val))
+                                    except Exception: pass
+                                continue
                             _nm = format_anomaly_checker.near_miss_confirmed(str(val), fmt_entry)
                             if _nm:
                                 results[key] = {

@@ -658,6 +658,71 @@ def near_miss_confirmed(value: str, format_entry) -> Optional[str]:
     return best
 
 
+def _within_edit1(a: str, b: str) -> bool:
+    """True iff Levenshtein(a, b) <= 1 (equal, one substitution, or one insert/delete). Bounded and
+    cheap. Used to build the UNAMBIGUITY ball for unambiguous_near_miss — indels are included so a
+    length-off confirmed neighbour also counts toward ambiguity (a subs-only ball could miss it)."""
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:
+        return sum(1 for x, y in zip(a, b) if x != y) == 1
+    if la > lb:            # ensure `a` is the shorter
+        a, b = b, a
+    i = j = 0
+    skipped = False
+    while i < len(a) and j < len(b):
+        if a[i] == b[j]:
+            i += 1; j += 1
+        elif skipped:
+            return False
+        else:
+            skipped = True; j += 1   # skip one char in the longer string
+    return True
+
+
+def unambiguous_near_miss(value, format_entry, min_len: int = 10):
+    """Leg (b) of the single-glyph REFERENCE resolver (reggie + gary + Oracle SIGN-OFF-W/COND
+    2026-09-04, v1 REVIEW-BOUND). Return the confirmed in-scope literal L that `value` should be
+    corrected TO — but ONLY when the correction is UNAMBIGUOUS, so it can never snap toward the wrong
+    one of two rival serials. HARDENS near_miss_confirmed, which count-ranks (`best_n`) and would pick
+    the higher-count neighbour of two — the 752/782 booby-trap. Snap iff ALL hold:
+      • `value` has >= min_len alphanumeric chars (a short code collides too easily);
+      • the CONFIRMED value_counts ball {c : editdist(value, c) <= 1} is a SINGLETON {L} — so `value`
+        is NOT itself a confirmed literal (it would sit in the ball at distance 0) AND exactly one
+        confirmed value lies within one edit (no rival to snap the wrong way);
+      • L is a SAME-LENGTH single substitution of `value` whose one differing position is a BACKED
+        letter<->digit OCR confusable (an unbacked digit<->digit slip like 5<->8 is more likely a
+        genuinely different serial -> refuse; this is why doc196 is never touched here).
+    Else None (fail-toward-review). Pure/deterministic; value_counts absent -> None."""
+    v = (value or '').strip()
+    if len(re.sub(r'[^0-9A-Za-z]', '', v)) < int(min_len):
+        return None
+    vc = (format_entry or {}).get('value_counts') or {}
+    if not vc:
+        return None
+    ball = []
+    for conf in vc:
+        c = (conf or '').strip()
+        if not c:
+            continue
+        if _within_edit1(v, c):          # includes c == v at distance 0
+            ball.append(c)
+            if len(ball) > 1:
+                return None              # >1 confirmed literal within one edit -> ambiguous, refuse
+    if len(ball) != 1:
+        return None
+    L = ball[0]
+    if L == v or len(L) != len(v):       # value is itself confirmed, or the sole neighbour is an indel
+        return None
+    diffs = [i for i in range(len(v)) if v[i] != L[i]]
+    if len(diffs) != 1:
+        return None
+    return L if _is_letter_digit_confusable(v[diffs[0]], L[diffs[0]]) else None
+
+
 def value_is_confirmed_literal(value, format_entry) -> bool:
     """True when `value` (compare-normalised) EXACTLY equals a CONFIRMED in-scope literal — a
     key of value_counts a human already accepted for THIS (supplier, doctype, field). Used by the

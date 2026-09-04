@@ -527,6 +527,13 @@ function _reconcileEnv(db) {
     if (env.FORMAT_VARIANCE_RELAX == null && learning.getSetting(db, 'format_variance_relax', 'false') === 'true') {
       env.FORMAT_VARIANCE_RELAX = '1';
     }
+    // RESOLVE_REF_NEAR_MISS (2026-09-04; reggie+gary → Oracle SIGN-OFF-W/COND). Leg-b of the single-glyph
+    //   ref resolver, v1 REVIEW-BOUND: PRE-FILL a confirmed reference value when the near-miss is
+    //   UNAMBIGUOUS (one confirmed literal one BACKED OCR-slip away, len>=10) instead of only suggesting
+    //   it — kept below the auto-file floor by a <=70 cap + a dedicated note, so it never silently files.
+    if (env.RESOLVE_REF_NEAR_MISS == null && learning.getSetting(db, 'resolve_ref_near_miss', 'false') === 'true') {
+      env.RESOLVE_REF_NEAR_MISS = '1';
+    }
     // FORMAT-VARIANCE RELAX (REF) (2026-09-03, gary + Oracle C1a; DARK): a taught template-mapping
     //   DERIVED-rung read of a ref/serial field that fails the learned-SHAPE check but is an EXACT
     //   confirmed in-scope literal is noise (the re-import case — a value confirmed before whose
