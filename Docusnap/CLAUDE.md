@@ -22,8 +22,14 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-09-04 LATE (confusion-precedence 2a BUILT at a RELOCATED site + FORMAT_CLASS_JOIN + import
-messaging): **READ `HANDOVER_2026-09-04_LATE.md` FIRST (incl. its ADDENDUM).** HEAD `c8baa68`; pushed through
-`85bf8d0`; LOCAL after that: `12e5176` (import strip says grabbed/checking/splitting) · `f12b952`
+messaging + leg-b/leg-a RELOCATED as SUGGESTIONS): **READ `HANDOVER_2026-09-04_LATE.md` FIRST (incl. ADDENDA 1+2).**
+HEAD = `f76e8d1` + docs; pushed through `fbf572a`. `f76e8d1` = RESOLVE_REF_NEAR_MISS/POSITIONAL moved to
+`engine._apply_ref_resolvers` (before 2a; the dead text-branch blocks deleted) as SUGGESTIONS (value unchanged,
+corrected_to, ≤70, count-bearing note, no was_corrected, NO method suffix — a suffix corrupts the corroboration
+record); **mig 121 forces both settings OFF** (re-arm by a settings write for testing); flip gate = Oracle C9
+(arms × join, M=0, the AUTO-FILE ELIGIBILITY DELTA, census vs the rendered page). Verified by render: docs 176/210's
+page prints `1G25802868` — the owner's `1625802868` confirms are rubber-stamps (Learning Repair owed).
+Earlier the same day: `12e5176` (import strip says grabbed/checking/splitting) · `f12b952`
 **FORMAT_CLASS_JOIN** (DARK `format_class_join`, mig 120; Oracle C1-C11 — a MIXED-code scope no longer loses its
 whole format entry to `classify_format`'s 3-newest unanimity rule; the entry's loss had silently disarmed EVERY
 confirmed-literal arc for Print Tracker; a joined entry has NO `shapes`, consents review-bound only, never

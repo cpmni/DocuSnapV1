@@ -26,6 +26,19 @@ combination. **(4) Learning-Repair remediation on the owner's DB** (not code): d
 (a 6↔G misread of `1G25802868`), doc 92 confirmed `782923124N3M2` (a 5↔8 misread of `752923124N3M2`) — these
 rubber-stamps are what reordered the sample AND make 752/782 "both confirmed" (every resolver refuses by design).
 
+## 2026-09-04 — leg-b / leg-a RELOCATED ✅ BUILT `f76e8d1` (as SUGGESTIONS; Oracle C1-C11) — FLIP GATE OWED
+Built the same evening: `engine._apply_ref_resolvers` (before 2a), SUGGESTION-shaped (value unchanged, corrected_to,
+<=70, count-bearing note, no was_corrected, no method suffix), union + attestation in `unambiguous_near_miss`, mig 121
+forces both settings OFF (discharges TEST migs 114/116; the owner re-arms by a settings write). **OWED before FLIP
+(Oracle C9):** arms A/B/C × join ON/OFF after reverting the TEST migs — realdoc M=0 + zero per-field drop (arm asserted
+ARMED) + the **AUTO-FILE ELIGIBILITY DELTA per leg** (docs eligible with the legs OFF but held ON — the review-load
+price the owner must see; leg-b never self-disarms on an accepted suggestion) + leg-a fire count/wall-clock + a
+constructed census on a db.backup() copy vs the RENDERED PAGE (heal/refuse doc176, 752/782, machine-only, cross-
+supplier, attestation, taught read overridden, accepted suggestion writes the corrections row, `ref_class_fix_enabled`
+composition S2, OFF==ON). Phase 2 = PRE-FILL promotion behind that census. leg-a stays DARK with its own flip (C11).
+The join census (`format_join_census.py`) must be re-run with leg-b armed (S1: the join becomes a value authority).
+Original entry kept below for the record.
+
 ## 2026-09-04 — RELOCATE leg-b / leg-a (RESOLVE_REF_NEAR_MISS / RESOLVE_REF_POSITIONAL): wired at a site the REF ROLE never reaches
 FACTS (verified at source, gary + Oracle 2026-09-04): both resolvers sit inside the Stage-4.5 text branch
 `if key in text_field_keys:` (engine.py ~:10318); `text_field_keys` = text-typed AND `not _is_ref_field(key)`

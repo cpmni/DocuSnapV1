@@ -180,3 +180,32 @@ the TEST force-ON migs first); the UNANIMOUS-by-accident twin (own slice); Stage
 confirmed literal (own slice); Learning-Repair remediation of the rubber-stamped `1625802868` (docs 176/210) and
 `782923124N3M2` (doc 92).
 **Push:** none of `12e5176`/`f12b952`/`c8baa68` pushed (owner has not asked).
+
+---
+## ADDENDUM 2 (evening) — leg-b/leg-a RELOCATED as SUGGESTIONS · `f76e8d1` (+ docs)
+gary → Oracle SEND-BACK → narrowed → SIGN-OFF-W/COND C1-C11 (`docs/oracle_log.md`). **C1 settled by render:** the page
+of docs 176/210 prints `1G25802868` — the human-confirmed `1625802868` on them is a 6↔G rubber-stamp of the SAME device
+(identical IP/MAC); the exhibit is a genuine heal. `engine._apply_ref_resolvers` now runs immediately before
+`_apply_confusion_precedence` (after Gate C … D1); the old text-branch blocks are DELETED. **v1 = SUGGESTION:** value
+unchanged, `corrected_to` = the proposal, conf ≤70, a note naming both forms + the glyph pair + the target's confirm
+count; never `was_corrected`, never a method suffix (S3: a suffix broke the corroboration record's exact family match —
+this also applies to 2a's `+confusion_resolved`, logged). An ACCEPTED suggestion writes the `corrections` row 2a mines
+(a pre-fill would starve it — S4). leg-b: `unambiguous_near_miss` — casefolded human ∪ MACHINE literal union for
+REFUSAL (singleton ball), a HUMAN-attested target for LICENSING, backed slip, from-glyph ATTESTATION; no support floor
+by design (pinned). leg-a: ref role only, never on a confirmed literal, DARK behind its own flag. The union now rides
+on every supplier group when either flag is armed (handler.js) and independently of facts (index). **mig 121 forces
+`resolve_ref_near_miss` + `resolve_ref_positional` OFF** (a relocated feature is born DARK); the owner's dev DB was
+re-armed by an explicit settings write after boot. Docs corrected: 2a's "raw_value stays searchable" was FALSE (the
+import path persists raw_value from `value`; the note is the only durable record of the raw read — Oracle C7: do not
+persist it, handler.js:1481 class-fix survival reads it).
+Pins: `test_ref_resolvers_wiring.py` 53 (reachability via template_mapping AND anchor_crop_relocated; suggestion
+shape; deny set; '' twin; union/attestation/machine-only/no-floor; leg-a via a spy; placement; marks; leg-b ⟂ 2a) ·
+`test_resolve_ref_near_miss.py` 24 · `test_resolve_ref_positional_wiring.py` 13 · `test_format_anomaly_variance.py`
+(window → 1400) · `test_ref_resolver_autofile_hold.js` 10 (three independent gates each alone; accepted suggestion
+writes the row). All existing pins green. **E2E honest:** on the purged `db.backup()` copy from the FILED PDF the
+fresh winner was the anchor family's DOUBLE slip `I625802868` (2 edits from `1G25802868`) and Gate C noted it first →
+the pass correctly deferred (ordering proven); the single-slip heal is carried by the wiring pin on the real index
+(the morning's inbox-copy run — crop winner `1625802868` — is no longer reproducible: the inbox file was consumed
+when the owner filed the doc). **OWED before FLIP:** Oracle C9 (arms × join, M=0, the AUTO-FILE ELIGIBILITY DELTA
+per leg, leg-a cost, the constructed census vs the rendered page, the S2 class-fix composition); re-run the join
+census with leg-b armed (S1). Phase 2 = pre-fill promotion behind that census.
