@@ -2619,6 +2619,21 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 113 (resolve_ref_near_miss): ${e.message}`); }
   }
 
+  // ── migration 114: TEST-BUILD force-ON of resolve_ref_near_miss (2026-09-04; same pattern + caveat as
+  //    mig 108/110/112). FORCE-flips (UPSERT) leg-b ON so the owner's test DB pre-fills the confirmed
+  //    reference on the unambiguous backed-slip case. It stays review-bound (note + <=70 cap), so it never
+  //    silently files. ⚠ TEST-ONLY / REVERSIBLE: revert (or gate) before ANY customer build; and the leg-a
+  //    / re-slice / auto-file relaxation needs its OWN constructed-adversarial census first. Requires
+  //    format_variance_relax ON (this is the high-variance ref branch). ──
+  if (!applied.has(114)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('resolve_ref_near_miss', 'true')
+                  ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (114)').run();
+      console.log('JS migration 114 applied: TEST-BUILD force-ON resolve_ref_near_miss (revert + census before customer build)');
+    } catch (e) { console.warn(`  migration 114 (resolve_ref_near_miss force-ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
