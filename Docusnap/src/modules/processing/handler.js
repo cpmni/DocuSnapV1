@@ -554,6 +554,14 @@ function _reconcileEnv(db) {
     if (env.CONFUSION_PRECEDENCE == null && learning.getSetting(db, 'confusion_precedence', 'false') === 'true') {
       env.CONFUSION_PRECEDENCE = '1';
     }
+    // FORMAT_CLASS_JOIN (2026-09-04; gary → Oracle SIGN-OFF-W/COND C1-C11). A MIXED-code scope (pure-digit
+    //   serials beside alnum ones) is folded to FREETEXT by the 3-newest unanimity rule and its whole format
+    //   entry is DROPPED — silently disarming every confirmed-literal arc for that sender. When ON, the index
+    //   admits such a scope as its JOIN class (no shapes, no support, supplier-scoped) so value_counts survive;
+    //   the mapper's consent stays review-bound on it ('joined' tier). Env wins both ways for harness arms.
+    if (env.FORMAT_CLASS_JOIN == null && learning.getSetting(db, 'format_class_join', 'false') === 'true') {
+      env.FORMAT_CLASS_JOIN = '1';
+    }
     // FORMAT-VARIANCE RELAX (REF) (2026-09-03, gary + Oracle C1a; DARK): a taught template-mapping
     //   DERIVED-rung read of a ref/serial field that fails the learned-SHAPE check but is an EXACT
     //   confirmed in-scope literal is noise (the re-import case — a value confirmed before whose

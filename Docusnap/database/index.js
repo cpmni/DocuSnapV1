@@ -2710,6 +2710,24 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 119 (confusion_precedence): ${e.message}`); }
   }
 
+  // ── migration 120: format_class_join seeded OFF (2026-09-04; gary → Oracle SIGN-OFF-W/COND C1-C11).
+  //    FORMAT_CLASS_JOIN: a MIXED-code scope (a serial field holding pure-digit serials beside alnum ones) is
+  //    folded to FREETEXT by classify_format's 3-newest unanimity rule and its ENTIRE format entry is dropped —
+  //    one pure-digit confirm among the last three and every confirmed-literal arc (the 09-03/04 reference-flag
+  //    family, both Gate-C softens, leg-b, confusion-precedence 2a) plus the mapper's consent ladder go silently
+  //    inert for that sender (the owner's false "fuller reading could not be verified" note on a correctly
+  //    re-read value). When ON, build_format_class_index admits such a scope as its JOIN class over the DISTINCT
+  //    set (no `shapes` key, no `support`, supplier-scoped only) so value_counts survive; consent on it is
+  //    review-bound at most ('joined' tier) — never a clean commit; class F refuses it; it flags, never blanks.
+  //    DARK: seed OFF, byte-identical until flipped. ──
+  if (!applied.has(120)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('format_class_join', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (120)').run();
+      console.log(`JS migration 120 applied: format_class_join (mixed-code scope keeps its format entry) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 120 (format_class_join): ${e.message}`); }
+  }
+
 
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand

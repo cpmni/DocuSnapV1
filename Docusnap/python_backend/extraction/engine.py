@@ -4250,6 +4250,12 @@ class ExtractionEngine:
                 (sup.lower().strip(), slug.lower().strip(), key)) if sup else None
             if not fmt_entry or format_anomaly_checker.check_value(val, fmt_entry) is not None:
                 return False
+            # FORMAT_CLASS_JOIN, Oracle C4 (explicit + pinned): a JOINED (mixed-code) entry may never
+            # clear a verification-doubt note or lift a field to 90 — the join restores the evidence
+            # channel, never the confidence economy. (C3 makes this true de facto — no `shapes` → the
+            # shape_match_score leg refuses — but a future dev re-adding shapes must not re-open it.)
+            if fmt_entry.get("joined"):
+                return False
             if str(fmt_entry.get("class") or "") in (format_anomaly_checker.FREETEXT,
                                                      format_anomaly_checker.CURRENCY_LIKE):
                 return False
@@ -6728,6 +6734,8 @@ class ExtractionEngine:
                     continue
                 # Post-correction shape sanity (gary; refusal-only, asymmetric): if the READ satisfied the
                 # scope's learned shape and the CORRECTION does not, the shape model outranks the glyph fact.
+                # KNOWINGLY DEAD on a FORMAT_CLASS_JOIN entry (no `shapes` key by Oracle C3) — accepted: 2a is
+                # review-bound + capped at 70 there. Do not "restore" it by re-attaching shapes to a joined entry.
                 if fe.get('shapes') \
                         and format_anomaly_checker.check_value(out['value'], fe) is not None \
                         and format_anomaly_checker.check_value(sval, fe) is None:
@@ -10609,7 +10617,11 @@ class ExtractionEngine:
                                 'confidence':      min(data.get('confidence') or 0, 70),
                                 'validation_note': 'format differs from the usual — please verify',
                             }
-                            if (_xsupplier and os.environ.get('SHAPE_WITHHOLD_SUPPLIER_SCOPED', '1') != '0')
+                            # FORMAT_CLASS_JOIN, Oracle C7: a JOINED scope (its own history could not agree on a
+                            # class) may FLAG, never BLANK — a case slip ('W2s…') on a mixed-code serial keeps the
+                            # value for review instead of an empty required field.
+                            if ((_xsupplier or bool(fmt_entry.get('joined')))
+                                    and os.environ.get('SHAPE_WITHHOLD_SUPPLIER_SCOPED', '1') != '0')
                             else {
                                 **data,
                                 'value':           None,
@@ -10813,7 +10825,10 @@ class ExtractionEngine:
         if self.format_class_index and supplier_name and document_slug:
             sl = supplier_name.lower().strip()
             dl = document_slug.lower().strip()
-            supported_keys = {k for (s, d, k) in self.format_class_index if s == sl and d == dl}
+            # FORMAT_CLASS_JOIN S5: a JOINED entry is not a "supported" format — it must not move the
+            # document score either way (the join restores evidence, never the confidence economy).
+            supported_keys = {k for (s, d, k), _fe in self.format_class_index.items()
+                              if s == sl and d == dl and not (isinstance(_fe, dict) and _fe.get('joined'))}
         fc_delta = validator.format_consistency_delta(results, field_defs, supported_keys)
         if fc_delta:
             overall_conf = max(0, min(100, overall_conf + fc_delta))

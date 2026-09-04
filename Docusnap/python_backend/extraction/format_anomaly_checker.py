@@ -41,6 +41,25 @@ _LOW_DISTINCT_NAME_LEX = os.environ.get('NAME_LEXICON_LOW_DISTINCT', '0') != '0'
 # the CALLERS, not here: this module only exposes the two PURE predicates, so check_value stays
 # byte-identical and the mapper's DERIVED rungs (Oracle C1) keep their review cap.
 _FORMAT_VARIANCE_RELAX = os.environ.get('FORMAT_VARIANCE_RELAX', '0') == '1'
+# FORMAT_CLASS_JOIN (2026-09-04, gary → Oracle SIGN-OFF-W/COND C1-C11; DARK, DEFAULT OFF, byte-identical off).
+# classify_format requires the 3 NEWEST distinct values to share ONE coarse class, else FREETEXT — and
+# build_format_class_index DROPS a FREETEXT non-name entry. A genuine MIXED-code scope (a serial field
+# carrying pure-digit Lexmark serials beside alnum HP ones) therefore has a model that is a function of
+# CONFIRM ORDER, not evidence: one pure-digit confirm among the last three and the entry vanishes — and
+# with it every confirmed-literal arc (FORMAT_VARIANCE_RELAX_REF/_INLINE, both Gate-C softens, leg-b,
+# confusion-precedence 2a, _has_no_usual_format) plus the mapper's consent ladder (the owner's false
+# "fuller reading could not be verified" note on a value the relocate had already read correctly).
+# When ON, build_format_class_index ADMITS such a scope as its JOIN class (the widest code-lattice member
+# over the DISTINCT set — no confirmed value can violate the charset) under Oracle's conditions:
+#   C1 admission in the INDEX BUILDER (classify_format byte-identical; the free is_name_like_field
+#      exclusion; every DISTINCT value non-empty, whitespace-free, in the lattice);
+#   C2 separators over the same distinct set; C3 NO `shapes` key (the folded set is length-blind and is a
+#      POSITIVE LICENCE for deskew _shape_ok / class-F shape_match_score / bleed-trim / sep-fix) — the
+#      count-gated set is computed ONLY as the admission test; length-aware `shape_families` attached;
+#   C8 SUPPLIER-scoped groups only (never the '' twin); S3 no `support` (no learned-agreement boost).
+# The joined entry is marked `joined: True`; consumers: template_mapper._shape_consents (review-bound
+# 'joined' tier only — C5/C6), engine class-F refusal (C4), keep-and-flag withhold (C7), no fc_delta (S5).
+_FORMAT_CLASS_JOIN = os.environ.get('FORMAT_CLASS_JOIN', '0') == '1'
 _VARIANCE_MIN_FAMILIES = 3               # >= this many LENGTH-AWARE shape families (shape_families)
 _VARIANCE_MIN_CONFIRMS = 8               # ...backed by >= this many confirmed documents in total
 _VARIANCE_DOMINANT     = 0.50            # ...and NO family holding >= this share ("no usual format")
@@ -1006,6 +1025,75 @@ def _derive_charset(values) -> dict | None:
             'has_space': has_space, 'literals': literals}
 
 
+# ── FORMAT_CLASS_JOIN helpers (pure; see the flag block) ──────────────────────────────────────
+_CODE_LATTICE = (DIGITS_ONLY, UPPER_ALPHANUM, ALPHANUM, ALPHANUM_SEP)   # strictly nested on _disallowed_chars
+
+
+def join_code_class(distinct_values) -> "str | None":
+    """The JOIN (widest member) of the code lattice DIGITS_ONLY ⊂ UPPER_ALPHANUM ⊂ ALPHANUM ⊂ ALPHANUM_SEP
+    over EVERY distinct value — or None when any value is empty, carries whitespace (the freetext signal:
+    names/addresses/descriptions), or classifies outside the lattice (date/currency/freetext). By
+    construction every member value satisfies the joined charset."""
+    widest = -1
+    seen = False
+    for v in (distinct_values or ()):
+        s = str(v or '')
+        if not s.strip() or any(ch.isspace() for ch in s):
+            return None
+        cls = classify_single(s)
+        if cls not in _CODE_LATTICE:
+            return None
+        widest = max(widest, _CODE_LATTICE.index(cls))
+        seen = True
+    return _CODE_LATTICE[widest] if seen else None
+
+
+def _joined_separators(distinct_values) -> frozenset:
+    """C2: the separator set over the SAME distinct set the class was joined over (classify_format's
+    5-newest pool would let a confirmed historic value fail its own charset)."""
+    return frozenset(c for v in (distinct_values or ()) for c in str(v or '') if not c.isalnum())
+
+
+def _count_gated_shapes(value_counts) -> frozenset:
+    """The count-gated folded shape set — the SAME rule classify_format applies (kept as a separate
+    helper so classify_format stays byte-identical; pinned equal in tests/test_format_class_join.py).
+    Used by the join ONLY as the ADMISSION test (C3): a scope with no shape clearing the bar has no
+    repeated structure and stays FREETEXT; the set itself is never attached to a joined entry."""
+    vc = value_counts or {}
+    shape_counts: dict = {}
+    for val, n in vc.items():
+        sig = _fold_shape(shape_signature(val))
+        if sig:
+            shape_counts[sig] = shape_counts.get(sig, 0) + int(n or 0)
+    N = sum(int(n or 0) for n in vc.values())
+    thr = max(_SHAPE_ACCEPT_MIN, math.ceil(_SHAPE_ACCEPT_RATIO * N))
+    return frozenset(sig for sig, c in shape_counts.items() if c >= _SHAPE_ACCEPT_ABS or c >= thr)
+
+
+def join_format_entry(supplier: str, field_key: str, samples, value_counts) -> "dict | None":
+    """C1 admission for a scope classify_format folded to FREETEXT. Returns the joined fmt dict
+    {'class': join, 'separators', 'joined': True} (NO 'shapes' key — C3), or None. ALL of:
+    supplier-scoped only (C8 — never the '' twin); not a name-like field; value_counts present;
+    every DISTINCT value (value_counts keys ∪ samples) whitespace-free and in the code lattice;
+    >= 1 count-gated shape (the admission test)."""
+    if not supplier or not value_counts:
+        return None
+    try:
+        from extraction import value_quality as _vq
+        if _vq.is_name_like_field(field_key):
+            return None
+    except Exception:
+        return None
+    distinct = {str(k).strip() for k in value_counts if k} | {str(s).strip() for s in (samples or []) if s}
+    jc = join_code_class(distinct)
+    if not jc:
+        return None
+    if not _count_gated_shapes(value_counts):
+        return None
+    seps = _joined_separators(distinct) if jc == ALPHANUM_SEP else frozenset()
+    return {'class': jc, 'separators': seps, 'joined': True}
+
+
 def build_format_class_index(formats_data: list) -> dict:
     """
     Build a lookup dict keyed by (supplier_lower, doc_type_lower, field_key).
@@ -1108,6 +1196,15 @@ def build_format_class_index(formats_data: list) -> dict:
         except Exception:
             name_lex = None
 
+        # FORMAT_CLASS_JOIN (DARK): a MIXED-code scope folded to FREETEXT by the 3-newest unanimity rule is
+        # admitted as its JOIN class so its value_counts (the confirmed-literal channel) survive — see the
+        # flag block for the Oracle conditions. Only when classify_format itself said FREETEXT, the group is
+        # solid (not low-distinct), non-name, supplier-scoped; a joined entry carries NO 'shapes' key.
+        if (_FORMAT_CLASS_JOIN and fmt['class'] == FREETEXT and not name_lex and not _low_distinct):
+            _joined = join_format_entry(supplier, field_key, samples, vcounts)
+            if _joined:
+                fmt = _joined
+
         if fmt['class'] == FREETEXT and not name_lex:
             continue  # no usable constraint learned and no name lexicon
 
@@ -1131,7 +1228,9 @@ def build_format_class_index(formats_data: list) -> dict:
             fmt = {**fmt, 'word_like': word_like}
         # Additive families VIEW (Phase 2) — diagnostic only; existing consumers read
         # class/separators/shapes and never see this key. Empty when no shapes/counts.
-        if fmt.get('shapes') and vcounts:
+        # (A joined entry has no shapes by design — C3 — but ATTACHES the length-aware families: they are
+        # what _has_no_usual_format and the mapper's review-bound consent tier read.)
+        if (fmt.get('shapes') or fmt.get('joined')) and vcounts:
             fams = shape_families(vcounts)
             if fams:
                 fmt = {**fmt, 'shape_families': fams}
@@ -1160,10 +1259,13 @@ def build_format_class_index(formats_data: list) -> dict:
         # How much confirmed history backs this format — the learned-agreement confidence
         # boost (engine Stage 4.5) scales with it. confirmed_count (total confirmed docs) is
         # the strongest signal; fall back to the distinct-sample count (already >= 3 here).
-        _support = entry.get('confirmed_count')
-        if not _support and vcounts:
-            _support = sum(int(n or 0) for n in vcounts.values())
-        fmt = {**fmt, 'support': int(_support) if _support else len(samples)}
+        # S3 (FORMAT_CLASS_JOIN): a JOINED entry carries NO `support` — restoring the evidence channel must
+        # not re-arm the confidence economy (the engine's learned-agreement boost keys on support >= 3).
+        if not fmt.get('joined'):
+            _support = entry.get('confirmed_count')
+            if not _support and vcounts:
+                _support = sum(int(n or 0) for n in vcounts.values())
+            fmt = {**fmt, 'support': int(_support) if _support else len(samples)}
         # Learned CHARSET descriptor (ANCHOR_CHARSET_DEBRIS, Oracle C2 2026-07-27) — derived by
         # UNANIMITY over ALL raw distinct confirmed values (value_counts keys ∪ samples), NOT the
         # ratio-accepted shapes: one lettered confirm anywhere ⇒ has_letter True ⇒ the debris arm

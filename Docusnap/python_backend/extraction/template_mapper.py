@@ -490,11 +490,41 @@ def _anchor_alnum_tail(anchor_text):
     return ''.join(c for c in str(anchor_text or '') if c.isalnum()).lower()
 
 
+def _joined_consent(value, entry):
+    """FORMAT_CLASS_JOIN, Oracle C5/C6 — the REVIEW-BOUND consent tier for a JOINED entry (a mixed-code
+    scope admitted by its join class; no `shapes` key). Never 'confirmed' (a scope whose own confirmed
+    history contains confusable twins — 752/782 — must not license a full-confidence, note-free commit)
+    and never 'refused' (a joined entry carries no veto). Returns 'joined' on POSITIVE, LENGTH-AWARE
+    evidence only: the value is an exact confirmed in-scope literal, OR its RAW shape_signature is a
+    variant of a shape FAMILY confirmed on >= _SHAPE_ACCEPT_MIN documents (the folded `#`/`@#` set is
+    length-blind and is deliberately NOT consulted). Else None (fall through to provisional / 'none')."""
+    try:
+        from extraction import format_anomaly_checker as _fac
+        v = str(value)
+        if _fac.value_is_confirmed_literal(v, entry):
+            return 'joined'
+        sig = _fac.shape_signature(v)
+        if sig:
+            for fam in (entry.get('shape_families') or []):
+                if int(fam.get('count') or 0) < _fac._SHAPE_ACCEPT_MIN:
+                    continue
+                if sig == fam.get('shape') or sig in (fam.get('variants') or []):
+                    return 'joined'
+    except Exception:
+        return None
+    return None
+
+
 def _shape_consents(value, field_key, format_lookup, provisional_lookup):
     """The ONE consent ladder shared by the fragment strip and C2a (Oracle S2 — single helper,
     provisional index consulted NOWHERE else). Returns:
       'confirmed'   — a >=3-confirm learned entry EXISTS and ACCEPTS the value;
       'refused'     — an entry EXISTS and REJECTS it (FINAL — never falls through to provisional);
+      'joined'      — FORMAT_CLASS_JOIN: a JOINED (mixed-code) entry with POSITIVE length-aware evidence
+                      (exact confirmed literal / a >=3-doc shape family) — REVIEW-BOUND: every caller
+                      that tests `in ('confirmed', 'provisional')` treats it as NOT clean (Oracle C5);
+                      only _edge_cut_relocate / the edge-guard grow read it, to pre-fill + cap + a
+                      truthful note. A joined entry never yields 'confirmed' or 'refused';
       'provisional' — no confirmed entry, but the taught-doc skeleton index accepts;
       'none'        — no evidence either way."""
     if format_lookup is not None:
@@ -502,6 +532,11 @@ def _shape_consents(value, field_key, format_lookup, provisional_lookup):
             entry = format_lookup(field_key)
         except Exception:
             entry = None
+        if entry and entry.get('joined'):
+            _jc = _joined_consent(value, entry)
+            if _jc:
+                return _jc
+            entry = None                          # no positive evidence -> provisional / 'none', never 'refused'
         if entry:
             try:
                 return 'confirmed' if _check_learned_format(str(value), entry) is None else 'refused'
@@ -569,6 +604,14 @@ _EDGE_GUARD_VAL_TYPES = frozenset(_SNAP_VAL_TYPES | {'currency'})
 _ABS_EDGE_GUARD_ON = os.environ.get('TEMPLATE_ABS_EDGE_GUARD', '0') != '0'
 _EDGE_CUT_NOTE = ("The taught box's edge cuts through the printed value here and the fuller "
                   "reading could not be verified — please check this value.")
+# FORMAT_CLASS_JOIN, Oracle C10 — the TRUTHFUL note for a re-seated value that matched this sender's
+# confirmed history on a joined (mixed-code) scope: the old note's "could not be verified" is false once
+# the re-read matches a confirmed literal, so say what happened instead — and keep the human. Deliberately
+# NOT in engine._verification_doubt_note_marks() (class F may never clear it — Oracle C4) and not a
+# substring of any JS CLEARABLE_NOTE_MARK.
+_JOINED_LITERAL_NOTE = ("The taught box's edge cuts through the printed value here, so it was read again from "
+                        "the label — and that reading matches a value you have confirmed before. Please confirm "
+                        "it once.")
 _EDGE_GUARD_FIRES = []   # per-process census: (field_key, edges, outcome) — tests + SFDEV introspection
 
 # SNAP-UNION GEOMETRY WITNESS (Oracle SIGN-OFF-W/COND 2026-08-06, docs/oracle_log.md) — the
@@ -2005,7 +2048,10 @@ def _edge_cut_relocate(page, mapping, anchor_box, target_box, located, val_type,
     if consent not in ('confirmed', 'provisional'):
         relo = dict(relo)
         relo["confidence"] = min(int(relo.get("confidence") or 70), 70)
-        relo["validation_note"] = _EDGE_CUT_NOTE
+        # 'joined' (FORMAT_CLASS_JOIN, Oracle C5/C10): positive length-aware evidence on a mixed-code
+        # scope — still REVIEW-BOUND (cap kept), but the note tells the truth instead of "could not be
+        # verified". Every other outcome keeps the edge-cut note verbatim.
+        relo["validation_note"] = _JOINED_LITERAL_NOTE if consent == 'joined' else _EDGE_CUT_NOTE
         if not str(relo.get("method") or "").endswith(("_edgecut", "_relocated")):
             relo["method"] = (relo.get("method") or "template_mapping") + "_relocated"
     return relo
@@ -3456,12 +3502,13 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
         _EDGE_GUARD_FIRES.append((field_key, _edges, 'refused'))
         return None
     # No history either way: the fuller value goes to review pre-filled (cheapest correction).
+    # ('joined' — FORMAT_CLASS_JOIN — lands here too: review-bound by design, with the truthful note.)
     _EDGE_GUARD_FIRES.append((field_key, _edges, 'flagged'))
     r = _mapping_result(gv, has_label, False, False, anchor_name or field_key,
                         val_type=val_type, ocr_conf=_gmeta.get('conf'))
     r["confidence"] = min(r["confidence"], 70)
     r["method"] += "_edgegrow"
-    r["validation_note"] = _EDGE_CUT_NOTE
+    r["validation_note"] = _JOINED_LITERAL_NOTE if consent == 'joined' else _EDGE_CUT_NOTE
     return {"result": r}
 
 
