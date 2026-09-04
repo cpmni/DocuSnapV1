@@ -2680,6 +2680,20 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 117 (filing_sanity_ref_history_soften): ${e.message}`); }
   }
 
+  // ── migration 118: TEST-BUILD force-ON of filing_sanity_ref_history_soften (2026-09-04; same pattern +
+  //    caveat as mig 108/…/116). FORCE-flips (UPSERT) the history soften ON so the owner's test DB shows
+  //    doc238 (RFH0738865 vs page RFHO738865) the honest note. Note-text-only, review-bound — never files.
+  //    Requires filing_value_sanity_flags ON. ⚠ TEST-ONLY / REVERSIBLE: revert (or gate) before ANY
+  //    customer build; run its WARM-DB census (softened value == the on-page-labelled value, 0 new
+  //    auto-files) + realdoc M=0. ──
+  if (!applied.has(118)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('filing_sanity_ref_history_soften', 'true')
+                  ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (118)').run();
+      console.log('JS migration 118 applied: TEST-BUILD force-ON filing_sanity_ref_history_soften (revert + census before customer build)');
+    } catch (e) { console.warn(`  migration 118 (filing_sanity_ref_history_soften force-ON): ${e.message}`); }
+  }
 
 
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
