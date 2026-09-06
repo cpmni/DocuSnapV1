@@ -1,0 +1,29 @@
+{
+  "_comment": "Shared twin vectors for the date-pattern ALNUM lookbehind (log review Item 3, 2026-09-05). Read by python_backend/tests/test_date_alpha_prefix_gate.py AND database/modules/test_date_alpha_prefix_gate.js — one file so the Python `re` and the JS `new RegExp(p,'i')` can never drift. `accept` = at least one shipped numeric date pattern matches SOMEWHERE in the string; `reject` = no numeric date pattern matches anywhere.",
+  "accept": [
+    "26/01/2026",
+    "2026-01-26",
+    "26.01.26",
+    "| 26/01/2026",
+    "W/E 26/01/2026",
+    "Date: 26/01/2026",
+    "26/01/2026Terms",
+    "Invoice date 26-01-2026 due",
+    "(26/01/2026)",
+    "REF-2026-01-26X"
+  ],
+  "reject": [
+    "P1/26/6000",
+    "PI/26/6000",
+    "INV2026-01-26",
+    "Q1/25/2026",
+    "A26/01/2026",
+    "l26/01/2026"
+  ],
+  "_notes": {
+    "P1/26/6000": "the Pelican 0023 exhibit: the tail of a reference read as 1/26/6000 -> 26-01-6000 @40",
+    "l26/01/2026": "the NAMED recall cost (Oracle): a border glyph OCR'd as a letter glued to a real date now reads empty -> review",
+    "26/01/2026Terms": "the trailing (?!\\d) is untouched — letters AFTER a date still read",
+    "REF-2026-01-26X": "a dash between the prefix and the date is a boundary: only a letter/digit glued DIRECTLY to the leading digit is forbidden"
+  }
+}

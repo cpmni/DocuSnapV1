@@ -20,8 +20,14 @@ const path = require('path'), fs = require('fs'), os = require('os');
 const { spawn } = require('child_process');
 const Database = require('better-sqlite3');
 const REPO = 'c:/GIT Projects/Docusnap', ST = path.join(REPO, 'stress_test');
-const OUT = path.join(ST, 'out'), CFG = path.join(REPO, 'config', 'keyword_patterns.json');
-const PROCESS_DOCS = path.join(REPO, 'python_backend', 'process_docs.py');
+const OUT = path.join(ST, 'out');
+// RR_CFG / RR_PY_ROOT (2026-09-06): opt-in overrides for a CLEAN A/B — point an arm at a frozen
+// snapshot of the pattern config and/or python_backend (a scratch copy) so the working tree can keep
+// moving while two arms run and the ONLY difference between them is the thing under test (the
+// 08-05 never-edit-py-mid-arm trap). Absent => the repo files, byte-identical to every prior run.
+const CFG = process.env.RR_CFG || path.join(REPO, 'config', 'keyword_patterns.json');
+const PY_ROOT = process.env.RR_PY_ROOT || path.join(REPO, 'python_backend');
+const PROCESS_DOCS = path.join(PY_ROOT, 'process_docs.py');
 const TESS = 'C:/Program Files/Tesseract-OCR/tesseract.exe';
 // RR_DB: optional DB override for same-corpus A/Bs against a MODIFIED COPY (e.g. the
 // logo-detail backfill activation gate, Oracle C5 2026-07-23). Absent ⇒ the live DB, unchanged.

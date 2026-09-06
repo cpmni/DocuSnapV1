@@ -2664,7 +2664,12 @@ def _crop_is_credible(value: str, val_type: str | None,
             # pattern check, so a Continental "1.234,56" / Swiss "1'234.56" is accepted.
             # No-op for anglo → byte-identical.
             _v = number_format.canonical(v) if val_type == "currency" else v
-            return any(re.search(p, _v, re.IGNORECASE) for p in pats)
+            _ok = any(re.search(p, _v, re.IGNORECASE) for p in pats)
+            # 2026-09-05 (log review Item 3, Oracle condition): this substring branch had NO census
+            # hook, so the alnum-lookbehind census could only see the keyword site. Record the crop
+            # site's date/currency acceptances too. Inert unless VAL_CENSUS_DIR is set.
+            _val_census("crop", val_type, _v, _ok)
+            return _ok
         # Other typed fields (alphanumeric / reference / code): the pattern must
         # COVER most of the value, so a colon-laden MAC matching only a sub-run is
         # rejected and the field relocates/falls to review instead of committing junk.
