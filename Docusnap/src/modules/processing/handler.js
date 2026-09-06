@@ -121,6 +121,11 @@ function _anchorCropEnv(db) {
     // mig 122): anchor._is_bare_label also rejects a read ONE OCR slip from a caption token ("USTOMER"
     // for "CUSTOMER") — every rung, incl. registration, which had no caption defence. Env wins for arms.
     if (env.ANCHOR_BARE_LABEL_FUZZY == null && learning.getSetting(db, 'anchor_bare_label_fuzzy', 'false') === 'true') env.ANCHOR_BARE_LABEL_FUZZY = '1';
+    // ANCHOR_LABELLESS_CURRENCY_REFUSE (2026-09-05, log review Item 1 read-side; Oracle SIGN-OFF-W/COND C1;
+    // DARK, mig 122): a LABEL-LESS authoritative currency anchor's absolute reads are refused (rigid +
+    // registration); the field falls to the keyword incumbent or, when it would end EMPTY, to a re-teach
+    // note (engine._apply_labelless_withheld_notes). Env wins for arms.
+    if (env.ANCHOR_LABELLESS_CURRENCY_REFUSE == null && learning.getSetting(db, 'anchor_labelless_currency_refuse', 'false') === 'true') env.ANCHOR_LABELLESS_CURRENCY_REFUSE = '1';
     return env;
   } catch { return {}; }
 }

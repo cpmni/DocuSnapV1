@@ -2747,14 +2747,19 @@ function runJsMigrations(db, applied) {
   // ── migration 122: the 2026-09-05 log-review arcs are born DARK (docs/designs/LOG_REVIEW_FIX_PLAN_
   //    2026-09-05.md; Oracle per-item SIGN-OFF-W/COND). Every switch UPSERTed to 'false' (the mig-121 shape):
   //    anchor_bare_label_fuzzy — Item 2 slice A: a taught read one OCR slip from its own caption token
-  //      ("USTOMER" for "CUSTOMER") is a bare label at every rung (env ANCHOR_BARE_LABEL_FUZZY). ──
+  //      ("USTOMER" for "CUSTOMER") is a bare label at every rung (env ANCHOR_BARE_LABEL_FUZZY).
+  //    anchor_labelless_currency_refuse — Item 1 read-side: a LABEL-LESS authoritative currency anchor's two
+  //      absolute reads (rigid crop + registration map) are refused; the field goes to the keyword incumbent
+  //      or, when it would end EMPTY, to a re-teach note (env ANCHOR_LABELLESS_CURRENCY_REFUSE).
+  //    type_uninstalled_heading_fold — Item 4(b): a shipped-but-uninstalled type's bare name competes in the
+  //      election as a STRICT top-band standalone heading only (env TYPE_UNINSTALLED_HEADING_FOLD). ──
   if (!applied.has(122)) {
     try {
-      for (const k of ['anchor_bare_label_fuzzy']) {
+      for (const k of ['anchor_bare_label_fuzzy', 'anchor_labelless_currency_refuse', 'type_uninstalled_heading_fold']) {
         db.prepare(`INSERT INTO settings (key, value) VALUES (?, 'false') ON CONFLICT(key) DO UPDATE SET value = 'false'`).run(k);
       }
       db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (122)').run();
-      console.log('JS migration 122 applied: log-review arcs seeded OFF (anchor_bare_label_fuzzy)');
+      console.log('JS migration 122 applied: log-review arcs seeded OFF (anchor_bare_label_fuzzy, anchor_labelless_currency_refuse, type_uninstalled_heading_fold)');
     } catch (e) { console.warn(`  migration 122 (log-review arcs OFF): ${e.message}`); }
   }
 

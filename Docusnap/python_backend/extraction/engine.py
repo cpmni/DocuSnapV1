@@ -3176,6 +3176,62 @@ def format_invalid_witness(value, val_type, key=None) -> bool:
     return False
 
 
+_WITHHELD_ISSUER_NOTE = ("A known supplier's name appears on this page, but not in the letterhead area, so it "
+                         "wasn't trusted as the issuer. Please confirm who issued this document.")
+_WITHHELD_OWN_COMPANY_NOTE = ("Your own company's name was read here, and the issuer's letterhead couldn't be "
+                              "read. Please pick who issued this document.")
+_OWN_COMPANY_MIN_CONFIRMS = 3
+
+
+def _withheld_issuer_note(matched_value, hints) -> str:
+    """Item 4(i) (log review 2026-09-05; Oracle: COPY only). The Stage-2.5 withheld gate found a KNOWN name
+    outside the issuer band. When that name is also this install's confirmed customer_name (a
+    `customer_name` hint with >= _OWN_COMPANY_MIN_CONFIRMS uses — the owner's own company in a BILL TO
+    block), the generic note names the wrong actor ("a known supplier's name"); say what actually
+    happened. Pure; fail-safe to the generic note on any doubt."""
+    try:
+        _norm = lambda t: re.sub(r"[^a-z0-9]+", " ", str(t or "").lower()).strip()
+        want = _norm(matched_value)
+        if not want:
+            return _WITHHELD_ISSUER_NOTE
+        for h in (hints or []):
+            if not isinstance(h, dict) or str(h.get("field_key") or "") != "customer_name":
+                continue
+            if int(h.get("usage_count") or 0) < _OWN_COMPANY_MIN_CONFIRMS:
+                continue
+            if _norm(h.get("hint_value")) == want:
+                return _WITHHELD_OWN_COMPANY_NOTE
+    except Exception:
+        pass
+    return _WITHHELD_ISSUER_NOTE
+
+
+_LABELLESS_WITHHELD_NOTE = ("This amount was taught by position only, and totals move with the number of "
+                            "lines, so the remembered spot can land on the wrong row. Re-teach it with its "
+                            "caption (e.g. Total) so it can be found on every document.")
+
+
+def _apply_labelless_withheld_notes(results: dict, rejected_reads: dict | None) -> bool:
+    """ANCHOR_LABELLESS_CURRENCY_REFUSE — the NOTE road (log review Item 1, 2026-09-05; Oracle C1, the seam
+    gary missed): anchor.py has NO emission path for "value None + note", and a note attached to a keyword
+    INCUMBENT would hold every Meadowvale INVOICE too. Mirror issuer_band_withheld: the note lands ONLY when
+    the field would end EMPTY after every stage; with an incumbent the refused anchor yielded silently and
+    the incumbent's own gates hold. Keyed on the recorder's 'labelless_currency_refuse' reason (anchor.py
+    emits it only under the armed switch, so this is inert when the switch is OFF). Returns True when a
+    note landed (the caller marks the doc review-bound). Pinned: tests/test_anchor_labelless_currency.py."""
+    changed = False
+    for fk, rejs in (rejected_reads or {}).items():
+        if not any(isinstance(r, dict) and r.get("reason") == "labelless_currency_refuse" for r in (rejs or [])):
+            continue
+        cur = results.get(fk)
+        if isinstance(cur, dict) and str(cur.get("value") or "").strip():
+            continue                                   # an incumbent stands; its own gates hold it
+        results[fk] = {"value": None, "confidence": 0, "method": "anchor_labelless_withheld",
+                       "validation_note": _LABELLESS_WITHHELD_NOTE}
+        changed = True
+    return changed
+
+
 class ExtractionEngine:
 
     def __init__(self,
@@ -11457,6 +11513,12 @@ class ExtractionEngine:
             if results.get("_needs_review") and not _any_note \
                     and not (validator.needs_review(results, field_defs) or format_anomaly_flagged):
                 results["_needs_review"] = False
+
+        # ANCHOR_LABELLESS_CURRENCY_REFUSE — the NOTE road (log review Item 1, 2026-09-05; Oracle C1). Runs
+        # LAST so "would end EMPTY" is literally known: every filler (keyword, hints, snap, template) has had
+        # its turn. A landed note is a hold (review-bound) — the same any-note rule every direct writer obeys.
+        if _apply_labelless_withheld_notes(results, getattr(self, "_rejected_reads", None)):
+            results["_needs_review"] = True
 
         # Final resolved value per field — the inspector marks any earlier
         # candidate whose value differs from this as a superseded intermediate.

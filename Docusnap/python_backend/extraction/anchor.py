@@ -505,6 +505,22 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                        and (anchor.get("anchor_label") or "").strip()
                        and anchor.get("offset_dy_norm") is not None
                        and page0 is not None)
+        # ANCHOR_LABELLESS_CURRENCY_REFUSE (log review Item 1, 2026-09-05; gary + 007 -> Oracle SIGN-OFF-
+        # W/COND C1; DARK, mig 122). A LABEL-LESS AUTHORITATIVE currency anchor is a pure absolute crop: no
+        # label -> no relocation road (label-lock / drift / inline all need one), and a totals block FLOATS
+        # with the line count, so the box reads the VAT row, a neighbour's amount or garbage @50 (Meadowvale
+        # credit notes: 13/20 in review, every hand-fix a corrections row). Registration cannot fix a row that
+        # moves relative to the PAGE (007 1f), so when armed BOTH absolute reads are refused — the rigid crop
+        # here and the registration map below — and the field is left to the keyword incumbent or, when it
+        # would end EMPTY, to the engine's note (engine._apply_labelless_withheld_notes; anchor.py has no
+        # "value None + note" emission path). Passive anchors, labelled anchors and free-text are untouched.
+        # Pinned: tests/test_anchor_labelless_currency.py.
+        _labelless_refused = (os.environ.get("ANCHOR_LABELLESS_CURRENCY_REFUSE", "0") != "0"
+                              and _labelless_absolute_currency(anchor, val_type))
+        if _labelless_refused:
+            _skip_rigid = True
+            if on_reject:
+                on_reject(field_key, "anchor_crop", None, "labelless_currency_refuse")
 
         # CROSS-SUPPLIER ABSOLUTE-READ GATE (007① applied BEFORE the crop; Oracle-scoped, 2026-07-09).
         # A NAMED cross-supplier AUTHORITATIVE anchor's ABSOLUTE reads — the rigid crop and the
@@ -1249,6 +1265,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
         # credibility + learned-format gates. INERT (byte-identical) when no transform
         # was fitted (flag off / no landmarks / poor fit).
         if (not value or _is_weak_read(value, val_type)) and _xsup_absolute_ok and page_transform is not None \
+                and not _labelless_refused \
                 and x_norm > 0 and y_norm > 0 and page0 is not None:
             w_norm = anchor.get("w_norm") or 0.0
             h_norm = anchor.get("h_norm") or 0.0
@@ -2647,6 +2664,14 @@ def _name_field_code_reject(value, field_key):
     from extraction.value_quality import is_name_like_field
     v = (value or "").strip()
     return bool(v) and is_name_like_field(field_key) and re.search(r"[A-Za-z]{3,}", v) is None
+
+
+def _labelless_absolute_currency(anchor, val_type) -> bool:
+    """Item 1 (2026-09-05): an AUTHORITATIVE currency anchor with NO caption — a blind absolute box on a
+    totals block that floats with the line count. The ONE predicate both absolute reads (rigid crop,
+    registration map) consult under ANCHOR_LABELLESS_CURRENCY_REFUSE."""
+    return bool(val_type == "currency" and (anchor or {}).get("last_authoritative_at")
+                and not ((anchor or {}).get("anchor_label") or "").strip())
 
 
 def _is_weak_read(value, val_type):
