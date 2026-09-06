@@ -2744,6 +2744,20 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 121 (ref resolvers OFF): ${e.message}`); }
   }
 
+  // ── migration 122: the 2026-09-05 log-review arcs are born DARK (docs/designs/LOG_REVIEW_FIX_PLAN_
+  //    2026-09-05.md; Oracle per-item SIGN-OFF-W/COND). Every switch UPSERTed to 'false' (the mig-121 shape):
+  //    anchor_bare_label_fuzzy — Item 2 slice A: a taught read one OCR slip from its own caption token
+  //      ("USTOMER" for "CUSTOMER") is a bare label at every rung (env ANCHOR_BARE_LABEL_FUZZY). ──
+  if (!applied.has(122)) {
+    try {
+      for (const k of ['anchor_bare_label_fuzzy']) {
+        db.prepare(`INSERT INTO settings (key, value) VALUES (?, 'false') ON CONFLICT(key) DO UPDATE SET value = 'false'`).run(k);
+      }
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (122)').run();
+      console.log('JS migration 122 applied: log-review arcs seeded OFF (anchor_bare_label_fuzzy)');
+    } catch (e) { console.warn(`  migration 122 (log-review arcs OFF): ${e.message}`); }
+  }
+
 
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand

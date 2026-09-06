@@ -117,6 +117,10 @@ function _anchorCropEnv(db) {
     // + quiet-zone + no-sharpen) so 'PO-17039' stops garbling to '»0-17039'. Default OFF; a
     // sub-floor struct read falls through to today's rungs, so it heals where it can, never worse.
     if (learning.getSetting(db, 'struct_code_read', 'false') === 'true') env.STRUCT_CODE_READ = '1';
+    // ANCHOR_BARE_LABEL_FUZZY (2026-09-05, log review Item 2 slice A; Oracle SIGN-OFF-W/COND C1; DARK,
+    // mig 122): anchor._is_bare_label also rejects a read ONE OCR slip from a caption token ("USTOMER"
+    // for "CUSTOMER") — every rung, incl. registration, which had no caption defence. Env wins for arms.
+    if (env.ANCHOR_BARE_LABEL_FUZZY == null && learning.getSetting(db, 'anchor_bare_label_fuzzy', 'false') === 'true') env.ANCHOR_BARE_LABEL_FUZZY = '1';
     return env;
   } catch { return {}; }
 }

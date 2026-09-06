@@ -2427,7 +2427,70 @@ def _is_bare_label(v: str, label: str | None) -> bool:
     val_tokens = re.findall(r"[a-z0-9]+", v.lower())
     if not label_tokens or not val_tokens:
         return False
-    return all(t in label_tokens for t in val_tokens)
+    if all(t in label_tokens for t in val_tokens):
+        return True
+    # ANCHOR_BARE_LABEL_FUZZY (2026-09-05, log review Item 2 slice A; gary + 007 → Oracle SIGN-OFF-W/COND
+    # C1; DARK, mig 122). The exact rule above is token-EXACT: a crop that lands on the caption row
+    # minus its first glyph reads "USTOMER" for the label "CUSTOMER" and sails through as a NAME
+    # (Oakhaven delivery notes — the registration rung committed it @81 over the keyword "Deliver To"
+    # @78; that rung has no other caption defence). When armed, a value is ALSO a bare label when it is
+    # one OCR slip away from a caption TOKEN — per token, never the joined phrase ("CUSTOMER NAME" joined
+    # is 12 chars and "USTOMER" would escape a len-1 rule); caption tokens carrying a digit are skipped
+    # ("Order 12345" must not reject a real "1234"); short tokens (<5) and short values (<4) are never
+    # compared ("To", "IBM"). Two roads: the alnum-JOINED value against each token (a space-split
+    # "UST OMER"), and every value token individually (a two-token "USTOMER NAME"). One helper, every
+    # rung — the Stage-0.5 mapper passes no label (template_mapper.py) and is untouched (Oracle C2).
+    # Pinned by tests/test_bare_label_fuzzy.py (ON/OFF, the negatives, the registration rung).
+    if os.environ.get("ANCHOR_BARE_LABEL_FUZZY", "0") != "0":
+        cand = [t for t in label_tokens if len(t) >= 5 and not any(c.isdigit() for c in t)]
+        if cand:
+            joined = "".join(val_tokens)
+            if _fuzzy_label_token(joined, cand):
+                return True
+            if all((t in label_tokens) or _fuzzy_label_token(t, cand) for t in val_tokens):
+                return True
+    return False
+
+
+def _fuzzy_label_token(val: str, label_tokens) -> bool:
+    """ONE OCR slip from a caption token: `val` (alnum, lower) is a contiguous substring of a
+    caption token missing at most one glyph (a clipped first/last letter), or within edit distance
+    1 of it (one substitution / insertion / deletion). len(val) >= 4 and len(token) >= 5 — the caller
+    pre-filters the tokens. Precision-first: "customs" vs "customer" (2 edits) and "custom" vs
+    "customer" (2 short) are NOT slips and stay values."""
+    if len(val) < 4:
+        return False
+    for tok in label_tokens:
+        if len(tok) < 5:
+            continue
+        if val in tok and len(val) >= len(tok) - 1:
+            return True
+        if _edit_distance_le1(val, tok):
+            return True
+    return False
+
+
+def _edit_distance_le1(a: str, b: str) -> bool:
+    """True when a and b are within Levenshtein distance 1 (bounded, O(n))."""
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:                                   # exactly one substitution
+        return sum(1 for x, y in zip(a, b) if x != y) == 1
+    if la > lb:                                    # normalise: a is the shorter
+        a, b, la, lb = b, a, lb, la
+    i = j = 0
+    skipped = False
+    while i < la and j < lb:
+        if a[i] == b[j]:
+            i += 1; j += 1
+        elif skipped:
+            return False
+        else:
+            skipped = True; j += 1
+    return True
 
 
 # Structured val_types eligible for the caption-prefix strip. DELIBERATELY EXCLUDES currency
