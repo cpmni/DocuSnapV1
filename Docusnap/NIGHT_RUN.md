@@ -27,14 +27,9 @@ scratch/sandbox, implementing a Chris card); **anything dangerous goes to the ag
 and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
-- **2026-09-06 · [arm] Hard Set 3-arm re-score** — the standing "repeat if any extraction change lands": today's date
-  lookbehind (`70bfe3a`), 2B clamp geometry (`03be597`) and the three DARK arcs (armed) all landed. Cheap; compare
-  to `docs/HARD_SET_REPORT_2026-08-31.md` (wrong+would-file must stay 0).
 - **2026-09-06 · [arm] 4(b) OCR re-detect over the Desktop 605 corpus + Hard Set** (PDFs, no stored text) with
   `TYPE_UNINSTALLED_HEADING_FOLD=1` — winner changes must be exactly the uninstalled-heading docs (the live-copy text
   census already MET 20/20 Ironclad, 521 unchanged).
-- **2026-09-06 · [arm] 5b sibling run** — templates 6/7 OFF-vs-ON on a db.backup() copy (the angle heal now works, so
-  their siblings' Stage-0.5 compose changes); M=0 + zero drop. Never re-darken.
 - **2026-09-06 · [decision] the 605-corpus DB harness is VACUOUS on the reset live DB** (`rr_ids.txt` → 15 docs). Rebuild
   `rr_ids` from a fresh db.backup() copy (`_dedup_ids.py`) or build a WARM folder-corpus harness.
 - **2026-09-02 · [census, real corpus] `raw_value` on keyword money reads is LIVE, not DARK** — the
@@ -250,6 +245,13 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-09-06 AFTERNOON · Hard Set 3-arm re-score + 5b sibling run (follow-on to the log-review build).** Result:
+  5b siblings 0 diffs; Hard Set wrong+would-file 0 in both cold arms; the two moved classes + the warm buyer_large 4
+  wrong+would-file are reproduced EXACTLY by the pre-today python on the same DB copy = the DB reset (Statement
+  uninstalled; Bramblewood's real PO template claims the buyer-issued POs — the known GT flaw), zero delta from
+  today's code. `score_hard_set.js` gained RR_CFG/RR_PY_ROOT. Artefacts `TESTING/_measure/log_review_20260906/
+  hardset_{today,pre,baseline_0831}/`. Repeat if: an extraction change lands (the standing rule) — compare to
+  `hardset_today/` now, not to 08-31 (different DB).
 - **2026-09-06 AFTERNOON · The 09-05 log-review fix plan BUILT in the Oracle's order (11 commits, all pinned).** 5a
   `dfc3cc4` · Item 3 `70bfe3a` (+census: affected population = exactly the 2 Pelican `P1/26/…` windows; realdoc `new`
   arm 453 docs: date 452/453 = doc 471's POISONED GT) · 2A `c912c09` · 2B `03be597` · Item 1 `ba454bf`+`c09c16c`+`799c212`

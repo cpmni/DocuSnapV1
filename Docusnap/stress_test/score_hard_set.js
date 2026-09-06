@@ -18,8 +18,12 @@ const path = require('path'), fs = require('fs'), os = require('os');
 const { spawn } = require('child_process');
 const Database = require('better-sqlite3');
 const REPO = 'c:/GIT Projects/Docusnap';
-const CFG = path.join(REPO, 'config', 'keyword_patterns.json');
-const PROCESS_DOCS = path.join(REPO, 'python_backend', 'process_docs.py');
+// RR_CFG / RR_PY_ROOT (2026-09-06): the realdoc harness's opt-in overrides, mirrored here — point an arm at a
+// frozen config / python_backend snapshot for a clean A/B (attribute a class delta to ONE change, not to
+// everything since the last baseline). Absent => the repo files, byte-identical to every prior run.
+const CFG = process.env.RR_CFG || path.join(REPO, 'config', 'keyword_patterns.json');
+const PY_ROOT = process.env.RR_PY_ROOT || path.join(REPO, 'python_backend');
+const PROCESS_DOCS = path.join(PY_ROOT, 'process_docs.py');
 const TESS = 'C:/Program Files/Tesseract-OCR/tesseract.exe';
 const ROOT = process.env.HARDSET_OUT || path.join(process.env.USERPROFILE, 'Desktop', 'Hard Set');
 const learning = require(path.join(REPO, 'database', 'modules', 'learning.js'));
