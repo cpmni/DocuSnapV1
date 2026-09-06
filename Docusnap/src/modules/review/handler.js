@@ -58,8 +58,12 @@ function _scheduleSourceMove(ctx, db, documents, { srcPath, originalFilename }) 
 }
 
 function register(ctx) {
+  // 2026-09-05 (log review 5a): templatesDir MUST be destructured here — the learnTemplateOnCommit dep
+  // below calls it bare, and a missing binding threw ReferenceError inside its try/catch on EVERY
+  // confirm ("template file sync (commit): templatesDir is not defined" x35 in processing.log), so the
+  // template FILE never mirrored the DB intersection. Pinned by test_template_file_sync.js §4/§5.
   const { ipcMain, getDb, pythonExe, pythonArgs, tesseractPath,
-          notifyMainWindow, spawn, path, fs, logger } = ctx;
+          notifyMainWindow, spawn, path, fs, logger, templatesDir } = ctx;
   // Bin-changed signal (eric design + Oracle 2026-08-16): fired ONCE per bin-mutating op below —
   // the Search window's recycle-bin view re-pulls on it. Optional in ctx (pure unit fixtures).
   const notifyBinChanged = typeof ctx.notifyBinChanged === 'function' ? ctx.notifyBinChanged : () => {};
