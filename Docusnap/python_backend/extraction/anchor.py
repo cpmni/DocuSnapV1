@@ -3135,7 +3135,21 @@ def _clean_text_fallback(value: str | None, val_type: str | None,
         for p in (validation_patterns or {}).get(val_type) or []:
             m = re.search(p, v, re.IGNORECASE)
             if m:
-                return m.group(0).strip(" -:;,")
+                out = m.group(0).strip(" -:;,")
+                # MONEY_SIGN_CAPTURE at the ANCHOR mint (log review Item 1 sign lever, 2026-09-05; the
+                # keyword twin is _clean_value's currency branch, mig-72 setting money_sign_capture).
+                # Fixing the strip above alone did nothing: no shipped currency pattern admits a leading
+                # '-', so the crop read "£-366.66" always matched bare "366.66" and a credit-note total lost
+                # its sign at THIS mint too. Same rule as keyword.py: a SINGLE '-' sitting IMMEDIATELY
+                # before the match (no dash run; preceded by start / whitespace / a currency symbol) is
+                # re-attached. Spaced dashes ("Total - 160.32") and runs stay unsigned (fail toward today).
+                if (val_type == "currency" and out and not out.startswith('-')
+                        and os.environ.get('MONEY_SIGN_CAPTURE', '0') != '0'):
+                    pre = v[:m.start()]
+                    if (pre.endswith('-') and not pre.endswith('--')
+                            and (len(pre) == 1 or pre[-2] in ' \t£$€¥')):
+                        return '-' + out
+                return out
     return clean_crop_segment(value, val_type)
 
 
