@@ -6118,6 +6118,13 @@ function showAnchorReadout(detected, value) {
   const isAbove = detected.direction === 'below';
   const typeHeading = !detected.fallback && labelIsTypeHeading(detected.anchor_label);
   const suspicious = !detected.fallback && (labelLooksSuspicious(detected.anchor_label) || typeHeading);
+  // Item 1 teach-side (log review 2026-09-05, Oracle C2: WARN, refuse nothing). A CURRENCY field taught with
+  // NO caption is a position-only box on a totals block that moves with the line count — the Meadowvale
+  // credit-note class (17/20 docs read the wrong row @50). The position-only save still happens (a receipt
+  // total with no adjacent caption must stay teachable); the readout is the WARN variant with the typed-
+  // caption input so the operator anchors on the word instead.
+  const _teachFdef = (typeof fieldDefs !== 'undefined' && Array.isArray(fieldDefs) ? fieldDefs : []).find(f => f && f.key === lastTeachCtx?.fieldKey);
+  const currencyNoLabel = !!(detected.fallback && _teachFdef && _teachFdef.type === 'currency');
   const warn = detected.fallback || suspicious;
   // Garble verdict → never keep the misread caption staged: fall back to a POSITION-ONLY anchor
   // (empty label + registration/position relocation), the same safe fallback used for a cleared
@@ -6132,7 +6139,12 @@ function showAnchorReadout(detected, value) {
     }
   }
   let msg;
-  if (detected.fallback) {
+  if (currencyNoLabel) {
+    msg = `<span class="ar-msg">&#9888; No caption was found beside this amount. Totals move with the number of lines on a document, so a remembered spot alone can read the <strong>wrong row</strong> on other documents. Type the caption printed beside it (e.g. <strong>Total to Pay</strong>) to anchor on the word instead: `
+      + `<input class="ar-label-edit" spellcheck="false" title="The caption printed beside this amount — e.g. Total, Total to Pay, Amount Due" `
+      + `style="font:inherit;font-weight:600;padding:1px 5px;min-width:110px;border:1px solid var(--border2);border-radius:5px;background:var(--surface)"> `
+      + `&rarr; <span class="ar-val">${val}</span></span>`;
+  } else if (detected.fallback) {
     msg = `<span class="ar-msg">&#10003; No label word sits next to this value, so Scan Finder will <strong>remember this exact spot</strong> (highlighted on the page) and read whatever prints here on future documents from this supplier. Read: <span class="ar-val">${val}</span></span>`;
   } else {
     // The label is EDITABLE — an auto-detect off a noisy scan can be misread ("verial No."),
@@ -6164,8 +6176,9 @@ function showAnchorReadout(detected, value) {
   // inviting the real caption. Typing one re-stages it via the change handler below.
   const lblInput = bar.querySelector('.ar-label-edit');
   if (lblInput) {
-    lblInput.value = suspicious ? '' : (detected.anchor_label || '');
+    lblInput.value = (suspicious || currencyNoLabel) ? '' : (detected.anchor_label || '');
     if (suspicious) lblInput.placeholder = 'caption as printed (optional)';
+    if (currencyNoLabel) lblInput.placeholder = 'e.g. Total to Pay';
     lblInput.addEventListener('change', () => {
       const fk = lastTeachCtx?.fieldKey;
       const cleaned = sanitizeAnchorLabel(lblInput.value);
