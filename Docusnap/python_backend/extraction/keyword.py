@@ -976,6 +976,31 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 if a:
                     name_alias_lc.add(a.lower())
 
+    # TYPE_UNINSTALLED_HEADING_FOLD (2026-09-05, log review Item 4b; herald → Oracle SIGN-OFF-W/COND; DARK,
+    # mig 122 `type_uninstalled_heading_fold`). Ironclad statements typed INVOICE @31: a table-cell "Invoice"
+    # in the top 15 lines earned the strong heading weight, while the legible 44-px "STATEMENT" scored
+    # NOTHING — the shipped Statement bucket carries no bare name and ONLY installed names fold (above).
+    # When armed, every shipped-but-UNINSTALLED bucket's bare NAME is folded as a HEADING-ONLY phrase: it
+    # scores solely as a STRICT standalone TOP-BAND heading (seg0 == phrase, the 2.0 test, whole-segment
+    # equality), NEVER as a mention — bare "statement" as a mention would poison invoices carrying "VAT
+    # statement". A legible title then wins as the uninstalled name -> process_docs derives its slug
+    # (DETECTED_SLUG_FALLBACK re-arms the type refuse for a same-supplier template) and the doc reaches
+    # review UNTYPED + the existing "Add '<type>'" nudge (mig-51 detected_type_name) instead of MIS-typed.
+    # Strictly additive: a bare name ALREADY in its bucket keeps its ordinary scoring (never demoted to
+    # heading-only). Skipped when no type list was supplied (nothing is "uninstalled" then).
+    heading_only_lc: set[str] = set()
+    if os.environ.get("TYPE_UNINSTALLED_HEADING_FOLD", "0") != "0" and known_types is not None:
+        _installed_lc = {str(n or "").strip().lower() for n in known_types}
+        for _tname, _bucket in type_keywords.items():
+            _t = str(_tname or "").strip()
+            if not _t or _t.lower() in _installed_lc:
+                continue
+            if _t.lower() in {str(p).strip().lower() for p in _bucket}:
+                continue                                    # already a scoring phrase — leave it alone
+            _bucket.append(_t)
+            heading_only_lc.add(_t.lower())
+            name_alias_lc.add(_t.lower())                   # the column-aware heading test applies to it
+
     if not type_keywords:
         return None
 
@@ -1018,6 +1043,19 @@ def detect_document_type(ocr_text: str, patterns: dict,
                             _despaced = True                # Lever 1 — fuzzy-to-vocabulary garble recovery
                     if not _despaced:
                         continue
+                # TYPE_UNINSTALLED_HEADING_FOLD: a folded uninstalled NAME scores ONLY as a strict standalone
+                # heading in the TOP band — the leftmost column segment IS the phrase (heading-adjacent
+                # punctuation allowed, caption words not). Anything else on this line is skipped and the
+                # search continues (a body mention or a deep heading never scores; the loop's first-hit
+                # `break` below is therefore only reached by a qualifying heading).
+                _uninst_head = False
+                if kw.lower() in heading_only_lc:
+                    if not (i <= _HEADING_TOP_BAND_LINES or i / total <= _HEADING_TOP_BAND_FRAC):
+                        continue
+                    _seg0u = _COL_BREAK_RE.split(line.strip().lower())[0].strip()
+                    if not _segment_is_heading(_seg0u, kw.lower(), caption_ok=False):
+                        continue
+                    _uninst_head = True
                 # Headings near the top carry by far the strongest signal;
                 # weight decays smoothly with depth but never drops below 1 —
                 # nothing found later in the document is structurally ignored.
@@ -1046,6 +1084,8 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 _hl_line, _hl_phrase = line, (m.group(0) if m is not None else "")
                 if _addr_kw:
                     is_heading = False                      # Fix 1 — an address caption is never a title
+                elif _uninst_head:
+                    is_heading = True                       # TYPE_UNINSTALLED_HEADING_FOLD: proven above
                 elif _despaced:
                     is_heading = True                       # Seam B (Oracle): a letter-spacing
                     # recovery MUST force BOTH the strong 2.0 SCORE and the exposed head signal below;

@@ -415,6 +415,13 @@ function _reconcileEnv(db) {
       env.TYPE_HEADING_ANY_SEGMENT = '1';
       env.TYPE_TIE_HEADING_PREF = '1';
     }
+    // TYPE_UNINSTALLED_HEADING_FOLD (2026-09-05, log review Item 4b; herald → Oracle SIGN-OFF-W/COND; DARK,
+    //   mig 122): a shipped-but-UNINSTALLED type's bare name competes in the election as a STRICT top-band
+    //   standalone heading only (never a mention) — a legible "STATEMENT" beats a table-cell "Invoice" and the
+    //   doc reaches review UNTYPED + the "Add 'Statement'" nudge instead of MIS-typed. Env wins for arms.
+    if (env.TYPE_UNINSTALLED_HEADING_FOLD == null && learning.getSetting(db, 'type_uninstalled_heading_fold', 'false') === 'true') {
+      env.TYPE_UNINSTALLED_HEADING_FOLD = '1';
+    }
     // CORROBORATION STEP 3, slice 1 (gary → Oracle W/COND 2026-08-12 NIGHT): a crosscheck
     // disagreement note on a DATE is released when a crop-side ledger witness corroborates the
     // committed value (the "please verify" on a triple-verified date). Dates only; the dissent
