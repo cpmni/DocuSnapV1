@@ -9634,14 +9634,18 @@ class ExtractionEngine:
                 # and the band did not, so a document where 2.5a declines today for any other
                 # reason is completely unaffected.
                 _legacy = (ocr_text or "")[:600].lower()
-                if _legacy != ocr_top and self._supplier_hint_upgrade(None, hints, _legacy, _suppressed_norm):
+                _wh = (self._supplier_hint_upgrade(None, hints, _legacy, _suppressed_norm)
+                       if _legacy != ocr_top else None)
+                if _wh:
                     results["supplier_name"] = {
                         "value":           None,
                         "confidence":      0,
                         "method":          "issuer_band_withheld",
-                        "validation_note": "A known supplier's name appears on this page, but not in "
-                                           "the letterhead area, so it wasn't trusted as the issuer. "
-                                           "Please confirm who issued this document.",
+                        # Item 4(i) (log review 2026-09-05, Oracle: COPY only — the withheld gate is the C1
+                        # rescue for an implausible incumbent and stays): when the matched name is ALSO the
+                        # install's own confirmed customer_name (Castellan: the only known name on the page
+                        # was the owner's company in BILL TO), the note names the right actor.
+                        "validation_note": _withheld_issuer_note(_wh[0], hints),
                     }
                     supplier_name = None
                     self.log("  Stage 2.5: a known supplier name matched OUTSIDE the issuer band "
