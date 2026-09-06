@@ -571,7 +571,15 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                         _lclamp = _label_left_limit(_cloc, anchor, direction, val_type)
                     if _want_rgrow:
                         _rlim = _label_right_limit(field_key, _cloc, anchor, direction, val_type, validation_patterns)
-            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m, continuation=continuation, max_w_norm=anchor.get("max_w_norm"), left_limit_norm=_lclamp, right_limit_norm=_rlim)
+            # Item 2 slice B (2026-09-05, Oracle C4): the (P) caption clamp threaded to the RIGID rung for an
+            # AUTHORITATIVE + LABELLED + direction=below anchor — the located caption's bottom bounds the padded
+            # crop's TOP, never the value (_caption_top_limit clamps to min(caption bottom + gap, value top)), so
+            # a wrong locate can only trim pad headroom. The locate is the same page pass the authoritative
+            # verification below pays (line_cache hit). Rides RELOCATE_CAPTION_EXCLUDE; None when nothing is
+            # located / the caption is not cleanly above => byte-identical read.
+            _tlim_rigid = _rigid_caption_top_limit(page0, anchor, direction, (x_norm, y_norm, w_norm, h_norm),
+                                                   page_text_lines, line_cache, _plc)
+            crop_value = _crop_and_ocr(page0, x_norm, y_norm, w_norm, h_norm, val_type, capture=_cap, verify_fn=_verify, meta=_m, continuation=continuation, max_w_norm=anchor.get("max_w_norm"), left_limit_norm=_lclamp, right_limit_norm=_rlim, top_limit_norm=_tlim_rigid)
             # CAPTION-PREFIX STRIP (kill ANCHOR_CAPTION_PREFIX_STRIP, DEFAULT OFF => byte-identical).
             # A rigid crop can capture its own caption ("Date 22/07/2026", "No. DN-36457"), which then
             # fails the credibility / learned-format gate below (the correct value is DISCARDED) OR — on a
@@ -743,8 +751,10 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                         _drelo = _place_from_located(_dloc, direction, (x_norm, y_norm, _dw, _dh),
                                      offset=(anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")))
                         if _drelo:
-                            _drelo = _widen_relocated_crop(_drelo, val_type)
-                            _tl = _caption_top_limit(_dlb, direction, _drelo)   # (P) exclude the located caption band
+                            # (P') Item 2 slice B (2026-09-05, Oracle C4): the (P) clamp is computed on the
+                            # UN-widened box and THEN the box is widened — the widening pad used to eat the
+                            # caption gap (see _caption_clamp_and_widen; the drift rung has the twin).
+                            _drelo, _tl = _caption_clamp_and_widen(_dlb, direction, _drelo, val_type, field_key)
                             # Left clamp + right grow (C4): this rung's types (free-text/currency) are
                             # DISJOINT from _LEFT_CLAMP_TYPES / the ref-like|date right-grow scope today, so
                             # both helpers return None here — passed anyway so a future type-set widening
@@ -1013,6 +1023,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
             except Exception:
                 pass  # dev-only diagnostic; never disrupt extraction
 
+        _reg_lb = None   # Item 2 slice B: the LOCATED caption box (post-veto), mirrored at the registration rung
         if (not value or _is_weak_read(value, val_type)
                 or not _strict_credible(value, val_type, validation_patterns, ocr_conf=ocr_conf)) \
                 and page0 is not None and (anchor.get("anchor_label") or "").strip():
@@ -1043,6 +1054,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                     on_reject(field_key, "anchor_relocate",
                               (located or {}).get("matched_text"), "label_off_taught_position")
                 located = None
+            _reg_lb = (located or {}).get("label_box")
             if located:
                 # 1. INLINE HARVEST: in a key/value row the value shares the located
                 # label's OCR line ("label …gap… value") and sits in a far column the
@@ -1156,21 +1168,26 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                     if relo:
                         # Widen a touch (centre-preserved) so a value marginally
                         # wider than the tight taught box isn't sheared.
-                        relo = _widen_relocated_crop(relo, val_type)
-                        _rcap = ((lambda c: slice_capture(field_key, "anchor_relocate", 0,
-                                    relo, c, "target")) if slice_capture else None)
-                        _mr = {}
                         # (P) slice A: the drift rung's relocate crop was NEVER clamped — the
                         # exclusion was produced at exactly one call site (the label-lock rung).
                         # Same geometry, same failure: a padded below-anchor crop balloons up into
                         # the caption it was seated beneath. Rides RELOCATE_CAPTION_EXCLUDE.
-                        _rtl = _caption_top_limit(located.get("label_box"), direction, relo)
+                        # (P') Item 2 slice B (2026-09-05, Oracle C4): the clamp is computed on the
+                        # UN-widened box and THEN the box is widened — the 0.006 text pad used to eat
+                        # the caption gap (Oakhaven: an 11-px gap -> no clamp -> the crop read the
+                        # caption "CUSTOMER" itself). Same helper as the label-lock rung.
+                        relo, _rtl = _caption_clamp_and_widen(located.get("label_box"), direction, relo, val_type, field_key)
+                        _rcap = ((lambda c: slice_capture(field_key, "anchor_relocate", 0,
+                                    relo, c, "target")) if slice_capture else None)
+                        _mr = {}
+                        _rkw = dict(max_w_norm=anchor.get("max_w_norm"),
+                                    left_limit_norm=_label_left_limit(located, anchor, direction, val_type),
+                                    right_limit_norm=_label_right_limit(field_key, located, anchor, direction, val_type, validation_patterns))
                         rval = _crop_and_ocr(page0, relo[0], relo[1], relo[2], relo[3],
                                              val_type, capture=_rcap, verify_fn=_verify, meta=_mr,
-                                             continuation=continuation, top_limit_norm=_rtl,
-                                             max_w_norm=anchor.get("max_w_norm"),
-                                             left_limit_norm=_label_left_limit(located, anchor, direction, val_type),
-                                             right_limit_norm=_label_right_limit(field_key, located, anchor, direction, val_type, validation_patterns))
+                                             continuation=continuation, top_limit_norm=_rtl, **_rkw)
+                        _reorder_census_diff(page0, located.get("label_box"), direction, relo, val_type,
+                                             field_key, _rtl, rval, continuation, _rkw)
                         _xfield = bool(rval) and _name_field_code_reject(rval, field_key)
                         if rval and (_xfield or not _crop_is_credible(rval, val_type, validation_patterns, label)):
                             _rec = None if _xfield else _recover_clean_token(rval, val_type, validation_patterns, label)
@@ -1247,7 +1264,12 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
             _gcap = ((lambda c: slice_capture(field_key, "anchor_registration", 0,
                         (rcx, rcy, w_norm, h_norm), c, "target")) if slice_capture else None)
             _mg = {}
-            gval = _crop_and_ocr(page0, rcx, rcy, w_norm, h_norm, val_type, capture=_gcap, verify_fn=_verify, meta=_mg, continuation=continuation)
+            # Item 2 slice B (2026-09-05, Oracle C4): the (P) caption clamp + the (C) caption-band MIRROR at the
+            # registration rung — it had ZERO caption defences and wins Tier-A by fiat (engine.py). The located
+            # caption (the relocate's own locate, post-veto) bounds the mapped crop's top; None when nothing was
+            # located or the caption overlaps the mapped box => byte-identical read.
+            _rtl_reg = _caption_top_limit(_reg_lb, direction, (rcx, rcy, w_norm, h_norm)) if _reg_lb else None
+            gval = _crop_and_ocr(page0, rcx, rcy, w_norm, h_norm, val_type, capture=_gcap, verify_fn=_verify, meta=_mg, continuation=continuation, top_limit_norm=_rtl_reg)
             if gval and not _crop_is_credible(gval, val_type, validation_patterns, label):
                 _rec = _recover_clean_token(gval, val_type, validation_patterns, label)
                 if _rec and _should_replace(value, _rec, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
@@ -1271,6 +1293,21 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                 if not q and not _digit_free_on_digit_field(gval, field_key, format_lookup) \
                         and not _partial_of_uniform_shape(gval, field_key, format_lookup):
                     q = gval
+                # (C) COMPOSED CAPTION-BAND REJECT mirrored at the registration commit (Item 2 slice B): a
+                # garbled caption read from a mapped window that still overlaps the LOCATED caption band is
+                # the LABEL, not the value ("USTOMER" for CUSTOMER — the Oakhaven exhibit). Same rule, same
+                # kill switch (CAPTION_BAND_REJECT) as the relocate rung; fail-safe False without a located
+                # caption. Mirror without the clamp over-rejects; clamp without the mirror leaves this rung
+                # bare — they land together (Oracle S3). Pinned: tests/test_caption_clamp_threading.py.
+                if q and _reg_lb and _is_caption_band_read(q, anchor.get("anchor_label"), field_key,
+                                                           _reg_lb, (rcx, rcy, w_norm, h_norm), val_type,
+                                                           page0.size, _rtl_reg):
+                    if on_reject:
+                        on_reject(field_key, "anchor_registration", q, "caption_band_read")
+                    if not _relocate_guard_note:
+                        _relocate_guard_note = ("The value beside this document's own caption "
+                                                "was the caption itself — please verify.")
+                    q = None
                 if q and _should_replace(value, q, val_type, validation_patterns, inc_ocr_conf=ocr_conf):
                     value  = q
                     method = "anchor_registration"
@@ -1805,6 +1842,67 @@ def _caption_top_limit(label_box, direction, relo_box):
     if lb_bottom < val_top - 0.002:                 # caption genuinely above the value
         return min(lb_bottom + 0.002, val_top)      # just below the caption, never into the value
     return None
+
+
+def _caption_clamp_and_widen(label_box, direction, relo, val_type, field_key=None):
+    """Item 2 slice B (2026-09-05, gary + 007 -> Oracle C4). ONE road for both relocate rungs: the (P)
+    caption clamp is computed on the UN-widened relocate box, THEN the box is widened. Before, both
+    sites widened first — `_widen_relocated_crop` adds 0.006 of vertical pad on text, so any caption gap
+    under ~0.008 (the Oakhaven 11-px gap) turned the clamp OFF at exactly the geometry it exists for,
+    and the padded crop read the caption. The clamp is still `min(caption bottom + gap, value top)`, so
+    it can never clip the value; an abutting caption still yields None (test_caption_exclusion's pin).
+    Returns (widened_box, top_limit_norm). Census (VAL_CENSUS_DIR): the REORDER BAND — a clamp the old
+    order would have dropped — is recorded for the gate."""
+    rtl = _caption_top_limit(label_box, direction, relo)
+    widened = _widen_relocated_crop(relo, val_type)
+    if rtl is not None and os.environ.get("VAL_CENSUS_DIR"):
+        try:
+            if _caption_top_limit(label_box, direction, widened) is None:
+                _val_census("caption_clamp_reorder_band", val_type, f"{field_key}|clamp={rtl:.4f}", True)
+        except Exception:
+            pass
+    return widened, rtl
+
+
+def _reorder_census_diff(page0, label_box, direction, relo, val_type, field_key, rtl, new_val, continuation, kw):
+    """MEASUREMENT ONLY (Item 2 slice B gate: "the reorder band count, with value diffs"). When the census
+    is armed and this read sits in the REORDER BAND (clamped now, unclamped under the old order), re-read
+    the same widened box WITHOUT the clamp and record old vs new. Inert unless VAL_CENSUS_DIR; never
+    raises into an extraction."""
+    if not os.environ.get("VAL_CENSUS_DIR") or rtl is None or page0 is None:
+        return
+    try:
+        if _caption_top_limit(label_box, direction, relo) is not None:
+            return                                      # the old (widened) order clamped too: not the band
+        old = _crop_and_ocr(page0, relo[0], relo[1], relo[2], relo[3], val_type,
+                            continuation=continuation, **(kw or {}))
+        _val_census("caption_clamp_reorder_diff", val_type,
+                    f"{field_key}|clamp={rtl:.4f}|old={old!r}|new={new_val!r}",
+                    (old or "") != (new_val or ""))
+    except Exception:
+        pass
+
+
+def _rigid_caption_top_limit(page0, anchor, direction, vbox, page_text_lines, line_cache, pre_located=None):
+    """Item 2 slice B (Oracle C4): the (P) caption clamp for the RIGID crop of an AUTHORITATIVE + LABELLED
+    + direction=below anchor. Locates the taught caption on this page (the same line_cache pass the
+    authoritative verification pays later) and returns `_caption_top_limit(caption, 'below', vbox)`:
+    None unless the caption sits cleanly ABOVE the taught box — then the padded crop's top is bounded by
+    the caption bottom, never the value. Passive / label-less / non-below anchors and the
+    RELOCATE_CAPTION_EXCLUDE=0 kill switch => None (byte-identical). `vbox` = (cx, cy, w, h)."""
+    if direction != "below" or not anchor.get("last_authoritative_at"):
+        return None
+    lbl = (anchor.get("anchor_label") or "").strip()
+    if not lbl or os.environ.get("RELOCATE_CAPTION_EXCLUDE", "1") == "0" or page0 is None:
+        return None
+    try:
+        loc = pre_located if pre_located is not None else _locate_for_relocation(
+            page0, lbl, direction, vbox, page_text_lines, line_cache=line_cache)
+        if not loc:
+            return None
+        return _caption_top_limit(loc.get("label_box"), "below", vbox)
+    except Exception:
+        return None
 
 
 def _norm_box_dict(box, centre) -> dict | None:
