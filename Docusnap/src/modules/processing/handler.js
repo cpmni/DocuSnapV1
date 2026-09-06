@@ -1747,10 +1747,18 @@ function _healSampleAngles(db, allTemplates, logger) {
       // dev 'py -3.12' vs packaged vendor python). Spawning the function object throws
       // silently — the 2026-08-05 live-heal no-op bug. Call them like every other site.
       const exe = typeof _pyHelpers.pythonExe === 'function' ? _pyHelpers.pythonExe() : _pyHelpers.pythonExe;
-      const pargs = typeof _pyHelpers.pythonArgs === 'function' ? _pyHelpers.pythonArgs() : (_pyHelpers.pythonArgs || []);
-      const p = spawn(exe, [...pargs, script, '--file', file], { windowsHide: true });
-      let out = '';
+      // 2026-09-05 (log review 5b, eric → Oracle SIGN-OFF-W/COND): main.js pythonArgs(script, ...args) takes
+      // the SCRIPT as its first argument — calling it with NONE yielded ['-3.12', undefined], so every heal
+      // ran `py -3.12 undefined detect_angle.py` and exited 2 (templates 6/7 stayed NULL-angled; the
+      // (...a) => a stub in test_stage2_hardening masked it). Build argv the way every other spawn site
+      // does (templates/handler.js) and capture stderr into the warn. Pinned: test_angle_heal_argv.js.
+      const argv = typeof _pyHelpers.pythonArgs === 'function'
+        ? _pyHelpers.pythonArgs(script, '--file', file)
+        : [...(_pyHelpers.pythonArgs || []), script, '--file', file];
+      const p = spawn(exe, argv, { windowsHide: true });
+      let out = '', err = '';
       p.stdout.on('data', (d2) => { out += d2; });
+      p.stderr.on('data', (d2) => { err += d2; });
       p.on('close', (code) => {
         try {
           const r = JSON.parse(out.trim());
@@ -1759,10 +1767,10 @@ function _healSampleAngles(db, allTemplates, logger) {
               .run(r.angle, t.id);
             logger?.log?.(`[training] sample angle healed: template ${t.id} = ${r.angle.toFixed(2)} deg`);
           } else {
-            logger?.warn?.(`[training] angle heal (template ${t.id}): detector returned no angle (exit ${code}, out=${(out || '').trim().slice(0, 120)})`);
+            logger?.warn?.(`[training] angle heal (template ${t.id}): detector returned no angle (exit ${code}, out=${(out || '').trim().slice(0, 120)}${err ? ', stderr=' + err.trim().slice(0, 200) : ''})`);
           }
         } catch (ep) {
-          logger?.warn?.(`[training] angle heal (template ${t.id}): unparseable detector output (exit ${code}, out=${(out || '').trim().slice(0, 120)}): ${ep && ep.message}`);
+          logger?.warn?.(`[training] angle heal (template ${t.id}): unparseable detector output (exit ${code}, out=${(out || '').trim().slice(0, 120)}${err ? ', stderr=' + err.trim().slice(0, 200) : ''}): ${ep && ep.message}`);
         }
       });
       p.on('error', (e2) => { logger?.warn?.(`[training] angle-heal spawn failed (template ${t.id}): ${e2 && e2.message}`); });
