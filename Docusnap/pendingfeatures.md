@@ -4650,3 +4650,12 @@ e.g. `deskew_corrob_autofile`, `watch_separate_enabled`, `template_locate_role_q
 entries that remain (e.g. crosscheck-outlier, scope-sweep, the perfect-catch arc, template fine-tune) were
 KEPT because each still carries an open sub-part (a deferred slice / follow-up), which a header-level move
 would have lost. Those need a per-BULLET pass, not a per-section move — left for a deliberate session.
+## 2026-09-05 — log-review fix plan: DEFERRED slices (design `docs/designs/LOG_REVIEW_FIX_PLAN_2026-09-05.md`, Oracle 2026-09-05)
+- **Table-cell-as-trusted-heading** (Ironclad: a line-item column cell `Invoice` within the top 15 lines equals the phrase → `_line_is_heading_like` → 2.0 weight). The honest lever = a geometry check (the trusted phrase must be the TALLEST top-band cluster); `type_uninstalled_heading_fold` is a workaround for shipped names only. Needs its own census (the heading-absent class: the banner is DROPPED from page text on 105/416 docs).
+- **Letterhead banner re-join** (Castellan: the letter-spaced `Castellan Security Systems` is emitted as three column segments; the tallest SEGMENT `Security` wins → `letterhead_fragment_abstain`). Re-join same-row banner-height segments before gating — page-wide grouping, own census (the Silverbeck fragmentation class). Oracle SEND BACK.
+- **Withheld issuer must not block the letterhead SUGGESTION** (only the prefill). Must be shown additive-only (`suggested_supplier` engine.py ~11098-11213 never auto-adopts) before it ships. Oracle SEND BACK.
+- **Stage-0.5 mapper label at `_crop_is_credible`** (template_mapper.py:1244,1248 pass NO label → the exact bare-label check is off there). Own slice + pin after `anchor_bare_label_fuzzy`.
+- **`_RELOCATE_METHODS` / Guard B hygiene** — add `anchor_registration` (engine.py:1254, anchor.py:1382/:1428); INERT on the USTOMER exhibit (`dq<0.6` gate), so its own realdoc arm.
+- **Credit-note sign witness** — when credit-sign arm 1 fires, re-crop the currency box extended LEFT ~1.5 glyphs and attach `-` only if a lone `-` glyph is adjacent (type decides WHEN to look, the page decides the value; stays on the right side of validator.py:773). Oracle needed.
+- **Templates with NULL sample + NULL angle** (3/5/8/9): nothing can measure them and no road pins a sample later — the open owner decision (see the 2026-08 entry ~:1224). Log the skip for now.
+- **PI→P1 on the number itself** (Pelican 0023 `P1/26/6000`): check the Stage-2.5 trace for doc 471 before calling it a corrector gap (likely FORMAT_CLASS_JOIN class — mixed `P1`/`PI` confirms).
