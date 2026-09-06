@@ -21,7 +21,23 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-04 LATE (confusion-precedence 2a BUILT at a RELOCATED site + FORMAT_CLASS_JOIN + import
+## ⏭ LATEST — 2026-09-06 AFTERNOON (the 09-05 LOG-REVIEW FIX PLAN BUILT on auto, 11 commits): **READ
+`HANDOVER_2026-09-06.md` FIRST.** HEAD = `cc41c9f`, **13 local commits UNPUSHED**. Built in the Oracle's order, every
+slice pinned: 5a `templatesDir` ReferenceError (`dfc3cc4`, executing pin + lint) · Item 3 date patterns
+`(?<![A-Za-z0-9])` (`70bfe3a`, non-DARK, census = exactly the 2 Pelican `P1/26/…` windows) · 2A DARK
+`anchor_bare_label_fuzzy` (`c912c09`) · 2B clamp-before-widen + rigid/registration clamp + registration band
+mirror (`03be597`, rides `RELOCATE_CAPTION_EXCLUDE`/`CAPTION_BAND_REJECT`) · Item 1 DARK
+`anchor_labelless_currency_refuse` + engine note road (`ba454bf`), teach WARN (`c09c16c`), MONEY_SIGN_CAPTURE anchor
+twin (`799c212`, flip = owner) · 5b angle-heal argv (`8a26f6f`) · 4b DARK `type_uninstalled_heading_fold` (`25a0cfe`,
+re-detect census 20/20 Ironclad → Statement, 521 unchanged) · 4i copy (`cc41c9f`). **mig 122** seeds the three DARK
+arcs OFF. Harness gained `RR_CFG`/`RR_PY_ROOT` (frozen-snapshot arms). ⚠ **The live DB was RESET (541 docs, 453
+confirmed): the 605-corpus `rr_ids.txt` selects 15 → the DB harness is vacuous for that corpus; arms run on ALL
+453.** Findings: `clearAnchors` is document_type-blind (it deleted the Meadowvale label-less anchor on a typed
+correction); doc 471's confirmed date `26-01-6000` is poisoned GT. Owner actions + approvals (push, flips, presets
+tick, Meadowvale re-teach, Learning Repair) in the handover's "NEEDS YOUR APPROVAL". Arms (`old`, `b_only`,
+`arcs_on`, `mv_off`/`mv_on`) were running at wrap — read `TESTING/_measure/log_review_20260906/chain.log` and the
+handover ADDENDUM.
+## Prior — 2026-09-04 LATE (confusion-precedence 2a BUILT at a RELOCATED site + FORMAT_CLASS_JOIN + import
 messaging + leg-b/leg-a RELOCATED as SUGGESTIONS): **READ `HANDOVER_2026-09-04_LATE.md` FIRST (incl. ADDENDA 1+2).**
 HEAD = `f76e8d1` + docs; pushed through `fbf572a`. `f76e8d1` = RESOLVE_REF_NEAR_MISS/POSITIONAL moved to
 `engine._apply_ref_resolvers` (before 2a; the dead text-branch blocks deleted) as SUGGESTIONS (value unchanged,
