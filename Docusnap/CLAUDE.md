@@ -21,7 +21,17 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-07 AFTERNOON (the PLACEMENT ROOT CAUSE + the Oracle-ordered fix set + import speed + six owner UX
+## ⏭ LATEST — 2026-09-07 EVENING (placement root cause FIXED, five DARK arcs + speed + UX, TEST BUILD with everything
+ON): **READ `HANDOVER_2026-09-07.md` FIRST** (the cold-start summary; detail in `HANDOVER_2026-09-06.md` ADDENDUM 7 +
+UPDATE 1/2 and `docs/oracle_log.md` 2026-09-07). All PUSHED. Installer `ScanFinder Setup 2.0.0-r20260907-1503-7b75c73.exe` = HEAD with **mig 134**
+(TEST force-ON of 129-133) + 128 + the morning's 123/124/126. **Revert list before ANY customer build:
+108/110/112/114/116/118/123/124/126/128/134.** The one fact to carry: `templates.sample_deskew_angle` NULL was read as
+0.00° and the packaged build had compiled `detect_angle.py` away — every taught box on the install landed a glyph to the
+side; `13cfcf9` + `7c61317` (angle at commit + startup backfill) close it, this installer is the first to carry both.
+Owner: Learning Repair invoice docs #42/#25/#27/#40 (poisoned clipped dates), doc 99 `ws-55718`; read the 133 arm
+(`TESTING/_measure/clip_left_slack_20260907/diff_off_on.txt`) before it stays ON. Memory
+`project_placement_rootcause_20260907.md`.
+## Prior — 2026-09-07 AFTERNOON (the PLACEMENT ROOT CAUSE + the Oracle-ordered fix set + import speed + six owner UX
 slices, 15 commits): **READ `HANDOVER_2026-09-06.md` ADDENDUM 7 (+ its UPDATE) FIRST.** HEAD = see `git log`. **ROOT CAUSE
 of the owner's four exhibits (`5/03/2026`, `NS-39241`/the `WS-39241` shape-warn, `NS-85617`, the 4 silent invoice-date
 regressions on the fresh DB): the Stage-0.5 scan compose read a NULL `templates.sample_deskew_angle` as 0.00° (a HALF
