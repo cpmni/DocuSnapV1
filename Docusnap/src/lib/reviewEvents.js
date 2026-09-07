@@ -132,6 +132,13 @@ function create(deps = {}) {
       let latest = null;
       for (let i = state.events.length - 1; i >= 0; i--) {
         const e = state.events[i];
+        // Owner 2026-09-07 ("the notifications are fragmented per filed group but are all the same doc type
+        // and supplier — if consecutive batches are filed, add them to the previous filing"): the NEWEST event
+        // merges on the same key regardless of the burst gap — consecutive same-sender filings grow ONE chip.
+        // An intervening event of another key still starts a fresh chip (the gap rule below is unchanged
+        // for older events). The merge keeps started_at, bumps `at`/seen, and the undo covers every id
+        // (the sweep undo re-checks each row's status/confirmed_via, so a stale id is refused, not clobbered).
+        if (i === state.events.length - 1 && e.key === key && !e.put_back_at) { latest = e; break; }
         if ((t - Number(e.at || 0)) >= burstGapMs) break;
         if (e.key === key) { latest = e; break; }
       }
