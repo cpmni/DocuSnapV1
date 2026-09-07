@@ -25,7 +25,8 @@ touches that area — read the pointed-to doc BEFORE working in it:
 ON): **READ `HANDOVER_2026-09-07.md` FIRST** (the cold-start summary; detail in `HANDOVER_2026-09-06.md` ADDENDUM 7 +
 UPDATE 1/2 and `docs/oracle_log.md` 2026-09-07). All PUSHED. Installer `ScanFinder Setup 2.0.0-r20260907-1503-7b75c73.exe` = HEAD with **mig 134**
 (TEST force-ON of 129-133) + 128 + the morning's 123/124/126. **Revert list before ANY customer build:
-108/110/112/114/116/118/123/124/126/128/134.** The one fact to carry: `templates.sample_deskew_angle` NULL was read as
+108/110/112/114/116/118/123/124/126/128/134/136.** (mig 136 = TEST force-ON of the 2026-09-07-evening
+`inline_disagree_corrob_soften`.) The one fact to carry: `templates.sample_deskew_angle` NULL was read as
 0.00° and the packaged build had compiled `detect_angle.py` away — every taught box on the install landed a glyph to the
 side; `13cfcf9` + `7c61317` (angle at commit + startup backfill) close it, this installer is the first to carry both.
 Owner: Learning Repair invoice docs #42/#25/#27/#40 (poisoned clipped dates), doc 99 `ws-55718`; read the 133 arm

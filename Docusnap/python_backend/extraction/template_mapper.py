@@ -499,8 +499,23 @@ _CLIP_COMMIT_LEFT_SLACK_ON = os.environ.get('TEMPLATE_CLIP_COMMIT_LEFT_SLACK', '
 # matches every confirmed sibling (the owner's E2: "the format is literally identical"). Same cap, same review
 # bind, a truthful sentence naming both reads. Not a "confirm once" lane-hold note (same semantics as before).
 _INLINE_DISAGREE_HONEST_NOTE_ON = os.environ.get('INLINE_DISAGREE_HONEST_NOTE', '1') != '0'
-_INLINE_DISAGREE_NOTE = ("The taught box read '{rigid}' but the text beside its label reads '{inline}' — the box "
-                         "may be clipping the first character; please check which is printed.")
+# The MARK is the load-bearing discriminator (Oracle G2, 2026-09-07): `_pick_fuller_code`'s flag path and
+# the plain `_SHAPE_WARN_NOTE` share the SAME method (`template_mapping_shapewarn`), so only this phrase
+# separates the inline-disagree note from a plain shape-warn (and from the raw-witness note, which says
+# "one character differs", and the pad-date note, which says "clipping the first DIGIT"). Factored out so
+# the engine's class-G softener (INLINE_DISAGREE_CORROB_SOFTEN) keys on the exact same constant the note
+# is written with. Pinned both ways in tests/test_inline_disagree_corrob_soften.py.
+_INLINE_DISAGREE_MARK = "the box may be clipping the first character"
+_INLINE_DISAGREE_NOTE = ("The taught box read '{rigid}' but the text beside its label reads '{inline}' — "
+                         + _INLINE_DISAGREE_MARK + "; please check which is printed.")
+# The class-G REWORD (2026-09-07, Oracle G4): when an independent KEYWORD-family read on the SAME page
+# corroborates the committed inline value, the box-vs-inline disagreement is "box drifted, value has
+# support" — not value doubt. The reword re-aims the note at the REAL, reusable defect (re-teach the box)
+# and must NOT assert the value is correct (HYPOTHESIS b: a common-mode misread both families share) —
+# it keeps a mandatory value-check ("confirm once"; the doc stays review-bound regardless).
+_INLINE_DISAGREE_SOFTENED_NOTE = ("The taught box has drifted off the value — '{val}' was read beside its "
+                                  "label and has independent support on this page. Please re-teach the box "
+                                  "for this template, then confirm this one.")
 
 
 def _anchor_alnum_tail(anchor_text):

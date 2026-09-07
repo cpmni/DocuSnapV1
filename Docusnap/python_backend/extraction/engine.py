@@ -4044,7 +4044,14 @@ class ExtractionEngine:
         #   "please check/verify" doubt-note family — clear + LIFT to 90 iff >=2 distinct PAGE families
         #   agree with an un-noted witness AND the value passes the learned shape. See the F arm.
         F_on = os.environ.get("CORROB_VERIFICATION_DOUBT_CLEAR", "0") != "0"
-        if not (A_on or B_on or C_on or D_on or E_on or P_on or F_on):
+        # G INLINE_DISAGREE_CORROB_SOFTEN (2026-09-07, gary design → Oracle SIGN-OFF-W/COND G1-G7):
+        #   REWORD (never clear) the `_pick_fuller_code` inline-disagree value-doubt note when an
+        #   independent KEYWORD-family read corroborates the committed value — the real defect is a
+        #   drifted taught box, not the value. REVIEW-BOUND: the note is retained (reworded) so the doc
+        #   stays needs_review and NEVER auto-files; conf is NOT lifted (Oracle G1 — kept < 88). Uses the
+        #   `== '1'` idiom (Oracle G6: empty reads OFF), unlike the sibling `!= '0'` flags above.
+        G_on = os.environ.get("INLINE_DISAGREE_CORROB_SOFTEN", "0") == "1"
+        if not (A_on or B_on or C_on or D_on or E_on or P_on or F_on or G_on):
             return False                                   # OFF ⇒ byte-identical
         from extraction import validator as _v
         try:
@@ -4259,6 +4266,14 @@ class ExtractionEngine:
                 if self._try_verification_doubt_clear(key, data, rec, sup, slug, field_defs):
                     changed = True
                 continue
+
+            # ── G: reword (never clear) the inline-disagree box-clip note when KEYWORD corroborates ──
+            # Keyed on the MARK, not the method (shape-warn shares `template_mapping_shapewarn`); its own
+            # class, never folded into F's allowlist (Oracle G2). Stays review-bound; conf never lifted.
+            if G_on and template_mapper._INLINE_DISAGREE_MARK in note:
+                if self._try_inline_disagree_corrob_soften(key, data, rec, sup, slug, field_defs):
+                    changed = True
+                continue
         return changed
 
     def _try_verification_doubt_clear(self, key, data, rec, sup, slug, field_defs=None):
@@ -4401,6 +4416,111 @@ class ExtractionEngine:
                      f"{witness.get('method')} independently agrees (field {conf0}→{data['confidence']})")
             if self._trace:
                 self._t("corrob_note_resolve", field=key, cls="F", value=val,
+                        witness=str(witness.get("method")))
+            return True
+        except Exception:
+            return False   # a lane failure must never break extraction (fail toward Review)
+
+    def _try_inline_disagree_corrob_soften(self, key, data, rec, sup, slug, field_defs=None):
+        """Class G apply (gary design → Oracle SIGN-OFF-W/COND G1-G7, 2026-09-07). REWORD the
+        `_pick_fuller_code` inline-disagree box-clip note ("the box may be clipping the first character;
+        please check which is printed") when an independent KEYWORD-family read on the same page
+        corroborates the committed inline value. The value is NEVER edited; the note is REWORDED (not
+        cleared) to name the real defect (a drifted taught box) and keep a mandatory value-check; the
+        field stays REVIEW-BOUND and its confidence is NOT lifted. Fires iff ALL of:
+          (1) method == 'template_mapping_shapewarn' AND '_rawwitness' not in method — the mark keyed the
+              dispatch, this belts G off the raw-witness note (which shares the tail 'please check which
+              is printed' but is a two-reads-say-WRONG note, Oracle G2);
+          (2) not supplier_name / not a name-like field / not a money-currency field (mirror F);
+          (3) record _corrob_licensed AND >=2 distinct PAGE families agree, no dissent;
+          (4) an un-noted, conf>=80 KEYWORD-family ledger witness agrees (Oracle G3: keyword ONLY — a
+              crop witness is a second crop of the winner's overlapping region = common-mode, weak
+              independence; keyword-vs-mapping is the canonical independent pair);
+          (5) any corrected_to is vacuous (== value);
+          (6) SOFT shape belt (Oracle G3): if the scope has a learned entry, check_value must pass;
+              FAIL-OPEN when there is no entry (a ref is unique per doc — the two same-label reads are
+              the licence). NOT F's strict skeleton==1.0 rail — safe ONLY because G keeps conf < 88 and
+              retains the note (G5); a future dev restoring a conf lift MUST restore F's strict rail.
+        Apply: reword to _INLINE_DISAGREE_SOFTENED_NOTE, conf = min(conf0, 70) (Oracle G1 — never lifted,
+        always < 88 so the weak-critical-field floor stays a second guard), method
+        '+inline_disagree_corrob_soften', provenance recorded additively. The reworded text is still a
+        validation_note, so the recompute keeps needs_review True → the doc never auto-files."""
+        try:
+            from extraction.value_quality import is_name_like_field
+            val    = str(data.get("value") or "")
+            method = str(data.get("method") or "")
+            note   = str(data.get("validation_note") or "").strip()
+            if not val or key == "supplier_name" or is_name_like_field(key):
+                return False
+            # (1) exact method guard — belt against the raw-witness note (Oracle G2)
+            if method != "template_mapping_shapewarn" or "_rawwitness" in method:
+                return False
+            # (2) money/currency never (mirror F's Oracle-C2 exclusion — a drifted total box "agreed" by
+            #     a Total-regex reading the same wrong line is a common-mode role error)
+            if key == "total_amount" or key in (keyword.ROLE_KEY_ALIASES.get("total_amount") or ()):
+                return False
+            for fd in (field_defs or []):
+                if isinstance(fd, dict) and str(fd.get("key") or "") == key \
+                        and str(fd.get("type") or "").lower() in ("currency", "money", "amount"):
+                    return False
+            # (3) licensed record + >=2 distinct page families
+            if not isinstance(rec, dict) or not _corrob_licensed(rec):
+                return False
+            fams = set(rec.get("agree") or [])
+            win_family = str(rec.get("winner_family") or "")
+            if win_family:
+                fams.add(win_family)
+            if len(fams & _CORROB_PAGE_FAMILIES) < 2:
+                return False
+            # (4) an un-noted, confident KEYWORD-family ledger witness agrees (Oracle G3: keyword ONLY)
+            witness = None
+            for c in (self._field_candidates.get(key) or []):
+                b = _corrob_record_bucket(c.get("stage"), c.get("method"))
+                if not b or b[0] != "keyword":
+                    continue
+                if c.get("noted"):
+                    continue
+                try:
+                    if int(c.get("confidence") or 0) < 80:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                cv = c.get("value")
+                if cv in (None, "") or not _corrob_values_agree(cv, val):
+                    continue
+                witness = c
+                break
+            if witness is None:
+                return False
+            # (5) a pending alternative reading keeps the doubt open
+            ct = str(data.get("corrected_to") or "").strip()
+            if ct and ct != val:
+                return False
+            # (6) SOFT shape belt — pass check_value if an entry exists; FAIL-OPEN when none (G3)
+            fmt_entry = self.format_class_index.get(
+                (sup.lower().strip(), slug.lower().strip(), key)) if sup else None
+            if fmt_entry and format_anomaly_checker.check_value(val, fmt_entry) is not None:
+                return False
+            # apply — REWORD (never clear), conf NOT lifted (Oracle G1: min(conf0,70), always < 88)
+            try:
+                conf0 = int(data.get("confidence") or 0)
+            except (TypeError, ValueError):
+                conf0 = 0
+            data["validation_note"] = template_mapper._INLINE_DISAGREE_SOFTENED_NOTE.format(val=val)
+            data["confidence"] = min(conf0, 70)
+            data["method"] = method + "+inline_disagree_corrob_soften"
+            rec["inline_disagree_softened"] = {
+                "note":           note,
+                "witness_family": "keyword",
+                "witness_method": witness.get("method"),
+                "witness_value":  witness.get("value"),
+                "conf":           conf0,
+            }
+            self.log(f"  Corrob soften (G): {key} '{val}' — inline-disagree note reworded to a "
+                     f"teach-note ({witness.get('method')} keyword-agrees); stays review-bound, conf "
+                     f"{conf0}→{data['confidence']}")
+            if self._trace:
+                self._t("corrob_note_resolve", field=key, cls="G", value=val,
                         witness=str(witness.get("method")))
             return True
         except Exception:

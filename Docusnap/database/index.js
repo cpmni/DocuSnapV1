@@ -2950,6 +2950,32 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 134 (afternoon force-ON): ${e.message}`); }
   }
 
+  // ── migration 135: inline_disagree_corrob_soften seeded OFF (2026-09-07 evening, gary → Oracle
+  //    SIGN-OFF-W/COND G1-G7). Class G in engine._resolve_corroborated_notes REWORDS (never clears) the
+  //    `_pick_fuller_code` inline-disagree box-clip value-doubt note when an independent KEYWORD-family
+  //    read corroborates the committed value — the real defect is a drifted taught box, not the value.
+  //    REVIEW-BOUND: the note is retained (reworded), conf never lifted (< 88) → the doc never auto-files.
+  //    DARK; OFF ⇒ byte-identical. Flip gate = OFF==ON realdoc M=0 + per-field accuracy delta 0 + the
+  //    fire census (docs/oracle_log.md 2026-09-07). Full clear + auto-file is a DEFERRED slice 2.
+  if (!applied.has(135)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('inline_disagree_corrob_soften', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (135)').run();
+      console.log(`JS migration 135 applied: inline_disagree_corrob_soften (class G — reword the box-clip note on keyword corroboration) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 135 (inline_disagree_corrob_soften): ${e.message}`); }
+  }
+
+  // ── migration 136: TEST-BUILD force-ON of inline_disagree_corrob_soften (owner ships everything-ON test
+  //    builds). ⚠ TEST-ONLY / REVERSIBLE — add to the revert list before a customer build:
+  //    108/110/112/114/116/118/123/124/126/128/134 → +136. Separate mig (134 already applied → won't re-run).
+  if (!applied.has(136)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('inline_disagree_corrob_soften', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (136)').run();
+      console.log('JS migration 136 applied: TEST-BUILD force-ON of inline_disagree_corrob_soften (revert before customer build)');
+    } catch (e) { console.warn(`  migration 136 (inline_disagree_corrob_soften force-ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

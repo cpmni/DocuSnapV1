@@ -335,6 +335,10 @@ function _reconcileEnv(db) {
     // TEMPLATE_CLIP_COMMIT_LEFT_SLACK (2026-09-07): the leading-glyph mirror of the trailing edge slack — a taught
     // box cutting the FIRST character no longer flags the correct inline value with a false note. DARK (mig 133).
     if (learning.getSetting(db, 'template_clip_commit_left_slack', 'false') === 'true') env.TEMPLATE_CLIP_COMMIT_LEFT_SLACK = '1';
+    // INLINE_DISAGREE_CORROB_SOFTEN (2026-09-07, gary → Oracle SIGN-OFF-W/COND G1-G7): class G rewords the
+    // box-clip value-doubt note (never clears) when an independent KEYWORD read corroborates the value —
+    // review-bound, conf never lifted. DARK (mig 135; mig 136 = TEST force-ON). Env uses the '1' idiom.
+    if (learning.getSetting(db, 'inline_disagree_corrob_soften', 'false') === 'true') env.INLINE_DISAGREE_CORROB_SOFTEN = '1';
     // TEMPLATE_DATE_LEFT_CLIP_GROW (2026-09-07, Oracle C9-C11): the guard's H3 exemption narrowed for a 4-digit-year
     // date with a ONE-digit first component — a LEFT cut may grow (strict comparator). DARK (mig 131 seeds OFF).
     if (learning.getSetting(db, 'template_date_left_clip_grow', 'false') === 'true') env.TEMPLATE_DATE_LEFT_CLIP_GROW = '1';
