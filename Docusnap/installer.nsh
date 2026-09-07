@@ -16,7 +16,18 @@
     DetailPrint "Kept ${Dir} — it contains your documents folder"
     Goto done_${Uid}
   wipe_${Uid}:
+    ; NSIS RMDir /r SILENTLY LEAVES any locked file — and every parent folder above it. Electron/
+    ; Chromium keeps open handles (Cache, Network, GPUCache, the SQLite DB + WAL, processing.log) that
+    ; Windows releases asynchronously after the process dies, so a single attempt often leaves the whole
+    ; folder. Try, wait + retry if anything remains, then schedule the stubborn remnants for the next
+    ; reboot so the folder DOES eventually go rather than lingering forever.
     RMDir /r "${Dir}"
+    IfFileExists "${Dir}\*.*" 0 done_${Uid}
+    Sleep 1500
+    RMDir /r "${Dir}"
+    IfFileExists "${Dir}\*.*" 0 done_${Uid}
+    RMDir /r /REBOOTOK "${Dir}"
+    DetailPrint "Some ${Dir} files were still in use — they will be removed after the next restart."
   done_${Uid}:
 !macroend
 
@@ -66,6 +77,12 @@
   IfSilent keepData 0
   MessageBox MB_YESNO|MB_ICONEXCLAMATION|MB_DEFBUTTON2 "Also remove all ScanFinder data from this PC?$\r$\n$\r$\nThis permanently deletes the ScanFinder database, your settings and learned data, and any not-yet-filed documents still in the review queue.$\r$\n$\r$\nYour FILED documents in your output folder are NOT affected and stay on your PC.$\r$\n$\r$\nChoose No to keep everything for a future reinstall." IDYES removeData IDNO keepData
   removeData:
+    ; Belt: make sure the app AND its OCR/Python/Tesseract children are gone, and give Windows a
+    ; moment to release the file handles, BEFORE we delete (RMDir /r leaves anything still locked).
+    ; customUnInit already ran a taskkill, but a mid-run OCR child or a just-closed DB handle can
+    ; still hold the folder — re-kill + wait here where the wipe actually happens.
+    nsExec::Exec 'taskkill /F /T /IM ScanFinder.exe'
+    Sleep 1500
     !insertmacro SafeWipe "$APPDATA\ScanFinder"      a
     !insertmacro SafeWipe "$APPDATA\DocuSnap"         b
     !insertmacro SafeWipe "$LOCALAPPDATA\ScanFinder"  c
