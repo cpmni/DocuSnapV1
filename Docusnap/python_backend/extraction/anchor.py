@@ -1782,8 +1782,9 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
     # page-wide label locate; without sharing, each re-ran a full-page image_to_data
     # (~2s). One cache for this page collapses them to a single pass (see
     # template_mapper._locate_anchor). Especially hot when NO template matched and
-    # all fields fall here.
-    line_cache = {}
+    # all fields fall here. SHARED_LOCATE_CACHE (2026-09-07): the engine may hand in its per-document
+    # cache (already warm from Stage 0.5 + the landmark fit); None -> a private dict = today.
+    line_cache = line_cache if line_cache is not None else {}
 
     # ── Option C: evaluate anchors GROUPED BY field_key (2026-07-17) ──────────────────────
     # Fields are INDEPENDENT — every `results` access in the former per-anchor loop was the
@@ -1816,7 +1817,12 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                  and not force_serial and slice_capture is None
                  and len(_gvals) > 1)
     if _parallel:
-        os.environ['OMP_THREAD_LIMIT'] = '1'   # cap Tesseract OMP (1 = floor; LSTM is 1-core-bound)
+        # OMP INHERIT (Oracle 2026-09-07 C6 / S2): the pool NEVER LOWERS a cap the parent exported. The old
+        # unconditional '1' meant a single reprocess on a cap>=2 box read Stage 0-1 at the cap and Stage 2+
+        # at 1 while Reprocess-All shards read everything at the cap — the 'ACC-2291' vs 'ACC-229]'
+        # thread-count class (08-11) reintroduced by the pools. Only an ABSENT cap gets the '1' floor.
+        if not os.environ.get('OMP_THREAD_LIMIT'):
+            os.environ['OMP_THREAD_LIMIT'] = '1'   # floor when nothing was exported (LSTM is 1-core-bound)
         results.update(_eval_field_group(_gvals[0], *_ctx))   # warm shared line_cache entries
         _rest = _gvals[1:]
         try:

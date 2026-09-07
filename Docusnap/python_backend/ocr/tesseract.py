@@ -660,7 +660,8 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
     if os.environ.get('DS_OCR_PARALLEL_FULLPAGE', '0') != '0':
         try:
             import concurrent.futures as _cf
-            os.environ['OMP_THREAD_LIMIT'] = '1'   # floor; never raises a parent cap (1 is the min)
+            if not os.environ.get('OMP_THREAD_LIMIT'):          # OMP INHERIT (Oracle 2026-09-07 C6): never
+                os.environ['OMP_THREAD_LIMIT'] = '1'            # LOWER an exported cap; floor only when absent
             with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
                 _fm = _ex.submit(pytesseract.image_to_data, img, config=main_cfg, output_type=pytesseract.Output.DICT)
                 _fs = _ex.submit(pytesseract.image_to_data, img, config=supp_cfg, output_type=pytesseract.Output.DICT)
