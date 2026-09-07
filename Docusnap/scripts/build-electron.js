@@ -32,14 +32,16 @@ const hardenArgs = [path.join('scripts', 'harden-js.js')];
 if (process.env.HARDEN_JS_NOBYTECODE !== '1') hardenArgs.push('--bytecode');
 execFileSync(process.execPath, hardenArgs, { stdio: 'inherit', cwd: ROOT, env: process.env });
 
-// 2. Build with `files` remapped so src/ + database/ come from build_js/ (the bundled tree). Everything
-//    else in build.files (assets, package.json, the negations) is preserved. Uses the programmatic API so
-//    the array override merges cleanly (a CLI --config.files[…] override of an array is fragile).
-const builder = require('electron-builder');
-const pkg = require(path.join(ROOT, 'package.json'));
-const config = JSON.parse(JSON.stringify(pkg.build));   // deep clone; don't mutate the loaded module
-config.extraMetadata = Object.assign({}, config.extraMetadata, { buildRev: process.env.BUILD_REV });
-config.files = [
+// 2. Build with `files` remapped so src/ + database/ come from build_js/ (the bundled tree) — NOT the repo.
+//    The programmatic-config approach was WRONG: electron-builder still reads package.json's `build` field
+//    and MERGES it, so the repo's `src/**` + `database/**` shipped ALONGSIDE the bundle (the crown-jewel
+//    source landed in the asar next to main.jsc). The only deterministic override is package.json itself:
+//    swap build.files to the build_js remap for the CLI build, then restore the EXACT original bytes.
+const fs = require('fs');
+const pkgPath = path.join(ROOT, 'package.json');
+const origPkg = fs.readFileSync(pkgPath, 'utf8');
+const pkgObj = JSON.parse(origPkg);
+pkgObj.build.files = [
   { from: 'build_js/src', to: 'src', filter: ['**/*'] },
   { from: 'build_js/database', to: 'database', filter: ['**/*'] },
   'assets/**/*',
@@ -49,13 +51,12 @@ config.files = [
   '!**/__tests__/**',
   '!**/*.map',
 ];
-
-builder.build({
-  targets: builder.Platform.WINDOWS.createTarget('nsis', builder.Arch.x64),
-  config,
-}).then((res) => {
-  console.log('[build-electron] HARDENED build complete:', res.join(', '));
-}).catch((err) => {
-  console.error('[build-electron] build failed:', err && err.message || err);
-  process.exit(1);
-});
+fs.writeFileSync(pkgPath, JSON.stringify(pkgObj, null, 2) + '\n');
+try {
+  execFileSync('npx', ['electron-builder', '--win', '--x64',
+      '--config.extraMetadata.buildRev=' + process.env.BUILD_REV],
+    { stdio: 'inherit', cwd: ROOT, env: process.env, shell: true });
+  console.log('[build-electron] HARDENED build complete.');
+} finally {
+  fs.writeFileSync(pkgPath, origPkg);   // restore the exact original package.json regardless of outcome
+}
