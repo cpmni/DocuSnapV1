@@ -1645,6 +1645,13 @@
               </div>
               <label class="toggle"><input type="checkbox" id="parallel-reprocess-toggle"><span class="toggle-slider"></span></label>
             </div>
+            <div class="threshold-row">
+              <div>
+                <div class="threshold-label">Faster single-document import (uses more CPU cores)</div>
+                <div class="threshold-sub">When you import ONE document (for example from the Teach wizard), spreads its reads across several CPU cores. The result is identical either way &mdash; this only changes the speed. Batches of several documents already run in parallel and are unaffected. Off by default.</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="parallel-import-toggle"><span class="toggle-slider"></span></label>
+            </div>
           </div>
         </div>
       </div>

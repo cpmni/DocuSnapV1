@@ -138,5 +138,34 @@ console.log('\n§E CALL-SITE parity (CURRENT state) — the real threadCaps each
   check('manual conc==1 leaves OMP UNSET; watch sets it', !('OMP_THREAD_LIMIT' in m.env) && w.env.OMP_THREAD_LIMIT === String(watchThreadCap));
 }
 
+console.log('\n§F OCR_PARALLEL_IMPORT (Oracle 2026-09-07 C8): the per-document pools are a CALL-SITE asymmetry, never the builder');
+{
+  // The builder NEVER emits the pool pair for any arrival — manual or watch, setting on or off.
+  learning.setSetting(db, 'ocr_parallel_import_enabled', 'true');
+  learning.setSetting(db, 'processing_concurrency', '10');
+  const cap = H._reprocessThreadCap(db);
+  for (const arrival of ['manual', 'watch']) {
+    const b = H.buildWorkerCommand(db, { ...baseOpts, threadCap: cap, pyFolder: 'C:/X', filesFile: null, arrival });
+    check(`buildWorkerCommand(${arrival}) emits NO DS_OCR_* even with the setting ON`, !('DS_OCR_PARALLEL_FIELDS' in b.env) && !('DS_OCR_PARALLEL_FULLPAGE' in b.env));
+  }
+  // The pure call-site predicate: the pair ONLY for one file + an exported cap + setting ON + no trace.
+  const P = H.singleDocParallelEnv;
+  const on = { nFiles: 1, ompExported: true, settingOn: true, wantTrace: false };
+  check('manual one-file worker with an exported cap + setting ON carries the pair', JSON.stringify(P(on)) === JSON.stringify({ DS_OCR_PARALLEL_FULLPAGE: '1', DS_OCR_PARALLEL_FIELDS: '1' }));
+  check('cap NOT exported (concurrency 1 → uncapped) → refused', Object.keys(P({ ...on, ompExported: false })).length === 0);
+  check('two or more files → refused (a shard already parallelises across docs)', Object.keys(P({ ...on, nFiles: 2 })).length === 0 && Object.keys(P({ ...on, nFiles: 0 })).length === 0);
+  check('setting OFF → refused', Object.keys(P({ ...on, settingOn: false })).length === 0);
+  check('trace wanted → refused (pools disable under trace anyway)', Object.keys(P({ ...on, wantTrace: true })).length === 0);
+  // Negative control: watch has NO road to the pair — its handler never names the env keys.
+  const _fs = require('fs'), _path = require('path'), _REPO = _path.join(__dirname, '..');
+  const watchSrc = _fs.readFileSync(_path.join(_REPO, 'src', 'modules', 'watch', 'handler.js'), 'utf8');
+  check('watch/handler.js never names DS_OCR_* (no road to the pools)', !/DS_OCR_PARALLEL/.test(watchSrc));
+  const procSrc = _fs.readFileSync(_path.join(_REPO, 'src', 'modules', 'processing', 'handler.js'), 'utf8');
+  check('the manual call site composes the pair AFTER buildWorkerCommand from the BUILT env (ompExported = builtEnv.OMP_THREAD_LIMIT)',
+        /singleDocParallelEnv\(\{ nFiles: poolHint\.nFiles, ompExported: !!builtEnv\.OMP_THREAD_LIMIT, settingOn, wantTrace \}\)/.test(procSrc));
+  check('only the single-file import branch passes the hint', (procSrc.match(/runWorker\([^)]*\{ nFiles: allFiles\.length \}\)/g) || []).length === 1);
+  learning.setSetting(db, 'ocr_parallel_import_enabled', 'false');
+}
+
 console.log(fails ? `\nFAIL — ${fails} check(s) failed` : '\nPASS — all parity checks green');
 process.exit(fails ? 1 : 0);

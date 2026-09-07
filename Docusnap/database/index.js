@@ -2824,6 +2824,31 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 126 (one-confirm force-ON): ${e.message}`); }
   }
 
+  // ── migration 127: ocr_parallel_import_enabled seeded OFF (2026-09-07, oscar+gary → Oracle SIGN-OFF-W/COND
+  //    C5-C8). Arms the two per-document OCR pools on a ONE-FILE manual import (the teach wizard's road) — the
+  //    same pair the single reprocess has used since 07-17 — composed at the runWorker call site, only when the
+  //    worker exports an OMP cap (read-identical by the OMP-inherit fix). Its OWN key (C7: NOT in
+  //    ALL_ON_DEFAULTS_93 — the customer default stays OFF until the memory-pressure gate exists). ──
+  if (!applied.has(127)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('ocr_parallel_import_enabled', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (127)').run();
+      console.log(`JS migration 127 applied: ocr_parallel_import_enabled (per-document OCR pools on a one-file import) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 127 (ocr_parallel_import_enabled): ${e.message}`); }
+  }
+
+  // ── migration 128: TEST-BUILD force-ON of ocr_parallel_import_enabled (owner runs every switch ON; the
+  //    mig-123/124/126 pattern). ⚠ TEST-ONLY / REVERSIBLE: revert with 108/110/112/114/116/118/123/124/126
+  //    before ANY customer build. ──
+  if (!applied.has(128)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('ocr_parallel_import_enabled', 'true')
+                  ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (128)').run();
+      console.log('JS migration 128 applied: TEST-BUILD force-ON ocr_parallel_import_enabled (revert before customer build)');
+    } catch (e) { console.warn(`  migration 128 (parallel-import force-ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

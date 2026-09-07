@@ -994,6 +994,29 @@ function _reconcileEnv(db) {
 // frame change onto the UNATTENDED, AUTO-FILING watch path — fail-toward-silent-wrong-file, strictly
 // worse than the fenced-off import case. The correct posture here is ANTI-parity. (Deskew-on-watch, if
 // ever wanted, is its own owner-gated DARK arc.)
+// OCR_PARALLEL_IMPORT (2026-09-07, oscar+gary -> Oracle SIGN-OFF-W/COND C5-C8; owner: "when I open teach and
+// import a doc it takes a very long time"). The two in-process per-document OCR pools (DS_OCR_PARALLEL_FULLPAGE =
+// the PSM-3/PSM-6 page pair, DS_OCR_PARALLEL_FIELDS = the Stage-2 field-key groups) were armed ONLY by the
+// single-reprocess spawn; a ONE-FILE manual import (the teach wizard's road) ran every read serially on one core.
+// This PURE predicate decides the pair for a manual worker and is composed at the runWorker CALL SITE — never
+// inside buildWorkerCommand, which the watch path shares (Oracle 09-02: watch stays pool-free; unattended,
+// auto-filing, a slower unattended import is invisible). Arms ONLY when:
+//   nFiles === 1      — exactly one document in the worker (a shard of N already parallelises across docs;
+//                       nesting a per-doc pool would oversubscribe);
+//   ompExported       — the worker's env carries an OMP_THREAD_LIMIT (cap >= 1). The pools inherit it (the
+//                       09-07 OMP-inherit fix), so the read is thread-count-IDENTICAL to the un-pooled worker.
+//                       A cap-0 (uncapped, concurrency 1) worker is REFUSED: the pool would have to floor the
+//                       cap to 1 in-process = the boundary-glyph read change the owner watched live (08-11);
+//   settingOn         — `ocr_parallel_import_enabled` (seeded OFF, mig 127; its own key, NOT the reprocess one,
+//                       so the customer default can differ until the memory-pressure gate exists — C7);
+//   !wantTrace        — the dev inspector / diag logging force serial reads anyway (pools disable under trace).
+// Pinned: stress_test/import_watch_parity.js §F (the truth table; buildWorkerCommand never emits DS_OCR_*;
+// watch never carries them) + database/test_migration127_128_parallel_import.js.
+function singleDocParallelEnv({ nFiles = 0, ompExported = false, settingOn = false, wantTrace = false } = {}) {
+  if (nFiles !== 1 || !ompExported || !settingOn || wantTrace) return {};
+  return { DS_OCR_PARALLEL_FULLPAGE: '1', DS_OCR_PARALLEL_FIELDS: '1' };
+}
+
 function buildWorkerCommand(db, {
   pyFolder, tesseract, filesFile = null, mode,
   threadCap = 0, wantTrace = false, sliceDir = null,
@@ -2912,7 +2935,7 @@ function register(ctx) {
     // original single-process behaviour). suppressStart hides the worker's own
     // {type:'start'} so a pool can emit ONE aggregate total to the renderer
     // instead of N competing ones (the renderer keys its progress bar off it).
-    const runWorker = (filesFile, suppressStart, threadCap = 0) => new Promise((resolve) => {
+    const runWorker = (filesFile, suppressStart, threadCap = 0, poolHint = null) => new Promise((resolve) => {
       // Oracle C4: 'error' and 'close' are the only async resolve vectors, and a synchronous spawn
       // throw is mutually exclusive with both, so a single `settled` flag makes resolve idempotent.
       let settled = false;
@@ -2933,10 +2956,19 @@ function register(ctx) {
       let sliceDir = null;
       const wantTrace = traceWanted(diagOn);   // dev inspector open OR diagnostic logging on
       if (wantTrace) { try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); sliceDir = ctx.devSliceDir; } catch {} }
-      const { scriptArgs, env } = buildWorkerCommand(db, {
+      const { scriptArgs, env: builtEnv } = buildWorkerCommand(db, {
         pyFolder: folderPath, tesseract: tesseractPath(), filesFile, mode: procMode,
         threadCap, wantTrace, sliceDir, trainingArgs, arrival: 'manual',
       });
+      // OCR_PARALLEL_IMPORT: call-site composition (never in the shared builder). poolHint is set only by the
+      // single-file branch below; the predicate refuses unless the built env exports an OMP cap.
+      let env = builtEnv;
+      if (poolHint) {
+        let settingOn = false;
+        try { settingOn = learning.getSetting(db, 'ocr_parallel_import_enabled', 'false') === 'true'; } catch {}
+        const pool = singleDocParallelEnv({ nFiles: poolHint.nFiles, ompExported: !!builtEnv.OMP_THREAD_LIMIT, settingOn, wantTrace });
+        if (Object.keys(pool).length) { env = { ...builtEnv, ...pool }; logger?.log?.('[import] one-document worker: per-document OCR pools armed'); }
+      }
       let proc;
       try {
         proc = spawn(py, pythonArgs(backendScript(), ...scriptArgs),
@@ -3094,7 +3126,7 @@ function register(ctx) {
       if (allFiles.length <= 1) {
         // Nothing to parallelize — fall back to the single-worker path.
         logger?.log(`Batch start: folder="${folderPath}" mode=${procMode} concurrency=1 (only ${allFiles.length} file)`);
-        workerPromises = [runWorker(null, false, importThreadCap)];
+        workerPromises = [runWorker(null, false, importThreadCap, { nFiles: allFiles.length })];   // OCR_PARALLEL_IMPORT hint
       } else {
         batchTotal = allFiles.length;
         const shards = partitionRoundRobin(allFiles, Math.min(concurrency, allFiles.length));
@@ -6661,6 +6693,7 @@ module.exports = {
   register,
   // 2026-08-31 batch-import crash fix — pure cap-math + resilience hooks (test_import_concurrency_cap.js).
   maxConcurrency, defaultConcurrency, ramConcurrencyCap, _effectiveWorkers, _reprocessThreadCap,
+  singleDocParallelEnv,   // OCR_PARALLEL_IMPORT (2026-09-07): the pure call-site predicate (test_import_parallel_env.js)
   PER_WORKER_BUDGET_BYTES,
   recordReviewEvent,   // B1: the activity ledger's one writer (reviewService's class-fix door reaches it through review/handler)
   getReviewEvent,      // batch-audit grid: resolve an event's authoritative id set from review/handler

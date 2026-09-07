@@ -1085,7 +1085,7 @@ const DEV_SWITCH_IDS = [
   'teach-label-keyword-toggle', 'reprocess-autocommit-toggle', 'auto-title-toggle', 'tpl-ocr-auto-toggle',
   'right-grow-toggle', 'left-clamp-toggle', 'prefix-garble-toggle', 'crosscheck-reconcile-toggle',
   'universal-verify-toggle', 'edge-clean-toggle', 'word-snap-toggle', 'struct-code-read-toggle',
-  'warm-ocr-toggle', 'parallel-reprocess-toggle',
+  'warm-ocr-toggle', 'parallel-reprocess-toggle', 'parallel-import-toggle',   // parallel-import: OCR_PARALLEL_IMPORT (2026-09-07), the reprocess pools' one-file-import twin
   'template-fixed-supplier-toggle', 'pad-window-code-toggle', 'vat-reg-toggle',
   'frag-clean-toggle', 'clip-commit-toggle', 'edge-guard-toggle', 'date-clip-toggle',
   'label-digit-toggle', 'angle-compose-toggle', 'edge-cut-relocate-toggle', 'clip-slack-toggle',
@@ -1230,6 +1230,16 @@ document.getElementById('warm-ocr-toggle').addEventListener('change', async (e) 
 })();
 document.getElementById('parallel-reprocess-toggle').addEventListener('change', async (e) => {
   await api.setSetting('ocr_parallel_reprocess_enabled', e.target.checked ? 'true' : 'false');
+});
+// ── Faster single-document IMPORT (OCR_PARALLEL_IMPORT, 2026-09-07; its own key, default OFF) ──
+(async () => {
+  try {
+    const v = await api.getSetting('ocr_parallel_import_enabled');
+    document.getElementById('parallel-import-toggle').checked = (v === 'true');
+  } catch { document.getElementById('parallel-import-toggle').checked = false; }
+})();
+document.getElementById('parallel-import-toggle').addEventListener('change', async (e) => {
+  await api.setSetting('ocr_parallel_import_enabled', e.target.checked ? 'true' : 'false');
 });
 
 // ── Home dashboard cards (show/hide) ───────────────────────────────────────────
