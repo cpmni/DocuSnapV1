@@ -131,7 +131,28 @@ function pythonExe() {
 }
 
 function pythonArgs(script, ...args) {
-  return app.isPackaged ? [script, ...args] : ['-3.12', script, ...args];
+  // SOURCE PROTECTION (2026-09-07, Build 1 — Oracle SIGN-OFF-W/COND): the packaged build ships every
+  // python_backend module — including the JS-spawned entry scripts — as SOURCELESS .pyc (see
+  // scripts/compile-python-bytecode.js, KEEP_SOURCE=∅). So in a packaged build we must spawn the .pyc,
+  // not the .py that no longer exists on disk. This is the ONE choke point every Python spawn routes
+  // through (grep-verified: every spawn is spawn(pythonExe(), pythonArgs(script,…))), so the swap here
+  // covers the resourcePath sites AND the path.dirname(backendScript()) siblings (segment/split/slip/
+  // rotate) that the per-site edits would miss. Dev (py -3.12 script.py against the source tree) is
+  // untouched — the .pyc only exist in the staged build. Verified: python.exe X.pyc runs as __main__
+  // with __file__=the .pyc path, so the entries' sys.path.insert(Path(__file__).parent) still resolves.
+  // Kill switch: SHIP_PY_SOURCE=1 stages verbatim source (no .pyc). So the swap prefers the .pyc ONLY
+  // when it actually exists on disk and falls back to the .py otherwise — self-correcting for both a
+  // normal build (.pyc present) and a SHIP_PY_SOURCE build (.py present, .pyc absent). Pinned:
+  // scripts/test_compile_python_keep.js.
+  if (app.isPackaged) {
+    let spawnScript = script;
+    if (typeof script === 'string' && script.endsWith('.py') && script.includes('python_backend')) {
+      const compiled = script + 'c';   // …/python_backend/foo.py -> …/python_backend/foo.pyc
+      if (fs.existsSync(compiled)) spawnScript = compiled;
+    }
+    return [spawnScript, ...args];
+  }
+  return ['-3.12', script, ...args];
 }
 
 function tesseractPath() {

@@ -35,19 +35,16 @@ const VENDOR_PY = path.join(ROOT, 'vendor', 'python', 'python.exe');
 // Never staged (mirrors the old extraResources filter + dev debris).
 const EXCLUDE_DIRS = new Set(['__pycache__', 'tests', 'test_harness', 'artifacts']);
 
-// JS-spawned entry scripts — MUST remain .py at these exact relative paths (spawn contract).
-const KEEP_SOURCE = new Set([
-  'process_docs.py', 'render_pages.py', 'ocr_region.py', 'pdf_splitter.py', 'pdf_rotate.py',
-  'segment_docs.py', 'filing_slips.py', 'template_fingerprint.py', 'test_mapping.py',
-  'ocr/region.py', 'ocr/region_worker.py', 'ocr/landmarks.py',
-  // 2026-09-07 (owner's packaged log): the TEACH_ANGLE_COMPOSE sample-angle heal spawns ocr/detect_angle.py by
-  // path (processing/handler.js _healSampleAngles); it was compiled away → "python.exe: can't open file …
-  // detect_angle.py" exit 2 on every packaged install (the 5b fix corrected the argv, not the missing file).
-  // Pinned by scripts/test_compile_python_keep.js: every .py the JS spawns by path is in this set.
-  'ocr/detect_angle.py',
-  'render/pages.py', 'render/preview_enhance.py',
-  'logo/fingerprint.py',
-].map(p => p.replace(/\//g, path.sep)));
+// SOURCE PROTECTION (2026-09-07, Build 1 — Oracle SIGN-OFF-W/COND): KEEP_SOURCE is now EMPTY — the
+// packaged build strips EVERY .py and ships only sourceless .pyc, so no readable Python source lands in
+// Program Files (the owner's literal complaint). The JS-spawned entry scripts used to stay .py because
+// they were launched as `python.exe <path>.py`; main.js pythonArgs() now swaps .py -> .pyc when packaged
+// (the ONE choke point every spawn routes through), and CPython runs `python.exe X.pyc` as __main__ with
+// __file__ = the .pyc path, so the entries' sys.path.insert(Path(__file__).parent) + `from ocr.x import`
+// still resolve (smoked on vendor/python, sourceless). To restore the old readable-entry behaviour, the
+// SHIP_PY_SOURCE=1 kill switch stages verbatim source (pythonArgs then falls back to the .py that exists).
+// Pinned: scripts/test_compile_python_keep.js (the swap + no crown-jewel .py) + scripts/test_no_shipped_py_source.js.
+const KEEP_SOURCE = new Set();
 
 function copyTree(src, dst) {
   fs.mkdirSync(dst, { recursive: true });
@@ -88,7 +85,7 @@ function main() {
   // -b = legacy adjacent layout (module.pyc beside module.py) => sourceless import after .py removal.
   execFileSync(VENDOR_PY, ['-m', 'compileall', '-b', '-q', OUT], { stdio: 'inherit' });
 
-  // Remove source for everything EXCEPT the spawn-contract entry scripts.
+  // Remove source for EVERY module (KEEP_SOURCE is empty) — each keeps its adjacent .pyc.
   let compiled = 0, kept = 0;
   for (const f of [...walk(OUT)]) {
     if (!f.endsWith('.py')) continue;
@@ -102,22 +99,22 @@ function main() {
     fs.rmSync(f);
     compiled++;
   }
-  // compileall -b also compiled the kept entries (harmless adjacent .pyc; python.exe entry.py
-  // ignores it because the .py timestamp governs nothing in -b mode) — drop those to avoid staleness.
-  for (const rel of KEEP_SOURCE) {
-    const pyc = path.join(OUT, rel) + 'c';
-    fs.rmSync(pyc, { force: true });
-  }
   // Belt: no __pycache__ dirs in the staged tree.
   for (const f of [...walk(OUT)]) {
     if (f.includes('__pycache__')) fs.rmSync(f, { force: true });
   }
 
-  // Sanity gate: the crown jewels must be sourceless; the entries must exist as source.
+  // Sanity gate 1: the crown jewels + the JS-spawned entries must ALL exist as sourceless .pyc.
+  // (SPAWN_ENTRIES = the paths main.js pythonArgs swaps to .pyc; the gate proves they compiled and
+  // shipped. Kept in sync with the JS-side lint scripts/test_compile_python_keep.js.)
   const mustBeGone = ['extraction/engine.py', 'extraction/anchor.py', 'extraction/template_matcher.py',
-                      'ocr/tesseract.py', 'logo_detail.py', 'logo_hash.py']
-    .map(p => p.replace(/\//g, path.sep));
-  for (const rel of mustBeGone) {
+                      'ocr/tesseract.py', 'logo_detail.py', 'logo_hash.py'];
+  const SPAWN_ENTRIES = ['process_docs.py', 'render_pages.py', 'ocr_region.py', 'pdf_splitter.py',
+                      'pdf_rotate.py', 'segment_docs.py', 'filing_slips.py', 'template_fingerprint.py',
+                      'test_mapping.py', 'ocr/region.py', 'ocr/region_worker.py', 'ocr/landmarks.py',
+                      'ocr/detect_angle.py', 'render/pages.py', 'render/preview_enhance.py',
+                      'logo/fingerprint.py'];
+  for (const rel of [...mustBeGone, ...SPAWN_ENTRIES].map(p => p.replace(/\//g, path.sep))) {
     if (fs.existsSync(path.join(OUT, rel))) {
       console.error(`[compile-python-bytecode] ${rel} still present as SOURCE — gate failed.`);
       process.exit(1);
@@ -127,13 +124,15 @@ function main() {
       process.exit(1);
     }
   }
-  for (const rel of KEEP_SOURCE) {
-    if (!fs.existsSync(path.join(OUT, rel))) {
-      console.error(`[compile-python-bytecode] entry ${rel} missing from stage — gate failed.`);
-      process.exit(1);
-    }
+
+  // Sanity gate 2: NO readable .py may remain anywhere in the staged tree (the owner's complaint).
+  const leftover = [...walk(OUT)].filter(f => f.endsWith('.py')).map(f => path.relative(OUT, f));
+  if (leftover.length) {
+    console.error(`[compile-python-bytecode] ${leftover.length} .py still present after strip — gate failed:`);
+    leftover.slice(0, 20).forEach(r => console.error(`    ${r}`));
+    process.exit(1);
   }
-  console.log(`[compile-python-bytecode] staged build_python: ${compiled} modules sourceless, ${kept} spawn entries kept as .py`);
+  console.log(`[compile-python-bytecode] staged build_python: ${compiled} modules sourceless, 0 readable .py remain`);
 }
 
 main();

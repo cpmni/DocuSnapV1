@@ -2676,3 +2676,32 @@ PREMISE (verified): `engine.py` reads a NULL `sample_deskew_angle` as 0.0 and co
 ORDER: `13cfcf9` in the installer → P1(a) switchless (C1 payload angle+measured, write page 0 only when measured · C2 guarded IS NULL, async fallback kept · C3 re-teach frame mix WARN + per-mapping teach_angle to pendingfeatures · C4 startup backfill mirroring the landmark one · C5 confirm why the dev templates were NULL — resolved: the "dev" DB IS the installed app's) → P1(b) DARK `TEACH_ANGLE_COMPOSE_NULL_ABSTAIN` (C6 skip landmarks too + own log line · C7 pins incl. the 10-sibling geometry pin that FAILS on the NULL→0 path · C8 arms old/abstain/healed + registration counts) → P4 DARK `reread_hold_corrob_release` (C13 `_corrobLicensedKeyword` in trust.js as the JS twin of `_corrob_licensed_keyword`, consumer-side tightening · C14 release only if the OLD record was not itself licensed · C15 NULL corrected_to only when it equals the S3-C5 baseline · C16 T1/T2/T4 + the E1 replay pin (B alone inert) · C17 the eligibility-delta census) → P2 DARK `template_date_left_clip_grow` (C9 1-digit FIRST component, region-agnostic; right-only keeps H3; digit-suffix comparator · C10 pins incl. the [8,10) px dead band as an accepted NO-FIRE · C11 fire census) → P3 DARK (C12 flag only, corrected_to parses, containment/legit/abstain pins). P2/P3 remain warranted after P1: paper placement scatters a value's left edge ~57 px across 10 siblings (full compose still 10/90 cuts) — and the deeper lever is the wizard's 3 px snap pad (follow-up, own census).
 P5 SEND BACK: a `template_fixed` identity is a matcher-conditioned MEMORY stamp with ONE page family, not a fact; cosmetic on E3 (the customer "(empty) → Willowbrook" note ALSO holds the doc). The real E3 lever is upstream: a 2-token name has zero slip tolerance under the ≥60% whole-word floor of `identity_present_on_page`, so one glyph slip on the raw pass throws the frozen identity away and forces the straighten retry — a slip-tolerant token match INSIDE that predicate (edit-distance ≤1 on tokens ≥6 chars) is its own round with a cross-supplier collision census. P6 WRONG LAYER as framed: case-only folding belongs as a CASE-ONLY leg in the prefix-confusable adopt lane (unanimous confirmed prefix ≥5 docs/≥0.9 share + the page-witness rule) + a case-aware prefix outlier in Learning Repair.
 BUILT: `7c61317` P1(a) · `e296310` P1(b) mig 129 · `90d62ad` P4 mig 130 (C17 census: the fresh copy carries 0 S3-C5 rows; the warm 09-06 copy: 4 rows, 1 would release, eligibility delta 0) · `14074e8` P2 mig 131 · `3ef9ec4` P3 mig 132. ARMS (147-doc copy): old = 5 regressions (4 silent first-digit invoice dates #42/#25/#27/#40 + #56 year garble); abstain = 6 (the same 4 + #58 PO `15→05` flagged + #80 SO `24→04` SILENT; #56 gone) — abstain alone is NOT a flip candidate; healed arm + the P2 OFF/ON arms in `TESTING/_measure/{null_abstain,date_left_clip}_20260907/`.
+
+## 2026-09-07 (evening) — Source-protection packaging (eric+gary consensus) — SIGN OFF W/CONDITIONS
+VERDICT: SIGN OFF W/ CONDITIONS. Three separate builds, smoked independently.
+Order: gary .pyc-spawn FIRST/alone → eric esbuild-no-bytecode → bytenode. DO NOTHING on config
+encryption; DEFER Cython.
+Premise: fuses live+correct (pkg.json:19-25); worker_threads=none (repo-verified); bytenode passes
+check-licenses (MIT, walked via dependencies). Reward is IP-obfuscation not security (licensing moat is
+crypto — reading trust.js/licensing.js forges nothing).
+Named seam is SAFE: resourcePath/backendScript/configPath use process.resourcesPath in packaged mode
+(main.js:121-148), not __dirname; keyword_patterns.json resolved by DIRECTORY in Python (keyword.py:72),
+unaffected by .py→.pyc; freeze_guard/trust already isPackaged-guard config. .pyc-spawn as __main__ SMOKED
+by parent (vendor/python, sourceless): __name__=__main__, __file__=.pyc path, from ocr.x import resolves.
+REAL seam (missed by both specialists, parent-verified at source): database/index.js:72 raw __dirname +
+dynamic readdirSync('migrations') → if esbuild INLINES index.js into the src/main.js bundle, __dirname →
+app.asar/src → reads app.asar/src/migrations → boot death. Also charsetAcceptService.js:28 raw
+require(__dirname/../../config/keyword_patterns.json) with NO isPackaged guard (likely ALREADY a latent
+packaged no-op — points inside the asar where config does not ship) — give it the _configDir guard before
+bundling.
+Missed cases: the four dirname(backendScript()) siblings (segment_docs:2724, pdf_splitter:2725/5845,
+filing_slips:5772, pdf_rotate:6151) are invisible to test_compile_python_keep.js's regex AND absent from
+compile-python-bytecode.js mustBeGone — under KEEP_SOURCE=∅ a stripped sibling fails open per-feature
+(the detect_angle.py regression repeating). esbuild must keep node_modules external (argon2/better-sqlite3
+are .node); bytenode = permanent Electron/V8-parity release coupling (fail-closed).
+Gate: source pin suites green + inverted keep-pin covering siblings/.pyc + packaged smoke on vendor/python
+(boot+DB open, M=0 realdoc parity, exercise split/segment/rotate/slip/region/detect_angle/thumb,
+asar-extract+grep opacity {isAutoFileEligible,TRUSTED_FLOOR,_corrobLicensed}=none + no crown-jewel .py under
+resources, processing.log file:line legibility). WOULD NOT: ship the 3 rungs in one build; bundle database/**
+without anchoring index.js migrations off __dirname; bytecode without a buildRev→sourcemap archive gated as a
+release artifact; encrypt/move keyword_patterns.json; start Cython here.
