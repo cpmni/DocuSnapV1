@@ -99,7 +99,8 @@
       "!**/*.map"
     ],
     "asarUnpack": [
-      "**/*.node"
+      "**/*.node",
+      "assets/icon.ico"
     ],
     "directories": {
       "output": "dist",
