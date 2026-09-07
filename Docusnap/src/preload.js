@@ -179,6 +179,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   pickOutputFolder:   ()     => ipcRenderer.invoke('pick-output-folder'),
   processFolder:      (f, opts) => ipcRenderer.invoke('process-folder', f, opts),
   stagePdfForTeach:   ()     => ipcRenderer.invoke('stage-pdf-for-teach'),
+  getStagedTeachThumbnail: (folder, filename) => ipcRenderer.invoke('get-staged-teach-thumbnail', folder, filename),
   stopProcessing:     ()     => ipcRenderer.invoke('stop-processing'),
   onProgress:         (cb)   => ipcRenderer.on('process-progress', (_e, m) => cb(m)),
   removeProgress:     ()     => ipcRenderer.removeAllListeners('process-progress'),

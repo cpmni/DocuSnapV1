@@ -173,6 +173,27 @@ async function renderDocPicker(){
   }
 }
 
+// A provisional picker card for a PDF that is still being read (owner 2026-09-07): the file name, a
+// "Reading…" line and the page-1 thumbnail of the STAGED copy (get-staged-teach-thumbnail — temp-root
+// only). Returns { remove() }. Never throws; a missing grid or thumbnail leaves a plain card / no card.
+function _showProvisionalCard(staged){
+  const grid=$('doc-picker'); if(!grid) return { remove(){} };
+  const c=document.createElement('div'); c.className='card sel'; c.dataset.provisional='1';
+  c.innerHTML=`<div class="ic"><span class="ic-emoji">📄</span><img class="ic-thumb" alt=""></div>`+
+    `<div class="nm" style="font-size:13px;word-break:break-all">${esc(staged.filename||'')}</div>`+
+    `<div class="muted" style="font-size:12px">Reading the document…</div>`;
+  $('doc-picker-empty')?.classList.add('hidden');
+  grid.prepend(c);
+  (async()=>{
+    try{
+      const src = D.getStagedTeachThumbnail ? await D.getStagedTeachThumbnail(staged.folder, staged.filename) : null;
+      const img=c.querySelector('.ic-thumb');
+      if (src && img && c.isConnected){ img.src=src; img.classList.add('loaded'); c.querySelector('.ic-emoji')?.classList.add('hidden'); }
+    }catch{}
+  })();
+  return { remove(){ try{ c.remove(); }catch{} } };
+}
+
 // Import a single PDF to teach (esp. when the queue is empty): stage it in a temp folder,
 // run the normal import path, then pick the new doc from the refreshed queue.
 $('btn-import-teach')?.addEventListener('click', async () => {
@@ -186,18 +207,24 @@ $('btn-import-teach')?.addEventListener('click', async () => {
   if (st) st.textContent = 'Reading the document…';
   const bar = $('teach-import-progress');
   if (bar) bar.classList.add('active');
+  // Owner 2026-09-07: show the picked document AT ONCE — a provisional card with its page-1 thumbnail
+  // rendered from the staged copy — so the wizard is not blank for the whole read. renderDocPicker()
+  // rebuilds the grid when the read completes (the real card replaces it); an error removes it.
+  const _prov = _showProvisionalCard(staged);
   // Progress subscription (eric): remove-before-add so a 2nd import in the same session can't
   // double-register; window-scoped ipcRenderer, so removeAllListeners clears only this window's.
   D.removeProgress && D.removeProgress();
   D.onProgress && D.onProgress(teachProgress);
   try {
     await D.processFolder(staged.folder, { autoFile: false });  // same import path, but DON'T auto-file (keep it in Review to teach)
+    _prov.remove();
     state.docs = await D.getReviewQueue() || [];
     const match = state.docs.filter(d => d.original_filename === staged.filename).sort((a, b) => b.id - a.id)[0];
     if (match) { state.doc = match; _prefetchTeachPage(); }   // read done -> start the page render in the background
     await renderDocPicker(); renderFooter();
     if (st) st.textContent = match ? 'Imported — selected below.' : 'Imported. Pick it below.';
   } catch (e) {
+    _prov.remove();
     if (st) st.textContent = 'Import failed: ' + (e.message || 'unknown error');
   } finally {
     D.removeProgress && D.removeProgress();

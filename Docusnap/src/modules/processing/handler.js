@@ -2486,6 +2486,31 @@ function register(ctx) {
   // Output folder is an app-wide filing-destination setting — "access all
   // settings" is the Admin-exclusive line drawn for Settings, and this picker
   // only ever appears inside that Admin-gated window.
+  // Owner 2026-09-07 ("when I open teach and import a doc, it takes a very long time for it to finish and the
+  // thumbnail to appear"): the picked PDF's page-1 thumbnail is rendered from the STAGED copy the moment it
+  // is picked, so the wizard shows the document while the read runs (the read itself is unchanged). The
+  // folder is accepted ONLY when it is the app's own `sf-teach-*` staging dir under the OS temp root and the
+  // filename is a bare basename — a renderer can never point this at an arbitrary file.
+  ipcMain.handle('get-staged-teach-thumbnail', async (_e, folder, filename) => {
+    requireRole('admin', 'edit');
+    try {
+      const tmpRoot = path.resolve(os.tmpdir());
+      const dir = path.resolve(String(folder || ''));
+      const base = path.basename(String(filename || ''));
+      if (!base || base !== filename) return null;
+      if (path.dirname(dir) !== tmpRoot || !path.basename(dir).startsWith('sf-teach-')) return null;
+      if (!fs.existsSync(path.join(dir, base))) return null;
+      const previewService = require('../../services/previewService');
+      return await previewService.getThumbnail(getDb(), { docId: null, folderPath: dir, filename: base }, {
+        fs, path, spawn, pythonExe, pythonArgs,
+        renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
+      });
+    } catch (err) {
+      logger?.warn?.(`[teach] staged thumbnail failed: ${err && err.message}`);
+      return null;
+    }
+  });
+
   ipcMain.handle('pick-output-folder', async (e) => {
     requireRole('admin');
     const { BrowserWindow } = require('electron');

@@ -2,7 +2,8 @@
 'use strict';
 /* trace_single_doc.js — run ONE PDF through process_docs.py exactly as the app does (buildTrainingArgs + the app's
  * spawn env mirrored from the LIVE DB read-only) WITH --trace/--slice-dir, and save every stdout line to
- * trace_<tag>.jsonl (+ the log lines to trace_<tag>.log). Read-only on the DB; writes only to this folder + temp.
+ * trace_<tag>.jsonl (+ the log lines to trace_<tag>.log). NO_TRACE=1 runs WITHOUT --trace (pools stay armed;
+ * the file_done extractions are still saved). Read-only on the DB; writes only to this folder + temp.
  *   ELECTRON_RUN_AS_NODE=1 OCR_RENDER_DPI=200 node_modules/electron/dist/electron.exe <this> <pdf> <tag> [ENV=val …] */
 const path = require('path'), fs = require('fs'), os = require('os');
 const { spawn } = require('child_process');
@@ -25,7 +26,7 @@ const filesFile = path.join(folder, 'files.json');
 fs.writeFileSync(filesFile, JSON.stringify([path.basename(pdf)]));
 const sliceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-slices-'));
 const args = ['-3.12', path.join(REPO, 'python_backend', 'process_docs.py'),
-  '--folder', folder, '--files-file', filesFile, '--mode', 'smart', '--trace', '--slice-dir', sliceDir,
+  '--folder', folder, '--files-file', filesFile, '--mode', 'smart', ...(process.env.NO_TRACE === '1' ? [] : ['--trace', '--slice-dir', sliceDir]),
   '--tesseract', 'C:/Program Files/Tesseract-OCR/tesseract.exe', ...built.args];
 const env = { ...process.env, ...appEnv, OCR_RENDER_DPI: process.env.OCR_RENDER_DPI || '200', ...overrides };
 const t0 = Date.now();
