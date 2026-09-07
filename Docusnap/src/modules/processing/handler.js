@@ -1126,6 +1126,17 @@ function _diagEnabled(db) {
   } catch { return false; }
 }
 
+// Owner 2026-09-07: "the app used to remember the last opened folder but it now defaults to Documents —
+// remember the last location for that session; default back on a reopen". SESSION-ONLY memory (a module
+// variable, never persisted): the import-folder picker and the teach PDF picker share it, so a teach after
+// an import opens where the operator just was. Nothing is written to settings; a restart forgets it.
+let _lastPickedDir = null;
+function _rememberPickedDir(p) {
+  try { if (p && fs.existsSync(p)) _lastPickedDir = fs.statSync(p).isDirectory() ? p : path.dirname(p); } catch {}
+}
+function _pickerDefaultPath() {
+  try { return (_lastPickedDir && fs.existsSync(_lastPickedDir)) ? _lastPickedDir : undefined; } catch { return undefined; }
+}
 let _currentBatchProcs = [];     // all running Python worker processes for the active batch (bounded pool)
 let _singleReprocessActive = false;  // a single reprocess-document is in flight (NOT in the pool array)
 // Live "Reprocess All" status, so a Review window that was CLOSED mid-batch can reconnect on reopen
@@ -2412,8 +2423,11 @@ function register(ctx) {
     const r = await dialog.showOpenDialog(win, {
       properties: ['openDirectory'],
       title: 'Select the folder of scanned documents to import',
+      defaultPath: _pickerDefaultPath(),
     });
-    return r.canceled ? null : r.filePaths[0];
+    if (r.canceled || !r.filePaths[0]) return null;
+    _rememberPickedDir(r.filePaths[0]);
+    return r.filePaths[0];
   });
 
   // List the documents the import will actually process in a chosen folder (non-recursive, SAME
@@ -2445,8 +2459,10 @@ function register(ctx) {
       properties: ['openFile'],
       title: 'Select a PDF to teach',
       filters: [{ name: 'PDF documents', extensions: ['pdf'] }],
+      defaultPath: _pickerDefaultPath(),
     });
     if (r.canceled || !r.filePaths[0]) return null;
+    _rememberPickedDir(r.filePaths[0]);
     try {
       // Sweep leftover staging folders from previous teaches first (teach-imports are
       // sequential, so any prior sf-teach-* is finished) — bounds the temp clutter to ≤1.
@@ -6616,6 +6632,7 @@ function killAll() {
 }
 
 module.exports = {
+  _rememberPickedDir, _pickerDefaultPath, _resetPickedDir: () => { _lastPickedDir = null; },
   register,
   // 2026-08-31 batch-import crash fix — pure cap-math + resilience hooks (test_import_concurrency_cap.js).
   maxConcurrency, defaultConcurrency, ramConcurrencyCap, _effectiveWorkers, _reprocessThreadCap,
