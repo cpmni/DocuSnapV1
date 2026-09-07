@@ -36,7 +36,7 @@ confirmed): the 605-corpus `rr_ids.txt` selects 15 → the DB harness is vacuous
 correction); doc 471's confirmed date `26-01-6000` is poisoned GT. Owner actions + approvals (push, flips, presets
 tick, Meadowvale re-teach, Learning Repair) in the handover's "NEEDS YOUR APPROVAL". Arms (`old`, `b_only`,
 `arcs_on`, `mv_off`/`mv_on`) were running at wrap — read `TESTING/_measure/log_review_20260906/chain.log` and the
-handover ADDENDUM.
+handover ADDENDUM. **2026-09-07 TEST BUILD** `dist\ScanFinder Setup 2.0.0-r20260907-0829-ef47b51.exe` = HEAD `ef47b51` with **mig 123** force-ON of the three arcs + `money_sign_capture` (owner order) — **revert 123 with 108–118 before a customer build**; 17 local commits unpushed.
 ## Prior — 2026-09-04 LATE (confusion-precedence 2a BUILT at a RELOCATED site + FORMAT_CLASS_JOIN + import
 messaging + leg-b/leg-a RELOCATED as SUGGESTIONS): **READ `HANDOVER_2026-09-04_LATE.md` FIRST (incl. ADDENDA 1+2).**
 HEAD = `f76e8d1` + docs; pushed through `fbf572a`. `f76e8d1` = RESOLVE_REF_NEAR_MISS/POSITIONAL moved to
