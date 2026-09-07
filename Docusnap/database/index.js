@@ -2913,6 +2913,25 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 133 (template_clip_commit_left_slack): ${e.message}`); }
   }
 
+  // ── migration 134: TEST-BUILD force-ON of the five 2026-09-07 afternoon DARK switches (owner order "rebuild the
+  //    app with all the new settings on"; the mig-123/124/126/128 pattern): teach_angle_compose_null_abstain (129),
+  //    reread_hold_corrob_release (130), template_date_left_clip_grow (131), template_pad_date_containment_flag
+  //    (132), template_clip_commit_left_slack (133). ⚠ TEST-ONLY / REVERSIBLE — each carries an Oracle flip
+  //    condition NOT yet met (129: its arm shows abstain alone trades one clip class for another — harmless once the
+  //    startup backfill has healed every template's angle; 130: the C17 census on a warm copy; 131/132/133: their
+  //    OFF→ON arms — 131 read byte-identical + a clean fire census; 133 not yet Oracle-vetted). Revert with
+  //    108/110/112/114/116/118/123/124/126/128 before ANY customer build. ──
+  if (!applied.has(134)) {
+    try {
+      for (const k of ['teach_angle_compose_null_abstain', 'reread_hold_corrob_release', 'template_date_left_clip_grow',
+                       'template_pad_date_containment_flag', 'template_clip_commit_left_slack']) {
+        db.prepare(`INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run(k);
+      }
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (134)').run();
+      console.log('JS migration 134 applied: TEST-BUILD force-ON of the five 2026-09-07 afternoon switches (revert before customer build)');
+    } catch (e) { console.warn(`  migration 134 (afternoon force-ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

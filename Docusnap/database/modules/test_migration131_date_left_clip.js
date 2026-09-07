@@ -16,13 +16,16 @@ const { runMigrations } = require(path.join(ROOT, 'database', 'index'));
 let fails = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
 const db = new Database(':memory:');
-const origLog = console.log; console.log = () => {};
+const logs = []; const origLog = console.log; console.log = (m) => { logs.push(String(m)); };
 runMigrations(db);
 console.log = origLog;
 const get = (k) => { const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(k); return r ? r.value : null; };
 const applied = new Set(db.prepare('SELECT version FROM migrations').all().map(r => r.version));
 check('migration 131 stamped', applied.has(131));
-check("a fresh install ends with template_date_left_clip_grow === 'false' (DARK)", get('template_date_left_clip_grow') === 'false');
+// mig 134 (TEST-BUILD force-ON, 2026-09-07 owner order) may sit on top: the SEED is pinned by the console line + the
+// source; the final state is 'true' only while that test migration exists (revert list) — else 'false'.
+check("the seed line says seeded OFF (DARK)", logs.some(l => /migration 131 applied/.test(l) && /seeded OFF/.test(l)));
+check("a fresh install ends with template_date_left_clip_grow === " + (applied.has(134) ? "'true' (mig 134 TEST force-ON on top)" : "'false' (DARK)"), get('template_date_left_clip_grow') === (applied.has(134) ? 'true' : 'false'));
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('mig 131 is an INSERT OR IGNORE seed of false', /INSERT OR IGNORE INTO settings \(key, value\) VALUES \('template_date_left_clip_grow', 'false'\)/.test(src));
 check('NO force-ON twin exists', !/VALUES \('template_date_left_clip_grow', 'true'\)/.test(src));
