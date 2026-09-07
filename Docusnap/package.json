@@ -10,6 +10,7 @@
     "check:licenses": "node scripts/check-licenses.js",
     "check:vendor": "node scripts/check-vendor-python.js",
     "check:help": "node scripts/check-help-coverage.js",
+    "build:store": "node scripts/check-vendor-python.js && node scripts/check-licenses.js && node scripts/compile-python-bytecode.js && node scripts/test_no_shipped_py_source.js && node -e \"const c=require('child_process');process.env.BUILD_REV=require('./scripts/build-rev').buildRev();c.execSync('electron-builder --win appx --config.extraMetadata.buildRev=' + process.env.BUILD_REV + ' --config.extraMetadata.version=' + require('./scripts/build-rev').msixVersion(),{stdio:'inherit',env:process.env})\"",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {
@@ -49,6 +50,17 @@
       "deleteAppDataOnUninstall": false,
       "include": "installer.nsh",
       "license": "LEGAL.txt"
+    },
+    "appx": {
+      "identityName": "SixMileSoftware.ScanFinder",
+      "publisher": "CN=Six Mile Software",
+      "publisherDisplayName": "Six Mile Software",
+      "applicationId": "ScanFinder",
+      "backgroundColor": "#0c0e14",
+      "languages": [
+        "en-US"
+      ],
+      "artifactName": "ScanFinder-${version}.appx"
     },
     "extraResources": [
       {

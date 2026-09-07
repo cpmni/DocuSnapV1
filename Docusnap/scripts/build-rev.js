@@ -20,4 +20,13 @@ function buildRev() {
   return ts + sha;
 }
 
-module.exports = { buildRev };
+// MSIX requires a 4-part numeric version (Major.Minor.Build.Revision), strictly increasing per Store
+// submission. Derive it from package.json `version` + a STORE_BUILD counter (bump once per submission).
+// The <UTC>-<sha> buildRev stays for the About box only — never in the package version (MSIX rejects it).
+function msixVersion() {
+  const [maj = 0, min = 0, pat = 0] = require('../package.json').version.split('.').map(n => parseInt(n, 10) || 0);
+  const counter = Number(process.env.STORE_BUILD || 0);
+  return `${maj}.${min}.${pat}.${counter}`;
+}
+
+module.exports = { buildRev, msixVersion };
