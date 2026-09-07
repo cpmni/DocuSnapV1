@@ -21,7 +21,22 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-06 AFTERNOON (the 09-05 LOG-REVIEW FIX PLAN BUILT on auto, 11 commits): **READ
+## ⏭ LATEST — 2026-09-07 AFTERNOON (the PLACEMENT ROOT CAUSE + the Oracle-ordered fix set + import speed + six owner UX
+slices, 15 commits): **READ `HANDOVER_2026-09-06.md` ADDENDUM 7 (+ its UPDATE) FIRST.** HEAD = see `git log`. **ROOT CAUSE
+of the owner's four exhibits (`5/03/2026`, `NS-39241`/the `WS-39241` shape-warn, `NS-85617`, the 4 silent invoice-date
+regressions on the fresh DB): the Stage-0.5 scan compose read a NULL `templates.sample_deskew_angle` as 0.00° (a HALF
+compose ~13.7 px/degree to the side); every template on the install was NULL because the packaged build compiled
+`ocr/detect_angle.py` away (`13cfcf9` KEEP_SOURCE, not yet in an installer).** Fixes: `7c61317` P1(a) the wizard's
+measured tilt written at commit + a startup backfill (switchless) · DARK, seed OFF, NO force-ON: `e296310` mig 129
+`teach_angle_compose_null_abstain` (arm: NOT a flip candidate alone) · `90d62ad` mig 130 `reread_hold_corrob_release` ·
+`14074e8` mig 131 `template_date_left_clip_grow` · `3ef9ec4` mig 132 `template_pad_date_containment_flag`. Speed:
+`8b8b095` SHARED_LOCATE_CACHE (byte-identical; yield only on level pages) · `5e40fa2` OMP inherit · `e9f67a4`
+OCR_PARALLEL_IMPORT (mig 127 seed OFF + **mig 128 TEST force-ON**; byte-identical + 10× determinism). UX: `d43bff6` one
+plain separator sheet · `bdcaf6c` session folder memory · `3c4f9ef` sticky-bottom import log · `a0e3795` teach-import
+thumbnail at once. Oracle: P5 (deskew identity-slip release) SEND BACK → the lever is a slip-tolerant `identity_present_
+on_page`; P6 (`ws-` case) WRONG LAYER → the prefix-confusable lane. **Revert list before a customer build:
+108/110/112/114/116/118/123/124/126/128.** Memory: `project_placement_rootcause_20260907.md`.
+## Prior — 2026-09-06 AFTERNOON (the 09-05 LOG-REVIEW FIX PLAN BUILT on auto, 11 commits): **READ
 `HANDOVER_2026-09-06.md` FIRST.** HEAD = `cc41c9f`, **13 local commits UNPUSHED**. Built in the Oracle's order, every
 slice pinned: 5a `templatesDir` ReferenceError (`dfc3cc4`, executing pin + lint) · Item 3 date patterns
 `(?<![A-Za-z0-9])` (`70bfe3a`, non-DARK, census = exactly the 2 Pelican `P1/26/…` windows) · 2A DARK
