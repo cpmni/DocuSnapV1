@@ -60,6 +60,14 @@ check('the icon carries a kind-colour class (green filed / amber put-back / acce
       /function _asIconClass\(ev\)[\s\S]{0,320}return 'filed'/.test(rend)
       && /\.as-chip \.as-ico\.filed \{ color: var\(--ok\); \}/.test(html)
       && /\.as-chip \.as-ico\.putback \{ color: var\(--warn\); \}/.test(html));
+check('YOU-filed reads apart from auto (owner 2026-09-07): approved → youfiled/accent icon + k-you left rail; auto stays green',
+      /if \(ev\.kind === 'approved'\) return 'youfiled';/.test(rend)
+      && /\.as-chip \.as-ico\.youfiled \{ color: var\(--accent\); \}/.test(html)
+      && /\.as-chip\.k-you\s+\{ border-left: 3px solid var\(--accent\);/.test(html)
+      && /\.as-chip\.k-auto\s+\{ border-left: 3px solid var\(--ok\);/.test(html));
+check('the chip tooltip carries the doc TYPE on top of the description (owner 2026-09-07)',
+      /function _asTypeName\(ev\)[\s\S]{0,260}allDocTypes\.find/.test(rend)
+      && /_type \? `Type: \$\{_type\}\\n` : ''/.test(rend));
 check('…and the panel line says "put back by you" after an undo (r18 card 7)', /function _asLineFull\(ev\)[\s\S]{0,400}put back<\/b> by you/.test(rend) && /\$\{_asIcon\(ev\)\} \$\{_asLineFull\(ev\)\}/.test(rend));
 check('a bulk receipt still names its sender even when there is only one (r18 card 5) — via the real-sender filter', /const senders = ev\.bySender \? Object\.entries\(ev\.bySender\)\.filter\(\(\[k, v\]\) => k && k !== '—' && Number\(v\) > 0\) : \[\];/.test(rend) && /const by = senders\.length/.test(rend));
 check("the lane notice names the real trigger: ready / layout / typesplit / teach (r18 copy)", /j\.reason === 'ready' \? 'now that this sender files by itself'/.test(rend) && /j\.reason === 'layout' \? 'after your box change'/.test(rend));

@@ -654,7 +654,24 @@ function _asIconClass(ev) {
   if (ev.kind === 'put_back') return 'putback';
   if (ev.kind === 'class_fix' || ev.kind === 'issuer_fill' || ev.kind === 'convention') return 'fix';
   if (ev.kind === 'approved' && (Number(ev.count) || 0) === 0) return 'putback';
+  if (ev.kind === 'approved') return 'youfiled';
   return 'filed';
+}
+// A calm LEFT-BORDER colour by who-did-it (the chip class), pairing with the icon colour so the strip
+// reads at a glance without a loud fill (bob: reserve colour). green=app filed · accent=you filed ·
+// amber=put back / kept back · the fix kinds keep their pencil icon.
+function _asKindClass(ev) {
+  const ic = _asIconClass(ev);
+  return ic === 'youfiled' ? 'k-you' : ic === 'putback' ? 'k-putback' : ic === 'fix' ? 'k-fix' : 'k-auto';
+}
+// The document type behind a chip (from the event's scope), resolved to its display name. Empty when the
+// event carries no type (a File-All bulk approval spans every type). Fed into the chip tooltip so the
+// label — which has no room for it — still tells the operator WHICH type was filed.
+function _asTypeName(ev) {
+  const slug = ev && ev.scope && ev.scope.typeSlug ? String(ev.scope.typeSlug).trim() : '';
+  if (!slug) return '';
+  const t = Array.isArray(allDocTypes) ? allDocTypes.find(x => x && x.slug === slug) : null;
+  return (t && t.name) ? t.name : slug.replace(/_/g, ' ');
 }
 function _asShort(ev) {
   const n = Number(ev.count) || 0, s = n === 1 ? '' : 's';
@@ -735,7 +752,11 @@ function renderActivityStrip() {
   } else {
     track.innerHTML = vis.map(ev => {
       const detail = _asChipDetail(ev);
-      return `<span class="as-chip${ev.seen ? '' : ' unseen'}${_asOpenId === ev.id ? ' open' : ''}" data-as="${ev.id}" title="${escHtml(_asLine(ev).replace(/<[^>]+>/g, ''))}">`
+      const _type = _asTypeName(ev);
+      // Tooltip: the doc TYPE on top of the existing plain-text description (owner 2026-09-07 — the chip
+      // label has no room for the type; put it in the tooltip).
+      const _title = (_type ? `Type: ${_type}\n` : '') + _asLine(ev).replace(/<[^>]+>/g, '');
+      return `<span class="as-chip ${_asKindClass(ev)}${ev.seen ? '' : ' unseen'}${_asOpenId === ev.id ? ' open' : ''}" data-as="${ev.id}" title="${escHtml(_title)}">`
         + `<span class="as-l1"><span class="as-ico ${_asIconClass(ev)}">${_asIcon(ev)}</span><span class="as-act">${escHtml(_asShort(ev))}</span></span>`
         + `<span class="as-l2"><span class="as-when">${escHtml(_asRelTime(ev.at))}</span>${detail ? ` · ${escHtml(detail)}` : ''}<span class="as-caret">▾</span></span>`
         + `</span>`;

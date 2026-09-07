@@ -295,8 +295,16 @@
     .as-chip .as-act { font-weight: 600; color: var(--text); }
     .as-chip .as-ico { margin-right: 4px; font-weight: 700; }
     .as-chip .as-ico.filed { color: var(--ok); }
+    .as-chip .as-ico.youfiled { color: var(--accent); }
     .as-chip .as-ico.putback { color: var(--warn); }
     .as-chip .as-ico.fix { color: var(--accent); }
+    /* Who-did-it left rail (owner 2026-09-07: colour-code so an auto-filed and a you-filed chip for the
+       same sender read apart). green=app filed · accent=you filed · amber=put back / kept back · fix keeps
+       accent + its pencil icon. padding-left drops 11->9 to absorb the +2px left border (text unmoved). */
+    .as-chip.k-auto    { border-left: 3px solid var(--ok);     padding-left: 9px; }
+    .as-chip.k-you     { border-left: 3px solid var(--accent); padding-left: 9px; }
+    .as-chip.k-putback { border-left: 3px solid var(--warn);   padding-left: 9px; }
+    .as-chip.k-fix     { border-left: 3px solid var(--accent); padding-left: 9px; }
     .as-chip:hover, .as-chip.open { border-color: var(--accent); background: var(--accent-bg); }
     .as-chip.unseen { box-shadow: inset 0 0 0 1px var(--accent); border-color: var(--accent); }
     .as-chip .as-when { color: var(--muted); }
@@ -336,6 +344,7 @@
     .ap-line { font-size: 13.5px; line-height: 20px; color: var(--text); }
     .ap-line .ap-ico { position: absolute; left: 0; top: 0; width: 14px; line-height: 20px; text-align: center; font-size: 13px; font-weight: 700; margin: 0; }
     .ap-line .ap-ico.filed { color: var(--ok); }
+    .ap-line .ap-ico.youfiled { color: var(--accent); }
     .ap-line .ap-ico.putback { color: var(--warn); }
     .ap-line .ap-ico.fix { color: var(--accent); }
     .ap-what { font-weight: 600; }
