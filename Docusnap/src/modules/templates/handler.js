@@ -252,6 +252,23 @@ function register(ctx) {
     } catch (e) { console.error('[landmarks] backfill failed:', e.message); }
   }, 8000);
 
+  // SAMPLE-ANGLE BACKFILL (2026-09-07, Oracle C4): every template with a pinned sample but NO sample tilt gets
+  // it detected once at startup (sequential, delayed, best-effort — the landmark backfill's twin). Closes the
+  // "all templates NULL forever" hole the packaged build fell into (detect_angle.py was compiled away; the
+  // once-per-process heal in processing/handler.js then left every template composing with 0.00°).
+  setTimeout(async () => {
+    try {
+      const db = getDb();
+      const rows = db.prepare(`
+        SELECT id FROM templates
+        WHERE sample_document_id IS NOT NULL AND sample_deskew_angle IS NULL
+      `).all();
+      let healed = 0;
+      for (const r of rows) { try { const res = await generateSampleAngle(r.id); if (res && res.success && !res.skipped) healed++; } catch {} }
+      if (rows.length) console.log(`[templates] sample-angle backfill: ${healed}/${rows.length} template(s) detected`);
+    } catch (e) { console.error('[templates] sample-angle backfill failed:', e.message); }
+  }, 10000);
+
   // (Re)derive a template's KEYWORD FINGERPRINT from several of its documents,
   // keeping only the STABLE recurring words (template_fingerprint.py). This is what
   // lets a BORN-DIGITAL template (e.g. a Print Tracker email alert, whose logo crop

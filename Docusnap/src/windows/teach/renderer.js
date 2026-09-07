@@ -610,6 +610,15 @@ function _teachFwdBox(n){                   // raw -> display(straightened), for
   const r = window.AnchorLabel.deskewedNormToRaw(n.x + n.w/2, n.y + n.h/2, -a, W, H);  // -angle: inverse (raw -> display)
   return { x: r.x - n.w/2, y: r.y - n.h/2, w: n.w, h: n.h };
 }
+// The sample page pinned at commit is page 0; report ITS measured tilt (from the page cache when the operator
+// has moved on to another page, else the live state). {angle:null, measured:false} when the detector never ran.
+function _sampleAngleForCommit(){
+  const pc = state.pageCache && state.pageCache[0];
+  const onPage0 = (state.pageIndex | 0) === 0;
+  const measured = onPage0 ? !!state.deskewMeasured : !!(pc && pc.deskewMeasured);
+  const angle = onPage0 ? (state.deskewMeasuredAngle || 0) : ((pc && pc.deskewMeasuredAngle) || 0);
+  return measured ? { angle: Number(angle) || 0, measured: true } : { angle: null, measured: false };
+}
 async function toggleTeachDeskew(forceOn){
   if (_teachDeskewBusy || _teachReadBusy || drag || !state.rawImg || !state.pageDataUrl) return;
   const goOn = (typeof forceOn === 'boolean') ? forceOn : !state.deskewAngle;
@@ -622,10 +631,17 @@ async function toggleTeachDeskew(forceOn){
         if (res && res.image && res.angle) {
           await new Promise(r => { const im = new Image(); im.onload = () => { state.deskewImg = im; state.deskewImgAngle = res.angle; r(); }; im.onerror = () => r(); im.src = 'data:image/png;base64,' + res.image; });
         }
+        // TEACH-COMMIT SAMPLE ANGLE (2026-09-07, 007 → Oracle C1): remember whether the detector actually RAN on
+        // this page and what it measured (a level page = 0, measured). doCommit sends page 0's reading so the
+        // template's sample tilt is KNOWN at commit — the engine composes every taught box by (sample tilt −
+        // scan tilt), and a NULL sample tilt (the async detect had been failing on the packaged build) was read
+        // as 0.00°, landing the box a glyph to the side on every tilted sibling ('5/03/2026', 'NS-39241').
+        if (res && res.measured) { state.deskewMeasured = true; state.deskewMeasuredAngle = Number(res.angle) || 0; }
+        else { state.deskewMeasured = false; state.deskewMeasuredAngle = 0; }
         // Bank it against THIS page (multi-page): straighten is per page, and re-fetching a
         // straightened render every time the operator flips back would be a visible stall.
         const _pc = state.pageCache && state.pageCache[state.pageIndex];
-        if (_pc) { _pc.deskewImg = state.deskewImg; _pc.deskewImgAngle = state.deskewImgAngle; }
+        if (_pc) { _pc.deskewImg = state.deskewImg; _pc.deskewImgAngle = state.deskewImgAngle; _pc.deskewMeasured = state.deskewMeasured; _pc.deskewMeasuredAngle = state.deskewMeasuredAngle; }
       }
       if (state.deskewImg && state.deskewImgAngle) { state.img = state.deskewImg; state.deskewAngle = state.deskewImgAngle; }
       else if (typeof forceOn !== 'boolean') { try { toast('This page is already straight'); } catch {} }
@@ -664,7 +680,8 @@ async function showTeachPage(idx){
   // Bank the page we are leaving, including whatever straighten state it had.
   if (state.rawImg && state.pageCache[state.pageIndex]) {
     Object.assign(state.pageCache[state.pageIndex], {
-      deskewImg: state.deskewImg, deskewImgAngle: state.deskewImgAngle });
+      deskewImg: state.deskewImg, deskewImgAngle: state.deskewImgAngle,
+      deskewMeasured: !!state.deskewMeasured, deskewMeasuredAngle: state.deskewMeasuredAngle || 0 });
   }
   state.pageIndex = idx;
   state.pageDataUrl = state.pages[idx];
@@ -673,8 +690,9 @@ async function showTeachPage(idx){
     state.rawImg = cached.rawImg;
     state.deskewImg = cached.deskewImg || null;
     state.deskewImgAngle = cached.deskewImgAngle || 0;
+    state.deskewMeasured = !!cached.deskewMeasured; state.deskewMeasuredAngle = cached.deskewMeasuredAngle || 0;
   } else {
-    state.rawImg = null; state.deskewImg = null; state.deskewImgAngle = 0;
+    state.rawImg = null; state.deskewImg = null; state.deskewImgAngle = 0; state.deskewMeasured = false; state.deskewMeasuredAngle = 0;
     if (!state.pageDataUrl) return false;
     await new Promise(res => {
       const im = new Image();
@@ -2063,8 +2081,10 @@ async function doCommit(){
       }
     }
     // 1) create/refresh the template + pin this page as the sample (→ landmarks)
+    const _sa = _sampleAngleForCommit();     // page 0's MEASURED tilt (the pinned sample page) — see toggleTeachDeskew
     const promo=await D.promoteToTemplate({
       document_id:state.doc.id, allValues, document_type_slug:state.docTypeSlug, supplier_name:supplier,
+      sample_deskew_angle:_sa.angle, angle_measured:_sa.measured,
     });
     if (!promo||!promo.success){ throw new Error((promo&&promo.error)||'Could not create the template.'); }
     const templateId=promo.templateId;

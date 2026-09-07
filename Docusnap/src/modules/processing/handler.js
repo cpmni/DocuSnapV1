@@ -5441,7 +5441,10 @@ function register(ctx) {
       proc.on('close', () => {
         try { fs.unlinkSync(tmpFile); } catch {}
         if (err) console.error('get_page_deskew stderr:', err);
-        try { resolve(JSON.parse(out.trim())); } catch { resolve({ angle: 0, image: null }); }
+        // `measured` (TEACH-COMMIT SAMPLE ANGLE, Oracle C1 2026-09-07): a PARSED result means the detector ran —
+        // a level page is {angle:0, image:null, measured:true}; a parse/spawn failure is measured:false, so a
+        // 0 from a failure is never written as "level".
+        try { resolve({ measured: true, ...JSON.parse(out.trim()) }); } catch { resolve({ angle: 0, image: null, measured: false }); }
       });
     });
   });

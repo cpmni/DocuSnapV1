@@ -1455,6 +1455,7 @@ function register(ctx) {
     if (!document_id || !allValues) {
       return { success: false, error: 'Missing document or field values' };
     }
+    const wizardAngle = _wizardSampleAngle(payload);   // {angle, measured} — validated, never trusts a bare 0
     const db = getDb();
     const dtInfo = document_type_slug
       ? doctypes.getWithFields(db, document_type_slug)
@@ -1486,6 +1487,29 @@ function register(ctx) {
         // resolves (never rejects) and the template still works via anchors meanwhile.
         try { if (ctx.generateLandmarks) await ctx.generateLandmarks(result.templateId); }
         catch (e) { console.error('promote-to-template landmarks:', e.message); }
+        // TEACH-COMMIT SAMPLE ANGLE (2026-09-07, 007 → Oracle C1-C3): the wizard already MEASURED the sample's
+        // tilt (get-page-deskew, the same detect_skew_angle); write it SYNCHRONOUSLY here, guarded `IS NULL`,
+        // so the template's compose frame is known before the first sibling is read. The async detect below
+        // stays the fallback for every non-wizard pin. Never write from an unmeasured page (a 0 from a parse
+        // failure is not "level"). C3: on a REUSED template the sample is re-pinned but its angle is not reset
+        // (templates.setSampleDocument) — a box drawn on the NEW sample's frame would be composed with the OLD
+        // sample's angle; warn loudly (per-mapping teach angles are logged in pendingfeatures.md).
+        if (wizardAngle.measured) {
+          try {
+            const before = db.prepare('SELECT sample_deskew_angle FROM templates WHERE id = ?').get(result.templateId);
+            if (before && before.sample_deskew_angle == null) {
+              db.prepare('UPDATE templates SET sample_deskew_angle = ? WHERE id = ? AND sample_deskew_angle IS NULL')
+                .run(wizardAngle.angle, result.templateId);
+              console.log(`[templates] sample angle written at commit from the wizard: template ${result.templateId} = ${wizardAngle.angle.toFixed(2)} deg`);
+            } else if (before && result.created === false
+                       && Math.abs(Number(before.sample_deskew_angle) - wizardAngle.angle) >= 0.3) {
+              const _msg = `[templates] re-teach frame mix: template ${result.templateId} keeps sample angle `
+                + `${Number(before.sample_deskew_angle).toFixed(2)} deg but the new sample measures ${wizardAngle.angle.toFixed(2)} deg `
+                + `— boxes drawn on this sample are composed with the OLD angle (per-mapping teach angle: pendingfeatures.md)`;
+              console.warn(_msg); try { ctx.logger?.warn?.(_msg); } catch {}
+            }
+          } catch (e) { console.error('promote-to-template wizard sample-angle:', e.message); }
+        }
         // TEACH_ANGLE_COMPOSE enabler: record the sample's tilt NOW so the first process of a
         // sibling composes the teach coords to level (else the lazy heal lands it one batch late).
         try { if (ctx.generateSampleAngle) await ctx.generateSampleAngle(result.templateId); }
@@ -1561,10 +1585,22 @@ function register(ctx) {
 // The ONE shared reviewService instance (set in register) — the Catch-up sweep accept files
 // through it so there is never a second confirm/filing implementation. Null until register runs.
 let _sharedReviewServiceInstance = null;
-module.exports = { _writeTemplateFileForSync, register, _buildTemplateFields, _upsertTemplate,   // _buildTemplateFields + _upsertTemplate exported for tests (test_build_template_fields.js, test_upsert_type_link.js)
+// _wizardSampleAngle: TEACH-COMMIT SAMPLE ANGLE (2026-09-07), the pure payload validator (test_promote_sample_angle.js)
+module.exports = { _wizardSampleAngle, _writeTemplateFileForSync, register, _buildTemplateFields, _upsertTemplate,   // _buildTemplateFields + _upsertTemplate exported for tests (test_build_template_fields.js, test_upsert_type_link.js)
                    getReviewService: () => _sharedReviewServiceInstance };
 
 // ── Template create / update ──────────────────────────────────────────────────
+
+// TEACH-COMMIT SAMPLE ANGLE: the wizard's payload → {angle, measured}. Pure. `measured` only when the wizard
+// said so AND the angle is a finite number; anything else = not measured (never a bare 0 = "level").
+function _wizardSampleAngle(payload) {
+  const p = payload || {};
+  const a = Number(p.sample_deskew_angle);
+  if (p.angle_measured !== true || p.sample_deskew_angle === null || p.sample_deskew_angle === undefined || !Number.isFinite(a)) {
+    return { angle: null, measured: false };
+  }
+  return { angle: a, measured: true };
+}
 
 async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }) {
   // Generic Document (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §3, pinned trade-off):
