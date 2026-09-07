@@ -158,7 +158,8 @@ function main() {
       + "module.exports = require('./main.jsc');\n";
     fs.rmSync(entry);
     fs.writeFileSync(entry, stub);
-    mode = `bundle + V8 bytecode (main.jsc; ${removed} source modules inlined + removed)`;
+    const strNote = process.env.HARDEN_JS_STRINGS === '1' ? ' + string-array obfuscation' : '';
+    mode = `bundle${strNote} + V8 bytecode (main.jsc; ${removed} source modules inlined + removed)`;
   }
 
   // Gate: the crown-jewel source must be GONE from build_js.
