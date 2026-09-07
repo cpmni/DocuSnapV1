@@ -1,9 +1,11 @@
 # Scan Finder — MSIX / Microsoft Store packaging guide
 
-Ready-to-apply recipe for shipping a **Store SKU** alongside the existing NSIS installer.
-Nothing here is wired into `package.json` yet — it needs the Partner-Center identity and a build
-machine with `vendor/` (Python + Tesseract). Apply it as a **separate `build:store` path** so the
-current `npm run build` (NSIS) is untouched.
+Recipe for shipping a **Store SKU** alongside the existing NSIS installer. **WIRED + SHAKEN OUT
+2026-09-07** — the `appx` block + `build:store` script are in `package.json`, the JS+Python hardening
+runs on both paths, and a signed test `.appx` was built, registered, and driven through a full
+in-container import (watch → packaged Python → OCR → auto-file). The ONLY thing still needed is the
+**Partner-Center identity** to replace the placeholders (`SixMileSoftware.ScanFinder` / `CN=Six Mile
+Software`). Build machine needs `vendor/` (Python + Tesseract). `npm run build` (NSIS) is untouched.
 
 > Strategy: **dual-track.** NSIS stays the primary direct-download installer (preserves the current
 > %APPDATA% persistence + Polar/JWS licensing exactly). MSIX is an **additive, free, trial-only**
@@ -58,10 +60,11 @@ registered (OV also needs D-U-N-S / registry presence). **Interim:** keep shippi
 `package.json` is name-clean (`author`/`copyright` = "Six Mile Software"), so nothing leaks; the only cost
 is SmartScreen "Run anyway".
 
-### 0.2 Tooling
-- **electron-builder is 24.13.3** (CLAUDE.md's "v26" is inaccurate — fix that note). Consider
-  upgrading to a newer major before MSIX work: later versions handle the `appx` target +
-  capability injection more cleanly.
+### 0.2 Tooling (verified 2026-09-07)
+- **electron-builder is 26.15.3** (bumped in the Electron 44 upgrade). The `appx` target + `runFullTrust`
+  injection work cleanly.
+- Build machine needs: **Windows Developer Mode ON** (electron-builder extracts winCodeSign via symlinks;
+  off ⇒ `makeappx` never lands) + the **Windows SDK** (`makeappx.exe` / `signtool.exe`; had 10.0.26100).
 
 ## 1. `appx` build config (add to `package.json` `build`, used ONLY by `build:store`)
 ```json
@@ -74,10 +77,9 @@ is SmartScreen "Run anyway".
   "languages": ["en-US"]
 }
 ```
-Add a separate script (keeps `npm run build` = NSIS only):
-```json
-"build:store": "node scripts/check-licenses.js && node -e \"const c=require('child_process');process.env.BUILD_REV=require('./scripts/build-rev').buildRev();c.execSync('electron-builder --win appx --config.extraMetadata.buildRev=' + process.env.BUILD_REV + ' --config.extraMetadata.version=' + require('./scripts/build-rev').msixVersion(),{stdio:'inherit',env:process.env})\""
-```
+**DONE (2026-09-07):** the `appx` block is in `package.json` (placeholder identity) and `build:store`
+routes through `scripts/build-electron.js appx` — the SAME shared path as NSIS, so the JS+Python
+hardening applies to both. Current commands are in §8.1 (not the old inline `node -e`).
 electron-builder auto-injects **`runFullTrust`** for the appx target. `extraResources` + `asarUnpack`
 translate cleanly (they're just payload files; `process.resourcesPath` resolves the same in-package).
 
@@ -135,3 +137,67 @@ service — no Store commerce).
    an active trial resumes its remaining days.
 4. Confirm the **main-window dev-inspector does NOT open**; the **Review trace console DOES**.
 5. Re-run `npm run build` (NSIS) → unchanged.
+
+## 8. Store submission checklist (2026-09-07)
+
+### 8.1 Build the package
+```
+HARDEN_JS=1 HARDEN_JS_STRINGS=1 npm run build:store      # hardened: JS bytecode + string obfuscation + .pyc
+```
+- **Do NOT sign it** for submission (no `CSC_LINK`) — Microsoft signs on ingestion with an opaque
+  `CN=<account id>` (the name-privacy win). A local test build can be self-signed to sideload (§8.4).
+- **Bump `STORE_BUILD`** once per submission (`STORE_BUILD=1 …`) — the 4-part MSIX version
+  (`msixVersion()` = `Major.Minor.Patch.STORE_BUILD`) must strictly INCREASE per submission or the Store
+  rejects it. `2.0.0.0` was the first test.
+- Output: `dist/ScanFinder-<version>.appx` (~500 MB). Both NSIS and Store carry identical source
+  protection now (`build:store` routes through `scripts/build-electron.js appx`).
+
+### 8.2 Identity (replace the placeholders FIRST — see §0.1)
+- [ ] Partner Center account (Individual ~$19 / Company ~$99). **Confirm `PublisherDisplayName` shows
+      "Six Mile Software", not your legal name**, before paying (individual-account open question, §0.1).
+- [ ] Reserve the app name → copy `identityName`, `publisher` (`CN=…`), `publisherDisplayName` into the
+      `appx` block in `package.json` (currently placeholders `SixMileSoftware.ScanFinder` / `CN=Six Mile
+      Software`).
+
+### 8.3 Listing + policy (free trial vessel, Polar sales — no Store commerce)
+- [ ] App is **FREE**; the 14-day trial + activation is entirely the app's own (backend + fingerprint);
+      purchase is external via **Polar**. Non-game third-party commerce is allowed (Store Policy 10.8.1),
+      Microsoft takes 0%.
+- [ ] **Privacy policy URL** (required).
+- [ ] **Age rating** (IARC questionnaire).
+- [ ] Screenshots + description + support contact.
+- [ ] **Certification disclosures** (pre-empt review — §6): `runFullTrust` (offline OCR + user-chosen
+      folders) · bundled Python/Tesseract (bundled, NOT downloaded) · opt-in inbound LAN `/v1` API · the
+      hidden Review trace console (password-gated diagnostic) · external Polar activation.
+
+### 8.4 Upload WITHOUT going public (test first)
+Set the submission's **Visibility → "Private audience"** (Pricing and availability). Microsoft still
+CERTIFIES + SIGNS it, but it is **not searchable/discoverable** — only the MSA emails in your tester
+group can install it via a direct link. (Alternative: **package flights** = beta channels.) Flip
+Visibility → **Public** when ready. Certification still runs on a private submission (not instant).
+
+Local sideload of the self-signed TEST build (skip for the real submission — that one is Microsoft-signed):
+```
+# elevated PowerShell — trust the throwaway cert baked into the test .appx, then install
+$appx = "…\dist\ScanFinder-2.0.0.0.appx"
+$c = (Get-AuthenticodeSignature $appx).SignerCertificate
+$s = Get-Item Cert:\LocalMachine\TrustedPeople; $s.Open('ReadWrite'); $s.Add($c); $s.Close()
+Add-AppxPackage $appx
+# uninstall:  Get-AppxPackage SixMileSoftware.ScanFinder | Remove-AppxPackage
+# untrust:    Get-ChildItem Cert:\LocalMachine\TrustedPeople | ? { $_.Subject -eq 'CN=Six Mile Software' } | Remove-Item
+```
+No-admin dev alternative: `makeappx unpack` the `.appx`, then `Add-AppxPackage -Register <dir>\AppxManifest.xml`
+(Developer Mode, per-user, no cert/trust). A double-clicked self-signed `.appx` on an untrusting machine
+fails with **0x800B010A** (chain-to-trusted-root) — expected; the real Store build never hits it.
+
+### 8.5 Shaken-out facts (2026-09-07 — what a test package actually did)
+- Builds clean; manifest is minimal + name-clean: identity `SixMileSoftware.ScanFinder`,
+  `PublisherDisplayName=Six Mile Software`, **only `runFullTrust`**, `Windows.FullTrustApplication`.
+- Boots `packaged=true`, DB opens + migrations run, GUI renders. Source protection intact IN-PACKAGE
+  (`process_docs.py` absent, `.pyc` present; the packaged interpreter runs `process_docs.pyc`; `trust.js`
+  + licensing are bytecode in `app.asar`).
+- **Full import proven in-container**: watch folder → packaged Python spawn → OCR → auto-file with the
+  correct folder tree + XML metadata (`[watch] finished batch of 1 (exit=0)`).
+- Data lands in the **REAL `%APPDATA%\ScanFinder`**, NOT a virtualized container → NSIS↔MSIX share data
+  (migration is a non-issue); flip side: an MSIX uninstall won't auto-wipe it either.
+- Full-trust = normal Win32 filesystem access (scan/output folders) with NO `broadFileSystemAccess`.
