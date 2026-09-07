@@ -60,6 +60,29 @@ registered (OV also needs D-U-N-S / registry presence). **Interim:** keep shippi
 `package.json` is name-clean (`author`/`copyright` = "Six Mile Software"), so nothing leaks; the only cost
 is SmartScreen "Run anyway".
 
+**Decision record UPDATE (2026-09-07) — the account-type question, verified against Microsoft's current
+onboarding doc (learn.microsoft.com/windows/apps/publish/partner-center/open-a-developer-account,
+updated 2025-09):**
+- **An INDIVIDUAL Partner Center account publishes under the holder's LEGAL PERSONAL NAME** ("publish apps
+  under your own name"). There is NO clean trade-name route on it → publishing here breaks the
+  name-privacy rule.
+- Worse, Microsoft **scopes the Individual account to NON-COMMERCIAL use** — "not in relation to their
+  business, trade, or profession", "hobbyist/amateur/school/personal project". **ScanFinder is a SOLD
+  product (Polar), so it belongs on a COMPANY account** — an individual listing is arguably miscategorised
+  and a certification risk.
+- A **COMPANY account** publishes as the verified legal entity → **"Six Mile Software Ltd"**, legal name
+  never public. Requires a **D-U-N-S number OR incorporation/business-registration documents** — a UK sole
+  trader with no Companies House registration generally can't clear this, so **incorporating Six Mile
+  Software Ltd is the reliable route** (confirm with MS support whether HMRC/tax docs suffice — the long shot).
+- **Individual → Company CONVERSION is NOT supported** — you must create a NEW company account from scratch.
+  The owner already opened an **individual** account (free, unused) — treat it as a placeholder; the app
+  name reserved on it must be **released + re-reserved on the company account** (or a support ticket),
+  so it isn't lost in the gap.
+- **DECISION: move "incorporate later" → "incorporate Six Mile Software Ltd BEFORE the Store launch."**
+  Then: company account → verify → re-reserve the name → build with the company identity → submit private →
+  public. **Interim (unchanged): ship the unsigned NSIS direct download** (already name-clean) so there is a
+  distributable product now; the Store follows once the Ltd + company account exist.
+
 ### 0.2 Tooling (verified 2026-09-07)
 - **electron-builder is 26.15.3** (bumped in the Electron 44 upgrade). The `appx` target + `runFullTrust`
   injection work cleanly.
