@@ -23,6 +23,51 @@ Nothing here blocks the **MSIX/Store** channel except items P0-1, P0-3, P0-4 (St
 
 ---
 
+## Oracle adversarial vet — SIGN OFF WITH CORRECTIONS
+The Oracle traced every load-bearing P0/P1/P2 claim to source. **No finding is wrong.** It confirmed P0-1's
+"silent wrong auto-file" is REAL (dropping the shape-warn cap restores the field's *native high* confidence,
+so the 88 critical-field floor, the `flagged` check, and `docTrustGate` all pass — the only residual safety is
+each arc's own precondition, not a shared gate) and that the customer DPI default is genuinely 300. Four
+corrections and one missed seam:
+
+### THE SEAM the four auditors missed (cross-lane) — census contamination
+**The mechanism used to validate the fix is contaminated by the thing being fixed.** The P0-1 build-gate stops
+*future* tainted builds, but the owner's own live/reference DB **already ran and stamped migs 108…136**, with
+no down-migration and `deleteAppDataOnUninstall:false` — so those switches are ON **forever** on the reference
+DB. Therefore every future OFF==ON / realdoc-M=0 census the owner runs to validate the *next* build reads a DB
+where they're already ON → the arm is **vacuous** (the same "`!= '0'` reads EMPTY as ON" / "rr_ids harness
+vacuous" trap already in the memory index). gary saw the migration, eric saw `deleteAppDataOnUninstall`, oscar
+saw the corpus gate, main-Claude saw persistence — nobody joined them. **Consequence: the reference-DB
+reconciliation (a real down-migration OR a customer-build reset) is CO-EQUAL with the gate, not "Secondary".**
+
+### Corrections applied below
+1. **P0-1's down-migration / reference-DB reconciliation → REQUIRED** (was "Secondary"). Without it your future
+   validation censuses lie.
+2. **P2-1 (DPI 200 default) is re-tiered UP** — it's not just speed: 300 is an **un-corpus-validated operating
+   point** (M=0 was measured at 200) and the crop/reslice geometry is calibrated for 200, so the current
+   default is a quality + stability risk, not only a slow one. Treat as a pre-release quality item.
+3. **P2-3 (deskew bitmap reuse) needs an explicit realdoc M=0 gate** — it changes a read path that decides
+   which docs heal and get adopted; the audit named no gate.
+4. **P0-5 (/v1 temp-password) and P1-8 (doc access control) gate ONLY the LAN add-on** — deferrable if the
+   first release is **core-desktop-only**. P0-4 (plaintext DB) is a *decision*, not a code blocker.
+
+### Oracle's TRUE top-3 blockers (core desktop, direct download)
+1. **P0-1 gate + reference-DB reconciliation** — the one silent-wrong-file class, cheap, and without the
+   reconciliation your censuses can't be trusted.
+2. **P0-3 HARDEN_JS release build** — the licence verifier ships in the clear = trivial repack-and-patch bypass.
+3. **P2-1 DPI 200 default + P2-4 RAM recalibration** — retires an un-validated default and an OOM on 4-8GB PCs.
+
+(P0-2 signing is real but business-gated on incorporation; unsigned NSIS is the accepted name-clean interim → #4.)
+
+### The validation gate for the efficiency bundle
+Do NOT ship the P2 changes off a census run on the contaminated reference DB. Run **one COLD-DB corpus pass at
+exactly `{DPI 200, parallel ON, all 12 revert-list switches OFF}`** → require **M=0 AND zero per-field accuracy
+delta** vs the 200-DPI serial baseline. `{DPI 200, parallel ON, switches OFF}` as one combined config on a cold
+DB has never been run — seed-OFF is the validated baseline and parallel is byte-identical, so it's *probably*
+the validated point, but it must be **pinned** by that cold run.
+
+---
+
 ## P0 — Release blockers (fix before ANY public deployment)
 
 ### P0-1 [CRITICAL · effort S] No build gate stops shipping the TEST-BUILD force-ON migrations
@@ -37,8 +82,12 @@ DB that already ran them** (no down-migration), and `deleteAppDataOnUninstall:fa
 test machine keeps them ON forever, seeding any reference/backup DB with them.
 - **Fix:** `scripts/check-release-migrations.js` prebuild gate wired into `build` — grep `database/index.js`
   for the `TEST-BUILD force-ON` marker and **fail the build unless `ALLOW_TEST_MIGS=1`** (test builds pass,
-  a release build refuses). Add a machine-readable sentinel comment per block. Secondary: a real
-  down-migration or a "customer build resets these OFF" reconciliation so a persisted ON can't survive.
+  a release build refuses). Add a machine-readable sentinel comment per block.
+- **AND (REQUIRED, co-equal — Oracle):** a real down-migration OR a "customer build resets these OFF"
+  reconciliation. Not optional — the owner's reference DB already ran + stamped 108…136 (ON forever, no
+  down-migration, `deleteAppDataOnUninstall:false`), so **until it is reconciled every future OFF==ON / M=0
+  census reads a contaminated DB and is vacuous** (see the Oracle seam above). The gate fixes future builds;
+  the reconciliation is what lets you TRUST the validation of them.
 
 ### P0-2 [CRITICAL · effort M — owner] Unsigned installers make the asar-integrity fuses unenforceable; unpacked native modules are outside integrity entirely
 *eric.* All five `electronFuses` are declared (`enableEmbeddedAsarIntegrityValidation`, `onlyLoadAppFromAsar`)
@@ -159,6 +208,7 @@ tilted) a large fraction of docs pay ~2×. The heal is genuinely valuable (~98% 
 - **Fix (preferred):** the second pass should **reuse the already-rendered page bitmaps** (it re-renders from
   the PDF; straightening is on the same pixels — re-render is redundant, ~0.25s/page). OR move the heal to the
   Review "Straighten + Reprocess" button so cold-start import stays fast. Keep the never-auto-file hold.
+  **Gate (Oracle): a realdoc M=0 — this changes a read path that decides which docs heal and get adopted.**
 
 ### P2-4 [MED · effort S] The RAM cap is calibrated for 200 DPI → at the 300 default a big multi-page scan can OOM a 4-8GB PC
 *oscar.* `PER_WORKER_BUDGET_BYTES` = 1.5GB assumes 200-DPI pages; `extract_text_and_images` holds ALL pages at
