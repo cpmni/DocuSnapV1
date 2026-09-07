@@ -363,6 +363,9 @@ function _reconcileEnv(db) {
     // cross-checks it and FLAGS a confident disagreement (keeps the value, routes to review). Dates
     // only (Slice 1); geometric neighbour guard; never silent-swaps. Default OFF, byte-identical off.
     if (learning.getSetting(db, 'template_pad_window_read', 'false') === 'true') env.TEMPLATE_PAD_WINDOW_READ = '1';
+    // TEMPLATE_PAD_DATE_CONTAINMENT_FLAG (2026-09-07, Oracle C12): the pad-window date flag's clipped-first-digit
+    // sub-case fires WITHOUT the +15 margin (≤70 + note + a one-click corrected_to; never a swap). DARK (mig 132).
+    if (learning.getSetting(db, 'template_pad_date_containment_flag', 'false') === 'true') env.TEMPLATE_PAD_DATE_CONTAINMENT_FLAG = '1';
     // Pad-window CODE read — the code sibling of the date slice above. A taught CODE box too tight for
     // its value clips the leading glyphs ('PO-48009' -> '-48009') or garbles it; a wider row-bounded
     // re-read of the SAME box either recovers the fuller code (consented strict-suffix SWAP) or FLAGS

@@ -2887,6 +2887,19 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 131 (template_date_left_clip_grow): ${e.message}`); }
   }
 
+  // ── migration 132: template_pad_date_containment_flag seeded OFF (2026-09-07, gary A2 → Oracle SIGN-OFF-W/COND
+  //    C12). The pad-window date cross-check's +15 margin is blind to a clean first-glyph clip (a half-"2" reads as
+  //    a confident 5/9); the containment sub-case — a one-digit first component whose padded read restores exactly
+  //    one leading digit — flags ≤70 + note + a one-click corrected_to without the margin. Never a swap. DARK
+  //    until the OFF→ON realdoc M=0 + flag census are read. ──
+  if (!applied.has(132)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('template_pad_date_containment_flag', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (132)').run();
+      console.log(`JS migration 132 applied: template_pad_date_containment_flag (clipped-first-digit date flags without the margin) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 132 (template_pad_date_containment_flag): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

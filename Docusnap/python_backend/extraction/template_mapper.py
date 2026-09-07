@@ -715,6 +715,19 @@ _NAME_GROW_NOTE = ("The taught box's edge cuts through the last word of this nam
 # live. Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_template_pad_window_read.py.
 _PAD_WINDOW_READ_ON = os.environ.get('TEMPLATE_PAD_WINDOW_READ', '0') != '0'
 _PAD_DISAGREE_MARGIN = 15          # padded read's OCR conf must beat the TIGHT read's by this (Oracle ~15)
+# TEMPLATE_PAD_DATE_CONTAINMENT_FLAG (2026-09-07, gary A2 → Oracle SIGN-OFF-W/COND C12; DARK, mig 132 seeds
+# `template_pad_date_containment_flag` OFF; nested under the pad-window read). The +15 margin above is blind
+# to a CLEAN first-glyph clip: a half-"2" reads as a confident 5 or 9, so `5/03/2026` @91 against a padded
+# `25/03/2026` @92 never clears tight+15 and the clipped date files silently. CONTAINMENT sub-case: when the
+# committed raw date has a ONE-digit first component and the padded nearest-centre read is a different
+# calendar date whose digit string ends with the committed one and is exactly one digit longer (the clipped
+# digit restored), FLAG WITHOUT the margin — cap ≤70, the note, and `corrected_to` = the padded value (a
+# one-click "Use"). Never a swap (Oracle C1 stands). A genuinely printed `5/03/2026` reads the same padded
+# (Case 2 no-op) so it cannot false-flag; a glued neighbour digit flags to review, not silently.
+# Pins: tests/test_template_pad_date_containment.py.
+_PAD_DATE_CONTAINMENT_ON = os.environ.get('TEMPLATE_PAD_DATE_CONTAINMENT_FLAG', '0') != '0'
+_PAD_DATE_CONTAIN_NOTE = ("A wider reading of this date box shows '{}' — the taught box may be clipping the "
+                          "first digit; please check which is printed.")
 _PAD_DATE_DISAGREE_NOTE = ("A wider reading of this date box shows '{}', which differs from the "
                            "value shown here — please check which is printed.")
 
@@ -2192,6 +2205,23 @@ def _maybe_pad_date_flag(page, target_box, val_type, result, tight_ocr_conf):
     pd = validator.parse_date(pad_val)
     if pd is None or pd.date() == cd.date():  # Case 2 — calendar-equal (e.g. 3/04 vs 03/04): no-op
         return result
+    # TEMPLATE_PAD_DATE_CONTAINMENT_FLAG (see the flag block): the clipped-first-digit sub-case flags without
+    # the margin — the committed raw date's first component is ONE digit, un-salvaged, and the padded date's
+    # digit string restores exactly one leading digit ('25032026' ← '5032026').
+    if _PAD_DATE_CONTAINMENT_ON and not str(result.get("method") or "").endswith("_salvaged"):
+        m4 = None
+        for m4 in _DATE_CLIP_NUMERIC.finditer(str(committed)):
+            pass
+        do = re.sub(r'[^0-9]', '', str(committed))
+        dn = re.sub(r'[^0-9]', '', str(pad_val))
+        if (m4 is not None and len(m4.group(1)) == 1 and len(m4.group(3)) == 4
+                and do and dn.endswith(do) and len(dn) == len(do) + 1):
+            out = dict(result)
+            out["confidence"] = min(out.get("confidence") or 90, 70)
+            out["method"] = (out.get("method") or "template_mapping") + "_padcontain"
+            out["validation_note"] = _PAD_DATE_CONTAIN_NOTE.format(pad_val)
+            out["corrected_to"] = pad_val            # one click away — never a silent swap
+            return out
     # Case 3 — DISAGREEMENT. Only flag when the padded read is confidently better than the TIGHT
     # read (not the synthetic 90 tier — that would never fire). Weak disagreement adds review load
     # for no gain → keep the current commit (Oracle: fail toward MAX auto-file).
