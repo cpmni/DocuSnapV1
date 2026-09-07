@@ -245,6 +245,11 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-09-07 NIGHT · FULL PRE-DEPLOYMENT AUDIT (owner ask) — security + efficiency, no code changes.** 4 auditors
+  (eric/gary/oscar/main-Claude) + Oracle vet. Report: `docs/PRE_DEPLOYMENT_AUDIT_2026-09-07.md` (P0 blockers → P3
+  refactor). Top: the TEST-BUILD force-ON migs (108/…/136) have NO build gate → customers could ship every switch
+  ON (silent wrong auto-files); unsigned/opt-in-hardened artifacts; plaintext DB; easy wins = DPI 200 default +
+  import parallelism. Repeat if: before a public release build (re-check the gate + node-forge + fuse read).
 - **2026-09-06 AFTERNOON · Hard Set 3-arm re-score + 5b sibling run (follow-on to the log-review build).** Result:
   5b siblings 0 diffs; Hard Set wrong+would-file 0 in both cold arms; the two moved classes + the warm buyer_large 4
   wrong+would-file are reproduced EXACTLY by the pre-today python on the same DB copy = the DB reset (Statement
