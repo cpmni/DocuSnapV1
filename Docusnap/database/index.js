@@ -2900,6 +2900,19 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 132 (template_pad_date_containment_flag): ${e.message}`); }
   }
 
+  // ── migration 133: template_clip_commit_left_slack seeded OFF (2026-09-07). The leading-glyph mirror of the
+  //    Oracle-signed trailing edge slack (2026-08-06): a taught box that cuts the FIRST character reads a confusable
+  //    ('lNV-19842' vs the inline 'INV-19842') and fell through to the inline-disagree flag — the correct value @70
+  //    with a false "differs from the usual format" note (44/147 docs on the healed arm). Same legs (conf margin,
+  //    prefix floor, ladder, locate token, shape consent). DARK until its OFF→ON realdoc M=0 + fire census are read. ──
+  if (!applied.has(133)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('template_clip_commit_left_slack', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (133)').run();
+      console.log(`JS migration 133 applied: template_clip_commit_left_slack (leading-glyph clip-commit slack) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 133 (template_clip_commit_left_slack): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

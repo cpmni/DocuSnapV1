@@ -332,6 +332,9 @@ function _reconcileEnv(db) {
     // word-edge guard (grow a cut taught box's READ to the full word, witness-corroborated), the
     // date-clip fragment gate + the locate digit-exactness guard. Dark until the owner flip.
     if (learning.getSetting(db, 'template_abs_edge_guard', 'false') === 'true') env.TEMPLATE_ABS_EDGE_GUARD = '1';
+    // TEMPLATE_CLIP_COMMIT_LEFT_SLACK (2026-09-07): the leading-glyph mirror of the trailing edge slack — a taught
+    // box cutting the FIRST character no longer flags the correct inline value with a false note. DARK (mig 133).
+    if (learning.getSetting(db, 'template_clip_commit_left_slack', 'false') === 'true') env.TEMPLATE_CLIP_COMMIT_LEFT_SLACK = '1';
     // TEMPLATE_DATE_LEFT_CLIP_GROW (2026-09-07, Oracle C9-C11): the guard's H3 exemption narrowed for a 4-digit-year
     // date with a ONE-digit first component — a LEFT cut may grow (strict comparator). DARK (mig 131 seeds OFF).
     if (learning.getSetting(db, 'template_date_left_clip_grow', 'false') === 'true') env.TEMPLATE_DATE_LEFT_CLIP_GROW = '1';

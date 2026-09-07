@@ -483,6 +483,24 @@ try:
     _CLIP_COMMIT_EDGE_SLACK_MARGIN = int(os.environ.get('TEMPLATE_CLIP_COMMIT_EDGE_SLACK_MARGIN', '15'))
 except ValueError:
     _CLIP_COMMIT_EDGE_SLACK_MARGIN = 15
+# LEFT-EDGE SLACK (2026-09-07; DARK, mig 133 seeds `template_clip_commit_left_slack` OFF; nested under
+# _CLIP_COMMIT_ON). The EXACT mirror of the trailing-glyph slack above for the LEADING glyph: a taught box that
+# lands a glyph to the right cuts the FIRST character, which Tesseract reads as a confusable ('l'/'|'/'i' for a
+# half 'I': box 'lNV-19842' vs the double-witnessed inline 'INV-19842'). A PURE suffix ('NV-19842') already heals
+# as `unclip`; a SUBSTITUTED leading glyph fell through to `inline_disagree_flag` — the correct inline value
+# capped @70 with the factually-false "differs from the usual format" note (44 docs on the 147-doc healed arm,
+# the dominant review-load driver after the placement fix). Admit a LENGTH-PRESERVING single-LEADING-glyph
+# substitution under the SAME legs as the trailing slack: the rigid markedly LESS confident (the margin), the
+# shared (len-1) suffix clears the prefix floor, ladder + locate_token==inline + shape-consent. Census marker
+# `clip_commit_left`. OFF = byte-identical. Pins: tests/test_template_clip_left_slack.py.
+_CLIP_COMMIT_LEFT_SLACK_ON = os.environ.get('TEMPLATE_CLIP_COMMIT_LEFT_SLACK', '0') != '0'
+# HONEST NOTE for `inline_disagree_flag` (2026-09-07; kill INLINE_DISAGREE_HONEST_NOTE=0). The flag path adopted
+# the inline value but wore the SHAPE-warn sentence ("differs from the usual format") — false when the value
+# matches every confirmed sibling (the owner's E2: "the format is literally identical"). Same cap, same review
+# bind, a truthful sentence naming both reads. Not a "confirm once" lane-hold note (same semantics as before).
+_INLINE_DISAGREE_HONEST_NOTE_ON = os.environ.get('INLINE_DISAGREE_HONEST_NOTE', '1') != '0'
+_INLINE_DISAGREE_NOTE = ("The taught box read '{rigid}' but the text beside its label reads '{inline}' — the box "
+                         "may be clipping the first character; please check which is printed.")
 
 
 def _anchor_alnum_tail(anchor_text):
@@ -1698,7 +1716,13 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
                   and ni[:-1] == _core2[:-1] and ni[-1:] != _core2[-1:]
                   and rigid_conf is not None and inline_conf is not None
                   and inline_conf >= rigid_conf + _CLIP_COMMIT_EDGE_SLACK_MARGIN)
-        if not (_exact or _slack):
+        # LEFT-EDGE SLACK (see the flag block): the leading-glyph mirror, same legs.
+        _lslack = (_CLIP_COMMIT_LEFT_SLACK_ON
+                   and len(ni) == len(_core2) and len(ni) - 1 >= _CLIP_COMMIT_MIN_PREFIX
+                   and ni[1:] == _core2[1:] and ni[:1] != _core2[:1]
+                   and rigid_conf is not None and inline_conf is not None
+                   and inline_conf >= rigid_conf + _CLIP_COMMIT_EDGE_SLACK_MARGIN)
+        if not (_exact or _slack or _lslack):
             _clip_decline = 'not_a_strict_prefix'
         elif _exact and len(_core2) < _CLIP_COMMIT_MIN_PREFIX:
             _clip_decline = 'prefix_too_short'
@@ -1713,7 +1737,7 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
         if _clip_decline is None:
             committed = _mapping_result(inline_val, True, False, False, anchor,
                                         val_type=val_type, geom=inline_geom)
-            committed["_heal"] = "clip_commit"                   # census marker
+            committed["_heal"] = "clip_commit_left" if (_lslack and not _exact and not _slack) else "clip_commit"   # census marker
             if inline_geom is not None:                          # diag-only trace marker
                 committed["clip_committed_from"] = rigid_text
             return committed
@@ -1745,6 +1769,9 @@ def _pick_fuller_code(rigid_text, rigid_conf, inline_val, inline_conf, anchor, v
             return committed
     flagged = _mapping_result(inline_val, True, False, False, anchor, shape_warn=True,
                               val_type=val_type, geom=inline_geom)
+    if _INLINE_DISAGREE_HONEST_NOTE_ON:
+        flagged["validation_note"] = _INLINE_DISAGREE_NOTE.format(
+            rigid=str(rigid_text or '').strip() or '(nothing)', inline=str(inline_val or '').strip())
     flagged["_heal"] = "inline_disagree_flag"                    # census marker
     if inline_geom is not None and _clip_decline:                # diag-only decline reason
         flagged["clip_decline"] = _clip_decline
