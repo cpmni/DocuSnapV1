@@ -29,7 +29,10 @@ compose ~13.7 px/degree to the side); every template on the install was NULL bec
 `ocr/detect_angle.py` away (`13cfcf9` KEEP_SOURCE, not yet in an installer).** Fixes: `7c61317` P1(a) the wizard's
 measured tilt written at commit + a startup backfill (switchless) · DARK, seed OFF, NO force-ON: `e296310` mig 129
 `teach_angle_compose_null_abstain` (arm: NOT a flip candidate alone) · `90d62ad` mig 130 `reread_hold_corrob_release` ·
-`14074e8` mig 131 `template_date_left_clip_grow` · `3ef9ec4` mig 132 `template_pad_date_containment_flag`. Speed:
+`14074e8` mig 131 `template_date_left_clip_grow` · `3ef9ec4` mig 132 `template_pad_date_containment_flag` ·
+`5ee8cd4` mig 133 `template_clip_commit_left_slack` (+ the honest inline-disagree note, default ON) — **E2's note =
+`inline_disagree_flag`, not the format model; the 4 silent invoice-date "regressions" on the fresh DB are POISONED GT
+(doc 27 reads `28/01/2026` three independent ways)**. Speed:
 `8b8b095` SHARED_LOCATE_CACHE (byte-identical; yield only on level pages) · `5e40fa2` OMP inherit · `e9f67a4`
 OCR_PARALLEL_IMPORT (mig 127 seed OFF + **mig 128 TEST force-ON**; byte-identical + 10× determinism). UX: `d43bff6` one
 plain separator sheet · `bdcaf6c` session folder memory · `3c4f9ef` sticky-bottom import log · `a0e3795` teach-import
