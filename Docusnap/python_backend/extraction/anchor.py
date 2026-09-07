@@ -1754,7 +1754,8 @@ def extract_with_anchors(ocr_text: str, anchors: list[dict],
                          text_field_keys = None,
                          multiline_lookup = None,
                          identity_labels = None,
-                         force_serial = False) -> dict:
+                         force_serial = False,
+                         line_cache = None) -> dict:
     """
     Attempt to extract field values using saved structural anchors.
 

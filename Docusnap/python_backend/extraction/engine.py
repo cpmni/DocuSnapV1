@@ -794,6 +794,19 @@ TEACH_ANGLE_COMPOSE = os.environ.get('TEACH_ANGLE_COMPOSE', '0') != '0'
 # Stored rows are NEVER mutated — copies only, exactly as the deskew sibling does.
 # Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_teach_angle_compose_scan.py.
 TEACH_ANGLE_COMPOSE_SCAN = os.environ.get('TEACH_ANGLE_COMPOSE_SCAN', '0') != '0'
+
+# SHARED_LOCATE_CACHE (2026-09-07, oscar+gary -> Oracle SIGN-OFF-W/COND C1-C4; owner: "import is notably
+# slower than it used to be"). ONE label-locate OCR cache per extract() call, threaded to Stage 0.5
+# (extract_with_mappings), the Stage-2 landmark re-fit and every extract_with_anchors call. Before, each
+# held a private dict, so the Stage-2 fit re-OCR'd the SAME landmark bands on the SAME page object (5 of
+# 10 fit locates on the profiled doc were byte-for-byte re-spawns, ~1.2 s) and a page-wide pass could
+# run once per stage. Reuse is exact: same page object (crop_pages is held for the whole call, so an
+# id() can never be recycled while the cache lives), same `_ocr_lines` recipe (C2: the cache is stamped
+# with its function; another fn bypasses it), and a FAILED OCR is never memoised (C1: `_ocr_lines`
+# returns None on exception, `_locate_anchor` skips the cache). The pooled Stage-2 field groups keep
+# their serial cache-warming first group. Kill SHARED_LOCATE_CACHE=0 -> every stage its own dict (today).
+# Pins: tests/test_shared_locate_cache.py. Gate: realdoc RR_CONSENSUS per-field byte-identity OFF==ON.
+SHARED_LOCATE_CACHE = os.environ.get('SHARED_LOCATE_CACHE', '1') != '0'
 _COMPOSE_SCAN_MIN_NET = 0.2    # below the detector's own noise floor a compose is not evidence
 _COMPOSE_SCAN_MAX_NET = 5.0    # beyond this the page is not "slightly askew" — leave it to review
 
@@ -7995,6 +8008,7 @@ class ExtractionEngine:
         """
         self._trace     = trace
         self._slice_dir = slice_dir   # dev-only crop capture dir (set only with --trace)
+        self._line_cache = ({} if SHARED_LOCATE_CACHE else None)   # SHARED_LOCATE_CACHE: one per extract()
         self._slice_n   = 0
         self._field_candidates = {}   # per-run candidate ledger — ALWAYS built (_remember_candidates is
                                       # unconditional); safety-load-bearing for G1 arm (i), do not re-gate
@@ -8350,6 +8364,7 @@ class ExtractionEngine:
                         template_landmarks=_landmarks,
                         registration_enabled=self.registration_enabled,
                         read_geoms_out=self._s05_read_geom,   # the box each rung actually read (re-slice witness)
+                        line_cache=self._line_cache,          # SHARED_LOCATE_CACHE
                     )
                     # RE-SLICE WITNESS inputs: the mappings + pages AS READ (composed, in-memory).
                     self._s05_mappings = list(tmpl_mappings or [])
@@ -9016,7 +9031,8 @@ class ExtractionEngine:
                 else:
                     try:
                         anchor_page_transform = template_mapper._fit_page_transform(
-                            crop_pages[0], _alm, template_mapper._ocr_lines)
+                            crop_pages[0], _alm, template_mapper._ocr_lines,
+                            line_cache=self._line_cache)   # SHARED_LOCATE_CACHE: reuse Stage 0.5's locates
                     except Exception as e:
                         self.log(f"  Stage 2: landmark fit skipped ({e})", "warn")
                     # S-D VACUOUS-FIT GATE (Oracle-authorized cheap gate, evidence-met 2026-08-01;
@@ -9081,6 +9097,7 @@ class ExtractionEngine:
                 multiline_lookup=self._make_multiline_lookup(supplier_name, document_slug),
                 identity_labels=_identity_labels,
                 force_serial=bool(self._trace),
+                line_cache=self._line_cache,   # SHARED_LOCATE_CACHE
             )
             _pre_s2 = self._snap(results)
             self._remember_candidates('2_anchor', anchor_results)
@@ -9896,6 +9913,7 @@ class ExtractionEngine:
                         multiline_lookup=self._make_multiline_lookup(supplier_name, document_slug),
                         identity_labels=_r_identity_labels,
                         force_serial=bool(self._trace),
+                        line_cache=self._line_cache,   # SHARED_LOCATE_CACHE
                     ) or {}
                 except Exception as e:
                     rescue_results = {}
@@ -9949,6 +9967,7 @@ class ExtractionEngine:
                         page_text_lines=page_text_lines,
                         text_field_keys=text_field_keys,
                         multiline_lookup=self._make_multiline_lookup(supplier_name, document_slug),
+                        line_cache=self._line_cache,   # SHARED_LOCATE_CACHE
                     ) or {}
                 except Exception as e:
                     corrob_results = {}

@@ -878,7 +878,8 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
                           ocr_lines_fn=None, ocr_text_fn=None, slice_capture=None,
                           validation_patterns=None, format_lookup=None,
                           template_landmarks=None, registration_enabled=False,
-                          provisional_lookup=None, read_geoms_out=None):
+                          provisional_lookup=None, read_geoms_out=None,
+                          line_cache=None):
     """
     Run every enabled mapping against `page_images` and return resolved fields.
 
@@ -908,7 +909,10 @@ def extract_with_mappings(page_images, mappings, field_patterns=None,
     # Per-page OCR cache (Stage 1 / #4): memoises full-page image_to_data so the
     # transform fit + every per-field page-wide relocation share ONE pass per page
     # (see _locate_anchor). One dict for the whole call; keyed by (page, crop_box).
-    line_cache = {}
+    # SHARED_LOCATE_CACHE (2026-09-07): the engine may hand in ONE per-document cache so the Stage-2
+    # landmark re-fit and the Stage-2 relocations reuse the locates this stage already OCR'd (the same
+    # page object, the same `_ocr_lines` recipe — reuse is exact). None -> a private dict = today.
+    line_cache = line_cache if line_cache is not None else {}
 
     # Pre-pass: relocate every mapping's anchor ONCE and cache it so _extract_one
     # reuses it (no anchor OCR'd twice) for the single-label local-refinement path.
@@ -3574,8 +3578,13 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
     crop_box = _clamp_box(search_box)
     cache_key = None
     if line_cache is not None and capture is None:
-        cache_key = (id(page), round(crop_box["x_norm"], 4), round(crop_box["y_norm"], 4),
-                     round(crop_box["w_norm"], 4), round(crop_box["h_norm"], 4))
+        # SHARED_LOCATE_CACHE (Oracle C2, 2026-09-07): ONE cache serves ONE line-OCR recipe. The first
+        # user stamps its function on the cache; a caller with a DIFFERENT ocr_lines_fn (a test stub,
+        # a future recipe) bypasses the cache instead of reading lines another recipe produced.
+        _owner = line_cache.setdefault("_fn", ocr_lines_fn)
+        if _owner is ocr_lines_fn:
+            cache_key = (id(page), round(crop_box["x_norm"], 4), round(crop_box["y_norm"], 4),
+                         round(crop_box["w_norm"], 4), round(crop_box["h_norm"], 4))
     if cache_key is not None and cache_key in line_cache:
         lines = line_cache[cache_key]
     else:
@@ -3586,6 +3595,8 @@ def _locate_anchor(page, anchor_box, anchor_text, expansion, ocr_lines_fn,
             try: capture(crop)
             except Exception: pass   # dev-only slice capture; never disrupt relocation
         lines = ocr_lines_fn(crop)
+        if lines is None:
+            return None              # C1: an OCR failure is not a result — never cached, re-spawned next time
         if cache_key is not None:
             line_cache[cache_key] = lines
     if not lines:
@@ -3926,7 +3937,11 @@ def _ocr_lines(image):
             return []
         data = pytesseract.image_to_data(img, config="--oem 3 --psm 6", output_type=Output.DICT)
     except Exception:
-        return []
+        # SHARED_LOCATE_CACHE (Oracle C1, 2026-09-07): a FAILED OCR call returns None — distinct from a
+        # genuine empty read ([]) — so `_locate_anchor` never memoises a transient failure and serves
+        # "label not found" to every later consumer of the shared per-document cache (Stage 2's
+        # relocation, label-lock and caption checks). Every caller guards None (`or []` / `is None`).
+        return None
 
     groups = {}
     for i in range(len(data.get("text", []))):
