@@ -558,6 +558,18 @@ function _corrobLicensed(record) {
   for (const f of fams) if (_CORROB_PAGE_FAMILIES.has(f)) return true;
   return false;
 }
+// _corrobLicensedKeyword — the JS TWIN of process_docs._corrob_licensed_keyword (DESKEW_CORROB_AUTOFILE C2a,
+// 2026-08-31): the shared licence above AND a KEYWORD (page-text) witness among the agreeing families. A
+// page-text read is a different OCR invocation from a crop re-OCR, which closes the mapping+crop common-mode
+// case (two box crops taught on the same tight geometry reproduce the same clip). Consumer-side TIGHTENING of
+// the ONE predicate (Oracle 2026-09-07 C13) — never a second licence; `_corrobLicensed` is untouched.
+function _corrobLicensedKeyword(record) {
+  if (!_corrobLicensed(record)) return false;
+  let rec = record;
+  if (typeof rec === 'string') { try { rec = JSON.parse(rec); } catch { return false; } }
+  const fams = new Set([rec.winner_family, ...(Array.isArray(rec.agree) ? rec.agree : [])].filter(Boolean));
+  return fams.has('keyword');
+}
 
 // Every FILENAME-DECIDING role (issuer + ref + date — the same roleKeys set docTrustGate builds)
 // must carry a non-empty value AND a licensed record. Both role keys must exist on the type
@@ -1247,6 +1259,7 @@ module.exports = {
   _gateUnifyEnabled,               // ditto for gate-unify — handler.js T1 and the T2 refusal share ONE read
   _missingRequiredKey,             // exported for the T2 pins (test_scope_trust.js)
   _corrobLicensed,                 // exported for the declined census + pins — decision logic stays HERE
+  _corrobLicensedKeyword,          // its keyword-witness tightening (rereadHolds corrob release; test_reread_holds_corrob_release.js)
   _critFieldCorrobRelaxEnabled, _vacuousCorrectedToIgnore,   // exported so pins can't drift from the default
   _roleDisagreementRefuseEnabled, _pageFamilyDisagrees,      // r19 (d): the role-field disagreement refusal
   _companyKeyOwnScopeEnabled, _scopeFormats,                 // r19 N2: a company key verifies only against its own scope

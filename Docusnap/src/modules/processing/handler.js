@@ -1107,8 +1107,18 @@ function _reprocessHoldsEnabled(db) {
   try { return require('../../../database/modules/learning').getSetting(db, 'reprocess_holds_as_lane', 'false') === 'true'; }
   catch { return false; }
 }
+function _rereadHoldCorrobReleaseOn(db) {
+  if (process.env.REREAD_HOLD_CORROB_RELEASE === '1') return true;
+  if (process.env.REREAD_HOLD_CORROB_RELEASE === '0') return false;
+  try { return require('../../../database/modules/learning').getSetting(db, 'reread_hold_corrob_release', 'false') === 'true'; } catch { return false; }
+}
 function _rereadHolds() {
-  return require('./rereadHolds').create({ corroborated: (rec) => require('../../../database/modules/trust')._corrobLicensed(rec), k: FIRST_FILL_UNRELIABLE_K });
+  return require('./rereadHolds').create({
+    corroborated: (rec) => require('../../../database/modules/trust')._corrobLicensed(rec), k: FIRST_FILL_UNRELIABLE_K,
+    // REREAD_HOLD_CORROB_RELEASE (2026-09-07): the keyword-witness tightening + the DARK switch (env for harnesses)
+    changedReadLicensed: (rec) => require('../../../database/modules/trust')._corrobLicensedKeyword(rec),
+    corrobReleaseEnabled: (db) => _rereadHoldCorrobReleaseOn(db),
+  });
 }
 // Owner card 1 (2026-08-23): the ready arm's own switch (DARK). Rides quiet_reread_on_ready, which is
 // what schedules the 'ready' job in the first place — this only widens THAT job's population.
@@ -4645,6 +4655,8 @@ function register(ctx) {
       nameTokens: (name) => nameArmTokens(name),
     },
     corroborated: (rec) => require('../../../database/modules/trust')._corrobLicensed(rec),
+    changedReadLicensed: (rec) => require('../../../database/modules/trust')._corrobLicensedKeyword(rec),   // REREAD_HOLD_CORROB_RELEASE
+    corrobReleaseEnabled: (db) => _rereadHoldCorrobReleaseOn(db),
     typeSplitArm: { enabled: (db) => _typeSplitRippleOn(db) },   // A6
     // Owner card 1 (2026-08-23): the READY arm — DARK behind `quiet_reread_on_ready_templated`, riding
     // `quiet_reread_on_ready` (the crossing itself). The floor is the scope's LIVE trust floor.

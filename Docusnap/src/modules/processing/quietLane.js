@@ -58,6 +58,8 @@ function create(deps) {
     timers = { setTimeout, clearTimeout, setInterval, clearInterval },
     layoutArm = null,           // Q3: { enabled(db), onPage(db), nameTokens(name) } — the layout arm's preconditions
     corroborated = null,        // Q3 C3.3: trust._corrobLicensed(record) — licenses a first-fill to stand
+    changedReadLicensed = null, // REREAD_HOLD_CORROB_RELEASE (2026-09-07): trust._corrobLicensedKeyword(record)
+    corrobReleaseEnabled = null, // (db) → bool — the `reread_hold_corrob_release` switch
     typeSplitArm = null,        // A6 (type-split arc): { enabled(db) } — the confirm-once ripple's switch
     readyArm = null,            // owner card 1 (2026-08-23): { enabled(db), floor(db, supplier, slug) } — the READY-crossing re-read of TEMPLATE-CARRYING held docs below the scope floor
     firstFillReliability = null, // Chris r18 A1 (Oracle 2026-08-23): { enabled(db), k } — hold every first-fill at merge, release at finish unless the field proved unreliable in this job
@@ -462,7 +464,8 @@ function create(deps) {
   // S3-C5 changed reads (with the C1 type-valid baseline), first-fill holds per via, the reliability
   // witnesses + release — shared with the manual "Reprocess N" road. Thin aliases keep the names the
   // tests and the merge below use.
-  const _holds = require('./rereadHolds').create({ corroborated, k: Number(firstFillReliability && firstFillReliability.k) || 1 });
+  const _holds = require('./rereadHolds').create({ corroborated, changedReadLicensed, corrobReleaseEnabled,
+    k: Number(firstFillReliability && firstFillReliability.k) || 1 });
   const RELIABILITY_NOTE = _holds.RELIABILITY_NOTE;
   const _holdChangedReads = (db, docId, existing) => _holds.holdChangedReads(db, docId, existing);
   const _holdFirstFills = (db, docId, existing, noteText) => _holds.holdFirstFills(db, docId, existing, noteText);

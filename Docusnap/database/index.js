@@ -2862,6 +2862,18 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 129 (teach_angle_compose_null_abstain): ${e.message}`); }
   }
 
+  // ── migration 130: reread_hold_corrob_release seeded OFF (2026-09-07, gary → Oracle SIGN-OFF-W/COND C13-C17,
+  //    NO force-ON twin). The S3-C5 "Read differently after learning" hold releases a fresh read that is
+  //    corroboration-LICENSED with a keyword witness over an unlicensed old record (identity excluded). Flip
+  //    gate: the C17 auto-file ELIGIBILITY DELTA census, each flipped doc vetted against its page. ──
+  if (!applied.has(130)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('reread_hold_corrob_release', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (130)').run();
+      console.log(`JS migration 130 applied: reread_hold_corrob_release (S3-C5 hold released on a licensed keyword-witnessed re-read) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 130 (reread_hold_corrob_release): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

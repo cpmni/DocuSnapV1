@@ -50,6 +50,19 @@ function _validDate(v) {
 function create(deps = {}) {
   const corroborated = deps.corroborated || (() => false);
   const K = Number.isFinite(deps.k) ? Number(deps.k) : 1;
+  // REREAD_HOLD_CORROB_RELEASE (2026-09-07, gary → Oracle SIGN-OFF-W/COND C13-C17; DARK, mig 130 seeds
+  // `reread_hold_corrob_release` OFF, no force-ON twin). The S3-C5 "Read differently after learning" hold
+  // compared baseline vs fresh and never looked at the fresh row's corroboration record: a fresh value
+  // LICENSED by two independent page families incl. a KEYWORD (page-text) witness was still held against an
+  // outvoted single-family baseline, and the baseline stuck via corrected_to across every later re-read.
+  // With the switch ON such a changed read is RELEASED — no note, no put-back offer — when ALSO (C14) the
+  // OLD row's own record was NOT licensed (two licensed reads disagreeing across time = a human's call) and
+  // (T4) the field is not the identity. A carried S3-C5 sentence naming this exact was→now is stripped and
+  // a carried corrected_to equal to that baseline is cleared (C15: never another writer's suggestion).
+  // `released: true` rides the changed entry so the reliability witness still counts it (the box DID read
+  // differently). Downstream isAutoFileEligible keeps every other leg. Fail-closed: no record → hold.
+  const changedReadLicensed = deps.changedReadLicensed || (() => false);
+  const corrobReleaseOn = deps.corrobReleaseEnabled || (() => false);
 
   function _typeInfo(db, docId) {
     const doc = db.prepare('SELECT document_type_id FROM documents WHERE id = ?').get(docId);
@@ -97,6 +110,26 @@ function create(deps = {}) {
       if (isDate && !_validDate(was) && _validDate(now)) continue;
       const note = `Read differently after learning — was '${was}', now '${now}'. Please check which is right.`;
       const prior = String(after[key].validation_note || '').trim();
+      // REREAD_HOLD_CORROB_RELEASE (see create): a licensed + keyword-witnessed fresh read over an UNLICENSED old
+      // record, on a non-identity field, stands without the hold (C14 old-record check, T4 identity excluded).
+      let release = false;
+      try {
+        release = !COMPANY_KEYS.has(key)
+          && !!corrobReleaseOn(db)
+          && !!changedReadLicensed(after[key].corroboration)
+          && !corroborated(before[key] && before[key].corroboration);
+      } catch { release = false; }
+      if (release) {
+        let next = prior;
+        if (next.includes(note)) next = next.replace(note, '').replace(/\s{2,}/g, ' ').trim();   // a CARRIED sentence for this exact was→now
+        if (next !== prior) upd.run(next || null, docId, key);
+        const ct = String(after[key].corrected_to || '').trim();
+        if (ct && ct === was) {                                    // C15: only the S3-C5 baseline, never another writer's suggestion
+          try { db.prepare('UPDATE extractions SET corrected_to = NULL WHERE document_id = ? AND field_key = ?').run(docId, key); } catch {}
+        }
+        changed.push({ key, was, now, released: true });
+        continue;
+      }
       // Chris round 20 card 7: a Reprocess that re-reads the SAME value carries the earlier hold
       // (mergeReprocessRows) — never print the same sentence twice.
       if (!prior.includes(note)) upd.run(prior ? `${prior} ${note}` : note, docId, key);
