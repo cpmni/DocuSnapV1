@@ -2840,7 +2840,7 @@ function register(ctx) {
       if (i >= 0) templatesFile = built.args[i + 1];
     } catch (e) { logger?.warn?.(`[separate] training-args failed: ${e && e.message}`); }
     const tf = (autoSep && templatesFile) ? templatesFile : null;   // heuristic arm needs templates; slips arm is template-less
-    if (!tf && !slipsOn) { if (built) cleanupTempFiles(built.tempFiles); return { separated: 0, rewrites: [], consumed: [] }; }
+    if (!tf && !slipsOn) { if (built) cleanupFiles(built.tempFiles); return { separated: 0, rewrites: [], consumed: [] }; }
     const sepP = Math.max(1, Math.min(os.cpus().length || 1, 6, ramConcurrencyCap()));
     try {
       return await _separateBatchDocuments(folder, tf,
@@ -2850,7 +2850,7 @@ function register(ctx) {
         (text, meta) => log?.('log', `[separate] ${text}`, { phase: true, ...(meta || {}) }),
         sepP, slipsOn, null, new Set(fileList));
     } finally {
-      if (built) cleanupTempFiles(built.tempFiles);
+      if (built) cleanupFiles(built.tempFiles);
     }
   }
   _separateFilesImpl = separateFiles;
