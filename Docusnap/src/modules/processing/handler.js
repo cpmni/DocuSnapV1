@@ -521,6 +521,13 @@ function _reconcileEnv(db) {
     if (env.BUYER_ISSUED_CONVENTION_NOTE == null && learning.getSetting(db, 'buyer_issued_convention_note', 'false') === 'true') {
       env.BUYER_ISSUED_CONVENTION_NOTE = '1';
     }
+    // ONE-CONFIRM leg of the convention licence (2026-09-07, owner ask; gary → Oracle SIGN-OFF-W/COND; DARK,
+    //   mig 125): a human answer to the note (kept the letterhead, same type) writes a `buyer_issued_convention`
+    //   record; the engine licenses that (company, type) on usage >= 1. Lives inside the note block — the
+    //   parent OFF keeps it inert. Env wins both ways for harness arms.
+    if (env.BUYER_ISSUED_CONVENTION_ONE_CONFIRM == null && learning.getSetting(db, 'buyer_issued_convention_one_confirm', 'false') === 'true') {
+      env.BUYER_ISSUED_CONVENTION_ONE_CONFIRM = '1';
+    }
     // LOCATE ROLE-QUALIFIER (2026-08-31, reggie stop-vocabulary + 007 placement → Oracle; DARK): a taught
     //   bare "Total" mapping's locate (template_mapper._locate_anchor + anchor._locate_in_text_lines) DEMOTES
     //   role-qualified "Total" occurrences (Net/Sub/Goods Total, Total VAT…) using keyword._total_role_collision,
@@ -4720,17 +4727,29 @@ function register(ctx) {
       try { r = require('../../services/issuerSiblingFillService').undoBatch(db, String(ev.undo.batchId), { actorName: (getCurrentUser() || {}).username || null, audit: logAudit, logger }); } catch (e) { r = { ok: false, reason: 'failed', message: e && e.message }; }
       if (r && r.ok) undone.push(...(ev.ids || [])); else refused.push(...(ev.ids || []));
       if (!(r && r.ok)) return { ok: false, reason: (r && r.reason) || 'failed', undone, refused };
+    } else if (ev.undo.type === 'convention') {
+      // ONE-CONFIRM convention undo (Oracle C5, 2026-09-07): retract the exact record the confirm planted —
+      // found by that confirm's audit row (never by value), so a second press or a later send-back through
+      // Learning Repair cannot double-decrement. No document is put back; the note simply asks again next time.
+      const learningMod = require('../../../database/modules/learning');
+      for (const id of (ev.ids || []).map(Number).filter(Boolean)) {
+        let r = null;
+        try { r = learningMod.retractBuyerIssuedConventionForDoc(db, id, { userId: (getCurrentUser() || {}).id, reason: 'undo' }); } catch { r = null; }
+        if (r && r.retracted) undone.push(id); else refused.push(id);
+      }
+      if (!undone.length) return { ok: false, reason: 'nothing-to-undo', undone, refused };
     } else {
       return { ok: false, reason: 'not-undoable', undone: [], refused: (ev.ids || []).slice() };
     }
     try {
-      if (undone.length) logAudit(db, { action: ev.undo.type === 'sweep' ? 'scope_sweep_undone' : ev.undo.type === 'issuerfill' ? 'issuer_sibling_fill_undone' : 'class_fix_undone', target_type: 'scope', outcome: 'success',
+      if (undone.length) logAudit(db, { action: ev.undo.type === 'sweep' ? 'scope_sweep_undone' : ev.undo.type === 'issuerfill' ? 'issuer_sibling_fill_undone' : ev.undo.type === 'convention' ? 'buyer_issued_convention_undone' : 'class_fix_undone', target_type: 'scope', outcome: 'success',
         metadata: { doc_ids: undone.join(','), refused_ids: refused.join(','), event_id: ev.id } });
     } catch { /* audit is best-effort */ }
     // card 7: the event stops offering Put back (full AND partial — the refused rows are non-sweep rows a
     // retry would refuse again); the updated event rides back so the renderer replaces its copy.
     const updated = undone.length ? _reviewEvents.markUndone(db, ev.id, { undone, refused }) : null;
-    if (undone.length) recordReviewEvent(db, { kind: 'put_back', ids: undone, scope: ev.scope || { supplier: null, typeSlug: null }, undo: null });
+    // a convention undo forgets a filing rule — nothing was put back, so no put_back receipt (Oracle C5)
+    if (undone.length && ev.undo.type !== 'convention') recordReviewEvent(db, { kind: 'put_back', ids: undone, scope: ev.scope || { supplier: null, typeSlug: null }, undo: null });
     try {
       notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
       notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));

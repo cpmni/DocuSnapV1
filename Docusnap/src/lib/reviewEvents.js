@@ -35,7 +35,7 @@ const CAP = 50;
 const BURST_GAP_MS = 60 * 1000;
 const NOTIFY_THROTTLE_MS = 1000;
 const UNDO_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-const KINDS = new Set(['auto_filed', 'self_filed', 'approved', 'class_fix', 'issuer_fill', 'put_back']);
+const KINDS = new Set(['auto_filed', 'self_filed', 'approved', 'class_fix', 'issuer_fill', 'put_back', 'convention']);   // 'convention' (2026-09-07): a one-confirm filing rule learned, undoable
 
 function _scopeKey(scope) {
   const s = scope || {};

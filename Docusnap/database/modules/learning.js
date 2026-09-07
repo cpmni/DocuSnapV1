@@ -572,7 +572,85 @@ function retractConfirmHints(db, document_id) {
     if (r.field_key === 'supplier_name' && !isPlausibleSupplierName(v)) continue;
     retractOne(eff, r.field_key, v);
   }
-  return { decremented, deleted };
+  // C2 (Oracle 2026-09-07): the ONE-CONFIRM buyer-issued convention record this doc's confirm planted
+  // is retracted with it — identified by the audit row the confirm wrote, never by value alone (a
+  // non-noted confirm of the same company must not decrement). replantConfirmHints deliberately does
+  // NOT replant it (fail toward review).
+  let convention = 0;
+  try { convention = retractBuyerIssuedConventionForDoc(db, document_id).retracted || 0; } catch { convention = 0; }
+  return { decremented, deleted, convention };
+}
+
+// ── ONE-CONFIRM BUYER-ISSUED CONVENTION (owner 2026-09-07; gary → Oracle SIGN-OFF-W/COND C1-C8) ──
+// The Stage-4.6 buyer-issued convention note ("This purchase order is on X's letterhead but names 'Y' as
+// the supplier — confirm which company to file under") clears only once a same-type supplier_name hint
+// for X reaches usage 3 (leg 1: generic bumps can't tell a NOTED confirm from any other). When a HUMAN
+// confirms a document that carried the note and keeps the letterhead value on the same type, the confirm
+// writes this note-specific record — one direct answer licenses (engine leg 2, usage >= 1). Stored as a
+// `supplier_hints` row under a PSEUDO field key so it rides the existing --hints-file road, the forget-
+// sender inverse (clearSupplierHintsForScope) and the memory inventory (labelled there, C7); every other
+// hint consumer keys on a real field_key, so the row is inert elsewhere. Never `__global__`.
+const BUYER_ISSUED_CONVENTION_KEY = 'buyer_issued_convention';
+// The two wordings the engine prints (engine.py, the note block) — vendor-name-blind. Pinned in both
+// languages so a wording edit breaks a test, not the feature.
+const _CONVENTION_NOTE_RE = /confirm which company to file under|usually files under the buyer/i;
+function isBuyerIssuedConventionNote(note) {
+  return _CONVENTION_NOTE_RE.test(String(note || ''));
+}
+function _conventionScope(issuer) {
+  const v = String(issuer || '').trim();
+  return v ? (normalizeSupplierName(v) || v) : null;
+}
+function recordBuyerIssuedConvention(db, { issuer, typeSlug } = {}) {
+  const value = String(issuer || '').trim();
+  const dt = String(typeSlug || '').trim();
+  const scope = _conventionScope(value);
+  if (!value || !dt || !scope) return null;
+  db.prepare(`
+    INSERT INTO supplier_hints (supplier_name, document_type, field_key, hint_value, usage_count, last_seen)
+    VALUES (?, ?, ?, ?, 1, datetime('now'))
+    ON CONFLICT(supplier_name, document_type, field_key, hint_value) DO UPDATE SET
+      usage_count = usage_count + 1, last_seen = datetime('now')
+  `).run(scope, dt, BUYER_ISSUED_CONVENTION_KEY, value);
+  return db.prepare('SELECT id, usage_count FROM supplier_hints WHERE supplier_name = ? AND document_type = ? AND field_key = ? AND hint_value = ?')
+           .get(scope, dt, BUYER_ISSUED_CONVENTION_KEY, value) || null;
+}
+function retractBuyerIssuedConvention(db, { issuer, typeSlug } = {}) {
+  const value = String(issuer || '').trim();
+  const dt = String(typeSlug || '').trim();
+  const scope = _conventionScope(value);
+  if (!value || !dt || !scope) return { retracted: 0 };
+  const row = db.prepare('SELECT id, usage_count FROM supplier_hints WHERE supplier_name = ? AND document_type = ? AND field_key = ? AND hint_value = ?')
+                .get(scope, dt, BUYER_ISSUED_CONVENTION_KEY, value);
+  if (!row) return { retracted: 0 };
+  if ((row.usage_count || 0) <= 1) db.prepare('DELETE FROM supplier_hints WHERE id = ?').run(row.id);
+  else db.prepare('UPDATE supplier_hints SET usage_count = usage_count - 1 WHERE id = ?').run(row.id);
+  return { retracted: 1, remaining: Math.max(0, (row.usage_count || 0) - 1) };
+}
+// C2: the planting confirm is identified by its audit row (action + document_id); a retracted row is
+// written beside it so a repeated send-back / undo never double-decrements (open = recorded − retracted).
+function retractBuyerIssuedConventionForDoc(db, document_id, opts = {}) {
+  let rows = [];
+  try {
+    rows = db.prepare(`SELECT action, metadata_json FROM audit_log WHERE document_id = ?
+                       AND action IN ('buyer_issued_convention_recorded', 'buyer_issued_convention_retracted') ORDER BY id`).all(document_id);
+  } catch { return { retracted: 0 }; }
+  let open = 0, last = null;
+  for (const r of rows) {
+    if (r.action === 'buyer_issued_convention_recorded') { open++; try { last = JSON.parse(r.metadata_json || '{}'); } catch { last = null; } }
+    else open--;
+  }
+  if (open <= 0 || !last || !last.issuer || !last.typeSlug) return { retracted: 0 };
+  const r = retractBuyerIssuedConvention(db, { issuer: last.issuer, typeSlug: last.typeSlug });
+  if (r.retracted) {
+    try {
+      require('./auth').addAuditEntry(db, { user_id: opts.userId != null ? opts.userId : null,
+        action: 'buyer_issued_convention_retracted', action_category: 'review', outcome: 'success',
+        document_id, target_type: 'document', target_id: document_id,
+        metadata: { issuer: last.issuer, typeSlug: last.typeSlug, reason: opts.reason || 'retract' } });
+    } catch { /* audit is best-effort; the retract already happened */ }
+  }
+  return r;
 }
 
 // ── replantConfirmHints — the inverse of retractConfirmHints, for the recycle-bin RESTORE of a
@@ -2430,7 +2508,8 @@ module.exports = {
   insertExtractions, deleteExtractions,
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue, getPrefixModelForScope,
   getSupplierScopeCounts, renameSupplier, findDuplicateSupplierPairs,
-  saveCorrections, retractConfirmHints, replantConfirmHints, getHints, getAllHints, isPlausibleSupplierName, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, issuerReadLooksImplausible, findNearMatchIdentity, normalizeSupplierName,
+  saveCorrections, retractConfirmHints, replantConfirmHints, getHints, getAllHints, isPlausibleSupplierName,
+  BUYER_ISSUED_CONVENTION_KEY, isBuyerIssuedConventionNote, recordBuyerIssuedConvention, retractBuyerIssuedConvention, retractBuyerIssuedConventionForDoc, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, issuerReadLooksImplausible, findNearMatchIdentity, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   detailCrossPlantCloser: _detailCrossPlantCloser,   // exported for the detail-backfill script's final anti-poison check (2026-07-23)

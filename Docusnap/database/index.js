@@ -2798,6 +2798,32 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 124 (09-04 arcs force-ON): ${e.message}`); }
   }
 
+  // ── migration 125: buyer_issued_convention_one_confirm seeded OFF (2026-09-07, owner ask; gary → Oracle
+  //    SIGN-OFF-W/COND C1-C8, C8 = seed OFF, no force-ON twin). ONE human answer to the buyer-issued convention
+  //    note licenses that (company, type) — leg 2 of `_buyer_issued_convention_licensed`, fed by the
+  //    `buyer_issued_convention` record the confirm writes. Flip gate: the copy-DB warm arm + a sandboxed
+  //    Chris run (HANDOVER_2026-09-06.md ADDENDUM 6). ──
+  if (!applied.has(125)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('buyer_issued_convention_one_confirm', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (125)').run();
+      console.log(`JS migration 125 applied: buyer_issued_convention_one_confirm (one noted confirm licenses the convention) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 125 (buyer_issued_convention_one_confirm): ${e.message}`); }
+  }
+
+  // ── migration 126: TEST-BUILD force-ON of buyer_issued_convention_one_confirm (owner order 2026-09-07 "go, and
+  //    turn it on in the build"; the mig-123/124 pattern). ⚠ TEST-ONLY / REVERSIBLE: revert with
+  //    108/110/112/114/116/118/123/124 before ANY customer build (Oracle C8 asked for NO twin — the owner's
+  //    explicit build order overrides for the VM test only). ──
+  if (!applied.has(126)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('buyer_issued_convention_one_confirm', 'true')
+                  ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (126)').run();
+      console.log('JS migration 126 applied: TEST-BUILD force-ON buyer_issued_convention_one_confirm (revert before customer build)');
+    } catch (e) { console.warn(`  migration 126 (one-confirm force-ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

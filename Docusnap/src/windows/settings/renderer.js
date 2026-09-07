@@ -739,6 +739,8 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // Buyer-issued convention note (2026-08-31, gary design): a learned
                          // buyer fill on a PO needs same-type evidence, else a both-parties note.
                          ['buyer-issued-convention-toggle', 'buyer_issued_convention_note'],
+                         // ONE-CONFIRM leg of that note (2026-09-07, owner ask → Oracle): one noted answer licenses.
+                         ['buyer-issued-one-confirm-toggle', 'buyer_issued_convention_one_confirm'],
                          // Taught-total role-qualifier locate (2026-08-31, reggie + 007 → Oracle): a
                          // taught bare-"Total" mapping prefers a clean grand total over a "Net Total".
                          ['locate-role-qualifier-toggle', 'template_locate_role_qualifier'],
@@ -1061,10 +1063,14 @@ for (const [id, keys] of [['template-fixed-supplier-toggle', ['template_fixed_ne
 // watch/rotate/multiline, printing/slips, generic/title, name checks, telemetry/diag) plus the
 // three switches the owner is actively evaluating (teach-label-keyword, list-field-scan,
 // hidden-field-drop) — migrate those behind the gate once settled.
+// C7 (2026-09-07): learned-memory rows under a PSEUDO field key read as what they mean, never a raw key.
+function _hintKeyLabel(key) {
+  return key === 'buyer_issued_convention' ? 'Files purchase orders under this company' : key;
+}
 const DEV_SWITCH_IDS = [
   // 2026-08-31 DARK arcs (Oracle C5: dev-gated until their flips)
   'keyword-cell-below-toggle', 'money-sign-parens-toggle', 'money-sign-cr-toggle',
-  'buyer-issued-convention-toggle', 'locate-role-qualifier-toggle', 'fragment-containment-toggle',
+  'buyer-issued-convention-toggle', 'buyer-issued-one-confirm-toggle', 'locate-role-qualifier-toggle', 'fragment-containment-toggle',
   'format-variance-relax-toggle',    // 2026-09-02 DARK arc — dev-gated until its 605-corpus census/flip
   'deskew-corrob-autofile-toggle',   // 2026-09-01 DARK arc — dev-gated until its census/flip
   'quiet-reread-silent-toggle',      // 2026-09-01 rollout feature — default ON (mig 103), dev escape hatch
@@ -4929,7 +4935,7 @@ async function loadMemoryInventory() {
   for (const r of rows) {
     const parts = [r.supplier_name || '—'];
     if (r.document_type) parts.push(r.document_type);
-    if (r.field_key) parts.push(r.field_key);
+    if (r.field_key) parts.push(_hintKeyLabel(r.field_key));
     const tr = document.createElement('tr');
     tr.innerHTML =
       `<td><span class="field-key">${escHtml(parts.join(' · '))}</span></td>` +
@@ -5051,7 +5057,7 @@ function lrBrowseDetailHtml(sup, slug, scope, data) {
   out.push(`<div class="section-desc" style="margin-bottom:10px;">${scope.docs ? `Learned from ${scope.docs} document${scope.docs === 1 ? '' : 's'}` : 'No documents behind this learning'}${scope.last_confirmed ? `, last on ${_lrWhen(scope.last_confirmed)}` : ''}. ${esc(autoTxt)}</div>`);
 
   const grp = (title, items) => { if (items.length) { out.push(`<div class="section-title sub" style="margin-top:12px;">${title}</div><div style="font-family:var(--mono); font-size:11px; line-height:1.8;">${items.join('')}</div>`); } };
-  grp('Remembered values (fill-in hints)', (d.hints || []).map(h => `<div>${esc(h.field_key)} = &ldquo;${esc(h.hint_value)}&rdquo; <span style="color:var(--muted);">(used ${h.usage_count || 0}×)</span></div>`));
+  grp('Remembered values (fill-in hints)', (d.hints || []).map(h => `<div>${esc(_hintKeyLabel(h.field_key))} = &ldquo;${esc(h.hint_value)}&rdquo; <span style="color:var(--muted);">(used ${h.usage_count || 0}×)</span></div>`));
   grp('Past corrections', (d.corrections || []).map(c => `<div>${esc(c.field_key)}: &ldquo;${esc(c.original_value || '')}&rdquo; → &ldquo;${esc(c.corrected_value)}&rdquo; <span style="color:var(--muted);">${esc((c.corrected_at || '').slice(0, 10))}</span></div>`));
   grp('Where it reads (taught positions)', (d.anchors || []).map(a => `<div>${esc(a.field_key)} ← &ldquo;${esc(a.anchor_label)}&rdquo; (${esc(a.direction)}) <span style="color:var(--muted);">used ${a.usage_count || 0}×</span></div>`));
   grp('Cleanup rules', (d.rules || []).map(r => `<div>${esc(r.field_key)} — ${esc(r.rule_type === 'keep_block' ? 'keep only the main value' : ('remove &ldquo;' + (r.created_from || r.token_norm || '') + '&rdquo;'))}</div>`));
@@ -5195,7 +5201,7 @@ function renderLearningDetail(detail) {
   if (detail.hints.length) {
     lines.push('<div class="section-title" style="margin-top:10px;">Supplier Hints</div>');
     for (const h of detail.hints) {
-      lines.push(`<div>${escHtml(h.field_key)} = "${escHtml(h.hint_value)}", type: ${escHtml(h.document_type || '—')}, used ${h.usage_count}×, last ${escHtml(h.last_seen)}</div>`);
+      lines.push(`<div>${escHtml(_hintKeyLabel(h.field_key))} = "${escHtml(h.hint_value)}", type: ${escHtml(h.document_type || '—')}, used ${h.usage_count}×, last ${escHtml(h.last_seen)}</div>`);
     }
   }
   if (detail.corrections.length) {

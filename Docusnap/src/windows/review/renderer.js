@@ -646,13 +646,13 @@ function _asRelTime(at) {
   const dt = new Date(Number(at)); const hh = String(dt.getHours()).padStart(2, '0'), mm = String(dt.getMinutes()).padStart(2, '0');
   return d < 2 * 86_400_000 ? `Yesterday ${hh}:${mm}` : `${dt.toLocaleDateString()} ${hh}:${mm}`;
 }
-function _asIcon(ev) { return ev.kind === 'put_back' ? '↩' : (ev.kind === 'class_fix' || ev.kind === 'issuer_fill') ? '✎' : '✓'; }
+function _asIcon(ev) { return ev.kind === 'put_back' ? '↩' : (ev.kind === 'class_fix' || ev.kind === 'issuer_fill' || ev.kind === 'convention') ? '✎' : '✓'; }
 // Kind → an icon COLOUR class (green filed · amber put-back · accent fix) so the line reads at a glance
 // without painting the whole chip (bob: reserve colour, don't nag). A zero-filed approved is "kept back",
 // which reads as put-back tone (amber), not a green tick.
 function _asIconClass(ev) {
   if (ev.kind === 'put_back') return 'putback';
-  if (ev.kind === 'class_fix' || ev.kind === 'issuer_fill') return 'fix';
+  if (ev.kind === 'class_fix' || ev.kind === 'issuer_fill' || ev.kind === 'convention') return 'fix';
   if (ev.kind === 'approved' && (Number(ev.count) || 0) === 0) return 'putback';
   return 'filed';
 }
@@ -667,6 +667,7 @@ function _asShort(ev) {
     case 'class_fix':  return `${n} corrected`;
     case 'issuer_fill': return `${n} more ready to file`;
     case 'put_back':   return `${n} put back`;
+    case 'convention': return 'Filing rule learned';
     default:           return `${n} document${s}`;
   }
 }
@@ -700,8 +701,16 @@ function _asLine(ev) {
     case 'class_fix':  return `${n} ${sup ? `<b>${sup}</b> ` : ''}document${s} ${n === 1 ? 'was' : 'were'} corrected to match your fix`;
     case 'issuer_fill': return `${sup ? `<b>${sup}</b> filled in on ` : 'The sender was filled in on '}${n} more document${s} with this same letterhead — File All Ready now offers ${n === 1 ? 'it' : 'them'}`;
     case 'put_back':   return `${n} ${sup ? `<b>${sup}</b> ` : ''}document${s} ${n === 1 ? 'was' : 'were'} put back in Review — the filed copies stay in your folder until you file them again`;
+    // ONE-CONFIRM convention (2026-09-07, Oracle C5: told with an undo): the rule, in the owner's words.
+    case 'convention': { const t = _conventionTypeWords(ev.scope && ev.scope.typeSlug);
+      return sup ? `${t} on <b>${sup}</b>'s letterhead will now file under ${sup} without asking` : `${t} on this letterhead will now file under it without asking`; }
     default:           return `${n} document${s}`;
   }
+}
+function _conventionTypeWords(slug) {
+  const t = String(slug || 'purchase_order').replace(/_/g, ' ');
+  const words = t.endsWith('s') ? t : t + 's';
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 function _asLineFull(ev) {
   const base = _asLine(ev);
@@ -771,7 +780,10 @@ function _asRenderPanel() {
     // INVISIBLE placeholder of the SAME element and label (so the same width) — the permanent two never slide and
     // every row's columns line up (index.html .ap-actions grid / .ap-ghost).
     const _apGhost = (label) => `<button type="button" class="ap-btn ap-ghost" disabled tabindex="-1" aria-hidden="true">${label}</button>`;
-    const undo = ev.undoable ? `<button type="button" class="ap-btn" data-ap="undo" data-ev="${ev.id}" title="Puts these documents back in Review. ${_putBackBody(ev)}">Put back</button>` : _apGhost('Put back');
+    // a convention event's undo FORGETS the rule (nothing is put back) — label + title say so (Oracle C5)
+    const _undoLabel = ev.kind === 'convention' ? 'Undo' : 'Put back';
+    const _undoTitle = ev.kind === 'convention' ? 'Forgets this filing rule — the next document on this letterhead asks again.' : `Puts these documents back in Review. ${_putBackBody(ev)}`;
+    const undo = ev.undoable ? `<button type="button" class="ap-btn" data-ap="undo" data-ev="${ev.id}" title="${_undoTitle}">${_undoLabel}</button>` : _apGhost(_undoLabel);
     const see = Number(ev.count) ? `<button type="button" class="ap-btn primary" data-ap="see" data-ev="${ev.id}">See them</button>` : _apGhost('See them');
     // Batch-audit "Quick check" (2026-08-24, DARK batch_audit_enabled): on any FILED batch — auto-filed,
     // self-filed, OR human-approved (File All / File N / a run of individual Confirm & File, which the
@@ -6650,8 +6662,36 @@ async function confirmCurrentDoc({ bulk = false, expectId = null, acknowledgePre
       }
     } catch { /* the report must never affect the filing that already happened */ }
   }
+  // ONE-CONFIRM convention (2026-09-07, Oracle C6): the confirm recorded the filing rule and N queued siblings of
+  // the same company + type still carry the note (frozen on their stored rows — nothing re-derives it). Offer the
+  // EXISTING re-read road ("Reprocess N from this sender"); its consent bar stays the human checkpoint. Never clear
+  // the siblings' notes in place (that would make them Tier-1 eligible off one click).
+  try { if (result.convention && result.convention.issuer) showConventionRecheckBar(result.convention); } catch { /* advisory */ }
   const _issuerFilled = (result.issuerFill && Array.isArray(result.issuerFill.docs)) ? result.issuerFill.docs.length : 0;
   return { filed: true, filename: result.filename || null, filePath: result.filePath || null, issuerFilled: _issuerFilled };
+}
+function showConventionRecheckBar(cv) {
+  const bar = document.getElementById('reprocess-autofile-bar');
+  if (!bar || !cv || !cv.issuer) return;
+  const issuer = String(cv.issuer).trim();
+  const sup = escHtml(issuer);
+  const n = Number(cv.pending) || 0;
+  const t = _conventionTypeWords(cv.typeSlug);
+  const tl = t.toLowerCase();
+  bar.innerHTML = `<b>${t}</b> on ${sup}'s letterhead will now file under <b>${sup}</b> without asking (undo from the activity strip). `
+    + (n ? `<button class="btn" id="cvr-recheck">Re-check the ${n} other ${sup} ${tl} waiting</button> ` : '')
+    + `<button class="btn" id="cvr-dismiss">OK</button>`;
+  bar.style.display = 'block';
+  document.getElementById('cvr-recheck')?.addEventListener('click', () => {
+    bar.style.display = 'none';
+    const slug = String(cv.typeSlug || '').trim().toLowerCase();
+    const sameSender = queue.filter(d => (d.supplier_name || '').trim() === issuer);
+    const sameType = slug ? sameSender.filter(d => String(d.type_slug || d.document_type_slug || '').toLowerCase() === slug) : [];
+    const docs = sameType.length ? sameType : sameSender;
+    if (!docs.length) { showToast('No queued documents from this sender', 'warn'); return; }
+    runReprocessBatch(docs, issuer);
+  }, { once: true });
+  document.getElementById('cvr-dismiss')?.addEventListener('click', () => { bar.style.display = 'none'; }, { once: true });
 }
 
 // The human-readable tail of a filed path: the folders the operator's own Output Structure made

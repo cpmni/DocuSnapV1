@@ -5924,8 +5924,25 @@ class ExtractionEngine:
         rn = accept_norm(resolved or "")
         if not rn:
             return False
+        # ONE-CONFIRM leg (owner 2026-09-07 "after 1 confirm the system would learn"; gary → Oracle
+        # SIGN-OFF-W/COND C1-C8; DARK BUYER_ISSUED_CONVENTION_ONE_CONFIRM, mig 125). Leg 1 above needs
+        # THREE generic confirms because a `supplier_name` hint bump cannot tell a NOTED confirm from any
+        # other. Leg 2 is note-specific evidence: the confirm writes a `buyer_issued_convention` row ONLY
+        # when a human confirmed a doc that carried this very note and kept the letterhead value on the
+        # same type (learning.recordBuyerIssuedConvention) — one direct answer to the exact question, so
+        # usage >= 1 licenses. Same slug, same normaliser, same value compare as leg 1; never chooses a
+        # value. The leg lives INSIDE this predicate, which only the note block calls → the parent OFF
+        # keeps it inert (pinned).
+        _one = os.environ.get("BUYER_ISSUED_CONVENTION_ONE_CONFIRM", "0") != "0"
         for h in (hints or []):
-            if h.get("field_key") != "supplier_name":
+            _fk = h.get("field_key")
+            if _fk == "buyer_issued_convention":
+                if (_one and str(h.get("document_type") or "") == str(document_slug or "")
+                        and (h.get("usage_count") or 0) >= 1
+                        and accept_norm(h.get("hint_value") or "") == rn):
+                    return True
+                continue
+            if _fk != "supplier_name":
                 continue
             if str(h.get("document_type") or "") != str(document_slug or ""):
                 continue

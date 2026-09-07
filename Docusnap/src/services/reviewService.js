@@ -741,6 +741,54 @@ function createReviewService(deps = {}) {
     // as the two hooks above (LAST, its own `!_via`/`!bulk`, fail-open, DARK). The service reads BOTH
     // the field_anchor and the Stage-0.5 mapping/fixed_value scope (by template id, not supplier) so a
     // wizard-taught field is never nagged. Value-blind by construction: it returns only field labels.
+    // ── ONE-CONFIRM BUYER-ISSUED CONVENTION (owner 2026-09-07; gary → Oracle SIGN-OFF-W/COND C1-C8; DARK
+    //    `buyer_issued_convention_one_confirm`, mig 125). The operator confirmed a document whose issuer
+    //    carried the convention note ("…names 'Y' as the supplier — confirm which company to file under")
+    //    and KEPT the letterhead company: one direct answer to the exact question. Record it so the engine's
+    //    leg 2 licenses that (company, type) from the next read. Own guard (never lean on a closed one): human
+    //    single confirms only (`_issuerFillSrc` is captured pre-claim under !_via && !bulk — the note is NULLed
+    //    at the clear above, so the capture is load-bearing), the note must be THIS note, the confirmed value
+    //    must equal the machine's display (an edit to the vendor writes nothing — per-direction), and C3: the
+    //    confirmed type must be the type the doc was read as (a re-typed doc is not an answer). Value never
+    //    rewritten; told with an undo (C5, the activity strip); the still-noted queued siblings are COUNTED
+    //    for the renderer's re-check nudge (C6) — never cleared in place (that would make 8 rows Tier-1
+    //    eligible off one click). Fail-open.
+    let _convention = null;
+    if (!_via && !bulk && dtInfo && _issuerFillSrc) {
+      try {
+        const _normName = (v) => String(v || '').trim().toLowerCase().split(/\s+/).join(' ');
+        if (learning.getSetting(db, 'buyer_issued_convention_one_confirm', 'false') === 'true'
+            && typeof learning.isBuyerIssuedConventionNote === 'function'
+            && learning.isBuyerIssuedConventionNote(_issuerFillSrc.note)
+            && _normName(confirmedSupplier) && _normName(confirmedSupplier) === _normName(_issuerFillSrc.display)
+            && docRow.document_type_id != null && dtInfo.id != null
+            && Number(docRow.document_type_id) === Number(dtInfo.id)) {
+          const _cvSlug = document_type_slug || (dtInfo && dtInfo.slug) || null;
+          const _rec = learning.recordBuyerIssuedConvention(db, { issuer: confirmedSupplier, typeSlug: _cvSlug });
+          if (_rec) {
+            audit(db, { action: 'buyer_issued_convention_recorded', action_category: 'review', outcome: 'success',
+                        document_id, target_type: 'document', target_id: document_id,
+                        metadata: { document_id, issuer: confirmedSupplier, typeSlug: _cvSlug, usage: _rec.usage_count } });
+            let _pending = 0;
+            try {
+              _pending = db.prepare(`SELECT COUNT(*) AS n FROM documents d
+                                       JOIN extractions e ON e.document_id = d.id AND e.field_key = 'supplier_name'
+                                      WHERE d.status = 'needs_review' AND d.id != ? AND d.document_type_id = ?
+                                        AND d.supplier_name = ? AND e.validation_note IS NOT NULL
+                                        AND (e.validation_note LIKE '%confirm which company to file under%'
+                                             OR e.validation_note LIKE '%usually files under the buyer%')`)
+                          .get(document_id, dtInfo.id, confirmedSupplier).n;
+            } catch { _pending = 0; }
+            _convention = { issuer: confirmedSupplier, typeSlug: _cvSlug, usage: _rec.usage_count, pending: Number(_pending) || 0 };
+            try {
+              recordReviewEvent(db, { kind: 'convention', ids: [document_id], approved: true,
+                                      scope: { supplier: confirmedSupplier, typeSlug: _cvSlug }, undo: { type: 'convention' } });
+            } catch { /* presentation only */ }
+          }
+        }
+      } catch (e) { logger?.warn?.('convention record skipped: ' + (e && e.message)); }
+    }
+
     let _positionHint = null;
     if (!_via && !bulk && dtInfo) {
       try {
@@ -778,7 +826,8 @@ function createReviewService(deps = {}) {
     }
 
     return { ok: true, success: true, ...filingResult, ...(_classFix ? { classFix: _classFix } : {}),
-             ...(_issuerFill ? { issuerFill: _issuerFill } : {}), ...(_positionHint ? { positionHint: _positionHint } : {}) };
+             ...(_issuerFill ? { issuerFill: _issuerFill } : {}), ...(_positionHint ? { positionHint: _positionHint } : {}),
+             ...(_convention ? { convention: _convention } : {}) };
   }
 
   // ── Defer / restore (status-guarded) ──────────────────────────────────────────
