@@ -99,6 +99,29 @@ V8-bytecode the proven bundle so `asar extract` + grep finds bytecode, not `trus
   `contextIsolation`/`sandbox`. Optional later: terser-minify (BSD-2) renderers; NOT javascript-obfuscator
   `selfDefending`/`debugProtection` (hangs a sandboxed renderer).
 
+**Name obfuscation before bytecode (2026-09-07, owner ask — bytenode alone leaves identifier/string names in the V8 constant pool):**
+- **esbuild `minify` (default in the hardened bundle):** renames every LOCAL identifier. After the whole
+  graph is bundled into one file, internal functions are locals, so `isAutoFileEligible`/`_corrobLicensed`
+  get renamed too — they only kept their names in the readable asar as cross-module property references.
+- **`javascript-obfuscator` string-array (opt-in `HARDEN_JS_STRINGS=1`, BSD-2, build-time only):** hides
+  the string LITERALS minify leaves (DB setting keys, log text) in a rotated base64 array decoded at
+  runtime. Conservative config — NO `transformObjectKeys` / control-flow-flattening / selfDefending
+  (property-key mangling and self-defending break a bundled main process / hang under bytenode).
+  Validated: obfuscate + bytecode + load roundtrip runs; requires resolve; strings decode faithfully.
+
+Measured leak in the real `main.jsc` (`strings` count):
+
+| name | plaintext asar | +minify | +minify+string-array |
+|---|---|---|---|
+| `isAutoFileEligible` | 31 | 1 | 1 |
+| `graduation…` (setting keys) | 146 | 11 | 0 |
+| `TRUSTED_FLOOR` | 16 | 2 | 2 |
+
+The ~6 residuals are module-boundary PROPERTY KEYS (`isAutoFileEligible:`, `TRUSTED_FLOOR:`). Hiding those
+needs property mangling, which is HIGH-risk on a 115-module bundle (any key JSON-serialised, used as a DB
+payload, or read by name would break) and can't be responsibly enabled without a full packaged+DB smoke —
+left readable by design; it is a name, not the logic.
+
 **Conditions**
 1. **Cost — main-process stack traces go dark.** `main.js:1320/1321/1329/1343` lose line numbers/names in
    `processing.log`. Mitigation is REAL only if gated as a release artifact: archive a source-map keyed by

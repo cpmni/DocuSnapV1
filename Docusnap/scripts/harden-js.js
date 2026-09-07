@@ -71,8 +71,14 @@ function main() {
     metafile: true,
     logLevel: 'warning',
     legalComments: 'none',
-    // The main process is CJS; keep it CJS. No minify (Build 3's bytecode is the opacity layer;
-    // minify would also scramble the tracebacks we still want at the bundle stage).
+    // OBFUSCATE VARIABLES (2026-09-07, owner ask): minify renames every LOCAL identifier — and after
+    // bundling the whole graph into one file, internal functions like `isAutoFileEligible`/
+    // `_corrobLicensed` ARE locals, so they get renamed too (they only kept their names in the readable
+    // asar because they were cross-module property references). This scrubs the identifier names from the
+    // bytecode constant pool that plain bytenode leaves visible. Whitespace/tracebacks don't matter — the
+    // bundle becomes bytecode. String LITERALS (note text, threshold-as-string) survive minify; the
+    // optional javascript-obfuscator string-array pass below hides those when HARDEN_JS_STRINGS=1.
+    minify: true,
   });
 
   // Which app-source files got inlined into the bundle → delete them from build_js (only the bundle ships).
@@ -93,6 +99,42 @@ function main() {
   pruneEmpty(path.join(OUT, 'src'));
 
   let mode = `bundle only (${removed} source modules inlined + removed)`;
+
+  // OPT-IN string-array obfuscation (HARDEN_JS_STRINGS=1). minify already renamed every local identifier;
+  // this hides the STRING LITERALS that survive it (DB setting keys like "graduation_window", log text,
+  // method-name strings) by moving them into a rotated/encoded array decoded at runtime. Conservative
+  // config for a Node/Electron MAIN bundle: NO transformObjectKeys (property-key mangling is the risky
+  // lever — module-boundary keys like `isAutoFileEligible` and any JSON-serialised/DB-payload key would
+  // break; left readable by design), NO controlFlowFlattening / deadCodeInjection (startup cost), NO
+  // selfDefending / debugProtection (they break under bytenode and hang). Console output kept (the owner
+  // diagnoses from processing.log). External require() path strings are encoded but decode at runtime, so
+  // node_modules/electron resolution is unaffected.
+  if (process.env.HARDEN_JS_STRINGS === '1') {
+    const JsObf = require('javascript-obfuscator');
+    const code = fs.readFileSync(entry, 'utf8');
+    const obf = JsObf.obfuscate(code, {
+      compact: true,
+      target: 'node',
+      identifierNamesGenerator: 'mangled',
+      renameGlobals: false,
+      stringArray: true,
+      stringArrayEncoding: ['base64'],
+      stringArrayThreshold: 1,
+      stringArrayRotate: true,
+      stringArrayShuffle: true,
+      splitStrings: false,
+      transformObjectKeys: false,
+      numbersToExpressions: false,
+      controlFlowFlattening: false,
+      deadCodeInjection: false,
+      selfDefending: false,
+      debugProtection: false,
+      disableConsoleOutput: false,
+      unicodeEscapeSequence: false,
+    }).getObfuscatedCode();
+    fs.writeFileSync(entry, obf);
+    mode += ' + string-array obfuscation';
+  }
 
   if (WANT_BYTECODE) {
     // V8-bytecode the bundle with THIS project's Electron (V8 parity — a bytenode .jsc is locked to the
