@@ -7152,10 +7152,39 @@ document.getElementById('btn-file-all-review')?.addEventListener('click', fileAl
 // accept IPC takes NO payload — the server files its own recorded offer, so this window can
 // accept or ignore the offer but never widen it.
 let _rabOfferIds = null;   // Q4c: the reprocess-offer bar's live candidate ids (pruned on every queue refresh)
-function showReprocessAutofileOffer(offerIds) {
+// IN-VIEW COUNTDOWN on the REPROCESS door (owner 2026-09-07: "I keep getting this message when all the other
+// docs have filed and there is only the one in view left"). The 09-01 countdown (sweep_inview_countdown) was
+// wired to the SCOPE SWEEP only; after a Reprocess the last document on screen always waited for a click.
+// When the server's offer is EXACTLY the document on screen and the countdown switch is on, run the SAME
+// 5→1 countdown + Stop instead of the static bar. Expiry calls the SAME accept IPC (no payload — the server
+// files only its own recorded offer, so the 08-12 invariant holds: visible, cancellable, server-decided).
+// Stop, a touched field or navigating away falls back to the CLICK door (File 1 / Review them / Not now) —
+// the operator never loses the buttons. n > 1, a different doc on screen, or the switch OFF → the static
+// bar, byte-identical.
+async function showReprocessAutofileOffer(offerIds) {
   const bar = document.getElementById('reprocess-autofile-bar');
   if (!bar || !Array.isArray(offerIds) || !offerIds.length) return;
   _rabOfferIds = offerIds.slice();
+  if (offerIds.length === 1 && currentDoc && currentDoc.id === offerIds[0] && !_inviewCd) {
+    let cdOn = false;
+    try { cdOn = String(await window.docusnap.getSetting?.('sweep_inview_countdown')) === 'true'; } catch { cdOn = false; }
+    // re-check after the await: the operator may have moved on, or a newer offer may have replaced this one
+    if (cdOn && currentDoc && currentDoc.id === offerIds[0] && _rabOfferIds && _rabOfferIds[0] === offerIds[0] && !_inviewCd) {
+      bar.style.display = 'none';
+      const started = _startInviewCountdown({ docId: offerIds[0], fingerprint: null }, {
+        source: 'reprocess',
+        onExpire: () => _acceptReprocessOffer(bar),
+        onStop:   () => _renderReprocessOfferBar(bar, offerIds),
+        onCancel: () => { if (_rabOfferIds && _rabOfferIds[0] === offerIds[0]) _renderReprocessOfferBar(bar, offerIds); },
+      });
+      if (started) return;
+    }
+  }
+  _renderReprocessOfferBar(bar, offerIds);
+}
+// The CLICK door (unchanged behaviour): File N · Review them · Not now.
+function _renderReprocessOfferBar(bar, offerIds) {
+  if (!bar || !Array.isArray(offerIds) || !offerIds.length) return;
   const n = offerIds.length;
   bar.innerHTML =
     `<b>${n}</b> reprocessed document${n === 1 ? '' : 's'} read clean and ${n === 1 ? 'is' : 'are'} ready to file — `
@@ -7163,28 +7192,7 @@ function showReprocessAutofileOffer(offerIds) {
     + `<button class="btn" id="rab-review">Review them</button> `
     + `<button class="btn" id="rab-dismiss">Not now</button>`;
   bar.style.display = 'block';
-  document.getElementById('rab-file')?.addEventListener('click', async () => {
-    bar.style.display = 'none'; _rabOfferIds = null;
-    let r = null;
-    try { r = await window.docusnap.reprocessAutocommitAccept(); } catch {}
-    if (r && r.ok) {
-      const dropped = (r.dropped || []).length;
-      // "you approved", not "automatically" — the operator just clicked "File N" (Chris card 4).
-      showToast(`✓ Filed ${r.filed.length} document${r.filed.length === 1 ? '' : 's'} you approved`
-        + (dropped ? ` · ${dropped} left for review` : ''), r.filed.length ? 'ok' : 'warn');
-    } else {
-      showToast('Nothing was filed' + (r && r.reason ? ` (${r.reason})` : '') + ' — the documents stay in the queue.', 'warn');
-    }
-    queue         = await window.docusnap.getReviewQueue();
-    deferredQueue = await window.docusnap.getDeferredQueue();
-    updateTabCounts();
-    renderQueueList();
-    refreshAutoCommittedBar();
-    if (currentDoc && !queue.some(d => d.id === currentDoc.id)) {
-      if (queue.length) selectDoc(queue[0]);
-      else { currentDoc = null; clearDocPanel(); }
-    }
-  }, { once: true });
+  document.getElementById('rab-file')?.addEventListener('click', () => _acceptReprocessOffer(bar), { once: true });
   document.getElementById('rab-review')?.addEventListener('click', () => {
     bar.style.display = 'none'; _rabOfferIds = null;
     _sweepFilterIds = new Set(offerIds);   // reuse the existing "Review them" queue filter
@@ -7193,6 +7201,31 @@ function showReprocessAutofileOffer(offerIds) {
   document.getElementById('rab-dismiss')?.addEventListener('click', () => {
     bar.style.display = 'none'; _rabOfferIds = null;   // offer stays server-side; a new batch overwrites it
   }, { once: true });
+}
+// ONE accept road for both doors (the click and the countdown expiry): the accept IPC takes NO payload —
+// the server files its own recorded offer and re-validates every doc, so neither door can widen it.
+async function _acceptReprocessOffer(bar) {
+  if (bar) bar.style.display = 'none';
+  _rabOfferIds = null;
+  let r = null;
+  try { r = await window.docusnap.reprocessAutocommitAccept(); } catch {}
+  if (r && r.ok) {
+    const dropped = (r.dropped || []).length;
+    // "you approved", not "automatically" — the operator just clicked "File N" (Chris card 4).
+    showToast(`✓ Filed ${r.filed.length} document${r.filed.length === 1 ? '' : 's'} you approved`
+      + (dropped ? ` · ${dropped} left for review` : ''), r.filed.length ? 'ok' : 'warn');
+  } else {
+    showToast('Nothing was filed' + (r && r.reason ? ` (${r.reason})` : '') + ' — the documents stay in the queue.', 'warn');
+  }
+  queue         = await window.docusnap.getReviewQueue();
+  deferredQueue = await window.docusnap.getDeferredQueue();
+  updateTabCounts();
+  renderQueueList();
+  refreshAutoCommittedBar();
+  if (currentDoc && !queue.some(d => d.id === currentDoc.id)) {
+    if (queue.length) selectDoc(queue[0]);
+    else { currentDoc = null; clearDocPanel(); }
+  }
 }
 
 // ── Catch-up Filing slice 3 (design 2026-07-31, dark unless scope_sweep_enabled) ──────
@@ -9730,15 +9763,20 @@ window.docusnap.onQuietReprocess?.(async (ev) => {
 // fingerprint and the file aborts), on STOP hold it (durable put-back). Cancelled the instant the
 // user touches a field, navigates to another doc, or the window unloads. OFF (default) → the server
 // never emits the event, so this whole block is inert (byte-identical).
-function _cancelInviewCountdown() {
+function _cancelInviewCountdown(opts) {
   if (!_inviewCd) return;
-  try { clearInterval(_inviewCd.timer); } catch {}
-  try { _inviewCd.el?.remove(); } catch {}
+  const cd = _inviewCd;
+  try { clearInterval(cd.timer); } catch {}
+  try { cd.el?.remove(); } catch {}
   _inviewCd = null;
+  // A door may want the click surface back when the countdown is cancelled by a touched field or a
+  // navigation (the reprocess door re-shows its bar); the expiry/stop roads pass silent=true.
+  if (!(opts && opts.silent) && typeof cd.onCancel === 'function') { try { cd.onCancel(); } catch {} }
 }
 async function _inviewFileNow() {
   const cd = _inviewCd; if (!cd) return;
-  _cancelInviewCountdown();
+  _cancelInviewCountdown({ silent: true });
+  if (typeof cd.onExpire === 'function') { try { await cd.onExpire(); } catch {} return; }   // the reprocess door
   try {
     const res = await window.docusnap.sweepInviewFile(cd.docId, cd.fingerprint);
     if (res && res.ok) { _pendingQuietRefresh = false; try { await _refreshQueueFromBroadcast(); } catch {} }
@@ -9747,16 +9785,20 @@ async function _inviewFileNow() {
 }
 async function _inviewHold() {
   const cd = _inviewCd; if (!cd) return;
-  _cancelInviewCountdown();
+  _cancelInviewCountdown({ silent: true });
+  if (typeof cd.onStop === 'function') { try { await cd.onStop(); } catch {} return; }       // the reprocess door
   try { await window.docusnap.sweepInviewHold(cd.docId); } catch {}
 }
-function _startInviewCountdown(ev) {
-  if (!ev || !ev.docId) return;
-  if (!currentDoc || currentDoc.id !== ev.docId) return;    // only for the doc actually on screen (presence race)
-  if (_inviewCd && _inviewCd.docId === ev.docId) return;     // already counting this one
+// `opts` (2026-09-07): a second DOOR may run the same countdown — { source, onExpire, onStop, onCancel }.
+// Absent (the sweep's 'sweep-inview-eligible' event) → the original sweep-inview-file / sweep-inview-hold
+// roads, byte-identical. Returns true when a countdown was started.
+function _startInviewCountdown(ev, opts) {
+  if (!ev || !ev.docId) return false;
+  if (!currentDoc || currentDoc.id !== ev.docId) return false;    // only for the doc actually on screen (presence race)
+  if (_inviewCd && _inviewCd.docId === ev.docId) return false;     // already counting this one
   _cancelInviewCountdown();
   const panel = document.getElementById('doc-panel');
-  if (!panel) return;
+  if (!panel) return false;
   const el = document.createElement('div');
   el.id = 'inview-countdown';
   el.setAttribute('style', 'position:absolute;top:52px;left:50%;transform:translateX(-50%);z-index:60;'
@@ -9769,13 +9811,16 @@ function _startInviewCountdown(ev) {
     + 'color:var(--text,#1b1f2a);border-radius:var(--r-sm,9px);padding:5px 12px;cursor:pointer;font-size:12.5px">Stop</button>';
   panel.appendChild(el);
   el.querySelector('.ivc-stop').addEventListener('click', () => { _inviewHold(); });
-  _inviewCd = { docId: ev.docId, fingerprint: ev.fingerprint, remaining: 5, timer: null, el };
+  _inviewCd = { docId: ev.docId, fingerprint: ev.fingerprint, remaining: 5, timer: null, el,
+                source: (opts && opts.source) || 'sweep',
+                onExpire: opts && opts.onExpire, onStop: opts && opts.onStop, onCancel: opts && opts.onCancel };
   _inviewCd.timer = setInterval(() => {
     if (!_inviewCd) return;
     _inviewCd.remaining -= 1;
     if (_inviewCd.remaining <= 0) { _inviewFileNow(); return; }
     const n = _inviewCd.el?.querySelector('.ivc-num'); if (n) n.textContent = String(_inviewCd.remaining);
   }, 1000);
+  return true;
 }
 window.docusnap.onSweepInviewEligible?.((ev) => { try { _startInviewCountdown(ev); } catch {} });
 // Cancel the moment a field is touched — an unsaved edit is invisible to the server's fingerprint
