@@ -1472,11 +1472,11 @@ if (slipsPrintBtn) slipsPrintBtn.addEventListener('click', async () => {
   slipsPrintBtn.disabled = true;
   if (slipsResult) { slipsResult.style.display = ''; slipsResult.textContent = 'Creating separator sheets…'; }
   try {
-    const res = await api.generateFilingSlips(parseInt(slipsCountInput?.value, 10));
+    // Owner 2026-09-07: ONE plain sheet; the operator prints/photocopies copies (the count box is hidden).
+    const res = await api.generateFilingSlips(1, { plain: true });
     if (res && res.success && slipsResult) {
-      const pad = (n) => String(n).padStart(4, '0');
       slipsResult.textContent = '';
-      slipsResult.append(`Created sheets ${pad(res.first)}–${pad(res.last)}. `);
+      slipsResult.append('Separator sheet created — print or photocopy as many copies as you need. ');
       const openBtn = document.createElement('button');
       openBtn.className = 'btn'; openBtn.textContent = 'Open to print';
       openBtn.style.marginRight = '6px';

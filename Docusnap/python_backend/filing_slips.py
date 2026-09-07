@@ -66,7 +66,12 @@ def _stripe_band(draw, y0, y1):
         draw.polygon([(x, y0), (x + w, y0), (x + w - h, y1), (x - h, y1)], fill=0)
 
 
-def make_sheet(number):
+def make_sheet(number, plain=False):
+    """One separator sheet. `plain` (owner 2026-09-07: "it only needs to be 1 page with a barcode — the split
+    happens when the code is seen, no need for numbering"): the SAME frozen artwork and QR payload contract
+    (the detector decides on the code alone; the printed number was only ever the human handle — never
+    cross-checked, slip_detect.py), but the big number is replaced by "SEPARATOR SHEET" and the instructions
+    say to print/photocopy copies. Every copy carries the same code and splits the batch the same way."""
     from PIL import Image, ImageDraw
     payload = f"SFSEP-{number:04d}"
     page = Image.new("L", (PAGE_W, PAGE_H), 255)
@@ -88,21 +93,28 @@ def make_sheet(number):
 
     # The human handle: big number + the payload in small print (support/diagnostic).
     y = 420 + big
-    d.text((PAGE_W // 2, y + 130), f"SEPARATOR {number:02d}", font=_font(150), fill=0, anchor="mm")
+    if plain:
+        d.text((PAGE_W // 2, y + 130), "SEPARATOR SHEET", font=_font(110), fill=0, anchor="mm")
+    else:
+        d.text((PAGE_W // 2, y + 130), f"SEPARATOR {number:02d}", font=_font(150), fill=0, anchor="mm")
     d.text((PAGE_W // 2, y + 250), payload, font=_font(24), fill=0, anchor="mm")
 
     # Instructions — must make sense lying in a paper pile, months later.
     ins = _font(40)
     d.text((PAGE_W // 2, y + 360), "Place this sheet between documents in your scan pile.", font=ins, fill=0, anchor="mm")
     d.text((PAGE_W // 2, y + 425), "ScanFinder splits the batch here and removes this sheet automatically.", font=ins, fill=0, anchor="mm")
-    d.text((PAGE_W // 2, y + 490), "Reusable — any way up is fine. Print double-sided if you can.", font=ins, fill=0, anchor="mm")
+    if plain:
+        d.text((PAGE_W // 2, y + 490), "Print or photocopy as many copies as you need — every copy works the same.", font=ins, fill=0, anchor="mm")
+        d.text((PAGE_W // 2, y + 555), "Reusable — any way up is fine. Print double-sided if you can.", font=ins, fill=0, anchor="mm")
+    else:
+        d.text((PAGE_W // 2, y + 490), "Reusable — any way up is fine. Print double-sided if you can.", font=ins, fill=0, anchor="mm")
     return page
 
 
-def generate(out_path, count, start):
+def generate(out_path, count, start, plain=False):
     pages = []
     for i in range(count):
-        sheet = make_sheet(start + i)
+        sheet = make_sheet(start + i, plain=plain)
         pages.append(sheet)
         pages.append(sheet.copy())     # duplex pair — identical back face
     # resolution= is LOAD-BEARING: without it the PDF page size is wrong and the
@@ -116,13 +128,15 @@ def main():
     ap.add_argument("--out", required=True, help="Output PDF path")
     ap.add_argument("--count", type=int, default=10, help="Number of sheets (1-50)")
     ap.add_argument("--start", type=int, default=1, help="First sheet number")
+    ap.add_argument("--plain", action="store_true",
+                    help="No printed number: 'SEPARATOR SHEET' + copy-as-many-as-you-need instructions (same QR contract)")
     args = ap.parse_args()
     try:
         count = max(1, min(50, int(args.count)))
         start = max(1, min(9999, int(args.start)))
-        n_pages = generate(args.out, count, start)
+        n_pages = generate(args.out, count, start, plain=bool(args.plain))
         print(json.dumps({"success": True, "path": args.out, "first": start,
-                          "last": start + count - 1, "pages": n_pages}), flush=True)
+                          "last": start + count - 1, "pages": n_pages, "plain": bool(args.plain)}), flush=True)
     except Exception as exc:
         print(json.dumps({"success": False, "error": str(exc)}), flush=True)
         sys.exit(1)

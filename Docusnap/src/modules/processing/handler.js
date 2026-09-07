@@ -10,7 +10,7 @@ const path = require('path');
 const fs   = require('fs');
 const diaglog = require('../diaglog');
 const { buildSegmentArgs, buildSplitPlan } = require('./split_plan');
-const { clampSlipCount, nextSlipRange, slipPackName } = require('./slip_pack');
+const { clampSlipCount, nextSlipRange, slipPackName, pad4 } = require('./slip_pack');
 
 // SECURITY (Stage 2 — M11): call Windows system binaries by ABSOLUTE path. A bare image name is
 // resolved by CreateProcess from the CALLING process's directory FIRST — user-writable under a
@@ -5651,18 +5651,22 @@ function register(ctx) {
   // renderer opens it via the existing open-file/show-in-explorer bridges and the
   // user prints from their PDF viewer. The numbering counter advances ONLY on a
   // successful generation. requireRole holds the read-only wall (mutating IPC).
-  ipcMain.handle('generate-filing-slips', async (_e, count) => {
+  ipcMain.handle('generate-filing-slips', async (_e, count, opts) => {
     requireRole('admin', 'edit');
     const { app } = require('electron');
     const learning = require('../../../database/modules/learning');   // per-function require, matching this file's convention
     const db = getDb();
+    // Owner 2026-09-07: the UI asks for ONE PLAIN sheet (no printed number — the QR is the decision, the
+    // number was only ever the human handle); the operator prints/photocopies copies. The numbered PACK road
+    // stays for callers that still ask for it (count > 1 without plain) — same generator, same QR contract.
+    const plain = !!(opts && opts.plain);
     const n = clampSlipCount(count);
     const cur = parseInt(learning.getSetting(db, 'filing_slip_next_number', '1'), 10);
     const { first, last, next } = nextSlipRange(cur, n);
     const outDir = path.join(app.getPath('userData'), 'filing-slips');
     try { fs.mkdirSync(outDir, { recursive: true }); }
     catch (err) { return { success: false, error: `Could not create the output folder: ${err.message}` }; }
-    const outPath = path.join(outDir, slipPackName(first, last));
+    const outPath = path.join(outDir, plain ? `separator-sheet-${pad4(first)}.pdf` : slipPackName(first, last));
 
     const script = path.join(path.dirname(backendScript()), 'filing_slips.py');
     const res = await new Promise((resolve) => {
@@ -5670,7 +5674,7 @@ function register(ctx) {
       let proc;
       try {
         proc = spawn(pythonExe(),
-          pythonArgs(script, '--count', String(n), '--start', String(first), '--out', outPath),
+          pythonArgs(script, '--count', String(n), '--start', String(first), '--out', outPath, ...(plain ? ['--plain'] : [])),
           { windowsHide: true });
       } catch (err) { return resolve({ success: false, error: err.message }); }
       // Deliberately NOT in the batch Stop/kill registry — pack generation is

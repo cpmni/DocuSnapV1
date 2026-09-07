@@ -1261,10 +1261,12 @@ document.getElementById('btn-print-slips')?.addEventListener('click', async () =
   btn.disabled = true;
   if (msg) { msg.style.display = ''; msg.textContent = 'Creating sheets…'; }
   try {
-    const res = await window.docusnap.generateFilingSlips(10);
+    // Owner 2026-09-07: ONE plain sheet (no number) — print or photocopy as many copies as needed; every
+    // copy carries the same code and splits the batch the same way. Two identical pages = one double-sided sheet.
+    const res = await window.docusnap.generateFilingSlips(1, { plain: true });
     if (res && res.success) {
       window.docusnap.openFile(res.path);
-      if (msg) msg.textContent = `Sheets ${String(res.first).padStart(4, '0')}–${String(res.last).padStart(4, '0')} created — print from the viewer.`;
+      if (msg) msg.textContent = 'Separator sheet created — print or photocopy as many copies as you need (double-sided if you can).';
     } else if (msg) {
       msg.textContent = `Couldn't create sheets: ${(res && res.error) || 'unknown error'}`;
     }

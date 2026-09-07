@@ -1742,13 +1742,13 @@
             </div>
             <div class="threshold-row">
               <div>
-                <div class="threshold-label">Print separator sheets</div>
-                <div class="threshold-sub">Creates a PDF pack of numbered sheets and opens it — print from your PDF viewer (double-sided if you can). Sheets are reusable; keep the pack by the scanner.</div>
+                <div class="threshold-label">Print a separator sheet</div>
+                <div class="threshold-sub">Creates a one-sheet PDF (two identical pages, so a double-sided print reads either way up) and opens it &mdash; print or photocopy as many copies as you need. Every copy works the same: the batch splits wherever a sheet is scanned, so no numbering is needed. Sheets are reusable; keep a few by the scanner.</div>
                 <div class="threshold-sub" id="filing-slips-result" style="display:none"></div>
               </div>
               <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
-                <input type="number" id="filing-slips-count" min="1" max="50" value="10" title="How many sheets to print" style="width:64px;">
-                <button class="btn" id="filing-slips-print">Print separator sheets…</button>
+                <input type="number" id="filing-slips-count" min="1" max="50" value="1" title="How many sheets to print" style="width:64px; display:none;">
+                <button class="btn" id="filing-slips-print">Print a separator sheet…</button>
               </div>
             </div>
           </div>

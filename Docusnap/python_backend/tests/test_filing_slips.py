@@ -75,5 +75,15 @@ print("#5 embeddable (-P) run")
 out3, r = gen("embed.pdf", "--count", "1", safepath=True)
 check("generator runs under -P (no sibling-import trap)", r.get("success") is True, json.dumps(r))
 
+print("#6 PLAIN sheet (owner 2026-09-07): no printed number, same QR contract, duplex pair, decodes")
+out4, r = gen("plain.pdf", "--count", "1", "--start", "42", "--plain")
+check("plain generation succeeds + echoes plain", r.get("success") is True and r.get("plain") is True, json.dumps(r))
+check("one sheet = 2 identical pages (double-sided)", r.get("pages") == 2 and r.get("first") == 42 and r.get("last") == 42)
+d4 = detect_slips(out4)
+check("both pages decode as separators with the SAME payload (the code is the decision)",
+      d4["aborted"] is None and d4["separator_pages"] == [0, 1] and d4["separator_payloads"] == ["SFSEP-0042", "SFSEP-0042"], json.dumps(d4))
+out5, r = gen("pack_after_plain.pdf", "--count", "2", "--start", "42")
+check("the numbered pack road is unchanged (no flag -> plain False, 4 pages)", r.get("plain") is False and r.get("pages") == 4)
+
 print(f"\n{'PASS' if not fails else 'FAIL'} -- {fails} failure(s)")
 sys.exit(1 if fails else 0)
