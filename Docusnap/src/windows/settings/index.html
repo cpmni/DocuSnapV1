@@ -1070,6 +1070,13 @@
             </div>
             <div class="threshold-row">
               <div>
+                <div class="threshold-label">Unknown sample tilt = read the box where it was taught</div>
+                <div class="threshold-sub">When a taught document's own tilt was never measured, the crooked-scan allowance above used to assume it was perfectly level and tilt the remembered box by the new scan's full angle &mdash; landing it a character to one side. With this on, an unmeasured tilt means "unknown" and the box is read exactly where it was taught until the tilt is known. Off by default (test switch).</div>
+              </div>
+              <label class="toggle"><input type="checkbox" id="angle-compose-null-abstain-toggle"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="threshold-row">
+              <div>
                 <div class="threshold-label">Keep the sender's name you confirmed when the letterhead reads as nonsense</div>
                 <div class="threshold-sub">Once you've confirmed who a document is from, Scan Finder keeps that company name against the layout. On a poor scan the letterhead can come back garbled, or the reading can pick up something that isn't a company name at all — a date line, a VAT number, a page heading. On the test set that happened on 42 documents out of 135. Scan Finder already spots this and tells you (“Letterhead may read ‘Castellan Security Systems’ — detected ‘DATE 14-03-2026 Job Ref JB-8887’”); this lets it act on what it has already worked out, and keep the name you confirmed. A genuinely different company still comes through, and re-teaching still replaces a name that has gone out of date. ON by default &mdash; you can turn it off here.</div>
               </div>

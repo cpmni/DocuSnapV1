@@ -786,6 +786,10 @@ function _reconcileEnv(db) {
     //
     // Default OFF, byte-identical off. App RESTART to load the bridge.
     if (learning.getSetting(db, 'teach_angle_compose_scan', 'false') === 'true') env.TEACH_ANGLE_COMPOSE_SCAN = '1';
+    // TEACH_ANGLE_COMPOSE_NULL_ABSTAIN (2026-09-07, Oracle C6-C8): a NULL sample tilt means UNKNOWN, not level —
+    // the scan compose reads the stored box instead of composing by −θ_scan (the half-compose that clipped
+    // first glyphs on every tilted sibling while the packaged detector was missing). DARK (mig 129 seeds OFF).
+    if (learning.getSetting(db, 'teach_angle_compose_null_abstain', 'false') === 'true') env.TEACH_ANGLE_COMPOSE_NULL_ABSTAIN = '1';
     if (learning.getSetting(db, 'template_fixed_issuer_repair', 'false') === 'true') env.TEMPLATE_FIXED_ISSUER_REPAIR = '1';
     // ── THE ISSUER CURE (2026-08-09 NIGHT; Oracle FINAL RULING "the layer MOVED") ──
     //  • TEMPLATE_REG_ARBITER_ANCHOR_EVIDENCE — the Stage-0.5 registration arbiter treats ABSENT

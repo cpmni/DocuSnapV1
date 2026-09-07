@@ -2849,6 +2849,19 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 128 (parallel-import force-ON): ${e.message}`); }
   }
 
+  // ── migration 129: teach_angle_compose_null_abstain seeded OFF (2026-09-07, 007 → Oracle SIGN-OFF-W/COND
+  //    C6-C8). A NULL template sample tilt is UNKNOWN, not 0.00°: with the switch ON the Stage-0.5 scan compose
+  //    reads a NULL-angled template's boxes where they were stored instead of composing by −θ_scan (the half
+  //    compose that clipped first glyphs on every tilted sibling while the packaged detector was missing). DARK
+  //    until its own realdoc arm (old / abstain / healed) is read — NO force-ON twin yet. ──
+  if (!applied.has(129)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('teach_angle_compose_null_abstain', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (129)').run();
+      console.log(`JS migration 129 applied: teach_angle_compose_null_abstain (unknown sample tilt = stationary read) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 129 (teach_angle_compose_null_abstain): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

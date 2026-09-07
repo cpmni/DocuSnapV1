@@ -797,6 +797,7 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          // extractor by construction, so both may be on; on the ordinary import
                          // path (no deskew) this is the one that actually fires.
                          ['angle-compose-scan-toggle', 'teach_angle_compose_scan'],
+                         ['angle-compose-null-abstain-toggle', 'teach_angle_compose_null_abstain'],   // 2026-09-07: NULL tilt = stationary
                          ['fixed-issuer-repair-toggle', 'template_fixed_issuer_repair'],
                          // The issuer cure: the registration arbiter may only override a taught
                          // read when the field's own caption was looked for AND failed. A mapping
@@ -1092,7 +1093,7 @@ const DEV_SWITCH_IDS = [
   'date-invalid-yield-toggle', 'date-future-yield-toggle', 'pad-window-read-toggle',
   'heading-absent-reread-toggle', 'credit-sign-toggle', 'inline-row-overlap-toggle',
   'ref-role-digit-toggle', 'inline-offset-veto-toggle', 'drift-row-pitch-toggle',
-  'currency-edge-grow-toggle', 'name-edge-grow-toggle', 'angle-compose-scan-toggle',
+  'currency-edge-grow-toggle', 'name-edge-grow-toggle', 'angle-compose-scan-toggle', 'angle-compose-null-abstain-toggle',
   'fixed-issuer-repair-toggle',
   'reg-arbiter-anchor-evidence-toggle', 'issuer-region-presence-toggle',
   'fixed-seed-agreement-toggle', 'stage05-ref-code-toggle', 'generic-caption-exclusive-toggle',

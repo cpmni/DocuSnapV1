@@ -795,6 +795,39 @@ TEACH_ANGLE_COMPOSE = os.environ.get('TEACH_ANGLE_COMPOSE', '0') != '0'
 # Default OFF (=1 arms); OFF = byte-identical. Pins: tests/test_teach_angle_compose_scan.py.
 TEACH_ANGLE_COMPOSE_SCAN = os.environ.get('TEACH_ANGLE_COMPOSE_SCAN', '0') != '0'
 
+# TEACH_ANGLE_COMPOSE_NULL_ABSTAIN (2026-09-07, 007 → Oracle SIGN-OFF-W/COND C6-C8; DARK, mig 129 seeds
+# `teach_angle_compose_null_abstain` OFF). The SCAN compose above composes a taught box by net = θ_teach − θ_scan
+# and read a NULL θ_teach (`templates.sample_deskew_angle` never detected) as 0.0 — a HALF compose that lands the
+# box ~13.7 px per degree of the sample's real tilt to the side, cutting the first glyph ('5/03/2026' from
+# 25/03/2026, 'NS-39241' from WS-39241; 007's 10-sibling matrix: 30/90 first-glyph cuts, 3 confident valid-
+# looking wrong dates). The DESKEW sibling branch already abstains on NULL; this aligns the two: with the switch
+# ON a NULL sample tilt means "unknown" and the box is read where it was stored (the pre-08-09 stationary read),
+# for mappings AND landmarks. A known angle is byte-identical either way. OFF = today (NULL → 0.0).
+# Pins: tests/test_teach_angle_compose_null_abstain.py. Gate: the old / abstain / healed realdoc arms.
+TEACH_ANGLE_COMPOSE_NULL_ABSTAIN = os.environ.get('TEACH_ANGLE_COMPOSE_NULL_ABSTAIN', '0') != '0'
+
+
+def _compose_scan_decision(sample_angle, scan_angle, abstain_on_null, lo, hi):
+    """Pure: what the SCAN compose does with (θ_teach, θ_scan). Returns (net_deg | None, reason):
+      ('abstain')   θ_teach is NULL and the abstain switch is ON → no compose, read the stored box;
+      ('null_as_0') θ_teach is NULL and the switch is OFF → net = 0.0 − θ_scan (today's half compose);
+      ('compose')   both known and lo <= |net| <= hi → net;
+      ('below')/('above') |net| outside the band → no compose."""
+    if sample_angle is None:
+        if abstain_on_null:
+            return None, 'abstain'
+        tt = 0.0
+        reason = 'null_as_0'
+    else:
+        tt = float(sample_angle)
+        reason = 'compose'
+    net = tt - float(scan_angle or 0.0)
+    if abs(net) < lo:
+        return None, 'below'
+    if abs(net) > hi:
+        return None, 'above'
+    return net, reason
+
 # SHARED_LOCATE_CACHE (2026-09-07, oscar+gary -> Oracle SIGN-OFF-W/COND C1-C4; owner: "import is notably
 # slower than it used to be"). ONE label-locate OCR cache per extract() call, threaded to Stage 0.5
 # (extract_with_mappings), the Stage-2 landmark re-fit and every extract_with_anchors call. Before, each
@@ -8337,21 +8370,29 @@ class ExtractionEngine:
                           and tmpl_mappings and crop_pages):
                         try:
                             _src_t = (mapping_src or matched_tmpl) or {}
-                            _tt = _src_t.get("sample_deskew_angle")
-                            _tt = float(_tt) if _tt is not None else 0.0
-                            from ocr.tesseract import detect_skew_angle as _dsa
-                            _ts = float(_dsa(crop_pages[0], _COMPOSE_SCAN_MIN_NET) or 0.0)
-                            _net = _tt - _ts
-                            if _COMPOSE_SCAN_MIN_NET <= abs(_net) <= _COMPOSE_SCAN_MAX_NET:
-                                _W, _H = crop_pages[0].size
-                                tmpl_mappings = _compose_mappings_to_level(tmpl_mappings, _net, _W, _H)
-                                _landmarks = _compose_landmarks_to_level(_landmarks, _net, _W, _H)
-                                self.log(f"  Stage 0.5: composed {len(tmpl_mappings)} mapping(s) "
-                                         f"teach-frame -> this page (teach {_tt:.2f} deg, "
-                                         f"scan {_ts:.2f} deg, net {_net:.2f} deg) — no pixels rotated")
-                                self._t('compose_scan', theta_teach=round(_tt, 2),
-                                        theta_scan=round(_ts, 2), net=round(_net, 2),
-                                        mappings=len(tmpl_mappings))
+                            _tt_raw = _src_t.get("sample_deskew_angle")
+                            if _tt_raw is None and TEACH_ANGLE_COMPOSE_NULL_ABSTAIN:
+                                # TEACH_ANGLE_COMPOSE_NULL_ABSTAIN: an unknown sample tilt is not 0.00° — read the
+                                # box where it was stored (mappings AND landmarks untouched; no skew measurement).
+                                self.log("  Stage 0.5: sample tilt unknown — stationary read, no compose "
+                                         "(TEACH_ANGLE_COMPOSE_NULL_ABSTAIN)")
+                                self._t('compose_scan_abstain', mappings=len(tmpl_mappings))
+                            else:
+                                from ocr.tesseract import detect_skew_angle as _dsa
+                                _ts = float(_dsa(crop_pages[0], _COMPOSE_SCAN_MIN_NET) or 0.0)
+                                _net, _why = _compose_scan_decision(
+                                    _tt_raw, _ts, False, _COMPOSE_SCAN_MIN_NET, _COMPOSE_SCAN_MAX_NET)
+                                _tt = float(_tt_raw) if _tt_raw is not None else 0.0
+                                if _net is not None:
+                                    _W, _H = crop_pages[0].size
+                                    tmpl_mappings = _compose_mappings_to_level(tmpl_mappings, _net, _W, _H)
+                                    _landmarks = _compose_landmarks_to_level(_landmarks, _net, _W, _H)
+                                    self.log(f"  Stage 0.5: composed {len(tmpl_mappings)} mapping(s) "
+                                             f"teach-frame -> this page (teach {_tt:.2f} deg, "
+                                             f"scan {_ts:.2f} deg, net {_net:.2f} deg) — no pixels rotated")
+                                    self._t('compose_scan', theta_teach=round(_tt, 2),
+                                            theta_scan=round(_ts, 2), net=round(_net, 2),
+                                            mappings=len(tmpl_mappings))
                         except Exception:
                             pass   # measurement/compose failure -> stored geometry, unchanged
                     mapping_results = template_mapper.extract_with_mappings(
