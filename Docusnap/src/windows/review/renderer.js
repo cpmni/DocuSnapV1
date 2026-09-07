@@ -6356,7 +6356,8 @@ function showIssuerBlankChoice(name) {
 // door — reuse each page's already-read text (fast), read every document in full, or cancel. Native
 // confirm() can only do two. Returns 'quick' | 'full' | 'cancel'. `fileLine` = the same self-files
 // honesty sentence the plain confirm shows.
-function showReprocessModeChoice(count, scopeLabel, fileLine) {
+function showReprocessModeChoice(count, scopeLabel, fileLine, opts = {}) {
+  const fullOnly = !!(opts && opts.fullOnly);   // a Straighten-all session: the re-read must see the pixels
   return new Promise((resolve) => {
     let done = false;
     const finish = (v) => { if (done) return; done = true; document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); };
@@ -6381,7 +6382,11 @@ function showReprocessModeChoice(count, scopeLabel, fileLine) {
     // newly taught. On the clean-corpus M=0 arm this class is invisible (every pass reads the same), so
     // the ONLY thing standing between "reuse the stale image value" and "silently refile it" is this
     // sentence steering a page that needs a fresh look to Full. Do not weaken it.
-    p.innerHTML = `<strong>Quick</strong> reuses the text already read from each page and skips re-reading the `
+    p.innerHTML = fullOnly
+      ? `Straighten-all is on, so every document is re-read from its page image (straightened where it needs it) — `
+        + `slower than a Quick re-read, but it re-checks the fields read from the page. Values the documents re-read may `
+        + `replace what's shown now. Documents you've already confirmed and filed are not touched.<br><br>${fileLine || ''}`
+      : `<strong>Quick</strong> reuses the text already read from each page and skips re-reading the `
                 + `images — fastest. Fields taught by drawing a box keep their current values, and any document whose `
                 + `scan settings changed since it was read is re-read in full for you.<br><br>`
                 + `Quick does <strong>not</strong> re-check the things that need a fresh look at the page image — `
@@ -6401,11 +6406,17 @@ function showReprocessModeChoice(count, scopeLabel, fileLine) {
     const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); finish('cancel'); } };
     document.addEventListener('keydown', onKey, true);
     ov.addEventListener('click', (e) => { if (e.target === ov) finish('cancel'); });
-    foot.append(cancel, full, quick);
+    if (fullOnly) {
+      full.textContent = 'Re-read (straightened)';
+      Object.assign(full.style, { background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--bg)', fontWeight: '500' });
+      foot.append(cancel, full);
+    } else {
+      foot.append(cancel, full, quick);
+    }
     box.append(h, p, foot);
     ov.append(box);
     document.body.append(ov);
-    quick.focus();
+    (fullOnly ? full : quick).focus();
   });
 }
 
@@ -9272,8 +9283,11 @@ async function runReprocessBatch(docs, scopeLabel, opts = {}) {
   if (!opts.preConfirmed) {
     let _quickOn = false;
     try { _quickOn = (await window.docusnap.getSetting('quick_reprocess_enabled')) === 'true'; } catch {}
-    if (_quickOn && !deskewSessionOn) {
-      const choice = await showReprocessModeChoice(docs.length, scopeLabel, _fileLine);
+    // Owner 2026-09-07 ("quite often I don't get the full quick message, but this instead"): the native
+    // OK/Cancel box appeared whenever the Straighten-all session was ON — a straighten needs the page pixels,
+    // so Quick is not on offer, and the code fell through to confirm(). Same styled modal, Full only.
+    if (_quickOn) {
+      const choice = await showReprocessModeChoice(docs.length, scopeLabel, _fileLine, { fullOnly: !!deskewSessionOn });
       if (choice === 'cancel') return;
       _quick = (choice === 'quick');
       _quickChoiceMade = true;

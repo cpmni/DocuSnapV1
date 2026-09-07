@@ -40,6 +40,11 @@ const KEEP_SOURCE = new Set([
   'process_docs.py', 'render_pages.py', 'ocr_region.py', 'pdf_splitter.py', 'pdf_rotate.py',
   'segment_docs.py', 'filing_slips.py', 'template_fingerprint.py', 'test_mapping.py',
   'ocr/region.py', 'ocr/region_worker.py', 'ocr/landmarks.py',
+  // 2026-09-07 (owner's packaged log): the TEACH_ANGLE_COMPOSE sample-angle heal spawns ocr/detect_angle.py by
+  // path (processing/handler.js _healSampleAngles); it was compiled away → "python.exe: can't open file …
+  // detect_angle.py" exit 2 on every packaged install (the 5b fix corrected the argv, not the missing file).
+  // Pinned by scripts/test_compile_python_keep.js: every .py the JS spawns by path is in this set.
+  'ocr/detect_angle.py',
   'render/pages.py', 'render/preview_enhance.py',
   'logo/fingerprint.py',
 ].map(p => p.replace(/\//g, path.sep)));

@@ -1989,6 +1989,13 @@ async function doCommit(){
     // A3 (type-split arc, 2026-08-22; Oracle S2-js-a-1): ask BEFORE the template is born. The wizard
     // promotes before it confirms, so reviewService's own gate would fire too late (a half-born
     // template with no confirmed document). One question, once per sender-type split; advisory.
+    // Owner 2026-09-07 ("the customer had to choose invoice to begin with"): in THIS wizard the type is never a
+    // machine assignment — step 2 has no pre-selection, Next stays disabled until the operator clicks a type
+    // card (see canProceed case 2), and the summary above restates the choice. Asking "files as Delivery Note
+    // (21 so far) — teach this one as Invoice?" here re-asks a question the click already answered. The gate
+    // keeps its meaning in Review (where the type can be the machine's); the wizard passes
+    // acknowledgeTypeSplit so reviewService's own gate does not re-ask at commit either.
+    state.typeSplitAck = true;
     if (!state.typeSplitAck && D.checkTypeSplit) {
       let ts = null;
       try { ts = await D.checkTypeSplit({ supplier_name: supplier, document_type_slug: state.docTypeSlug }); } catch {}
