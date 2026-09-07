@@ -716,8 +716,19 @@ function clearStage() {
 btnToggleLog?.addEventListener('click', () => {
   const open = logPanel.classList.toggle('log-open');
   btnToggleLog.textContent = open ? 'Hide log' : 'View log';
-  if (open) logOutput.scrollTop = logOutput.scrollHeight;
+  if (open) { _logStick = true; logOutput.scrollTop = logOutput.scrollHeight; }
 });
+
+// Sticky-bottom log (owner 2026-09-07: "I'd like to scroll up and read the log as it is processing — it
+// jumps to the bottom every time it updates. Stop jumping if a user scrolls up; resume when they scroll
+// back to the bottom"). The log auto-follows ONLY while the reader is at (or within a few px of) the
+// bottom; scrolling up parks it, scrolling back down re-arms it. A programmatic scroll-to-bottom also
+// fires 'scroll' and lands at the bottom, so it re-arms itself.
+let _logStick = true;
+const _LOG_STICK_PX = 8;
+function _logAtBottom(el) { return (el.scrollHeight - el.scrollTop - el.clientHeight) <= _LOG_STICK_PX; }
+logOutput?.addEventListener('scroll', () => { _logStick = _logAtBottom(logOutput); });
+function _logFollow() { if (_logStick) logOutput.scrollTop = logOutput.scrollHeight; }
 
 // X / N count under the bar, kept in sync with the batch.
 function updateProgressCount() {
@@ -1236,7 +1247,7 @@ function appendLog(text, cls = '') {
   if (cls) div.className = cls;
   div.textContent = text;
   logOutput.appendChild(div);
-  logOutput.scrollTop = logOutput.scrollHeight;
+  _logFollow();
 }
 
 function updateStats() {
