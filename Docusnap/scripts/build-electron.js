@@ -1,43 +1,55 @@
 'use strict';
 /*
- * build-electron.js — the electron-builder invocation, factored out of the inline `node -e` so the
- * OPT-IN source-protection path (HARDEN_JS=1, Build 2/3) can remap `files` to ship the bundled +
- * bytecoded main process from build_js/.
+ * build-electron.js — the electron-builder invocation for BOTH the NSIS installer and the MSIX/Store
+ * (appx) package, so the OPT-IN source-protection path (HARDEN_JS=1) protects them identically. The JS
+ * bundling/bytecode + build_js/ files-remap is target-agnostic — the difference is only the
+ * electron-builder target args.
  *
- *   npm run build                 # default — byte-identical to the old inline invocation
- *   HARDEN_JS=1 npm run build     # bundle + V8-bytecode the main process (needs a live packaged smoke)
- *   HARDEN_JS=1 HARDEN_JS_NOBYTECODE=1 npm run build   # Build 2 only (bundle, no bytecode)
+ *   npm run build                                   # NSIS, plain
+ *   HARDEN_JS=1 HARDEN_JS_STRINGS=1 npm run build   # NSIS, hardened (bundle + V8 bytecode + string-array)
+ *   npm run build:store                             # MSIX/appx, plain
+ *   HARDEN_JS=1 HARDEN_JS_STRINGS=1 npm run build:store   # MSIX/appx, hardened (SAME protection as NSIS)
+ *   HARDEN_JS=1 HARDEN_JS_NOBYTECODE=1 …            # bundle only (no bytecode)
  *
- * DEFAULT (HARDEN_JS unset): unchanged — spawns the same electron-builder CLI the repo always used, so a
- * normal release is identical. Kill switch for the hardened path = don't set HARDEN_JS (or git revert).
+ * DEFAULT (HARDEN_JS unset): unchanged — the same electron-builder CLI the repo always used. Kill switch
+ * for the hardened path = don't set HARDEN_JS (or git revert). Target = `node build-electron.js appx`
+ * for the Store package, else NSIS.
  */
 const { execFileSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
+const TARGET = process.argv[2] === 'appx' ? 'appx' : 'nsis';
 process.env.BUILD_REV = process.env.BUILD_REV || require('./build-rev').buildRev();
 const HARDEN = process.env.HARDEN_JS === '1';
 
+// electron-builder target args (+ the MSIX 4-part version, which the appx target requires).
+const ebArgs = ['electron-builder', '--win'];
+if (TARGET === 'appx') {
+  ebArgs.push('appx', '--config.extraMetadata.buildRev=' + process.env.BUILD_REV,
+              '--config.extraMetadata.version=' + require('./build-rev').msixVersion());
+} else {
+  ebArgs.push('--x64', '--config.extraMetadata.buildRev=' + process.env.BUILD_REV);
+}
+const runBuilder = () => execFileSync('npx', ebArgs, { stdio: 'inherit', cwd: ROOT, env: process.env, shell: true });
+
 if (!HARDEN) {
-  // Unchanged default path.
-  execFileSync('npx', ['electron-builder', '--win', '--x64',
-      '--config.extraMetadata.buildRev=' + process.env.BUILD_REV],
-    { stdio: 'inherit', cwd: ROOT, env: process.env, shell: true });
+  runBuilder();                                    // plain path — unchanged
   process.exit(0);
 }
 
-// ── Hardened path ─────────────────────────────────────────────────────────────
+// ── Hardened path (shared by NSIS + appx) ─────────────────────────────────────
 // 1. Stage build_js/ (bundle, + bytecode unless HARDEN_JS_NOBYTECODE).
 const hardenArgs = [path.join('scripts', 'harden-js.js')];
 if (process.env.HARDEN_JS_NOBYTECODE !== '1') hardenArgs.push('--bytecode');
 execFileSync(process.execPath, hardenArgs, { stdio: 'inherit', cwd: ROOT, env: process.env });
 
-// 2. Build with `files` remapped so src/ + database/ come from build_js/ (the bundled tree) — NOT the repo.
-//    The programmatic-config approach was WRONG: electron-builder still reads package.json's `build` field
-//    and MERGES it, so the repo's `src/**` + `database/**` shipped ALONGSIDE the bundle (the crown-jewel
-//    source landed in the asar next to main.jsc). The only deterministic override is package.json itself:
-//    swap build.files to the build_js remap for the CLI build, then restore the EXACT original bytes.
-const fs = require('fs');
+// 2. Remap `files` so src/ + database/ ship from build_js/ (the bundled tree), NOT the repo. electron-
+//    builder still reads + MERGES package.json's `build.files`, so a programmatic override leaves the
+//    crown-jewel source in the asar next to main.jsc — the only deterministic override is package.json
+//    itself: swap build.files for the CLI build, restore the exact original bytes after. Applies to both
+//    targets (electron-builder reads `files` regardless of --win nsis vs --win appx).
 const pkgPath = path.join(ROOT, 'package.json');
 const origPkg = fs.readFileSync(pkgPath, 'utf8');
 const pkgObj = JSON.parse(origPkg);
@@ -53,10 +65,8 @@ pkgObj.build.files = [
 ];
 fs.writeFileSync(pkgPath, JSON.stringify(pkgObj, null, 2) + '\n');
 try {
-  execFileSync('npx', ['electron-builder', '--win', '--x64',
-      '--config.extraMetadata.buildRev=' + process.env.BUILD_REV],
-    { stdio: 'inherit', cwd: ROOT, env: process.env, shell: true });
-  console.log('[build-electron] HARDENED build complete.');
+  runBuilder();
+  console.log(`[build-electron] HARDENED ${TARGET} build complete.`);
 } finally {
   fs.writeFileSync(pkgPath, origPkg);   // restore the exact original package.json regardless of outcome
 }
