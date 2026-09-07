@@ -2781,6 +2781,23 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 123 (log-review arcs force-ON): ${e.message}`); }
   }
 
+  // ── migration 124: TEST-BUILD force-ON of the 2026-09-04 arcs (owner order 2026-09-07 "rebuild the app with all
+  //    the new settings on"; same pattern + caveat as migs 108/…/118/123). A fresh install seeds these OFF (119/120)
+  //    or forces them OFF (121); the owner's live DB has them ON by a hand settings write. FORCE-flips (UPSERT)
+  //    confusion_precedence (mig 119, review-bound 2a) · format_class_join (mig 120) · resolve_ref_near_miss +
+  //    resolve_ref_positional (mig 121, SUGGESTIONS, review-bound). Runs AFTER 121 by number, so the relocated
+  //    resolvers end ON. ⚠ TEST-ONLY / REVERSIBLE: revert (or gate) before ANY customer build, with
+  //    108/110/112/114/116/118/123; their flip gates (Oracle C9 / G1-G3) are still owed. ──
+  if (!applied.has(124)) {
+    try {
+      for (const k of ['confusion_precedence', 'format_class_join', 'resolve_ref_near_miss', 'resolve_ref_positional']) {
+        db.prepare(`INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run(k);
+      }
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (124)').run();
+      console.log('JS migration 124 applied: TEST-BUILD force-ON confusion_precedence + format_class_join + resolve_ref_near_miss + resolve_ref_positional (revert before customer build)');
+    } catch (e) { console.warn(`  migration 124 (09-04 arcs force-ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
