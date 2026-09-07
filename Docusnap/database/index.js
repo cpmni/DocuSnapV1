@@ -2764,6 +2764,23 @@ function runJsMigrations(db, applied) {
   }
 
 
+  // ── migration 123: TEST-BUILD force-ON of the 2026-09-06 log-review arcs + the money sign lever (owner order
+  //    2026-09-07 "build it with the toggles on"; same pattern + caveat as migs 108/…/118). FORCE-flips (UPSERT)
+  //    anchor_bare_label_fuzzy · anchor_labelless_currency_refuse · type_uninstalled_heading_fold (mig 122's
+  //    three DARK arcs, all gated 2026-09-06: realdoc arms inert live / Meadowvale copy 18 wrong-row totals ->
+  //    re-teach notes / re-detect census 20 Ironclad -> Statement, 521 unchanged) and money_sign_capture (mig 72;
+  //    both mints now re-attach the minus — 799c212). ⚠ TEST-ONLY / REVERSIBLE: revert (or gate) before ANY
+  //    customer build, with migs 108/110/112/114/116/118. Runs AFTER mig 122 (seed OFF) by number. ──
+  if (!applied.has(123)) {
+    try {
+      for (const k of ['anchor_bare_label_fuzzy', 'anchor_labelless_currency_refuse', 'type_uninstalled_heading_fold', 'money_sign_capture']) {
+        db.prepare(`INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run(k);
+      }
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (123)').run();
+      console.log('JS migration 123 applied: TEST-BUILD force-ON anchor_bare_label_fuzzy + anchor_labelless_currency_refuse + type_uninstalled_heading_fold + money_sign_capture (revert before customer build)');
+    } catch (e) { console.warn(`  migration 123 (log-review arcs force-ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
