@@ -2874,6 +2874,19 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 130 (reread_hold_corrob_release): ${e.message}`); }
   }
 
+  // ── migration 131: template_date_left_clip_grow seeded OFF (2026-09-07, gary A1 → Oracle SIGN-OFF-W/COND
+  //    C9-C11). Slice C's "a complete 4-digit-year date is never a partial" exemption is narrowed: a date whose
+  //    FIRST component is one digit ('5/03/2026') lets the page geometry decide — a LEFT-cut word grows the read
+  //    with a strict one-digit-restored comparator; anything else floors to review. DARK until the OFF→ON
+  //    realdoc M=0 + fire census are read. ──
+  if (!applied.has(131)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('template_date_left_clip_grow', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (131)').run();
+      console.log(`JS migration 131 applied: template_date_left_clip_grow (left-cut 1-digit-day date may grow) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 131 (template_date_left_clip_grow): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

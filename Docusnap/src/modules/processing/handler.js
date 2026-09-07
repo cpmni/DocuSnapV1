@@ -332,6 +332,9 @@ function _reconcileEnv(db) {
     // word-edge guard (grow a cut taught box's READ to the full word, witness-corroborated), the
     // date-clip fragment gate + the locate digit-exactness guard. Dark until the owner flip.
     if (learning.getSetting(db, 'template_abs_edge_guard', 'false') === 'true') env.TEMPLATE_ABS_EDGE_GUARD = '1';
+    // TEMPLATE_DATE_LEFT_CLIP_GROW (2026-09-07, Oracle C9-C11): the guard's H3 exemption narrowed for a 4-digit-year
+    // date with a ONE-digit first component — a LEFT cut may grow (strict comparator). DARK (mig 131 seeds OFF).
+    if (learning.getSetting(db, 'template_date_left_clip_grow', 'false') === 'true') env.TEMPLATE_DATE_LEFT_CLIP_GROW = '1';
     if (learning.getSetting(db, 'template_date_clip_gate', 'false') === 'true') env.TEMPLATE_DATE_CLIP_GATE = '1';
     if (learning.getSetting(db, 'template_label_digit_exact', 'false') === 'true') env.TEMPLATE_LABEL_DIGIT_EXACT = '1';
     // Straighten pivot (Oracle 2026-08-05 late; corpus + Chris-vet GREEN): the level-frame

@@ -602,6 +602,23 @@ _EDGE_GUARD_VAL_TYPES = frozenset(_SNAP_VAL_TYPES | {'currency'})
 # teach, so a read-time mid-word edge is drift evidence, not operator intent. Default OFF
 # (=1 arms); OFF = byte-identical. Pins: tests/test_template_abs_edge_guard.py.
 _ABS_EDGE_GUARD_ON = os.environ.get('TEMPLATE_ABS_EDGE_GUARD', '0') != '0'
+# TEMPLATE_DATE_LEFT_CLIP_GROW (2026-09-07, gary A1 → Oracle SIGN-OFF-W/COND C9-C11; DARK, mig 131 seeds
+# `template_date_left_clip_grow` OFF; nested under the guard above — inert unless it is armed). Slice C's H3
+# exemption returns before computing any cut when the abs read parses as a date with a 4-digit year ("a
+# complete 4-digit-year date is never a partial") — an argument about RIGHT overhang. A LEFT cut with a
+# complete year is a real class: a taught box landed a glyph to the right reads `5/03/2026` (25/03/2026)
+# @90, format-valid, no salvage, no defence ('09-03-2026' silently committed; 3 confident valid-looking
+# wrong dates on 007's 10-sibling matrix). Narrowing: a 4-digit-year date whose FIRST component is ONE
+# digit (region-agnostic — DD/MM or MM/DD) no longer returns early; the geometry decides. `left_cut is None`
+# → None (a right-only cut keeps H3 byte-identically); a left cut runs the existing label-bounded grow +
+# full-res re-read, with a STRICT comparator for this class: the grown digit string must end with the
+# rigid one AND be exactly one digit longer ('25032026' ← '5032026'; a grown '26/03/2026' over a rigid
+# '9/03/2026' floors, never heals). Dates self-consent → {'rewrite'} = `template_mapping_edgegrow` @90
+# clean; any leg failing → the deferred cap (≤70 + the edge-cut note). Pinned miss: a cut in [8, 10) px
+# never fires (the 0.6·glyph overhang floor of _find_edge_cut_words) — the pad-window flag is that net.
+# Pins: tests/test_template_date_left_clip_grow.py. Gate: OFF→ON realdoc M=0 + the fire census
+# (NAMEGROW_CENSUS_DIR lines tagged date_left_*), every fire = same value or a correct heal.
+_DATE_LEFT_CLIP_GROW_ON = os.environ.get('TEMPLATE_DATE_LEFT_CLIP_GROW', '0') != '0'
 _EDGE_CUT_NOTE = ("The taught box's edge cuts through the printed value here and the fuller "
                   "reading could not be verified — please check this value.")
 # FORMAT_CLASS_JOIN, Oracle C10 — the TRUTHFUL note for a re-seated value that matched this sender's
@@ -3263,17 +3280,25 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
     # A clean 2-digit-year read does NOT skip: it may be a cut 4-digit year (the pinned
     # Slice-B trade-off) — geometry is exactly the judge there. Codes have no
     # completeness test — their witness + consent ladder carries them.
+    _date_left_probe = False
     if val_type == 'date' and abs_text and not _date_clip_suspect(abs_text):
         m4 = None
         for m4 in _DATE_CLIP_NUMERIC.finditer(str(abs_text)):
             pass
         if m4 is not None and len(m4.group(3)) == 4:
-            return None
+            if _DATE_LEFT_CLIP_GROW_ON and len(m4.group(1)) == 1:
+                _date_left_probe = True               # TEMPLATE_DATE_LEFT_CLIP_GROW: H3 narrowed — geometry decides
+            else:
+                return None
     lines = _page_words_cached(page, ocr_lines_fn, line_cache)
     if not lines:
         return None                                   # no geometry -> byte-identical (fail-inert)
     read_box = _expand_box(target_box, expansion) if (abs_expanded and expansion > 0) else target_box
     left_cut, right_cut = _find_edge_cut_words(lines, read_box)
+    if _date_left_probe and left_cut is None:
+        _EDGE_GUARD_FIRES.append((field_key, 'R' if right_cut is not None else '', 'date_left_nofire'))
+        _name_grow_census(field_key, 'R' if right_cut is not None else '', 'date_left_nofire', old=abs_text)
+        return None                                   # right-only / no cut: H3 stands byte-identically
     if left_cut is None and right_cut is None:
         return None
     if name_grow and (right_cut is None or left_cut is not None):
@@ -3425,7 +3450,14 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
         elif val_type == 'date':
             do = re.sub(r'[^0-9]', '', _strip_code_edges(str(abs_text)))
             dn = re.sub(r'[^0-9]', '', str(gv))
-            if not (do and len(dn) > len(do) - 1 and _frag_matches(do, dn)):
+            if _date_left_probe:
+                # STRICT (Oracle C9): the one-digit first component is the TAIL of the true one — the grown
+                # digit string must end with the whole rigid string and restore exactly ONE digit.
+                if not (do and dn.endswith(do) and len(dn) == len(do) + 1):
+                    _EDGE_GUARD_FIRES.append((field_key, _edges, 'date_left_capped'))
+                    _name_grow_census(field_key, _edges, 'date_left_capped', old=abs_text, new=gv)
+                    return _floor()
+            elif not (do and len(dn) > len(do) - 1 and _frag_matches(do, dn)):
                 return _floor()
         else:
             co = _code_norm(_strip_code_edges(str(abs_text)))
@@ -3499,6 +3531,9 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
     if consent in ('confirmed', 'provisional') or (witness_ok and consent == 'none'):
         _EDGE_GUARD_FIRES.append((field_key, _edges,
                                   'healed_witness' if consent == 'none' else 'healed'))
+        if _date_left_probe:
+            _EDGE_GUARD_FIRES.append((field_key, _edges, 'date_left_healed'))
+            _name_grow_census(field_key, _edges, 'date_left_healed', old=abs_text, new=gv)
         return {"rewrite": (gv, _gmeta.get('conf'))}
     if consent == 'refused':
         # Deliberate-sub-token-teach protection: a confirmed history in the SUB-token shape
