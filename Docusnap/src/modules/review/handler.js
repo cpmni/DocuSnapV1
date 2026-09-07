@@ -160,14 +160,14 @@ function register(ctx) {
     startDefaultRoute: (db, docId, routeCtx, meta) =>
       require('../../services/amountRouting').startDefaultRoute(db, docId, routeCtx, meta, {
         entitled: (d) => { try { return !!require('../../services/entitlementService').checkClientEntitlement(d).workflow.entitled; } catch { return false; } },
-        hasActiveRoute: (d, id) => require('../../database/modules/workflow').hasActiveRoute(d, id),
-        currencyConsistent: (d, sup, slug, fk, v) => require('../../database/modules/trust').currencyConsistentForField(d, sup, slug, fk, v),
+        hasActiveRoute: (d, id) => require('../../../database/modules/workflow').hasActiveRoute(d, id),
+        currencyConsistent: (d, sup, slug, fk, v) => require('../../../database/modules/trust').currencyConsistentForField(d, sup, slug, fk, v),
         floor: (d) => parseInt(learning.getSetting(d, 'critical_field_conf_floor', '88'), 10) || 0,
-        listActiveRules: (d) => require('../../database/modules/workflow').listActiveRouteRules(d),
-        usersByRole: (d, role) => require('../../database/modules/auth').getAllUsers(d).filter(u => u.role === role),
+        listActiveRules: (d) => require('../../../database/modules/workflow').listActiveRouteRules(d),
+        usersByRole: (d, role) => require('../../../database/modules/auth').getAllUsers(d).filter(u => u.role === role),
         assign: (actor, opts) => require('../../services/workflowService').createWorkflowService({ audit: (e) => logAudit(db, e) }).assign(db, actor, opts),
         audit: (e) => logAudit(db, e),
-        summarizeRule: (rule) => require('../../database/modules/workflow').summarizeRule(db, rule),
+        summarizeRule: (rule) => require('../../../database/modules/workflow').summarizeRule(db, rule),
       }),
     // releaseDelayMs stays 0 (the default): the old 150ms "release the preview file handle" wait
     // before filing was vestigial — the preview is an in-memory data URL, not an OS handle, and the

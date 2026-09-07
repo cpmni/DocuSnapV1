@@ -6774,8 +6774,7 @@ module.exports = {
   endWatchActivity:   ()      => _endActivity('watch'),
   // Shared with the watch-folder handler so it can batch + shard its queue exactly like a
   // manual import (one Python process per shard of MANY files, not one process per file).
-  maxConcurrency,
-  defaultConcurrency,
+  // (maxConcurrency + defaultConcurrency are already exported above with the crash-fix hooks.)
   partitionRoundRobin,
   // Exposed for the F-06 path-policy unit test (test_open_path_policy.js).
   _isOpenablePath,
