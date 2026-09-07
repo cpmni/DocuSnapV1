@@ -62,7 +62,7 @@ console.log('§4 the in-gap rule for an OLDER same-key event is unchanged');
 clock += 2 * GAP;
 rec('self_filed', [12], 'Oakhaven');            // a fresh Oakhaven chip (its older one is far past the gap)
 clock += 100;
-rec('self_filed', [13], 'Ironbridge');          // newest is now Ironbridge (merges into chip [11] — consecutive rule)
+rec('self_filed', [13], 'Ironbridge');          // NOT consecutive with [11] (an Oakhaven chip sits between) → a fresh Ironbridge chip
 clock += 100;
 rec('self_filed', [14], 'Oakhaven');            // Oakhaven is NOT newest, but inside the gap → the old in-gap merge
 evs = list();
