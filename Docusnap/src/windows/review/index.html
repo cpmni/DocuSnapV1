@@ -255,6 +255,16 @@
     }
     .qi-btn:hover { border-color: var(--accent); color: var(--accent); }
     .qi-btn.danger:hover { border-color: var(--err); color: var(--err); }
+    /* Queue-row delete (×): vertically centred against the whole 2-line card (not pinned to
+       the top by the row's align-items:flex-start) and shown as a real delete affordance —
+       a red glyph on a faint danger tint at rest, filling on hover. */
+    .qi-delete {
+      align-self: center; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; padding: 0; font-size: 14px; line-height: 1; border-radius: 6px;
+      color: var(--err); border-color: color-mix(in srgb, var(--err) 35%, var(--border2));
+      background: color-mix(in srgb, var(--err) 8%, transparent);
+    }
+    .qi-delete:hover { color: var(--err); border-color: var(--err); background: var(--err-bg); }
 
     /* ── Document viewer (centre) ── */
     #doc-panel { flex: 1; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--doc-bg); min-width: 0; position: relative;

@@ -2197,7 +2197,7 @@ function buildQueueItem(doc) {
         </div>
         ${blockerLine}
       </div>
-      ${canEdit ? `<button class="qi-btn danger qi-delete" title="Delete this row's document" aria-label="Delete this row's document" style="flex-shrink:0; padding:2px 7px; font-size:13px;">&#215;</button>` : ''}
+      ${canEdit ? `<button class="qi-btn danger qi-delete" title="Delete this row's document" aria-label="Delete this row's document">&#215;</button>` : ''}
     </div>
   `;
   if (window.Thumbs) window.Thumbs.lazy(el.querySelector('.qi-thumb'), doc);
@@ -2245,7 +2245,7 @@ function renderDeferredList() {
         </div>
         <div style="display:flex; gap:3px; flex-shrink:0;" onclick="event.stopPropagation()">
           <button class="qi-btn qi-review-now" title="Move back to review queue" style="padding:2px 6px; font-size:10px;">Review</button>
-          <button class="qi-btn danger qi-delete" title="Delete this row's document" aria-label="Delete this row's document" style="padding:2px 7px; font-size:13px;">&#215;</button>
+          <button class="qi-btn danger qi-delete" title="Delete this row's document" aria-label="Delete this row's document">&#215;</button>
         </div>
       </div>
     `;
