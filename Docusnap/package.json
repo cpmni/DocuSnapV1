@@ -6,7 +6,7 @@
   "main": "src/main.js",
   "scripts": {
     "start": "node scripts/dev-start.js",
-    "build": "node scripts/check-vendor-python.js && node scripts/check-licenses.js && node scripts/compile-python-bytecode.js && node scripts/test_no_shipped_py_source.js && node -e \"const c=require('child_process');process.env.BUILD_REV=require('./scripts/build-rev').buildRev();c.execSync('electron-builder --win --x64 --config.extraMetadata.buildRev=' + process.env.BUILD_REV,{stdio:'inherit',env:process.env})\"",
+    "build": "node scripts/check-vendor-python.js && node scripts/check-licenses.js && node scripts/compile-python-bytecode.js && node scripts/test_no_shipped_py_source.js && node scripts/build-electron.js",
     "check:licenses": "node scripts/check-licenses.js",
     "check:vendor": "node scripts/check-vendor-python.js",
     "check:help": "node scripts/check-help-coverage.js",
@@ -109,11 +109,13 @@
   "devDependencies": {
     "@electron/fuses": "^2.1.3",
     "electron": "44.0.0",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "esbuild": "^0.28.2"
   },
   "dependencies": {
     "argon2": "0.45.1",
     "better-sqlite3": "npm:better-sqlite3-multiple-ciphers@^13.0.3",
+    "bytenode": "^1.6.0",
     "node-forge": "1.3.1",
     "pdf-lib": "^1.17.1"
   }

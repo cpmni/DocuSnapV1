@@ -23,9 +23,24 @@ const learning = require('../../database/modules/learning');
 
 const _FC_MISMATCH_BASE = 12, _FC_MISMATCH_STEP = 6, _FC_MISMATCH_CAP = 25;   // = validator.py:896-898
 
+// WHERE THE SHIPPED CONFIG ACTUALLY LIVES (2026-09-07, source-protection Build 2 prep). Same DEAD-GUARD
+// as database/modules/freeze_guard.js:69 (Oracle C1, 2026-08-10): `config/` ships as extraResources at
+// resources/config/, NOT inside the asar — so a repo-relative require() resolved to
+// resources/app.asar/config/… which does not exist, and this feature silently saw an EMPTY charset key
+// set in every packaged build (the try/catch masked it). Resolve the same way main.js resourcePath()
+// does — this ALSO makes the site bundle-stable (Oracle's Build-2 catch: __dirname collapses when
+// bundled into src/main.js). ONE path for Python + renderer + this module; never add config/** to files.
+function _configDir() {
+  try {
+    const { app } = require('electron');
+    if (app && app.isPackaged) return path.join(process.resourcesPath, 'config');
+  } catch { /* not in an Electron main process (harness / plain-node consumer) */ }
+  return path.join(__dirname, '..', '..', 'config');
+}
+
 function _charsetKeys() {
   try {
-    const cfg = require(path.join(__dirname, '..', '..', 'config', 'keyword_patterns.json'));
+    const cfg = require(path.join(_configDir(), 'keyword_patterns.json'));
     return new Set(Object.keys((cfg && cfg.field_charsets) || {}));
   } catch { return new Set(); }
 }

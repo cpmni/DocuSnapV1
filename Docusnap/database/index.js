@@ -56,6 +56,24 @@ function open() {
 
 // ── Migrations ────────────────────────────────────────────────────────────────
 
+// BUNDLE-STABLE migrations dir (2026-09-07, source-protection Build 2 prep — Oracle's boot-death catch).
+// The .sql migrations are DATA read via readdirSync (esbuild can't inline them), so they always ship as a
+// real directory. But if a future bundling pass inlines this module into src/main.js, a raw
+// `path.join(__dirname, 'migrations')` would resolve to app.asar/src/migrations and 404 → the DB would
+// never open. Anchor to the app root (bundle-stable) FIRST, fall back to __dirname (unbundled + the
+// electron-as-node test harness, where getAppPath is not meaningful). existsSync picks the one that is
+// actually on disk, so it is correct in every mode.
+function _migrationsDir() {
+  const candidates = [];
+  try {
+    const { app } = require('electron');
+    if (app && typeof app.getAppPath === 'function') candidates.push(path.join(app.getAppPath(), 'database', 'migrations'));
+  } catch { /* harness without a full electron app — fall through */ }
+  candidates.push(path.join(__dirname, 'migrations'));
+  for (const c of candidates) { try { if (fs.existsSync(c)) return c; } catch {} }
+  return path.join(__dirname, 'migrations');
+}
+
 function runMigrations(db) {
   // Ensure migrations table exists
   db.exec(`CREATE TABLE IF NOT EXISTS migrations (
@@ -69,7 +87,7 @@ function runMigrations(db) {
   );
 
   // Run SQL migration files
-  const migrationsDir = path.join(__dirname, 'migrations');
+  const migrationsDir = _migrationsDir();
   const files = fs.readdirSync(migrationsDir)
     .filter(f => f.endsWith('.sql'))
     .sort();

@@ -74,6 +74,7 @@ _archive/
 SECURITY_AUDIT_*.md
 SECURITY_BACKLOG.md
 build_python/
+build_js/
 
 # CUSTOMER-DERIVED DATA that lives in the working tree during testing — never committable.
 # `templates/*.json` below already covers the template dumps, but the folders themselves hold real
