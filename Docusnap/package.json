@@ -111,7 +111,13 @@
       "!**/test_*.js",
       "!**/*.test.js",
       "!**/__tests__/**",
-      "!**/*.map"
+      "!**/*.map",
+      "!src/index.html",
+      "!src/review.html",
+      "!src/settings.html",
+      "!src/renderer.js",
+      "!src/review_renderer.js",
+      "!src/settings_renderer.js"
     ],
     "asarUnpack": [
       "**/*.node",

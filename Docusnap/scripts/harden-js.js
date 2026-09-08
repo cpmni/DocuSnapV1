@@ -89,11 +89,21 @@ function main() {
   // Overwrite the entry with the bundle, then remove every OTHER inlined source file.
   fs.rmSync(entry);
   fs.renameSync(tmpOut, entry);
-  let removed = 0;
+  // RENDERER TREE IS NEVER DELETED (eric re-audit 2026-09-08, NEW P0): src/windows/shared/listCaption.js and
+  // reviewReadiness.js are require()d by main-side code (so esbuild inlines them) AND loaded by <script src> from
+  // review/teach index.html — deleting them here shipped a hardened build whose Review "File all ready" threw
+  // (window.ReviewReadiness undefined) and whose list-caption previews were empty. Nothing caught it: the boot smoke
+  // exits before any window and the verifier never looked at src/windows. The renderer tree ships readable by
+  // definition, so keeping an inlined input there leaks nothing new; verify-release-artifact.js now also resolves
+  // every <script src>/<link href> in every shipped .html against the asar (the whole class, not just these two).
+  const RENDERER_TREE = path.join(OUT, 'src', 'windows') + path.sep;
+  let removed = 0, kept = 0;
   for (const f of inputs) {
     if (f === entry) continue;
+    if (f.startsWith(RENDERER_TREE)) { kept++; continue; }
     if (fs.existsSync(f)) { fs.rmSync(f); removed++; }
   }
+  if (kept) console.log(`[harden-js] ${kept} renderer-served module(s) under src/windows were inlined into the bundle AND kept on disk (loaded by <script src>).`);
   // Prune now-empty dirs under build_js/database and build_js/src (leaves windows/ + preload.js intact).
   pruneEmpty(path.join(OUT, 'database'));
   pruneEmpty(path.join(OUT, 'src'));

@@ -47,12 +47,44 @@ function parseFuseText(text) {
 }
 
 /**
- * evaluate({ entries, mainJs, fuses, expectedFuses, smokeExit, pkg, testBuild }) → problems[]
+ * htmlAssetProblems(entries, htmlByPath) → problems[]: for every shipped .html, every relative <script src> /
+ * <link href> (and <img src>) must resolve to an asar entry. Pure. (eric re-audit 2026-09-08 — the hardened
+ * build had deleted two renderer-served scripts; the boot smoke never reaches a window, so only an asset walk sees it.)
+ */
+function htmlAssetProblems(entries, htmlByPath) {
+  const set = new Set(entries.map(e => String(e).replace(/\\/g, '/')));
+  const out = [];
+  for (const [htmlPath, html] of Object.entries(htmlByPath || {})) {
+    const dir = htmlPath.replace(/[^/]*$/, '');
+    const refs = [];
+    const re = /<(?:script|link|img)\b[^>]*?\s(?:src|href)=["']([^"']+)["']/gi;
+    let m;
+    while ((m = re.exec(html))) refs.push(m[1]);
+    for (const ref of refs) {
+      if (/^(?:https?:|data:|#|mailto:)/i.test(ref) || ref.startsWith('/')) continue;
+      const parts = (dir + ref.split('?')[0].split('#')[0]).split('/');
+      const stack = [];
+      for (const p of parts) { if (p === '..') stack.pop(); else if (p !== '.' && p !== '') stack.push(p); }
+      const resolved = '/' + stack.join('/');
+      if (!set.has(resolved)) out.push(`html-asset: ${htmlPath} references ${ref} → ${resolved} which is NOT in the asar (a deleted/unpacked renderer asset — the window would load broken)`);
+    }
+  }
+  return out;
+}
+
+/**
+ * evaluate({ entries, mainJs, fuses, expectedFuses, smokeExit, pkg, testBuild, htmlByPath, smokeIdentity }) → problems[]
  * entries: asar paths ('/src/main.js' …); mainJs: text of /src/main.js; fuses: parsed {name:bool};
  * expectedFuses: package.json build.electronFuses; smokeExit: number|null (null = skipped); pkg: packaged package.json.
  */
-function evaluate({ entries = [], mainJs = '', fuses = {}, expectedFuses = {}, smokeExit = null, smokeSkipped = false, pkg = {}, testBuild = false } = {}) {
+function evaluate({ entries = [], mainJs = '', fuses = {}, expectedFuses = {}, smokeExit = null, smokeSkipped = false, pkg = {}, testBuild = false, htmlByPath = null, smokeIdentity = null } = {}) {
   const p = [];
+  if (htmlByPath) p.push(...htmlAssetProblems(entries, htmlByPath));
+  // The smoke prints the arming identity the packaged bundle resolved; it must see the packaged package.json
+  // (buildRev) — a silent resolve failure would leave a TEST build unarmed / a release never disarming.
+  if (!smokeSkipped && smokeIdentity && pkg && pkg.buildRev && smokeIdentity.buildRev !== pkg.buildRev) {
+    p.push(`identity: the running binary resolved buildRev ${JSON.stringify(smokeIdentity.buildRev)} but the packaged package.json says ${JSON.stringify(pkg.buildRev)} — build_arming.resolveIdentity() cannot see the packaged package.json`);
+  }
   const set = new Set(entries.map(e => String(e).replace(/\\/g, '/')));
   if (!set.has('/src/main.jsc')) p.push('source-protection: /src/main.jsc missing — the build is NOT hardened (HARDEN_JS=1)');
   if (!/require\(['"]\.\/main\.jsc['"]\)/.test(mainJs)) p.push('source-protection: /src/main.js is not the bytenode stub (real source shipped)');
@@ -96,25 +128,35 @@ if (require.main === module) (async () => {
   const read = (f) => { try { return asar.extractFile(asarPath, f.replace(/^\//, '')).toString('utf8'); } catch { return ''; } };
   const mainJs = read('/src/main.js');
   let pkg = {}; try { pkg = JSON.parse(read('/package.json')); } catch {}
+  const htmlByPath = {};
+  for (const e of entries) if (/\.html$/i.test(e)) htmlByPath[e] = read(e);
   const expectedFuses = (JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).build || {}).electronFuses || {};
   let fuses = {};
   try { fuses = await readFuses(exe); } catch (e) { console.error(`[verify-release-artifact] fuse read failed: ${e && e.message}`); }
-  let smokeExit = null; const smokeSkipped = process.env.SKIP_SMOKE === '1';
+  let smokeExit = null, smokeIdentity = null; const smokeSkipped = process.env.SKIP_SMOKE === '1';
   if (!smokeSkipped) {
     const sr = spawnSync(exe, ['--smoke-boot'], { cwd: unpacked, encoding: 'utf8', timeout: 60000, windowsHide: true });
     smokeExit = sr.error ? null : sr.status;
+    try {
+      const line = String(sr.stdout || '').split(/\r?\n/).find(l => l.startsWith('smoke-boot identity '));
+      if (line) smokeIdentity = JSON.parse(line.slice('smoke-boot identity '.length));
+    } catch { smokeIdentity = null; }
     try { for (const d of fs.readdirSync(require('os').tmpdir())) if (/^scanfinder-smoke-\d+$/.test(d)) fs.rmSync(path.join(require('os').tmpdir(), d), { recursive: true, force: true }); } catch {}
   } else console.log('[verify-release-artifact] SKIP_SMOKE=1 — the boot smoke was NOT run (say so in the release notes).');
   const testBuild = process.env.TEST_BUILD === '1';
-  const problems = evaluate({ entries, mainJs, fuses, expectedFuses, smokeExit, smokeSkipped, pkg, testBuild });
+  const problems = evaluate({ entries, mainJs, fuses, expectedFuses, smokeExit, smokeSkipped, pkg, testBuild, htmlByPath, smokeIdentity });
   const rev = pkg.buildRev || 'unknown';
-  const installer = fs.existsSync(path.join(ROOT, 'dist')) ? fs.readdirSync(path.join(ROOT, 'dist')).filter(f => f.endsWith('.exe') && f.includes(rev)).map(f => path.join(ROOT, 'dist', f)) : [];
+  const installer = fs.existsSync(path.join(ROOT, 'dist')) ? fs.readdirSync(path.join(ROOT, 'dist')).filter(f => /\.(exe|appx)$/i.test(f) && f.includes(rev) && !/\.REFUSED\./.test(f)).map(f => path.join(ROOT, 'dist', f)) : [];
   const manifest = { rev, version: pkg.version, testBuild: !!pkg.testBuild, verifiedAt: new Date().toISOString(),
     fuses, smoke: smokeSkipped ? 'skipped' : smokeExit, asarEntries: entries.length,
     installers: installer.map(f => ({ file: path.basename(f), sha256: sha256(f) })), problems };
   try { fs.writeFileSync(path.join(ROOT, 'dist', `release-manifest-${rev}.json`), JSON.stringify(manifest, null, 2)); } catch {}
-  if (problems.length) { console.error(`[verify-release-artifact] REFUSED — ${problems.length} problem(s):\n  ${problems.join('\n  ')}`); process.exit(1); }
+  if (problems.length) {
+    // A refused release must not sit in dist/ looking shippable: rename the finished installer(s).
+    for (const f of installer) { try { fs.renameSync(f, f.replace(/(\.(exe|appx))$/i, '.REFUSED$1')); } catch {} }
+    console.error(`[verify-release-artifact] REFUSED — ${problems.length} problem(s) (installer renamed *.REFUSED.*):\n  ${problems.join('\n  ')}`); process.exit(1);
+  }
   console.log(`[verify-release-artifact] OK — rev ${rev}: bytecode present, no plaintext modules, ${Object.keys(fuses).length} fuses read (${Object.keys(expectedFuses).length} declared, all as declared), boot smoke ${smokeSkipped ? 'skipped' : 'exit 0'}. Manifest dist/release-manifest-${rev}.json`);
 })().catch((e) => { console.error(`[verify-release-artifact] crashed: ${e && e.stack || e}`); process.exit(1); });
 
-module.exports = { evaluate, parseFuseText, readFuses, PLAINTEXT_FORBIDDEN, FUSE_NAMES };
+module.exports = { evaluate, parseFuseText, readFuses, htmlAssetProblems, PLAINTEXT_FORBIDDEN, FUSE_NAMES };

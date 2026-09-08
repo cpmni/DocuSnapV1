@@ -50,8 +50,18 @@ check('TEST_BUILD=1 verify of a test build passes', evaluate({ ...GOOD, testBuil
 // Source pins: the --smoke-boot road in src/main.js (throwaway userData BEFORE the single-instance lock; exit inside whenReady).
 const fs = require('fs');
 const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
-const iSmokeDir = mainSrc.indexOf('scanfinder-smoke-'), iLock = mainSrc.indexOf('app.requestSingleInstanceLock()'), iExit = mainSrc.search(/if \(_smokeBoot\) \{\s*\r?\n\s*try \{ getDb\(\);/);
+const iSmokeDir = mainSrc.indexOf('scanfinder-smoke-'), iLock = mainSrc.indexOf('app.requestSingleInstanceLock()'), iExit = mainSrc.search(/if \(_smokeBoot\) \{\s*\r?\n\s*try \{\s*\r?\n?\s*getDb\(\);/);
 check('main.js re-points userData to a scanfinder-smoke-<pid> temp dir BEFORE the single-instance lock', iSmokeDir > 0 && iLock > iSmokeDir);
-check('main.js exits the smoke inside whenReady right after the DB open (getDb + app.exit(0))', iExit > iLock && /app\.exit\(0\)/.test(mainSrc.slice(iExit, iExit + 400)));
+check('main.js exits the smoke inside whenReady right after the DB open (getDb + app.exit(0))', iExit > iLock && /app\.exit\(0\)/.test(mainSrc.slice(iExit, iExit + 700)));
+check('the smoke prints the resolved arming identity (build_arming.resolveIdentity) for the verifier', /smoke-boot identity ' \+ JSON\.stringify\(require\('\.\.\/database\/build_arming'\)\.resolveIdentity\(\)\)/.test(mainSrc));
+// HTML asset belt (eric re-audit 2026-09-08): every shipped .html's relative script/link/img must be an asar entry.
+const { htmlAssetProblems } = require(path.join(__dirname, 'verify-release-artifact.js'));
+const ENTRIES = ['/src/windows/review/index.html', '/src/windows/review/renderer.js', '/src/windows/shared/theme.js', '/src/windows/shared/reviewReadiness.js'];
+const HTML_OK = { '/src/windows/review/index.html': '<link rel="stylesheet" href="../shared/theme.css"><script src="../shared/theme.js"></script><script src="../shared/reviewReadiness.js"></script><script src="renderer.js"></script><script src="https://cdn.example/x.js"></script>' };
+check('html-asset: a page whose script refs all resolve passes (external/absolute refs ignored)', htmlAssetProblems([...ENTRIES, '/src/windows/shared/theme.css'], HTML_OK).length === 0);
+const HTML_BAD = { '/src/windows/review/index.html': '<script src="../shared/theme.js"></script><script src="../shared/listCaption.js"></script>' };
+check('html-asset: a deleted renderer-served script (the hardened-build P0) → refused, naming the resolved path', (() => { const p = htmlAssetProblems(ENTRIES, HTML_BAD); return p.length === 1 && /\/src\/windows\/shared\/listCaption\.js/.test(p[0]); })());
+check('evaluate() runs the asset belt when htmlByPath is given', has(evaluate({ ...GOOD, htmlByPath: HTML_BAD }), /html-asset/));
+check('identity: the smoke-resolved buildRev must equal the packaged package.json (bundle can see the manifest)', has(evaluate({ ...GOOD, smokeIdentity: { testBuild: false, buildRev: 'packaged' } }), /cannot see the packaged package\.json/) && !has(evaluate({ ...GOOD, smokeIdentity: { testBuild: false, buildRev: GOOD.pkg.buildRev } }), /identity:/));
 console.log(`\nverify-release-artifact: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

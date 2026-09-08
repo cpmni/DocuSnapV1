@@ -1307,7 +1307,14 @@ app.whenReady().then(() => {
 
   // --smoke-boot: the DB open below is the proof; exit before any window. See the top of this file.
   if (_smokeBoot) {
-    try { getDb(); try { logger.log('smoke-boot: whenReady + DB open + migrations OK'); } catch {} app.exit(0); }
+    try {
+      getDb();
+      try { logger.log('smoke-boot: whenReady + DB open + migrations OK'); } catch {}
+      // The verifier asserts this buildRev equals the packaged package.json's — proof that the bundled
+      // build_arming.resolveIdentity() sees the packaged manifest (else a TEST build never arms / a release never disarms).
+      try { console.log('smoke-boot identity ' + JSON.stringify(require('../database/build_arming').resolveIdentity())); } catch {}
+      app.exit(0);
+    }
     catch (e) { try { logger.err('smoke-boot FAILED: ' + (e && e.message)); } catch {} app.exit(3); }
     return;
   }
