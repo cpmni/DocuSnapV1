@@ -21,7 +21,29 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-08 EVENING (audit fixes BUILT + RE-AUDIT vetted + belts gated + hardened REBUILD + Chris round):
+## ⏭ LATEST — 2026-09-09 (the 2026-09-08 NIGHT RUN — items 1-7 all done, 6 commits, none pushed):
+**READ `HANDOVER_2026-09-09.md` FIRST** (morning summary + the “NEEDS YOUR APPROVAL” queue), then
+`docs/CHRIS_FULL_APP_REVIEW_2026-09-09.md` (round 2, verdict YES + 7 cards) and
+`docs/CHRIS_VET_DIAGNOSES_2026-09-08_NIGHT.md` (item-5 fix designs). Branch `feat/teach-side-overnight`; 6 night
+commits `5db333e`,`82843a0`,`790c7d1`,`9097b31`,`ef12f72` + wrap, **NONE pushed** (owner's call).
+**THE click-through target = `dist/ScanFinder Setup 2.0.0-r20260908-2238-ef12f72.exe`** (release build, testBuild:false,
+verifier OK incl. the new **`--smoke-windows` 14/14 on the packaged binary**; supersedes `…-1843-9251551.exe`, now
+`.REFUSED`-free but stale). Night results: (1) the 17 pre-existing red pins were ALL STALE (0 real regressions) →
+`npm run test:pins` **325/325**; (2) `--smoke-windows` = a runtime per-window load/probe layer catching the
+dropped-renderer-script P0 class (present-but-throws / missing load-bearing global), verifier refuses on it;
+(3) harness `RR_ALLOW_ARMED` + `_operating_point` + `RR_APP_ENV` DEFAULT-ON (arm137 gate byte-identical);
+(4) `type_uninstalled_heading_fold` OCR re-detect = SAFETY 0/0 on the Hard Set digital+scan (arm137 has no `statement`
+type; efficacy = the 09-06 text census, 20/20 Ironclad→Statement); (5) two REAL Chris display/wiring bugs designed
+(mailbox card “Type —/Unknown”; import row stale after a MANUAL confirm) + bundle-issuer owner-gated; (6) Chris YES,
+7 cards (top = phantom “Format check · 1” flag pointing at no visible field), all destructive warnings verified TRUE
+— **but his helper read the owner's live DB `%APPDATA%\ScanFinder` READ-ONLY by misidentification (no writes; the
+sandbox got config-contaminated → cards 3/4/5 need a fresh re-vet)**; (7) client/cert-tool E44 graph + code smoke
+clean (electron BINARY download allow-scripts-gated → owner finishes). **Security to vet:** the Settings backup
+restore accepted a FABRICATED device fingerprint on an un-licensed machine (Chris card 7). Owner queue (push ·
+click-through+uninstall drill→`build` flip · Chris cards · the item-5 builds · flips · client/cert-tool finish ·
+Learning Repair) is in the handover's “NEEDS YOUR APPROVAL”. Memory `project_night_run_20260908.md`.
+
+## Prior — 2026-09-08 EVENING (audit fixes BUILT + RE-AUDIT vetted + belts gated + hardened REBUILD + Chris round):
 **NIGHT RUN: READ `HANDOVER_2026-09-08_NIGHT.md` FIRST** (cold start: state, commands, traps) → the plan `docs/designs/NIGHT_RUN_2026-09-08_NIGHT.md`; then `HANDOVER_2026-09-08_BUILD.md` (LATE EVENING + CHRIS TRIAGE), then `docs/PRE_DEPLOYMENT_AUDIT_2026-09-08_RERUN.md`
 (the Oracle's ordered "BEFORE A CUSTOMER BUILD" list = the queue). Branch `feat/teach-side-overnight`, 40 commits since `eeb8d56`,
 **NONE pushed** (owner's decision). **The click-through target = `dist/ScanFinder Setup 2.0.0-r20260908-1843-9251551.exe`** (hardened,
