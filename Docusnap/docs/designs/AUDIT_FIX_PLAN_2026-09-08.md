@@ -96,9 +96,11 @@ The release orchestrator DELETES it from the env. A customer box can never carry
 ### 2.1 P1-7 deskew temp name — S
 `handler.js:5458` → `` `ds_deskew_${Date.now()}_${process.pid}_${_ocrTmpSeq++}.png` `` (`_ocrTmpSeq` declared `:5364`, same scope as `ocr-page-words :5425`). Zero risk.
 
-### 2.2 P1-6 CSP appends (meta only) — S
-Client `client/renderer/index.html:6` + all 40 core meta CSPs (`src/windows/**/*.html`) append `base-uri 'none'; form-action 'none';`.
-The one `<form>` (`main/index.html:852`) submits via JS `preventDefault` (`main/renderer.js:537`) → safe. Header CSP dropped on
+### 2.2 P1-6 CSP appends (meta only) — S — DONE (client only)
+**Corrected at build time:** all 40 core meta CSPs (`src/windows/**/*.html`) ALREADY carry `form-action 'none'; base-uri 'none'`
+(multi-line `<meta>` tags hid them from the audit's line grep). Only `client/renderer/index.html:6` lacked them — appended.
+Pin `scripts/test_csp_directives.js` scans every meta CSP under `src/windows` + `client/renderer` for both directives.
+The one `<form>` (`main/index.html:852`) submits via JS `preventDefault` (`main/renderer.js:538`) → safe. Header CSP dropped on
 VALUE grounds (F8): same asar, same trust boundary; not worth an `app://` scheme on ship eve.
 
 ### 2.3 Client `perMachine:true` — S (P0-2 interim)
