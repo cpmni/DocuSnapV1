@@ -156,6 +156,22 @@ check("defer-cap: a PROVEN cut whose heal fails commits capped <=70 with the edg
       and r.get("validation_note") == tm._EDGE_CUT_NOTE and r["method"].endswith("_edgecut"))
 check("defer-cap: the value is NEVER swapped (fail-toward-review, not a heal)", r and r["value"] == "Bramblewood Joinery Ltc")
 check("defer-cap: stored mapping unmutated", unmut)
+# ── 2(a) SEAM PIN (2026-09-08 belts gate, realdoc doc 67): a NAME defer-cap must NEVER reach the edge-cut
+# relocate. Before the belt a name never defer-capped, so that road was unreachable for names; routed
+# through it, the relocate's shape-consent ladder judges free text as always consenting and CLEAN-committed
+# a re-seated garble ('Kingfisher Print Stv' @90) over the deferred cap, beating the correct keyword read.
+_relo_calls = []
+_orig_relo = tm._edge_cut_relocate
+tm._edge_cut_relocate = lambda *a, **k: (_relo_calls.append(1),
+                                        {"value": "Bramblewood Joinery Ltv", "confidence": 90, "method": "template_mapping"})[1]
+try:
+    r, _ = run_one(tm, CUT)
+finally:
+    tm._edge_cut_relocate = _orig_relo
+check("SEAM: a name defer-cap skips the edge-cut relocate entirely (never called)", not _relo_calls)
+check("SEAM: a re-seated name garble can never clean-commit over the deferred cap (<=70 + note, value unswapped)",
+      r and r["value"] == "Bramblewood Joinery Ltc" and r["confidence"] <= 70
+      and r.get("validation_note") == tm._EDGE_CUT_NOTE and r["method"].endswith("_edgecut"))
 GROWN_READ[0] = "Bramblewood Joinery Ltd"     # the stub keys off the crop's right edge: a no-cut box reads the true name
 r, _ = run_one(tm, NOCUT)
 check("defer-cap: an UNPROVEN cut (box clears the word) never caps — the belt needs the geometry",

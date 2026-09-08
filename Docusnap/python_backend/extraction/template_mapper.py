@@ -2692,10 +2692,19 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
                 abs_salvaged = False
                 _edge_healed = True
             elif _eg.get("name_grow"):
-                # NAME leg: flag-only and FINAL. The edge-cut relocate below re-seats via the
-                # word-snap, which EXCLUDES names by design, and a name result never defer-caps —
-                # so neither interception applies.
-                return _eg["result"]
+                if "result" in _eg:
+                    # NAME leg heal: flag-only and FINAL (the edge-cut relocate below re-seats via
+                    # the word-snap, which EXCLUDES names by design).
+                    return _eg["result"]
+                # NAME defer-cap (TEMPLATE_NAME_CUT_DEFER_CAP) — the SEAM the 2026-09-08 belts gate
+                # caught (realdoc doc 67): before the belt a name NEVER defer-capped, so the edge-cut
+                # relocate below was unreachable for names; routed through it, the relocate's shape-
+                # consent ladder judges a free-text name as always consenting and CLEAN-committed a
+                # re-seated garble ('Kingfisher Print Stv' @90) over the deferred cap, beating the
+                # correct keyword read. A name takes the deferred cap DIRECTLY: the final abs commit
+                # wears <=70 + _EDGE_CUT_NOTE (the belt's documented contract) and the keyword /
+                # anchor witnesses arbitrate at merge. Pinned in test_template_name_grow_belts.py.
+                _edge_suspect = True
             else:
                 # The guard could NOT clean-heal this cut (defer_cap floor OR flagged {'result'}).
                 # Before committing either, try the PLACEMENT primitive: re-seat the value off the
@@ -3532,7 +3541,9 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
                 # commit silently at its natural confidence any more — the deferred cap + note, like codes.
                 _EDGE_GUARD_FIRES.append((field_key, _edges, 'name_capped'))
                 _name_grow_census(field_key, _edges, 'capped', old=abs_text, new=new)
-                return {"defer_cap": True}
+                # `name_grow` marks the defer-cap as a NAME's so the consumer takes the cap directly
+                # (never the code-contract edge-cut relocate — the 2026-09-08 gate seam, doc 67).
+                return {"defer_cap": True, "name_grow": True}
             return None
         _EDGE_GUARD_FIRES.append((field_key, _edges, 'capped'))
         return {"defer_cap": True} if abs_text else None
