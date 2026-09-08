@@ -36,6 +36,19 @@ try {
 const { isForbiddenArgv } = require('./lib/forbiddenArgv');
 
 app.setPath('userData', _resolvedUserData);
+// --smoke-boot (release-artifact verification, scripts/verify-release-artifact.js, 2026-09-08): boot THIS exact
+// binary far enough to prove whenReady + a real DB open + migrations under the shipped fuses/bytecode, then
+// exit 0 — no window, no gate, no customer data. userData is re-pointed at a throwaway temp folder BEFORE
+// the single-instance lock (keyed on userData), so the smoke runs beside a live app and never opens its DB.
+// Not a bypass: nothing is shown and the process exits inside whenReady; the verifier deletes the folder.
+const _smokeBoot = process.argv.includes('--smoke-boot');
+if (_smokeBoot) {
+  try {
+    const _smokeDir = path.join(require('os').tmpdir(), `scanfinder-smoke-${process.pid}`);
+    fs.mkdirSync(_smokeDir, { recursive: true });
+    app.setPath('userData', _smokeDir);
+  } catch { /* fall through to the normal userData — the verifier still reads the exit code */ }
+}
 // REMOTE-DEBUGGING LOCKOUT (2026-08-09 NIGHT, pre-release audit). Anyone could start the shipped
 // ScanFinder.exe with `--remote-debugging-port=9222` and attach a full DevTools session to the
 // running app: read every window's code, set breakpoints, and call the ~200 privileged bridge
@@ -1290,6 +1303,13 @@ app.whenReady().then(() => {
     else if (egate.action === 'tripwire') { destroyWindow('splash'); showEncryptionTripwire(); return; }
     else if (egate.action === 'migrate') { _runBootMigration(dbPath); }   // opt-in encrypt-at-boot; NO return — falls through (encrypted on success, plaintext on failure)
     // egate.action === 'plaintext' → fall through (byte-identical to today's boot)
+  }
+
+  // --smoke-boot: the DB open below is the proof; exit before any window. See the top of this file.
+  if (_smokeBoot) {
+    try { getDb(); try { logger.log('smoke-boot: whenReady + DB open + migrations OK'); } catch {} app.exit(0); }
+    catch (e) { try { logger.err('smoke-boot FAILED: ' + (e && e.message)); } catch {} app.exit(3); }
+    return;
   }
 
   // ── Diagnostic completeness (owner ask 2026-08-02: "check log → know the problem") ──────
