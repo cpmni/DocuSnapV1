@@ -52,6 +52,34 @@ quiet(() => runMigrations(dbNone, { identity: REL }));
 dbNone.prepare("DELETE FROM settings WHERE key = 'ocr_dpi'").run();
 check('a rowless DB (harness/legacy) still resolves 300 = the Python code default (documented fallback)', H._resolveOcrDpi(dbNone) === 300);
 
+// Oracle C7a (2026-09-08): a DB that already holds learned geometry (a template or a confirmed document) keeps the frame it
+// was taught under — mig 138 writes an EXPLICIT '300' row there, and seeds 200 only on a fresh install.
+function insertMinimalRow(db, table, overrides) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  const row = {};
+  for (const c of cols) {
+    if (c.name in overrides) { row[c.name] = overrides[c.name]; continue; }
+    if (c.pk || c.dflt_value != null || !c.notnull) continue;
+    row[c.name] = /INT|REAL|NUM/i.test(c.type) ? 0 : 'x';
+  }
+  const names = Object.keys(row);
+  db.prepare(`INSERT INTO ${table} (${names.join(',')}) VALUES (${names.map(() => '?').join(',')})`).run(...names.map(k => row[k]));
+}
+for (const [label, seed] of [
+  ['a confirmed document', (db) => insertMinimalRow(db, 'documents', { status: 'confirmed', original_filename: 'x.pdf' })],
+  ['a template', (db) => insertMinimalRow(db, 'templates', {})],
+]) {
+  const dbTaught = new Database(':memory:');
+  quiet(() => runMigrations(dbTaught, { identity: REL }));
+  dbTaught.prepare('DELETE FROM migrations WHERE version = 138').run();
+  dbTaught.prepare("DELETE FROM settings WHERE key = 'ocr_dpi'").run();
+  let seeded = true; try { seed(dbTaught); } catch (e) { seeded = false; console.log(`  (fixture insert failed: ${e.message})`); }
+  quiet(() => runMigrations(dbTaught, { identity: REL }));
+  check(`C7a: a DB with ${label} and no ocr_dpi row gets an EXPLICIT '300' row (the frame its geometry was learned under)`, seeded && get(dbTaught, 'ocr_dpi') === '300');
+  check(`C7a: … and the env then exports nothing (Python default 300) — unchanged behaviour for a taught install`, seeded && Object.keys(H._ocrDpiEnv(dbTaught)).length === 0);
+}
+check('C7a source: mig 138 counts templates + confirmed documents before choosing 200 vs 300', /applied\.has\(138\)[\s\S]{0,900}count\(\*\)[\s\S]{0,200}FROM templates[\s\S]{0,400}status = 'confirmed'[\s\S]{0,400}fresh \? '200' : '300'/.test(fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8')));
+
 // mig 139: one-shot promotion, manual OFF survives, sole writer, not a test switch.
 db.prepare("UPDATE settings SET value = 'false' WHERE key = 'ocr_parallel_import_enabled'").run();
 quiet(() => runMigrations(db, { identity: REL }));
@@ -61,8 +89,11 @@ const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('mig 139 is labelled @DEFAULT_FLIP 139 (the release gate requires the label)', /\/\/ @DEFAULT_FLIP 139 keys=ocr_parallel_import_enabled\r?\n\s*if \(!applied\.has\(139\)\)/.test(src));
 check('mig 139 is the UPSERT shape (mig 127 seeded false everywhere; INSERT OR IGNORE would be dead)', /applied\.has\(139\)[\s\S]{0,400}VALUES \('ocr_parallel_import_enabled', 'true'\) ON CONFLICT\(key\) DO UPDATE SET value = 'true'/.test(src));
 check("mig 139 is the key's SOLE 'true' writer in index.js", (src.match(/'ocr_parallel_import_enabled', 'true'/g) || []).length === 1);
-check('mig 138 is an INSERT OR IGNORE seed of 200', /INSERT OR IGNORE INTO settings \(key, value\) VALUES \('ocr_dpi', '200'\)/.test(src));
+check('mig 138 is an INSERT OR IGNORE seed (an explicit Settings choice survives), 200 or 300 by the C7a guard', /INSERT OR IGNORE INTO settings \(key, value\) VALUES \('ocr_dpi', \?\)`\)\.run\(dpi\)/.test(src));
 check('the release gate scan of index.js is still 0 hits (a labelled promotion of a non-test key)', scan({ indexSrc: src }).hits.length === 0);
+
+// Oracle C7b: the Settings DPI control warns that a change after teaching re-reads every taught box.
+check('C7b: the Settings DPI helper text warns of the one-time review wave', /Changing this after teaching re-reads every taught box[\s\S]{0,120}review wave/.test(fs.readFileSync(path.join(ROOT, 'src', 'windows', 'settings', 'index.html'), 'utf8')));
 
 console.log(fails ? `\nFAILED: ${fails}` : '\nALL PASS');
 process.exit(fails ? 1 : 0);

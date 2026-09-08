@@ -2839,12 +2839,22 @@ function runJsMigrations(db, applied) {
   //    (150/200/300 chosen in Settings) is untouched. A rowless existing install flips 300→200 on this start: taught
   //    geometry is *_norm (DPI-free), stored ocr_text of confirmed docs is not re-read, `ocrCache` dpi-changed invalidation
   //    serves only DARK quick_reprocess; pending docs re-read at 200 may raise one "Read differently after learning" hold
-  //    (fail-toward-review — pre-announced). The three code-default-300 mirrors stay: the ROW is what makes them agree. ──
+  //    (fail-toward-review). The three code-default-300 mirrors stay: the ROW is what makes them agree.
+  //    ⚠ Oracle C7a (2026-09-08 ruling on the warm arm): the arm measured a DPI FLIP under geometry learned at 300 — it re-rolled
+  //    ~10% of taught reads (a tight taught box that clips at one DPI and not the other, 5 Ironbridge type-refuse holds, one
+  //    one-line-low relocate) — so an install that ALREADY holds templates or confirmed documents keeps the frame its geometry
+  //    was learned under: it gets an EXPLICIT '300' row (what it was running, the code default). Only a DB with NO templates
+  //    and NO confirmed documents (a fresh install) is seeded 200. An operator can still pick 200 in Settings — an explicit
+  //    choice with the helper text's warning, never a migration. Both branches pinned (test_migration138_139_efficiency.js). ──
   if (!applied.has(138)) {
     try {
-      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('ocr_dpi', '200')`).run().changes;
+      const nTpl = (db.prepare('SELECT count(*) AS n FROM templates').get() || {}).n || 0;
+      const nConf = (db.prepare("SELECT count(*) AS n FROM documents WHERE status = 'confirmed'").get() || {}).n || 0;
+      const fresh = nTpl === 0 && nConf === 0;
+      const dpi = fresh ? '200' : '300';
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('ocr_dpi', ?)`).run(dpi).changes;
       db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (138)').run();
-      console.log(`JS migration 138 applied: ocr_dpi seeded 200 (the corpus-validated operating point; ${n} row)`);
+      console.log(`JS migration 138 applied: ocr_dpi ${n ? 'seeded ' + dpi : 'left as set'} (${fresh ? 'fresh install → the corpus-validated 200' : `learned geometry present (${nTpl} template(s), ${nConf} confirmed) → keeps 300, the frame it was taught under`})`);
     } catch (e) { console.warn(`  migration 138 (ocr_dpi seed): ${e.message}`); }
   }
 
