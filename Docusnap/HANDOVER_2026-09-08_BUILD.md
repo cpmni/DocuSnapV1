@@ -89,3 +89,51 @@ binary). Log `TESTING/_measure/release_build_20260908/build_release_2000.log`. T
 **Owner: the scripted click-through (re-audit Oracle item 3) runs on THIS file** — Review → "File all ready" dialog opens and files one;
 Teach → draw a box → OCR read-back; Settings → every tab; Search → preview → stamp; Help; About shows `Version 2.0.0 (20260908-1843-9251551)`;
 no console error in the SFDEV trace. That pass gates the `build`/`build:store` default flip (plan 2.7b, Oracle C5).
+
+## LATE EVENING (2026-09-08, ~19:00-20:30) — re-audit vetted, belts gated, artifact rebuilt, pin runner, Chris round
+**Read order for a cold start:** this section → `docs/PRE_DEPLOYMENT_AUDIT_2026-09-08_RERUN.md` (the Oracle's ordered
+"BEFORE A CUSTOMER BUILD" list is the authoritative queue) → `docs/designs/KEYWORD_SUPERSTRING_GROW_2026-09-08.md` §7.1 →
+`docs/CHRIS_FULL_APP_REVIEW_2026-09-08.md`. HEAD = `71e00ac`+ (see `git log`), **~45 commits since `eeb8d56`, NONE pushed** — the
+push is the owner's decision.
+
+**What happened, in order:**
+1. **Re-audit written + Oracle re-vet = SIGN OFF WITH CORRECTIONS** (`ccbc557`). Every FIXED-VERIFIED traced at the source and held. His
+   two real corrections were built the same evening: the boot-smoke identity was silently OPTIONAL (absent stdout line ⇒ the
+   bundle-sees-package.json assert skipped; a temp-dir failure fell through to the REAL userData) → `9251551` makes it REQUIRED on a
+   0-exit smoke, emitted to `smoke-identity.json` in a verifier-owned `SCANFINDER_SMOKE_DIR` (primary) + stdout (fallback), exit 4 on a
+   userData failure; RED-first pins (6 new checks). His `BUILD_REV` claim was FALSIFIED at the source (already stripped, pinned).
+2. **Both earlier hardened installers RETIRED** (`…-2017-dd9a790` and `…-1355-5b6c226` → `.REFUSED.exe`, the 1355 manifest deleted):
+   every HARDEN_JS artifact before `5a4bd94` shipped a Review whose "File all ready" threw. Pointers corrected in the plan §7b,
+   `HANDOVER_2026-09-08_BUILD.md`, `pendingfeatures.md`, and annotated in `HANDOVER_2026-09-08.md`.
+3. **Name-grow belts C6 gate ran** (arms off / mapper / note on the post-137 reference copy). The FIRST mapper run caught a SEAM —
+   doc 67 `customer_name` flipped from the correct keyword read to a WRONG `Kingfisher Print Stv` @94 at would-file: belt 2b's name
+   defer-cap reached `_edge_cut_relocate`, whose code-contract shape consent clean-committed a re-seated garble. **Fixed `f4a32a7`**
+   (a name defer-cap takes the cap directly, never the relocate; RED-first pin). Fixed-code gate: 129/129 would-file, 0 new filers,
+   ref/date identical, ONE page-verified HEAL (#70 `Halcyon Leisure Gr` @94 silent-wrong → `Group`), 7 capped review-bound with no
+   consensus change. **The keyword-superstring NOTE belt is VACUOUS on the corpus (fired 0/63)** — its flip gate is a corpus where it
+   fires or an in-app census. All three belts stay DARK (mig 140).
+4. **REBUILT the hardened artifact through `npm run build:release`** → **`dist/ScanFinder Setup 2.0.0-r20260908-1843-9251551.exe`**
+   (sha256 `ba5c318d…`), manifest `problems: []`, identity via FILE (the first artifact on which the assert actually ran), html-asset belt
+   green. **This is the owner's click-through target** (scripted list in the REBUILD section above).
+5. **Pin runner** `npm run test:pins` (`scripts/run-pins.js`, `71e00ac`) — Oracle item 5: there was no runner and the new
+   `scripts/test_*.js` location was never on the hand-run glob list. First sweep 325 files: 308 green, **17 red — ALL 17 reproduce
+   identically at the pre-session baseline `eeb8d56`** (scratch worktree) — none is today's; queued in `NIGHT_RUN.md` with
+   signatures (5 = the hand-rolled-schema class; `test_failure_creates_holding_row` says "the failure-row producer regressed" — VET FIRST).
+6. **Chris round** (fresh sandbox, CDP 9223, PID 3200, same conditions as 09-03, full battery vs the 09-03 review) — report in
+   `docs/CHRIS_FULL_APP_REVIEW_2026-09-08.md`; triage below when he returns. The sandbox stays running for the owner to poke.
+
+**Traps added tonight:** a harness launched as `electron.exe script.js` WITHOUT `ELECTRON_RUN_AS_NODE=1` runs as a full app and NEVER
+exits after the script ends (idle gpu/network children) — a chained arm script then hangs forever; harvest by row count + kill the PID.
+`package.json` is STAMPED during a build (` M`) and restored after — never commit it mid-build. A pin whose negative regex is broader
+than the block it guards trips on your own comment. The git root is `C:\GIT Projects` (the worktree checkout lands under `…\Docusnap\`).
+Junctions: delete as reparse points (`[IO.Directory]::Delete`) BEFORE any recursive remove.
+
+**NEEDS YOUR APPROVAL / OWNER QUEUE (in the Oracle's order):**
+1. The scripted click-through on **`…-r20260908-1843-9251551.exe`** (Review → File all ready files one; Teach → box → read-back;
+   every Settings tab; Search → preview → stamp; Help; About shows the rev; no SFDEV console error) + the uninstall "remove all data" drill.
+2. Then say the word and I flip `build`/`build:store` to the release road (plan 2.7b, Oracle C5) + retire the "revert list" wording (C10).
+3. Push decision (~45 local commits).
+4. Learning Repair: invoice docs #42/#25/#27/#40 (poisoned dates) and the Ridgeway docs 8/19/21 (clipped customer names); doc 99 `ws-55718`.
+5. Incorporate Six Mile Software Ltd → `WIN_CSC_LINK` signing; the DB-at-rest decision; backend `DocumentRoot=public` + admin 2FA ON.
+6. `pip uninstall` the 9 dead Python packages on the build machine + relock with `--require-hashes`.
+7. Belts flip (mapper pair) = your call with the §7.1 table, after the `_name_band_read` real-page pin; the note belt needs a corpus where it fires.
