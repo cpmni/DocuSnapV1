@@ -26,7 +26,7 @@ check('1. .ap-ghost is invisible and inert', /\.ap-btn\.ap-ghost \{[^}]*visibili
 check('2. slots emitted in the order Put back, See them, Quick check', /<span class="ap-actions">\$\{undo\}\$\{see\}\$\{qcheck\}<\/span>/.test(js));
 const ghostDef = /const _apGhost = \(label\) => `<button type="button" class="ap-btn ap-ghost" disabled tabindex="-1" aria-hidden="true">\$\{label\}<\/button>`;/.test(js);
 check('3. the ghost is a same-element BUTTON with the same label', ghostDef);
-check("3. 'Put back' falls back to its ghost", /: _apGhost\('Put back'\);/.test(js));
+check("3. 'Put back' falls back to its ghost", /: _apGhost\(_undoLabel\);/.test(js) && /_undoLabel = ev\.kind === 'convention' \? 'Undo' : 'Put back'/.test(js));
 check("3. 'See them' falls back to its ghost", /: _apGhost\('See them'\);/.test(js));
 check("3. 'Quick check' falls back to its ghost", /: _apGhost\('Quick check'\);/.test(js));
 check('3. no slot falls back to an empty string any more', !/data-ap="see"[^\n]*\n?[^\n]*: '';/.test(js));

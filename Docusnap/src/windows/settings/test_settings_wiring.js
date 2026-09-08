@@ -46,7 +46,18 @@ const addressed = new Set([
   ...[...js.matchAll(/\[\s*'([a-z0-9-]+-toggle)'\s*,/g)].map(m => m[1]),
 ]);
 
-const missing = [...addressed].filter(id => !ids.has(id));
+// Ids the renderer addresses that are legitimately NOT static HTML:
+//  - dbenc-print-sheet is created dynamically (renderer.js ~2534: getElementById-then-createElement).
+//  - the stamp-* ids belong to the stamp-placement panel REMOVED in the 2026-08-28 Workflow+Stamping
+//    redesign (stamping moved to click-to-place in Search/client); the renderer code is UNREACHABLE
+//    (initStampPlacement gated on `if (stampSec)` = null, and early-returns on !sizeEl) so it cannot throw.
+//    OWNER FOLLOW-UP (queued): delete the dead stamp-placement code + its leftover CSS from settings.
+const KNOWN_ABSENT = new Set([
+  'dbenc-print-sheet',
+  'stamp-section', 'stamp-preview-box', 'stamp-preview', 'stamp-msg',
+  'stamp-size', 'stamp-size-val', 'stamp-save', 'stamp-reset',
+]);
+const missing = [...addressed].filter(id => !ids.has(id) && !KNOWN_ABSENT.has(id));
 check(`every element id the renderer addresses exists (${addressed.size} checked)`
       + (missing.length ? ` — MISSING: ${missing.join(', ')}` : ''),
       missing.length === 0);

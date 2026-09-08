@@ -27,7 +27,7 @@ const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 // Strip line comments before asserting on structure. The comments here deliberately DESCRIBE the
 // old shape ("used to resolve ... pages[0]"), so a naive source scan finds the very pattern it is
 // checking has gone — the first run of this pin failed on its own documentation.
-const js = raw.split('\n').map(l => l.replace(/(^|[^:])\/\/.*$/, '$1')).join('\n');
+const js = raw.split(/\r?\n/).map(l => l.replace(/(^|[^:])\/\/.*$/, '$1')).join('\n');
 
 console.log('\nTHE TWO HALVES — navigation and the page number must ship together');
 check('every rendered page is kept (the pages[0] discard is gone)',

@@ -29,7 +29,7 @@ db.exec(`
   CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, original_filename TEXT, folder_path TEXT,
     document_type_id INTEGER, supplier_name TEXT, overall_confidence INTEGER, status TEXT,
     template_id INTEGER, logo_phash TEXT, logo_detail_hash TEXT, keyword_fingerprint TEXT,
-    ocr_text TEXT, page_count INTEGER, detected_type_name TEXT,
+    ocr_text TEXT, page_count INTEGER, detected_type_name TEXT, ocr_recipe TEXT,
     stored_filename TEXT, stored_path TEXT, doc_date TEXT, reference_number TEXT, confirmed_at TEXT,
     error_message TEXT, working_path TEXT, review_acknowledged_at TEXT, confirmed_by_username TEXT,
     supplier_pin TEXT);

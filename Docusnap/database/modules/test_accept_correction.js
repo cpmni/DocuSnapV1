@@ -33,7 +33,7 @@ function freshDb() {
       was_corrected INTEGER DEFAULT 0, corrected_to TEXT, anchor_label TEXT,  -- migration 14
       -- learning.insertExtractions also writes these three; a fixture missing them fails at
       -- INSERT, which is what made this suite red from 2026-08-11.
-      candidates TEXT, suggested_supplier TEXT, corroboration TEXT
+      candidates TEXT, suggested_supplier TEXT, corroboration TEXT, charset_flag_meta TEXT
     );
     CREATE TABLE corrections (
       id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, field_key TEXT,

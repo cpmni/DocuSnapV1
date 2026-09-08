@@ -209,7 +209,7 @@ const humanConfirm = (id, supplier) => svc.confirm(db, { username: 'sarah', role
   check('the scheduler refuses a via (machine) trigger before any DB read', /function scheduleScopeAutoAccept\(db, \{ supplier, typeSlug, via \} = \{\}\) \{\s*if \(via\) return false;/.test(src));
   check('one cap, one writer: the automatic path calls the SAME _sweepAcceptCore as the consent bar', (src.match(/_sweepAcceptCore\(db, \{/g) || []).length === 3);   // the definition + the two callers
   check('the receipt bar says what happened in the operator\'s words and offers Put back', /filed by itself after your confirms/.test(rend) && /acb-putback/.test(rend));
-  check('Review refreshes the LIST on scope-auto-filed, never the open document', /onScopeAutoFiled\?\.\(async \(\) => \{[\s\S]{0,200}_refreshQueueFromBroadcast\(\)/.test(rend));
+  check('Review refreshes the LIST on scope-auto-filed, never the open document', /onScopeAutoFiled\?\.\(async \(\) => \{[\s\S]{0,200}_deferOrRefresh\(\)/.test(rend));
   // F2a (Oracle C2a.1/C2a.2): the quiet lane is scheduled on a graduation MINT only — after the
   // `!res.templateId` early return (a skip never reaches it) and after the enrichment block.
   const revh = fs.readFileSync(path.join(ROOT, 'src', 'modules', 'review', 'handler.js'), 'utf8');

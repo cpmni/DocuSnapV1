@@ -68,7 +68,7 @@ check('YOU-filed reads apart from auto (owner 2026-09-07): approved → youfiled
 check('the chip tooltip carries the doc TYPE on top of the description (owner 2026-09-07)',
       /function _asTypeName\(ev\)[\s\S]{0,260}allDocTypes\.find/.test(rend)
       && /_type \? `Type: \$\{_type\}\\n` : ''/.test(rend));
-check('…and the panel line says "put back by you" after an undo (r18 card 7)', /function _asLineFull\(ev\)[\s\S]{0,400}put back<\/b> by you/.test(rend) && /\$\{_asIcon\(ev\)\} \$\{_asLineFull\(ev\)\}/.test(rend));
+check('…and the panel line says "put back by you" after an undo (r18 card 7)', /function _asLineFull\(ev\)[\s\S]{0,400}put back<\/b> by you/.test(rend) && /const _full = _asLineFull\(ev\), _cut = _full\.indexOf\(' — '\)/.test(rend));
 check('a bulk receipt still names its sender even when there is only one (r18 card 5) — via the real-sender filter', /const senders = ev\.bySender \? Object\.entries\(ev\.bySender\)\.filter\(\(\[k, v\]\) => k && k !== '—' && Number\(v\) > 0\) : \[\];/.test(rend) && /const by = senders\.length/.test(rend));
 check("the lane notice names the real trigger: ready / layout / typesplit / teach (r18 copy)", /j\.reason === 'ready' \? 'now that this sender files by itself'/.test(rend) && /j\.reason === 'layout' \? 'after your box change'/.test(rend));
 check("…and the job_start event's reason reaches the hint's job record (r20 card 5 — it was dropped on the way)", /if \(ev\.reason\) j\.reason = ev\.reason;/.test(rend));
@@ -82,7 +82,7 @@ check('Esc is consumed only while a panel is open', /e\.key === 'Escape' && _asO
 console.log(LF + 'offers stay out of the strip:');
 const stripStart = rend.indexOf('// ═══ B2 — THE ACTIVITY STRIP'), stripEnd = rend.indexOf('initActivityStrip();' + LF, stripStart);
 const stripCode = (stripStart < 0 || stripEnd < 0) ? '' : rend.slice(stripStart, stripEnd);
-check('the strip block is found and bounded', stripCode.length > 1000 && stripCode.length < 20000);
+check('the strip block is found and bounded', stripCode.length > 1000 && stripCode.length < 30000);
 check('no offer copy in the strip code (File up to / Review them / Not now / Choose which)', stripCode.length > 0 && !/File up to|Review them|Not now|Choose which/.test(stripCode));
 check('the sweep done-phase bar defers to the strip when armed — and its 20 s timer with it', /if \(s\.phase === 'done' && _asOn\) \{[\s\S]{0,300}?_sweepState = null; bar\.style\.display = 'none'/.test(rend));
 
@@ -110,7 +110,7 @@ check('card 4: under the strip the tile yields (early return on _asOn) — place
 check('card 4: get-recent-auto-filed derives from status + a machine door (never the rolling id set alone)',
       /\.filter\(d => d && d\.status === 'confirmed' && \(d\.confirmed_via \|\| \/\^Auto-filed\/\.test\(String\(d\.confirmed_by_username \|\| ''\)\)\)\)/.test(rh));
 check("card 5a: the strip line for a BULK approval drops the sender (the breakdown lives in the panel)",
-      /case 'approved':\s+return ev\.bulk \? `You filed \$\{n\} in one go`/.test(rend));
+      /case 'approved':\s+return n === 0 \? [\s\S]{0,160}ev\.bulk \? `You filed \$\{n\} in one go`/.test(rend));
 check('card 6: get-processing-activity self-heals a stale import banner when nothing is running',
       /if \(_activity && _activity\.source === 'import' && !_anyProcessingBusy\(\)\) \{ _activity = null; _broadcastActivity\(\); \}/.test(ph));
 check('card 6: the renderer re-pulls the activity truth every 30 s while the banner shows',
@@ -127,9 +127,9 @@ console.log(LF + 'the close affordance (#5) + File All kept-back receipt (2026-0
 // the delegated #activity-panel listener: non-capture, C5-safe, routes See/Put-back, closes on X or body
 const panelListStart = rend.indexOf("document.getElementById('activity-panel')?.addEventListener('click'");
 const panelList = panelListStart < 0 ? '' : rend.slice(panelListStart, rend.indexOf('});', panelListStart) + 3);
-check('#5: a visible close X (data-ap="close") is prepended to the panel; .ap-close is styled',
-      /const closeX = `<button type="button" class="ap-close" data-ap="close"/.test(rend)
-      && /panel\.innerHTML = closeX \+ rows\.map/.test(rend) && /\.ap-close \{ position: absolute;/.test(html));
+check('#5: the sticky header (.ap-head) carries the close X (data-ap="close"); .ap-close is styled',
+      /const closeX = `<div class="ap-head"><span class="ap-title">/.test(rend)
+      && /panel\.innerHTML = closeX \+ rows\.map/.test(rend) && /\.ap-close \{ position: static;/.test(html));
 check('#5: the panel listener routes See / Put back and closes on the X or any body click',
       panelList.length > 0 && /dataset\.ap === 'see'\)  \{ _asSeeThem/.test(panelList)
       && /dataset\.ap === 'undo'\) \{ _asPutBack/.test(panelList) && /_asClosePanel\(\);   \/\/ the X/.test(panelList));

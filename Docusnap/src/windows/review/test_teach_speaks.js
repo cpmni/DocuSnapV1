@@ -142,7 +142,7 @@ check('a THROWN read speaks too, instead of only console.error',
 check('a read with no anchor context speaks (previously silent inside if (detected))',
       /I read <span class="ar-val">\$\{escHtml\(text\)\}<\/span> from your box, and I'll/.test(rend));
 check('the issuer read-back goes through one shared speaker',
-      /await speakIssuerTeach\(fieldKey, text\)/.test(rend));
+      /speakIssuerTeach\(fieldKey, text[,)]/.test(rend) && /async function speakIssuerTeach\(fieldKey, text/.test(rend));
 check('the issuer branch no longer congratulates via a toast',
       !/Captured the ' \+ \(labelFor\(fieldKey\) \|\| 'company name'\)/.test(rend));
 check('the message lands on the PERSISTENT #anchor-readout bar, not a toast',

@@ -89,8 +89,8 @@ let fail = 0;
   });
 
   const rows = db.prepare(`SELECT * FROM field_anchors WHERE field_key='date'`).all();
-  fail += !check('cross-supplier stale anchor is swept by an authoritative teach (single row)', rows.length === 1);
-  fail += !check('surviving row is the taught one (y≈0.206)', Math.abs(rows[0].y_norm - 0.206) < 1e-6);
+  fail += !check('cross-supplier stale anchor is PRESERVED (supplier-scoped sweep — see test_saveanchor_scope)', rows.length === 2);
+  fail += !check('the freshly-taught blank-supplier row exists (y≈0.206)', rows.some(r => Math.abs(r.y_norm - 0.206) < 1e-6));
   db.close();
 }
 

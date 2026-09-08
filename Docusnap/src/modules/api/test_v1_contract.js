@@ -56,6 +56,7 @@ async function freshDb(pngPath) {
       display_value TEXT, confidence INTEGER, was_corrected INTEGER, corrected_to TEXT,
       validation_note TEXT, extraction_method TEXT
     );
+    CREATE TABLE document_routes (id INTEGER PRIMARY KEY, document_id INTEGER, from_user_id INTEGER, to_user_id INTEGER, from_username TEXT, to_username TEXT, action_required TEXT, state TEXT);
     CREATE TABLE users (
       id INTEGER PRIMARY KEY, username TEXT, display_name TEXT, password_hash TEXT,
       role TEXT, is_active INTEGER DEFAULT 1, must_change_password INTEGER DEFAULT 0,

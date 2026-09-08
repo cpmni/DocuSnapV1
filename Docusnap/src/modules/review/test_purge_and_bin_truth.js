@@ -61,7 +61,7 @@ function freshDb() {
       template_id INTEGER, logo_phash TEXT, logo_detail_hash TEXT, keyword_fingerprint TEXT,
       ocr_text TEXT, error_message TEXT, stored_filename TEXT, stored_path TEXT, doc_date TEXT,
       reference_number TEXT, confirmed_at TEXT, working_path TEXT, detected_type_name TEXT,
-      review_acknowledged_at TEXT, page_count INTEGER, deleted_at TEXT
+      review_acknowledged_at TEXT, page_count INTEGER, deleted_at TEXT, ocr_recipe TEXT
     );
   `);
   return db;

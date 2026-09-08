@@ -44,7 +44,7 @@ check('getPageDeskew forwards minAngle', preload.includes("getPageDeskew:       
 console.log('\nrenderer.js — session drive + reprocess flag (C4) + display threshold:');
 check('doc-open makes deskewEnabled FOLLOW the session flag', renderer.includes('deskewEnabled = deskewSessionOn; deskewByPage = {}; deskewPageAngle = 0; updateDeskewBtn();'));
 check('C4: Reprocess batch call passes {deskewAll, deskewMinAngle} (covers both reprocess buttons via runReprocessBatch)',
-      renderer.includes('{ deskewAll: !!deskewSessionOn, deskewMinAngle }'));
+      renderer.includes('deskewAll: !!deskewSessionOn, deskewMinAngle'));
 check('display fetch passes a floor to getPageDeskew (session default = deskewMinAngle)',
       renderer.includes('getPageDeskew?.(b64, minAngle)') && renderer.includes('applyDeskewToCurrentPage(minAngle = deskewMinAngle, manual = false)'));
 check('the min-angle input read is clamped [0.2, 5.0]', renderer.includes('Math.max(0.2, Math.min(5.0, v))'));

@@ -34,7 +34,7 @@ db.exec(`
     -- outright and EVERY assertion downstream reads as a producer regression. logo_detail_hash
     -- (mig 47) had already gone stale here; detected_type_name is mig 51. Keep in step with
     -- database/modules/documents.js insert().
-    logo_detail_hash TEXT, detected_type_name TEXT
+    logo_detail_hash TEXT, detected_type_name TEXT, ocr_recipe TEXT
   );
 `);
 
@@ -56,7 +56,9 @@ const rows = db.prepare("SELECT * FROM documents WHERE status = 'error'").all();
 check('one status=error row was inserted', rows.length === 1);
 check('original_filename captured', rows[0] && rows[0].original_filename === 'scan001.pdf');
 check('folder_path captured',       rows[0] && rows[0].folder_path === 'C:/watch');
-check('error_message captured',      rows[0] && rows[0].error_message === 'boom: OCR engine crashed');
+// formatFileError (2026-09-01) wraps the raw error as "[stage · ]Type: <error>"; its exact shape is
+// pinned in test_error_logging.js. Here we guard only that the failure text reaches error_message.
+check('error_message captured',      rows[0] && typeof rows[0].error_message === 'string' && rows[0].error_message.includes('boom: OCR engine crashed'));
 check('getStuckCount() returns 1',   documents.getStuckCount(db) === 1);
 
 // ── A failure missing the filename still records (defensive) ──────────────────

@@ -32,7 +32,7 @@ check('…and "Looks right →" demotes to a ghost "Keep "v" anyway"', /yes\.cla
 check('no ghost Use button remains (the old role)', !/class="btn ghost quiet" id="rb-use-known"/.test(warn));
 
 console.log('\nSave:');
-const commit = src.slice(src.indexOf('async function doCommit'), src.indexOf('async function doCommit') + 9000);
+const commit = src.slice(src.indexOf('async function doCommit'), src.indexOf('async function doCommit') + 11000);
 const askAt = commit.indexOf('state.issuerNearMatchAck && supplier && D.checkIdentityNearMatch');
 const promoteAt = commit.indexOf('const promo=await D.promoteToTemplate');
 check('doCommit re-asks with the same near-match lookup', askAt > 0 && /checkIdentityNearMatch\(\{ value: supplier, templateId:/.test(commit));

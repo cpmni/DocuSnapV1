@@ -61,8 +61,8 @@ check('adding from the catalog re-renders the type list',
       /onAdded[\s\S]{0,200}renderTypeStep\(\)/.test(teachJs));
 check('editing a type refreshes the fields the operator is about to teach',
       /onChange[\s\S]{0,600}state\.fields\s*=/.test(teachJs));
-check('the edit button is hidden while creating a new type',
-      /btn-teach-edit-type[\s\S]{0,400}isNew \? 'none'/.test(teachJs));
+check('the edit button is disabled (not hidden) while creating a new type',
+      /setEditTypeEnabled\(!isNew\)/.test(teachJs) && /function setEditTypeEnabled\(on\)\{[\s\S]{0,120}\.disabled = !on/.test(teachJs));
 
 console.log('\n5. The modal opts out of help-mode (the dead-dialog class)');
 check('the shared overlay sets data-help-ignore', catalogJs.includes('data-help-ignore'));
