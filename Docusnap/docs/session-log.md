@@ -3766,3 +3766,22 @@ plain separator sheet · `bdcaf6c` session folder memory · `3c4f9ef` sticky-bot
 thumbnail at once. Oracle: P5 (deskew identity-slip release) SEND BACK → the lever is a slip-tolerant `identity_present_
 on_page`; P6 (`ws-` case) WRONG LAYER → the prefix-confusable lane. **Revert list before a customer build:
 108/110/112/114/116/118/123/124/126/128.** Memory: `project_placement_rootcause_20260907.md`.
+
+## Archived from CLAUDE.md at the 2026-09-08 EVENING wrap (the owner's 2026-09-08 morning LATEST block, verbatim)
+
+## ⏭ LATEST — 2026-09-08 (SOURCE PROTECTION shipped + MSIX/Store path wired + a FULL pre-deployment AUDIT):
+**READ `HANDOVER_2026-09-08.md` FIRST.** Branch `feat/teach-side-overnight`, HEAD `eeb8d56`, **3 audit-doc commits
+UNPUSHED**. Installer = `dist\ScanFinder Setup 2.0.0-r20260907-2017-dd9a790.exe` (hardened NSIS, current). The
+session's deliverable is **`docs/PRE_DEPLOYMENT_AUDIT_2026-09-07.md`** (4 auditors + Oracle SIGN-OFF-W/CORRECTIONS)
+— the next session's first work is its Oracle top-3: **(1) a build gate for the TEST-force-ON migs
+`108/…/136` + a reference-DB reconciliation** (they UPSERT ON, persist after code revert, and the reference DB
+has them ON forever → future OFF==ON/M=0 censuses are VACUOUS = the census-contamination seam); **(2) a
+`build:release` forcing `HARDEN_JS`** (default build ships plaintext JS); **(3) `ocr_dpi=200` default + RAM cap
+∝ DPI²** (customer default is 300, un-corpus-validated + OOM-risky) validated in ONE cold-DB run at `{DPI 200,
+parallel ON, 12 switches OFF}` → M=0. SOURCE PROTECTION: `.pyc` (default-on, `SHIP_PY_SOURCE=1` kill) + JS
+bytecode+obfuscation (OPT-IN `HARDEN_JS=1 HARDEN_JS_STRINGS=1`, wired into BOTH `build` and `build:store`). MSIX
+shaken out (full in-container import proven; data → real %APPDATA%; `MSIX_SETUP.md` §8 checklist). Class G
+`inline_disagree_corrob_soften` mig 135 DARK/136 force-ON (M=0 owed). Owner: INCORPORATE Six Mile Software Ltd
+(gates the signed name-clean path — IV/individual leak the legal name), DB-at-rest decision, backend
+DocumentRoot=public + admin 2FA. Memory `project_predeployment_audit_20260907.md` + `project_source_protection_20260907.md`.
+

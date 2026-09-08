@@ -137,3 +137,31 @@ Junctions: delete as reparse points (`[IO.Directory]::Delete`) BEFORE any recurs
 5. Incorporate Six Mile Software Ltd → `WIN_CSC_LINK` signing; the DB-at-rest decision; backend `DocumentRoot=public` + admin 2FA ON.
 6. `pip uninstall` the 9 dead Python packages on the build machine + relock with `--require-hashes`.
 7. Belts flip (mapper pair) = your call with the §7.1 table, after the `_name_band_read` real-page pin; the note belt needs a corpus where it fires.
+
+## CHRIS ROUND — TRIAGE (2026-09-08 evening; report verbatim in `docs/CHRIS_FULL_APP_REVIEW_2026-09-08.md`; NOTHING implemented)
+**Verdict: "Yes — I'd keep using it."** Import distinctly quicker (10 scans ~16 s, 20 invoices ~37 s, "Using 7 workers"), every scary
+button + Empty bin + the whole approval workflow with a second user told the truth, the Review-row overlap fix confirmed FIXED.
+Sandbox left running (CDP 9223, PID 3200, signed in as Chris) for you to poke.
+**Item-by-item vs 09-03:** #1 Import list "Confirm to file →" after a manual confirm = **SAME, NOT FIXED** (already on your vet list
+since 09-03) · #2 watch bundle imported whole = SAME (the `watch_separate_enabled` soak gate is yours to run) but **WORSE on the name**
+(NEW #1) · #3/#4/#5 SAME (cold install) · #6 percentages BETTER-BUT (NEW #4) · the row fix FIXED (side effect NEW #8) · Pelican now reads
+`PI/25/3699` where 09-03 read `P1/25/3699` — Chris calls it "better by my eye" but **the page prints P1**: this is the documented 200-DPI
+confusable trade-off from the cold gate (the 2 ref losses = O/0 · I/1 on serif scans; mig 138 seeds 200 on an empty install) and the
+`ref_prefix_confusable_adopt` arc (mig 74) only heals it once history exists — flag for your DPI/budget decision, not a new bug.
+**NEW cards (his rank) → my read for your vet:**
+1. Bundle issuer read from page 3 while page 1 is shown (`Halcyon Leisure Group` on an Ironbridge page) — held at 40 % (fail-toward-review
+   worked, nothing filed itself), but the honest cross-page provenance note + a Split nudge is a real design item → advisors + Oracle gate.
+2. STATEMENT typed Invoice, blocked for an Invoice Number — **the exact exhibit of the DARK `type_uninstalled_heading_fold` arc** (mig 122
+   seed OFF, in `TEST_SWITCH_KEYS`; census 20/20 Ironclad → Statement, 521 unchanged) — correctly OFF on a customer install after mig 137;
+   its flip is your call (a "add Statement as a type?" nudge on the picker is the UX half).
+3. "4 more to file by itself" beside "17 more ready" + "needs a layout" after 18 confirms — copy/counter semantics; queue.
+4. Green "63 %" = ready vs "Check" = not; a confirmed doc still shows "63 % confidence" in Search — copy; queue.
+5. The approver (Edit role, Sam) sees "Type —" / "Unknown" / "Document —" on the same filed invoice — POSSIBLE BUG in the mailbox's
+   document card projection for a non-admin role; worth a read-only look before the vet (the sender sees the type + status).
+6. Batch counters tell three stories (strip "1 of 20" with 7 workers; card counts the session; the watch strip repeats the manual batch)
+   — copy; queue (the parallel default made "1 of 20" visibly wrong).
+7. `✓ → undefined` in the import log = `src/windows/main/renderer.js:1158` prints `msg.new_filename` unconditionally (a needs-review
+   doc has none) — cosmetic, pre-existing; the "Document Issuer box is still empty" note surviving a ⊕ fill — cosmetic.
+8. The row fix's truncation makes 20 same-sender rows identical ("Northgate… / No… / Check") — side effect of `72ce811`; his
+   suggestion (show the reference/date when grouped by sender) is sensible; queue.
+**Not exercised:** Split on a multi-page doc, the Teach wizard, Defer/Print/Export/separator/Learning Repair/Straighten, a second watch drop.

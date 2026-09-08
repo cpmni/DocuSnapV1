@@ -21,7 +21,27 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-07 EVENING (placement root cause FIXED, five DARK arcs + speed + UX, TEST BUILD with everything
+## ⏭ LATEST — 2026-09-08 EVENING (audit fixes BUILT + RE-AUDIT vetted + belts gated + hardened REBUILD + Chris round):
+**READ `HANDOVER_2026-09-08_BUILD.md` FIRST** (its LATE EVENING section + CHRIS TRIAGE), then `docs/PRE_DEPLOYMENT_AUDIT_2026-09-08_RERUN.md`
+(the Oracle's ordered "BEFORE A CUSTOMER BUILD" list = the queue). Branch `feat/teach-side-overnight`, ~48 commits since `eeb8d56`,
+**NONE pushed** (owner's decision). **The click-through target = `dist/ScanFinder Setup 2.0.0-r20260908-1843-9251551.exe`** (hardened,
+manifest clean, identity via file; the 2017/1355 hardened installers are `.REFUSED` — every earlier HARDEN_JS build shipped a Review whose
+"File all ready" threw, fixed `5a4bd94`). **The old "revert list" is RETIRED:** mig 137 reset the 27 DARK test switches, the KEY-based gate
+`scripts/check-release-migrations.js` runs first in every build, runtime arming `database/build_arming.js` (`TEST_BUILD=1` = the one knob).
+`npm run build:release` = the hardened road; the DEFAULT `build` stays plain until the owner's click-through (Oracle C5) → then flip (2.7b).
+Efficiency: mig 138 `ocr_dpi=200` on an EMPTY install only (C7a), budget ∝ DPI², mig 139 import parallelism ON. Name-grow belts mig 140 DARK
+(gate: seam fixed `f4a32a7`, one page-verified heal, the kw-note belt VACUOUS on the corpus). Boot-smoke identity REQUIRED (`9251551`).
+`npm run test:pins` runs all 325 JS pins — 17 reds are PRE-EXISTING at `eeb8d56` (queued in `NIGHT_RUN.md`). Chris 09-08: "I'd keep
+using it"; import quicker; row fix confirmed; vet queue = bundle issuer from page 3, STATEMENT→Invoice (= the DARK `type_uninstalled_
+heading_fold` exhibit), Import list stale after a manual confirm (still), Edit-role mailbox card "Type —/Unknown", Pelican `PI` at 200 DPI
+(the documented confusable trade-off). Owner: click-through + uninstall drill → `build` flip; push; Learning Repair #42/#25/#27/#40 + Ridgeway
+8/19/21; incorporate (signing); DB-at-rest; backend DocumentRoot + 2FA; `pip uninstall` 9 dead packages + `--require-hashes`.
+Memory `project_audit_fix_build_20260908.md`.
+
+## Prior — 2026-09-08 MORNING (SOURCE PROTECTION shipped + MSIX/Store path wired + the pre-deployment AUDIT) — the owner's own block,
+moved verbatim to `docs/session-log.md` ("Archived from CLAUDE.md at the 2026-09-08 EVENING wrap"); its installer pointer (`…-2017-dd9a790.exe`)
+is now `.REFUSED` — see LATEST.
+## Prior — 2026-09-07 EVENING (placement root cause FIXED, five DARK arcs + speed + UX, TEST BUILD with everything
 ON): **READ `HANDOVER_2026-09-07.md` FIRST** (the cold-start summary; detail in `HANDOVER_2026-09-06.md` ADDENDUM 7 +
 UPDATE 1/2 and `docs/oracle_log.md` 2026-09-07). All PUSHED. Installer `ScanFinder Setup 2.0.0-r20260907-1503-7b75c73.exe` = HEAD with **mig 134**
 (TEST force-ON of 129-133) + 128 + the morning's 123/124/126. **Revert list before ANY customer build:
