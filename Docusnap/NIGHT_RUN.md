@@ -27,6 +27,12 @@ scratch/sandbox, implementing a Chris card); **anything dangerous goes to the ag
 and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
+- **2026-09-08 · [QUARTERLY, owner/build machine] vendor/python CVE review against `python_backend/requirements.lock`** — Pillow
+  (untrusted scanned images) and pypdfium2 (untrusted PDFs) first, then pypdf / numpy / scipy. `vendor\python\python.exe -m pip
+  index versions pillow` (or pip-audit on the lock); bump = re-provision the bundled interpreter, regenerate the lock
+  (`pip freeze > python_backend/requirements.lock`), run `scripts/test_check_vendor_python.js`, note the decision in the
+  commit. The build gate (`check-vendor-python.js`) refuses any drift from the lock. Repeat if: a Pillow/pypdfium2
+  advisory lands, or every ~90 days.
 - **2026-09-08 · [GATE, blocks the first customer build] the AUDIT FIX PLAN gate runs** — `docs/designs/AUDIT_FIX_PLAN_2026-09-08.md`
   §2 1.3 (realdoc post-mig-137 copy vs the 136 copy: `wouldFile(137) ⊆ wouldFile(136)` + value diffs 0) and §4 3.4 (cold
   `customer_corpus_score.js` A/B/C after the [C6] env fix + the warm 200-vs-300 arm + 10× determinism). Prereqs: slices 1.1/1.2

@@ -1113,3 +1113,14 @@ On ADOPT every field whose VALUE changed between the raw and straightened reads 
 every floor, survives reprocess merges, says what changed); unchanged values get no note. Also noted, not fixed: the
 retry keys on engine `_needs_review` (required-empty OR field<70) so it never fires on a NOTE-only hold (0/20 on the
 Nordwind corpus).
+
+## Customer operating point — 200 DPI (2026-09-08)
+Mig 138 seeds `ocr_dpi=200` on every install (INSERT OR IGNORE; an explicit Settings choice survives). Before it, a rowless
+install rendered at the code default 300 (`tesseract.py:45`) while the owner's install and the whole 605-corpus history
+validated at 200 — the crop / re-slice geometry is calibrated for 200 and OCR cost scales ~DPI², so 300 was an
+un-corpus-validated, OOM-prone default (audit P2-1, Oracle re-tiered to QUALITY). `handler._resolveOcrDpi(db)` is the ONE
+resolver the spawn env (`OCR_RENDER_DPI`) and the per-worker RAM budget (`perWorkerBudgetBytes(dpi)` ∝ DPI², P2-4) share.
+The three code-default-300 mirrors stay; the ROW makes them agree — a harness that bypasses the DB still needs
+`OCR_RENDER_DPI=200` (or `buildWorkerCommand(db).env`, which `customer_corpus_score.js` now uses). One-file imports run the
+two OCR pools by default (mig 139) behind a memory-pressure clause in `singleDocParallelEnv`. Gates + results:
+`docs/designs/AUDIT_FIX_PLAN_2026-09-08.md` §4 / §7b.

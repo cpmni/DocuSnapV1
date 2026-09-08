@@ -5,7 +5,10 @@ Recipe for shipping a **Store SKU** alongside the existing NSIS installer. **WIR
 runs on both paths, and a signed test `.appx` was built, registered, and driven through a full
 in-container import (watch → packaged Python → OCR → auto-file). The ONLY thing still needed is the
 **Partner-Center identity** to replace the placeholders (`SixMileSoftware.ScanFinder` / `CN=Six Mile
-Software`). Build machine needs `vendor/` (Python + Tesseract). `npm run build` (NSIS) is untouched.
+Software`). Build machine needs `vendor/` (Python + Tesseract). Since 2026-09-08 the release road is the orchestrator
+(`npm run build:release` / `build:release:store` / `build:test` — `scripts/build-release.js`: hardened env + the
+migration/licence/npm-audit gates + `verify-release-artifact`); the plain `npm run build` stays until the owner's
+click-through of the first verified artifact (AUDIT_FIX_PLAN_2026-09-08 §7b), then it flips to the same road.
 
 > Strategy: **dual-track.** NSIS stays the primary direct-download installer (preserves the current
 > %APPDATA% persistence + Polar/JWS licensing exactly). MSIX is an **additive, free, trial-only**
@@ -153,7 +156,7 @@ the hidden Review trace console (§4) · external Polar activation (free app con
 service — no Store commerce).
 
 ## 7. Verification (on a build machine with `vendor/`)
-1. `STORE_BUILD=0 npm run build:store` → install the MSIX.
+1. `STORE_BUILD=0 npm run build:release:store` (hardened + gated; the old `build:store` is the plain path) → install the MSIX.
 2. Confirm: Python/Tesseract spawn works; pick scan + output folders; process a doc; the trial
    validates against the backend.
 3. **Uninstall → reinstall** → the trial state persists (same fingerprint): expired stays expired,
@@ -165,7 +168,8 @@ service — no Store commerce).
 
 ### 8.1 Build the package
 ```
-HARDEN_JS=1 HARDEN_JS_STRINGS=1 npm run build:store      # hardened: JS bytecode + string obfuscation + .pyc
+npm run build:release:store                              # hardened + gated (scripts/build-release.js composes HARDEN_JS=1 HARDEN_JS_STRINGS=1 itself)
+# equivalent legacy form: HARDEN_JS=1 HARDEN_JS_STRINGS=1 npm run build:store   (no gates, no verifier)
 ```
 - **Do NOT sign it** for submission (no `CSC_LINK`) — Microsoft signs on ingestion with an opaque
   `CN=<account id>` (the name-privacy win). A local test build can be self-signed to sideload (§8.4).
