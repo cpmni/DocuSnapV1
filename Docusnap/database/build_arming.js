@@ -1,6 +1,6 @@
 'use strict';
 /**
- * database/test_build_arming.js — the ONLY road that turns a DARK test switch ON at scale.
+ * database/build_arming.js — the ONLY road that turns a DARK test switch ON at scale.
  * (2026-09-08; pre-deployment audit P0-1; docs/designs/AUDIT_FIX_PLAN_2026-09-08.md §2 slice 1.4; Oracle C2/C3.)
  *
  * Replaces the numbered "TEST-BUILD force-ON" migrations (deleted with mig 137). Runs at EVERY start, after
@@ -25,7 +25,7 @@
  * Excluded by construction: money_sign_capture (a real default) and ocr_parallel_import_enabled (mig 139's key)
  * are not in TEST_SWITCH_KEYS — a disarm can never un-promote them.
  */
-const { TEST_SWITCH_KEYS } = require('./test_switch_keys');
+const { TEST_SWITCH_KEYS } = require('./dark_switches');
 
 const MARKER = 'test_build_armed_rev';
 

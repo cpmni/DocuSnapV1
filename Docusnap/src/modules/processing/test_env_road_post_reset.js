@@ -18,7 +18,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..', '..', '..');
 const Database = require(path.join(ROOT, 'node_modules', 'better-sqlite3'));
 const { runMigrations } = require(path.join(ROOT, 'database', 'index'));
-const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'test_switch_keys'));
+const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'dark_switches'));
 const H = require(path.join(__dirname, 'handler.js'));
 let fails = 0;
 const check = (label, cond, extra) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}${!cond && extra ? ' — ' + extra : ''}`); if (!cond) fails++; };

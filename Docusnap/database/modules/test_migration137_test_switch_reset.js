@@ -13,7 +13,7 @@
  *   - THE TRADE-OFF: a manual 'true' written AFTER 137 survives the next start — 137 is one-shot, never a
  *     startup sweep (a sweep would undo an SFDEV choice every launch);
  *   - the source carries NO numbered force-ON of a listed key (the 13 blocks are gone; the release gate's
- *     scan reports 0 hits on database/index.js) and requires database/test_switch_keys.js.
+ *     scan reports 0 hits on database/index.js) and requires database/dark_switches.js.
  *
  *   ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe database/modules/test_migration137_test_switch_reset.js
  */
@@ -22,7 +22,7 @@ const fs = require('fs');
 const Database = require('better-sqlite3');
 const ROOT = path.join(__dirname, '..', '..');
 const { runMigrations } = require(path.join(ROOT, 'database', 'index'));
-const { TEST_SWITCH_KEYS, TEST_BUILD_MIGS } = require(path.join(ROOT, 'database', 'test_switch_keys'));
+const { TEST_SWITCH_KEYS, TEST_BUILD_MIGS } = require(path.join(ROOT, 'database', 'dark_switches'));
 const { scan } = require(path.join(ROOT, 'scripts', 'check-release-migrations'));
 let fails = 0;
 const check = (label, cond, extra) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}${!cond && extra ? ' — ' + extra : ''}`); if (!cond) fails++; };
@@ -73,7 +73,7 @@ const mig103 = listBody(/\/\/ @DEFAULT_FLIP 103\r?\n\s*if \(!applied\.has\(103\)
 const inPromo = TEST_SWITCH_KEYS.filter(k => [allOn, mig98, mig103].some(b => b.includes(`'${k}'`)));
 check('TEST_SWITCH_KEYS ∩ (ALL_ON_DEFAULTS_93 ∪ mig 98 ∪ mig 103) = ∅ (Oracle C2)', inPromo.length === 0, inPromo.join(','));
 check('mig 98 / 103 bodies were located (the pin is not vacuous)', mig98.includes("'true'") && mig103.includes("'true'"));
-check('index.js requires database/test_switch_keys.js', /require\('\.\/test_switch_keys'\)/.test(src));
+check('index.js requires database/dark_switches.js', /require\('\.\/dark_switches'\)/.test(src));
 check('no @TEST_BUILD_MIG sentinel remains', !/@TEST_BUILD_MIG/.test(src));
 const forced = TEST_SWITCH_KEYS.filter(k => new RegExp(`VALUES \\('${k}', 'true'\\)`).test(src));
 check('no literal UPSERT-true of a listed key remains', forced.length === 0, forced.join(','));

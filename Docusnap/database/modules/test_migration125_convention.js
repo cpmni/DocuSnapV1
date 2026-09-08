@@ -4,7 +4,7 @@
  * database/modules/test_migration125_convention.js — mig 125 seeds `buyer_issued_convention_one_confirm`
  * OFF (Oracle C8, 2026-09-07: NO force-ON twin). The test-build force-ON mig 126 was DELETED 2026-09-08 with
  * the customer-build reset (mig 137, database/modules/test_migration137_test_switch_reset.js); the key is a
- * DARK test switch (database/test_switch_keys.js) armed at runtime by a TEST build only. Pins: seeded 'false',
+ * DARK test switch (database/dark_switches.js) armed at runtime by a TEST build only. Pins: seeded 'false',
  * a fresh install ends OFF, no force-ON twin in the source, a later manual ON survives the next start.
  *
  *   ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe database/modules/test_migration125_convention.js
@@ -14,7 +14,7 @@ const fs = require('fs');
 const Database = require('better-sqlite3');
 const ROOT = path.join(__dirname, '..', '..');
 const { runMigrations } = require(path.join(ROOT, 'database', 'index'));
-const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'test_switch_keys'));
+const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'dark_switches'));
 let fails = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
 const KEY = 'buyer_issued_convention_one_confirm';

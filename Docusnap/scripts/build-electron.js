@@ -24,7 +24,7 @@ const TARGET = process.argv[2] === 'appx' ? 'appx' : 'nsis';
 process.env.BUILD_REV = process.env.BUILD_REV || require('./build-rev').buildRev();
 // TEST BUILD (TEST_BUILD=1): the artifact filename + About box carry -TEST and the packaged package.json
 // carries extraMetadata.testBuild=true, which is what arms the DARK test switches at runtime
-// (database/test_build_arming.js). A release build never sets either — the release gate
+// (database/build_arming.js). A release build never sets either — the release gate
 // (scripts/check-release-migrations.js) already refused any force-ON without TEST_BUILD=1.
 const TEST_BUILD = process.env.TEST_BUILD === '1';
 if (TEST_BUILD && !/-TEST$/.test(process.env.BUILD_REV)) process.env.BUILD_REV += '-TEST';

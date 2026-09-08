@@ -17,8 +17,8 @@ const path = require('path');
 const fs = require('fs');
 const ROOT = path.join(__dirname, '..');
 const Database = require(path.join(ROOT, 'node_modules', 'better-sqlite3'));
-const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'test_switch_keys'));
-const arming = require(path.join(ROOT, 'database', 'test_build_arming'));
+const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'dark_switches'));
+const arming = require(path.join(ROOT, 'database', 'build_arming'));
 
 const args = process.argv.slice(2);
 const dbPath = args.find(a => !a.startsWith('--'));

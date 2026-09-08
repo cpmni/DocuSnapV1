@@ -15,7 +15,7 @@
  *   (iv)  a database/modules/test_migration*_test_force_on.js pin exists (a fresh-install-must-be-ON pin);
  *   (v)   a listed TEST switch key appears inside a `@DEFAULT_FLIP` block or inside the
  *         ALL_ON_DEFAULTS_93 literal (the label is not a bypass; a DARK key cannot become a default
- *         without leaving database/test_switch_keys.js);
+ *         without leaving database/dark_switches.js);
  *   (vi)  any non-test JS under src/ or database/ writes a listed key 'true' by ANY idiom —
  *         setSetting(...,'true'), UPDATE settings SET value='true', INSERT OR REPLACE, excluded.value,
  *         parameterised run(k,'true') within a few lines of the key;
@@ -29,7 +29,7 @@
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..');
-const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'test_switch_keys.js'));
+const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'dark_switches.js'));
 
 const RE = {
   appliedHas: /if\s*\(\s*!applied\.has\((\d+)\)\s*\)/,

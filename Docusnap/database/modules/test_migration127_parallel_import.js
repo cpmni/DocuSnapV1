@@ -4,7 +4,7 @@
  * database/modules/test_migration127_parallel_import.js — mig 127 seeds `ocr_parallel_import_enabled` OFF
  * (Oracle C7, 2026-09-07 — its OWN key, never in ALL_ON_DEFAULTS_93). The test-build force-ON mig 128 was
  * DELETED 2026-09-08 with the customer-build reset (mig 137). The key is deliberately NOT in
- * database/test_switch_keys.js: it graduates by its own promotion migration (mig 139, AUDIT_FIX_PLAN §4 3.3),
+ * database/dark_switches.js: it graduates by its own promotion migration (mig 139, AUDIT_FIX_PLAN §4 3.3),
  * whose UPSERT would otherwise be undone by the runtime disarm (Oracle C2). Until 139 lands a fresh install
  * ends OFF. Pins: seeded 'false', not in ALL_ON_DEFAULTS_93, not a runtime-armed test switch, a later manual
  * OFF survives the next start.
@@ -16,7 +16,7 @@ const fs = require('fs');
 const Database = require('better-sqlite3');
 const ROOT = path.join(__dirname, '..', '..');
 const { runMigrations } = require(path.join(ROOT, 'database', 'index'));
-const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'test_switch_keys'));
+const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'dark_switches'));
 let fails = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
 const KEY = 'ocr_parallel_import_enabled';

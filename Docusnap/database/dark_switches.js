@@ -1,6 +1,6 @@
 'use strict';
 /**
- * database/test_switch_keys.js — the ONE list of DARK switches a TEST build may force ON.
+ * database/dark_switches.js — the ONE list of DARK switches a TEST build may force ON.
  *
  * Plain Node module (no better-sqlite3) so the prebuild gate (scripts/check-release-migrations.js)
  * and its pin can require it without the Electron ABI, and database/index.js can require it for the

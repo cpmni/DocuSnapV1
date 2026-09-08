@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * database/modules/test_runtime_test_arming.js — pins database/test_build_arming.js (slice 1.4 of
+ * database/modules/test_runtime_test_arming.js — pins database/build_arming.js (slice 1.4 of
  * docs/designs/AUDIT_FIX_PLAN_2026-09-08.md; Oracle C2/C3): the runtime road that replaced the numbered
  * TEST-BUILD force-ON migrations.
  *
@@ -12,8 +12,8 @@ const fs = require('fs');
 const Database = require('better-sqlite3');
 const ROOT = path.join(__dirname, '..', '..');
 const { runMigrations } = require(path.join(ROOT, 'database', 'index'));
-const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'test_switch_keys'));
-const arming = require(path.join(ROOT, 'database', 'test_build_arming'));
+const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'dark_switches'));
+const arming = require(path.join(ROOT, 'database', 'build_arming'));
 const { scan } = require(path.join(ROOT, 'scripts', 'check-release-migrations'));
 let fails = 0;
 const check = (label, cond, extra) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}${!cond && extra ? ' — ' + extra : ''}`); if (!cond) fails++; };
@@ -75,8 +75,8 @@ const sh = fs.readFileSync(path.join(ROOT, 'src', 'modules', 'settings', 'handle
 check('set-setting stamps the manual@<rev> marker when an SFDEV hand turns a listed key ON (C3)', /TEST_SWITCH_KEYS\.includes\(key\)[\s\S]{0,300}writeArmMarker\(db, ['`]manual@/.test(sh));
 const be = fs.readFileSync(path.join(ROOT, 'scripts', 'build-electron.js'), 'utf8');
 check('build-electron.js bakes extraMetadata.testBuild + a -TEST rev only under TEST_BUILD=1', /TEST_BUILD === '1'/.test(be) && /extraMetadata\.testBuild=true/.test(be) && /-TEST/.test(be));
-const armSrc = fs.readFileSync(path.join(ROOT, 'database', 'test_build_arming.js'), 'utf8');
-check('the arming module carries no key literal (the release gate cannot be bypassed through it)', scan({ indexSrc: '', otherFiles: [{ file: 'database/test_build_arming.js', src: armSrc }] }).hits.length === 0);
+const armSrc = fs.readFileSync(path.join(ROOT, 'database', 'build_arming.js'), 'utf8');
+check('the arming module carries no key literal (the release gate cannot be bypassed through it)', scan({ indexSrc: '', otherFiles: [{ file: 'database/build_arming.js', src: armSrc }] }).hits.length === 0);
 check('repo package.json has no testBuild', !Object.prototype.hasOwnProperty.call(JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')), 'testBuild'));
 
 console.log(fails ? `\nFAILED: ${fails}` : '\nALL PASS');

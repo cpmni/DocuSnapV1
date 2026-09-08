@@ -48,7 +48,7 @@ The release orchestrator DELETES it from the env. A customer box can never carry
   without `TEST_BUILD=1` in the shell.
 
 ### 1.2 `TEST_SWITCH_KEYS` + mig 137 one-shot reset + delete the 13 blocks + 5 pins — S–M (~2.5 h) — DONE
-Built as designed (1.1 + 1.2 landed 2026-09-08): keys module `database/test_switch_keys.js` (24), gate green on the real repo,
+Built as designed (1.1 + 1.2 landed 2026-09-08): keys module `database/dark_switches.js` (24), gate green on the real repo,
 mig 137 in, the 13 blocks deleted (221 lines), 21 ⚑ FLIP GATE lines carried onto the seed-OFF migs (the two seedless keys carry
 theirs in the keys module), pins 123/124/134 deleted, 125/127 trimmed + renamed, `test_migration137_test_switch_reset.js` added.
 - Export `TEST_SWITCH_KEYS` (**24** = the 26 minus `money_sign_capture` [F2] minus `ocr_parallel_import_enabled` [C2])
@@ -72,7 +72,14 @@ theirs in the keys module), pins 123/124/134 deleted, 125/127 trimmed + renamed,
   'true', re-run) → all 'false'; `resolve_ref_near_miss` ends 'false' (121→124→137); a manual 'true' written AFTER 137
   survives the next start (the pinned trade-off: one-shot, never a sweep).
 
-### 1.3 Env-road unit + the first NON-vacuous realdoc arm — M (machine time)
+### 1.3 Env-road unit + the first NON-vacuous realdoc arm — M (machine time) — DONE, PASS
+2026-09-08: `src/modules/processing/test_env_road_post_reset.js` (21 of 24 keys map to a spawn var; none set post-137; all set on
+a 136 fixture; 'false' == absent). Realdoc arm on the 09-07 backup (147 confirmed docs, files present), `TESTING/_measure/
+reset_arm_20260908/`: arm136 = the backup as-is (18/24 ON, harness mirrored **127** spawn vars), arm137 = the same copy after
+mig 137 (0 ON, **111** vars — 16 fewer, the arm was live). `stress_test/reset_arm_compare.js` → **PASS: wouldFile 129/129
+identical, 0 extra holds, 0 new filers, 0 value diffs.** Both arms report the SAME 4 SILENT invoice-date rows (#42/#25/#27/#40)
+= the known poisoned-GT docs from `HANDOVER_2026-09-07.md`, not a code delta. The owner's mig-136 DB (F5) would be a larger
+re-run; the fallback backup was sufficient for the C8 question.
 - Unit: `_reconcileEnv(db)` + `_anchorCropEnv(db)` on a post-137 copy yield none of the 22 Python-side env vars.
 - Realdoc: `RR_APP_ENV=1 OCR_RENDER_DPI=200 RR_DB=<db.backup() copy after 137>` vs the same copy at 136 (19 keys ON).
   **Metric [C8]: `wouldFile(137) ⊆ wouldFile(136)` AND value-diffs = 0 on the intersection.** Extra holds on the OFF arm are
@@ -85,7 +92,7 @@ theirs in the keys module), pins 123/124/134 deleted, 125/127 trimmed + renamed,
   cannot un-poison GT; a 137-files-what-136-held case needs a page render before it counts as a regression.
 
 ### 1.4 Runtime arming (the owner's re-arm road) — M (~2 h) — DONE
-Built 2026-09-08 as `database/test_build_arming.js` (`armTestSwitches(db, identity)` at the end of `runMigrations`, unstamped;
+Built 2026-09-08 as `database/build_arming.js` (`armTestSwitches(db, identity)` at the end of `runMigrations`, unstamped;
 `resolveIdentity()` = packaged `package.json.testBuild`/`buildRev`, dev = `TEST_BUILD=1` + stable rev `dev`), `scripts/build-electron.js`
 bakes `extraMetadata.testBuild=true` + a `-TEST` rev under `TEST_BUILD=1`, the SFDEV `set-setting` road and `scripts/arm-test-switches.js`
 stamp `manual@<rev>` [C3]. Refinement over the draft: a release build disarms only a marker written by a DIFFERENT build, so a same-build

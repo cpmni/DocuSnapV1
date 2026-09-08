@@ -631,9 +631,9 @@ function register(ctx) {
     // launch of a DIFFERENT build disarms every test switch (mig 137 is one-shot and already stamped, so a raw
     // write without the marker would re-open the "reference DB ON forever" seam). Same-build hands stand.
     try {
-      const { TEST_SWITCH_KEYS } = require('../../../database/test_switch_keys');
+      const { TEST_SWITCH_KEYS } = require('../../../database/dark_switches');
       if (TEST_SWITCH_KEYS.includes(key) && String(val) === 'true') {
-        const arming = require('../../../database/test_build_arming');
+        const arming = require('../../../database/build_arming');
         arming.writeArmMarker(db, `manual@${arming.resolveIdentity().buildRev}`);
       }
     } catch {}

@@ -3,7 +3,7 @@
 const path = require('path');
 const fs   = require('fs');
 const { app } = require('electron');
-const { TEST_SWITCH_KEYS } = require('./test_switch_keys');
+const { TEST_SWITCH_KEYS } = require('./dark_switches');
 
 let _db = null;
 let _encryptionCode = null;   // the NORMALISED recovery code (passphrase) | null
@@ -108,10 +108,10 @@ function runMigrations(db, opts = {}) {
   // Runtime TEST-BUILD arming / release disarm of the DARK test switches — UNSTAMPED, every start, AFTER the
   // migrations (mig 137 reset them once; this is the only road that turns them ON at scale). A test build
   // (extraMetadata.testBuild) arms once per rev; a release build disarms a DB armed by another build once.
-  // Identity is injectable for the pins (opts.identity). database/test_build_arming.js; slice 1.4 of
+  // Identity is injectable for the pins (opts.identity). database/build_arming.js; slice 1.4 of
   // docs/designs/AUDIT_FIX_PLAN_2026-09-08.md.
   try {
-    const arming = require('./test_build_arming');
+    const arming = require('./build_arming');
     const r = arming.armTestSwitches(db, opts.identity || arming.resolveIdentity());
     if (r.action !== 'noop') console.log(`  test switches ${r.action} (${r.n} row(s); marker ${r.marker || 'cleared'})`);
   } catch (e) { console.warn(`  test-build arming: ${e.message}`); }
@@ -2816,7 +2816,7 @@ function runJsMigrations(db, applied) {
   //    were STAMPED, so reverting their code left every DB that had run them ON forever (the owner's reference
   //    DBs: 15-19 of 26 ON) and every OFF==ON / M=0 census on those DBs vacuous. Those blocks are DELETED (each
   //    flip gate now lives on its seed-OFF migration's ⚑ line); this ONE-SHOT UPSERT returns each key in
-  //    database/test_switch_keys.js (24 = the 26 minus the two legitimate defaults) to 'false' — the mig-121
+  //    database/dark_switches.js (24 = the 26 minus the two legitimate defaults) to 'false' — the mig-121
   //    shape. Customer DBs never had the rows (or had 'false') → no-op. Runs ONCE per DB, never as a startup
   //    sweep, so an operator's (SFDEV) choice made AFTER it stands — pinned. A test build re-arms them at
   //    RUNTIME (extraMetadata.testBuild + the test_build_armed_rev marker, slice 1.4); there is never a
