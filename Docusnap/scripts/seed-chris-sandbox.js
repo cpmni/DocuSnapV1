@@ -16,7 +16,7 @@ fs.mkdirSync(SANDBOX, { recursive: true });
 const live = new Database(path.join(process.env.APPDATA, 'ScanFinder', 'docusnap.db'), { readonly: true });
 const sand = new Database(path.join(SANDBOX, 'docusnap.db'));
 dbmod.runMigrations(sand);
-try { dbmod.runJsMigrations(sand); } catch (e) { console.log('js migrations note:', e.message); }
+// (migrations already ran inside dbmod.open() above — the old runJsMigrations call here only printed a confusing 'not a function' note)
 
 let tokens = 0, regs = 0;
 for (const r of live.prepare('SELECT * FROM license_tokens').all()) {

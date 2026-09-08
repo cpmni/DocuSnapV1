@@ -10,6 +10,7 @@
 ---
 
 ## 2026-09-08 — Clipped-name class: the keyword-superstring grow (Oracle SEND BACK → redirected; spec `docs/designs/KEYWORD_SUPERSTRING_GROW_2026-09-08.md`)
+- **GATE RAN 2026-09-08 evening (spec §7.1):** arms off/mapper/note on the post-137 reference copy — the first mapper run caught a SEAM (doc 67: belt 2b's name defer-cap reached `_edge_cut_relocate`, whose code-contract shape consent clean-committed a re-seated garble @90) → FIXED `f4a32a7` (a name defer-cap never reaches the relocate; RED-first pin). Fixed code: 129/129 would-file, 0 new filers, ref/date identical, ONE page-verified HEAL (#70 `Halcyon Leisure Gr` @94 silent-wrong → `Group`), 7 capped (review-bound, no consensus change). **The kw-note belt's corpus gate is VACUOUS (fired 0/63)** — its flip gate = a corpus where it fires or an in-app census on the owner's DB. All three stay DARK; the mapper pair's flip = the owner's call with the §7.1 table + the `_name_band_read` real-page pin (Oracle).
 - **BUILT 2026-09-08 (`139780a`, DARK, mig 140, 3 keys in TEST_SWITCH_KEYS):** steps 0-3 of the redirected order — census instrumentation
   (`entered`/`nolines`/`nocut`+neighbourhood/`band_abstain`/decline `new`), `template_name_grow_band_pick`, `template_name_cut_defer_cap`,
   `keyword_superstring_name_note`. **In-app finding (positive control):** doc 14's leg exits at `nocut` — the DRIFT-PLACED box cuts
@@ -38,6 +39,7 @@
   mig-133 left slack; the note the owner saw is the raw `inline_disagree_flag` because G's consumer is dark (its 44-doc OFF==ON M=0 is the flip gate).
 
 ## 2026-09-08 — Pre-deployment audit: what is deferred after the fix build (plan `docs/designs/AUDIT_FIX_PLAN_2026-09-08.md`, Oracle C1-C10)
+- **Oracle RE-VET backlog (2026-09-08 evening, `docs/PRE_DEPLOYMENT_AUDIT_2026-09-08_RERUN.md` item 7):** `--smoke-windows` (open every window hidden, await `did-finish-load`, probe `window.ReviewReadiness` — the automated layer for the class the owner hand-tests); a dynamic-asset belt (CSS `url()`/`fetch`/`import()`/`<iframe|source>` — the verifier covers static tags only); `RR_ALLOW_ARMED` + the marker/ON-count in `_operating_point` + `RR_APP_ENV` default-ON-or-refuse (C9) — BEFORE the next flip census; the `_name_band_read` real-page pin + the two tautological pins (`test_runtime_test_arming:79`, `test_migration137:82`) before the mig-140 flip; register the hand-run pins in a runner; OMP cap-2 rerun; Python re-provision with `--require-hashes` + `pip uninstall` the 9 dead packages (owner).
 - **DPI-sensitive one-line-low relocate on a multi-line recipient block (warm-arm exhibit #117, 2026-09-08):** Larkspur delivery
   docket, "Deliver To" over four lines (company / "Site Office, Foundry Lane" / town / postcode). At 300 DPI `customer_name` reads
   line 1 @89 (`anchor_crop`); at 200 the `anchor_crop_relocated` crop lands one line low and commits the STREET line @86 — a wrong

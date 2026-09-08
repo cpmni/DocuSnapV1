@@ -256,6 +256,7 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-09-08 EVENING · Pre-deployment audit RE-RUN (4 lenses + Oracle re-vet) + the name-grow belts C6 gate + the hardened REBUILD.** Result: `docs/PRE_DEPLOYMENT_AUDIT_2026-09-08_RERUN.md` — SIGN OFF W/CORRECTIONS; a NEW P0 caught (hardened build dropped two renderer scripts) and fixed `5a4bd94`; the smoke identity made REQUIRED `9251551`; belts seam fixed `f4a32a7` (gate: 0 new filers, 1 page-verified heal, note belt VACUOUS); artifact `dist/ScanFinder Setup 2.0.0-r20260908-1843-9251551.exe` verified (identity via file). Repeat if: any change to `scripts/harden-js.js`, the verifier, `build-release.js`, or a new hardened build — re-run the verifier + the owner's scripted click-through.
 - **2026-09-07 NIGHT · FULL PRE-DEPLOYMENT AUDIT (owner ask) — security + efficiency, no code changes.** 4 auditors
   (eric/gary/oscar/main-Claude) + Oracle vet. Report: `docs/PRE_DEPLOYMENT_AUDIT_2026-09-07.md` (P0 blockers → P3
   refactor). Top: the TEST-BUILD force-ON migs (108/…/136) have NO build gate → customers could ship every switch
