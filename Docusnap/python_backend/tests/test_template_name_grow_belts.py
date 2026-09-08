@@ -228,6 +228,38 @@ ln_, n_ = tm._pick_band_line([{"top": None, "height": 18, "text": "x"}], band)
 check("pick: a line without geometry is skipped", ln_ is None and n_ == 0)
 check("_name_band_read routes through _pick_band_line (one pick rule)", "_pick_band_line(lines, (band[0] + _rs.BORDER_PX" in open(tm.__file__, encoding="utf-8").read())
 
+# ── REAL-PAGE _name_band_read body (Oracle re-vet 2026-09-08): every band-pick e2e case above injects
+#    _NAME_BAND_READ_HOOK, so the real body — _crop_padded + prep + the +BORDER_PX band shift + _pick_band_line
+#    + _clean_value — was never RUN (only source-grepped). Drive it with a real PIL page and a monkeypatched
+#    _read_lines_full so the ONLY thing stubbed is the Tesseract call. box h_norm 0.05 on a 1000x1000 page →
+#    prepped band (45,95); a line at top 55 h 30 sits inside it. ────────────────────────────────────────────
+from PIL import Image
+import extraction.anchor as _anchor
+tm._NAME_BAND_READ_HOOK = None
+_orig_rl = _anchor._read_lines_full
+_page_real = Image.new('RGB', (1000, 1000), 'white')
+_box_real = {'x_norm': 0.10, 'y_norm': 0.20, 'w_norm': 0.30, 'h_norm': 0.05}
+def _mk_rl(_lines):
+    return lambda img, psm: ('x', 90, len(_lines), _lines)
+try:
+    _anchor._read_lines_full = _mk_rl([{'top': 55, 'height': 30, 'text': 'Bramblewood Joinery Ltd', 'mean_conf': 91}])
+    _meta_real = {}
+    _t, _n = tm._name_band_read(_page_real, _box_real, 'name', _meta_real)
+    check('real body: single in-band line read+cleaned, n=1, meta.conf carried (crop_padded+prep+pick+clean all run)',
+          _t is not None and 'Bramblewood' in _t and _n == 1 and _meta_real.get('conf') == 91.0)
+    _anchor._read_lines_full = _mk_rl([{'top': 55, 'height': 30, 'text': 'Bramblewood Joinery Ltd', 'mean_conf': 91},
+                                       {'top': 58, 'height': 30, 'text': 'Unit 4, Sawpit Lane', 'mean_conf': 88}])
+    _t2, _n2 = tm._name_band_read(_page_real, _box_real, 'name', {})
+    check('real body: TWO in-band lines -> decline (None, 2)', _t2 is None and _n2 == 2)
+    _anchor._read_lines_full = _mk_rl([])
+    _t3, _n3 = tm._name_band_read(_page_real, _box_real, 'name', {})
+    check('real body: no lines -> decline (None, 0)', _t3 is None and _n3 == 0)
+    _anchor._read_lines_full = _mk_rl([{'top': 55, 'height': 30, 'text': 'x', 'mean_conf': 90}])
+    _t4, _n4 = tm._name_band_read(_page_real, {'x_norm': 0.5, 'y_norm': 0.5, 'w_norm': 0.0001, 'h_norm': 0.0001}, 'name', {})
+    check('real body: a sub-_MIN_CROP box declines cleanly (None, 0), never raises', _t4 is None and _n4 == 0)
+finally:
+    _anchor._read_lines_full = _orig_rl
+
 # ── OFF: byte-identical to v1 ────────────────────────────────────────────────
 GROWN_READ[0] = "Greenacres Mill Lane"
 tm = arm(TEMPLATE_NAME_EDGE_GROW='1')

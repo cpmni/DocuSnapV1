@@ -76,6 +76,9 @@ check('set-setting stamps the manual@<rev> marker when an SFDEV hand turns a lis
 const be = fs.readFileSync(path.join(ROOT, 'scripts', 'build-electron.js'), 'utf8');
 check('build-electron.js bakes extraMetadata.testBuild + a -TEST rev only under TEST_BUILD=1', /TEST_BUILD === '1'/.test(be) && /extraMetadata\.testBuild=true/.test(be) && /-TEST/.test(be));
 const armSrc = fs.readFileSync(path.join(ROOT, 'database', 'build_arming.js'), 'utf8');
+// Positive control (Oracle re-vet 2026-09-08): a 0-hits result is only meaningful if scan() actually FIRES.
+const _plantArm = "db.prepare(\"INSERT OR REPLACE INTO settings (key,value) VALUES ('" + TEST_SWITCH_KEYS[0] + "','true')\").run();";
+check('positive control: scan() CATCHES a planted key-write in build_arming.js (belt vi) — not a dead guard', scan({ indexSrc: '', otherFiles: [{ file: 'database/build_arming.js', src: _plantArm }] }).hits.some(h => h.belt === 'vi'));
 check('the arming module carries no key literal (the release gate cannot be bypassed through it)', scan({ indexSrc: '', otherFiles: [{ file: 'database/build_arming.js', src: armSrc }] }).hits.length === 0);
 check('repo package.json has no testBuild', !Object.prototype.hasOwnProperty.call(JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')), 'testBuild'));
 

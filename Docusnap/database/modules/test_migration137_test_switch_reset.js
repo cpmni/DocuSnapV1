@@ -78,6 +78,10 @@ check('index.js requires database/dark_switches.js', /require\('\.\/dark_switche
 check('no @TEST_BUILD_MIG sentinel remains', !/@TEST_BUILD_MIG/.test(src));
 const forced = TEST_SWITCH_KEYS.filter(k => new RegExp(`VALUES \\('${k}', 'true'\\)`).test(src));
 check('no literal UPSERT-true of a listed key remains', forced.length === 0, forced.join(','));
+// Positive control (Oracle re-vet 2026-09-08): prove scan() FIRES so the real 0-hits result is not a dead guard.
+const _plantIdx = ['// @TEST_BUILD_MIG 999', 'if (!applied.has(500)) {', '  db.prepare("UPDATE settings SET value = \'true\' WHERE key = \'z\'").run();', '}'].join('\r\n');
+const _plantHits = scan({ indexSrc: _plantIdx }).hits;
+check('positive control: scan() CATCHES a numbered force-ON (belt i) + an unlabeled UPSERT-true (belt iii) — not a dead guard', _plantHits.some(h => h.belt === 'i') && _plantHits.some(h => h.belt === 'iii'));
 const { hits } = scan({ indexSrc: src });
 check('the release gate scan of database/index.js reports 0 hits', hits.length === 0, hits.slice(0, 3).map(h => `[${h.belt}] :${h.line} ${h.detail}`).join(' | '));
 check('every deleted test-build migration number has no block left', !TEST_BUILD_MIGS.some(n => new RegExp(`applied\\.has\\(${n}\\)`).test(src)));

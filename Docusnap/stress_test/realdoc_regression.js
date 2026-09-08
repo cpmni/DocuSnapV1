@@ -35,6 +35,7 @@ const LIVE_DB = process.env.RR_DB || path.join(process.env.APPDATA, 'ScanFinder'
 const learning = require(path.join(REPO, 'database', 'modules', 'learning.js'));
 const templates = require(path.join(REPO, 'database', 'modules', 'templates.js'));
 const trust = require(path.join(REPO, 'database', 'modules', 'trust.js'));
+const { TEST_SWITCH_KEYS } = require(path.join(REPO, 'database', 'dark_switches.js'));
 let labelOverrides = null; try { labelOverrides = require(path.join(REPO, 'database', 'modules', 'label_overrides.js')); } catch {}
 // GT overrides: docs whose CONFIRMED value was poisoned during testing (mis-confirmed page
 // numbers / transpositions). Corrects the harness's EXPECTED value to the true value (per the
@@ -95,10 +96,11 @@ function snap(db) {
 // A/B (both arms share the deficit) but it is NOT a faithful replay, and it has already produced a
 // false negative — the slice-3 name-guard note "did not re-form on harness replay" and was written
 // off as import-batch-specific; with the app env mirrored it re-forms on the first document.
-// RR_APP_ENV=1 mirrors the real builders. DEFAULT OFF deliberately: turning it on changes the
-// BASELINE of every historical arm in this file, so it is opt-in and must be stated when used.
+// RR_APP_ENV mirrors the real app spawn env. DEFAULT ON (C9 fold, Oracle re-vet 2026-09-08): the app env IS
+// the correct operating point, so a run measures what the app actually does unless you explicitly opt OUT with
+// RR_APP_ENV=0 (the historical no-env baseline — state it when used). _operating_point logs which applies.
 function _appSpawnEnv() {
-  if (process.env.RR_APP_ENV !== '1') return {};
+  if (process.env.RR_APP_ENV === '0') return {};
   try {
     const db = new Database(LIVE_DB, { readonly: true, fileMustExist: true });
     const H = require(path.join(REPO, 'src', 'modules', 'processing', 'handler.js'));
@@ -151,6 +153,18 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
 (async () => {
   if (!fs.existsSync(LIVE_DB)) { console.error('live DB not found:', LIVE_DB); process.exit(1); }
   const db = new Database(LIVE_DB, { readonly: true, fileMustExist: true });
+  // _operating_point (Oracle re-vet 2026-09-08): a run on an ARMED DB (TEST switches ON) is NOT a clean baseline.
+  // Print the arm marker + the count of ON TEST_SWITCH_KEYS, and REFUSE unless RR_ALLOW_ARMED=1 (an armed run must
+  // be a deliberate choice, never mistaken for a release-shape measurement).
+  {
+    const _armedRev = safe(() => (db.prepare("SELECT value FROM settings WHERE key = 'test_build_armed_rev'").get() || {}).value, null);
+    const _onKeys = TEST_SWITCH_KEYS.filter(k => safe(() => (db.prepare('SELECT value FROM settings WHERE key = ?').get(k) || {}).value, null) === 'true');
+    console.log(`    [op] operating point: test_build_armed_rev=${_armedRev == null ? 'none' : JSON.stringify(_armedRev)}; ${_onKeys.length}/${TEST_SWITCH_KEYS.length} TEST_SWITCH_KEYS ON; RR_APP_ENV=${process.env.RR_APP_ENV === '0' ? 'OFF(explicit)' : 'ON(default)'}`);
+    if (_onKeys.length > 0 && process.env.RR_ALLOW_ARMED !== '1') {
+      console.error(`    [op] REFUSED: ${_onKeys.length} TEST switch(es) ON in this DB (${_onKeys.slice(0, 6).join(', ')}${_onKeys.length > 6 ? '…' : ''}) — an armed DB is not a clean baseline. Re-run with RR_ALLOW_ARMED=1 if deliberate.`);
+      process.exit(2);
+    }
+  }
   const nameToSlug = {}; for (const r of db.prepare('SELECT name, slug FROM document_types').all()) nameToSlug[r.name] = r.slug;
   const roles = {}; for (const r of db.prepare('SELECT slug, ref_field_key, date_field_key FROM document_types').all()) roles[r.slug] = { ref: r.ref_field_key, date: r.date_field_key };
   const slugToId = {}; for (const r of db.prepare('SELECT id, slug FROM document_types').all()) slugToId[r.slug] = r.id;
