@@ -194,6 +194,24 @@ check("band-pick: the in-band read is called ONCE, inside the guard, only on the
       and _guard.index("if name_grow and _NAME_GROW_BAND_PICK_ON:") < _guard.index("_name_band_read(page, grown")
       and "_name_band_read(page, target_box" not in _src)
 
+# ── the in-band pick, pure (oscar re-audit 2026-09-08: the merged-line hole) ────────
+L = lambda top, height, text: {"top": top, "height": height, "text": text, "mean_conf": 90}
+band = (120, 140)                                    # a 20 px taught band in the prepped frame
+ln_, n_ = tm._pick_band_line([L(100, 18, "Deliver To"), L(121, 19, "Bramblewood Joinery Ltd"), L(142, 18, "Unit 4, Sawpit Lane")], band)
+check("pick: ONE line in the band -> picked, n=1", ln_ is not None and ln_["text"] == "Bramblewood Joinery Ltd" and n_ == 1)
+ln_, n_ = tm._pick_band_line([L(118, 21, "Bramblewood Joinery Ltd"), L(130, 20, "Unit 4, Sawpit Lane")], band)
+check("pick: TWO lines overlapping the band -> decline, n=2", ln_ is None and n_ == 2)
+ln_, n_ = tm._pick_band_line([L(120, 40, "Bramblewood Joinery Ltd Unit 4, Sawpit Lane")], band)
+check("pick: a MERGED line (2 rows fused by PSM 6, 2x the band, exactly 50% overlap) -> declined by the height guard",
+      ln_ is None and n_ == 2)
+ln_, n_ = tm._pick_band_line([L(119, 24, "Bramblewood Joinery Ltd")], band)
+check("pick: a slightly taller single row (<=1.5x band) still picks", ln_ is not None and n_ == 1)
+ln_, n_ = tm._pick_band_line([L(10, 18, "Deliver To")], band)
+check("pick: no line in the band -> n=0", ln_ is None and n_ == 0)
+ln_, n_ = tm._pick_band_line([{"top": None, "height": 18, "text": "x"}], band)
+check("pick: a line without geometry is skipped", ln_ is None and n_ == 0)
+check("_name_band_read routes through _pick_band_line (one pick rule)", "_pick_band_line(lines, (band[0] + _rs.BORDER_PX" in open(tm.__file__, encoding="utf-8").read())
+
 # ── OFF: byte-identical to v1 ────────────────────────────────────────────────
 GROWN_READ[0] = "Greenacres Mill Lane"
 tm = arm(TEMPLATE_NAME_EDGE_GROW='1')

@@ -744,6 +744,33 @@ _NAME_CUT_DEFER_CAP_ON = os.environ.get('TEMPLATE_NAME_CUT_DEFER_CAP', '0') != '
 _NAME_BAND_READ_HOOK = None      # tests inject: (page, box, val_type) -> (text|None, conf|None, n_in_band)
 
 
+def _pick_band_line(lines, band):
+    """The in-band pick, pure (pinned): `lines` = per-visual-line dicts {top, height, text, …} in the prepped frame,
+    `band` = (y0, y1) of the taught box in that frame. Returns (line, n_in_band): the ONE line whose overlap with
+    the band is ≥50 % of its own height, else (None, n). MERGED-LINE GUARD (oscar re-audit 2026-09-08): PSM 6 can
+    fuse the name row and the address row below into one line (tight leading / tilt); such a line is ~2× the band
+    tall and overlaps it by exactly ~50 %, so it would qualify as ONE in-band line carrying two rows — decline any
+    qualifying line taller than 1.5× the band (a real single row never is)."""
+    try:
+        b0, b1 = int(band[0]), int(band[1])
+    except (TypeError, ValueError, IndexError):
+        return None, 0
+    bh = max(1, b1 - b0)
+    q = []
+    for ln in (lines or []):
+        top, height = ln.get("top"), ln.get("height")
+        if top is None or height is None:
+            continue
+        y0, y1 = int(top), int(top) + int(height)
+        if max(0, min(y1, b1) - max(y0, b0)) >= 0.5 * max(1, y1 - y0):
+            q.append(ln)
+    if len(q) != 1:
+        return None, len(q)
+    if int(q[0].get("height") or 0) > 1.5 * bh:
+        return None, 2                                   # merged rows masquerading as one line → decline (counts as 2)
+    return q[0], 1
+
+
 def _name_band_read(page, box, val_type, meta=None):
     """In-band re-read of a GROWN name box (the BAND_PICK leg). Returns (cleaned_text|None, n_in_band).
     R8 discipline from reslice: crop grown by 0.5·h vertically ONLY (hpad 0 — the grow already set the
@@ -765,18 +792,9 @@ def _name_band_read(page, box, val_type, meta=None):
         if crop is None:
             return None, 0
         _text, _mc, _mn, lines = _rl(_rs.prep(crop), 6)
-        b0, b1 = band[0] + _rs.BORDER_PX, band[1] + _rs.BORDER_PX
-        q = []
-        for ln in (lines or []):
-            top, height = ln.get("top"), ln.get("height")
-            if top is None or height is None:
-                continue
-            y0, y1 = int(top), int(top) + int(height)
-            if max(0, min(y1, b1) - max(y0, b0)) >= 0.5 * max(1, y1 - y0):
-                q.append(ln)
-        if len(q) != 1:
-            return None, len(q)
-        line = q[0]
+        line, n = _pick_band_line(lines, (band[0] + _rs.BORDER_PX, band[1] + _rs.BORDER_PX))
+        if line is None:
+            return None, n
         if meta is not None:
             try:
                 meta['conf'] = float(line.get("mean_conf") or 0.0)

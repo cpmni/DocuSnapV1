@@ -92,6 +92,15 @@ check("mig 139 is the key's SOLE 'true' writer in index.js", (src.match(/'ocr_pa
 check('mig 138 is an INSERT OR IGNORE seed (an explicit Settings choice survives), 200 or 300 by the C7a guard', /INSERT OR IGNORE INTO settings \(key, value\) VALUES \('ocr_dpi', \?\)`\)\.run\(dpi\)/.test(src));
 check('the release gate scan of index.js is still 0 hits (a labelled promotion of a non-test key)', scan({ indexSrc: src }).hits.length === 0);
 
+// oscar re-audit (2026-09-08): ocrCache.currentOcrRecipe carries its own DPI resolver — it must agree with the shared one
+// on every DB shape (fresh 200, explicit 300, rowless), or a recipe-key drift invalidates every cache silently.
+{
+  const ocrCache = require(path.join(ROOT, 'src', 'modules', 'processing', 'ocrCache.js'));
+  const same = [db, db300, dbNone].every(d => ocrCache.currentOcrRecipe(d).dpi === H._resolveOcrDpi(d));
+  check('ocrCache.currentOcrRecipe().dpi === _resolveOcrDpi() on fresh(200) / explicit 300 / rowless DBs', same);
+}
+// Settings copy (oscar): 300 DPI is sold for very small print, not as "most accurate" (the cold gate read 200 vs 300 as a wash).
+check('Settings no longer labels 300 DPI "most accurate"', !/most accurate/.test(fs.readFileSync(path.join(ROOT, 'src', 'windows', 'settings', 'index.html'), 'utf8')));
 // Oracle C7b: the Settings DPI control warns that a change after teaching re-reads every taught box.
 check('C7b: the Settings DPI helper text warns of the one-time review wave', /Changing this after teaching re-reads every taught box[\s\S]{0,120}review wave/.test(fs.readFileSync(path.join(ROOT, 'src', 'windows', 'settings', 'index.html'), 'utf8')));
 
