@@ -22,7 +22,7 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-09-08 EVENING (audit fixes BUILT + RE-AUDIT vetted + belts gated + hardened REBUILD + Chris round):
-**READ `HANDOVER_2026-09-08_BUILD.md` FIRST** (its LATE EVENING section + CHRIS TRIAGE), then `docs/PRE_DEPLOYMENT_AUDIT_2026-09-08_RERUN.md`
+**NIGHT RUN: READ `HANDOVER_2026-09-08_NIGHT.md` FIRST** (cold start: state, commands, traps) → the plan `docs/designs/NIGHT_RUN_2026-09-08_NIGHT.md`; then `HANDOVER_2026-09-08_BUILD.md` (LATE EVENING + CHRIS TRIAGE), then `docs/PRE_DEPLOYMENT_AUDIT_2026-09-08_RERUN.md`
 (the Oracle's ordered "BEFORE A CUSTOMER BUILD" list = the queue). Branch `feat/teach-side-overnight`, 40 commits since `eeb8d56`,
 **NONE pushed** (owner's decision). **The click-through target = `dist/ScanFinder Setup 2.0.0-r20260908-1843-9251551.exe`** (hardened,
 manifest clean, identity via file; the 2017/1355 hardened installers are `.REFUSED` — every earlier HARDEN_JS build shipped a Review whose
