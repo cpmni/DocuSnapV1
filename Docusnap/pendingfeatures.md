@@ -13,12 +13,24 @@
 - **DPI-sensitive one-line-low relocate on a multi-line recipient block (warm-arm exhibit #117, 2026-09-08):** Larkspur delivery
   docket, "Deliver To" over four lines (company / "Site Office, Foundry Lane" / town / postcode). At 300 DPI `customer_name` reads
   line 1 @89 (`anchor_crop`); at 200 the `anchor_crop_relocated` crop lands one line low and commits the STREET line @86 — a wrong
-  optional-field value that does not block filing (ref + date correct). SYSTEM class, not a doc: (a) the relocate band on a
-  below-label anchor should snap to the FIRST text row under the label, not the row nearest the DPI-scaled taught box; (b)
-  `value_quality`'s address-line veto (`is_name_like_field` / wordness) let "Site Office, Foundry Lane" through as a name —
-  a street-token ("Lane"/"Road"/"Street"/"Office") + comma shape should demote or flag. Gate: the warm 200-vs-300 arm on the
-  post-137 copy (`TESTING/_measure/efficiency_bundle_20260908/`), 0 would-file value diffs; then realdoc M=0. Advisor: 007 (placement)
-  + reggie (the street-shape veto), then Oracle.
+  optional-field value that does not block filing (ref + date correct). SYSTEM class, not a doc. **Layer (Oracle C7 ruling):** the
+  `below` relocate seat in `anchor.py` — `_place_from_located` (~2473) + the caption top-clamp off the locate box + `_crop_and_ocr`'s
+  FIXED-PIXEL pads (~3919-3926: +20 px, text +0.4h+6 px — the only DPI-dependent units on that road, 1.5× larger relative at 200),
+  with `_DRIFT_FLOOR = 0.03` (~2888) coarser than one line pitch so a one-row-low read is invisible to the off-row guard. NOT
+  `value_quality` (it has no address-line veto; "Site Office, Foundry Lane" is fully word-like). Fix = first-credible-row-under-
+  caption for `below` on multi-line blocks + pads in `h_norm` units — page-wide blast radius → DARK arc + census, POST-LAUNCH.
+  Pre-existing (any rigid failure exposes it at any DPI). Gate: the warm arm on the post-137 copy (`TESTING/_measure/
+  efficiency_bundle_20260908/`, `reset_arm_compare.js` now compares VALUES), then realdoc M=0. Advisor: 007, then Oracle.
+- **Ironbridge 200-DPI type-refuse (warm arm, 2026-09-08):** 5/147 docs (#47/#62/#87/#92/#105, ONE supplier's PO/worksheets) hit the
+  `_type_refused` hold (`engine.py` ~11534-11544 "Couldn't match this document to the supplier's saved … layout") at 200 but match at
+  300 on geometry taught at 300 — a heading/identity read that changes with DPI; review-bound, self-heals on confirm. Moot for
+  customers under the C7a guard (mig 138 keeps a taught DB at 300). Census (which read flips: the title band or the fingerprint)
+  before anything moves. Advisor: herald.
+- **Confusable-glyph refs at 200 on clean scans (cold gate A↔C, 2026-09-08):** the two scanned-lane ref losses at 200 are the known
+  class — Oakhaven `OE/141221` read `0E/141221`, Pelican `PI/26/1792` read `P1/26/1792` (serif face); 300 resolved both. The
+  prefix-confusable arc (`ref_prefix_confusable_adopt_length_note`) only fires with a learned scope; a COLD install has none. Both
+  pages print the ref TWICE (header + "Please quote … on all remittances") — a same-page second-occurrence corroboration would
+  resolve the glyph without learning. Net on the scanned lane 200 vs 300 = +9/−6 for 200. Advisor: reggie, then Oracle.
 - **`build` default flip (plan 2.7b, Oracle C5):** `npm run build` still runs the plain chain ON PURPOSE. Flip `build`/`build:store`
   to `scripts/build-release.js nsis|appx` (+ `build:plain` for the old path) ONLY after the owner has installed and clicked through
   `dist/ScanFinder Setup 2.0.0-r20260908-1355-5b6c226.exe` (verified: bytecode, 5/5 fuses, `--smoke-boot` exit 0). Then retire every

@@ -292,7 +292,31 @@ Construction' @89 `anchor_crop` at 300 → 'Site Office, Foundry Lane' @86 `anch
 over four lines (company / street / town / postcode); at 200 the relocated crop lands one line low. Ref + date correct in both, the doc
 still files → wrong recipient METADATA, not a misfile. Five other "diffs" are conf/method shifts with identical values. C7's letter
 ("0 or render-verified heals") is NOT met by that one doc → Oracle asked to rule (§9 addendum); the #117 class is queued in
-`pendingfeatures.md` (a DPI-sensitive one-line-low relocate on a multi-line address block + `value_quality`'s address-line veto).
+`pendingfeatures.md`.
+**ORACLE RE-READ (C7 ruling, 16:00) + the C7c-corrected comparer:** the warm arm measured a DPI FLIP under geometry learned at 300, not
+"200 vs 300" — the 7 "heals" and 8 of the 15 holds are ONE clip class re-rolled in both directions (a tight taught ref box that clips at
+one DPI and not the other; `warm_*.jsonl` notes "may be clipping the first character"), 5 holds are Ironbridge `_type_refused`, #56 a
+template-date clip, #103 "doesn't appear on this page". With the comparer comparing VALUES: **8 value diffs, all `customer_name`** — 6
+better at 200 (#14/#71/#74/#77/#109/#112), 2 worse (#83 clipped "Brightwater Dente", #117 one line low); 17 same-value conf/method
+shifts; **0 misfiles either way**. Consequence (C7a, built `bd63e16`): mig 138 seeds 200 ONLY for a DB with no templates and no confirmed
+docs; a taught DB gets an explicit '300' row — customers start at the corpus-validated 200 with nothing to flip, the owner's post-reset
+DB keeps 300 unless they choose 200 in Settings (C7b helper text warns of the re-read wave). #117's layer = the `anchor.py` `below`
+relocate seat + fixed-pixel pads (NOT `value_quality`) → post-launch DARK arc.
+**COLD ARMS (C6) — DONE 15:27, `run_gate_cold.sh`, Customer Doc Test SAMPLE=300 SEED=7 → 288/288 processed per arm, operating point
+recorded in every jsonl (DPI 200/200/300, OMP 1, pools false/true/false, 111 app env vars from the throwaway DB at mig 139):**
+- **A↔B (`--strict`): IDENTICAL** — zero delta across verdicts / *_got / confs / notes / methods on 288 docs. The pools are byte-identical
+  at `OMP_THREAD_LIMIT=1` (the product's one-file import exports `floor(cores/concurrency)` ≥ 2 on 16+-core boxes, where the LSTM is
+  documented non-reproducible — a pre-existing residual, logged, not claimed).
+- **Determinism: 10/10** identical sha256 on `SET=scanned SAMPLE=40` with the pools ON (`361117b9…`).
+- **A↔C (200 vs 300, informational):** 26/288 docs differ. Per lane overall (200 vs 300): ref 163/165 · date 268/267 · total 92/91 ·
+  issuer 91/90 · customer 69/70 · vat_no 232/228 · job_ref 35/36 · type 284/284 → net +7/−4 for 200. Scanned rendition: 9 gains / 6 losses
+  for 200; the 6 losses = 2 empty `vat_no` (a blank, not a wrong value), 1 clipped customer, 1 doubled `job_ref`, and **2 ref-lane
+  confusable-glyph garbles, page-rendered:** Oakhaven prints `OE/141221` (read `0E/…` at 200), Pelican prints `PI/26/1792` (serif; read
+  `P1/…` at 200) — the known prefix-confusable class, which the arc only resolves with a learned scope; both pages print the ref twice
+  (a same-page corroboration lever, queued). The cold harness has no would-file notion, so "A's wrong+would-file = 0" is not measurable
+  there; the realdoc arms carry that (0 new misfiles).
+**Verdict on the bundle:** ship — A↔B identical, deterministic at the tested point, 200 vs 300 a wash on a fresh install with a narrow,
+known loss class; C7a keeps every taught install at its learned DPI.
 
 ## 8. Commit order (each its own commit, pinned, revertable) — Oracle-reordered [C5]
 1. 2.1 P1-7 seq · 2. 2.2 CSP appends · 3. 2.3 client perMachine · 4. 2.4 forge bump + notices ·
@@ -323,3 +347,18 @@ Per item: 1 SIGN OFF W/COND · 2 SEND BACK (SQL-shape belt → KEY-based belt, C
 - **C9** pin `RR_APP_ENV` mirrors `_ocrDpiEnv` (`realdoc_regression.js:105`) or document DPI as env-driven. → 1.3
 - **C10** retire the "revert list" text; pre-announce the post-138 hold wave. → 2.7, §7
 Resolved seams: S1→C1 · S2→C2 (was a live bug) · S3→traced, no new cross-DPI road, warm arm prices it (C7) · S4→C7/C10 · S5→C8 · S6→C5.
+
+### 9b. Oracle C7 RULING on the warm arm — 2026-09-08 16:00 — SIGN OFF WITH CONDITIONS C7a-C7e
+The warm arm measured a DPI flip under 300-taught geometry, not 200-vs-300 (§7b re-read). Conditions and status:
+- **C7a** mig 138 seeds '200' only when `templates` = 0 AND confirmed documents = 0; otherwise an explicit '300' row (the frame the
+  geometry was learned under). Both branches pinned. — **DONE `bd63e16`.**
+- **C7b** Settings DPI helper text: changing it after teaching re-reads every taught box, expect a one-time review wave. — **DONE (pinned).**
+- **C7c** `reset_arm_compare.js` compares values, reports conf/method/note shifts separately; re-run → 8 value diffs (customer_name),
+  not the 6 mixed rows. — **DONE.**
+- **C7d (owner)** Learning Repair (or `gt_overrides`) for #42/#25/#27/#40 so the realdoc M reads 0 truthfully; prune the 7 stale
+  "GT override SKIPPED" rows. — **OWNER.**
+- **C7e** `pendingfeatures.md`: the #117 relocate-seat arc (`anchor.py` `below` seat + fixed-px pads, post-launch DARK) and the
+  Ironbridge 200-DPI type-refuse (5/147, one supplier — census before any flip); plus the confusable-glyph refs at 200 on cold scans
+  (same-page second-occurrence corroboration lever). — **DONE.**
+- Cold-arm reading rule applied (§7b): A↔B strict at OMP=1 only (residual logged); A↔C per lane per rendition with the ≤10 scanned
+  losses rendered (2 ref losses rendered = the confusable class).

@@ -45,8 +45,15 @@ to ProgramData). **One hardened artifact is built and machine-verified; the `bui
   wave), 7 NEW filers that are heals (below-floor/flagged at 300, correct ref+date at 200), 0 new misfiles (the 4 wrong auto-files
   are the poisoned #42/#25/#27/#40 in BOTH arms), and ONE render-verified regression on an OPTIONAL field: #117 `customer_name`
   read the address line under the company name at 200 (relocated crop one line low; the doc still files on the correct ref+date).
-  Oracle C7's letter is not met by that one doc → Oracle asked to rule (plan §9 addendum). **COLD ARMS + determinism: running
-  (`chain_cold.log`); results → plan §7b.**
+  **ORACLE C7 RULING (plan §9b): SIGN OFF W/COND** — the warm arm measured a DPI FLIP under geometry learned at 300 (the 7 "heals" and
+  8 of the holds are one clip class re-rolled both ways; 5 Ironbridge type-refuse holds; #117 = the `anchor.py` relocate seat, not
+  `value_quality`). With the comparer fixed (it compared arrays): 8 value diffs, all `customer_name`, 6 better at 200, 2 worse, 0 misfiles.
+  **Built on the ruling (`bd63e16`): mig 138 seeds 200 ONLY for a DB with no templates and no confirmed docs; a taught DB gets an
+  explicit 300 row** (so YOUR post-reset DB stays at 300 unless you pick 200 in Settings — the helper text now warns of the one-time
+  review wave). **COLD ARMS DONE:** A (serial 200) ↔ B (pools 200) IDENTICAL on 288/288 docs (`--strict`); determinism 10/10 identical
+  hashes (at OMP=1 — the product's ≥2-thread one-file import is a pre-existing LSTM residual, logged); A ↔ C (200 vs 300) a wash
+  (+7/−4 for 200 overall; scanned lane +9/−6, the 2 ref losses page-rendered = the known O/0 · I/1 confusable class on serif scans).
+  Verdict: the bundle ships as built. Details + per-lane tables: plan §7b.
 
 ## Traps found today (durable)
 1. A shipped module must not be named `test_*.js` — the staged build excludes that pattern (esbuild "Could not resolve").
@@ -59,7 +66,9 @@ to ProgramData). **One hardened artifact is built and machine-verified; the `bui
 
 ## Owner list (unchanged from the plan §7 + today)
 Push the branch · click-through + uninstall drill (above) · locate the mig-136 live DB · incorporate the Ltd · DB-at-rest decision ·
-backend DocumentRoot + admin 2FA · expect a one-time "Read differently after learning" hold wave after mig 138 · Store placeholders.
+backend DocumentRoot + admin 2FA · Store placeholders · **C7d: Learning Repair (or `gt_overrides`) for invoice docs #42/#25/#27/#40 so
+the realdoc M reads 0 truthfully, and prune the 7 stale "GT override SKIPPED" rows** · the hold wave after mig 138 now applies only if
+you CHOOSE 200 in Settings on your taught DB (mig 138 keeps it at 300 — C7a).
 
 ## Key files
 `scripts/check-release-migrations.js` (+pin) · `database/dark_switches.js` · `database/build_arming.js` (+`test_runtime_test_arming.js`) ·
