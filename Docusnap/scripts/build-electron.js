@@ -22,6 +22,12 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const TARGET = process.argv[2] === 'appx' ? 'appx' : 'nsis';
 process.env.BUILD_REV = process.env.BUILD_REV || require('./build-rev').buildRev();
+// TEST BUILD (TEST_BUILD=1): the artifact filename + About box carry -TEST and the packaged package.json
+// carries extraMetadata.testBuild=true, which is what arms the DARK test switches at runtime
+// (database/test_build_arming.js). A release build never sets either — the release gate
+// (scripts/check-release-migrations.js) already refused any force-ON without TEST_BUILD=1.
+const TEST_BUILD = process.env.TEST_BUILD === '1';
+if (TEST_BUILD && !/-TEST$/.test(process.env.BUILD_REV)) process.env.BUILD_REV += '-TEST';
 const HARDEN = process.env.HARDEN_JS === '1';
 
 // electron-builder target args (+ the MSIX 4-part version, which the appx target requires).
@@ -32,6 +38,7 @@ if (TARGET === 'appx') {
 } else {
   ebArgs.push('--x64', '--config.extraMetadata.buildRev=' + process.env.BUILD_REV);
 }
+if (TEST_BUILD) ebArgs.push('--config.extraMetadata.testBuild=true');
 const runBuilder = () => execFileSync('npx', ebArgs, { stdio: 'inherit', cwd: ROOT, env: process.env, shell: true });
 
 if (!HARDEN) {

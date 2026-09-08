@@ -75,7 +75,7 @@ function _migrationsDir() {
   return path.join(__dirname, 'migrations');
 }
 
-function runMigrations(db) {
+function runMigrations(db, opts = {}) {
   // Ensure migrations table exists
   db.exec(`CREATE TABLE IF NOT EXISTS migrations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,6 +105,16 @@ function runMigrations(db) {
 
   // Run JS migrations (for complex schema changes that SQL can't handle safely)
   runJsMigrations(db, applied);
+  // Runtime TEST-BUILD arming / release disarm of the DARK test switches — UNSTAMPED, every start, AFTER the
+  // migrations (mig 137 reset them once; this is the only road that turns them ON at scale). A test build
+  // (extraMetadata.testBuild) arms once per rev; a release build disarms a DB armed by another build once.
+  // Identity is injectable for the pins (opts.identity). database/test_build_arming.js; slice 1.4 of
+  // docs/designs/AUDIT_FIX_PLAN_2026-09-08.md.
+  try {
+    const arming = require('./test_build_arming');
+    const r = arming.armTestSwitches(db, opts.identity || arming.resolveIdentity());
+    if (r.action !== 'noop') console.log(`  test switches ${r.action} (${r.n} row(s); marker ${r.marker || 'cleared'})`);
+  } catch (e) { console.warn(`  test-build arming: ${e.message}`); }
 }
 
 // The switches migration 60 turns on. Kept beside the migration so the two cannot drift, and

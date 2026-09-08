@@ -627,6 +627,16 @@ function register(ctx) {
       throw Object.assign(new Error('That output folder is not allowed (system folders and drive roots are blocked).'), { code: 'UNSAFE_OUTPUT_FOLDER' });
     }
     learning.setSetting(db, key, val);
+    // An SFDEV hand turning a DARK test switch ON stamps the arming marker (Oracle C3, 2026-09-08): the next
+    // launch of a DIFFERENT build disarms every test switch (mig 137 is one-shot and already stamped, so a raw
+    // write without the marker would re-open the "reference DB ON forever" seam). Same-build hands stand.
+    try {
+      const { TEST_SWITCH_KEYS } = require('../../../database/test_switch_keys');
+      if (TEST_SWITCH_KEYS.includes(key) && String(val) === 'true') {
+        const arming = require('../../../database/test_build_arming');
+        arming.writeArmMarker(db, `manual@${arming.resolveIdentity().buildRev}`);
+      }
+    } catch {}
     // Mirror the output/documents folder into the registry the moment it changes so the
     // uninstaller's data-wipe guard always has the current path (see lib/outputPathRegistry).
     if (key === 'output_folder') { try { require('../../lib/outputPathRegistry').recordOutputPath(val); } catch {} }

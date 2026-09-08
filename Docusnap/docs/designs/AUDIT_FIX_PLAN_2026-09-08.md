@@ -84,7 +84,13 @@ theirs in the keys module), pins 123/124/134 deleted, 125/127 trimmed + renamed,
 - HYPOTHESIS to carry (S5): the reference DB's confirmed values were accumulated everything-ON (rubber-stamp class) — 137
   cannot un-poison GT; a 137-files-what-136-held case needs a page render before it counts as a regression.
 
-### 1.4 Runtime arming (the owner's re-arm road) — M (~2 h)
+### 1.4 Runtime arming (the owner's re-arm road) — M (~2 h) — DONE
+Built 2026-09-08 as `database/test_build_arming.js` (`armTestSwitches(db, identity)` at the end of `runMigrations`, unstamped;
+`resolveIdentity()` = packaged `package.json.testBuild`/`buildRev`, dev = `TEST_BUILD=1` + stable rev `dev`), `scripts/build-electron.js`
+bakes `extraMetadata.testBuild=true` + a `-TEST` rev under `TEST_BUILD=1`, the SFDEV `set-setting` road and `scripts/arm-test-switches.js`
+stamp `manual@<rev>` [C3]. Refinement over the draft: a release build disarms only a marker written by a DIFFERENT build, so a same-build
+SFDEV hand is never fought; dev uses rev `dev` so a new commit never disarms the owner's dev DB (`--off` is the explicit dev disarm).
+Pin `database/modules/test_runtime_test_arming.js`.
 - After the migrations (the unconditional-heal slot, `index.js:~2979`): if `package.json.testBuild`
   (or `!app.isPackaged && TEST_BUILD=1`) and `settings.test_build_armed_rev !== buildRev` → UPSERT `TEST_SWITCH_KEYS`
   'true' + stamp the marker; if NOT a test build and the marker exists → UPSERT 'false' + delete the marker. Customer DBs
