@@ -257,7 +257,11 @@
     .qi-btn.danger:hover { border-color: var(--err); color: var(--err); }
     /* Queue-row delete (×): vertically centred against the whole 2-line card (not pinned to
        the top by the row's align-items:flex-start) and shown as a real delete affordance —
-       a red glyph on a faint danger tint at rest, filling on hover. */
+       a red glyph on a faint danger tint at rest, filling on hover.
+       2026-09-08 (owner screenshot): the meta line's chips ("↩ will re-file", the % badge) are
+       flex-shrink:0, so on a narrow queue column the line OVERFLOWED its body and painted over
+       this button. The body column (.qi-body) now clips and the meta line (.qi-meta) wraps, so the
+       badge drops under the chip instead of floating over the ×. */
     .qi-delete {
       align-self: center; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
       width: 22px; height: 22px; padding: 0; font-size: 14px; line-height: 1; border-radius: 6px;

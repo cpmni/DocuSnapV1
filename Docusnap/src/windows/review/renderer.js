@@ -2208,9 +2208,9 @@ function buildQueueItem(doc) {
   el.innerHTML = `
     <div style="display:flex; align-items:flex-start; gap:8px;">
       <img class="qi-thumb" alt="">
-      <div style="flex:1; min-width:0;">
+      <div class="qi-body" style="flex:1; min-width:0; overflow:hidden;">
         <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
-        <div style="display:flex; align-items:center; gap:6px;">
+        <div class="qi-meta" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; row-gap:2px;">
           <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || 'Sender not identified')}${reviewGroupChip(doc)}</span>
           ${putBackChip}
           ${doc.page_count > 1 ? `<span class="qi-multipage" title="Multi-page document (${doc.page_count} pages)" style="flex-shrink:0;display:inline-flex;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg></span>` : ''}
