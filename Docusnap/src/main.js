@@ -42,7 +42,8 @@ app.setPath('userData', _resolvedUserData);
 // the single-instance lock (keyed on userData), so the smoke runs beside a live app and never opens its DB.
 // Not a bypass: nothing is shown and the process exits inside whenReady; the verifier deletes the folder.
 const _smokeBoot = process.argv.includes('--smoke-boot');
-if (_smokeBoot) {
+const _smokeWindows = process.argv.includes('--smoke-windows');
+if (_smokeBoot || _smokeWindows) {
   // The verifier hands over a fresh temp dir it owns (SCANFINDER_SMOKE_DIR) and reads smoke-identity.json
   // from it after exit; the pid-named fallback covers a hand run. NEVER fall through to the real userData
   // (Oracle re-vet 2026-09-08): a smoke against the build machine's live DB would run the RELEASE identity's
@@ -1062,7 +1063,89 @@ const _gotSingleInstanceLock = app.requestSingleInstanceLock();
 if (!_gotSingleInstanceLock) app.quit();
 app.on('second-instance', () => revealAppGated());
 
-app.whenReady().then(() => {
+// --smoke-windows (release-artifact verification, night item 2, eric-designed 2026-09-08): the RUNTIME
+// complement to verify-release-artifact.js's static htmlAssetProblems() asset walk. It opens EVERY renderer
+// window HIDDEN against the throwaway userData (no login, no licence gate — the same no-state boot --smoke-boot
+// relies on), waits for each to load, and flags a renderer that fails to load, crashes, throws at load, or is
+// MISSING a load-bearing page-script global — the class that shipped twice as a dropped listCaption.js/
+// reviewReadiness.js (a call-time break the static walk cannot see). Serial; nothing shown; each window
+// destroyed; writes smoke-windows.json + a stdout line; app.exit(0) all-clean / 5 any-problem / never returns.
+// NEVER routes through createWindow (no modal/tray/dock/reveal); never show()/focus() (the focus-flash landmine).
+const _SMOKE_WINDOWS = [
+  { name: 'main',          globals: ['docusnap'] },
+  { name: 'review',        globals: ['docusnap', 'ListCaption', 'ReviewReadiness', 'ReviewReadiness.partition', 'ReviewReadiness.classify'] },
+  { name: 'settings',      globals: ['docusnap'] },
+  { name: 'search',        globals: ['docusnap', 'SearchState', 'SearchActions', 'SearchResults', 'SearchPreview', 'SearchQuery', 'SearchWorkflow', 'SearchMailbox', 'SearchStamp'] },
+  { name: 'teach',         globals: ['docusnap'] },
+  { name: 'help',          globals: ['docusnap'] },
+  { name: 'welcome',       globals: ['docusnap'] },
+  { name: 'tutorial',      globals: ['docusnap', 'TUTORIAL_FIXTURES'] },
+  { name: 'onboarding',    globals: ['docusnap'] },
+  { name: 'license',       globals: ['docusnap'] },
+  { name: 'legal',         globals: ['docusnap'] },
+  { name: 'dev-inspector', globals: ['docusnap'] },
+  { name: 'unlock',        globals: ['docusnap'] },
+  { name: 'update-lock',   globals: ['docusnap'] },
+];
+async function _runWindowSmoke() {
+  const results = [];
+  const capTimer = setTimeout(() => {
+    try { fs.writeFileSync(path.join(app.getPath('userData'), 'smoke-windows.json'), JSON.stringify({ ok: false, windows: results, error: 'overall-timeout' })); } catch {}
+    try { console.log('smoke-windows ' + JSON.stringify({ ok: false, error: 'overall-timeout' })); } catch {}
+    app.exit(5);
+  }, 5 * 60 * 1000);
+  if (capTimer.unref) capTimer.unref();
+  for (const spec of _SMOKE_WINDOWS) {
+    const rec = { name: spec.name, status: 'ok', loadMs: null, problems: [] };
+    const t0 = Date.now();
+    let win = null;
+    const onRendererError = (e, info) => { if (win && !win.isDestroyed() && e.sender === win.webContents) rec.problems.push('renderer-error: ' + ((info && info.message) || 'unknown')); };
+    ipcMain.on('renderer-error', onRendererError);
+    try {
+      win = new BrowserWindow({
+        show: false, skipTaskbar: true, backgroundThrottling: false,
+        webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+      });
+      const wc = win.webContents;
+      wc.on('did-fail-load', (e, code, desc, url, isMainFrame) => { if (isMainFrame) rec.problems.push('did-fail-load ' + code + ' ' + desc); });
+      wc.on('preload-error', (e, pp, err) => rec.problems.push('preload-error: ' + ((err && err.message) || pp)));
+      wc.on('render-process-gone', (e, d) => rec.problems.push('render-process-gone: ' + ((d && d.reason) || 'unknown')));
+      const loaded = new Promise((resolve) => {
+        let done = false; const fin = (v) => { if (!done) { done = true; resolve(v); } };
+        wc.once('did-finish-load', () => fin('load'));
+        wc.once('did-fail-load', (e, code, desc, url, isMainFrame) => { if (isMainFrame) fin('fail'); });
+        wc.once('render-process-gone', () => fin('gone'));
+        setTimeout(() => fin('timeout'), 20000);
+      });
+      win.loadFile(path.join(__dirname, 'windows', spec.name, 'index.html'));
+      const how = await loaded;
+      if (how === 'timeout') rec.problems.push('load timeout (20s)');
+      if (how === 'load') {
+        try {
+          const miss = await wc.executeJavaScript('(' + JSON.stringify(spec.globals) + ').filter(function(g){ return g.split(".").reduce(function(o,k){ return o && o[k]; }, window) === undefined; })');
+          for (const g of (miss || [])) rec.problems.push('global ' + g + ' MISSING');
+        } catch (e) { rec.problems.push('probe threw: ' + (e && e.message)); }
+      }
+    } catch (e) {
+      rec.problems.push('open threw: ' + (e && e.message));
+    } finally {
+      rec.loadMs = Date.now() - t0;
+      if (rec.problems.length) rec.status = 'failed';
+      ipcMain.removeListener('renderer-error', onRendererError);
+      try { if (win && !win.isDestroyed()) { win.webContents.removeAllListeners(); win.destroy(); } } catch {}
+      results.push(rec);
+    }
+  }
+  clearTimeout(capTimer);
+  const ok = results.every(r => r.status === 'ok');
+  const report = { ok, windows: results, skipped: [] };
+  try { fs.writeFileSync(path.join(app.getPath('userData'), 'smoke-windows.json'), JSON.stringify(report)); } catch {}
+  try { console.log('smoke-windows ' + JSON.stringify(report)); } catch {}
+  try { logger.log('smoke-windows: ' + (ok ? 'all clean' : results.filter(r => r.status !== 'ok').map(r => r.name + '[' + r.problems.join('; ') + ']').join(' '))); } catch {}
+  app.exit(ok ? 0 : 5);
+}
+
+app.whenReady().then(async () => {
   if (!_gotSingleInstanceLock) return;   // a second instance: don't build anything, just quit
   // Frameless windows shown via show()/swap don't reliably take OS keyboard focus
   // on Windows — especially after the alwaysOnTop splash closes and the next
@@ -2074,6 +2157,7 @@ app.whenReady().then(() => {
   // splash stays alone for ~2s, then the (preloaded, hidden) login window is
   // revealed as the single follow-on. No overlap with the splash.
   setupTray();          // system-tray icon, present for the life of the app
+  if (_smokeWindows) { await _runWindowSmoke(); return; }   // night item 2: probe every window headless, then exit 0/5
   launchStartupWindow();
 });
 

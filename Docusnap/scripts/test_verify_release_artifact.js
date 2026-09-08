@@ -30,6 +30,7 @@ const GOOD = {
   mainJs: "'use strict';\nrequire('bytenode');\nmodule.exports = require('./main.jsc');\n",
   fuses: parseFuseText(FUSE_TEXT), expectedFuses, smokeExit: 0, pkg: { version: '2.0.0', buildRev: '20260908-1500-abc1234' }, testBuild: false,
   smokeIdentity: { testBuild: false, buildRev: '20260908-1500-abc1234' },
+  windowSmokeExit: 0, windowSmokeReport: { ok: true, windows: [{ name: 'review', status: 'ok', problems: [] }], skipped: [] },
 };
 
 console.log('verify-release-artifact:');
@@ -80,5 +81,11 @@ const HTML_BAD = { '/src/windows/review/index.html': '<script src="../shared/the
 check('html-asset: a deleted renderer-served script (the hardened-build P0) → refused, naming the resolved path', (() => { const p = htmlAssetProblems(ENTRIES, HTML_BAD); return p.length === 1 && /\/src\/windows\/shared\/listCaption\.js/.test(p[0]); })());
 check('evaluate() runs the asset belt when htmlByPath is given', has(evaluate({ ...GOOD, htmlByPath: HTML_BAD }), /html-asset/));
 check('identity: the smoke-resolved buildRev must equal the packaged package.json (bundle can see the manifest)', has(evaluate({ ...GOOD, smokeIdentity: { testBuild: false, buildRev: 'packaged' } }), /cannot see the packaged package\.json/) && !has(evaluate({ ...GOOD, smokeIdentity: { testBuild: false, buildRev: GOOD.pkg.buildRev } }), /identity:/));
+check('window-smoke: a clean run (exit 0 + ok report) adds no problem', !has(evaluate(GOOD), /window-smoke/));
+check('window-smoke: a failed window (exit 5, missing load-bearing global — the dropped-reviewReadiness.js P0 class) → refused, naming the window + global',
+      has(evaluate({ ...GOOD, windowSmokeExit: 5, windowSmokeReport: { ok: false, windows: [{ name: 'review', status: 'failed', problems: ['global ReviewReadiness MISSING'] }] } }), /window-smoke:.*review\[global ReviewReadiness MISSING\]/));
+check('window-smoke: a 0-exit with NO report → refused (vacuous pass, mirrors the identity guard)', has(evaluate({ ...GOOD, windowSmokeExit: 0, windowSmokeReport: null }), /vacuous pass/));
+check('window-smoke: a spawn error (null exit) → refused', has(evaluate({ ...GOOD, windowSmokeExit: null, windowSmokeReport: null }), /window-smoke:.*none\/timeout/));
+check('window-smoke: SKIP_SMOKE is honoured for the window smoke too (loud skip, not a failure)', !has(evaluate({ ...GOOD, smokeSkipped: true, smokeExit: null, smokeIdentity: null, windowSmokeExit: null, windowSmokeReport: null }), /window-smoke/));
 console.log(`\nverify-release-artifact: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

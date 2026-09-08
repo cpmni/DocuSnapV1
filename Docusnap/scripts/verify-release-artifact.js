@@ -77,7 +77,7 @@ function htmlAssetProblems(entries, htmlByPath) {
  * entries: asar paths ('/src/main.js' …); mainJs: text of /src/main.js; fuses: parsed {name:bool};
  * expectedFuses: package.json build.electronFuses; smokeExit: number|null (null = skipped); pkg: packaged package.json.
  */
-function evaluate({ entries = [], mainJs = '', fuses = {}, expectedFuses = {}, smokeExit = null, smokeSkipped = false, pkg = {}, testBuild = false, htmlByPath = null, smokeIdentity = null } = {}) {
+function evaluate({ entries = [], mainJs = '', fuses = {}, expectedFuses = {}, smokeExit = null, smokeSkipped = false, pkg = {}, testBuild = false, htmlByPath = null, smokeIdentity = null, windowSmokeExit = null, windowSmokeReport = null } = {}) {
   const p = [];
   if (htmlByPath) p.push(...htmlAssetProblems(entries, htmlByPath));
   // The smoke prints the arming identity the packaged bundle resolved; it must see the packaged package.json
@@ -101,6 +101,18 @@ function evaluate({ entries = [], mainJs = '', fuses = {}, expectedFuses = {}, s
   if (!smokeSkipped && smokeExit !== 0) p.push(`boot-smoke: --smoke-boot exit ${smokeExit === null ? 'none/timeout' : smokeExit}${smokeExit === 4 ? ' = no throwaway userData could be created (the smoke refused to touch the real one)' : ' (the packaged binary did not reach a DB open — bricking class)'}`);
   if (!testBuild && (pkg.testBuild === true || pkg.testBuild === 'true')) p.push('identity: the packaged package.json carries testBuild=true but TEST_BUILD is unset — this is a TEST build, not a release');
   if (testBuild && !(pkg.testBuild === true || pkg.testBuild === 'true')) p.push('identity: TEST_BUILD=1 but the packaged package.json lacks testBuild=true (the arming metadata did not bake)');
+  // --smoke-windows (night item 2): the RUNTIME complement to htmlAssetProblems. A window that fails to load,
+  // crashes, throws at load, or is missing a load-bearing page-script global (dropped listCaption.js/
+  // reviewReadiness.js class) makes the smoke exit 5. Mirror the identity guard: a 0-exit with no report is vacuous.
+  if (!smokeSkipped) {
+    if (windowSmokeExit !== 0) {
+      const wfails = (windowSmokeReport && Array.isArray(windowSmokeReport.windows)) ? windowSmokeReport.windows.filter(w => w.status !== 'ok') : [];
+      const detail = wfails.length ? wfails.map(w => w.name + '[' + (w.problems || []).join('; ') + ']').join(' ') : ((windowSmokeReport && windowSmokeReport.error) || 'no report');
+      p.push('window-smoke: --smoke-windows exit ' + (windowSmokeExit === null ? 'none/timeout' : windowSmokeExit) + ' — a renderer failed to load/probe headless: ' + detail);
+    } else if (!windowSmokeReport) {
+      p.push('window-smoke: --smoke-windows exited 0 but emitted NO report (smoke-windows.json absent + no stdout line) — a vacuous pass; refused');
+    }
+  }
   return p;
 }
 
@@ -154,12 +166,26 @@ if (require.main === module) (async () => {
     try { for (const d of fs.readdirSync(require('os').tmpdir())) if (/^scanfinder-smoke-\d+$/.test(d)) fs.rmSync(path.join(require('os').tmpdir(), d), { recursive: true, force: true }); } catch {}
     console.log(`[verify-release-artifact] boot smoke exit ${smokeExit}; identity ${smokeIdentity ? `via ${smokeIdentitySource}: ${JSON.stringify(smokeIdentity)}` : 'ABSENT'}`);
   } else console.log('[verify-release-artifact] SKIP_SMOKE=1 — the boot smoke was NOT run (say so in the release notes).');
+  let windowSmokeExit = null, windowSmokeReport = null;
+  if (!smokeSkipped) {
+    // Second spawn: open every renderer window HIDDEN and probe it (the call-time class the static asset walk misses).
+    const winDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'scanfinder-smokewin-'));
+    const wr = spawnSync(exe, ['--smoke-windows'], { cwd: unpacked, encoding: 'utf8', timeout: 360000, windowsHide: true, env: { ...process.env, SCANFINDER_SMOKE_DIR: winDir } });
+    windowSmokeExit = wr.error ? null : wr.status;
+    try { windowSmokeReport = JSON.parse(fs.readFileSync(path.join(winDir, 'smoke-windows.json'), 'utf8')); } catch { windowSmokeReport = null; }
+    if (!windowSmokeReport) { try { const line = String(wr.stdout || '').split(/\r?\n/).find(l => l.startsWith('smoke-windows ')); if (line) windowSmokeReport = JSON.parse(line.slice('smoke-windows '.length)); } catch { windowSmokeReport = null; } }
+    try { fs.rmSync(winDir, { recursive: true, force: true }); } catch {}
+    try { for (const d of fs.readdirSync(require('os').tmpdir())) if (/^scanfinder-smokewin-/.test(d)) fs.rmSync(path.join(require('os').tmpdir(), d), { recursive: true, force: true }); } catch {}
+    const nf = (windowSmokeReport && Array.isArray(windowSmokeReport.windows)) ? windowSmokeReport.windows.filter(w => w.status !== 'ok').length : null;
+    console.log('[verify-release-artifact] window smoke exit ' + windowSmokeExit + '; ' + (windowSmokeReport ? ((windowSmokeReport.windows ? windowSmokeReport.windows.length : 0) + ' windows, ' + nf + ' failed') : 'NO REPORT'));
+  }
   const testBuild = process.env.TEST_BUILD === '1';
-  const problems = evaluate({ entries, mainJs, fuses, expectedFuses, smokeExit, smokeSkipped, pkg, testBuild, htmlByPath, smokeIdentity });
+  const problems = evaluate({ entries, mainJs, fuses, expectedFuses, smokeExit, smokeSkipped, pkg, testBuild, htmlByPath, smokeIdentity, windowSmokeExit, windowSmokeReport });
   const rev = pkg.buildRev || 'unknown';
   const installer = fs.existsSync(path.join(ROOT, 'dist')) ? fs.readdirSync(path.join(ROOT, 'dist')).filter(f => /\.(exe|appx)$/i.test(f) && f.includes(rev) && !/\.REFUSED\./.test(f)).map(f => path.join(ROOT, 'dist', f)) : [];
   const manifest = { rev, version: pkg.version, testBuild: !!pkg.testBuild, verifiedAt: new Date().toISOString(),
     fuses, smoke: smokeSkipped ? 'skipped' : smokeExit, smokeIdentity, smokeIdentitySource, asarEntries: entries.length,
+    windowSmoke: smokeSkipped ? 'skipped' : windowSmokeExit, windowSmokeFailures: (windowSmokeReport && windowSmokeReport.windows) ? windowSmokeReport.windows.filter(w => w.status !== 'ok').map(w => w.name) : null,
     installers: installer.map(f => ({ file: path.basename(f), sha256: sha256(f) })), problems };
   try { fs.writeFileSync(path.join(ROOT, 'dist', `release-manifest-${rev}.json`), JSON.stringify(manifest, null, 2)); } catch {}
   if (problems.length) {
