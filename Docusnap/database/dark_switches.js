@@ -56,6 +56,14 @@ const TEST_SWITCH_KEYS = Object.freeze([
   'template_clip_commit_left_slack',
   // mig 136 (2026-09-07 evening, class G)
   'inline_disagree_corrob_soften',
+  // mig 140 (2026-09-08) — the NAME-GROW BELTS (docs/designs/KEYWORD_SUPERSTRING_GROW_2026-09-08.md §6): the in-band
+  // row pick on the grown re-read, the proven-cut defer-cap for names, the zero-OCR keyword-superstring note.
+  // ⚑ FLIP GATE: arms OFF / mapper / mapper+note on the post-137 reference copy (ref/date md5-identical, would-file
+  //   delta only REMOVES, census entered>0 with doc 14 as the positive control) + customer_name accuracy via
+  //   teach_run_ab / score_teach_run ≥ today; Oracle before any flip.
+  'template_name_grow_band_pick',
+  'template_name_cut_defer_cap',
+  'keyword_superstring_name_note',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

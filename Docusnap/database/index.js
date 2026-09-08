@@ -2874,6 +2874,30 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 139 (parallel-import promotion): ${e.message}`); }
   }
 
+  // ── migration 140: the NAME-GROW BELTS seeded OFF (2026-09-08; owner exhibit doc 14 'Willowbrook Nurserie:' — 007 +
+  //    gary → Oracle SEND BACK → redirected; spec docs/designs/KEYWORD_SUPERSTRING_GROW_2026-09-08.md §6). Three DARK
+  //    keys, each in TEST_SWITCH_KEYS (a test build arms them at runtime; never a numbered force-ON):
+  //    template_name_grow_band_pick — the v1 name edge-grow's GROWN re-read commits only the line in the taught box's
+  //    band (the exhibit's grown read landed on the address line below and declined silently);
+  //    template_name_cut_defer_cap — a geometrically PROVEN right cut whose heal fails takes the deferred ≤70 + note
+  //    floor instead of a silent None (two clipped customer names auto-filed on the owner's fresh install — non-role
+  //    field, only a note blocks);
+  //    keyword_superstring_name_note — engine, zero OCR, after Stage 4: a keyword reading that completes the taught
+  //    box's cut remnant → review with the fuller value offered (corrected_to), never swapped.
+  //    ⚑ FLIP GATE: arms OFF / mapper / mapper+note on the post-137 reference copy (ref/date md5-identical, would-file
+  //    delta only REMOVES, census entered>0 with doc 14 as the positive control) + customer_name accuracy via
+  //    teach_run_ab / score_teach_run ≥ today; Oracle before any flip. ──
+  if (!applied.has(140)) {
+    try {
+      let n = 0;
+      for (const k of ['template_name_grow_band_pick', 'template_name_cut_defer_cap', 'keyword_superstring_name_note']) {
+        n += db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, 'false')`).run(k).changes;
+      }
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (140)').run();
+      console.log(`JS migration 140 applied: name-grow belts (band pick / cut defer-cap / keyword-superstring note) seeded OFF (DARK, ${n} row(s))`);
+    } catch (e) { console.warn(`  migration 140 (name-grow belts): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

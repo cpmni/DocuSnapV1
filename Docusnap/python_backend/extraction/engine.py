@@ -1985,6 +1985,10 @@ _PREFIX_OUTLIER_NOTE_TAIL = "— likely a one-character misread. Please check."
 # reference-count phrase — NOT the bare pick-the-right-value tail, which is one glyph from the
 # 5697 blind-geom note and the 5967 D1 note (the literals live ONLY in the constants below).
 _REF_LENGTH_NOTE_MARK = "possibly an extra or missing digit"      # plain form (no corrected_to)
+# KEYWORD-SUPERSTRING NAME NOTE (2026-09-08, DARK — _keyword_superstring_name_note): the taught box's read is a cut
+# remnant of the fuller keyword reading; the doc goes to review with the fuller value offered, never swapped.
+_KW_SUPERSTRING_NOTE = ("The taught box read '{m}' but the text beside its label reads '{k}' — the box may be "
+                        "cutting the end of the name; please check which is printed.")
 _REF_LENGTH_WITNESS_NOTE_MARK = "references usually have"         # witness form (sets corrected_to)
 
 # The other two note classes the P lane reads (2026-08-19 widening). Each is composed from a
@@ -7303,6 +7307,88 @@ class ExtractionEngine:
         except Exception:
             pass   # advisory guard — must never break extraction
 
+    def _keyword_superstring_name_note(self, results, field_defs, ocr_text):
+        """KEYWORD-SUPERSTRING NAME NOTE (2026-09-08; owner ask "extend the mapped read until it corroborates the
+        keyword" → 007 + gary → Oracle SEND BACK → this zero-OCR belt; spec docs/designs/KEYWORD_SUPERSTRING_GROW_
+        2026-09-08.md §6 2(b)). DARK: KEYWORD_SUPERSTRING_NAME_NOTE, seeded OFF by mig 140, in TEST_SWITCH_KEYS.
+        Runs AFTER Stage 4 (the label-guard's note survives; a note written earlier is rebuilt by
+        validator.validate_and_adjust). For a name-like non-supplier field whose winner is the UN-SUFFIXED
+        Stage-0.5 abs read (`template_mapping` exactly — a fired grow/inline/relocate leg owns its own outcome,
+        C6), when an un-noted keyword-family ledger candidate K passes the name-grow SHAPE comparator (same token
+        count, last-token completion/repair, no digits — the same rule that refuses a glued neighbour
+        'Willowbrook Nurseries Site') and the winner is NOT word-bounded page-present while K IS (the name_unclip
+        C3 belt: a real short name defends itself; a cut remnant 'Nurserie' never is): value UNCHANGED,
+        `corrected_to` = K (the one-click Use), cap ≤70, a note if the field carries none. NO method suffix (S3),
+        NO ledger injection (a noted read is no witness). Catches the sub-floor nick no geometry can. v2 (own key,
+        census): inject the in-band grown read as an un-noted mapping-family witness and demote through
+        corrob_note_recompute_fc gated on _corrobLicensedKeyword — never a private agreement predicate."""
+        if os.environ.get('KEYWORD_SUPERSTRING_NAME_NOTE', '0') == '0':
+            return
+        try:
+            from extraction import template_mapper as _tm
+            _cs = _tm._name_grow_census                        # measurement only (NAMEGROW_CENSUS_DIR); inert otherwise
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            for key, data in list(results.items()):
+                if key.startswith('_') or not isinstance(data, dict) or key == 'supplier_name':
+                    continue
+                if not value_quality.is_name_like_field(key):
+                    continue
+                if type_by_key.get(key) not in (None, '', 'text', 'multiline_text'):
+                    continue
+                wv = str(data.get('value') or '').strip()
+                _cs(key, '', 'kw_note_entered', old=wv, extra={'method': str(data.get('method') or '')})
+                if str(data.get('method') or '') != 'template_mapping':
+                    _cs(key, '', 'kw_note_skip:method', old=wv, extra={'method': str(data.get('method') or '')})
+                    continue                                   # the un-suffixed abs read only (C6)
+                if data.get('corrected_to') or data.get('was_corrected'):
+                    _cs(key, '', 'kw_note_skip:already_corrected', old=wv)
+                    continue
+                if not wv or '\n' in wv:
+                    _cs(key, '', 'kw_note_skip:multiline_or_empty', old=wv)
+                    continue
+                _all = list(((self._field_candidates or {}).get(key) or []))
+                cands = [c for c in _all
+                         if (c or {}).get('stage') == '1_keyword' and not (c or {}).get('noted')
+                         and str((c or {}).get('value') or '').strip() and '\n' not in str((c or {}).get('value'))]
+                cands.sort(key=lambda c: (-int(c.get('confidence') or 0), str(c.get('value'))))
+                kv = None
+                for c in cands:
+                    cv = str(c.get('value') or '').strip()
+                    if _tm._name_grow_shape_ok(wv, cv):
+                        kv = cv
+                        break
+                if not kv:
+                    _cs(key, '', 'kw_note_skip:no_shape_candidate', old=wv,
+                        extra={'ledger': [{'s': str((c or {}).get('stage')), 'v': str((c or {}).get('value'))[:40],
+                                           'n': bool((c or {}).get('noted'))} for c in _all[:6]]})
+                    continue
+                if _uv_text_page_present(wv, ocr_text):
+                    _cs(key, '', 'kw_note_skip:winner_page_present', old=wv, new=kv)
+                    continue                                   # a real short name is on the page word-bounded
+                if not _uv_text_page_present(kv, ocr_text):
+                    _cs(key, '', 'kw_note_skip:keyword_not_page_present', old=wv, new=kv)
+                    continue                                   # the fuller reading must be on the page
+                if value_quality.name_quality(kv) < value_quality.name_quality(wv):
+                    _cs(key, '', 'kw_note_skip:quality', old=wv, new=kv)
+                    continue
+                _cs(key, '', 'kw_note_fired', old=wv, new=kv)
+                healed = {**data, 'confidence': min(int(data.get('confidence') or 0), 70),
+                          'corrected_to': kv, 'keyword_superstring_note': True}
+                if not str(data.get('validation_note') or '').strip():
+                    healed['validation_note'] = _KW_SUPERSTRING_NOTE.format(m=wv, k=kv)
+                results[key] = healed
+                try:
+                    self._t('kw_superstring_note', field=key, **{'from': wv, 'to': kv})
+                except Exception:
+                    pass
+                try:
+                    self.log(f"  Keyword-superstring note: {key} '{wv}' (taught box) vs keyword '{kv}' "
+                             f"-> review with the fuller reading offered (corrected_to)")
+                except Exception:
+                    pass
+        except Exception:
+            pass   # advisory — must never break extraction
+
     def _reconcile_name_truncation(self, results, field_defs, ocr_text):
         """NAME-UNCLIP reconcile (see the NAME_UNCLIP_RECONCILE const block for the full design +
         Oracle conditions). Post-merge, ledger-based, the free-text complement of
@@ -10392,6 +10478,9 @@ class ExtractionEngine:
             results, field_defs, trace=(self._t if self._trace else None),
             credit_expected=credit_expected,
             **({'corroboration': _corrob_pre} if _corrob_pre is not None else {}))
+        # KEYWORD-SUPERSTRING NAME NOTE (2026-09-08, DARK) — after Stage 4 so the label-guard's note survives;
+        # a zero-OCR review belt for the clipped-name class (see the method's docstring). OFF ⇒ returns at once.
+        self._keyword_superstring_name_note(results, field_defs, ocr_text)
 
         # ── Field cleanup rules (operator-taught, Review right-click toolkit) ──
         # Strip a learned leaked heading/column from a field's WINNER value

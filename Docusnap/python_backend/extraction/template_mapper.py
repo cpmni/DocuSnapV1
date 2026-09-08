@@ -720,6 +720,71 @@ _EDGE_CUT_RELOCATE_ON = os.environ.get('TEMPLATE_EDGE_CUT_RELOCATE', '0') != '0'
 _NAME_EDGE_GROW_ON = os.environ.get('TEMPLATE_NAME_EDGE_GROW', '0') != '0'
 _NAME_GROW_NOTE = ("The taught box's edge cuts through the last word of this name — the fuller "
                    "reading from the page is shown; please verify it.")
+# NAME-GROW BELTS (2026-09-08, owner exhibit doc 14 'Willowbrook Nurserie:' — 007 pixel replay + gary → Oracle
+# SEND BACK → redirected; spec docs/designs/KEYWORD_SUPERSTRING_GROW_2026-09-08.md §6). Both DARK, seeded OFF
+# by mig 140 and listed in database/dark_switches.js TEST_SWITCH_KEYS.
+#   • TEMPLATE_NAME_GROW_BAND_PICK — the v1 leg found the 17 px right cut on the exhibit but its GROWN re-read
+#     went through the free-text preview fast path, which adds 0.5·h headroom and picks the best-CONFIDENCE
+#     segment: on an over-tall taught box (0.0157 on a 0.0097 line — the teach snap pads 0.15·h/side) that is
+#     the ADDRESS line below ('Greenacres. Mill Lane' @95.7), the comparator sees 3≠2 tokens and declines
+#     silently. This leg re-reads the GROWN box with the R8 discipline (vertical pad 0.5·h, hpad 0, a 20 px
+#     white border, PSM 6 image_to_data) and commits ONLY the line whose band overlaps the TAUGHT box band
+#     (reslice.pick_in_band_line); 0 or ≥2 in-band lines → decline. The TIGHT read is untouched (Oracle C2:
+#     R8's hidden horizontal pad would otherwise be a grow with none of the leg's protections).
+#   • TEMPLATE_NAME_CUT_DEFER_CAP — v1's contract "declines silent; the wordness flag + picker are the net" rests
+#     on a net that is STRUCTURAL: a name-shaped remnant ('Aldermoor Engineerir') passes it, and on the owner's
+#     fresh install two clipped customer names AUTO-FILED (docs 19/21 — customer_name is non-role, only a note
+#     blocks). With this ON a geometrically PROVEN right cut whose heal fails takes the deferred fail-toward-
+#     review floor like the code leg ({'defer_cap': True} → the final abs commit wears ≤70 + _EDGE_CUT_NOTE +
+#     '_edgecut'); nothing ever swaps. OFF ⇒ byte-identical (silent None).
+# Census (measurement only, NAMEGROW_CENSUS_DIR): 'entered' at guard entry, 'nolines', 'nocut', 'band_abstain_<n>',
+# 'declined' now carries `new` — "no census line" was never evidence before (two silent exits preceded any line).
+_NAME_GROW_BAND_PICK_ON = os.environ.get('TEMPLATE_NAME_GROW_BAND_PICK', '0') != '0'
+_NAME_CUT_DEFER_CAP_ON = os.environ.get('TEMPLATE_NAME_CUT_DEFER_CAP', '0') != '0'
+_NAME_BAND_READ_HOOK = None      # tests inject: (page, box, val_type) -> (text|None, conf|None, n_in_band)
+
+
+def _name_band_read(page, box, val_type, meta=None):
+    """In-band re-read of a GROWN name box (the BAND_PICK leg). Returns (cleaned_text|None, n_in_band).
+    R8 discipline from reslice: crop grown by 0.5·h vertically ONLY (hpad 0 — the grow already set the
+    width), a 20 px white quiet zone, one PSM-6 image_to_data pass; `lines` are per-visual-line dicts in
+    the prepped frame; the ONE line whose band overlaps the original box band ≥50 % of its height is the
+    read, else (0 or ≥2) None. Never raises; a failure reads as n_in_band=0 (decline)."""
+    if _NAME_BAND_READ_HOOK is not None:
+        try:
+            t, c, n = _NAME_BAND_READ_HOOK(page, box, val_type)
+            if meta is not None and c is not None:
+                meta['conf'] = c
+            return (_clean_value(t, val_type) if t else None), int(n or 0)
+        except Exception:
+            return None, 0
+    try:
+        from extraction import reslice as _rs
+        from extraction.anchor import _read_lines_full as _rl
+        crop, band = _rs._crop_padded(page, _clamp_box(box), 0.5, 0.0)
+        if crop is None:
+            return None, 0
+        _text, _mc, _mn, lines = _rl(_rs.prep(crop), 6)
+        b0, b1 = band[0] + _rs.BORDER_PX, band[1] + _rs.BORDER_PX
+        q = []
+        for ln in (lines or []):
+            top, height = ln.get("top"), ln.get("height")
+            if top is None or height is None:
+                continue
+            y0, y1 = int(top), int(top) + int(height)
+            if max(0, min(y1, b1) - max(y0, b0)) >= 0.5 * max(1, y1 - y0):
+                q.append(ln)
+        if len(q) != 1:
+            return None, len(q)
+        line = q[0]
+        if meta is not None:
+            try:
+                meta['conf'] = float(line.get("mean_conf") or 0.0)
+            except (TypeError, ValueError):
+                pass
+        return (_clean_value(str(line.get("text") or ""), val_type) or None), 1
+    except Exception:
+        return None, 0
 
 # PAD-WINDOW DATE READ (Oracle SIGN-OFF-W/COND 2026-08-06 — the DATE-CROP read ROOT fix; SUPERSEDES
 # the raw-frame-election premise in docs/designs/DATE_CROP_DESKEW_READ_2026-08-06.md). A taught DATE
@@ -3270,7 +3335,37 @@ def _snap_union_witness(lines, grown, gx1, gx2, gv, target_box, edges):
     return True
 
 
-def _name_grow_census(field_key, edges, outcome, old=None, new=None):
+def _edge_neighbourhood(lines, read_box, span=0.08):
+    """MEASUREMENT ONLY (Oracle C1, 2026-09-08): the locate words on the read box's row band within `span`
+    of its RIGHT edge — what _find_edge_cut_words saw — so a 'nocut' census row explains itself
+    (a frame/DPI/cache mismatch vs a pixel replay is visible in one line). Never raises."""
+    out = []
+    try:
+        sx1 = float(read_box["x_norm"]); sy1 = float(read_box["y_norm"])
+        sw = float(read_box["w_norm"]);  sh = float(read_box["h_norm"])
+        sx2 = sx1 + sw; scy = sy1 + sh / 2.0
+        for ln in (lines or []):
+            for wd in (ln.get("words") or ()):
+                try:
+                    wx1 = float(wd["x_norm"]); wy1 = float(wd["y_norm"])
+                    ww = float(wd["w_norm"]);  wh = float(wd["h_norm"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                wcy = wy1 + wh / 2.0
+                if abs(wcy - scy) > max(wh, sh) * 1.5:
+                    continue
+                if wx1 + ww < sx2 - span or wx1 > sx2 + span:
+                    continue
+                out.append({"t": str(wd.get("text") or "")[:24], "x1": round(wx1, 4), "x2": round(wx1 + ww, 4),
+                            "cy": round(wcy, 4), "h": round(wh, 4),
+                            "rowband": abs(wcy - scy) <= max(wh, sh) * 0.6})
+        out.sort(key=lambda w: w["x1"])
+        return {"box": {"x1": round(sx1, 4), "x2": round(sx2, 4), "cy": round(scy, 4), "h": round(sh, 4)}, "near": out[:8]}
+    except Exception:
+        return {"box": None, "near": out[:8]}
+
+
+def _name_grow_census(field_key, edges, outcome, old=None, new=None, extra=None):
     """MEASUREMENT ONLY (Oracle revival condition — fire-rate census before any flip): the name
     leg's declines are SILENT by design, so a flat corpus lane cannot distinguish 'fires and
     declines everywhere' from 'never fires'; only counting can. One JSON line per fire to
@@ -3281,9 +3376,12 @@ def _name_grow_census(field_key, edges, outcome, old=None, new=None):
         return
     try:
         import json as _json
+        os.makedirs(d, exist_ok=True)          # Oracle C1 (2026-09-08): an absent dir swallowed every line
         with open(os.path.join(d, f"ng_{os.getpid()}.jsonl"), "a", encoding="utf-8") as fh:
-            fh.write(_json.dumps({"field": field_key, "edges": edges, "outcome": outcome,
-                                  "old": old, "new": new}) + "\n")
+            row = {"field": field_key, "edges": edges, "outcome": outcome, "old": old, "new": new}
+            if isinstance(extra, dict):
+                row.update(extra)
+            fh.write(_json.dumps(row) + "\n")
     except Exception:
         pass
 
@@ -3316,21 +3414,31 @@ def _name_grow_comparator(old, new, cut):
     The witness: the absorbed cut word's own LOCATE-tier text must EQUAL the grown last token —
     an independent OCR tier testifying the full word, with NO short-token skip ('Ltd' is exactly
     the token that must be tested; skipping short cores is the NAME_UNCLIP-C3 defect)."""
+    ln = _name_grow_shape_ok(old, new)
+    if not ln:
+        return False
+    return _name_norm_token((cut or {}).get("text")) == ln
+
+
+def _name_grow_shape_ok(old, new):
+    """The comparator's SHAPE half (shared with the engine's zero-OCR keyword-superstring note, 2026-09-08):
+    same token count, every leading token identical, the last token a completion-or-repair of the rigid
+    one (one untrusted cut glyph), no digits. Returns the normalised grown last token, else None."""
     ot = [t for t in str(old or '').split() if t]
     nt = [t for t in str(new or '').split() if t]
     if not ot or not nt or len(nt) != len(ot):
-        return False
+        return None
     for a, b in zip(ot[:-1], nt[:-1]):
         if _name_norm_token(a) != _name_norm_token(b):
-            return False
+            return None
     lo, ln = _name_norm_token(ot[-1]), _name_norm_token(nt[-1])
     if not lo or not ln or len(ln) < len(lo):
-        return False
+        return None
     if any(ch.isdigit() for ch in ln):
-        return False
+        return None
     if not (ln.startswith(lo) or (len(lo) > 1 and ln.startswith(lo[:-1]))):
-        return False
-    return _name_norm_token((cut or {}).get("text")) == ln
+        return None
+    return ln
 
 
 def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_type, field_key,
@@ -3363,7 +3471,11 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
             else:
                 return None
     lines = _page_words_cached(page, ocr_lines_fn, line_cache)
+    if name_grow:
+        _name_grow_census(field_key, '', 'entered', old=abs_text)      # positive control (Oracle C1)
     if not lines:
+        if name_grow:
+            _name_grow_census(field_key, '', 'nolines', old=abs_text)
         return None                                   # no geometry -> byte-identical (fail-inert)
     read_box = _expand_box(target_box, expansion) if (abs_expanded and expansion > 0) else target_box
     left_cut, right_cut = _find_edge_cut_words(lines, read_box)
@@ -3372,6 +3484,9 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
         _name_grow_census(field_key, 'R' if right_cut is not None else '', 'date_left_nofire', old=abs_text)
         return None                                   # right-only / no cut: H3 stands byte-identically
     if left_cut is None and right_cut is None:
+        if name_grow:
+            _name_grow_census(field_key, '', 'nocut', old=abs_text,
+                              extra=(_edge_neighbourhood(lines, read_box) if os.environ.get("NAMEGROW_CENSUS_DIR") else None))
         return None
     if name_grow and (right_cut is None or left_cut is not None):
         # NAME leg (v1): RIGHT-edge cut only — a left grow risks absorbing a label tail or a
@@ -3382,7 +3497,7 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
         _name_grow_census(field_key, _ne, 'declined_edges', old=abs_text)
         return None
 
-    def _floor():
+    def _floor(new=None):
         """Fail-toward-review, but NEVER pre-empt a later heal: the caller keeps its full
         flow (inline reconcile — the independent witness that heals exactly this class —
         then the commit), and only the FINAL abs commit wears the cap + note. Returning a
@@ -3393,7 +3508,13 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
         + picker remain the net, so arming can only ADD the healed-flagged outcome."""
         if name_grow:
             _EDGE_GUARD_FIRES.append((field_key, _edges, 'name_declined'))
-            _name_grow_census(field_key, _edges, 'declined', old=abs_text)
+            _name_grow_census(field_key, _edges, 'declined', old=abs_text, new=new)
+            if _NAME_CUT_DEFER_CAP_ON and abs_text:
+                # TEMPLATE_NAME_CUT_DEFER_CAP (see the flag block): a PROVEN cut whose heal failed may not
+                # commit silently at its natural confidence any more — the deferred cap + note, like codes.
+                _EDGE_GUARD_FIRES.append((field_key, _edges, 'name_capped'))
+                _name_grow_census(field_key, _edges, 'capped', old=abs_text, new=new)
+                return {"defer_cap": True}
             return None
         _EDGE_GUARD_FIRES.append((field_key, _edges, 'capped'))
         return {"defer_cap": True} if abs_text else None
@@ -3420,7 +3541,20 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
               (grown["x_norm"], grown["y_norm"], grown["w_norm"], grown["h_norm"]), c, "target", "edge grow"))
              if slice_capture else None)
     _gmeta = {}
-    raw = _crop_and_ocr(page, grown, val_type, ocr_text_fn, capture=_gcap, meta=_gmeta)
+    if name_grow and _NAME_GROW_BAND_PICK_ON:
+        # TEMPLATE_NAME_GROW_BAND_PICK (flag block): the grown re-read commits only the in-band line.
+        if _gcap:
+            try:
+                _gcap(_crop(page, _clamp_box(grown)))
+            except Exception:
+                pass
+        raw, _nb = _name_band_read(page, grown, val_type, meta=_gmeta)
+        if _nb != 1:
+            _EDGE_GUARD_FIRES.append((field_key, _edges, 'name_band_abstain'))
+            _name_grow_census(field_key, _edges, 'band_abstain_%d' % int(_nb), old=abs_text)
+            return _floor()
+    else:
+        raw = _crop_and_ocr(page, grown, val_type, ocr_text_fn, capture=_gcap, meta=_gmeta)
     gv, g_salv, _ = _gate_value(raw, val_type, field_key, validation_patterns,
                                 format_lookup, shape_mode='ignore', ocr_conf=_gmeta.get('conf'))
     if not gv or g_salv:
@@ -3472,7 +3606,7 @@ def _abs_edge_guard(page, target_box, abs_expanded, expansion, abs_text, val_typ
             _name_grow_census(field_key, _edges, 'noop', old=abs_text)
             return None
         if not _name_grow_comparator(abs_text, gv, right_cut):
-            return _floor()
+            return _floor(new=gv)
     elif abs_text:
         if val_type == 'currency':
             # Money is right-aligned, so a cut takes LEADING digits: the rigid read must be a strict

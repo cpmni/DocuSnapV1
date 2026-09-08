@@ -775,6 +775,12 @@ function _reconcileEnv(db) {
     //    (<=70 + note) — never a clean heal, declines silent. INERT unless template_abs_edge_guard
     //    is also on (nested like the currency leg).
     if (learning.getSetting(db, 'template_name_edge_grow', 'false') === 'true') env.TEMPLATE_NAME_EDGE_GROW = '1';
+    //  • NAME-GROW BELTS (2026-09-08, DARK, mig 140 seeds OFF, TEST_SWITCH_KEYS): the in-band row pick on the
+    //    grown re-read, the proven-cut defer-cap for names, and the zero-OCR keyword-superstring note — the
+    //    clipped-name class (docs/designs/KEYWORD_SUPERSTRING_GROW_2026-09-08.md §6). Each rides its own key.
+    if (learning.getSetting(db, 'template_name_grow_band_pick', 'false') === 'true') env.TEMPLATE_NAME_GROW_BAND_PICK = '1';
+    if (learning.getSetting(db, 'template_name_cut_defer_cap', 'false') === 'true') env.TEMPLATE_NAME_CUT_DEFER_CAP = '1';
+    if (learning.getSetting(db, 'keyword_superstring_name_note', 'false') === 'true') env.KEYWORD_SUPERSTRING_NAME_NOTE = '1';
     // ── THE TEACH-SIDE PAIR (2026-08-09 morning arc; bridged 2026-08-09 evening) ──
     // Both were measured on 140 unseen siblings of 10 taught documents and then left env-only, so
     // neither could be reached from the app at all: `npm start` is a plain `electron .` with no env
