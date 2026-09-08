@@ -25,8 +25,12 @@ const TEST_SWITCH_KEYS = Object.freeze([
   'format_variance_relax',
   'template_fragment_containment_yield',
   'template_locate_role_qualifier',
+  // ⚑ FLIP GATE (no seed migration — mig 106 was its only writer): the corroborated straighten auto-file's census
+  //   was MET 2026-09-01 on the owner's DB, but DO NOT FLIP without a COLD census (M=7 there was poisoned GT) — owner's call.
   'deskew_corrob_autofile',
   'quick_reprocess_enabled',
+  // ⚑ FLIP GATE (no seed migration — mig 106 was its only writer): the owner-run watch-separation SOAK,
+  //   docs/designs/WATCH_SEPARATE_SOAK_GATE_2026-09-02.md + stress_test/watch_separate_soak.js → PASS.
   'watch_separate_enabled',
   // migs 108-118 (2026-09-03/04) — the reference-flag family
   'format_variance_relax_ref',

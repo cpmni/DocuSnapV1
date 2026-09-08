@@ -47,7 +47,10 @@ The release orchestrator DELETES it from the env. A customer box can never carry
 - Seam closed: a dev can no longer ship a force-ON of a listed key by any SQL idiom, in any non-test file, under any label,
   without `TEST_BUILD=1` in the shell.
 
-### 1.2 `TEST_SWITCH_KEYS` + mig 137 one-shot reset + delete the 13 blocks + 5 pins — S–M (~2.5 h)
+### 1.2 `TEST_SWITCH_KEYS` + mig 137 one-shot reset + delete the 13 blocks + 5 pins — S–M (~2.5 h) — DONE
+Built as designed (1.1 + 1.2 landed 2026-09-08): keys module `database/test_switch_keys.js` (24), gate green on the real repo,
+mig 137 in, the 13 blocks deleted (221 lines), 21 ⚑ FLIP GATE lines carried onto the seed-OFF migs (the two seedless keys carry
+theirs in the keys module), pins 123/124/134 deleted, 125/127 trimmed + renamed, `test_migration137_test_switch_reset.js` added.
 - Export `TEST_SWITCH_KEYS` (**24** = the 26 minus `money_sign_capture` [F2] minus `ocr_parallel_import_enabled` [C2])
   beside `ALL_ON_DEFAULTS_93`. `ocr_parallel_import_enabled` leaves the list because mig 139 (3.3) becomes its SOLE writer —
   otherwise 1.4's disarm on the first release launch would silently un-promote it (the S2 seam, now a bug avoided).
