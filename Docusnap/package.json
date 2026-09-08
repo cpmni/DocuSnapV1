@@ -6,11 +6,11 @@
   "main": "src/main.js",
   "scripts": {
     "start": "node scripts/dev-start.js",
-    "build": "node scripts/check-vendor-python.js && node scripts/check-licenses.js && node scripts/compile-python-bytecode.js && node scripts/test_no_shipped_py_source.js && node scripts/build-electron.js",
+    "build": "node scripts/check-release-migrations.js && node scripts/check-vendor-python.js && node scripts/check-licenses.js && node scripts/compile-python-bytecode.js && node scripts/test_no_shipped_py_source.js && node scripts/build-electron.js",
     "check:licenses": "node scripts/check-licenses.js",
     "check:vendor": "node scripts/check-vendor-python.js",
     "check:help": "node scripts/check-help-coverage.js",
-    "build:store": "node scripts/check-vendor-python.js && node scripts/check-licenses.js && node scripts/compile-python-bytecode.js && node scripts/test_no_shipped_py_source.js && node scripts/build-electron.js appx",
+    "build:store": "node scripts/check-release-migrations.js && node scripts/check-vendor-python.js && node scripts/check-licenses.js && node scripts/compile-python-bytecode.js && node scripts/test_no_shipped_py_source.js && node scripts/build-electron.js appx",
     "postinstall": "electron-builder install-app-deps"
   },
   "build": {

@@ -735,6 +735,7 @@ function runJsMigrations(db, applied) {
   // shows when `first_run_completed` !== 'true'; stamp the flag on any DB that is
   // already configured (has an output_folder), so ONLY a genuinely clean install
   // sees the wizard. A fresh DB has no output_folder -> flag stays unset -> wizard.
+  // @DEFAULT_FLIP 24
   if (!applied.has(24)) {
     try {
       if (tableExists(db, 'settings')) {
@@ -1742,6 +1743,7 @@ function runJsMigrations(db, applied) {
   // — WRONG LAYER, and it silently disables teach_angle_compose_scan). INSERT OR IGNORE: an existing install
   // (incl. the owner's, already all-on) and any hand-disabled switch are untouched — this only fills the gaps
   // on a clean DB. The whole set stays reversible per-switch in Settings → Processing (+ the SFDEV pane).
+  // @DEFAULT_FLIP 70
   if (!applied.has(70)) {
     try {
       const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
@@ -1909,6 +1911,7 @@ function runJsMigrations(db, applied) {
   // has a deliberate choice for. NOT included: letterhead_prefill (built 2026-08-21, DEFAULT OFF —
   // it is SIGN-OFF-WITH-CONDITIONS and owes its verification gate before any default-ON flip); the
   // mig-75 starvation switch and every SENT-BACK / gate-owing arm stay OFF.
+  // @DEFAULT_FLIP 76
   if (!applied.has(76)) {
     try {
       const up76 = db.prepare("INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value='true'");
@@ -1932,6 +1935,7 @@ function runJsMigrations(db, applied) {
   // OFF==today, ON fills @69 + note with no button, the reader abstains on two companies (no-fill-
   // ambiguous), and a single-company/recipient page is FILLED-BUT-HELD (the known misfile class fails
   // toward review). UPSERT-forced like the mig-76 set; requires letterhead_issuer ON (mig 70).
+  // @DEFAULT_FLIP 77
   if (!applied.has(77)) {
     try {
       db.prepare("INSERT INTO settings (key, value) VALUES ('letterhead_prefill', 'true') ON CONFLICT(key) DO UPDATE SET value='true'").run();
@@ -1955,6 +1959,7 @@ function runJsMigrations(db, applied) {
   //   G2 realdoc_regression (RR_APP_ENV=1, both flags): 0 regressions, M=0, zero per-field accuracy
   //     drop, +3 more CORRECT auto-files through the real Python pipeline.
   // UPSERT-forced past the mig-73 OFF seed. Go-forward-only in effect (persist mints at confirm).
+  // @DEFAULT_FLIP 78
   if (!applied.has(78)) {
     try {
       const up78 = db.prepare("INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value='true'");
@@ -2010,6 +2015,7 @@ function runJsMigrations(db, applied) {
   // the toggle (Settings → Processing, dev-gated) or set the row to 'false'; mig 79 seeded the rows.
   // The Oracle asked for the quiet lane to be vetted apart from the auto-accept; the owner accepted
   // the combined rounds (docs/oracle_log.md 2026-08-21/22) — recorded, not hidden.
+  // @DEFAULT_FLIP 80
   if (!applied.has(80)) {
     try {
       const up80 = db.prepare("INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value='true'");
@@ -2034,6 +2040,7 @@ function runJsMigrations(db, applied) {
   //   net_misread_total_flag        — PAIRED with vat_reg_not_amount on one Settings toggle (already ON
   //                                   since mig 70); seeding it keeps the pair together on a fresh DB
   // UPSERT-forced (the mig-76 stance). Revert = the toggle or the settings row.
+  // @DEFAULT_FLIP 81
   if (!applied.has(81)) {
     try {
       const up81 = db.prepare("INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value='true'");
@@ -2061,6 +2068,7 @@ function runJsMigrations(db, applied) {
   //   quiet_reread_on_ready             — the confirm that makes a sender READY re-reads its siblings
   // UPSERT-forced (the mig-76 stance); gates: P1 census 0 correct lost / 0 new wrong, realdoc OFF==ON,
   // fired-path on the owner's parked run (the 9 held docs → template_fixed@95, overall 100).
+  // @DEFAULT_FLIP 82
   if (!applied.has(82)) {
     try {
       const up82 = db.prepare("INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value='true'");
@@ -2088,6 +2096,7 @@ function runJsMigrations(db, applied) {
   //     unlinks a drained original (reviewService: one gate, covers human / sweep / offer / v1);
   //     an un-drained one is drained now instead. OFF = today's byte-identical removal. Revert =
   //     the Files & filing toggle (disk cost stated there).
+  // @DEFAULT_FLIP 83
   if (!applied.has(83)) {
     if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'drained_at')) {
       try { db.exec('ALTER TABLE documents ADD COLUMN drained_at TEXT'); }
@@ -2281,6 +2290,7 @@ function runJsMigrations(db, applied) {
   }
 
   // ── Migration 93: complete the all-on-except-straighten new-install defaults (see ALL_ON_DEFAULTS_93) ──
+  // @DEFAULT_FLIP 93
   if (!applied.has(93)) {
     try {
       const ins = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
@@ -2358,6 +2368,7 @@ function runJsMigrations(db, applied) {
   //    mig-70/80/81 arc promotions, so the 95-97 'false' seeds and any pre-rename copy heal too.
   //    template_format_fail_yield_strict_money is DELIBERATELY absent: Oracle C10/C11 — it pre-empts
   //    the re-slice sweep's release path and is NEVER flipped in this arc. ──
+  // @DEFAULT_FLIP 98
   if (!applied.has(98)) {
     try {
       const up = db.prepare(`INSERT INTO settings (key, value) VALUES (?, 'true')
@@ -2448,6 +2459,7 @@ function runJsMigrations(db, applied) {
   //    mig-96→98 seed-OFF-then-force-ON pattern) so existing installs + fresh installs both get them.
   //    They stay SFDEV-gated (DEV_SWITCH_IDS) — customer-invisible defaults with a dev escape hatch, not
   //    new customer switches. ──
+  // @DEFAULT_FLIP 103
   if (!applied.has(103)) {
     try {
       const up = db.prepare(`INSERT INTO settings (key, value) VALUES (?, 'true')
@@ -2503,6 +2515,7 @@ function runJsMigrations(db, applied) {
   //    EXCLUDES the three NEVER-flip seams (template_format_fail_yield_strict_money — pre-empts the
   //    sweep release path; trust_company_key_own_scope — holds 45 docs; deskew_on_import — WRONG
   //    LAYER, toggle removed this session) and the corpus/Oracle-gated riskier switches. ──
+  // @TEST_BUILD_MIG 106 keys=format_variance_relax,template_fragment_containment_yield,template_locate_role_qualifier,deskew_corrob_autofile,quick_reprocess_enabled,watch_separate_enabled
   if (!applied.has(106)) {
     try {
       const up = db.prepare(`INSERT INTO settings (key, value) VALUES (?, 'true')
@@ -2546,6 +2559,7 @@ function runJsMigrations(db, applied) {
   //    filed — but this arc removes a ref-shape veto path, so it is a SEPARATE migration from mig 106
   //    and its own census is still OWED. ⚠ TEST-ONLY / REVERSIBLE: revert (or gate) before ANY customer
   //    build and run the census (value diffs 0 + no held->auto-file on a NON-confirmed shape-mismatch). ──
+  // @TEST_BUILD_MIG 108 keys=format_variance_relax_ref
   if (!applied.has(108)) {
     try {
       db.prepare(`INSERT INTO settings (key, value) VALUES ('format_variance_relax_ref', 'true')
@@ -2578,6 +2592,7 @@ function runJsMigrations(db, applied) {
   //    never-confirmed read or a credible competing read is still HELD, never auto-filed. ⚠ TEST-ONLY /
   //    REVERSIBLE: revert (or gate) before ANY customer build and run the WARM-DB census (each clean-
   //    commit equals that document's OWN prior-confirmed value; realdoc M=0 + zero accuracy drop). ──
+  // @TEST_BUILD_MIG 110 keys=format_variance_relax_ref_inline
   if (!applied.has(110)) {
     try {
       db.prepare(`INSERT INTO settings (key, value) VALUES ('format_variance_relax_ref_inline', 'true')
@@ -2611,6 +2626,7 @@ function runJsMigrations(db, applied) {
   //    unchanged), so this is the safest of the three test force-ONs — but ⚠ TEST-ONLY / REVERSIBLE: revert
   //    (or gate) before ANY customer build and run its gate (RED-first mirror pin + realdoc M=0 + WARM-DB
   //    census against INDEPENDENT GT). Requires filing_value_sanity_flags ON to have any effect. ──
+  // @TEST_BUILD_MIG 112 keys=filing_sanity_ref_corrob_soften
   if (!applied.has(112)) {
     try {
       db.prepare(`INSERT INTO settings (key, value) VALUES ('filing_sanity_ref_corrob_soften', 'true')
@@ -2643,6 +2659,7 @@ function runJsMigrations(db, applied) {
   //    silently files. ⚠ TEST-ONLY / REVERSIBLE: revert (or gate) before ANY customer build; and the leg-a
   //    / re-slice / auto-file relaxation needs its OWN constructed-adversarial census first. Requires
   //    format_variance_relax ON (this is the high-variance ref branch). ──
+  // @TEST_BUILD_MIG 114 keys=resolve_ref_near_miss
   if (!applied.has(114)) {
     try {
       db.prepare(`INSERT INTO settings (key, value) VALUES ('resolve_ref_near_miss', 'true')
@@ -2674,6 +2691,7 @@ function runJsMigrations(db, applied) {
   //    consensus on a disagreeing reference. Review-bound (note + <=70 cap), never silently files. Requires
   //    format_variance_relax ON (high-variance ref branch). ⚠ TEST-ONLY / REVERSIBLE: revert (or gate)
   //    before ANY customer build; auto-file relaxation needs its own constructed-adversarial census. ──
+  // @TEST_BUILD_MIG 116 keys=resolve_ref_positional
   if (!applied.has(116)) {
     try {
       db.prepare(`INSERT INTO settings (key, value) VALUES ('resolve_ref_positional', 'true')
@@ -2704,6 +2722,7 @@ function runJsMigrations(db, applied) {
   //    Requires filing_value_sanity_flags ON. ⚠ TEST-ONLY / REVERSIBLE: revert (or gate) before ANY
   //    customer build; run its WARM-DB census (softened value == the on-page-labelled value, 0 new
   //    auto-files) + realdoc M=0. ──
+  // @TEST_BUILD_MIG 118 keys=filing_sanity_ref_history_soften
   if (!applied.has(118)) {
     try {
       db.prepare(`INSERT INTO settings (key, value) VALUES ('filing_sanity_ref_history_soften', 'true')
@@ -2789,6 +2808,7 @@ function runJsMigrations(db, applied) {
   //    re-teach notes / re-detect census 20 Ironclad -> Statement, 521 unchanged) and money_sign_capture (mig 72;
   //    both mints now re-attach the minus — 799c212). ⚠ TEST-ONLY / REVERSIBLE: revert (or gate) before ANY
   //    customer build, with migs 108/110/112/114/116/118. Runs AFTER mig 122 (seed OFF) by number. ──
+  // @TEST_BUILD_MIG 123 keys=anchor_bare_label_fuzzy,anchor_labelless_currency_refuse,type_uninstalled_heading_fold,money_sign_capture
   if (!applied.has(123)) {
     try {
       for (const k of ['anchor_bare_label_fuzzy', 'anchor_labelless_currency_refuse', 'type_uninstalled_heading_fold', 'money_sign_capture']) {
@@ -2806,6 +2826,7 @@ function runJsMigrations(db, applied) {
   //    resolve_ref_positional (mig 121, SUGGESTIONS, review-bound). Runs AFTER 121 by number, so the relocated
   //    resolvers end ON. ⚠ TEST-ONLY / REVERSIBLE: revert (or gate) before ANY customer build, with
   //    108/110/112/114/116/118/123; their flip gates (Oracle C9 / G1-G3) are still owed. ──
+  // @TEST_BUILD_MIG 124 keys=confusion_precedence,format_class_join,resolve_ref_near_miss,resolve_ref_positional
   if (!applied.has(124)) {
     try {
       for (const k of ['confusion_precedence', 'format_class_join', 'resolve_ref_near_miss', 'resolve_ref_positional']) {
@@ -2833,6 +2854,7 @@ function runJsMigrations(db, applied) {
   //    turn it on in the build"; the mig-123/124 pattern). ⚠ TEST-ONLY / REVERSIBLE: revert with
   //    108/110/112/114/116/118/123/124 before ANY customer build (Oracle C8 asked for NO twin — the owner's
   //    explicit build order overrides for the VM test only). ──
+  // @TEST_BUILD_MIG 126 keys=buyer_issued_convention_one_confirm
   if (!applied.has(126)) {
     try {
       db.prepare(`INSERT INTO settings (key, value) VALUES ('buyer_issued_convention_one_confirm', 'true')
@@ -2858,6 +2880,7 @@ function runJsMigrations(db, applied) {
   // ── migration 128: TEST-BUILD force-ON of ocr_parallel_import_enabled (owner runs every switch ON; the
   //    mig-123/124/126 pattern). ⚠ TEST-ONLY / REVERSIBLE: revert with 108/110/112/114/116/118/123/124/126
   //    before ANY customer build. ──
+  // @TEST_BUILD_MIG 128 keys=ocr_parallel_import_enabled
   if (!applied.has(128)) {
     try {
       db.prepare(`INSERT INTO settings (key, value) VALUES ('ocr_parallel_import_enabled', 'true')
@@ -2939,6 +2962,7 @@ function runJsMigrations(db, applied) {
   //    startup backfill has healed every template's angle; 130: the C17 census on a warm copy; 131/132/133: their
   //    OFF→ON arms — 131 read byte-identical + a clean fire census; 133 not yet Oracle-vetted). Revert with
   //    108/110/112/114/116/118/123/124/126/128 before ANY customer build. ──
+  // @TEST_BUILD_MIG 134 keys=teach_angle_compose_null_abstain,reread_hold_corrob_release,template_date_left_clip_grow,template_pad_date_containment_flag,template_clip_commit_left_slack
   if (!applied.has(134)) {
     try {
       for (const k of ['teach_angle_compose_null_abstain', 'reread_hold_corrob_release', 'template_date_left_clip_grow',
@@ -2968,6 +2992,7 @@ function runJsMigrations(db, applied) {
   // ── migration 136: TEST-BUILD force-ON of inline_disagree_corrob_soften (owner ships everything-ON test
   //    builds). ⚠ TEST-ONLY / REVERSIBLE — add to the revert list before a customer build:
   //    108/110/112/114/116/118/123/124/126/128/134 → +136. Separate mig (134 already applied → won't re-run).
+  // @TEST_BUILD_MIG 136 keys=inline_disagree_corrob_soften
   if (!applied.has(136)) {
     try {
       db.prepare(`INSERT INTO settings (key, value) VALUES ('inline_disagree_corrob_soften', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
