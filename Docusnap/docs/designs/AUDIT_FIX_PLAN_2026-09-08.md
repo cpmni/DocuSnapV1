@@ -103,10 +103,18 @@ Pin `scripts/test_csp_directives.js` scans every meta CSP under `src/windows` + 
 The one `<form>` (`main/index.html:852`) submits via JS `preventDefault` (`main/renderer.js:538`) → safe. Header CSP dropped on
 VALUE grounds (F8): same asar, same trust boundary; not worth an `app://` scheme on ship eve.
 
-### 2.3 Client `perMachine:true` — S (P0-2 interim)
+### 2.3 Client `perMachine:true` — S (P0-2 interim) — DONE, with a seam found
 `client/package.json:32`. Program Files = admin-write; cost = a UAC prompt at install (matches the core). Boot-time hash-checks
 are WRONG LAYER unsigned (the checker lives in the same writable tree). Core `.node` under Program Files = same trust boundary
 as the exe → nothing until signing (business-gated, §7).
+**Seam found at build time (pre-existing CORE bug, fixed in the same slice):** electron-builder's uninstaller runs a per-machine
+uninstall under `SetShellVarContext all` (`multiUser.nsh` `setInstallModePerAllUsers`) and inserts `customUnInstall` (template
+`uninstaller.nsh:157`) BEFORE its own `SetShellVarContext current` flip (`:234`), so `$APPDATA`/`$LOCALAPPDATA` in our
+`customUnInstall` resolved to `C:\ProgramData` — the core's "Also remove all ScanFinder data" YES path wiped folders that do not
+exist. That is the owner report `baa25dd` chased as locked files. Fix = the template's own idiom in BOTH `installer.nsh` files:
+`${if} $installMode == "all"` → `SetShellVarContext current` before the first wipe, `all` restored after the last. Pin
+`scripts/test_uninstall_shell_context.js` (code lines only; both installers per-machine). **Owner drill owed (§7.9):** uninstall +
+YES on the next build → `%APPDATA%\ScanFinder` gone.
 
 ### 2.4 node-forge `1.3.1` → fixed `1.4.0` + notices — S
 API surface used is stable core (`certService.js:71-176`, `cert-tool/certgen.js:27/68/87`). **ASSUMPTION: a `1.4.0` exists — `npm view node-forge versions` first.**
@@ -238,6 +246,8 @@ versions (today it checks importability only, `REQUIRED` at `:34`); a quarterly 
    `--enable-logging` shows an asar-integrity failure.
 7. **Expect a hold wave after mig 138** (C10): pending docs re-read at 200 raise "Read differently after learning" holds once. Review-bound, not misfiles.
 8. **Store**: replace the Partner Center placeholders; do NOT sign the appx.
+9. **Uninstall drill** (2.3 seam): on the next NSIS build, uninstall the core + answer YES to "remove all data" →
+   `%APPDATA%\ScanFinder` must be gone (it was not, per `baa25dd`); same for the client's saved-settings prompt.
 
 ## 8. Commit order (each its own commit, pinned, revertable) — Oracle-reordered [C5]
 1. 2.1 P1-7 seq · 2. 2.2 CSP appends · 3. 2.3 client perMachine · 4. 2.4 forge bump + notices ·

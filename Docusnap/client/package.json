@@ -29,7 +29,7 @@
     "nsis": {
       "artifactName": "ScanFinder Search Client Setup ${version}-r${env.BUILD_REV}.exe",
       "oneClick": false,
-      "perMachine": false,
+      "perMachine": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
