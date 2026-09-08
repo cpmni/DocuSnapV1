@@ -43,11 +43,18 @@ app.setPath('userData', _resolvedUserData);
 // Not a bypass: nothing is shown and the process exits inside whenReady; the verifier deletes the folder.
 const _smokeBoot = process.argv.includes('--smoke-boot');
 if (_smokeBoot) {
+  // The verifier hands over a fresh temp dir it owns (SCANFINDER_SMOKE_DIR) and reads smoke-identity.json
+  // from it after exit; the pid-named fallback covers a hand run. NEVER fall through to the real userData
+  // (Oracle re-vet 2026-09-08): a smoke against the build machine's live DB would run the RELEASE identity's
+  // disarm on it and still exit 0 — exit 4 = "no throwaway userData", which the verifier refuses.
+  const _smokeDir = process.env.SCANFINDER_SMOKE_DIR || path.join(require('os').tmpdir(), `scanfinder-smoke-${process.pid}`);
   try {
-    const _smokeDir = path.join(require('os').tmpdir(), `scanfinder-smoke-${process.pid}`);
     fs.mkdirSync(_smokeDir, { recursive: true });
     app.setPath('userData', _smokeDir);
-  } catch { /* fall through to the normal userData — the verifier still reads the exit code */ }
+  } catch (e) {
+    try { process.stderr.write('smoke-boot: cannot create a throwaway userData: ' + (e && e.message) + '\n'); } catch {}
+    app.exit(4);
+  }
 }
 // REMOTE-DEBUGGING LOCKOUT (2026-08-09 NIGHT, pre-release audit). Anyone could start the shipped
 // ScanFinder.exe with `--remote-debugging-port=9222` and attach a full DevTools session to the
@@ -1312,7 +1319,12 @@ app.whenReady().then(() => {
       try { logger.log('smoke-boot: whenReady + DB open + migrations OK'); } catch {}
       // The verifier asserts this buildRev equals the packaged package.json's — proof that the bundled
       // build_arming.resolveIdentity() sees the packaged manifest (else a TEST build never arms / a release never disarms).
-      try { console.log('smoke-boot identity ' + JSON.stringify(require('../database/build_arming').resolveIdentity())); } catch {}
+      // Emitted BOTH ways — smoke-identity.json in the throwaway userData (the verifier's primary channel; a GUI-subsystem
+      // exe's stdout is not guaranteed to reach a parent pipe) and the stdout line. The verifier REFUSES a 0-exit smoke
+      // that emitted neither (Oracle re-vet 2026-09-08: a silently-optional identity made the assert vacuous).
+      const _idJson = JSON.stringify(require('../database/build_arming').resolveIdentity());
+      try { fs.writeFileSync(path.join(app.getPath('userData'), 'smoke-identity.json'), _idJson); } catch {}
+      try { console.log('smoke-boot identity ' + _idJson); } catch {}
       app.exit(0);
     }
     catch (e) { try { logger.err('smoke-boot FAILED: ' + (e && e.message)); } catch {} app.exit(3); }

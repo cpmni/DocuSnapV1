@@ -29,6 +29,7 @@ const GOOD = {
   entries: ['/package.json', '/src/main.js', '/src/main.jsc', '/src/preload.js', '/src/windows/main/renderer.js', '/src/windows/shared/theme.css', '/config/keyword_patterns.json'],
   mainJs: "'use strict';\nrequire('bytenode');\nmodule.exports = require('./main.jsc');\n",
   fuses: parseFuseText(FUSE_TEXT), expectedFuses, smokeExit: 0, pkg: { version: '2.0.0', buildRev: '20260908-1500-abc1234' }, testBuild: false,
+  smokeIdentity: { testBuild: false, buildRev: '20260908-1500-abc1234' },
 };
 
 console.log('verify-release-artifact:');
@@ -52,8 +53,24 @@ const fs = require('fs');
 const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
 const iSmokeDir = mainSrc.indexOf('scanfinder-smoke-'), iLock = mainSrc.indexOf('app.requestSingleInstanceLock()'), iExit = mainSrc.search(/if \(_smokeBoot\) \{\s*\r?\n\s*try \{\s*\r?\n?\s*getDb\(\);/);
 check('main.js re-points userData to a scanfinder-smoke-<pid> temp dir BEFORE the single-instance lock', iSmokeDir > 0 && iLock > iSmokeDir);
-check('main.js exits the smoke inside whenReady right after the DB open (getDb + app.exit(0))', iExit > iLock && /app\.exit\(0\)/.test(mainSrc.slice(iExit, iExit + 700)));
-check('the smoke prints the resolved arming identity (build_arming.resolveIdentity) for the verifier', /smoke-boot identity ' \+ JSON\.stringify\(require\('\.\.\/database\/build_arming'\)\.resolveIdentity\(\)\)/.test(mainSrc));
+check('main.js exits the smoke inside whenReady right after the DB open (getDb + app.exit(0))', iExit > iLock && /app\.exit\(0\)/.test(mainSrc.slice(iExit, iExit + 1400)));
+check('the smoke emits the resolved arming identity (build_arming.resolveIdentity) BOTH ways: smoke-identity.json in its userData + the stdout line',
+      /_idJson = JSON\.stringify\(require\('\.\.\/database\/build_arming'\)\.resolveIdentity\(\)\)/.test(mainSrc)
+      && /writeFileSync\(path\.join\(app\.getPath\('userData'\), 'smoke-identity\.json'\), _idJson\)/.test(mainSrc)
+      && /console\.log\('smoke-boot identity ' \+ _idJson\)/.test(mainSrc));
+// Oracle re-vet 2026-09-08: the identity is REQUIRED on a 0-exit smoke (it was silently optional → a vacuous assert),
+// the smoke NEVER falls through to the real userData (exit 4), and the verifier owns the smoke dir it reads back from.
+check('identity: a 0-exit smoke that emitted NO identity is REFUSED (never a vacuous pass)', has(evaluate({ ...GOOD, smokeIdentity: null }), /emitted NO identity/));
+check('identity: a SKIPPED smoke does not demand an identity (loud skip, not a refusal)', !has(evaluate({ ...GOOD, smokeExit: null, smokeSkipped: true, smokeIdentity: null }), /identity/));
+check('boot smoke exit 4 (no throwaway userData) → refused with the specific meaning', has(evaluate({ ...GOOD, smokeExit: 4 }), /no throwaway userData/));
+{ const iCatch = mainSrc.indexOf("app.setPath('userData', _smokeDir)");
+  const smokeBlock = mainSrc.slice(mainSrc.indexOf('const _smokeBoot ='), mainSrc.indexOf('// REMOTE-DEBUGGING LOCKOUT'));
+  check('main.js: a failed throwaway-userData setup exits 4 — the smoke block never falls through to the real userData', iCatch > 0 && /app\.exit\(4\)/.test(mainSrc.slice(iCatch, iCatch + 400)) && smokeBlock.length > 0 && !/fall through to the normal userData/.test(smokeBlock));
+  check('main.js honours the verifier-owned SCANFINDER_SMOKE_DIR before the pid-named fallback', /process\.env\.SCANFINDER_SMOKE_DIR \|\| path\.join\(require\('os'\)\.tmpdir\(\), `scanfinder-smoke-\$\{process\.pid\}`\)/.test(mainSrc)); }
+{ const vSrc = fs.readFileSync(path.join(__dirname, 'verify-release-artifact.js'), 'utf8');
+  check('verifier spawns the smoke with SCANFINDER_SMOKE_DIR = a fresh mkdtemp dir and reads smoke-identity.json back FIRST',
+        /SCANFINDER_SMOKE_DIR: smokeDir/.test(vSrc) && /mkdtempSync\(path\.join\(require\('os'\)\.tmpdir\(\), 'scanfinder-smoke-'\)\)/.test(vSrc)
+        && vSrc.indexOf("'smoke-identity.json'") < vSrc.indexOf("startsWith('smoke-boot identity ')")); }
 // HTML asset belt (eric re-audit 2026-09-08): every shipped .html's relative script/link/img must be an asar entry.
 const { htmlAssetProblems } = require(path.join(__dirname, 'verify-release-artifact.js'));
 const ENTRIES = ['/src/windows/review/index.html', '/src/windows/review/renderer.js', '/src/windows/shared/theme.js', '/src/windows/shared/reviewReadiness.js'];

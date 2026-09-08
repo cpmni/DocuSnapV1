@@ -82,6 +82,9 @@ function evaluate({ entries = [], mainJs = '', fuses = {}, expectedFuses = {}, s
   if (htmlByPath) p.push(...htmlAssetProblems(entries, htmlByPath));
   // The smoke prints the arming identity the packaged bundle resolved; it must see the packaged package.json
   // (buildRev) — a silent resolve failure would leave a TEST build unarmed / a release never disarming.
+  // Oracle re-vet 2026-09-08: the identity is REQUIRED whenever the smoke ran and exited 0 — a lost single-instance
+  // lock (app.quit) or any other silent road exits 0 with no identity, and a skipped assert proves nothing.
+  if (!smokeSkipped && smokeExit === 0 && !smokeIdentity) p.push('identity: the boot smoke exited 0 but emitted NO identity (neither smoke-identity.json in its userData nor the stdout line) — the bundle-sees-package.json assert would be vacuous; refused');
   if (!smokeSkipped && smokeIdentity && pkg && pkg.buildRev && smokeIdentity.buildRev !== pkg.buildRev) {
     p.push(`identity: the running binary resolved buildRev ${JSON.stringify(smokeIdentity.buildRev)} but the packaged package.json says ${JSON.stringify(pkg.buildRev)} — build_arming.resolveIdentity() cannot see the packaged package.json`);
   }
@@ -95,7 +98,7 @@ function evaluate({ entries = [], mainJs = '', fuses = {}, expectedFuses = {}, s
     if (!(name in fuses)) p.push(`fuses: ${name} not reported by electron-fuses read`);
     else if (fuses[name] !== !!want) p.push(`fuses: ${name} is ${fuses[name] ? 'Enabled' : 'Disabled'}, package.json declares ${want}`);
   }
-  if (!smokeSkipped && smokeExit !== 0) p.push(`boot-smoke: --smoke-boot exit ${smokeExit === null ? 'none/timeout' : smokeExit} (the packaged binary did not reach a DB open — bricking class)`);
+  if (!smokeSkipped && smokeExit !== 0) p.push(`boot-smoke: --smoke-boot exit ${smokeExit === null ? 'none/timeout' : smokeExit}${smokeExit === 4 ? ' = no throwaway userData could be created (the smoke refused to touch the real one)' : ' (the packaged binary did not reach a DB open — bricking class)'}`);
   if (!testBuild && (pkg.testBuild === true || pkg.testBuild === 'true')) p.push('identity: the packaged package.json carries testBuild=true but TEST_BUILD is unset — this is a TEST build, not a release');
   if (testBuild && !(pkg.testBuild === true || pkg.testBuild === 'true')) p.push('identity: TEST_BUILD=1 but the packaged package.json lacks testBuild=true (the arming metadata did not bake)');
   return p;
@@ -133,22 +136,30 @@ if (require.main === module) (async () => {
   const expectedFuses = (JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).build || {}).electronFuses || {};
   let fuses = {};
   try { fuses = await readFuses(exe); } catch (e) { console.error(`[verify-release-artifact] fuse read failed: ${e && e.message}`); }
-  let smokeExit = null, smokeIdentity = null; const smokeSkipped = process.env.SKIP_SMOKE === '1';
+  let smokeExit = null, smokeIdentity = null, smokeIdentitySource = null; const smokeSkipped = process.env.SKIP_SMOKE === '1';
   if (!smokeSkipped) {
-    const sr = spawnSync(exe, ['--smoke-boot'], { cwd: unpacked, encoding: 'utf8', timeout: 60000, windowsHide: true });
+    // The verifier OWNS the throwaway userData (SCANFINDER_SMOKE_DIR) so it can read smoke-identity.json back —
+    // the primary channel; the stdout line is the fallback (a GUI-subsystem exe's stdout may not reach this pipe).
+    const smokeDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'scanfinder-smoke-'));
+    const sr = spawnSync(exe, ['--smoke-boot'], { cwd: unpacked, encoding: 'utf8', timeout: 60000, windowsHide: true, env: { ...process.env, SCANFINDER_SMOKE_DIR: smokeDir } });
     smokeExit = sr.error ? null : sr.status;
-    try {
-      const line = String(sr.stdout || '').split(/\r?\n/).find(l => l.startsWith('smoke-boot identity '));
-      if (line) smokeIdentity = JSON.parse(line.slice('smoke-boot identity '.length));
-    } catch { smokeIdentity = null; }
+    try { smokeIdentity = JSON.parse(fs.readFileSync(path.join(smokeDir, 'smoke-identity.json'), 'utf8')); smokeIdentitySource = 'file'; } catch { smokeIdentity = null; }
+    if (!smokeIdentity) {
+      try {
+        const line = String(sr.stdout || '').split(/\r?\n/).find(l => l.startsWith('smoke-boot identity '));
+        if (line) { smokeIdentity = JSON.parse(line.slice('smoke-boot identity '.length)); smokeIdentitySource = 'stdout'; }
+      } catch { smokeIdentity = null; }
+    }
+    try { fs.rmSync(smokeDir, { recursive: true, force: true }); } catch {}
     try { for (const d of fs.readdirSync(require('os').tmpdir())) if (/^scanfinder-smoke-\d+$/.test(d)) fs.rmSync(path.join(require('os').tmpdir(), d), { recursive: true, force: true }); } catch {}
+    console.log(`[verify-release-artifact] boot smoke exit ${smokeExit}; identity ${smokeIdentity ? `via ${smokeIdentitySource}: ${JSON.stringify(smokeIdentity)}` : 'ABSENT'}`);
   } else console.log('[verify-release-artifact] SKIP_SMOKE=1 — the boot smoke was NOT run (say so in the release notes).');
   const testBuild = process.env.TEST_BUILD === '1';
   const problems = evaluate({ entries, mainJs, fuses, expectedFuses, smokeExit, smokeSkipped, pkg, testBuild, htmlByPath, smokeIdentity });
   const rev = pkg.buildRev || 'unknown';
   const installer = fs.existsSync(path.join(ROOT, 'dist')) ? fs.readdirSync(path.join(ROOT, 'dist')).filter(f => /\.(exe|appx)$/i.test(f) && f.includes(rev) && !/\.REFUSED\./.test(f)).map(f => path.join(ROOT, 'dist', f)) : [];
   const manifest = { rev, version: pkg.version, testBuild: !!pkg.testBuild, verifiedAt: new Date().toISOString(),
-    fuses, smoke: smokeSkipped ? 'skipped' : smokeExit, asarEntries: entries.length,
+    fuses, smoke: smokeSkipped ? 'skipped' : smokeExit, smokeIdentity, smokeIdentitySource, asarEntries: entries.length,
     installers: installer.map(f => ({ file: path.basename(f), sha256: sha256(f) })), problems };
   try { fs.writeFileSync(path.join(ROOT, 'dist', `release-manifest-${rev}.json`), JSON.stringify(manifest, null, 2)); } catch {}
   if (problems.length) {
