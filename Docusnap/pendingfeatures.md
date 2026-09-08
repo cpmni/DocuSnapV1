@@ -9,6 +9,29 @@
 
 ---
 
+## 2026-09-08 — Pre-deployment audit: what is deferred after the fix build (plan `docs/designs/AUDIT_FIX_PLAN_2026-09-08.md`, Oracle C1-C10)
+- **`build` default flip (plan 2.7b, Oracle C5):** `npm run build` still runs the plain chain ON PURPOSE. Flip `build`/`build:store`
+  to `scripts/build-release.js nsis|appx` (+ `build:plain` for the old path) ONLY after the owner has installed and clicked through
+  `dist/ScanFinder Setup 2.0.0-r20260908-1355-5b6c226.exe` (verified: bytecode, 5/5 fuses, `--smoke-boot` exit 0). Then retire every
+  "revert list" sentence in CLAUDE.md / handovers (C10 — mig 137 + the runtime arming supersede it; the owner's own uncommitted
+  CLAUDE.md LATEST block from 09-08 morning is still in the working tree).
+- **P2-3 deskew review-retry bitmap reuse** (audit, effort M): `process_docs.py:1287` re-calls `extract_text_and_images` — reusing the
+  rendered pages changes WHICH pixels heal → needs its own realdoc M=0 (now possible: the post-137 copy is un-contaminated;
+  `TESTING/_measure/reset_arm_20260908/arm137.db` + `stress_test/reset_arm_compare.js`). Keep the never-auto-file hold.
+- **P2-5 persistent Tesseract** (`tesserocr`, MIT over Apache-2.0 Tesseract; bundled Windows wheels need the vendor licence gate +
+  the lock): a read-path ENGINE swap → byte-identical realdoc gate before it nears a customer. Post-deploy.
+- **P2-6 lazy per-page preview render** (`render/pages.py` materialises every page): not a read path; user-visible; ride a later build
+  with the preview pins.
+- **P0-5 `/v1` temp-password enforcement + P1-8 document-level access control:** gate ONLY the LAN add-on (Oracle correction 4);
+  P1-8 is a schema+design arc (advisor + Oracle before build; do not stub-fill).
+- **Vendor lock hashes:** `python_backend/requirements.lock` pins exact versions (the build gate refuses drift); `--require-hashes`
+  needs the wheels re-downloaded (`pip download` + `pip hash`) — add when the interpreter is next re-provisioned.
+- **Owner drills owed:** uninstall + "remove all data" YES → `%APPDATA%\ScanFinder` gone (the `b8ff7d9` shell-context fix; it was a
+  no-op under per-machine); the client's saved-settings prompt likewise; locate the mig-136 live DB (the documented path was empty
+  on 09-08); expect a one-time "Read differently after learning" hold wave after mig 138 (200 DPI re-reads).
+- **Cold gate on the 605 realdoc corpus:** `customer_corpus_score.js` reads its native `Desktop\Customer Doc Test` (array GT); the 605
+  `ScanFinder Test Corpus` GT is object-keyed — a small loader shim would let the cold harness score the real papers too.
+
 ## 2026-09-04 — FORMAT_CLASS_JOIN follow-ups (built DARK `format_class_join`, mig 120; Oracle C1-C11 in `docs/oracle_log.md`)
 The format model is ORDER-SHAPED, not evidence-shaped: `classify_format` classes a scope from its 3 NEWEST confirmed
 values (unanimity else FREETEXT; `_SAMPLE_SIZE=3` of a pool of 5). The join fixes the MIXED direction (entry dropped).
