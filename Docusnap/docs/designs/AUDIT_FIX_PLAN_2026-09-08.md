@@ -265,6 +265,25 @@ versions (today it checks importability only, `REQUIRED` at `:34`); a quarterly 
 9. **Uninstall drill** (2.3 seam): on the next NSIS build, uninstall the core + answer YES to "remove all data" →
    `%APPDATA%\ScanFinder` must be gone (it was not, per `baa25dd`); same for the client's saved-settings prompt.
 
+## 7b. Build log — 2026-09-08 (what actually landed, in order)
+Commits: `f99b2e5` 2.1 · `04ae161` 2.2 (client only — core already had both directives) · `b8ff7d9` core uninstall shell-context fix
+(pre-existing bug) · `82e8f5a` 2.3 client per-machine + guard · `de20fb8` 2.4 forge 1.4.0 + the stale notice refreshed (55→20 real
+components) · `6e98f8a` 1.1 gate · `3a0a2b5` 1.2 mig 137 + 13 blocks deleted · `e41ec20` 1.4 runtime arming · `8b0a75c` 1.3a env-road
+pin + comparer · `98529e3` 2.5 npm-audit gate · `797469e` 2.6 verifier + `--smoke-boot` · `66ca624` 2.7a orchestrator (default
+`build` NOT flipped) · `3db29d1` 3.1-3.3 efficiency bundle · rename commit (runtime modules off the `test_` prefix — the staged
+build excludes `test_*.js`; the first hardened build refused on it) · `9aa503c` 3.4 prep (C6 harness env + `ccs_arm_diff.js`) ·
+`259a043` verifier reads fuses in-process (the `npx.cmd` spawn returned no stdout).
+**Step 11 DONE except the owner:** `dist/ScanFinder Setup 2.0.0-r20260908-1355-5b6c226.exe` (sha256 `fb04a396…`) built by
+`npm run build:release`; `verify-release-artifact` → bytecode present, no plaintext modules, 9 fuses read / 5 declared all as
+declared, `--smoke-boot` exit 0 (`dist/release-manifest-20260908-1355-5b6c226.json`). **The `build` default flip (2.7b) waits for
+the owner's click-through of this installer (C5).**
+**Reorder vs the draft:** 3.1-3.3 landed BEFORE the build so ONE artifact carries everything to the owner smoke.
+**3.4 status:** 1.3's realdoc arm PASS (above). Cold arms: the first chain pointed `customer_corpus_score.js` at the 605 realdoc
+corpus, whose GT shape it cannot read — its NATIVE corpus is `Desktop\Customer Doc Test` (11,000 PDFs; the stratified
+`SAMPLE=300 SEED=7` sample is the established convention, identical across arms; `SAMPLE=100000` would be ~9 h/arm). Rerun as
+`TESTING/_measure/efficiency_bundle_20260908/run_gate_cold.sh` after the warm arm (`run_gate.sh` warm section: post-137 copy at
+200 vs 300). Results go here when they land.
+
 ## 8. Commit order (each its own commit, pinned, revertable) — Oracle-reordered [C5]
 1. 2.1 P1-7 seq · 2. 2.2 CSP appends · 3. 2.3 client perMachine · 4. 2.4 forge bump + notices ·
 5. **1.1 sentinels + KEY-based gate + pin (RED)** · 6. **1.2 `TEST_SWITCH_KEYS`(24) + flip conditions moved + mig 137 + delete blocks/pins (gate GREEN)** ·
