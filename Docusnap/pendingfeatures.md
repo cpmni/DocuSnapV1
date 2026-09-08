@@ -10,6 +10,15 @@
 ---
 
 ## 2026-09-08 — Pre-deployment audit: what is deferred after the fix build (plan `docs/designs/AUDIT_FIX_PLAN_2026-09-08.md`, Oracle C1-C10)
+- **DPI-sensitive one-line-low relocate on a multi-line recipient block (warm-arm exhibit #117, 2026-09-08):** Larkspur delivery
+  docket, "Deliver To" over four lines (company / "Site Office, Foundry Lane" / town / postcode). At 300 DPI `customer_name` reads
+  line 1 @89 (`anchor_crop`); at 200 the `anchor_crop_relocated` crop lands one line low and commits the STREET line @86 — a wrong
+  optional-field value that does not block filing (ref + date correct). SYSTEM class, not a doc: (a) the relocate band on a
+  below-label anchor should snap to the FIRST text row under the label, not the row nearest the DPI-scaled taught box; (b)
+  `value_quality`'s address-line veto (`is_name_like_field` / wordness) let "Site Office, Foundry Lane" through as a name —
+  a street-token ("Lane"/"Road"/"Street"/"Office") + comma shape should demote or flag. Gate: the warm 200-vs-300 arm on the
+  post-137 copy (`TESTING/_measure/efficiency_bundle_20260908/`), 0 would-file value diffs; then realdoc M=0. Advisor: 007 (placement)
+  + reggie (the street-shape veto), then Oracle.
 - **`build` default flip (plan 2.7b, Oracle C5):** `npm run build` still runs the plain chain ON PURPOSE. Flip `build`/`build:store`
   to `scripts/build-release.js nsis|appx` (+ `build:plain` for the old path) ONLY after the owner has installed and clicked through
   `dist/ScanFinder Setup 2.0.0-r20260908-1355-5b6c226.exe` (verified: bytecode, 5/5 fuses, `--smoke-boot` exit 0). Then retire every

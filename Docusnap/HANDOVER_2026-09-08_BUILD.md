@@ -41,7 +41,12 @@ to ProgramData). **One hardened artifact is built and machine-verified; the `bui
 - **Env-road unit:** 21 of 24 keys map to a spawn var; none leak post-137; 'false' == absent (`test_env_road_post_reset.js`).
 - **3.4 efficiency gate:** `TESTING/_measure/efficiency_bundle_20260908/` — warm arm (post-137 copy, 200 vs 300, switches OFF,
   pools OFF) and cold arms A/B/C + 10× determinism on the harness's NATIVE corpus (`Desktop\Customer Doc Test`, SAMPLE=300).
-  **RESULTS: see the plan §7b (filled when the chain finishes; `chain.log` / `chain_cold.log`).**
+  **WARM ARM DONE (300 → 200 on the post-137 copy, 147 docs):** would-file 137 → 129 = 15 extra holds (the pre-announced hold
+  wave), 7 NEW filers that are heals (below-floor/flagged at 300, correct ref+date at 200), 0 new misfiles (the 4 wrong auto-files
+  are the poisoned #42/#25/#27/#40 in BOTH arms), and ONE render-verified regression on an OPTIONAL field: #117 `customer_name`
+  read the address line under the company name at 200 (relocated crop one line low; the doc still files on the correct ref+date).
+  Oracle C7's letter is not met by that one doc → Oracle asked to rule (plan §9 addendum). **COLD ARMS + determinism: running
+  (`chain_cold.log`); results → plan §7b.**
 
 ## Traps found today (durable)
 1. A shipped module must not be named `test_*.js` — the staged build excludes that pattern (esbuild "Could not resolve").

@@ -283,6 +283,16 @@ corpus, whose GT shape it cannot read — its NATIVE corpus is `Desktop\Customer
 `SAMPLE=300 SEED=7` sample is the established convention, identical across arms; `SAMPLE=100000` would be ~9 h/arm). Rerun as
 `TESTING/_measure/efficiency_bundle_20260908/run_gate_cold.sh` after the warm arm (`run_gate.sh` warm section: post-137 copy at
 200 vs 300). Results go here when they land.
+**WARM ARM (C7) — DONE 15:10:** post-137 copy (147 docs, switches OFF, pools OFF, 111 spawn vars in both arms), 300 → 200:
+would-file 137 → 129; intersection 122; **15 extra holds at 200** (5,19,32,35,47,56,59,62,80,81,87,92,103,105,124 — the pre-announced
+hold wave, fail-toward-review); **7 NEW filers at 200 = heals** (#22/#28/#31/#50/#110/#115 were below-floor at 300, #126 flagged; all
+seven file the confirmed ref + date at 200, overall 71-84 → 100); **4 wrong auto-files identical in both arms** (#42/#25/#27/#40 = the
+poisoned GT); **1 render-verified REGRESSION on an OPTIONAL field:** #117 (Larkspur delivery docket) `customer_name` = 'Redwood
+Construction' @89 `anchor_crop` at 300 → 'Site Office, Foundry Lane' @86 `anchor_crop_relocated` at 200 — the page shows "Deliver To"
+over four lines (company / street / town / postcode); at 200 the relocated crop lands one line low. Ref + date correct in both, the doc
+still files → wrong recipient METADATA, not a misfile. Five other "diffs" are conf/method shifts with identical values. C7's letter
+("0 or render-verified heals") is NOT met by that one doc → Oracle asked to rule (§9 addendum); the #117 class is queued in
+`pendingfeatures.md` (a DPI-sensitive one-line-low relocate on a multi-line address block + `value_quality`'s address-line veto).
 
 ## 8. Commit order (each its own commit, pinned, revertable) — Oracle-reordered [C5]
 1. 2.1 P1-7 seq · 2. 2.2 CSP appends · 3. 2.3 client perMachine · 4. 2.4 forge bump + notices ·
