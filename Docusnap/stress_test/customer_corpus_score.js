@@ -11,6 +11,13 @@
  * service_worksheet) + the custom extra fields, NO learning/templates/anchors — extraction runs
  * exactly as a fresh customer's would. Never touches the live DB.
  *
+ * OPERATING POINT (Oracle C6, 2026-09-08 — AUDIT_FIX_PLAN §4 3.4): the workers are spawned with the SAME env the app
+ * builds for a fresh install (`buildWorkerCommand(db,…).env` from the throwaway DB: the ALL_ON_DEFAULTS_93 bridge, the
+ * mig-137 test switches OFF, mig-138 OCR_RENDER_DPI=200) — not the bare shell env, which ran the arms at ENGINE defaults.
+ * Explicit ARM overrides still win: any of OCR_RENDER_DPI / OMP_THREAD_LIMIT / DS_OCR_PARALLEL_FULLPAGE /
+ * DS_OCR_PARALLEL_FIELDS set in the shell (+ names in CCS_OVERRIDE_KEYS, comma-separated) is re-applied on top. The
+ * operating point is written as the FIRST jsonl row ({_operating_point:…}) and into the md header.
+ *
  * Run (Git Bash; electron.exe directly — never the .cmd shim):
  *   ELECTRON_RUN_AS_NODE=1 [SAMPLE=300] [SET=both|digital|scanned] [TAG=base] [SEED=7] \
  *     [heal/verify env switches for the arm under test] \
@@ -252,14 +259,29 @@ async function main() {
   const manifestArgs = Object.keys(manifest).length
     ? ['--reprocess-manifest', w('manifest', manifest)] : [];
 
-  // ── 4. Shard + spawn (env inherited — the arm's switches ride through) ────
+  // ── 4. Shard + spawn at the FRESH-INSTALL operating point (Oracle C6) + explicit arm overrides ────
+  const H = require(path.join(REPO, 'src', 'modules', 'processing', 'handler.js'));
+  const built = H.buildWorkerCommand(db, { pyFolder: runDir, tesseract: TESS, mode: 'fast', arrival: 'manual' });
+  const spawnEnv = { ...built.env };
+  const ARM_KEYS = ['OCR_RENDER_DPI', 'OMP_THREAD_LIMIT', 'DS_OCR_PARALLEL_FULLPAGE', 'DS_OCR_PARALLEL_FIELDS',
+                    ...String(process.env.CCS_OVERRIDE_KEYS || '').split(',').map(k => k.trim()).filter(Boolean)];
+  for (const k of ARM_KEYS) if (process.env[k] != null) spawnEnv[k] = process.env[k];
+  const _switchVars = Object.keys(spawnEnv).filter(k => spawnEnv[k] !== process.env[k] && !/^(PATH|Path|TEMP|TMP)$/.test(k)).sort();
+  const operatingPoint = {
+    dpi: spawnEnv.OCR_RENDER_DPI || '300(code default)', omp: spawnEnv.OMP_THREAD_LIMIT || null,
+    pools: !!(spawnEnv.DS_OCR_PARALLEL_FULLPAGE || spawnEnv.DS_OCR_PARALLEL_FIELDS),
+    armOverrides: Object.fromEntries(ARM_KEYS.filter(k => process.env[k] != null).map(k => [k, process.env[k]])),
+    appEnvVars: _switchVars.length, appEnv: Object.fromEntries(_switchVars.map(k => [k, spawnEnv[k]])),
+    maxMigration: db.prepare('SELECT max(version) v FROM migrations').get().v,
+  };
+  console.log(`[ccs] operating point: DPI ${operatingPoint.dpi} · OMP ${operatingPoint.omp} · pools ${operatingPoint.pools} · ${operatingPoint.appEnvVars} app env var(s) from the fresh-install DB (mig ${operatingPoint.maxMigration}) · overrides ${JSON.stringify(operatingPoint.armOverrides)}`);
   const N = 8; const shards = Array.from({ length: N }, () => []);
   Object.keys(byName).forEach((f, i) => shards[i % N].push(f));
   const heals = [];                              // every heal/verify log line → per-fire census
   const HEAL_RE = /(Name-unclip reconcile|Universal verify|Crosscheck-outlier|edge-clean|Snap|clip commit|frag|Stage 0\.5 heal|Banner heading recovered)/i;
   const run1 = files => new Promise(res => {
     const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', runDir, '--files-file', w('shard', files),
-                           '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs], { windowsHide: true });
+                           '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs], { windowsHide: true, env: spawnEnv });
     let out = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', () => {});
     p.on('close', () => res(out)); p.on('error', () => res(''));
   });
@@ -351,10 +373,11 @@ async function main() {
 
   // ── 6. Report ─────────────────────────────────────────────────────────────
   fs.mkdirSync(OUT, { recursive: true });
-  const jl = rows.map(r => JSON.stringify(r)).join('\n') + '\n';
+  const jl = [JSON.stringify({ _operating_point: operatingPoint }), ...rows.map(r => JSON.stringify(r))].join('\n') + '\n';
   fs.writeFileSync(path.join(OUT, `customer_score_${TAG}.jsonl`), jl);
   let md = `# Customer-corpus score — TAG=${TAG} (SET=${SET}, SAMPLE=${sampled.length}, SEED=${SEED})\n\n`;
   md += `Processed ${Object.keys(docs).length}/${sampled.length} sampled docs (cold install — no learning/templates).\n\n`;
+  md += `Operating point: DPI ${operatingPoint.dpi} · OMP ${operatingPoint.omp} · pools ${operatingPoint.pools} · ${operatingPoint.appEnvVars} app env var(s) from the fresh-install DB (mig ${operatingPoint.maxMigration}) · overrides ${JSON.stringify(operatingPoint.armOverrides)}\n\n`;
   md += `| lane | digital | scanned | overall |\n|---|---|---|---|\n`;
   for (const lane of LANES) {
     const d = tally[`${lane}|digital`] || { ok: 0, n: 0 }, s = tally[`${lane}|scanned`] || { ok: 0, n: 0 };
