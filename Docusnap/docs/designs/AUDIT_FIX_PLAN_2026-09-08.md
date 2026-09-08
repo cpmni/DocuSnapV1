@@ -273,9 +273,10 @@ pin + comparer · `98529e3` 2.5 npm-audit gate · `797469e` 2.6 verifier + `--sm
 `build` NOT flipped) · `3db29d1` 3.1-3.3 efficiency bundle · rename commit (runtime modules off the `test_` prefix — the staged
 build excludes `test_*.js`; the first hardened build refused on it) · `9aa503c` 3.4 prep (C6 harness env + `ccs_arm_diff.js`) ·
 `259a043` verifier reads fuses in-process (the `npx.cmd` spawn returned no stdout).
-**Step 11 DONE except the owner:** `dist/ScanFinder Setup 2.0.0-r20260908-1355-5b6c226.exe` (sha256 `fb04a396…`) built by
+**Step 11 DONE except the owner:** `dist/ScanFinder Setup 2.0.0-r20260908-1355-5b6c226.REFUSED.exe` (sha256 `fb04a396…`) built by
+> ⚠ RETIRED 2026-09-08 evening — renamed `.REFUSED.exe`: the re-audit found every HARDEN_JS artifact shipped WITHOUT `listCaption.js`/`reviewReadiness.js` (Review's "File all ready" threw); fixed in `5a4bd94`, superseded by the rebuilt artifact named in `HANDOVER_2026-09-08_BUILD.md`. NOT a click-through target.
 `npm run build:release`; `verify-release-artifact` → bytecode present, no plaintext modules, 9 fuses read / 5 declared all as
-declared, `--smoke-boot` exit 0 (`dist/release-manifest-20260908-1355-5b6c226.json`). **The `build` default flip (2.7b) waits for
+declared, `--smoke-boot` exit 0 (`dist/release-manifest-20260908-1355-5b6c226.json — DELETED`). **The `build` default flip (2.7b) waits for
 the owner's click-through of this installer (C5).**
 **Reorder vs the draft:** 3.1-3.3 landed BEFORE the build so ONE artifact carries everything to the owner smoke.
 **3.4 status:** 1.3's realdoc arm PASS (above). Cold arms: the first chain pointed `customer_corpus_score.js` at the 605 realdoc

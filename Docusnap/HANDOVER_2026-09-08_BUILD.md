@@ -16,7 +16,8 @@ a pre-existing uninstaller bug found on the way (the "remove all data" prompt wa
 to ProgramData). **One hardened artifact is built and machine-verified; the `build` default flip waits for YOUR click-through.**
 
 ## The artifact for you (Oracle C5 — the default flips only after this)
-`dist/ScanFinder Setup 2.0.0-r20260908-1355-5b6c226.exe` (sha256 `fb04a396…`, manifest `dist/release-manifest-20260908-1355-5b6c226.json`)
+`dist/ScanFinder Setup 2.0.0-r20260908-1355-5b6c226.REFUSED.exe` (sha256 `fb04a396…`, manifest DELETED)
+> ⚠ RETIRED 2026-09-08 evening — renamed `.REFUSED.exe`: the re-audit found every HARDEN_JS artifact shipped WITHOUT `listCaption.js`/`reviewReadiness.js` (Review's "File all ready" threw); fixed in `5a4bd94`, superseded by the rebuilt artifact named in `HANDOVER_2026-09-08_BUILD.md`. NOT a click-through target.
 = `npm run build:release`: hardened (bytecode + string-array + .pyc), migration gate OK, licences OK, npm audit 0, verifier:
 `/src/main.jsc` present, no plaintext module under src/modules|services|lib|database, 9 fuses read / 5 declared all as declared,
 `--smoke-boot` exit 0. **Install it on a clean box and click through every window**; then uninstall + YES to "remove all data" →

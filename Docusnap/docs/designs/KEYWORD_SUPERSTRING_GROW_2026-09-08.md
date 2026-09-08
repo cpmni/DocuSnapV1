@@ -178,3 +178,46 @@ No `regrow_name_read`. The owner's "extend the mapped read until it corroborates
 - Keys: mig 140 seeds all three OFF; `TEST_SWITCH_KEYS` = 27; bridge lines in `_reconcileEnv`; pins listed in the commit.
 - **Gate (C6) arms:** `TESTING/_measure/name_grow_belts_20260908/run_arms.sh` — OFF / mapper / mapper+note on the post-137 copy with the
   census per arm. Results: _appended below when the chain finishes._
+
+### §7.1 C6 GATE RESULTS (2026-09-08 evening) — arms on the post-137 reference copy (147 confirmed docs, switches OFF, belts env-armed)
+Arms: `off` · `mapper` = `TEMPLATE_NAME_GROW_BAND_PICK=1 TEMPLATE_NAME_CUT_DEFER_CAP=1` · `note` = mapper + `KEYWORD_SUPERSTRING_NAME_NOTE=1`.
+Harness `stress_test/realdoc_regression.js` (`RR_DB=arm137.db RR_APP_ENV=1 OCR_RENDER_DPI=200`), compare `stress_test/reset_arm_compare.js`
+(values), census `NAMEGROW_CENSUS_DIR`. Data: `TESTING/_measure/name_grow_belts_20260908/`.
+
+**THE SEAM the gate caught (first mapper run, pre-fix) — realdoc doc 67:** `customer_name` went from the correct `Kingfisher Print Studio`
+@82 (`keyword_override`, OFF) to a WRONG `Kingfisher Print Stv` @94 (`template_mapping`) at would-file. Traced: before belt 2b a name NEVER
+defer-capped, so the guard consumer's edge-cut relocate road was unreachable for names; 2b's `_floor` returned `{"defer_cap": True}`, the
+consumer routed it through `_edge_cut_relocate`, and the relocate's shape-consent ladder — a CODE contract — judges a free-text name as
+always consenting, so it CLEAN-committed the re-seated garble at 90 over the deferred cap. **Fixed `f4a32a7`:** `_floor` marks a name
+defer-cap (`name_grow=True`); the consumer takes the deferred cap DIRECTLY for names (final abs commit ≤70 + `_EDGE_CUT_NOTE`, the belt's
+documented contract) and never calls the relocate. Pin proven RED on the unfixed mapper, green after; re-trace of doc 67 = the OFF arm.
+This is exactly the "name the seam" class: a belt that changed WHEN a name reaches a downstream road disabled a safety that road assumed.
+
+**Results on the FIXED code (both arms identical to each other):**
+| | off | mapper | note |
+|---|---|---|---|
+| docs / would-file | 147 / 129 | 147 / 129 | 147 / 129 |
+| NEW filers vs off (regression class) | — | **0** | **0** |
+| holds removed / added vs off | — | 0 / 0 | 0 / 0 |
+| ref / date value diffs vs off | — | **0** | **0** |
+| value diffs vs off (intersection) | — | 1 (#70, below) | 1 (#70) |
+| conf/method/note shifts, same value | — | 0 | 0 |
+| M (silent wrong at would-file) | 4 = the known poisoned-GT dates (#42/#25/#27/#40) | 4 (same docs) | 4 (same docs) |
+| census: entered / nocut / healed_flagged / declined / capped | 215 / 159 / 17 / 9 / — | 215 / 159 / **19** / 7 / **7** | same as mapper |
+| kw-note census | — | — | entered 63 · **fired 0** · skip: method 54, winner_page_present 5, no_shape_candidate 4 |
+
+**#70 (`IronbridgeFabrication_sales_order_05.pdf`) = a HEAL of a would-be SILENT WRONG auto-file, page-verified:** OFF commits
+`Halcyon Leisure Gr` @94 `template_mapping` at would-file (v1's grow read `Groun`, the shape guard refused, the sheared read committed
+silently); the belt's band-pick reads `Halcyon Leisure Group` → `healed_flagged` (≤70 `_namegrow` + note) → the independent
+`keyword_override` `Halcyon Leisure Group` @82 wins. Trace slices: the tight box prints `Halcyon Leisure Gr`, the grown box `Halcyon Leisure
+Group` (`trace70_on`). Two independent families agree; the fix helps every taught name box whose right edge shears the last word — the
+Willowbrook exhibit's class, not one document.
+
+**The 7 `capped` outcomes** (declined grows now ≤70 + note instead of a silent natural-confidence commit) produced NO consensus change: in
+every one another family (keyword/anchor) already out-ranked the capped mapping read at merge — the cap is a safety, not a heal.
+
+**Verdict per C6:** mapper arm PASSES (ref/date identical, would-file delta = 0 removed / 0 added, 1 page-verified heal, census
+non-vacuous, M unchanged at the 4 poisoned-GT docs). **The note belt's corpus gate is VACUOUS** — `kw_note_fired 0` on 147 docs (the 54
+`skip:method` rows = the winner was not a mapping/anchor read; 5 the page already carried the winner; 4 no shape candidate). Its only
+non-vacuous evidence is the unit pin + the owner-DB exhibit; it stays DARK behind its own flip gate (a corpus where it fires, or an
+in-app census on the owner's DB). All three belts remain DARK (mig 140 seed OFF); the flip is the owner's call with this table.

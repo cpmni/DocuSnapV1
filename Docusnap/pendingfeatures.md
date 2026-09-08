@@ -61,7 +61,8 @@
   resolve the glyph without learning. Net on the scanned lane 200 vs 300 = +9/−6 for 200. Advisor: reggie, then Oracle.
 - **`build` default flip (plan 2.7b, Oracle C5):** `npm run build` still runs the plain chain ON PURPOSE. Flip `build`/`build:store`
   to `scripts/build-release.js nsis|appx` (+ `build:plain` for the old path) ONLY after the owner has installed and clicked through
-  `dist/ScanFinder Setup 2.0.0-r20260908-1355-5b6c226.exe` (verified: bytecode, 5/5 fuses, `--smoke-boot` exit 0). Then retire every
+  `dist/ScanFinder Setup 2.0.0-r20260908-1355-5b6c226.REFUSED.exe` (verified: bytecode, 5/5 fuses, `--smoke-boot` exit 0). Then retire every
+> ⚠ RETIRED 2026-09-08 evening — renamed `.REFUSED.exe`: the re-audit found every HARDEN_JS artifact shipped WITHOUT `listCaption.js`/`reviewReadiness.js` (Review's "File all ready" threw); fixed in `5a4bd94`, superseded by the rebuilt artifact named in `HANDOVER_2026-09-08_BUILD.md`. NOT a click-through target.
   "revert list" sentence in CLAUDE.md / handovers (C10 — mig 137 + the runtime arming supersede it; the owner's own uncommitted
   CLAUDE.md LATEST block from 09-08 morning is still in the working tree).
 - **P2-3 deskew review-retry bitmap reuse** (audit, effort M): `process_docs.py:1287` re-calls `extract_text_and_images` — reusing the
