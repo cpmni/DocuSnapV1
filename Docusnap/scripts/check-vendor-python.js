@@ -43,6 +43,38 @@ const REQUIRED = [
 // pip package name when it differs from the import name (for the "how to fix" hint).
 const PIP_NAME = { PIL: 'pillow', zxingcpp: 'zxing-cpp' };
 
+// EXACT-VERSION PIN (2026-09-08, pre-deployment audit P1-2 — AUDIT_FIX_PLAN §5): python_backend/requirements.lock is the
+// shipped vendor/python inventory (`vendor\python\python.exe -m pip freeze`). Pillow parses untrusted scanned images and
+// pypdfium2 untrusted PDFs, so a silently re-provisioned vendor/ that pulled a different version must refuse the build:
+// every REQUIRED package's installed dist-info version must equal the lock. Bumping = edit the lock deliberately (a
+// dated security decision), then re-provision. compareLock() is pure (pinned by scripts/test_check_vendor_python.js).
+const LOCK = path.join(root, 'python_backend', 'requirements.lock');
+const PIP_OF = { PIL: 'pillow', zxingcpp: 'zxing-cpp', rapidfuzz: 'rapidfuzz', pytesseract: 'pytesseract', pypdfium2: 'pypdfium2', pypdf: 'pypdf', segno: 'segno' };
+const normName = (n) => String(n).toLowerCase().replace(/[-_.]+/g, '-');
+function parseLock(text) {
+  const out = {};
+  for (const line of String(text || '').split(/\r?\n/)) { const m = /^\s*([A-Za-z0-9_.\-]+)\s*==\s*([^\s#]+)/.exec(line); if (m) out[normName(m[1])] = m[2]; }
+  return out;
+}
+function installedVersions(sitePackages) {
+  const out = {};
+  if (!fs.existsSync(sitePackages)) return out;
+  for (const d of fs.readdirSync(sitePackages)) { const m = /^(.+?)-([0-9][^-]*)\.dist-info$/.exec(d); if (m) out[normName(m[1])] = m[2]; }
+  return out;
+}
+/** compareLock(lock, installed, required) → [{pkg, want, have, why}] mismatches. Pure. */
+function compareLock(lock, installed, required = REQUIRED.map(([m]) => PIP_OF[m] || m)) {
+  const bad = [];
+  for (const pkg of required) {
+    const k = normName(pkg); const want = lock[k], have = installed[k];
+    if (!want) bad.push({ pkg, want: null, have: have || null, why: 'not pinned in requirements.lock' });
+    else if (have !== want) bad.push({ pkg, want, have: have || null, why: have ? 'version drift' : 'not installed' });
+  }
+  return bad;
+}
+module.exports = { parseLock, installedVersions, compareLock, normName, PIP_OF, REQUIRED };
+if (require.main !== module) return;   // pure API for the pin — the checks below only run as a script
+
 // Import names that should NO LONGER be present (RapidOCR was removed 2026-07).
 const REMOVED = ['rapidocr_onnxruntime', 'onnxruntime', 'cv2', 'shapely', 'pyclipper'];
 
@@ -71,6 +103,19 @@ if (missing.length) {
   fail('vendor/python is missing REQUIRED package(s):\n' + lines
      + '\n\nInstall them into the BUNDLED interpreter (not the system one):\n'
      + `  vendor\\python\\python.exe -m pip install ${pipList}`);
+}
+
+// Exact versions vs the lock (P1-2). After the import check so a missing package reports as missing, not drift.
+{
+  const lockText = fs.existsSync(LOCK) ? fs.readFileSync(LOCK, 'utf8') : '';
+  if (!lockText) fail('python_backend/requirements.lock is missing — regenerate it from the bundled interpreter:\n  vendor\\python\\python.exe -m pip freeze > python_backend\\requirements.lock');
+  const bad = compareLock(parseLock(lockText), installedVersions(path.join(root, 'vendor', 'python', 'Lib', 'site-packages')));
+  if (bad.length) {
+    const lines = bad.map(b => `  - ${b.pkg}: lock pins ${b.want || '(none)'}, vendor has ${b.have || '(none)'} — ${b.why}`).join('\n');
+    fail('vendor/python does not match python_backend/requirements.lock (exact-version pin, audit P1-2):\n' + lines
+       + '\n\nEither re-provision the pinned version into the BUNDLED interpreter, or — after a deliberate review — update the lock:\n'
+       + '  vendor\\python\\python.exe -m pip freeze > python_backend\\requirements.lock');
+  }
 }
 
 const stale = REMOVED.filter(canImport);
