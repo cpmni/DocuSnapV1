@@ -71,7 +71,22 @@ function evaluate({ entries = [], mainJs = '', fuses = {}, expectedFuses = {}, s
 
 function sha256(file) { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); }
 
-if (require.main === module) {
+/** Read the fuse wire in-process via @electron/fuses (no shell — the npx.cmd spawn returned no stdout on Windows). */
+async function readFuses(exe) {
+  const { getCurrentFuseWire, FuseV1Options, FuseState } = require('@electron/fuses');
+  const wire = await getCurrentFuseWire(exe);
+  const out = {};
+  for (const [k, v] of Object.entries(wire || {})) {
+    if (k === 'version') continue;
+    const name = FuseV1Options[k] || k;
+    if (v === FuseState.ENABLE) out[name] = true;
+    else if (v === FuseState.DISABLE) out[name] = false;
+    // REMOVED / INHERIT are neither: left unreported → the declared-fuse check refuses loudly.
+  }
+  return out;
+}
+
+if (require.main === module) (async () => {
   const unpacked = path.resolve(ROOT, process.argv[2] || path.join('dist', 'win-unpacked'));
   const asarPath = path.join(unpacked, 'resources', 'app.asar');
   const exe = path.join(unpacked, 'ScanFinder.exe');
@@ -82,8 +97,8 @@ if (require.main === module) {
   const mainJs = read('/src/main.js');
   let pkg = {}; try { pkg = JSON.parse(read('/package.json')); } catch {}
   const expectedFuses = (JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).build || {}).electronFuses || {};
-  const fr = spawnSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['electron-fuses', 'read', '--app', exe], { cwd: ROOT, encoding: 'utf8', shell: process.platform === 'win32' });
-  const fuses = parseFuseText((fr.stdout || '') + (fr.stderr || ''));
+  let fuses = {};
+  try { fuses = await readFuses(exe); } catch (e) { console.error(`[verify-release-artifact] fuse read failed: ${e && e.message}`); }
   let smokeExit = null; const smokeSkipped = process.env.SKIP_SMOKE === '1';
   if (!smokeSkipped) {
     const sr = spawnSync(exe, ['--smoke-boot'], { cwd: unpacked, encoding: 'utf8', timeout: 60000, windowsHide: true });
@@ -99,7 +114,7 @@ if (require.main === module) {
     installers: installer.map(f => ({ file: path.basename(f), sha256: sha256(f) })), problems };
   try { fs.writeFileSync(path.join(ROOT, 'dist', `release-manifest-${rev}.json`), JSON.stringify(manifest, null, 2)); } catch {}
   if (problems.length) { console.error(`[verify-release-artifact] REFUSED — ${problems.length} problem(s):\n  ${problems.join('\n  ')}`); process.exit(1); }
-  console.log(`[verify-release-artifact] OK — rev ${rev}: bytecode present, no plaintext modules, ${Object.keys(fuses).length} fuses as declared, boot smoke ${smokeSkipped ? 'skipped' : 'exit 0'}. Manifest dist/release-manifest-${rev}.json`);
-}
+  console.log(`[verify-release-artifact] OK — rev ${rev}: bytecode present, no plaintext modules, ${Object.keys(fuses).length} fuses read (${Object.keys(expectedFuses).length} declared, all as declared), boot smoke ${smokeSkipped ? 'skipped' : 'exit 0'}. Manifest dist/release-manifest-${rev}.json`);
+})().catch((e) => { console.error(`[verify-release-artifact] crashed: ${e && e.stack || e}`); process.exit(1); });
 
-module.exports = { evaluate, parseFuseText, PLAINTEXT_FORBIDDEN, FUSE_NAMES };
+module.exports = { evaluate, parseFuseText, readFuses, PLAINTEXT_FORBIDDEN, FUSE_NAMES };
