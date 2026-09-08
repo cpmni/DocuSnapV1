@@ -1,0 +1,4 @@
+{
+  "_doc": "Advisories scripts/check-npm-audit.js may pass over. Every entry needs id (GHSA-… or the npm advisory number), reason, expires (ISO date). An EXPIRED entry fails the release build — an allowlist is a dated decision, not a hole. Entries are printed on every release build.",
+  "entries": []
+}
