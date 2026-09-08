@@ -52,12 +52,23 @@ function evaluate(report, allowlist, now = new Date()) {
   return out;
 }
 
+const MAX_HORIZON_DAYS = 90;   // an allowlist is a DATED decision — no permanent holes (re-audit 2026-09-08)
+/** validateEntry(entry, now) — id + reason + reviewed_by + expires within MAX_HORIZON_DAYS of `now`, else throws. Pure. */
+function validateEntry(e, now = new Date()) {
+  if (!e || !e.id || !e.reason || !e.expires || !e.reviewed_by) {
+    throw new Error(`audit-allowlist.json: every entry needs id + reason + reviewed_by + expires (bad: ${JSON.stringify(e)})`);
+  }
+  const exp = new Date(e.expires);
+  if (isNaN(exp)) throw new Error(`audit-allowlist.json: entry ${e.id} has an unparseable expires ${JSON.stringify(e.expires)}`);
+  const horizon = new Date(now.getTime() + MAX_HORIZON_DAYS * 86400000);
+  if (exp > horizon) throw new Error(`audit-allowlist.json: entry ${e.id} expires ${e.expires}, more than ${MAX_HORIZON_DAYS} days out — an allowlist is a dated decision, not a permanent hole`);
+  return true;
+}
+
 function loadAllowlist() {
   if (!fs.existsSync(ALLOWLIST_PATH)) return { entries: [] };
   const al = JSON.parse(fs.readFileSync(ALLOWLIST_PATH, 'utf8'));
-  for (const e of al.entries || []) {
-    if (!e.id || !e.reason || !e.expires) throw new Error(`audit-allowlist.json: every entry needs id + reason + expires (bad: ${JSON.stringify(e)})`);
-  }
+  for (const e of al.entries || []) validateEntry(e);
   return al;
 }
 
@@ -84,4 +95,4 @@ if (require.main === module) {
   console.log(`[check-npm-audit] OK — no open high/critical advisory in the production tree (${res.allowed.length} allowlisted).`);
 }
 
-module.exports = { evaluate, advisoryIds, loadAllowlist };
+module.exports = { evaluate, advisoryIds, loadAllowlist, validateEntry, MAX_HORIZON_DAYS };

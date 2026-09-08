@@ -26,6 +26,12 @@ check('version drift is refused (pillow 12.2.0 → 12.1.0)', (() => { const b = 
 check('a required package missing from vendor is refused', (() => { const b = V.compareLock(lock, { pillow: '12.2.0' }, ['pillow', 'pypdfium2']); return b.length === 1 && b[0].why === 'not installed'; })());
 check('a required package missing from the LOCK is refused (the lock must pin every required package)', (() => { const b = V.compareLock(lock, inst, ['pillow', 'segno']); return b.length === 1 && b[0].why === 'not pinned in requirements.lock'; })());
 check('dist-info spelling zxing_cpp matches pip spelling zxing-cpp', V.normName('zxing_cpp') === V.normName('zxing-cpp') && V.normName('PyWavelets') === 'pywavelets');
+// Re-audit 2026-09-08: EVERY lock line present in vendor is compared (numpy/scipy/ImageHash/PyWavelets — the phash stack — were
+// listed but never checked); a lock line absent from vendor is not an error.
+{ const lock2 = V.parseLock('pillow==12.2.0\nnumpy==2.4.6\nscipy==1.18.0\nImageHash==4.3.2\n');
+  const b = V.compareLock(lock2, { pillow: '12.2.0', numpy: '2.4.5', scipy: '1.18.0' }, ['pillow']);
+  check('a transitive package drifting from its lock line is refused even when not REQUIRED (numpy 2.4.6 → 2.4.5)', b.length === 1 && b[0].pkg === 'numpy' && /transitive/.test(b[0].why));
+  check('a lock line absent from vendor (ImageHash) is not an error', !b.some(x => x.pkg === 'imagehash')); }
 check('installedVersions parses <Name>-<ver>.dist-info folders', (() => {
   const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'vendorpin-'));
   for (const d of ['pillow-12.2.0.dist-info', 'zxing_cpp-3.1.0.dist-info', 'notes.txt']) fs.mkdirSync(path.join(tmp, d), { recursive: true });

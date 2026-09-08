@@ -44,8 +44,17 @@ const TABLES = [
 // SECURITY (Stage 2 — Oracle C1): use the SAME protected-key predicate set-setting refuses, so a
 // crafted/ restored backup can't write `detached_*_seats` / `update_info` (self-granting the paid
 // add-on) through this door — the seam that re-opened M1. Keep the legacy 'licens' substring too.
+// DARK TEST SWITCHES never travel in a backup (gary re-audit 2026-09-08, the P0-1 class through a customer-reachable
+// door): this UPSERT is variable-key, so a backup exported from a TEST-armed (or pre-mig-137) DB would restore every
+// listed switch 'true' on a customer DB with NO arming marker to disarm it — the release gate cannot see this road.
+// A backup is configuration, not a test-arming road: the listed keys and the marker are excluded on export AND restore.
 function _settingExcluded(key) {
   const s = String(key || '').toLowerCase();
+  if (s === 'test_build_armed_rev') return true;
+  try {
+    const { TEST_SWITCH_KEYS } = require('../../database/dark_switches');
+    if (TEST_SWITCH_KEYS.includes(s)) return true;
+  } catch { /* fall through — the licence/protected rules below still apply */ }
   return s.includes('licens') || require('../lib/protectedSettings').isProtectedSettingKey(s);
 }
 

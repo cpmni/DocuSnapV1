@@ -36,8 +36,8 @@ DISTRIBUTION & VERIFICATION NOTES
 - Apache-2.0 NOTICE files: where an Apache-2.0 component ships a NOTICE (or
   equivalent third-party attribution) file, its contents are incorporated here by
   reference. As verified for the components bundled in THIS release, none ships a
-  separate NOTICE text file, except opencv-python, whose additional third-party
-  attributions are in its bundled LICENSE-3RD-PARTY.txt (vendor/python). Re-verify
+  separate NOTICE text file. (opencv-python and the RapidOCR stack were removed in
+  2026-07; their third-party attributions no longer apply.) Re-verify
   this when dependencies change.
 - FFmpeg is LGPL-2.1, dynamically linked and unmodified inside the prebuilt
   Electron runtime; recipients may exercise the LGPL relinking right against that
@@ -60,7 +60,7 @@ License identifiers are taken from each package's own metadata. The full
 text of each license family is in section 3.
 
 Bundled runtimes & binaries (shipped, but not enumerated as npm/PyPI packages)
-  Electron 31                     MIT  (embeds Chromium [BSD-3-Clause] and
+  Electron 44                     MIT  (embeds Chromium [BSD-3-Clause] and
                                   FFmpeg [LGPL-2.1, dynamically linked]; the
                                   Electron runtime ships its own complete
                                   LICENSE + LICENSES.chromium.html, included
@@ -130,6 +130,9 @@ Electron            Copyright (c) Electron contributors;
                     Copyright (c) 2013-2020 GitHub Inc.
 Chromium            Copyright (c) The Chromium Authors.
 better-sqlite3      Copyright (c) 2017 Joshua Wise.
+                    Shipped as the better-sqlite3-multiple-ciphers fork (MIT), which bundles
+                    SQLite3MultipleCiphers (MIT) for DB-at-rest encryption; the fork's LICENSE files pack under node_modules.
+bytenode            Copyright (c) 2018 Osama Abbas (MIT) — V8 bytecode loader for the hardened main bundle (HARDEN_JS).
 SQLite              In the Public Domain (https://sqlite.org/copyright.html).
 argon2 (node)       Copyright (c) Ranieri Althoff.
 node-forge          Copyright (c) 2010 Digital Bazaar, Inc. All rights reserved.

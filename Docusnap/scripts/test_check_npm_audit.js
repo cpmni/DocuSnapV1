@@ -31,6 +31,13 @@ check('a MODERATE does not block', evaluate(report(vuln('y', 'moderate', 'GHSA-4
 check('a report with .error is OFFLINE', evaluate({ error: { code: 'ENOTFOUND' } }, { entries: [] }, NOW).offline === true);
 check('advisoryIds extracts GHSA + numeric source', (() => { const ids = advisoryIds(vuln('z', 'high', 'GHSA-7777-8888-9999').z); return ids.includes('GHSA-7777-8888-9999') && ids.includes('1101234'); })());
 { let ok = true, why = ''; try { const al = loadAllowlist(); ok = Array.isArray(al.entries); } catch (e) { ok = false; why = e.message; }
-  check('scripts/audit-allowlist.json is well-formed (every entry id + reason + expires)', ok, why); }
+  check('scripts/audit-allowlist.json is well-formed (every entry id + reason + reviewed_by + expires)', ok, why); }
+// Re-audit 2026-09-08: an allowlist entry is a DATED, SIGNED decision — no permanent holes.
+{ const { validateEntry, MAX_HORIZON_DAYS } = require(path.join(__dirname, 'check-npm-audit.js'));
+  const throws = (fn) => { try { fn(); return false; } catch { return true; } };
+  check('validateEntry: a complete entry within the horizon passes', validateEntry({ id: 'GHSA-1', reason: 'r', reviewed_by: 'owner', expires: '2026-10-01' }, NOW) === true);
+  check('validateEntry: missing reviewed_by throws', throws(() => validateEntry({ id: 'GHSA-1', reason: 'r', expires: '2026-10-01' }, NOW)));
+  check(`validateEntry: expires more than ${MAX_HORIZON_DAYS} days out throws (2099-01-01 is a permanent hole)`, throws(() => validateEntry({ id: 'GHSA-1', reason: 'r', reviewed_by: 'owner', expires: '2099-01-01' }, NOW)));
+  check('validateEntry: an unparseable expires throws', throws(() => validateEntry({ id: 'GHSA-1', reason: 'r', reviewed_by: 'owner', expires: 'soon' }, NOW))); }
 console.log(`\ncheck-npm-audit: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

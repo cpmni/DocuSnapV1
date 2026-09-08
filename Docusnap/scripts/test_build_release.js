@@ -31,7 +31,15 @@ check('test: TEST_BUILD=1, no RELEASE_BUILD, rev gets -TEST once', t.TEST_BUILD 
 check('test: HARDEN_JS is NOT forced (plain path, unless the shell sets it)', !('HARDEN_JS' in t));
 const names = (m, tg) => gateSequence(m, tg).map(([s]) => path.basename(s));
 check('release nsis order: migrations gate FIRST … verifier LAST', (() => { const n = names('release', 'nsis'); return n[0] === 'check-release-migrations.js' && n[n.length - 1] === 'verify-release-artifact.js' && n.includes('check-npm-audit.js') && n.indexOf('check-npm-audit.js') < n.indexOf('compile-python-bytecode.js'); })(), names('release', 'nsis').join(' > '));
-check('release appx: builds appx, no artifact verifier (unsigned Store package)', (() => { const s = gateSequence('release', 'appx'); return s.some(([f, a]) => /build-electron/.test(f) && a[0] === 'appx') && !names('release', 'appx').includes('verify-release-artifact.js'); })());
+check('release appx: builds appx AND runs the artifact verifier (re-audit 2026-09-08: the Store SKU had no gate)', (() => { const s = gateSequence('release', 'appx'); const n = names('release', 'appx'); return s.some(([f, a]) => /build-electron/.test(f) && a[0] === 'appx') && n[n.length - 1] === 'verify-release-artifact.js'; })());
+// Re-audit 2026-09-08: every gate-weakening variable is scrubbed from the inherited shell; only explicit flags re-enable.
+{ const { applyFlags } = require(path.join(__dirname, 'build-release.js'));
+  const scrubbed = composeEnv('release', { PATH: 'x', SKIP_SMOKE: '1', AUDIT_OFFLINE_OK: '1', HARDEN_JS_ESCAPE: '1' });
+  check('release: SKIP_SMOKE / AUDIT_OFFLINE_OK / HARDEN_JS_ESCAPE are scrubbed from the inherited env', !('SKIP_SMOKE' in scrubbed) && !('AUDIT_OFFLINE_OK' in scrubbed) && !('HARDEN_JS_ESCAPE' in scrubbed));
+  check('release: HARDEN_JS=0 still sets the escape marker itself (after the scrub)', composeEnv('release', { HARDEN_JS: '0', HARDEN_JS_ESCAPE: '1' }).HARDEN_JS_ESCAPE === '1');
+  const flagged = applyFlags(scrubbed, ['nsis', '--skip-smoke', '--audit-offline-ok']);
+  check('--skip-smoke / --audit-offline-ok are the only re-enables (explicit, after the scrub)', flagged.SKIP_SMOKE === '1' && flagged.AUDIT_OFFLINE_OK === '1' && !('SKIP_SMOKE' in applyFlags(scrubbed, ['nsis'])));
+  check('applyFlags does not mutate its input', !('SKIP_SMOKE' in scrubbed)); }
 check('test: no npm-audit, no verifier (the plain test path)', !names('test', 'nsis').includes('check-npm-audit.js') && !names('test', 'nsis').includes('verify-release-artifact.js') && names('test', 'nsis')[0] === 'check-release-migrations.js');
 const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
 check('package.json wires build:release / build:release:store / build:test to the orchestrator', /build-release\.js nsis$/.test(pkg.scripts['build:release'] || '') && /build-release\.js appx$/.test(pkg.scripts['build:release:store'] || '') && /build-release\.js nsis --test$/.test(pkg.scripts['build:test'] || ''));

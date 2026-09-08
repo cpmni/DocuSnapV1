@@ -169,3 +169,30 @@ db.close();
 
 console.log(fail ? `\n${fail} check(s) FAILED` : '\nAll backupService checks passed.');
 process.exit(fail ? 1 : 0);
+
+// DARK TEST SWITCHES never travel in a backup (gary re-audit 2026-09-08 — the P0-1 class through Settings→Advanced→Restore).
+{
+  const { TEST_SWITCH_KEYS } = require('../../database/dark_switches');
+  const K = TEST_SWITCH_KEYS[0];
+  const src = new Database(':memory:');
+  src.exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)`);
+  for (const t of ['document_types', 'fields', 'templates', 'template_field_mappings', 'field_anchors', 'supplier_hints', 'corrections', 'logo_fingerprints']) {
+    try { src.exec(db.prepare(`SELECT sql FROM sqlite_master WHERE name = ?`).get(t).sql); } catch {}
+  }
+  src.prepare(`INSERT INTO settings (key, value) VALUES ('output_folder', 'C:/x'), (?, 'true'), ('test_build_armed_rev', 'manual@dev')`).run(K);
+  const b = createBackup(src, 'pw123');
+  const r = readBackup(b, 'pw123');
+  const keys = (r.payload.tables.settings || []).map(x => x.key);
+  check('export: a listed DARK switch and the arming marker are NOT in the backup payload', !keys.includes(K) && !keys.includes('test_build_armed_rev') && keys.includes('output_folder'));
+  const dst = new Database(':memory:');
+  dst.exec(`CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT)`);
+  for (const t of ['document_types', 'fields', 'templates', 'template_field_mappings', 'field_anchors', 'supplier_hints', 'corrections', 'logo_fingerprints']) {
+    try { dst.exec(db.prepare(`SELECT sql FROM sqlite_master WHERE name = ?`).get(t).sql); } catch {}
+  }
+  dst.prepare(`INSERT INTO settings (key, value) VALUES (?, 'false')`).run(K);
+  const crafted = readBackup(b, 'pw123').payload;
+  crafted.tables.settings = [...(crafted.tables.settings || []), { key: K, value: 'true' }, { key: 'test_build_armed_rev', value: 'manual@dev' }];
+  try { applyBackup(dst, crafted); } catch (e) { check('restore of a crafted payload does not throw', false); }
+  check("restore: a crafted payload carrying a listed switch 'true' leaves the row 'false' (the door is closed)", dst.prepare('SELECT value FROM settings WHERE key = ?').get(K).value === 'false');
+  check('restore: the arming marker is never written by a backup', !dst.prepare(`SELECT 1 FROM settings WHERE key = 'test_build_armed_rev'`).get());
+}

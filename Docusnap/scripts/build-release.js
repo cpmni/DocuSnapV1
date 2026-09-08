@@ -13,7 +13,11 @@
  * RELEASE env: SET  HARDEN_JS=1 HARDEN_JS_STRINGS=1 RELEASE_BUILD=1 CSC_IDENTITY_AUTO_DISCOVERY=false (SIGN=1 inverts —
  *              post-incorporation signing is one switch); DELETE TEST_BUILD SHIP_PY_SOURCE HARDEN_JS_NOBYTECODE
  *              (a shell's leftover test env must not leak in). HARDEN_JS=0 in the shell stays an explicit
- *              plain-release escape for bisecting (printed loudly).
+ *              plain-release escape for bisecting (printed loudly). SKIP_SMOKE / AUDIT_OFFLINE_OK are scrubbed too;
+ *              --skip-smoke / --audit-offline-ok are the only (loud) re-enables.
+ *              SIGNING: CSC_IDENTITY_AUTO_DISCOVERY only silences electron-builder's keychain hunt (and the vendor-binary
+ *              signtool EBUSY trap); Windows Authenticode signing is WIN_CSC_LINK + WIN_CSC_KEY_PASSWORD (or a
+ *              signtoolOptions block) once the owner holds an OV/EV cert — SIGN=1 does not sign by itself.
  * TEST env:    today's plain path + TEST_BUILD=1 + BUILD_REV=<rev>-TEST (build-electron.js bakes
  *              extraMetadata.testBuild=true → the DARK test switches arm at runtime).
  * Order:       1 check-release-migrations → 2 check-vendor-python → 3 check-licenses → 4 check-npm-audit (release)
@@ -35,9 +39,11 @@ function composeEnv(mode, base = process.env) {
     if (!/-TEST$/.test(env.BUILD_REV)) env.BUILD_REV += '-TEST';
     return env;
   }
-  for (const k of ['TEST_BUILD', 'SHIP_PY_SOURCE', 'HARDEN_JS_NOBYTECODE']) delete env[k];
+  // Every variable that WEAKENS a gate is scrubbed from the inherited shell (re-audit 2026-09-08: a leftover
+  // SKIP_SMOKE=1 / AUDIT_OFFLINE_OK=1 silently degraded two gates). Re-enable only by explicit CLI flag.
+  for (const k of ['TEST_BUILD', 'SHIP_PY_SOURCE', 'HARDEN_JS_NOBYTECODE', 'SKIP_SMOKE', 'AUDIT_OFFLINE_OK', 'HARDEN_JS_ESCAPE']) delete env[k];
   env.RELEASE_BUILD = '1';
-  if (env.HARDEN_JS === '0') { env.HARDEN_JS_ESCAPE = '1'; delete env.HARDEN_JS; delete env.HARDEN_JS_STRINGS; }   // explicit plain-release escape (bisecting)
+  if (env.HARDEN_JS === '0') { env.HARDEN_JS_ESCAPE = '1'; delete env.HARDEN_JS; delete env.HARDEN_JS_STRINGS; }   // explicit plain-release escape (bisecting) — set AFTER the scrub above
   else { env.HARDEN_JS = '1'; env.HARDEN_JS_STRINGS = '1'; }
   env.CSC_IDENTITY_AUTO_DISCOVERY = env.SIGN === '1' ? 'true' : 'false';
   if (env.BUILD_REV && /-TEST$/.test(env.BUILD_REV)) env.BUILD_REV = env.BUILD_REV.replace(/-TEST$/, '');
@@ -54,8 +60,18 @@ function gateSequence(mode, target = 'nsis') {
   if (mode === 'release') seq.push(['scripts/check-npm-audit.js', []]);
   seq.push(['scripts/compile-python-bytecode.js', []], ['scripts/test_no_shipped_py_source.js', []]);
   seq.push(['scripts/build-electron.js', target === 'appx' ? ['appx'] : []]);
-  if (mode === 'release' && target === 'nsis') seq.push(['scripts/verify-release-artifact.js', []]);
+  // The verifier reads dist/win-unpacked, which BOTH targets pack from — the Store artifact gets the same
+  // source-protection / fuse / boot-smoke / html-asset gate (re-audit 2026-09-08: it had none).
+  if (mode === 'release') seq.push(['scripts/verify-release-artifact.js', []]);
   return seq;
+}
+
+/** applyFlags(env, argv) → env with the explicit, LOUD re-enables (after the scrub). Pure. */
+function applyFlags(env, argv = []) {
+  const out = { ...env };
+  if (argv.includes('--skip-smoke')) out.SKIP_SMOKE = '1';
+  if (argv.includes('--audit-offline-ok')) out.AUDIT_OFFLINE_OK = '1';
+  return out;
 }
 
 function packageJsonClean() {
@@ -66,9 +82,10 @@ if (require.main === module) {
   const args = process.argv.slice(2);
   const target = args.includes('appx') ? 'appx' : 'nsis';
   const mode = args.includes('--test') ? 'test' : 'release';
-  const env = composeEnv(mode, process.env);
+  const env = applyFlags(composeEnv(mode, process.env), args);
   const tag = mode === 'test' ? 'TEST build' : (env.HARDEN_JS_ESCAPE ? 'RELEASE build — HARDEN_JS=0 ESCAPE: PLAINTEXT JS (bisecting only)' : 'RELEASE build (hardened)');
-  console.log(`[build-release] ${tag} · target ${target} · BUILD_REV ${env.BUILD_REV || '(from build-rev.js)'} · signing ${env.CSC_IDENTITY_AUTO_DISCOVERY === 'true' ? 'ON' : 'off'}`);
+  const flags = [env.SKIP_SMOKE === '1' ? 'SKIP_SMOKE' : '', env.AUDIT_OFFLINE_OK === '1' ? 'AUDIT_OFFLINE_OK' : ''].filter(Boolean);
+  console.log(`[build-release] ${tag} · target ${target} · BUILD_REV ${env.BUILD_REV || '(from build-rev.js)'} · signing ${env.CSC_IDENTITY_AUTO_DISCOVERY === 'true' ? 'ON' : 'off'}${flags.length ? ' · WEAKENED BY FLAG: ' + flags.join(', ') : ''}`);
   if (!packageJsonClean()) { console.error('[build-release] package.json is dirty in git — commit or restore it first (build-electron.js swaps build.files during the pack).'); process.exit(1); }
   for (const [script, sargs] of gateSequence(mode, target)) {
     console.log(`\n[build-release] ▶ ${script} ${sargs.join(' ')}`);
@@ -79,4 +96,4 @@ if (require.main === module) {
   console.log(`\n[build-release] ✔ ${tag} complete.`);
 }
 
-module.exports = { composeEnv, gateSequence };
+module.exports = { composeEnv, gateSequence, applyFlags };
