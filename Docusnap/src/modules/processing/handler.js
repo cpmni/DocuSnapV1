@@ -5455,7 +5455,7 @@ function register(ctx) {
   // saved anchor coords back to the raw frame by the SAME angle. Mirrors the ocr-region spawn.
   ipcMain.handle('get-page-deskew', async (_e, base64png, minAngle) => {
     requireRole('admin', 'edit');
-    const tmpFile = path.join(os.tmpdir(), `ds_deskew_${Date.now()}.png`);
+    const tmpFile = path.join(os.tmpdir(), `ds_deskew_${Date.now()}_${_ocrTmpSeq++}.png`);
     fs.writeFileSync(tmpFile, Buffer.from(base64png, 'base64'));
     const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
     const py = pythonExe();
