@@ -83,8 +83,21 @@
     ; still hold the folder — re-kill + wait here where the wipe actually happens.
     nsExec::Exec 'taskkill /F /T /IM ScanFinder.exe'
     Sleep 1500
+    ; Under a per-machine install the uninstaller runs with SetShellVarContext all (electron-builder
+    ; multiUser.nsh setInstallModePerAllUsers), where $APPDATA / $LOCALAPPDATA resolve to C:\ProgramData
+    ; — NOT the user's profile — so this wipe silently targeted folders that do not exist (owner report
+    ; 2026-09-07: "remove all data" left %APPDATA%\ScanFinder behind; baa25dd chased locked files instead).
+    ; Electron data is ALWAYS per-user: switch to the current user's context for the wipe and restore
+    ; the all-users context afterwards (electron-builder's own uninstaller.nsh does exactly this around
+    ; its $APPDATA wipe). Harmless under a per-user install ($installMode != all).
+    ${if} $installMode == "all"
+      SetShellVarContext current
+    ${endif}
     !insertmacro SafeWipe "$APPDATA\ScanFinder"      a
     !insertmacro SafeWipe "$APPDATA\DocuSnap"         b
     !insertmacro SafeWipe "$LOCALAPPDATA\ScanFinder"  c
+    ${if} $installMode == "all"
+      SetShellVarContext all
+    ${endif}
   keepData:
 !macroend
