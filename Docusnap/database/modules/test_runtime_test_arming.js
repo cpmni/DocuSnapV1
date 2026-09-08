@@ -31,6 +31,7 @@ quiet(() => runMigrations(db, { identity: REL }));
 check('release identity on a fresh DB: every test switch OFF, no marker', allAre(db, 'false') && get(db, arming.MARKER) === null);
 check("money_sign_capture stays 'true' (not a test switch)", get(db, 'money_sign_capture') === 'true');
 
+const untouchedBefore = { msc: get(db, 'money_sign_capture'), opi: get(db, 'ocr_parallel_import_enabled') };   // mig 93 default / mig 139 promotion
 let r = arming.armTestSwitches(db, T1);
 check('test build T1 arms every switch + stamps the marker', r.action === 'armed' && allAre(db, 'true') && get(db, arming.MARKER) === T1.buildRev);
 r = arming.armTestSwitches(db, T1);
@@ -40,7 +41,7 @@ r = arming.armTestSwitches(db, T1);
 check("an operator's OFF made after arming stands on the same test rev", r.action === 'noop' && get(db, TEST_SWITCH_KEYS[3]) === 'false');
 r = arming.armTestSwitches(db, T2);
 check('a NEW test rev re-arms everything', r.action === 'armed' && allAre(db, 'true') && get(db, arming.MARKER) === T2.buildRev);
-check('money_sign_capture + ocr_parallel_import_enabled untouched by arming', get(db, 'money_sign_capture') === 'true' && get(db, 'ocr_parallel_import_enabled') === 'false');
+check('money_sign_capture (mig 93 default) + ocr_parallel_import_enabled (mig 139 promotion) untouched by arming', get(db, 'money_sign_capture') === untouchedBefore.msc && get(db, 'ocr_parallel_import_enabled') === untouchedBefore.opi && untouchedBefore.msc === 'true');
 
 r = arming.armTestSwitches(db, REL);
 check('a release build after a test build DISARMS once + drops the marker (the reference-DB road, C3)', r.action === 'disarmed' && allAre(db, 'false') && get(db, arming.MARKER) === null);

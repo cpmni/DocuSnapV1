@@ -2831,6 +2831,39 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 137 (test-switch reset): ${e.message}`); }
   }
 
+  // ── migration 138: ocr_dpi seeded 200 (2026-09-08; pre-deployment audit P2-1, Oracle re-tiered to a QUALITY item —
+  //    docs/designs/AUDIT_FIX_PLAN_2026-09-08.md §4 slice 3.1). No migration ever seeded `ocr_dpi`, so a rowless install
+  //    ran at the code default 300 (tesseract.py:45 / handler._ocrDpiEnv) while the owner's install and the whole 605-corpus
+  //    history validated at 200 — the crop/re-slice geometry is calibrated for 200 and OCR cost scales ~DPI², so 300 was an
+  //    un-corpus-validated, OOM-prone customer default. INSERT OR IGNORE (the mig-101 shape): an existing explicit row
+  //    (150/200/300 chosen in Settings) is untouched. A rowless existing install flips 300→200 on this start: taught
+  //    geometry is *_norm (DPI-free), stored ocr_text of confirmed docs is not re-read, `ocrCache` dpi-changed invalidation
+  //    serves only DARK quick_reprocess; pending docs re-read at 200 may raise one "Read differently after learning" hold
+  //    (fail-toward-review — pre-announced). The three code-default-300 mirrors stay: the ROW is what makes them agree. ──
+  if (!applied.has(138)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('ocr_dpi', '200')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (138)').run();
+      console.log(`JS migration 138 applied: ocr_dpi seeded 200 (the corpus-validated operating point; ${n} row)`);
+    } catch (e) { console.warn(`  migration 138 (ocr_dpi seed): ${e.message}`); }
+  }
+
+  // ── migration 139: ocr_parallel_import_enabled promoted to a customer default (2026-09-08; pre-deployment audit P2-2 —
+  //    AUDIT_FIX_PLAN §4 slice 3.3; Oracle C2/C7). The one-file import (the teach wizard's road) ran fully serial on one
+  //    core while the reprocess road has used the same two OCR pools since 07-17. Oracle C7 held the flip on a memory-
+  //    pressure gate: singleDocParallelEnv now refuses the pools when free RAM < one DPI-scaled worker budget + 1 GiB, and
+  //    mig 138 puts the default at 200 DPI. UPSERT (the mig-98 promotion shape): mig 127 seeded 'false' on every DB, so an
+  //    INSERT OR IGNORE would be a dead guard. This mig is the key's SOLE writer — it is NOT in TEST_SWITCH_KEYS (the runtime
+  //    release disarm must never un-promote it). A later manual OFF survives (never re-applied). ──
+  // @DEFAULT_FLIP 139 keys=ocr_parallel_import_enabled
+  if (!applied.has(139)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('ocr_parallel_import_enabled', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (139)').run();
+      console.log('JS migration 139 applied: ocr_parallel_import_enabled promoted ON (one-file import OCR pools; memory-pressure clause in singleDocParallelEnv)');
+    } catch (e) { console.warn(`  migration 139 (parallel-import promotion): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

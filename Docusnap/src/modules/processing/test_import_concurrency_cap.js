@@ -44,6 +44,18 @@ check('(4c, 32GB, want 10)  → 4  (core cap binds, RAM is generous)', H._effect
 check('(32c, 64GB, want 10) → 10 (a big box that wants 10 KEEPS 10 — not throttled)', H._effectiveWorkers(32, 64 * GiB, 10) === 10);
 check('(12c, 16GB, want 4)  → 4  (a modest explicit choice is honoured under the ceiling)', H._effectiveWorkers(12, 16 * GiB, 4) === 4);
 check('never returns < 1 even on a tiny box', H._effectiveWorkers(1, 1 * GiB, 1) === 1 && H.ramConcurrencyCap(1 * GiB) === 1);
+// DPI-scaled budget (audit P2-4, 2026-09-08): identity at 200, ×2.25 at 300, floored at the base below 200.
+check('budget(200) = 1.5 GiB (identity with the base)', H.perWorkerBudgetBytes(200) === 1.5 * GiB);
+check('budget(300) = 3.375 GiB (2.25×)', H.perWorkerBudgetBytes(300) === 3.375 * GiB);
+check('budget(150) = 1.5 GiB (floored — fixed overhead does not shrink)', H.perWorkerBudgetBytes(150) === 1.5 * GiB);
+check('budget(undefined/garbage) = base', H.perWorkerBudgetBytes() === 1.5 * GiB && H.perWorkerBudgetBytes(NaN) === 1.5 * GiB);
+check('ramCap(16GB, 300) → 3  (budget 12 / 3.375)', H.ramConcurrencyCap(16 * GiB, 300) === 3);
+check('ramCap(8GB, 300)  → 1  (budget 5 / 3.375)',  H.ramConcurrencyCap(8 * GiB, 300) === 1);
+check('ramCap(32GB, 300) → 7  (budget 24 / 3.375)', H.ramConcurrencyCap(32 * GiB, 300) === 7);
+check('(12c, 16GB, want 10, 300 DPI) → 3 (the OOM case the audit named)', H._effectiveWorkers(12, 16 * GiB, 10, 300) === 3);
+check('singleDocParallelEnv: refused under memory pressure (free < budget + 1 GiB)', Object.keys(H.singleDocParallelEnv({ nFiles: 1, ompExported: true, settingOn: true, freeBytes: 2 * GiB, budgetBytes: 1.5 * GiB })).length === 0);
+check('singleDocParallelEnv: armed with headroom (free >= budget + 1 GiB)', H.singleDocParallelEnv({ nFiles: 1, ompExported: true, settingOn: true, freeBytes: 3 * GiB, budgetBytes: 1.5 * GiB }).DS_OCR_PARALLEL_FIELDS === '1');
+check('singleDocParallelEnv: no clause when the caller passes no memory figures (older callers)', H.singleDocParallelEnv({ nFiles: 1, ompExported: true, settingOn: true }).DS_OCR_PARALLEL_FIELDS === '1');
 
 console.log('\n§2 OMP-decouple invariant (Oracle C2/C3/C6.4) — the OMP cap is a function of the SETTING, never shard count');
 const Database = require('better-sqlite3');
@@ -98,7 +110,7 @@ check('success discounts a HEALED spawn sentinel but fails on an unhealed shard'
       /failedShards\.length === 0 && codes\.every\(c => c === 0 \|\| c === SPAWN_FAILED\)/.test(src));
 
 // Item 5 transparency: the ceiling is surfaced.
-check('get-concurrency-info exposes ramCap + effectiveMax', /ramCap: ramConcurrencyCap\(\)/.test(src) && /effectiveMax:/.test(src));
+check('get-concurrency-info exposes ramCap + effectiveMax (RAM cap follows the active DPI, audit P2-4)', /ramCap: ramConcurrencyCap\(os\.totalmem\(\), _resolveOcrDpi\(getDb\(\)\)\)/.test(src) && /effectiveMax:/.test(src) && /ocrDpi: _resolveOcrDpi\(getDb\(\)\)/.test(src));
 check('a runtime clamp emits ONE "stay within this PC\'s available memory" line',
       /to stay within this PC's available memory/.test(src));
 

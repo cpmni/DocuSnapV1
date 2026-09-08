@@ -162,7 +162,9 @@ console.log('\n§F OCR_PARALLEL_IMPORT (Oracle 2026-09-07 C8): the per-document 
   check('watch/handler.js never names DS_OCR_* (no road to the pools)', !/DS_OCR_PARALLEL/.test(watchSrc));
   const procSrc = _fs.readFileSync(_path.join(_REPO, 'src', 'modules', 'processing', 'handler.js'), 'utf8');
   check('the manual call site composes the pair AFTER buildWorkerCommand from the BUILT env (ompExported = builtEnv.OMP_THREAD_LIMIT)',
-        /singleDocParallelEnv\(\{ nFiles: poolHint\.nFiles, ompExported: !!builtEnv\.OMP_THREAD_LIMIT, settingOn, wantTrace \}\)/.test(procSrc));
+        /singleDocParallelEnv\(\{ nFiles: poolHint\.nFiles, ompExported: !!builtEnv\.OMP_THREAD_LIMIT, settingOn, wantTrace, freeBytes, budgetBytes \}\)/.test(procSrc));
+  // Oracle C7 memory-pressure clause (2026-09-08): the call site passes the live free RAM + the DPI-scaled budget.
+  check('the manual call site feeds the memory-pressure clause (freemem + perWorkerBudgetBytes(_resolveOcrDpi(db)))', /budgetBytes = perWorkerBudgetBytes\(_resolveOcrDpi\(db\)\)/.test(procSrc) && /freeBytes = os\.freemem\(\)/.test(procSrc));
   check('only the single-file import branch passes the hint', (procSrc.match(/runWorker\([^)]*\{ nFiles: allFiles\.length \}\)/g) || []).length === 1);
   learning.setSetting(db, 'ocr_parallel_import_enabled', 'false');
 }

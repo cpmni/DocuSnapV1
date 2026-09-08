@@ -88,13 +88,19 @@ function _autoTitleEnv(db) {
 // is a large speed win — the OCR cost scales ~DPI^2 and smaller images parallelise far better — at
 // the cost of small-text accuracy on genuine high-res scans, so it is an operator opt-in. Coerced
 // to the same [100,600] band tesseract.py enforces; anything else falls back to the 300 default.
-function _ocrDpiEnv(db) {
+// ONE integer resolver for the active OCR DPI (2026-09-08, audit P2-1/P2-4 — AUDIT_FIX_PLAN §4 3.1): the spawn env
+// AND the per-worker RAM budget both read it, so they cannot drift. Mig 138 seeds the row at 200 (the corpus-
+// validated point); the 300 fallback here mirrors tesseract.py's code default for a DB without the row.
+function _resolveOcrDpi(db) {
   try {
     const learning = require('../../../database/modules/learning');
     const raw = parseInt(learning.getSetting(db, 'ocr_dpi', '300'), 10);
-    const dpi = (Number.isFinite(raw) && raw >= 100 && raw <= 600) ? raw : 300;
-    return dpi === 300 ? {} : { OCR_RENDER_DPI: String(dpi) };
-  } catch { return {}; }
+    return (Number.isFinite(raw) && raw >= 100 && raw <= 600) ? raw : 300;
+  } catch { return 300; }
+}
+function _ocrDpiEnv(db) {
+  const dpi = _resolveOcrDpi(db);
+  return dpi === 300 ? {} : { OCR_RENDER_DPI: String(dpi) };
 }
 
 // Anchor-crop opt-in spawn env — two independent, owner-flippable crop fixes, each DEFAULT OFF so
@@ -1029,8 +1035,13 @@ function _reconcileEnv(db) {
 //   !wantTrace        — the dev inspector / diag logging force serial reads anyway (pools disable under trace).
 // Pinned: stress_test/import_watch_parity.js §F (the truth table; buildWorkerCommand never emits DS_OCR_*;
 // watch never carries them) + database/test_migration127_128_parallel_import.js.
-function singleDocParallelEnv({ nFiles = 0, ompExported = false, settingOn = false, wantTrace = false } = {}) {
+//   freeBytes/budgetBytes — the MEMORY-PRESSURE clause (Oracle C7, 2026-09-08 — AUDIT_FIX_PLAN §4 3.3): the pools add
+//                       one full-page tesseract + up to min(cpu,8) crop reads on top of the worker; refuse them when
+//                       free RAM is below one worker budget + 1 GiB (the same idiom as the batch freemem tripwire).
+//                       Both absent (older callers / pins) ⇒ no clause.
+function singleDocParallelEnv({ nFiles = 0, ompExported = false, settingOn = false, wantTrace = false, freeBytes = null, budgetBytes = null } = {}) {
   if (nFiles !== 1 || !ompExported || !settingOn || wantTrace) return {};
+  if (freeBytes != null && budgetBytes != null && freeBytes < budgetBytes + 1024 * 1024 * 1024) return {};
   return { DS_OCR_PARALLEL_FULLPAGE: '1', DS_OCR_PARALLEL_FIELDS: '1' };
 }
 
@@ -2305,7 +2316,14 @@ function _reprocessThreadCap(db) {
 // for typical batches, NOT a complete OOM guard — a large multi-page PDF can still exceed it; the
 // runWorker spawn-failure handler (fail-toward-safe) is the real backstop. Design:
 // docs/designs/CONCURRENCY_RAM_CAP_2026-08-31.md.
-const PER_WORKER_BUDGET_BYTES = 1.5 * 1024 * 1024 * 1024;
+const PER_WORKER_BUDGET_BYTES = 1.5 * 1024 * 1024 * 1024;   // the 200-DPI base (mig 138 seeds ocr_dpi=200)
+// The budget scales with the ACTIVE render DPI (2026-09-08, audit P2-4): page rasters scale ~DPI², so at an explicit
+// 300 the same worker holds 2.25× the bytes (an A4 RGB page: 11.6 MB @200, 26.1 MB @300; 50 pages ≈ 0.58 vs 1.31 GB).
+// Floored at the base — the fixed Python+Tesseract overhead does not shrink below 200. Identity at 200 (pin unchanged).
+function perWorkerBudgetBytes(dpi = 200) {
+  const d = (Number.isFinite(dpi) && dpi >= 100 && dpi <= 600) ? dpi : 200;
+  return Math.max(PER_WORKER_BUDGET_BYTES, PER_WORKER_BUDGET_BYTES * (d / 200) * (d / 200));
+}
 
 // RAM-aware ceiling on cross-document import parallelism. The batch spawns N heavy OCR workers with
 // no memory awareness; on a box where cores overcount RAM (a 6c/12t / 16GB PC → default 10 workers)
@@ -2315,18 +2333,18 @@ const PER_WORKER_BUDGET_BYTES = 1.5 * 1024 * 1024 * 1024;
 // hard-ceil even an explicit user setting. Windows `freemem()` under-reports (excludes the reclaimable
 // standby/cache list), so it is used only as a light secondary tripwire at spawn time, never the
 // primary. Reserve max(3GiB, 25%) for the OS + Electron main/renderers/GPU + margin.
-function ramConcurrencyCap(totalBytes = os.totalmem()) {
+function ramConcurrencyCap(totalBytes = os.totalmem(), dpi = 200) {
   const reserve = Math.max(3 * 1024 * 1024 * 1024, totalBytes * 0.25);
   const budget = Math.max(0, totalBytes - reserve);
-  return Math.max(1, Math.floor(budget / PER_WORKER_BUDGET_BYTES));
+  return Math.max(1, Math.floor(budget / perWorkerBudgetBytes(dpi)));
 }
 
 // The import worker-COUNT decision as ONE pure, testable function: the user/default `setting`,
 // hard-ceiled by the core count (maxConcurrency) AND the RAM cap. The runtime layers a freemem
 // tripwire on top of this. Production and the pin both call this — no drift.
-function _effectiveWorkers(cores, totalBytes, setting) {
+function _effectiveWorkers(cores, totalBytes, setting, dpi = 200) {
   const requested = Math.max(1, Math.min(maxConcurrency(cores), setting || 1));
-  return Math.max(1, Math.min(requested, ramConcurrencyCap(totalBytes)));
+  return Math.max(1, Math.min(requested, ramConcurrencyCap(totalBytes, dpi)));
 }
 
 // How many concurrent Python workers the QUIET background re-read lane may use. The lane was ONE
@@ -2841,7 +2859,7 @@ function register(ctx) {
     } catch (e) { logger?.warn?.(`[separate] training-args failed: ${e && e.message}`); }
     const tf = (autoSep && templatesFile) ? templatesFile : null;   // heuristic arm needs templates; slips arm is template-less
     if (!tf && !slipsOn) { if (built) cleanupFiles(built.tempFiles); return { separated: 0, rewrites: [], consumed: [] }; }
-    const sepP = Math.max(1, Math.min(os.cpus().length || 1, 6, ramConcurrencyCap()));
+    const sepP = Math.max(1, Math.min(os.cpus().length || 1, 6, ramConcurrencyCap(os.totalmem(), _resolveOcrDpi(db))));
     try {
       return await _separateBatchDocuments(folder, tf,
         (text, level) => log?.(level || 'log', `[separate] ${text}`),
@@ -2930,10 +2948,11 @@ function register(ctx) {
     // below what the machine supports (a 32GB box that wants 10 keeps 10; a 16GB box that wants 10 is
     // capped to 8 — the crash case). It hard-ceils even an explicit setting (fail-safe). _effectiveWorkers
     // is the ONE pure, pinned decision; the freemem tripwire below is a runtime-only layer on top of it.
-    concurrency = _effectiveWorkers(os.cpus().length || 1, os.totalmem(), requestedConcurrency);
+    const _activeDpi = _resolveOcrDpi(db);   // the RAM budget follows the render DPI (audit P2-4)
+    concurrency = _effectiveWorkers(os.cpus().length || 1, os.totalmem(), requestedConcurrency, _activeDpi);
     // Secondary freemem tripwire (runtime only): drop one more worker when the box is already loaded by
     // other apps. totalmem stays the primary term (Windows freemem under-reports the reclaimable cache).
-    try { if (concurrency > 1 && os.freemem() < PER_WORKER_BUDGET_BYTES + 1024 * 1024 * 1024) concurrency -= 1; } catch {}
+    try { if (concurrency > 1 && os.freemem() < perWorkerBudgetBytes(_activeDpi) + 1024 * 1024 * 1024) concurrency -= 1; } catch {}
     // Transparency (Oracle): main is the sole authority; when the runtime clamp actually reduces the
     // worker count, say so ONCE. The Settings control surfaces the ceiling separately via
     // get-concurrency-info.effectiveMax.
@@ -2993,7 +3012,9 @@ function register(ctx) {
       if (poolHint) {
         let settingOn = false;
         try { settingOn = learning.getSetting(db, 'ocr_parallel_import_enabled', 'false') === 'true'; } catch {}
-        const pool = singleDocParallelEnv({ nFiles: poolHint.nFiles, ompExported: !!builtEnv.OMP_THREAD_LIMIT, settingOn, wantTrace });
+        let freeBytes = null, budgetBytes = null;
+        try { freeBytes = os.freemem(); budgetBytes = perWorkerBudgetBytes(_resolveOcrDpi(db)); } catch {}
+        const pool = singleDocParallelEnv({ nFiles: poolHint.nFiles, ompExported: !!builtEnv.OMP_THREAD_LIMIT, settingOn, wantTrace, freeBytes, budgetBytes });
         if (Object.keys(pool).length) { env = { ...builtEnv, ...pool }; logger?.log?.('[import] one-document worker: per-document OCR pools armed'); }
       }
       let proc;
@@ -3096,7 +3117,7 @@ function register(ctx) {
         // serialise a Python cold-start per document. Cap at the CPU core count (≤6).
         // RAM-capped too (Oracle, same family as the worker cap): the pre-pass spawns its own bounded
         // Tesseract parallelism, so a low-RAM box must not oversubscribe it either.
-        const sepP = Math.max(1, Math.min(os.cpus().length || 1, 6, ramConcurrencyCap()));
+        const sepP = Math.max(1, Math.min(os.cpus().length || 1, 6, ramConcurrencyCap(os.totalmem(), _resolveOcrDpi(db))));
         try {
           const sepRes = await _separateBatchDocuments(folderPath, templatesFile,
             (text, level) => mirror(event.sender, 'process-progress', { type: 'log', text, level: level || '' }),
@@ -3271,8 +3292,9 @@ function register(ctx) {
     recommended: defaultConcurrency(),
     // RAM-aware ceiling (2026-08-31): the most workers this PC's memory allows, and the effective
     // max the runtime will actually use. Settings surfaces this so a capped choice isn't a surprise.
-    ramCap: ramConcurrencyCap(),
-    effectiveMax: Math.max(1, Math.min(maxConcurrency(), ramConcurrencyCap())),
+    ramCap: ramConcurrencyCap(os.totalmem(), _resolveOcrDpi(getDb())),
+    effectiveMax: Math.max(1, Math.min(maxConcurrency(), ramConcurrencyCap(os.totalmem(), _resolveOcrDpi(getDb())))),
+    ocrDpi: _resolveOcrDpi(getDb()),
   }; });
 
   ipcMain.handle('get-stuck-count', () => { requireLogin();
@@ -6727,6 +6749,8 @@ module.exports = {
   maxConcurrency, defaultConcurrency, ramConcurrencyCap, _effectiveWorkers, _reprocessThreadCap,
   singleDocParallelEnv,   // OCR_PARALLEL_IMPORT (2026-09-07): the pure call-site predicate (test_import_parallel_env.js)
   PER_WORKER_BUDGET_BYTES,
+  perWorkerBudgetBytes,      // the DPI²-scaled per-worker budget (audit P2-4, 2026-09-08)
+  _resolveOcrDpi,            // the ONE active-DPI resolver the env + the RAM budget share (audit P2-1)
   recordReviewEvent,   // B1: the activity ledger's one writer (reviewService's class-fix door reaches it through review/handler)
   getReviewEvent,      // batch-audit grid: resolve an event's authoritative id set from review/handler
   // Exposed so other entry points into the same pipeline (e.g. the
