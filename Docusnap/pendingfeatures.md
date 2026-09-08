@@ -9,6 +9,27 @@
 
 ---
 
+## 2026-09-08 — Clipped-name class: the keyword-superstring grow (Oracle SEND BACK → redirected; spec `docs/designs/KEYWORD_SUPERSTRING_GROW_2026-09-08.md`)
+- **FIX-NOW (live defect, owner's fresh install):** on the 21 Ridgeway dockets the taught `customer_name` box is as wide as the SAMPLE's value;
+  7 siblings clipped (`Aldermoor Engineerir`, `Corvus Security Servic`, …) and **two clipped names AUTO-FILED** (docs 19/21) — `customer_name`
+  is non-role so the 88 floor never applies and the wordness net is structural (a name-shaped remnant passes). Oracle: two DARK belts →
+  (a) mapper: a geometrically PROVEN right cut whose heal fails takes the `defer_cap` (≤70 + `_EDGE_CUT_NOTE`) instead of returning `None`
+  (`template_mapper.py:3394-3397`; reverses v1's "names never take the defer-cap"); (b) engine, ZERO OCR, AFTER Stage 4: `template_mapping`
+  name winner M + un-noted keyword K + `_name_grow_comparator(M, K)` + M not word-bounded page-present → value unchanged, `corrected_to=K`,
+  cap ≤70, note. Learning Repair docs 8/19/21.
+- **Build order (all DARK + `TEST_SWITCH_KEYS`, flag-only v1):** 0 instrument the mapper name leg (census at ENTRY / `nolines` / `nocut`,
+  `_name_grow_census` makedirs; replay doc 14 = positive control — a `nocut` on the stored box while 007's pixel replay finds a 17 px cut =
+  a frame mismatch to fix first) → 1 in-band ROW PICK on the GROWN re-read only (vertical pad 0.5·h, hpad 0, PSM 6 `image_to_data`,
+  `reslice.pick_in_band_line`, ≥2 in-band → decline+note; the tight read untouched) → 2 the two belts above → 3 v2 clean tier = inject the
+  in-band grown read as an un-noted `template_mapping_regrown` ledger candidate and demote through `corrob_note_recompute_fc` gated on
+  `_corrobLicensedKeyword` (`trust.js:566`). NO `regrow_name_read` (a floor-waived grow = a parameter on `_find_edge_cut_words`); NO keyword-
+  steered walk (an over-capture `… Site` would make both witnesses agree on the wrong superstring).
+- **Gate:** arms OFF / mapper / mapper+note on `TESTING/_measure/reset_arm_20260908/arm137.db` (ref/date md5-identical, would-file delta only
+  REMOVES, census `entered>0`, doc 14 = `healed_flagged` or the note); name accuracy via `teach_run_ab.js` + `score_teach_run.py`
+  (`customer_name` ≥ today; the Hard Set is cold — vacuous here). Pins in the spec §6 C5.
+- Codes sibling (`JN-72756`/`DN-78756`): separate — `_pick_fuller_code` + class G (`inline_disagree_corrob_soften`, DARK after mig 137) +
+  mig-133 left slack; the note the owner saw is the raw `inline_disagree_flag` because G's consumer is dark (its 44-doc OFF==ON M=0 is the flip gate).
+
 ## 2026-09-08 — Pre-deployment audit: what is deferred after the fix build (plan `docs/designs/AUDIT_FIX_PLAN_2026-09-08.md`, Oracle C1-C10)
 - **DPI-sensitive one-line-low relocate on a multi-line recipient block (warm-arm exhibit #117, 2026-09-08):** Larkspur delivery
   docket, "Deliver To" over four lines (company / "Site Office, Foundry Lane" / town / postcode). At 300 DPI `customer_name` reads
