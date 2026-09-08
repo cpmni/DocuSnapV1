@@ -159,3 +159,22 @@ No `regrow_name_read`. The owner's "extend the mapped read until it corroborates
   vacuous for this change). Learning Repair docs 8/19/21.
 
 **Codes** (the `JN-72756`/`DN-78756` sibling): unchanged — a separate item (`_pick_fuller_code` + class G + mig-133 left slack).
+
+## 7. BUILT 2026-09-08 (steps 0-3, commit `139780a`) — status + the in-app finding
+- **Step 0 (instrumentation):** `entered` / `nolines` / `nocut` (+ the read box and the row-band words near its right edge) /
+  `band_abstain_<n>`; the decline row carries `new`; `_name_grow_census` creates its dir (a POSIX or absent dir had swallowed every
+  line). **Positive control on doc 14 achieved** — and it settles the premise argument: in-app the name leg is ENTERED and exits at
+  `nocut`. The read box is the DRIFT-PLACED one (x 0.0705–0.2403; the located "Deliver To" sits 0.0065 further right than on the taught
+  sample), not the stored 0.064–0.234 that 007 replayed. `Nurseries` spans 0.1773–0.2445, so the box cuts its final `s` by 0.0042
+  (≈7 px), and the v1 floor `max(0.004, 0.6·g)` = 0.00448 refuses it by 0.0003 — half a pixel. gary's floor hypothesis was right for
+  the frame the app reads; F1 measured the wrong frame; F2 was not the mechanism. **The floor is the seam** for this class (a
+  floor-waived cut test = a parameter on `_find_edge_cut_words`, C4 — NOT built: the nick protection stands until a census says
+  otherwise).
+- **Step 1 (`template_name_grow_band_pick`)** and **belt 2(a) (`template_name_cut_defer_cap`)** are built and pinned but cannot reach
+  doc 14 (no cut ⇒ the leg never re-reads). They reach any sibling whose cut clears the floor (the gate arms count them).
+- **Belt 2(b) (`keyword_superstring_name_note`) FIRES in-app on doc 14** (`LOG Keyword-superstring note: customer_name 'Willowbrook
+  Nurserie:' … 'Willowbrook Nurseries' -> review with the fuller reading offered (corrected_to)`) — the zero-OCR net for the sub-floor
+  nick, exactly as ruled. Belt census: `kw_note_entered` / `kw_note_fired` / `kw_note_skip:<why>` rows explain every decision.
+- Keys: mig 140 seeds all three OFF; `TEST_SWITCH_KEYS` = 27; bridge lines in `_reconcileEnv`; pins listed in the commit.
+- **Gate (C6) arms:** `TESTING/_measure/name_grow_belts_20260908/run_arms.sh` — OFF / mapper / mapper+note on the post-137 copy with the
+  census per arm. Results: _appended below when the chain finishes._

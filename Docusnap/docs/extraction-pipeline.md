@@ -1124,3 +1124,17 @@ The three code-default-300 mirrors stay; the ROW makes them agree — a harness 
 `OCR_RENDER_DPI=200` (or `buildWorkerCommand(db).env`, which `customer_corpus_score.js` now uses). One-file imports run the
 two OCR pools by default (mig 139) behind a memory-pressure clause in `singleDocParallelEnv`. Gates + results:
 `docs/designs/AUDIT_FIX_PLAN_2026-09-08.md` §4 / §7b.
+
+## Name-grow belts — the clipped-name class (2026-09-08, DARK, mig 140)
+Spec `docs/designs/KEYWORD_SUPERSTRING_GROW_2026-09-08.md`. The taught name box is as wide as the SAMPLE's value, so a longer sibling
+value is cut at the right edge; the v1 `TEMPLATE_NAME_EDGE_GROW` leg (ON) finds the cut only when the overhang clears `max(0.004, 0.6·g)`,
+re-reads the grown box through the free-text preview path (headroom + best-confidence pick — on an over-tall box that is the address
+line below), and declines SILENTLY; `customer_name` is non-role, so a clipped remnant auto-files (only a note blocks). Three DARK keys:
+`template_name_grow_band_pick` (the grown re-read commits only the line in the taught box's band — R8 pad 0.5·h vertical, hpad 0, PSM 6,
+`reslice.pick_in_band_line`; 0/≥2 → decline), `template_name_cut_defer_cap` (a PROVEN cut whose heal fails takes the deferred ≤70 +
+`_EDGE_CUT_NOTE` floor like codes), `keyword_superstring_name_note` (engine, zero OCR, after Stage 4: a keyword reading that completes
+the taught box's cut remnant — same token count, last-token completion, page-present belts — → value unchanged, `corrected_to`, ≤70,
+a note; never a swap, no method suffix). Census (`NAMEGROW_CENSUS_DIR`, a WINDOWS path): the name leg now logs `entered`/`nolines`/
+`nocut`(+ the read box and the words near its right edge)/`band_abstain_<n>`/`declined`(+`new`); the note logs `kw_note_*`. The in-app
+exhibit (doc 14 on the owner's install) exits at `nocut`: the drift-placed box cuts the last glyph by 0.0042 vs the 0.00448 floor —
+the floor is the seam for that class; the note is the net. Gate = the C6 arms (OFF / mapper / mapper+note on the post-137 copy).

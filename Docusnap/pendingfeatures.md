@@ -10,6 +10,13 @@
 ---
 
 ## 2026-09-08 — Clipped-name class: the keyword-superstring grow (Oracle SEND BACK → redirected; spec `docs/designs/KEYWORD_SUPERSTRING_GROW_2026-09-08.md`)
+- **BUILT 2026-09-08 (`139780a`, DARK, mig 140, 3 keys in TEST_SWITCH_KEYS):** steps 0-3 of the redirected order — census instrumentation
+  (`entered`/`nolines`/`nocut`+neighbourhood/`band_abstain`/decline `new`), `template_name_grow_band_pick`, `template_name_cut_defer_cap`,
+  `keyword_superstring_name_note`. **In-app finding (positive control):** doc 14's leg exits at `nocut` — the DRIFT-PLACED box cuts
+  'Nurseries' by 0.0042 and the v1 floor 0.00448 refuses by half a pixel. So the geometric belts cannot reach that doc and the zero-OCR
+  note is the net (it fires in-app). **STILL QUEUED:** (i) a floor-waived cut test as a parameter on `_find_edge_cut_words` (Oracle C4)
+  — the in-app census now shows how often a sub-floor nick is a real clip; (ii) v2 clean tier via the ledger witness +
+  `_corrobLicensedKeyword`; (iii) the flip gate per key (spec §7). Learning Repair docs 8/19/21 still owed.
 - **FIX-NOW (live defect, owner's fresh install):** on the 21 Ridgeway dockets the taught `customer_name` box is as wide as the SAMPLE's value;
   7 siblings clipped (`Aldermoor Engineerir`, `Corvus Security Servic`, …) and **two clipped names AUTO-FILED** (docs 19/21) — `customer_name`
   is non-role so the 88 floor never applies and the wordness net is structural (a name-shaped remnant passes). Oracle: two DARK belts →
