@@ -23,7 +23,7 @@ touches that area — read the pointed-to doc BEFORE working in it:
 
 ## ⏭ LATEST — 2026-09-08 EVENING (audit fixes BUILT + RE-AUDIT vetted + belts gated + hardened REBUILD + Chris round):
 **READ `HANDOVER_2026-09-08_BUILD.md` FIRST** (its LATE EVENING section + CHRIS TRIAGE), then `docs/PRE_DEPLOYMENT_AUDIT_2026-09-08_RERUN.md`
-(the Oracle's ordered "BEFORE A CUSTOMER BUILD" list = the queue). Branch `feat/teach-side-overnight`, ~48 commits since `eeb8d56`,
+(the Oracle's ordered "BEFORE A CUSTOMER BUILD" list = the queue). Branch `feat/teach-side-overnight`, 40 commits since `eeb8d56`,
 **NONE pushed** (owner's decision). **The click-through target = `dist/ScanFinder Setup 2.0.0-r20260908-1843-9251551.exe`** (hardened,
 manifest clean, identity via file; the 2017/1355 hardened installers are `.REFUSED` — every earlier HARDEN_JS build shipped a Review whose
 "File all ready" threw, fixed `5a4bd94`). **The old "revert list" is RETIRED:** mig 137 reset the 27 DARK test switches, the KEY-based gate

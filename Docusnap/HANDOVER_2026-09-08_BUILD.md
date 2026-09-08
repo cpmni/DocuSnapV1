@@ -93,7 +93,7 @@ no console error in the SFDEV trace. That pass gates the `build`/`build:store` d
 ## LATE EVENING (2026-09-08, ~19:00-20:30) — re-audit vetted, belts gated, artifact rebuilt, pin runner, Chris round
 **Read order for a cold start:** this section → `docs/PRE_DEPLOYMENT_AUDIT_2026-09-08_RERUN.md` (the Oracle's ordered
 "BEFORE A CUSTOMER BUILD" list is the authoritative queue) → `docs/designs/KEYWORD_SUPERSTRING_GROW_2026-09-08.md` §7.1 →
-`docs/CHRIS_FULL_APP_REVIEW_2026-09-08.md`. HEAD = `71e00ac`+ (see `git log`), **~45 commits since `eeb8d56`, NONE pushed** — the
+`docs/CHRIS_FULL_APP_REVIEW_2026-09-08.md`. HEAD = `71e00ac`+ (see `git log`), **40 commits since `eeb8d56`, NONE pushed** — the
 push is the owner's decision.
 
 **What happened, in order:**
@@ -132,7 +132,7 @@ Junctions: delete as reparse points (`[IO.Directory]::Delete`) BEFORE any recurs
 1. The scripted click-through on **`…-r20260908-1843-9251551.exe`** (Review → File all ready files one; Teach → box → read-back;
    every Settings tab; Search → preview → stamp; Help; About shows the rev; no SFDEV console error) + the uninstall "remove all data" drill.
 2. Then say the word and I flip `build`/`build:store` to the release road (plan 2.7b, Oracle C5) + retire the "revert list" wording (C10).
-3. Push decision (~45 local commits).
+3. Push decision (40 local commits).
 4. Learning Repair: invoice docs #42/#25/#27/#40 (poisoned dates) and the Ridgeway docs 8/19/21 (clipped customer names); doc 99 `ws-55718`.
 5. Incorporate Six Mile Software Ltd → `WIN_CSC_LINK` signing; the DB-at-rest decision; backend `DocumentRoot=public` + admin 2FA ON.
 6. `pip uninstall` the 9 dead Python packages on the build machine + relock with `--require-hashes`.
