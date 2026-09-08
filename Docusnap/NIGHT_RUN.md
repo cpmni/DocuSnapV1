@@ -6,7 +6,7 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
-## TONIGHT — ✅ DONE 2026-09-01 NIGHT (see the DONE ledger): #1 + #2 combined + a full SECURITY AUDIT
+## TONIGHT — 2026-09-08 NIGHT → **`docs/designs/NIGHT_RUN_2026-09-08_NIGHT.md`** (start it on "going to bed"): 1 triage the 17 pre-existing red pins (`test_failure_creates_holding_row` FIRST) · 2 `--smoke-windows` + ONE rebuild at the end · 3 the Oracle's before-flip/census prerequisites (name-band real-page pin, tautological pins, `RR_ALLOW_ARMED` + C9) · 4 the heading-fold ARM over the 605 corpus + Hard Set · 5 read-only diagnoses + advisor designs for Chris's vet queue · 6 Chris round 2 on the unexercised surfaces (sandboxed) · 7 client/cert-tool `npm install` smoke. Approval-class items logged, not run. (Previous TONIGHT = ✅ DONE 2026-09-01 NIGHT, see the ledger.)
 **Owner order:** combine the two suggested night jobs — (#1) the Quick Reprocess INTEGRATION GATE on a
 self-built warm sandbox DB, and (#2) a Chris sandboxed round on the newest surfaces — then do a full
 security audit (licensing + overall + raw-OCR-at-rest + a known-flaw sweep for Electron/Node.js/JS,
