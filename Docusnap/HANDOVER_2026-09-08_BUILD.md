@@ -77,3 +77,15 @@ you CHOOSE 200 in Settings on your taught DB (mig 138 keeps it at 300 — C7a).
 `scripts/check-npm-audit.js` + `scripts/audit-allowlist.json` · `scripts/check-vendor-python.js` + `python_backend/requirements.lock` ·
 `src/main.js --smoke-boot` · `src/modules/processing/handler.js` (`_resolveOcrDpi`, `perWorkerBudgetBytes`, freemem clause) ·
 `installer.nsh` / `client/installer.nsh` shell-context fix · `scripts/test_csp_directives.js` · `scripts/test_uninstall_shell_context.js`.
+
+## REBUILD after the re-audit (2026-09-08 19:45) — THE click-through target
+**`dist/ScanFinder Setup 2.0.0-r20260908-1843-9251551.exe`** (sha256 `ba5c318d1c2f2545d07f25782dbe7adf7a748bb8dd7e83b02e5e8eac8f4881f2`),
+built by `npm run build:release` at HEAD `9251551` (the belts-seam fix `f4a32a7` + the smoke-identity correction `9251551` included).
+Manifest `dist/release-manifest-20260908-1843-9251551.json`: `problems: []`, bytecode present, no plaintext modules, 5/5 declared fuses
+as declared (9 read), boot smoke exit 0, **`smokeIdentity {testBuild:false, buildRev:20260908-1843-9251551}` via the FILE channel**
+(`smokeIdentitySource: "file"` — the first artifact on which the bundle-sees-package.json assert actually ran), the html-asset belt green
+(every shipped `.html`'s scripts resolve in the asar — `listCaption.js`/`reviewReadiness.js` present; the re-audit P0 is closed on a real
+binary). Log `TESTING/_measure/release_build_20260908/build_release_2000.log`. The two earlier hardened installers are `.REFUSED.exe`.
+**Owner: the scripted click-through (re-audit Oracle item 3) runs on THIS file** — Review → "File all ready" dialog opens and files one;
+Teach → draw a box → OCR read-back; Settings → every tab; Search → preview → stamp; Help; About shows `Version 2.0.0 (20260908-1843-9251551)`;
+no console error in the SFDEV trace. That pass gates the `build`/`build:store` default flip (plan 2.7b, Oracle C5).
