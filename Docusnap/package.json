@@ -10,6 +10,7 @@
     "build:release": "node scripts/build-release.js nsis",
     "build:release:store": "node scripts/build-release.js appx",
     "build:test": "node scripts/build-release.js nsis --test",
+    "test:pins": "node scripts/run-pins.js",
     "check:licenses": "node scripts/check-licenses.js",
     "check:vendor": "node scripts/check-vendor-python.js",
     "check:help": "node scripts/check-help-coverage.js",
