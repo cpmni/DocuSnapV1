@@ -96,6 +96,12 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // NOTE: filing_sanity_confusable_soften (mig 147) GRADUATED to a customer default on 2026-09-09 (census PASS:
   // 1 real case reclassified, 0 wouldFile change, 0 corpus false-positives) — flipped ON by @DEFAULT_FLIP mig
   // 148, so it LEFT this list (the release gate forbids a TEST_SWITCH_KEY becoming a default in place).
+  // filing_sanity_confusable_prefix_autofile (mig 149, 2026-09-09 Oracle SIGN-OFF-W/COND): the AUTO-FILE half of
+  // the confusable case — when confirmed PREFIX history resolves a one-glyph digit/letter confusable in the ref
+  // prefix, Gate-C suppresses the note so the field auto-files. NOT auto-file-neutral. C2 mirror guard
+  // (any_confirmed_shares_head, counter==0) + fail-safe. HARD dep: filing_sanity_confusable_soften ON. ⚑ FLIP
+  // GATE: 605 + a constructed graduated scope, arc-inert vs arc-live decomposition, adversarial mirror set, M=0.
+  'filing_sanity_confusable_prefix_autofile',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

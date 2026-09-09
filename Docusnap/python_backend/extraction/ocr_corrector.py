@@ -530,6 +530,27 @@ def both_forms_established(value_counts, head):
     return same >= max(3, math.ceil(0.10 * total))
 
 
+def any_confirmed_shares_head(value_counts, head):
+    """C2 mirror guard (Oracle SIGN-OFF-W/COND 2026-09-09, confusable-prefix AUTO-FILE). True iff ANY
+    confirmed value in the scope shares `head`'s `_cmp_norm` form — a COUNTER==0 bar, deliberately STRICTER
+    than `both_forms_established`'s ≥3/≥10% ratio. This crosses the silent auto-file line (a false PO/P0 is
+    a wrong FILE), and — critically — a genuine digit-leading second convention (`P0-…`) is INVISIBLE to
+    `code_prefix`/the dominance bar, so the page-form head must be checked against the confirmed VALUES
+    directly. If any confirmed value already carries the whole-page confusable's head, that form is an
+    established series → the auto-file witness must refuse (→ the review-bound soft note). Same head-match
+    normalisation as `both_forms_established` (the shared `_cmp_norm_local`)."""
+    head_norm = _cmp_norm_local(head)
+    if not head_norm:
+        return False
+    for v, n in (value_counts or {}).items():
+        try:
+            if int(n or 0) > 0 and _cmp_norm_local(v)[:len(head_norm)] == head_norm:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 def build_prefix_index(formats_data):
     """Per (supplier, doctype, field): the DOMINANT leading-alpha code prefix + the SET of all
     confirmed prefixes. Share is over ALL confirmed values (so a mostly-numeric or genuinely mixed

@@ -2058,6 +2058,16 @@ _FILING_SANITY_REF_HISTORY_SOFTEN = os.environ.get("FILING_SANITY_REF_HISTORY_SO
 # the confirmed-literal requirement. Auto-file-NEUTRAL by construction (still a validation_note → trust.js holds
 # it for a human — the mirror case, where the page-form digit is the true value, is NEVER silently filed). DARK.
 _FILING_SANITY_CONFUSABLE_SOFTEN = os.environ.get("FILING_SANITY_CONFUSABLE_SOFTEN", "0") == "1"
+# FILING_SANITY_CONFUSABLE_PREFIX_AUTOFILE (2026-09-09; Oracle SIGN-OFF-W/COND, docs/designs/CONFUSABLE_PREFIX_
+# AUTOFILE_2026-09-09.md). The AUTO-FILE half of the confusable case. When ON, and the one-glyph digit/letter
+# confusable sits in the ref PREFIX, and CONFIRMED PREFIX HISTORY (an axis INDEPENDENT of the crop read —
+# `_prefix_dominant_backed`, ≥5/≥5/≥0.90) says the scope's convention IS the committed prefix while the
+# whole-page's `_near` is just a one-glyph misread of it, then the value is confirmed on-page BY HISTORY →
+# emit NO note → the field is auto-file-eligible. NOT auto-file-neutral (unlike the mig-147 soften): it
+# removes the note that blocks auto-file. Guarded by the C2 mirror (`any_confirmed_shares_head`, counter==0
+# on the page-form head) + fail-safe abstain. Inert until a scope has ≥5 confirmed refs. DARK; HARD dep
+# `_FILING_SANITY_CONFUSABLE_SOFTEN` (this arm lives in its branch). Every OTHER auto-file gate still applies.
+_FILING_SANITY_CONFUSABLE_PREFIX_AUTOFILE = os.environ.get("FILING_SANITY_CONFUSABLE_PREFIX_AUTOFILE", "0") == "1"
 _FILING_SANITY_ABSENT_NOTE = ("'{}' " + _FILING_SANITY_ABSENT_MARK
                               + " — please check the reference before filing.")
 
@@ -4632,6 +4642,39 @@ class ExtractionEngine:
             return True
         except Exception:
             return False   # a lane failure must never break extraction (fail toward Review)
+
+    def _confusable_prefix_backed(self, rv, near, rec_p, sup, slug, ref_field_key):
+        """FILING_SANITY_CONFUSABLE_PREFIX_AUTOFILE witness (Oracle SIGN-OFF-W/COND 2026-09-09,
+        docs/designs/CONFUSABLE_PREFIX_AUTOFILE_2026-09-09.md). Confirmed PREFIX history — an axis
+        INDEPENDENT of the crop read — resolves a one-glyph digit/letter confusable in the ref PREFIX, so
+        the whole-page's `near` misread of the dominant prefix does not block auto-file. ALL required (each a
+        pinned refusal; any exception → False → the mig-147 soft note, C3 fail-safe):
+          • `_prefix_dominant_backed(rec_p)` — ≥5 extractable / dominant ≥5 / share ≥0.90 (the B lane's bar);
+          • the committed read USES the dominant prefix (`rv.startswith(dom)`) — a crop that read a
+            non-dominant prefix already falls to review (Oracle Q3: the crop-vs-history match is required,
+            and it is exactly this clause);
+          • `near` is a one-glyph PREFIX misread of `dom` that reproduces `rv` byte-for-byte
+            (`_prefix_confusable_adopt(near, dom) == rv`) — the suffix is identical, so history never
+            touches the per-doc number (a suffix confusable → adopt returns dom+near_suffix ≠ rv → refuse);
+          • C2 MIRROR GUARD (binding, Oracle): the PAGE-FORM head `near[:len(dom)]` must NOT be a confirmed
+            in-scope convention (`any_confirmed_shares_head`, counter==0 — a genuine `P0-…` series is
+            invisible to the dominance bar, so it must be checked against the confirmed VALUES directly)."""
+        try:
+            if not _prefix_dominant_backed(rec_p):
+                return False
+            dom = str((rec_p or {}).get("dominant") or "")
+            rv = str(rv or ""); near = str(near or "")
+            if not dom or not rv.startswith(dom):
+                return False
+            if _prefix_confusable_adopt(near, dom) != rv:
+                return False
+            bucket = self.confirmed_counts_index.get(
+                (str(sup).lower().strip(), str(slug).lower().strip(), ref_field_key)) or {}
+            if bucket and ocr_corrector.any_confirmed_shares_head(bucket, near[:len(dom)]):
+                return False       # the page-form head is an established convention → refuse → soft note
+            return True
+        except Exception:
+            return False           # C3 fail-safe: any error → abstain → soft note
 
     def _try_prefix_confusable_adopt(self, key, data, rec_p, rec, sup, slug, page=""):
         """The P adopt lane's licensing + apply (reggie design → Oracle SIGN-OFF-W/COND 2026-08-16).
@@ -7383,17 +7426,34 @@ class ExtractionEngine:
                                              f"one-glyph page slip '{_near}' (history): softened, kept in review")
                             elif (_near and _FILING_SANITY_CONFUSABLE_SOFTEN
                                   and _one_digit_letter_confusable(rv, _near)):
-                                # Oracle C1 (2026-09-09): the page's only "absent" evidence is a single digit/letter
-                                # confusable (O/0, I/1…) of a crop-sourced value — the value IS on the page; the
-                                # low-res whole-page pass just mis-segmented one glyph. Truthful soft note, with NO
-                                # confirmed-literal requirement. Still a validation_note → review-bound (auto-file
-                                # byte-identical); the mirror case (page-form digit is the true value) is held for a
-                                # human, never filed. Case-folds excluded by _one_digit_letter_confusable.
-                                _txt = _FILING_SANITY_SOFTEN_NOTE.format(rv, _near)
-                                if _note(ref_field_key, _txt):
-                                    self._t('filing_sanity_ref_confusable_soften', field=ref_field_key, value=rv, page_form=_near)
-                                    self.log(f"  Filing sanity: {ref_field_key} '{rv}' — one-glyph digit/letter page "
-                                             f"confusable '{_near}': softened, kept in review")
+                                # A one-glyph digit/letter confusable (O/0, I/1…) of a crop-sourced value: the value
+                                # IS on the page; the low-res whole-page pass just mis-segmented one glyph.
+                                #   AUTO-FILE half (FILING_SANITY_CONFUSABLE_PREFIX_AUTOFILE, DARK; Oracle SIGN-OFF-
+                                #   W/COND 2026-09-09): when CONFIRMED PREFIX HISTORY (an axis independent of the
+                                #   read) resolves the confusable, emit NO note → the field auto-files.
+                                #   NOTE half (mig 147/148, default): otherwise the truthful SOFT note, review-bound.
+                                # Both fail toward review; the C2 mirror guard + fail-safe live in the witness.
+                                _rec_p = None
+                                if _FILING_SANITY_CONFUSABLE_PREFIX_AUTOFILE:
+                                    try:
+                                        _rec_p = ocr_corrector.lookup_prefix(self.prefix_index, ref_field_key, str(_sup), str(_slug))
+                                    except Exception:
+                                        _rec_p = None
+                                if (_FILING_SANITY_CONFUSABLE_PREFIX_AUTOFILE
+                                        and self._confusable_prefix_backed(rv, _near, _rec_p, str(_sup), str(_slug), ref_field_key)):
+                                    # Confirmed prefix history resolves the confusable → NO validation_note →
+                                    # auto-file-eligible (every OTHER gate — threshold, trust graduation, type,
+                                    # other flags — still applies). NOT auto-file-neutral (unlike the soften).
+                                    self._t('filing_sanity_ref_confusable_prefix_autofile', field=ref_field_key,
+                                            value=rv, page_form=_near, dominant=(_rec_p or {}).get('dominant'))
+                                    self.log(f"  Filing sanity: {ref_field_key} '{rv}' — confirmed prefix history "
+                                             f"resolves the one-glyph page confusable '{_near}': auto-file allowed")
+                                else:
+                                    _txt = _FILING_SANITY_SOFTEN_NOTE.format(rv, _near)
+                                    if _note(ref_field_key, _txt):
+                                        self._t('filing_sanity_ref_confusable_soften', field=ref_field_key, value=rv, page_form=_near)
+                                        self.log(f"  Filing sanity: {ref_field_key} '{rv}' — one-glyph digit/letter page "
+                                                 f"confusable '{_near}': softened, kept in review")
                             else:
                                 _txt = (f"'{rv}' {_FILING_SANITY_ABSENT_MARK} — the page reads it as '{_near}' — "
                                         f"please check the reference before filing.") if _near \

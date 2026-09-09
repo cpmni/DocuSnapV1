@@ -3025,6 +3025,25 @@ function runJsMigrations(db, applied) {
     console.log('JS migration 148 applied: filing_sanity_confusable_soften defaulted ON (Gate-C confusable soften; census PASS)');
   }
 
+  // ── migration 149: filing_sanity_confusable_prefix_autofile seeded OFF (2026-09-09; Oracle SIGN-OFF-W/COND,
+  //    docs/designs/CONFUSABLE_PREFIX_AUTOFILE_2026-09-09.md). The AUTO-FILE half of the confusable case: when
+  //    CONFIRMED PREFIX history (`_prefix_dominant_backed`, ≥5/≥5/≥0.90 — an axis independent of the crop read)
+  //    resolves a one-glyph digit/letter confusable in the ref PREFIX, Gate-C suppresses the note so the field
+  //    auto-files (every other gate stands). Guarded by the C2 mirror (`any_confirmed_shares_head`, counter==0
+  //    on the page-form head) + fail-safe abstain; inert until a scope has ≥5 confirmed refs. NOT auto-file-
+  //    neutral (it removes the note that blocks auto-file). DARK (in TEST_SWITCH_KEYS). Byte-identical OFF.
+  //    HARD dep: filing_sanity_confusable_soften ON (this arm lives in its branch). ⚑ FLIP GATE (Oracle
+  //    C1/C6/C7): census on the 605 corpus + a constructed ≥5-confirm graduated scope, decomposed into
+  //    arc-inert (held by trust_role_disagreement_refuse anyway) vs arc-live; the adversarial mirror set
+  //    (a genuine P0-… doc in a ≥90% PO scope) must NOT auto-file; realdoc M=0 → Oracle.
+  if (!applied.has(149)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('filing_sanity_confusable_prefix_autofile', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (149)').run();
+      console.log(`JS migration 149 applied: filing_sanity_confusable_prefix_autofile (Gate-C confusable AUTO-FILE via confirmed prefix history) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 149 (filing_sanity_confusable_prefix_autofile): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
