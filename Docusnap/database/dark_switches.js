@@ -64,6 +64,11 @@ const TEST_SWITCH_KEYS = Object.freeze([
   'template_name_grow_band_pick',
   'template_name_cut_defer_cap',
   'keyword_superstring_name_note',
+  // mig 141 (2026-09-09) — READ-WIDEN: a taught code/ref box clips the leading glyph on any docket WIDER
+  // than the teach sample (007 page-width-variance root cause); a shape-invalid tight read is replaced by a
+  // shape-valid wider row-bounded re-read. ⚑ FLIP GATE: OFF/ON on arm137 + 605 corpus (M=0, wouldFile(ON)⊇
+  // wouldFile(OFF) + new filers' value==GT, fire census on the docket corpus) → Oracle. Advisors 007 + gary.
+  'template_code_read_widen',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

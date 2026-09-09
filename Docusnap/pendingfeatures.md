@@ -9,6 +9,116 @@
 
 ---
 
+## 2026-09-09 — Taught code/ref box CLIPS the leading glyph on WIDER pages (page-width variance) — 007 root cause
+- **Exhibit (owner):** Marlowe/Ridgeway delivery dockets — `delivery_number` taught box reads `-57601` / `UN-5033¢` /
+  `JN-72756` (leading `D` cut) → `template_mapping_shapewarn`@70 + "the box may be clipping the first character" → HELD.
+  Owner: "Why are the slices STILL sliced pixels?" (expected the 2026-09-07 skew fix to cover it).
+- **007 ROOT CAUSE (verified by rendering the exact crop @200 DPI):** NOT skew. `sample_deskew_angle = 0` is a real,
+  correct 0 (level image-only sample) → the 09-07 NULL-angle half-compose fix is IRRELEVANT here. The bug is a
+  page-WIDTH-invariance failure of NORMALISED box coords: content sits at a fixed physical left margin, so as docket width
+  varies (measured 1659–1750 px across 40 dockets) the value's normalised left edge slides LEFT while the taught box left
+  edge is frozen (Ridgeway `target_x_norm=0.8049`, `target_w_norm≈0.0778`=129px, a tight 8-char `DN-#####`). Every docket
+  WIDER than the teach sample clips (`box_left − val_left` up to +57px ≈ half the corpus). Proof: docket_18 tight → `-57601`;
+  +2% left → `DN-57601`. The absolute read runs FIRST (`template_mapper.py:2560-2588`, `_crop:4123` no left pad) and a
+  code-shaped garble commits under `shape_mode='ignore'` before relocate/registration help (relocate `offset_dx_norm=0.1385`
+  is ALSO a page-fraction → overshoots on a wider page too).
+- **Why healers don't catch it:** `_maybe_pad_code` (`:2468`, ON) SWAPS only on clean SUFFIX-containment; a garbled LEADING
+  glyph → the FLAG branch (`_padcodeflag`, cap 70, keep clipped + note). `template_clip_commit_left_slack` (mig 133) is DARK,
+  single-substitution, and RELABELS not WIDENS. `template_date_left_clip_grow` is date-only. All post-hoc; none PREVENTS the
+  cut. The label-anchored inline harvest + full-page keyword rescue 15/21 (they read where the text IS).
+- **Trace puzzle answered:** the "target · absolute box" slice IS the exact rect the OCR consumed (`:2571-2575`, no hidden
+  recovery crop). A near-complete slice the eye completes still garbles because the leading `D`'s left bowl is sliced (→`U`).
+- **FIX DIRECTION (007, design only — SYSTEM fix, ALL code/ref absolute-box fields, every template):** WIDEN the READ for
+  code/ref absolute boxes so the leading glyph is never physically cut (row-bounded read with left+right slack — the
+  `_read_pad_window_code` geometry already proves it recovers), then the existing one-token trim + shape/consent gate picks
+  the token. Promote mig-133 from narrow relabel to an actual read-WIDENING of the primary code crop, OR promote the
+  pad-window read to primary for code fields when the tight read disagrees with the learned shape. Deeper durable fix:
+  page-width-invariant placement — anchor to the located label by a PHYSICAL (DPI) offset, not a page-fraction. SEAM: relies
+  on the row-bound vpad not bleeding to the adjacent row + the `reference_code` pattern + the two-near-equidistant-codes
+  ABSTAIN; disturbs = a wider crop may newly see debris (fail-toward-review, OK); MUST be byte-identical when the tight box
+  already fits. **Owner-gated, DARK + realdoc M=0 + fire census (heals vs newly-flagged; ~50% clip rate on the docket corpus)
+  + a byte-identical-when-fits pin + the abstain pin.** Advisor 007 (done) → Oracle before build.
+- **BUILT DARK 2026-09-09 (this session; gary implementation design):** `template_code_read_widen` (mig 141, seed OFF, in
+  `TEST_SWITCH_KEYS`). New `template_mapper._widen_code_read` at the ABSOLUTE-read site (upstream of `_inline_code_reconcile`
+  — gary caught that `_maybe_pad_code` is a DEAD GUARD for the inline exhibit, the 09-04 trap): when the tight read FAILS the
+  field's confirmed learned `shape_match_score==1.0` and a wider `_read_pad_window_code` recovers a code that PASSES it, swap
+  UPSTREAM so the garble never reaches a healer. Byte-identical OFF + when the tight box already fits. FIRING ENVELOPE
+  (pinned): fires on a STRUCTURAL clip (`-57601`→`-#####`, `UN-5033¢`→`@@-####¢`); does NOT fire on a same-length letter
+  substitution (`UN-5033` folds to the same `@@-#`) — the documented fail-safe (that residual is the corroboration net's job,
+  the entry below). Pins: `python_backend/tests/test_template_code_read_widen.py` (HEAL / byte-identical / fail-safe / abstain /
+  shape-fail / cold / label-glue / OFF / call-site-upstream) + `database/modules/test_migration141_code_read_widen.js`; full
+  suite 327/327; release gate OK (28 DARK keys). **FLIP GATE (owed, owner-run): OFF/ON on arm137 + the 605 corpus — M=0 +
+  wouldFile(ON)⊇wouldFile(OFF) + every new filer's value==GT + the docket fire census (gary: arm137 may lack docket code
+  fields → run the census on the docket corpus) → then Oracle.**
+- **Immediate owner remedy (partial):** re-teaching does NOT reliably fix this (unlike the 09-07 angle case) — a box re-drawn
+  tight still clips wider dockets; a generous left margin tolerates most of the range but risks the "No." label tail (~17px).
+- **Relationship to the corroborated-hold entry below:** THIS (stop the clip) is the DURABLE fix; gary's
+  `INLINE_DISAGREE_CORROB_RELEASE` (release when corroborated) is the NET for the residual that still garbles. Read-widening first.
+
+## 2026-09-09 — Corroborated ref value still HELD by a taught-box re-teach/shapewarn note (owner exhibit)
+- **Exhibit (owner, Review trace):** Marlowe Medical Supplies delivery docket 18 (Delivery Note). `delivery_number`
+  final = `DN-57601`, conf capped 70, HELD. Review reason: *"The taught box has drifted off the value — 'DN-57601'
+  was read beside its label and **has independent support on this page**. Please re-teach the box … then confirm."*
+  Trace: `template_mapping_shapewarn` WON `DN-57601` (absolute box garbled `YN-S76N1`; inline-harvest relocate off the
+  "Delivery Note No." label recovered `DN-57601`); `keyword_override` independently read `DN-57601` @93 (lost on
+  precedence, SAME value). validate note: "characters not expected for this field type (likely OCR symbol misread)".
+- **Owner argument (recurring):** the value IS corroborated (the app's OWN message says so) → the note that BLOCKS
+  auto-file is unnecessary. Keep the re-teach nudge as guidance, but don't force review when corroborated.
+- **THE CRUX (verify before any release):** are the mapping-inline-harvest read and the keyword read two INDEPENDENT
+  page families, or the SAME label-region ("Delivery Note No.") read twice (near-circular → correctly excluded from
+  `_corrobLicensed`)? This decides whether releasing is safe. Also: the "unexpected chars" flag fired on the GARBLED
+  RAW (`YN-S76N1`), not the clean final `DN-57601` — penalizing the final for the raw's garble may be a distinct bug.
+- **Coverage question:** which existing arc should release a corroborated ref value (`FILING_SANITY_REF_CORROB_SOFTEN`
+  mig 111/112 · `_REF_INLINE` mig 109 · `corrob_note_recompute_fc`) and WHY doesn't it fire on a Delivery-Note ref
+  field — is `delivery_number` on the 2026-09-04 "Stage-4.5 text branch unreachable for ref-role fields of a ref-named
+  type" dead-guard path? (See HANDOVER_2026-09-04_LATE.md.)
+- **Class:** extraction / auto-file eligibility → **owner-gated. DARK arc + cold census + realdoc M=0, NOT a flip.**
+- **DIAGNOSIS (gary, 2026-09-09):** the value IS genuinely corroborated — `template_mapping_shapewarn` (relocated crop) +
+  `keyword_override` are TWO independent OCR-recipe families; `_corrobLicensed` licenses it (NOT the near-circular
+  memory/hint or same-pixel-crop case). Hold source: `_pick_fuller_code` mints it `shape_warn=True` (cap 70 + note,
+  `template_mapper.py:1868-1876`); the class-G softener rewords but by design NEVER releases (`engine.py:4508-4515`); any
+  `validation_note` + the 70<88 floor block auto-file (`trust.js:869`/`:1076`/`:1097`). No existing arc releases a
+  corroborated-but-NOVEL ref (`_REF_INLINE`/`FILING_SANITY_REF_CORROB_SOFTEN` both require a CONFIRMED literal; a DN-#### is
+  per-doc unique). **Prior art: the Oracle already DEFERRED this exact fix — `oracle_log.md:2712` "Slice-2 full
+  clear+auto-file, separately gated".** The 09-04 dead-guard does NOT apply (different site; empirically reachable).
+- **FIX = DARK arc `INLINE_DISAGREE_CORROB_RELEASE` (class-G Slice 2)** (seed OFF, TEST_SWITCH_KEYS): RELEASE (clear note,
+  conf→max(conf0,90), preserve re-teach guidance in the record) iff ALL: every class-G condition + F's STRICT shape rail
+  restored (fail-CLOSED on no learned entry) + **R2 rigid-credibility guard** (rigid_conf<70; thread rigid_conf/value from
+  the mapper `:1868-1876`). SEAM: clearing the note removes BOTH note-block sites AND the 88 floor for the field;
+  `docTrustGate` can't re-catch a code-class ref bleed and the rigid dissent is same-family/folded (invisible to
+  `trust_role_disagreement_refuse`) → **R2 is the sole guard, must not be dropped.** RESIDUAL (007/census): both reads locate
+  off the SAME "Delivery Note No." label → a 2nd such label on some layout could make them agree on the wrong instance.
+- **Slice 2 (later, display-only):** the preserved re-teach guidance as a non-blocking "template box drifted — re-teach" chip
+  on the auto-filed doc + per-template in the Admin Template Viewer (the owner's "keep the guidance" ask, zero safety surface).
+- **GATE (before flip):** unit `test_inline_disagree_corrob_release.py` (heal + pin R2-held / no-entry-held / crop-only-held /
+  money-name-refuse / OFF==ON) + realdoc M=0 + auto-file-eligibility delta `wouldFile(ON)⊇wouldFile(OFF)` & new filers'
+  value==GT + fire census + the shared-label HYPOTHESIS (007). Then Oracle (it deferred Slice-2 — vet its two conditions).
+- **DONE 2026-09-09 (cosmetic twin, shipped this session):** `renderer.js:11059` trace `validationWhy` printed "characters
+  not expected… OCR symbol misread" for ANY note containing "character", so the geometry note "clipping the first character"
+  masqueraded as a charset flag on the clean value DN-57601. Fixed: a clip/drift note now gets an honest geometry explanation;
+  the charset branch excludes clip notes. (This is display-only — does NOT release the hold; that is the DARK arc above.)
+
+## 2026-09-09 — Teach wizard: overlap the OCR read with type-selection (owner ask)
+- **Symptom (owner):** in the Teach wizard, after importing a doc the page-1 thumbnail now loads fast, but the Continue button
+  sits blocked on "Reading the document…" for ~30s (the full-doc OCR read). The customer waits with nothing to do.
+- **Request:** let the wizard ADVANCE to the type-selection step while the read runs in the background — by the time the customer
+  has picked a document type the read should be finished. If it still hasn't finished by the time they reach the field-pointing
+  ("point out each field") screen, show a MESSAGE / PROGRESS BAR / time-remaining there instead of a dead wait.
+- **Why it's safe:** the type-selection step does NOT depend on the OCR read (type is picked by the human, not read-derived). The
+  ONLY step that truly needs the read is field-pointing (live read-back of each drawn box). So the read-complete gate can move one
+  step later and overlap the type pick — no correctness change, pure latency hiding.
+- **Code pointers (`src/windows/teach/renderer.js`):** step labels `[:91]` (welcome / choose-doc+import / pick-type / review / save);
+  import+read fires at the choose-doc step (`:206-241`, "Importing…"/"Reading the document…", rides the `file_begin`/`file_done`
+  process-progress stream); `canAdvance()` `[:93]` is the Continue gate — today it holds at choose-doc→pick-type until the read is
+  done; the "Reading…" overlay on the field-pointing page is `_setPageLoading` `[:771-789]` (drop at `:789` when page+deskew ready).
+- **Fix direction:** (a) move the read-complete requirement in `canAdvance()` from leaving choose-doc to leaving pick-type (or to
+  entering field-pointing), so pick-type is reachable immediately; (b) keep a background handle on the read promise; (c) on the
+  field-pointing screen, if the read is still running, show progress off the existing `file_begin`/`file_done` (and per-page)
+  process-progress messages — a determinate bar if page counts are known, else an honest "Reading page N of M…" / elapsed line.
+- **Watch-outs:** don't let field-pointing start drawing before the read lands (the overlay already guards this — keep it); a
+  read FAILURE must still surface (don't strand the user on a spinner — reuse the honest-failure pattern); Back/Cancel during the
+  overlapped read must abort/ignore the stale read cleanly (staged-copy cleanup). Advisor: eric (renderer/lifecycle) if built.
+
 ## 2026-09-08 — Clipped-name class: the keyword-superstring grow (Oracle SEND BACK → redirected; spec `docs/designs/KEYWORD_SUPERSTRING_GROW_2026-09-08.md`)
 - **GATE RAN 2026-09-08 evening (spec §7.1):** arms off/mapper/note on the post-137 reference copy — the first mapper run caught a SEAM (doc 67: belt 2b's name defer-cap reached `_edge_cut_relocate`, whose code-contract shape consent clean-committed a re-seated garble @90) → FIXED `f4a32a7` (a name defer-cap never reaches the relocate; RED-first pin). Fixed code: 129/129 would-file, 0 new filers, ref/date identical, ONE page-verified HEAL (#70 `Halcyon Leisure Gr` @94 silent-wrong → `Group`), 7 capped (review-bound, no consensus change). **The kw-note belt's corpus gate is VACUOUS (fired 0/63)** — its flip gate = a corpus where it fires or an in-app census on the owner's DB. All three stay DARK; the mapper pair's flip = the owner's call with the §7.1 table + the `_name_band_read` real-page pin (Oracle).
 - **BUILT 2026-09-08 (`139780a`, DARK, mig 140, 3 keys in TEST_SWITCH_KEYS):** steps 0-3 of the redirected order — census instrumentation

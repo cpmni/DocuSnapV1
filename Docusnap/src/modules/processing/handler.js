@@ -341,6 +341,10 @@ function _reconcileEnv(db) {
     // TEMPLATE_CLIP_COMMIT_LEFT_SLACK (2026-09-07): the leading-glyph mirror of the trailing edge slack — a taught
     // box cutting the FIRST character no longer flags the correct inline value with a false note. DARK (mig 133).
     if (learning.getSetting(db, 'template_clip_commit_left_slack', 'false') === 'true') env.TEMPLATE_CLIP_COMMIT_LEFT_SLACK = '1';
+    // TEMPLATE_CODE_READ_WIDEN (2026-09-09, 007/gary): a taught code/ref box clips the leading glyph on any
+    // docket WIDER than the teach sample (page-width variance). When ON, a shape-INVALID tight read is
+    // replaced by a shape-VALID wider row-bounded re-read of the same spot. DARK (mig 141), byte-identical OFF.
+    if (learning.getSetting(db, 'template_code_read_widen', 'false') === 'true') env.TEMPLATE_CODE_READ_WIDEN = '1';
     // INLINE_DISAGREE_CORROB_SOFTEN (2026-09-07, gary → Oracle SIGN-OFF-W/COND G1-G7): class G rewords the
     // box-clip value-doubt note (never clears) when an independent KEYWORD read corroborates the value —
     // review-bound, conf never lifted. DARK (mig 135; mig 136 = TEST force-ON). Env uses the '1' idiom.

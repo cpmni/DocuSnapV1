@@ -2898,6 +2898,22 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 140 (name-grow belts): ${e.message}`); }
   }
 
+  // ── migration 141: template_code_read_widen seeded OFF (2026-09-09, 007 root cause + gary design). Page-
+  //    width variance freezes a taught code/ref box's NORMALISED left edge, so on any docket WIDER than the
+  //    teach sample it clips the leading glyph and a code-shaped garble commits under shape_mode='ignore'.
+  //    When ON, a shape-INVALID tight read is replaced by a shape-VALID wider ROW-BOUNDED re-read of the
+  //    SAME spot, upstream of every downstream healer. DARK (in TEST_SWITCH_KEYS; armed by the runtime
+  //    test-build road, never a numbered force-ON — the mig-137 contract). Byte-identical OFF.
+  //    ⚑ FLIP GATE: OFF/ON on arm137 + the 605 corpus — M=0 + wouldFile(ON)⊇wouldFile(OFF) + every new
+  //    filer's value==GT + the docket fire census — then Oracle. Advisors 007 + gary.
+  if (!applied.has(141)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('template_code_read_widen', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (141)').run();
+      console.log(`JS migration 141 applied: template_code_read_widen (leading-glyph read-widen for code/ref boxes) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 141 (template_code_read_widen): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

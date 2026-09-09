@@ -42,7 +42,7 @@ from extraction.anchor import _crop_is_credible, _repair_single_token, clean_cro
 # value against the shape this field has historically taken on this template
 # (learned from confirmed docs) — label- and field-key-agnostic, one source of truth.
 from extraction.format_anomaly_checker import (check_value as _check_learned_format,
-                                               value_is_confirmed_literal)
+                                               value_is_confirmed_literal, shape_match_score)
 
 try:
     import pytesseract
@@ -869,6 +869,12 @@ _PAD_DATE_DISAGREE_NOTE = ("A wider reading of this date box shows '{}', which d
 # sub-slice below, where it does NOT hold. Default OFF; OFF = byte-identical.
 # Pins: tests/test_template_pad_window_code.py.
 _PAD_WINDOW_CODE_ON = os.environ.get('TEMPLATE_PAD_WINDOW_CODE', '0') != '0'
+# READ-WIDEN (Slice 1c, 2026-09-09 — 007 root cause / gary design). Page-width variance freezes a taught
+# code/ref box's NORMALISED left edge, so any docket WIDER than the teach sample clips the leading glyph
+# (a code-shaped garble then commits under shape_mode='ignore'). DARK: when ON, a shape-INVALID tight read
+# is replaced by a shape-VALID wider row-bounded re-read of the SAME spot, UPSTREAM of every healer.
+_CODE_READ_WIDEN_ON = os.environ.get('TEMPLATE_CODE_READ_WIDEN', '0') != '0'
+_READ_WIDEN_FIRES = []   # diag/census only: (field_key, tight, recovered) — read by the OFF/ON fire census
 _PAD_CODE_MIN_SUFFIX = _CLIP_COMMIT_MIN_PREFIX   # >=4 tight-read chars must survive as the padded suffix
 # The note is composed from a hoisted MARK so a reader elsewhere can recognise the class without
 # re-typing the prose (engine's P adopt lane reads this constant, 2026-08-19). Reword the tail
@@ -2465,6 +2471,41 @@ def _pad_label_glued(pad_norm, anchor_text):
     return False
 
 
+def _widen_code_read(page, target_box, tight_text, field_key, anchor_text,
+                     validation_patterns, format_lookup):
+    """READ-WIDEN (Slice 1c, 2026-09-09 — 007 root cause, gary design). Page-width variance freezes a
+    taught code/ref box's NORMALISED left edge, so on any docket WIDER than the teach sample the box
+    physically clips the leading glyph → a code-shaped garble commits under shape_mode='ignore'. When the
+    TIGHT read FAILS the field's CONFIRMED learned shape AND a wider ROW-BOUNDED re-read of the SAME spot
+    recovers a code that MATCHES the learned shape EXACTLY, return (recovered, conf) so the caller swaps
+    UPSTREAM of every downstream healer (inline reconcile / pad-window). The asymmetry is the whole safety:
+    ONLY a shape-INVALID tight read is ever replaced, and ONLY by a shape-VALID recovery — never empties a
+    field, never re-vetoes a fitting read. Returns None (byte-identical / today's FLAG path preserved) on
+    every other input. Pure except the diag census list. DARK (_CODE_READ_WIDEN_ON)."""
+    if not _CODE_READ_WIDEN_ON or not tight_text or format_lookup is None:
+        return None
+    try:
+        entry = format_lookup(field_key or "")
+    except Exception:
+        entry = None
+    if not entry or not entry.get('shapes'):
+        return None                                  # cold field / joined entry → no confirmed shape signal
+    if shape_match_score(tight_text, entry) == 1.0:
+        return None                                  # the tight box already fits → no re-read → byte-identical
+    pad = _read_pad_window_code(page, target_box, validation_patterns)
+    if pad is None:
+        return None                                  # nothing / two-equidistant ABSTAIN / no hard pattern
+    pad_val, pad_conf = pad
+    if not pad_val or _code_norm(pad_val) == _code_norm(tight_text):
+        return None                                  # nothing recovered
+    if shape_match_score(pad_val, entry) != 1.0:
+        return None                                  # the recovery must EXACTLY match the confirmed shape
+    if _pad_label_glued(_code_norm(pad_val), anchor_text):
+        return None                                  # defence-in-depth: never a swallowed label tail
+    _READ_WIDEN_FIRES.append((field_key, tight_text, pad_val))
+    return (pad_val, pad_conf)
+
+
 def _maybe_pad_code(page, target_box, val_type, result, tight_ocr_conf,
                     full_confidence, anchor, expanded, field_key, validation_patterns,
                     format_lookup, provisional_lookup, anchor_text=None):
@@ -2586,6 +2627,19 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
     abs_text, abs_salvaged, _ = _gate_value(abs_text, val_type, field_key,
                                             validation_patterns, format_lookup,
                                             shape_mode='ignore', ocr_conf=_abs_meta.get('conf'))
+    # ── READ-WIDEN (DARK: TEMPLATE_CODE_READ_WIDEN, 2026-09-09 — 007/gary) ─────
+    # Page-width variance clips the leading glyph of a code/ref taught box on any docket WIDER than the
+    # teach sample. When the tight read FAILS the field's confirmed learned shape and a wider row-bounded
+    # re-read of the SAME spot recovers a shape-MATCHING code, commit the recovered read HERE — upstream of
+    # the inline reconcile (_pick_fuller_code) + the commit — so the garble never reaches a downstream
+    # healer. Byte-identical OFF and whenever the tight box already fits. Fail-toward-review preserved: a
+    # non-exact-shape recovery returns None → today's flag path stands.
+    if (_CODE_READ_WIDEN_ON and abs_text and val_type in _CODE_CROSSCHECK_TYPES and not abs_expanded):
+        _w = _widen_code_read(page, target_box, abs_text, field_key,
+                              anchor_text, validation_patterns, format_lookup)
+        if _w is not None:
+            _abs_meta['widened_from'] = abs_text
+            abs_text, _abs_meta['conf'], _abs_meta['read_widened'] = _w[0], _w[1], True
     # ── DRIFT GUARD (before trusting the stationary drawn box) ────────────────
     # Only relevant when the absolute box DID read a credible value (`abs_text`):
     # on a shifted page (e.g. a cropped sample vs an uncropped reprocess pushes
@@ -2761,6 +2815,12 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         # OCR'd, carried on a `_`-key the engine POPS at the Stage-0.5 merge (never persisted, never in
         # the ledger, never in a result the trace serialises). `target_geom` stays trace-only.
         _r["_read_geom"] = _box_list(_expand_box(target_box, expansion) if abs_expanded else target_box)
+        # READ-WIDEN provenance (2026-09-09): the value was swapped to a shape-valid wider re-read upstream
+        # (the garble never reached here). Diag/census only — mirrors pad_unclipped_from.
+        if _abs_meta.get('read_widened'):
+            _r["method"] += "_readwiden"
+            _r["_heal"] = "read_widen"
+            _r["read_widened_from"] = _abs_meta.get('widened_from')
         # RAW-CROP WITNESS surface (Oracle C2, 2026-08-12 — see anchor._raw_witness_read block).
         # FLAG tier: the ladder kept today's value and stashed the one-glyph ambiguity in meta;
         # attach the honest choice (note + corrected_to) and cap BELOW the 88 critical auto-file
