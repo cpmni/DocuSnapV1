@@ -9805,8 +9805,15 @@ window.addEventListener('focus', () => { _flushQuietRefresh(); });
 // LIST + receipt bar (never the open document — the pass skipped anything being viewed), then re-ask
 // the queue sweep so OTHER senders' offers still surface as a bar (the pass answered
 // 'auto-accept-running' to any sweep that landed mid-filing).
-window.docusnap.onScopeAutoFiled?.(async () => {
+window.docusnap.onScopeAutoFiled?.(async (info) => {
   if (bulkFiling || _batchActive) return;
+  // Owner 2026-09-09: a visible RECEIPT when a sender's ready docs file themselves — a toast pointing at
+  // the activity strip (the "N filed themselves" history above), on top of the strip's own quiet chip.
+  const n = (info && Array.isArray(info.filed)) ? info.filed.length : 0;
+  if (n > 0) {
+    const sup = info.supplier ? ` from ${info.supplier}` : '';
+    try { showToast(`${n} document${n === 1 ? '' : 's'}${sup} filed automatically — see them in the activity strip above.`, 'ok'); } catch {}
+  }
   try { await _deferOrRefresh(); } catch {}
   try { await refreshAutoCommittedBar(); } catch {}
   try { await _runQueueSweep(); } catch {}
@@ -9843,20 +9850,37 @@ function _quietRefreshList() {
   if (_quietRefreshTimer) return;
   _quietRefreshTimer = setTimeout(async () => { _quietRefreshTimer = null; try { await _deferOrRefresh(); } catch {} }, 1000);
 }
+// Auto-file eligibility check bar (owner 2026-09-09; eric design): shown ONLY for a live quiet 'ready' job (a
+// just-graduated sender's held docs being re-read + checked for auto-file). Rides the SAME _quietJobs state as
+// the (silenced) quiet hint but on its OWN element + gated on the `ready` marker — so it surfaces the auto-file
+// case WITHOUT un-silencing the teach/layout re-reads (_quietSilent is never read here). Cleared when no live
+// 'ready' job remains (job_done deletes the job → then the sweep files them + the "filed automatically" toast).
+function _renderAutofileCheckBar() {
+  const el = document.getElementById('autofile-check-bar');
+  if (!el) return;
+  const ready = [..._quietJobs.values()].find(j => j.ready && j.state !== 'done');
+  if (!ready) { el.hidden = true; el.textContent = ''; return; }
+  const sup = ready.supplier ? ` from ${ready.supplier}` : '';
+  el.textContent = ready.state === 'deferred'
+    ? `Checking eligible docs${sup} for Autofile — paused while you work, resumes on its own`
+    : `Checking eligible docs${sup} for Autofile${ready.total ? ` — ${ready.done || 0} of ${ready.total}` : ''}…`;
+  el.hidden = false;
+}
 window.docusnap.onQuietReprocess?.(async (ev) => {
   if (!ev || !ev.jobId) return;
   const j = _quietJobs.get(ev.jobId) || { id: ev.jobId, supplier: ev.supplier || '', total: 0, done: 0, state: 'running' };
-  if (ev.type === 'job_start')    { j.supplier = ev.supplier || j.supplier; j.total = ev.total || 0; j.done = ev.done || 0; j.state = 'running'; if (ev.reason) j.reason = ev.reason; }   // r20 card 5: the hint names the real trigger
+  if (ev.type === 'job_start')    { j.supplier = ev.supplier || j.supplier; j.total = ev.total || 0; j.done = ev.done || 0; j.state = 'running'; if (ev.reason) j.reason = ev.reason; if (ev.ready) j.ready = true; }   // r20 card 5: the hint names the real trigger; ready → the autofile-check bar
   if (ev.type === 'doc_done')     { j.done = ev.done ?? (j.done + 1); j.total = ev.total || j.total; _quietRefreshList(); }
   if (ev.type === 'job_deferred') { j.state = 'deferred'; }
-  if (ev.type === 'job_done')     { j.state = 'done'; _quietJobs.delete(ev.jobId); _renderQuietHint(); try { await _deferOrRefresh(); } catch {} try { await _runQueueSweep({ via: 'quiet' }); } catch {} return; }
+  if (ev.type === 'job_done')     { j.state = 'done'; _quietJobs.delete(ev.jobId); _renderQuietHint(); _renderAutofileCheckBar(); try { await _deferOrRefresh(); } catch {} try { await _runQueueSweep({ via: 'quiet' }); } catch {} return; }
   _quietJobs.set(ev.jobId, j);
   _renderQuietHint();
+  _renderAutofileCheckBar();
 });
-(async () => {   // a window opened mid-job reconnects to the hint
+(async () => {   // a window opened mid-job reconnects to the hint + the autofile-check bar
   try {
     const st = await window.docusnap.getQuietRereadStatus?.();
-    if (st && st.running) { _quietJobs.set(st.running.id, { ...st.running, state: st.running.state || 'running' }); _renderQuietHint(); }
+    if (st && st.running) { _quietJobs.set(st.running.id, { ...st.running, state: st.running.state || 'running' }); _renderQuietHint(); _renderAutofileCheckBar(); }
   } catch {}
 })();
 

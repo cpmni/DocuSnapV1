@@ -79,6 +79,9 @@ function create(deps) {
   }
   function _public(j) {
     return { id: j.id, supplier: j.supplier, typeSlug: j.typeSlug, state: j.state, reason: j.reason,
+             // `ready` survives a coalesce (a 'ready' crossing folded onto a running teach/layout job keeps
+             // reason='teach' but reasons has 'ready') — the autofile-check bar filters on this (owner 2026-09-09).
+             ready: !!(j.reasons && j.reasons.has('ready')) || j.reason === 'ready',
              total: j.total, done: j.done.length, dropped: j.dropped.length, failed: j.failed, changed: j.changed.length };
   }
 
@@ -371,7 +374,8 @@ function create(deps) {
       if (!chunk.length) { _finish(job, db); return; }
       staged = stageDocs(db, chunk, { auditMeta: { quiet: true } });
       if (!staged || !staged.tmpNames.length) { _finish(job, db); return; }
-      notify({ type: 'job_start', jobId: job.id, supplier: job.supplier, typeSlug: job.typeSlug, total: job.total, done: job.done.length, reason: job.reason });   // r19 N8: the hint names the trigger
+      notify({ type: 'job_start', jobId: job.id, supplier: job.supplier, typeSlug: job.typeSlug, total: job.total, done: job.done.length, reason: job.reason,
+               ready: !!(job.reasons && job.reasons.has('ready')) || job.reason === 'ready' });   // r19 N8: the hint names the trigger; `ready` drives the autofile-check bar (owner 2026-09-09)
       _startPoll();
       await runShard({
         db, staged, label: 'quiet-reprocess',

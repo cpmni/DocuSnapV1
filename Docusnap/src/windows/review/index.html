@@ -1174,6 +1174,15 @@
     <div id="queue-resizer" title="Drag to resize the file list"></div>
 
     <div id="doc-panel">
+      <!-- Auto-file eligibility check bar (owner 2026-09-09; eric design): a slim progress strip shown while a
+           just-graduated sender's held docs are re-read + checked for auto-file in the background. Rides the
+           quiet-lane 'ready' job ONLY (never the teach/layout re-reads, which stay silent). Cleared on job_done,
+           right before the sweep files them + the "N filed automatically" toast fires. -->
+      <div id="autofile-check-bar" hidden role="status" aria-live="polite"
+           style="padding:5px 12px; font-size:12px; font-weight:600; color:var(--accent2); background:var(--accent-bg); border-bottom:1px solid var(--border);"></div>
+      <!-- When the check bar is visible it adds height at the top of #doc-panel; nudge the in-view countdown pill
+           (top:52px, chosen to clear #doc-toolbar) down by the bar's height so the two never overlap (rare co-occur). -->
+      <style>#doc-panel:has(#autofile-check-bar:not([hidden])) #inview-countdown{ top:80px; }</style>
       <!-- B2 (activity strip, 2026-08-22; barry + eric → Oracle): what the app just did, newest on the left. Armed by the
            `review_activity_strip` setting; hidden (and the head variable unchanged) otherwise. data-help-ignore: help-mode
            must not swallow the expand / undo clicks. -->
