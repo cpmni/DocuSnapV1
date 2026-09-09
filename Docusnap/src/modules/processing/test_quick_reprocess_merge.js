@@ -160,5 +160,29 @@ section('6. source contract — the contested set gates every auto-file door + p
   ok('C4: prior overall_confidence is restored when a guard kept a stored read', /_imageless && _mergeStats\.imagelessKept > 0/.test(src));
 }
 
+// ── 6. Imageless IDENTITY downgrade guard (owner 2026-09-09: Ironbridge issuer dropped logo→text @66) ──
+section('6. imageless issuer — an AGREEING value at LOWER confidence keeps the stored (logo) read:');
+{
+  const ex = row('supplier_name', 'Ironbridge Fabrication', { confidence: 90, extraction_method: 'hint_text_match' });
+  const fr = row('supplier_name', 'Ironbridge Fabrication', { confidence: 66, extraction_method: 'hint_text_match' });
+  const r = run1(ex, fr, { imageless: true });
+  ok('keeps the stored (higher) confidence — no silent downgrade', r.out.confidence === 90);
+  ok('decision = kept_imageless_identity_conf', r.decision === 'kept_imageless_identity_conf');
+  ok('counts as an imagelessKept (drives the C4 prior-overall preserve)', r.stats.imagelessKept === 1);
+}
+section('6b. it does NOT over-preserve or mis-fire:');
+{
+  const r1 = run1(row('supplier_name', 'Acme', { confidence: 66 }), row('supplier_name', 'Acme', { confidence: 80 }), { imageless: true });
+  ok('fresh conf higher → fresh read wins (no over-preserve)', r1.out.confidence === 80 && r1.decision === 'used_new');
+  const r3 = run1(row('invoice_number', 'INV-1', { confidence: 90 }), row('invoice_number', 'INV-1', { confidence: 66 }), { imageless: true });
+  ok('a NON-identity field is untouched (guard is supplier_name only)', r3.out.confidence === 66);
+  const r4 = run1(row('supplier_name', 'Acme', { confidence: 90 }), row('supplier_name', 'Acme', { confidence: 66 }), {});
+  ok('a NON-imageless run → the guard is inert (fresh wins)', r4.out.confidence === 66);
+  process.env.QUICK_IMAGELESS_IDENTITY_PRESERVE = '0';
+  const r5 = run1(row('supplier_name', 'Acme', { confidence: 90 }), row('supplier_name', 'Acme', { confidence: 66 }), { imageless: true });
+  ok('kill switch QUICK_IMAGELESS_IDENTITY_PRESERVE=0 → inert (byte-identical, fresh wins)', r5.out.confidence === 66);
+  delete process.env.QUICK_IMAGELESS_IDENTITY_PRESERVE;
+}
+
 console.log(`\n${n - fails}/${n} passed`);
 process.exit(fails ? 1 : 0);

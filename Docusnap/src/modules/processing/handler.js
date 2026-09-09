@@ -1649,6 +1649,25 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hidd
                  corrected_to: ex.corrected_to || null, corroboration: ex.corroboration || null };
       }
     }
+    // IMAGELESS IDENTITY DOWNGRADE GUARD (2026-09-09; owner: a Quick Reprocess dropped the Ironbridge issuer
+    // from a LOGO-recognized read to a text hint @66, mass-holding 17 ready docs — the customer can't know
+    // which suppliers are logo-recognized, so this must be transparent). The imageless run reads the ISSUER
+    // via TEXT ONLY (the logo/image identity arm never runs), so when its fresh value AGREES with the stored
+    // value but at LOWER confidence, `used_new` below silently DOWNGRADES the issuer's confidence/method and
+    // the doc falls below the review threshold. The identity field can never be read BETTER by a text-only
+    // pass, so on an agreeing value keep the stored read's confidence/method (the VALUE is unchanged — this
+    // preserves provenance only). A fresh conf >= stored keeps the fresh read (no over-preserve). Counts as an
+    // imagelessKept so the C4 prior-overall preserve fires with it. Kill: QUICK_IMAGELESS_IDENTITY_PRESERVE=0.
+    if (_imageless && row.field_key === 'supplier_name' && ex.display_value && row.display_value != null
+        && String(row.display_value).trim() === String(ex.display_value).trim()
+        && Number(ex.confidence || 0) > Number(row.confidence || 0)
+        && process.env.QUICK_IMAGELESS_IDENTITY_PRESERVE !== '0') {
+      if (_stats) _stats.imagelessKept = (_stats.imagelessKept || 0) + 1;
+      trace(row.field_key, 'kept_imageless_identity_conf', ex.display_value, row.display_value);
+      return { ...row, raw_value: ex.raw_value, display_value: ex.display_value, confidence: ex.confidence,
+               extraction_method: ex.extraction_method, validation_note: ex.validation_note || null,
+               corrected_to: ex.corrected_to || null, corroboration: ex.corroboration || null };
+    }
     if (ex.display_value) trace(row.field_key, 'used_new', ex.display_value, row.display_value);
     return row;
   });
