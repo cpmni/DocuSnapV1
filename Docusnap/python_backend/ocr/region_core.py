@@ -127,6 +127,10 @@ def _ink_band_count(img):
         return 2
 
 
+# S0 (2026-09-09): generous per-call timeout backstop (see ocr.tesseract.OCR_CALL_TIMEOUT for rationale).
+_OCR_TIMEOUT = int(os.environ.get('OCR_CALL_TIMEOUT') or 120)
+
+
 def process(img, *, boxes=False, singleline_fast=None, timing=None):
     """Focused OCR of an already-loaded greyscale ('L') PIL crop. Returns
     {"text": str, "box": [l,t,w,h]|None, "words": [...], "lines": int} with box/words in the caller's
@@ -164,7 +168,10 @@ def process(img, *, boxes=False, singleline_fast=None, timing=None):
         if src == 'heavy' and heavy is None:
             heavy = ImageOps.autocontrast(light, cutoff=2).filter(ImageFilter.SHARPEN)
         rimg = light if src == 'light' else heavy
-        t = pytesseract.image_to_string(rimg, config=f'--oem 3 --psm {psm}').strip()
+        try:   # S0 (2026-09-09): timeout backstop; a hung/aborted read is an empty rung, not a raise.
+            t = pytesseract.image_to_string(rimg, config=f'--oem 3 --psm {psm}', timeout=_OCR_TIMEOUT).strip()
+        except Exception:
+            t = ''
         if t:
             chosen, text = rimg, t
             break
@@ -183,7 +190,7 @@ def process(img, *, boxes=False, singleline_fast=None, timing=None):
     if not _skip_multiline:
         try:
             data6 = pytesseract.image_to_data(chosen, config='--oem 3 --psm 6',
-                                              output_type=pytesseract.Output.DICT)
+                                              output_type=pytesseract.Output.DICT, timeout=_OCR_TIMEOUT)
             groups = {}
             for i in range(len(data6.get('text', []))):
                 t6 = (data6['text'][i] or '').strip()
@@ -214,7 +221,7 @@ def process(img, *, boxes=False, singleline_fast=None, timing=None):
     if boxes:
         try:
             data = data6 if data6 is not None else pytesseract.image_to_data(
-                chosen, config='--oem 3 --psm 6', output_type=pytesseract.Output.DICT)
+                chosen, config='--oem 3 --psm 6', output_type=pytesseract.Output.DICT, timeout=_OCR_TIMEOUT)
             xs, ys, x2s, y2s = [], [], [], []
             for i in range(len(data.get('text', []))):
                 wtok = (data['text'][i] or '').strip()

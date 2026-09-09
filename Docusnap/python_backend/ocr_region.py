@@ -40,9 +40,13 @@ def main():
 
     # PSM 7 = single line (best for field values like invoice numbers, dates)
     # PSM 6 = block (fallback for multiline like addresses)
-    text = pytesseract.image_to_string(img, config='--oem 3 --psm 7').strip()
-    if not text:
-        text = pytesseract.image_to_string(img, config='--oem 3 --psm 6').strip()
+    _OCR_TIMEOUT = int(os.environ.get('OCR_CALL_TIMEOUT') or 120)   # S0: generous timeout backstop
+    try:
+        text = pytesseract.image_to_string(img, config='--oem 3 --psm 7', timeout=_OCR_TIMEOUT).strip()
+        if not text:
+            text = pytesseract.image_to_string(img, config='--oem 3 --psm 6', timeout=_OCR_TIMEOUT).strip()
+    except Exception:
+        text = ''
 
     # Clean up common OCR artifacts
     text = text.replace('\n', ' ').replace('\r', '').strip()

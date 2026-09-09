@@ -445,7 +445,26 @@ def _demote_process_priority():
         pass
 
 
+def _suppress_windows_error_dialogs():
+    """S0 (2026-09-09, oscar fix #1 + Oracle SIGN-OFF-W/COND). Kill the Windows Error Reporting modal so a
+    tesseract child that ABORTS (0x40000015 in libstdc++ — e.g. a degenerate/near-empty crop the LSTM can't
+    handle) fails FAST instead of blocking on the invisible WER dialog. The blocked child was the whole
+    crash: the parent's `pytesseract` subprocess-wait never returned, the shard never finished, siblings
+    never merged, and the per-file watchdog `os._exit(0)` then ORPHANED the still-blocked child (`_watch`,
+    :307-324). Set ONCE per worker process at startup so every CreateProcess-launched tesseract.exe inherits
+    the mode (incl. the DS_OCR_PARALLEL_FULLPAGE thread pool, which spawns from this same process). Only
+    removes error dialogs — recognition/DPI/PSM are untouched, so reads are byte-identical. Windows-only;
+    a no-op elsewhere."""
+    try:
+        import ctypes
+        SEM = 0x0001 | 0x0002 | 0x8000   # SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX
+        ctypes.windll.kernel32.SetErrorMode(SEM)
+    except Exception:
+        pass
+
+
 def main():
+    _suppress_windows_error_dialogs()
     _demote_process_priority()
     parser = argparse.ArgumentParser()
     parser.add_argument("--folder",          required=True)

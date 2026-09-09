@@ -24,9 +24,22 @@ def configure(tesseract_path: str | None = None):
         pytesseract.pytesseract.tesseract_cmd = tesseract_path
 
 
+# S0 (2026-09-09, oscar fix #1 + Oracle SIGN-OFF-W/COND). A per-call GUARANTEED BACKSTOP on every
+# pytesseract call: pytesseract's default `timeout=0` waits forever for the tesseract subprocess, so a hung
+# child wedges the whole shard. `timeout=` makes pytesseract KILL the child then raise (RuntimeError /
+# TesseractError ⊂ Exception → the crash-path `except` returns a per-field miss). GENEROUS by design (Oracle
+# S0-2): it must NEVER trip a legitimately-slow read under max concurrency on a low-core box — SetErrorMode is
+# the speed mechanism, this is only the floor. Do NOT tighten it. Env-tunable for diagnosis only.
+OCR_CALL_TIMEOUT = int(os.environ.get('OCR_CALL_TIMEOUT') or 120)
+
+
 def ocr_image(img: Image.Image, config: str = "--oem 3 --psm 3") -> str:
-    """Run Tesseract OCR on a PIL image."""
-    return pytesseract.image_to_string(img, config=config)
+    """Run Tesseract OCR on a PIL image. S0: timeout backstop + fail toward an empty read (a hung/aborted
+    child returns '' → a per-field miss → held, never a silent wrong value)."""
+    try:
+        return pytesseract.image_to_string(img, config=config, timeout=OCR_CALL_TIMEOUT)
+    except Exception:
+        return ''
 
 
 # Supplementary "uniform block" pass (PSM 6) used to RECOVER a sparse column that PSM 3's page
@@ -390,8 +403,11 @@ def _light_text_pass(img, base, med_h, dpi=None) -> list:
         light_img = g.point(lambda p, L=level: 0 if p < L else 255)
         if light_img.size != img.size:
             return []
-        data = pytesseract.image_to_data(light_img, config=_with_dpi(_LIGHT_CONFIG, dpi),
-                                         output_type=pytesseract.Output.DICT)
+        try:
+            data = pytesseract.image_to_data(light_img, config=_with_dpi(_LIGHT_CONFIG, dpi),
+                                             output_type=pytesseract.Output.DICT, timeout=OCR_CALL_TIMEOUT)
+        except Exception:
+            return []   # S0: a hung/aborted read fails toward the empty result this loop already returns
         light = _words_from_data(data)
         if not light:
             continue
@@ -663,8 +679,8 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
             if not os.environ.get('OMP_THREAD_LIMIT'):          # OMP INHERIT (Oracle 2026-09-07 C6): never
                 os.environ['OMP_THREAD_LIMIT'] = '1'            # LOWER an exported cap; floor only when absent
             with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
-                _fm = _ex.submit(pytesseract.image_to_data, img, config=main_cfg, output_type=pytesseract.Output.DICT)
-                _fs = _ex.submit(pytesseract.image_to_data, img, config=supp_cfg, output_type=pytesseract.Output.DICT)
+                _fm = _ex.submit(pytesseract.image_to_data, img, config=main_cfg, output_type=pytesseract.Output.DICT, timeout=OCR_CALL_TIMEOUT)
+                _fs = _ex.submit(pytesseract.image_to_data, img, config=supp_cfg, output_type=pytesseract.Output.DICT, timeout=OCR_CALL_TIMEOUT)
                 try:
                     data = _fm.result()
                 except Exception:
@@ -678,7 +694,7 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
 
     if data is None:                                        # OFF / fallback: sequential PSM-3
         try:
-            data = pytesseract.image_to_data(img, config=main_cfg, output_type=pytesseract.Output.DICT)
+            data = pytesseract.image_to_data(img, config=main_cfg, output_type=pytesseract.Output.DICT, timeout=OCR_CALL_TIMEOUT)
         except Exception:
             return ocr_image(img, config)
 
@@ -690,7 +706,7 @@ def reconstruct_page_text(img: Image.Image, config: str = "--oem 3 --psm 3", dpi
     # OFF path preserves today's behaviour of skipping PSM-6 when PSM-3 read nothing).
     if supp is None:
         try:
-            supp = pytesseract.image_to_data(img, config=supp_cfg, output_type=pytesseract.Output.DICT)
+            supp = pytesseract.image_to_data(img, config=supp_cfg, output_type=pytesseract.Output.DICT, timeout=OCR_CALL_TIMEOUT)
         except Exception:
             supp = None   # supplementary recovery is additive-only; never break the PSM-3 result
     if supp is not None:

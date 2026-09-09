@@ -39,6 +39,11 @@ _IMPORTS_DONE = _time.perf_counter()
 
 
 def main():
+    try:   # S0 (2026-09-09): kill the WER modal so an aborting tesseract child fails fast, not hangs.
+        import ctypes   # see process_docs._suppress_windows_error_dialogs for the full rationale.
+        ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002 | 0x8000)
+    except Exception:
+        pass
     parser = argparse.ArgumentParser()
     parser.add_argument('--image-file', required=True, help='Path to PNG file')
     parser.add_argument('--tesseract', default=None,  help='Path to tesseract.exe')

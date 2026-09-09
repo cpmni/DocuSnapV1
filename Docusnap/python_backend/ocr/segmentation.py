@@ -219,8 +219,8 @@ def _page_text(page, img, born_digital: bool, tesseract_path: str | None) -> str
             pass
     if tesseract_path and img is not None:
         try:
-            import pytesseract
-            return pytesseract.image_to_string(img)
+            import os, pytesseract   # S0 (2026-09-09): timeout backstop; guarded → '' on a hung/aborted read.
+            return pytesseract.image_to_string(img, timeout=int(os.environ.get('OCR_CALL_TIMEOUT') or 120))
         except Exception:
             return ""
     return ""
