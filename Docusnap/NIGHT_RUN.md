@@ -18,6 +18,16 @@ fix** (gary: `bd` = armed not detected; gate is correct; add an Oakhaven test-ar
 to a morning `/christest` (OCR contention + crash class). Artifacts: `TESTING/_measure/night_20260909/`.
 Repeat only if: the sweep is re-run after a detection change (watch M — it MUST be 0); re-run A's census only
 after the disagree-gate interaction changes.
+**LATE (owner authorised gated implementation + "streamline import-after-teach"):** (5) **Hard Set cold BOTH
+arms 0/0** (400 adversarial docs, 0 silent misfile — no regression). (6) **CALIBRATION**: ~10% of held docs read
+correctly but are held — top = a verified auto-file/UI ASYMMETRY (the stale "couldn't match saved layout" note
+holds perfect docs from auto-file while the renderer suppresses it; `CALIBRATION_FINDING.md`) → morning fix.
+(7) **IMPORT-AFTER-TEACH streamline** (barry+gary+Oracle): the propagation lane ALREADY exists + is ON + auto-
+files at threshold 90 — the **tesseract crash wedges it**. **BUILT Slice 0** (SetErrorMode + per-call timeout,
+Oracle SIGN-OFF-W/COND, pin 12/12, byte-identical no-regression, commit `0aa5225` LOCAL) = the unblocker. Slice 1
+(one-click re-read) DESIGNED+LOGGED (the via-seam not rushed). (8) M=2 narrow fix de-risked by a strict-gate A/B
+(catches #78, the narrow variant avoids the broad gate's 8 false holds). All night doc commits LOCAL/unpushed.
+Repeat only if: after any OCR-layer change, re-run the byte-identical sweep + Hard Set (M/misfile MUST stay 0).
 
 ## ✅ DONE 2026-09-08 NIGHT (see the DONE ledger + `HANDOVER_2026-09-09.md`) — was: `docs/designs/NIGHT_RUN_2026-09-08_NIGHT.md`** (start it on "going to bed"): 1 triage the 17 pre-existing red pins (`test_failure_creates_holding_row` FIRST) · 2 `--smoke-windows` + ONE rebuild at the end · 3 the Oracle's before-flip/census prerequisites (name-band real-page pin, tautological pins, `RR_ALLOW_ARMED` + C9) · 4 the heading-fold ARM over the 605 corpus + Hard Set · 5 read-only diagnoses + advisor designs for Chris's vet queue · 6 Chris round 2 on the unexercised surfaces (sandboxed) · 7 client/cert-tool `npm install` smoke. Approval-class items logged, not run. (Previous TONIGHT = ✅ DONE 2026-09-01 NIGHT, see the ledger.)
 **Owner order:** combine the two suggested night jobs — (#1) the Quick Reprocess INTEGRATION GATE on a
