@@ -61,7 +61,9 @@ function _learningExcluded(db, docId) {
 
 function sendBackToReview(db, docId, { suspects, source } = {}) {
   // Chris round 17 card 8: every Search send-back said "Sent back from Learning Repair" — name the real door.
-  const _prefix = source === 'search' ? 'Sent back from Search' : NOTE_PREFIX;
+  const _prefix = source === 'search' ? 'Sent back from Search'
+                : source === 'quick_check' ? 'Sent back from Quick check'
+                : NOTE_PREFIX;
   const run = db.transaction(() => {
     // Oracle C1 (Learning Repair "start fresh", 2026-08-26): a doc whose plants were ALREADY retracted
     // (forgetScope stamps learning_retracted_at while the doc stays confirmed) must not be retracted

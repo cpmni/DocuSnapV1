@@ -1073,6 +1073,12 @@ function _baEnsureStyle() {
     '.ba-btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent,#fff)}',
     '.ba-btn.primary:hover{background:var(--accent2)}',
     '.ba-btn:disabled{opacity:.5;cursor:default}',
+    // per-row "Send back to Review" (put-back tone) — cards head + table trailing action cell
+    '.ba-sendback{padding:3px 9px;border:1px solid var(--border2);border-radius:var(--r-pill);background:var(--surface2);color:var(--warn);font-size:11px;cursor:pointer;white-space:nowrap;flex:none}',
+    '.ba-sendback:hover{border-color:var(--warn);background:var(--accent-bg)}',
+    '.ba-card-head .ba-sendback{margin-left:8px}',
+    '.ba-tact{text-align:right;white-space:nowrap}',
+    '.ba-table th.ba-tact{background:var(--surface3)}',
   ].join('\n');
   document.head.appendChild(s);
 }
@@ -1121,7 +1127,12 @@ function _baBuildOverlay() {
   grid.addEventListener('input', _baOnInput);
   // select the doc (preview) on focus/click of its card OR table row — both carry data-doc.
   grid.addEventListener('focusin', (e) => { const el = e.target.closest('[data-doc]'); if (el) _baSelect(Number(el.dataset.doc)); });
-  grid.addEventListener('click', (e) => { if (e.target.closest('.ba-input') || e.target.closest('.ba-col-resize')) return; const el = e.target.closest('[data-doc]'); if (el) _baSelect(Number(el.dataset.doc)); });
+  grid.addEventListener('click', (e) => {
+    const sb = e.target.closest('.ba-sendback');
+    if (sb) { e.stopPropagation(); _baSendBack(Number(sb.dataset.sendback)); return; }
+    if (e.target.closest('.ba-input') || e.target.closest('.ba-col-resize')) return;
+    const el = e.target.closest('[data-doc]'); if (el) _baSelect(Number(el.dataset.doc));
+  });
   grid.addEventListener('blur', _baOnBlur, true);
   grid.addEventListener('pointerdown', _baReszStart);   // draggable column resizers (table view)
   const pv = ov.querySelector('#ba-preview');
@@ -1288,6 +1299,7 @@ function _baRenderCards(rows) {
       +   `<span class="ba-fname" title="${escHtml(r.filename || '')}">${escHtml(r.filename || ('#' + r.id))}</span>`
       +   `<span class="ba-issuer">${escHtml(r.supplier_name || '—')} <small>(issuer — edit in Review)</small></span>`
       +   `<span class="ba-conf">${escHtml(_baConf(r.overall_confidence))}</span>`
+      +   `<button type="button" class="ba-sendback" data-sendback="${r.id}" title="Send this document back to Review — to fix the issuer, the type, or a wrong read">↩ Send back</button>`
       + '</div>'
       + `<div class="ba-fields">${cells || '<span class="ba-note">No editable fields on this document.</span>'}</div>`
       + `<div class="ba-card-result" data-res="${r.id}"></div>`
@@ -1312,7 +1324,7 @@ function _baRenderTable(rows) {
     + cols.map(k => {
         const w = _baColW[k] ? ` style="width:${_baColW[k]}px"` : '';
         return `<th class="ba-tvcol"${w}>${escHtml(_baHumanize(k))}<span class="ba-col-resize" data-colkey="${escHtml(k)}" title="Drag to resize this column"></span></th>`;
-      }).join('') + '<th>Status</th></tr></thead>';
+      }).join('') + '<th>Status</th><th class="ba-tact"></th></tr></thead>';
   const body = rows.map(r => {
     const cells = cols.map(k => {
       const f = fmap[r.id][k];
@@ -1327,9 +1339,31 @@ function _baRenderTable(rows) {
       + `<td class="ba-tissuer" title="Issuer — edit in Review">${escHtml(r.supplier_name || '—')}</td>`
       + cells
       + `<td class="ba-tstatus" data-res="${r.id}"></td>`
+      + `<td class="ba-tact"><button type="button" class="ba-sendback" data-sendback="${r.id}" title="Send this document back to Review — to fix the issuer, the type, or a wrong read">↩ Send back</button></td>`
       + '</tr>';
   }).join('');
   grid.innerHTML = `<div class="ba-tablewrap"><table class="ba-table">${thead}<tbody>${body}</tbody></table></div>`;
+}
+
+// Send ONE grid doc back to Review — de-confirm + return to the queue via the shared repairService door
+// (batch-audit-send-back, event-cross-checked in main). Reversible by re-confirming in Review. The row is
+// dropped LOCALLY (buildGrid would exclude it anyway now it's needs_review), preserving un-applied edits on
+// the OTHER rows. Never trusts a renderer id-list — one docId, verified server-side against the batch.
+async function _baSendBack(docId) {
+  const row = (_baRows || []).find(r => r.id === docId);
+  const label = (row && row.filename) || ('#' + docId);
+  let r;
+  try { r = await window.docusnap.batchAuditSendBack(_baEvId, docId); }
+  catch (e) { r = { ok: false, error: (e && e.message) || 'error' }; }
+  if (!r || !r.ok) { showToast((r && r.error) || 'Could not send that document back.', 'warn'); return; }
+  const idx = _baRows.findIndex(r2 => r2.id === docId);
+  if (idx >= 0) _baRows.splice(idx, 1);
+  if (_baEdits[docId]) delete _baEdits[docId];
+  if (_baOrig[docId]) delete _baOrig[docId];
+  showToast(`Sent “${label}” back to Review.`, 'ok');
+  if (!_baRows.length) { _baClose(); return; }
+  _baPopulateFilters();
+  _baRender();
 }
 
 function _baOnInput(e) {

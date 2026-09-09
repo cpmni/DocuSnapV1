@@ -225,6 +225,30 @@ function register(ctx) {
     return batchAudit.confirmBatch(db, { userId: sess.id, username: sess.username, role: sess.role }, { eventId, edits });
   });
 
+  // Quick-check "Send back to Review": de-confirm ONE grid doc and return it to the Review queue (reuses the
+  // Learning-Repair sendBackToReview door — same de-confirm + planted-hint retract + suspect note). The docId is
+  // CROSS-CHECKED against the grid's event ids in MAIN (the C5 trust model of batch-audit-correct — a renderer
+  // docId is never trusted on its own). Admin/Edit; audited. No license gate (it UN-files, not files). A
+  // sent-back doc becomes needs_review, so buildGrid's status filter drops it on the next grid refresh.
+  ipcMain.handle('batch-audit-send-back', (_e, { eventId, docId } = {}) => {
+    const db = getDb();
+    if (!_batchAuditEnabled()) return { ok: false, reason: 'disabled' };
+    requireRole('admin', 'edit');
+    const id = Number(docId);
+    if (!id) return { ok: false, error: 'No document.' };
+    let ev; try { ev = require('../processing/handler').getReviewEvent(db, eventId); } catch { ev = null; }
+    const evIds = new Set(((ev && ev.ids) || []).map(Number));
+    if (!evIds.has(id)) return { ok: false, error: 'That document is not in this batch.' };   // C5
+    let r;
+    try { r = require('../../services/repairService').sendBackToReview(db, id, { source: 'quick_check' }); }
+    catch (e) { return { ok: false, error: 'Send-back failed (nothing was changed): ' + (e.message || e) }; }
+    if (r && r.ok) {
+      try { logAudit(db, { action: 'quick_check_send_to_review', action_category: 'document', target_type: 'document', target_id: id, outcome: 'success' }); } catch {}
+      try { notifyMainWindow('review-count-changed', documents.getReviewCount(db)); } catch {}
+    }
+    return r;
+  });
+
   // ── Validation patterns (shared source of truth for UI field validation) ─────
   // The Review window validates an edited field on blur (regex/type) using the
   // EXACT same `validation_patterns` the Python extraction qualification uses
