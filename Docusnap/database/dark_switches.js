@@ -93,6 +93,14 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // 88-95 band. Requires corroboration_autofile ON. Inert on a single-family @93 (honest limit). ⚑ FLIP GATE:
   // reach census + realdoc M=0 + wouldFile(ON)⊇wouldFile(OFF) role==GT + both-ON with mig 142 → Oracle.
   'corrob_autofile_band88',
+  // filing_sanity_confusable_soften (mig 147, 2026-09-09 Oracle C1): the Gate-C "doesn't appear on this page as
+  // written" note is FALSE + alarming when the page's only counter-evidence is a single digit/letter confusable
+  // (O/0, I/1…) of a crop-sourced value — the low-res whole-page pass just mis-segmented one glyph. When ON,
+  // writes the truthful SOFT note WITHOUT the mig 111/117 confirmed-literal requirement (case-folds excluded).
+  // NOTE-TEXT ONLY, auto-file-neutral (still a validation_note → the mirror case is held for a human). The
+  // AUTO-FILE half is a SEPARATE arc on the prefix-history axis (Oracle SEND BACK on the re-read lever). ⚑ FLIP
+  // GATE: corpus census (confusable-absent notes; 0 wouldFile change) + realdoc M=0 → Oracle.
+  'filing_sanity_confusable_soften',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

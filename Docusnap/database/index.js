@@ -2989,6 +2989,26 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 145 (corrob_autofile_band88): ${e.message}`); }
   }
 
+  // ── migration 147: filing_sanity_confusable_soften seeded OFF (2026-09-09; Oracle C1 SIGN-OFF,
+  //    docs/designs/CONFUSABLE_REREAD_ARC_2026-09-09.md). (146 reserved for the release-net
+  //    INLINE_DISAGREE_CORROB_RELEASE — see pendingfeatures.md.) The two 09-03/04 softeners (mig 111/117)
+  //    both need CONFIRMED HISTORY, which a UNIQUE ref (a fresh PO/invoice number) never has, so a
+  //    first-time-correct crop read that the low-res whole-page pass mis-segments as a one-glyph digit/letter
+  //    confusable (O/0, I/1…) still shipped the scary "doesn't appear as written" note (phantom Format-check
+  //    card; live exhibit doc #45 'PO-22954' vs whole-page 'P0-22954'). When ON, Gate-C writes the truthful
+  //    SOFT note for that case WITHOUT the confirmed-literal requirement (case-folds excluded). Auto-file-
+  //    NEUTRAL by construction (still a validation_note → trust.js holds the mirror case for a human). DARK
+  //    (in TEST_SWITCH_KEYS). Byte-identical OFF. ⚑ FLIP GATE: census (Gate-C confusable-absent notes on the
+  //    corpus; note-fix must show 0 wouldFile change) + realdoc M=0 → Oracle. The AUTO-FILE half is a
+  //    SEPARATE arc (prefix-history axis; Oracle SEND BACK on the re-read lever).
+  if (!applied.has(147)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('filing_sanity_confusable_soften', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (147)').run();
+      console.log(`JS migration 147 applied: filing_sanity_confusable_soften (Gate-C soft note on a one-glyph digit/letter page confusable, no history) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 147 (filing_sanity_confusable_soften): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

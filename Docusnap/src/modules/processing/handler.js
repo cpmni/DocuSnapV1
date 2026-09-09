@@ -313,6 +313,10 @@ function _reconcileEnv(db) {
     //   (O<->0, S<->5…) and there's no live agreement (the value came from a +corrected adopt), swap the
     //   scary "doesn't appear" note for the truthful soft one. Auto-file-neutral (still a note). Own switch.
     if (learning.getSetting(db, 'filing_sanity_ref_history_soften', 'false') === 'true') env.FILING_SANITY_REF_HISTORY_SOFTEN = '1';
+    // FILING_SANITY_CONFUSABLE_SOFTEN (2026-09-09; Oracle C1). Extends the soften to the no-history one-glyph
+    //   digit/letter confusable case (O/0, I/1…): the low-res whole-page pass mis-segmented a crop-sourced value,
+    //   so the scary "doesn't appear" note is false. Truthful soft note; auto-file-neutral (still a note). Own switch.
+    if (learning.getSetting(db, 'filing_sanity_confusable_soften', 'false') === 'true') env.FILING_SANITY_CONFUSABLE_SOFTEN = '1';
     if (learning.getSetting(db, 'vat_reg_symbol_confusable', 'false') === 'true') env.VAT_REG_SYMBOL_CONFUSABLE = '1';
     if (learning.getSetting(db, 'money_sign_capture', 'false') === 'true') env.MONEY_SIGN_CAPTURE = '1';
     // The linchpin (2026-08-15): a demoted note is no longer a format mismatch, so its -12

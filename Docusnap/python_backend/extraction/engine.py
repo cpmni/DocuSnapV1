@@ -1972,6 +1972,25 @@ def _one_confusable_diff(a, b) -> bool:
     return diffs == 1
 
 
+def _one_digit_letter_confusable(a, b) -> bool:
+    """True iff `a` and `b` are the same length and differ in EXACTLY ONE position, and that one difference is a
+    symbol/letter<->digit confusion from `_CONFUSE_TO_DIGIT` (O/0, I/1, S/5, B/8, Z/2, |/1, ]/1, [/1) — a PURE
+    case-fold is NOT admitted. Used ONLY by the Gate-C confusable soften (FILING_SANITY_CONFUSABLE_SOFTEN): a
+    whole-page pass that misreads such a glyph against a crop-sourced value is a legibility artifact, not a
+    genuine 'absent'. Deliberately TIGHTER than `_one_confusable_diff` (which also admits the case-fold branch)."""
+    a = str(a); b = str(b)
+    if len(a) != len(b):
+        return False
+    diffs = 0
+    for ca, cb in zip(a, b):
+        if ca == cb:
+            continue
+        diffs += 1
+        if not (_CONFUSE_TO_DIGIT.get(ca) == cb or _CONFUSE_TO_DIGIT.get(cb) == ca):
+            return False
+    return diffs == 1
+
+
 def _same_length_one_glyph(a, b) -> bool:
     """True iff `a` and `b` are the same length and differ in EXACTLY ONE position — WITHOUT the
     known-confusable requirement of `_one_confusable_diff`. Used ONLY by the Gate-C corroboration
@@ -2029,6 +2048,16 @@ _FILING_SANITY_SOFTEN_NOTE = ("This reference reads as '{}' where it is labelled
 # from it (C1 unambiguity — closes the two-confirmed-neighbours case). Auto-file-NEUTRAL (a note either way;
 # trust.js blocks on any note); note-text-only. Reuses the (non-sweepable) soften note; DARK, own switch.
 _FILING_SANITY_REF_HISTORY_SOFTEN = os.environ.get("FILING_SANITY_REF_HISTORY_SOFTEN", "0") == "1"
+# FILING_SANITY_CONFUSABLE_SOFTEN (2026-09-09; Oracle C1 SIGN-OFF, docs/designs/CONFUSABLE_REREAD_ARC_2026-09-09.md).
+# The two softeners above both need CONFIRMED HISTORY (a repeated confirmed literal), which a UNIQUE reference (a
+# fresh PO/invoice number) never has — so a first-time-correct crop read that the low-res whole-page pass
+# mis-segments as a one-glyph digit/letter confusable (O/0, I/1…) still shipped the scary "doesn't appear as
+# written" note (the phantom Format-check card, Chris 09-08/09; live exhibit doc #45 'PO-22954' vs whole-page
+# 'P0-22954'). When ON, and the page's nearest token is a digit/letter confusable of the committed value
+# (`_one_digit_letter_confusable`, case-folds EXCLUDED per Oracle), write the truthful SOFT note instead — WITHOUT
+# the confirmed-literal requirement. Auto-file-NEUTRAL by construction (still a validation_note → trust.js holds
+# it for a human — the mirror case, where the page-form digit is the true value, is NEVER silently filed). DARK.
+_FILING_SANITY_CONFUSABLE_SOFTEN = os.environ.get("FILING_SANITY_CONFUSABLE_SOFTEN", "0") == "1"
 _FILING_SANITY_ABSENT_NOTE = ("'{}' " + _FILING_SANITY_ABSENT_MARK
                               + " — please check the reference before filing.")
 
@@ -7352,6 +7381,19 @@ class ExtractionEngine:
                                     self._t('filing_sanity_ref_history_soften', field=ref_field_key, value=rv, page_form=_near)
                                     self.log(f"  Filing sanity: {ref_field_key} '{rv}' — confirmed literal, backed "
                                              f"one-glyph page slip '{_near}' (history): softened, kept in review")
+                            elif (_near and _FILING_SANITY_CONFUSABLE_SOFTEN
+                                  and _one_digit_letter_confusable(rv, _near)):
+                                # Oracle C1 (2026-09-09): the page's only "absent" evidence is a single digit/letter
+                                # confusable (O/0, I/1…) of a crop-sourced value — the value IS on the page; the
+                                # low-res whole-page pass just mis-segmented one glyph. Truthful soft note, with NO
+                                # confirmed-literal requirement. Still a validation_note → review-bound (auto-file
+                                # byte-identical); the mirror case (page-form digit is the true value) is held for a
+                                # human, never filed. Case-folds excluded by _one_digit_letter_confusable.
+                                _txt = _FILING_SANITY_SOFTEN_NOTE.format(rv, _near)
+                                if _note(ref_field_key, _txt):
+                                    self._t('filing_sanity_ref_confusable_soften', field=ref_field_key, value=rv, page_form=_near)
+                                    self.log(f"  Filing sanity: {ref_field_key} '{rv}' — one-glyph digit/letter page "
+                                             f"confusable '{_near}': softened, kept in review")
                             else:
                                 _txt = (f"'{rv}' {_FILING_SANITY_ABSENT_MARK} — the page reads it as '{_near}' — "
                                         f"please check the reference before filing.") if _near \
