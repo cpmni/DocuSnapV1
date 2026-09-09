@@ -82,6 +82,17 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // HARD dependency: template_pad_window_read ON. ⚑ FLIP GATE: unit adopt + pinned trade-offs + realdoc M=0 +
   // fire census (every adopt==GT, no new wrong file) → Oracle. Advisor: gary + reggie (date polarity).
   'template_pad_date_adopt',
+  // type_split_teach_scope_suppress (mig 144, 2026-09-09 Q1, herald): the type-split ask is a confirmed-COUNT
+  // predicate that treats a wizard-TAUGHT type as unsupported until its 2nd doc, so it re-asks "file as X?" on
+  // a type the human already taught. When ON, checkTypeSplit stands down iff a teach-origin template exists for
+  // (supplier, type). Still asks for a cold never-taught type. Read-only, NOT in the auto-file path. ⚑ FLIP
+  // GATE: taught->silent / cold->asks / mixed-unchanged pins + realdoc wouldAsk(ON)⊆wouldAsk(OFF) → Oracle.
+  'type_split_teach_scope_suppress',
+  // corrob_autofile_band88 (mig 145, 2026-09-09 Q3, gary): widens the EXISTING corroboration auto-file route
+  // down to the 88 critical-field floor so a clean, every-role >=2-family-corroborated doc auto-files in the
+  // 88-95 band. Requires corroboration_autofile ON. Inert on a single-family @93 (honest limit). ⚑ FLIP GATE:
+  // reach census + realdoc M=0 + wouldFile(ON)⊇wouldFile(OFF) role==GT + both-ON with mig 142 → Oracle.
+  'corrob_autofile_band88',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

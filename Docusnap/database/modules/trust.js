@@ -471,6 +471,22 @@ function _corrobAutofileEnabled(db) {
   } catch { return false; }
 }
 
+// CORROB_AUTOFILE_BAND88 (owner Q3 2026-09-09, gary design; mig 145 DARK). Widens the EXISTING
+// corroboration auto-file route (which today bridges only [95, userThr)) down to the 88 critical-field
+// floor, so a CLEAN doc whose EVERY role field is >=2-family corroborated on a cleanButForVolume scope
+// (>=3 confirms, 0 corrections, verifiable) auto-files in the 88-95 band instead of being held for a
+// human. Requires the master `corroboration_autofile` ON (it only widens THAT route's band; inert
+// otherwise). Every downstream safety stays: the per-field 88 floor, _docFullyCorroborated's per-role
+// >=2-family requirement, the flagged refusal, the sub-100 docTrustGate. DARK, byte-identical OFF.
+function _corrobBand88Enabled(db) {
+  const env = process.env.CORROB_AUTOFILE_BAND88;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('./learning').getSetting(db, 'corrob_autofile_band88', 'false') === 'true';
+  } catch { return false; }
+}
+
 // ── OPTIONAL SOFT-FLAG AUTO-FILE (owner 2026-09-09, gary design) — DARK arc `optional_soft_flag_autofile` ──
 // A "soft advisory" flag = a wordness / format-variance note on a field that is NOT a filing ROLE, is
 // OPTIONAL (required=0), and is NOT a deterministically-validatable STRICT type. Such a note never reflects a
@@ -1090,13 +1106,21 @@ function isAutoFileEligible(db, doc, opts = {}) {
   // lowered the floor and cannot be bypassed. Floors compose by min with the CONSTANT 95, so
   // no stacking exists (owner at 90 → identical with or without this route).
   const _conf0 = doc.overall_confidence || 0;
+  // Band-88 (mig 145, gary Q3): widen the corroboration route's lower bound from 95 to the 88 critical
+  // floor. Requires the master corrob route ON. OFF = the entry bound + cap stay at TRUSTED_FLOOR (95),
+  // byte-identical. The per-field 88 floor + _docFullyCorroborated's per-role corroboration are unchanged.
+  const _band88On = corrobOn && ((opts.corrobBand88 !== undefined) ? !!opts.corrobBand88 : _corrobBand88Enabled(db));
+  const _corrobLowerBound = _band88On ? CRITICAL_FIELD_FLOOR : TRUSTED_FLOOR;
   let corroborated = false;
   if (corrobOn && !graduated && gradOn && !optedOut
       && t.reason === 'volume' && t.cleanButForVolume === true
-      && userThr > TRUSTED_FLOOR && _conf0 >= TRUSTED_FLOOR && _conf0 < userThr) {
+      && userThr > TRUSTED_FLOOR && _conf0 >= _corrobLowerBound && _conf0 < userThr) {
     corroborated = _docFullyCorroborated(db, doc, dtRow, opts);
   }
-  const floor = (graduated || corroborated) ? Math.min(userThr, TRUSTED_FLOOR) : userThr;
+  // The corroborated CAP drops to 88 only under the band arc (an ungraduated corroborated doc); a
+  // graduated scope keeps its 95 floor. Floors still compose by min with userThr — no stacking.
+  const _corrobCap = (corroborated && !graduated && _band88On) ? CRITICAL_FIELD_FLOOR : TRUSTED_FLOOR;
+  const floor = (graduated || corroborated) ? Math.min(userThr, _corrobCap) : userThr;
   if ((doc.overall_confidence || 0) < floor)
     return { eligible: false, floor, trusted: t.trusted, reason: 'below-floor' };
   // Flagged = a real validation note OR a pending Stage-4.5 correction candidate (corrected_to).

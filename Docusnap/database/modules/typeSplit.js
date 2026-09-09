@@ -44,6 +44,31 @@ function checkTypeSplit(db, supplierName, documentTypeSlug, opts = {}) {
   if ((only.n || 0) < minConfirms) return { split: false, reason: 'thin', count: total };
   if (sorted.slice(1).some(r => (r.n || 0) >= 2)) return { split: false, reason: 'mixed', count: total };
   if (String(only.slug || '').toLowerCase() === slug.toLowerCase()) return { split: false, reason: 'same', count: total };
+  // TYPE-SPLIT teach-scope stand-down (mig 144, owner 2026-09-09; herald forensics). The count predicate
+  // treats a wizard-TAUGHT type as "unsupported" until its 2nd confirmed doc, so it re-asks "File as X?" on
+  // a type the human already pointed out the fields for (the exact grievance the 2026-09-07 wizard auto-ack
+  // fixed for the taught doc — this closes it for the NEXT doc in Review too). When ON, stand down iff a
+  // TEACH-ORIGIN template exists for (this supplier, the type being confirmed) — a `templates` row whose
+  // identity name == the supplier AND document_type_slug == the slug, carrying >=1 field mapping (the
+  // wizard/⊕ fingerprint; an ordinary confirm mints no mapping). The ask STILL fires for a cold, never-
+  // taught type on a single-type-history supplier (herald Scenario B — where the catch earns its keep).
+  // DARK (in TEST_SWITCH_KEYS; armed by the runtime test-build road). OFF = byte-identical. Read-only; NOT
+  // in the auto-file path (this predicate runs only on a human non-bulk confirm + the teach IPC), so
+  // standing the ask down can never auto-file a wrong type. Fails toward the ask on any lookup error.
+  const _suppressOn = (opts.teachScopeSuppress !== undefined)
+    ? !!opts.teachScopeSuppress
+    : (() => { try { const r = db.prepare("SELECT value FROM settings WHERE key = 'type_split_teach_scope_suppress'").get(); return !!(r && r.value === 'true'); } catch { return false; } })();
+  if (_suppressOn) {
+    try {
+      const taught = db.prepare(`
+        SELECT 1 FROM templates t
+         WHERE LOWER(TRIM(t.name)) = LOWER(TRIM(?))
+           AND LOWER(TRIM(t.document_type_slug)) = LOWER(TRIM(?))
+           AND EXISTS (SELECT 1 FROM template_field_mappings m WHERE m.template_id = t.id)
+         LIMIT 1`).get(sup, slug);
+      if (taught) return { split: false, reason: 'taught', count: total };
+    } catch { /* advisory — fall through to the ask */ }
+  }
   let typedName = null;
   try { typedName = (db.prepare('SELECT name FROM document_types WHERE slug = ?').get(slug) || {}).name || null; } catch { /* advisory */ }
   return {

@@ -54,5 +54,45 @@ check('unknown issuer / empty inputs → no ask', checkTypeSplit(db, 'Nobody', '
 check('an unknown typed slug still asks (typed_name null, slug in the message)',
       (() => { const x = checkTypeSplit(db, 'Harbour Glass Ltd', 'remittance'); return x.split === true && x.typed_name === null && /as remittance\?/.test(x.message); })());
 
+// ── mig 144 type_split_teach_scope_suppress (Q1, herald): a TAUGHT type stands the ask down ──────────
+console.log('\nteach-scope stand-down (mig 144):');
+const fs = require('fs');
+const path = require('path');
+// a teach-origin template = a templates row (name==supplier, document_type_slug==slug) with >=1 mapping.
+const teachTemplate = (supplier, slug, tid) => {
+  db.prepare("INSERT INTO templates (id, name, slug, document_type_slug) VALUES (?, ?, ?, ?)")
+    .run(tid, supplier, 'tpl_' + tid, slug);
+  db.prepare("INSERT INTO template_field_mappings (template_id, field_key, target_x_norm) VALUES (?, 'invoice_number', 0.5)").run(tid);
+};
+// A cold single-type supplier that WOULD ask when confirming the other type.
+for (let i = 0; i < 24; i++) mk('Teach Test Co', 7);          // 24 quotes
+db.prepare("INSERT INTO document_types (id, name, slug, built_in) VALUES (9, 'Invoice', 'invoice', 1)").run();
+check('BASELINE: 24 quotes, confirm Invoice, no taught template → split:true (the ask fires)',
+      checkTypeSplit(db, 'Teach Test Co', 'invoice').split === true);
+teachTemplate('Teach Test Co', 'invoice', 501);              // the human TAUGHT Invoice for this supplier
+check('OFF (arc off) is byte-identical — a taught template does NOT suppress unless the arc is on',
+      checkTypeSplit(db, 'Teach Test Co', 'invoice').split === true
+      && checkTypeSplit(db, 'Teach Test Co', 'invoice', { teachScopeSuppress: false }).split === true);
+check('SCENARIO A (taught → silent): arc ON + a teach-origin Invoice template → split:false reason taught',
+      (() => { const x = checkTypeSplit(db, 'Teach Test Co', 'invoice', { teachScopeSuppress: true }); return x.split === false && x.reason === 'taught'; })());
+check('SCENARIO B (cold, never-taught): arc ON but confirming purchase_order (no taught PO template) → STILL asks',
+      checkTypeSplit(db, 'Teach Test Co', 'purchase_order', { teachScopeSuppress: true }).split === true);
+// a templates row WITHOUT a mapping is not a teach fingerprint (graduation stub / bare row) → still asks.
+db.prepare("INSERT INTO templates (id, name, slug, document_type_slug) VALUES (777, 'Barecase Co', 'tpl_777', 'invoice')").run();
+for (let i = 0; i < 24; i++) mk('Barecase Co', 7);
+check('NEGATIVE CONTROL: a templates row with NO field mapping is not teach-origin → arc ON still asks',
+      checkTypeSplit(db, 'Barecase Co', 'invoice', { teachScopeSuppress: true }).split === true);
+// setting-driven (no opts): flipping the setting ON drives the same stand-down.
+db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('type_split_teach_scope_suppress', 'true')").run();
+check('setting-driven: type_split_teach_scope_suppress=true stands the taught ask down without opts',
+      checkTypeSplit(db, 'Teach Test Co', 'invoice').split === false
+      && checkTypeSplit(db, 'Teach Test Co', 'purchase_order').split === true);   // cold still asks
+db.prepare("UPDATE settings SET value = 'false' WHERE key = 'type_split_teach_scope_suppress'").run();
+// SAFETY PIN (herald seam): checkTypeSplit is NOT wired into the backend auto-file path — standing the ask
+// down can never file a wrong type. Assert the processing handler never references it.
+const procSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'modules', 'processing', 'handler.js'), 'utf8');
+check('SAFETY: checkTypeSplit is absent from processing/handler.js (not in the auto-file path)',
+      !/checkTypeSplit/.test(procSrc));
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASS');
 process.exit(fails ? 1 : 0);

@@ -280,6 +280,38 @@ function main() {
   check('18c. abstain residual: memory+mapping, no keyword voice → LICENSED (named, bounded, owed slice 2/3)',
     elig(db, doc).eligible);
 
+  // ── 19. CORROB_AUTOFILE_BAND88 (mig 145, gary Q3): the corroboration route down to the 88 floor ──
+  // A CLEAN, every-role >=2-family-corroborated doc @93 (in the 88-95 dead zone) on a cleanButForVolume
+  // scope with a high user threshold is HELD today (below the 95 lower bound); the band arc releases it.
+  const MEMHINT_ONLY = JSON.stringify({ winner_family: 'memory', agree: ['hint'], disagree: [], independent_agree: true });
+  db = freshDb(); nextId = 100;
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_file_threshold', '100')").run();  // userThr>95 so the route is live
+  addConfirmed(db, 5);                                    // cleanButForVolume (>=3 confirms, 0 corrections)
+  doc = addCandidate(db, { conf: 93 });                   // corroborated but in the 88-95 band
+  check('19a. OFF (band arc off): corroborated @93 → NOT eligible (below the 95 corrob bound — byte-identical)',
+    !elig(db, doc).eligible && elig(db, doc).reason === 'below-floor');
+  check('19b. ON (corrobBand88): the SAME corroborated @93 → eligible at floor 88',
+    (() => { const r = elig(db, doc, { corrobBand88: true }); return r.eligible === true && r.floor === 88; })());
+  // TRADE-OFF PIN (the honest limit): a SINGLE-family @93 (one role licensed only by memory+hint, not a
+  // 2nd PAGE family) is NOT rescued — corroboration is required; this doc wants calibration, not a floor drop.
+  const docSF = addCandidate(db, { conf: 93, corrobs: { worksheet_number: MEMHINT_ONLY } });
+  check('19c. TRADE-OFF: single-family (memory+hint) role @93 → NOT eligible even with the band arc on',
+    !elig(db, docSF, { corrobBand88: true }).eligible);
+  // COLD PIN: a scope with < 3 confirms is not cleanButForVolume → the route never opens at any band.
+  let dbCold = freshDb(); nextId = 400;
+  dbCold.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_file_threshold', '100')").run();
+  addConfirmed(dbCold, 2);
+  const docCold = addCandidate(dbCold, { conf: 93 });
+  check('19d. COLD (<3 confirms): corroborated @93 → NOT eligible even with the band arc (cleanButForVolume false)',
+    !elig(dbCold, docCold, { corrobBand88: true }).eligible);
+  // PER-FIELD FLOOR PIN: a role field below the 88 critical floor is still weak-critical even with the band on.
+  const docWeakRole = addCandidate(db, { conf: 93, refConf: 86 });   // worksheet_number field @86
+  check('19e. PER-FIELD: a role field @86 (<88) → weak-critical-field even with the band arc on',
+    !elig(db, docWeakRole, { corrobBand88: true }).eligible);
+  // BAND REQUIRES THE MASTER CORROB ROUTE: corrobBand88 on but corrobAutoFile OFF → inert (no widening).
+  check('19f. corrobBand88 ON but the master corroboration route OFF → inert (still below-floor)',
+    !trust.isAutoFileEligible(db, doc, { ...OPTS, corrobAutoFile: false, corrobBand88: true }).eligible);
+
   console.log('\n' + (fails ? `${fails} FAILED` : 'ALL PASS'));
   process.exit(fails ? 1 : 0);
 }

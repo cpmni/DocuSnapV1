@@ -2952,6 +2952,43 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 143 (template_pad_date_adopt): ${e.message}`); }
   }
 
+  // ── migration 144: type_split_teach_scope_suppress seeded OFF (2026-09-09, owner exhibit + herald
+  //    forensics). The type-split ask ("<supplier> files as X — file this one as Y?") is a pure
+  //    confirmed-COUNT predicate: a wizard-TAUGHT type sits at 1 confirmed doc so it looks "unsupported"
+  //    and the gate keeps asking, even though the human pointed out that type's fields in the wizard. When
+  //    ON, checkTypeSplit stands the ask down iff a TEACH-ORIGIN template exists for (supplier, the type
+  //    being confirmed) — a templates row (identity name == supplier, document_type_slug == slug) carrying
+  //    >=1 field mapping. The ask still fires for a cold, never-taught type (herald Scenario B). DARK (in
+  //    TEST_SWITCH_KEYS; armed by the runtime test-build road). Byte-identical OFF. Read-only, advisory,
+  //    NOT in the auto-file path → standing the ask down can never file a wrong type.
+  //    ⚑ FLIP GATE: pin taught->silent / cold->still-asks / mixed-unchanged; assert absent from the
+  //    auto-file path; realdoc wouldAsk(ON)⊆wouldAsk(OFF) & wouldFile unchanged → Oracle.
+  if (!applied.has(144)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('type_split_teach_scope_suppress', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (144)').run();
+      console.log(`JS migration 144 applied: type_split_teach_scope_suppress (a taught type no longer re-triggers the type-split ask) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 144 (type_split_teach_scope_suppress): ${e.message}`); }
+  }
+
+  // ── migration 145: corrob_autofile_band88 seeded OFF (2026-09-09, owner Q3 + gary design). Widens the
+  //    EXISTING corroboration auto-file route (today [95, userThr) only) down to the 88 critical-field
+  //    floor, so a CLEAN doc whose EVERY role field is >=2-family corroborated on a cleanButForVolume
+  //    scope (>=3 confirms, 0 corrections, verifiable) auto-files in the 88-95 band instead of being held.
+  //    Requires the master `corroboration_autofile` ON (only widens THAT route's band). Every downstream
+  //    safety unchanged: per-field 88 floor, _docFullyCorroborated per-role >=2-family, flagged refusal,
+  //    sub-100 docTrustGate. DARK (in TEST_SWITCH_KEYS). Byte-identical OFF. NB (gary): inert on a
+  //    SINGLE-family clean @93 (the honest limit — that wants confidence calibration, not a floor drop).
+  //    ⚑ FLIP GATE: reach census (how much of the [88,95) pile is >=2-family vs single-family) + realdoc
+  //    M=0 (never a WRONG value at 88-95) + wouldFile(ON)⊇wouldFile(OFF) role==GT + BOTH-ON with mig 142 → Oracle.
+  if (!applied.has(145)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('corrob_autofile_band88', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (145)').run();
+      console.log(`JS migration 145 applied: corrob_autofile_band88 (corroborated auto-file down to the 88 floor) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 145 (corrob_autofile_band88): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
