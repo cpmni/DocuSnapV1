@@ -31,7 +31,7 @@ const get = (db, k) => { const r = db.prepare('SELECT value FROM settings WHERE 
 const stamped = (db) => new Set(db.prepare('SELECT version FROM migrations').all().map(r => r.version));
 
 // 24 at mig 137 (the 26 minus the two legitimate defaults) + 3 name-grow belts (mig 140, 2026-09-08).
-check('TEST_SWITCH_KEYS has 32 distinct keys', new Set(TEST_SWITCH_KEYS).size === 32 && TEST_SWITCH_KEYS.length === 32);
+check('TEST_SWITCH_KEYS has 32 distinct keys', new Set(TEST_SWITCH_KEYS).size === 32 && TEST_SWITCH_KEYS.length === 32);  // filing_sanity_confusable_soften was added (mig 147) then GRADUATED to a customer default (mig 148 @DEFAULT_FLIP) — net back to 32, 2026-09-09
 check('money_sign_capture + ocr_parallel_import_enabled are NOT listed', !TEST_SWITCH_KEYS.includes('money_sign_capture') && !TEST_SWITCH_KEYS.includes('ocr_parallel_import_enabled'));
 
 // 1. Fresh install.
@@ -43,6 +43,7 @@ check('the 137 console line names the reset', logs.some(l => /migration 137 appl
 const notOff = TEST_SWITCH_KEYS.filter(k => get(db, k) !== 'false');
 check("every TEST switch is 'false' on a fresh install", notOff.length === 0, notOff.join(','));
 check("money_sign_capture stays 'true' (legit default, excluded)", get(db, 'money_sign_capture') === 'true');
+check("filing_sanity_confusable_soften defaulted 'true' on a fresh install (mig 148 @DEFAULT_FLIP, 2026-09-09)", get(db, 'filing_sanity_confusable_soften') === 'true');
 check("resolve_ref_near_miss ends 'false' (121 → 124 → 137 ordering)", get(db, 'resolve_ref_near_miss') === 'false');
 for (const n of TEST_BUILD_MIGS) if (stamped(db).has(n)) fails += 0; // historical stamps are fine on old DBs; a fresh DB simply never sees them
 check('a fresh install never stamps a deleted test-build migration', !TEST_BUILD_MIGS.some(n => stamped(db).has(n)));

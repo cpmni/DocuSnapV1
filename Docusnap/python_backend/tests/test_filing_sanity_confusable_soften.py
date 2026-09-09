@@ -66,15 +66,20 @@ check("writes the SOFT note + a distinct trace event, keeps it review-bound (cal
       "self._t('filing_sanity_ref_confusable_soften'" in src
       and src[i_conf:i_scary].count('_note(ref_field_key, _txt)') == 1)
 
-print("\n5. JS wiring — env bridge + DARK seed OFF + TEST_SWITCH_KEYS")
+print("\n5. JS wiring — env bridge + seed + GRADUATED to a customer default (mig 148 @DEFAULT_FLIP)")
 _h = open(os.path.join(os.path.dirname(__file__), '..', '..', 'src', 'modules', 'processing', 'handler.js'), encoding='utf-8').read()
 check("handler.js bridges the setting -> FILING_SANITY_CONFUSABLE_SOFTEN env",
       "getSetting(db, 'filing_sanity_confusable_soften'" in _h and "env.FILING_SANITY_CONFUSABLE_SOFTEN = '1'" in _h)
 _idx = open(os.path.join(os.path.dirname(__file__), '..', '..', 'database', 'index.js'), encoding='utf-8').read()
-check("migration 147 seeds filing_sanity_confusable_soften = 'false' (DARK)",
+check("migration 147 seeds filing_sanity_confusable_soften = 'false' first",
       "VALUES ('filing_sanity_confusable_soften', 'false')" in _idx and "VALUES (147)" in _idx)
+check("migration 148 @DEFAULT_FLIP force-defaults it ON (census PASS 2026-09-09)",
+      "@DEFAULT_FLIP 148" in _idx
+      and "INSERT INTO settings (key, value) VALUES ('filing_sanity_confusable_soften', 'true') ON CONFLICT(key) DO UPDATE SET value='true'" in _idx
+      and "VALUES (148)" in _idx)
 _dk = open(os.path.join(os.path.dirname(__file__), '..', '..', 'database', 'dark_switches.js'), encoding='utf-8').read()
-check("dark_switches.js lists the key in TEST_SWITCH_KEYS", "'filing_sanity_confusable_soften'" in _dk)
+check("GRADUATED — the key LEFT dark_switches TEST_SWITCH_KEYS (release gate forbids a TEST key as an in-place default)",
+      "'filing_sanity_confusable_soften'" not in _dk)
 
 print(f"\n{'ALL PASS' if _F == 0 else str(_F) + ' FAILED'}  ({_P} ok)")
 sys.exit(1 if _F else 0)

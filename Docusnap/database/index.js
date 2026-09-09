@@ -3009,6 +3009,22 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 147 (filing_sanity_confusable_soften): ${e.message}`); }
   }
 
+  // ── migration 148: filing_sanity_confusable_soften GRADUATES to a customer default (2026-09-09). Census
+  //    PASS (docs/designs/CONFUSABLE_REREAD_ARC_2026-09-09.md + TESTING/_measure/confusable_soften_census_
+  //    20260909/CENSUS_RESULT.md): across the 147-doc test corpus + the live install, exactly 1 doc carried
+  //    the Gate-C confusable-absent note (the PO-22954/P0-22954 O/0 exhibit) → reclassified scary→soft, 0
+  //    wouldFile change (structural: both branches set a validation_note), 0 false positives. UPSERT-forces
+  //    it ON for fresh AND existing installs (mig 147 seeded 'false' first). The AUTO-FILE half stays a
+  //    SEPARATE prefix-history arc (Oracle SEND BACK on the re-read lever), so this only calms the message.
+  // @DEFAULT_FLIP 148
+  if (!applied.has(148)) {
+    try {
+      db.prepare("INSERT INTO settings (key, value) VALUES ('filing_sanity_confusable_soften', 'true') ON CONFLICT(key) DO UPDATE SET value='true'").run();
+    } catch (e) { console.warn(`  migration 148: ${e.message}`); }
+    db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (148)').run();
+    console.log('JS migration 148 applied: filing_sanity_confusable_soften defaulted ON (Gate-C confusable soften; census PASS)');
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
