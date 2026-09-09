@@ -21,6 +21,7 @@ const read = f => fs.readFileSync(path.join(__dirname, f), 'utf8');
 const preview  = read('search-preview.js');
 const mailbox  = read('search-mailbox.js');
 const workflow = read('search-workflow.js');
+const previewSvc = fs.readFileSync(path.join(__dirname, '..', '..', 'services', 'previewService.js'), 'utf8');
 
 // selectDoc must wrap its fetch sequence and render an honest error, not leave the spinner.
 check('selectDoc wraps the fetch in try/catch', /async function selectDoc[\s\S]*?try\s*\{[\s\S]*?\}\s*catch/.test(preview));
@@ -32,7 +33,20 @@ check('a retry control re-runs selectDoc', /pe-retry[\s\S]*?selectDoc\(doc\)/.te
 
 // Stale-selection guard: a newer click must not be clobbered by an older fetch resolving late.
 check('selectDoc captures a selection token and bails when stale',
-      /const mine = doc/.test(preview) && (preview.match(/s\.selectedDoc !== mine/g) || []).length >= 2);
+      /\blet mine = doc/.test(preview) && (preview.match(/s\.selectedDoc !== mine/g) || []).length >= 2);
+// Chris r2 vet item A: a mailbox/workflow caller hands selectDoc a BARE {id}; the fields, actions and
+// stamp sub-renders must ALL get the MERGED doc (doc + fetched detail), else the status chip → "Unknown"
+// and the subtitle → "Document —".
+check('selectDoc feeds the MERGED doc to fields + actions + stamp (never the bare doc)',
+      /const merged = \{ \.\.\.doc, \.\.\.\(full \|\| \{\}\) \};/.test(preview)
+      && /renderPreviewFields\(merged\)/.test(preview)
+      && /renderActions\(merged\)/.test(preview)
+      && /onDocShown\(merged\)/.test(preview)
+      && !/renderActions\(doc\)/.test(preview) && !/onDocShown\(doc\)/.test(preview));
+check('the merge upgrades the stale-guard token in lockstep (mine = merged)',
+      /s\.selectedDoc = merged;[\s\S]{0,120}mine = merged;/.test(preview));
+check('previewService.getDocumentDetail resolves type_name so the detail DTO carries it (fixes "Type —")',
+      /SELECT slug, name FROM document_types WHERE id = \?/.test(previewSvc) && /doc\.type_name = typeName/.test(previewSvc));
 
 // The mailbox + workflow pre-fetches must be gone (they were unguarded double-fetches).
 check('mailbox row click no longer pre-fetches detail (routes through guarded selectDoc)',

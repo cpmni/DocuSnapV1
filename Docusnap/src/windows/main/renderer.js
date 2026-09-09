@@ -1001,17 +1001,26 @@ window.docusnap.onDocAutoFiled?.((info) => {
   try { checkGraduationAnnounce(); } catch {}
 });
 
-// A doc auto-filed after its results row was added (the row first showed "Needs review"): flip
-// it to a green "Filed (auto)" that still opens the filed copy in Review.
-function markRowFiled(docId) {
+// A doc CONFIRMED manually by a person files it too — flip its results row the same way auto-file
+// does. Same per-doc event contract as onDocAutoFiled; markRowFiled labels it plain "Filed"
+// (vs "Filed (auto)"). Fixes the row staying stuck on "Confirm to file →" (Chris vet item B).
+window.docusnap.onDocConfirmed?.((info) => {
+  if (info && info.docId != null) markRowFiled(info.docId, { manual: true });
+});
+
+// A doc filed after its results row was added (the row first showed "Needs review"): flip it to a
+// green badge that still opens the filed copy in Review — "Filed (auto)" for the app's own auto-file,
+// plain "Filed" for a person's manual confirm (opts.manual).
+function markRowFiled(docId, opts = {}) {
   const tr = tableBody.querySelector(`tr[data-doc-id="${docId}"]`);
   if (!tr) return;
   tr.classList.remove('row-review');
   const td = tr.querySelector('td:last-child');
   if (!td) return;
+  const label = opts.manual ? 'Filed' : 'Filed (auto)';
   td.innerHTML = _userCanReview
-    ? `<button type="button" class="badge ok row-filed-link" title="Open this filed document in Review to check or correct it">Filed (auto)</button>`
-    : `<span class="badge ok">Filed (auto)</span>`;
+    ? `<button type="button" class="badge ok row-filed-link" title="Open this filed document in Review to check or correct it">${label}</button>`
+    : `<span class="badge ok">${label}</span>`;
   const link = td.querySelector('.row-filed-link');
   if (link) link.addEventListener('click', () => window.docusnap.openReviewWindowAt(docId));
 }

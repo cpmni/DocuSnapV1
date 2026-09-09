@@ -152,8 +152,10 @@ function initPageNav() {
 async function selectDoc(doc) {
   const s = window.SearchState;
   s.selectedDoc = doc;
-  const mine = doc;   // stale-selection guard: a newer click reassigns s.selectedDoc, so a
+  let mine = doc;     // stale-selection guard: a newer click reassigns s.selectedDoc, so a
                       // late-resolving fetch for THIS doc must not clobber the newer render.
+                      // (let, not const: after the fetch we upgrade both s.selectedDoc AND mine to
+                      // the merged doc in lockstep, so the guard still fires on a genuinely newer click.)
 
   document.querySelectorAll('.result-item').forEach(el =>
     el.classList.toggle('active', parseInt(el.dataset.id) === doc.id));
@@ -174,11 +176,15 @@ async function selectDoc(doc) {
   try {
     const full = await window.docusnap.getDocumentDetail(doc.id);   // PROJECTED — no paths/ocr_text (Document-detail DTO)
     if (s.selectedDoc !== mine) return;   // a newer selection now owns the preview pane
-    // `full` (getWithExtractions → getById) carries the extractions but NOT type_name (no
-    // join to document_types), while the search-result `doc` DOES — so merge, keeping doc's
-    // type_name/type_slug (otherwise the preview "Type" always shows "-").
-    renderPreviewFields({ ...doc, ...(full || {}) });
-    window.SearchActions.renderActions(doc);
+    // `full` (getDocumentDetail) now carries type_name (previewService resolves it) alongside the
+    // extractions; the passed `doc` may be a BARE {id} from a mailbox/workflow row. Merge ONCE and use
+    // it for ALL sub-renders — passing the bare doc to renderActions/onDocShown was why the mailbox
+    // preview showed status "Unknown" and subtitle "Document —" (Chris r2 vet item A).
+    const merged = { ...doc, ...(full || {}) };
+    s.selectedDoc = merged;   // upgrade the live selection AND the guard token together, so a
+    mine = merged;            // genuinely newer click still trips the `!== mine` stale guards below.
+    renderPreviewFields(merged);
+    window.SearchActions.renderActions(merged);
 
     // DE-PATHED (owner 2026-08-02): rows no longer carry paths; the pages handler always
     // resolved server-side from the doc row anyway (client args were decorative), so fetch
@@ -196,7 +202,7 @@ async function selectDoc(doc) {
     }
     // Stamped/original toggle (Workflow+Stamping redesign): shows when the doc carries ≥1 stamp and
     // defaults the preview to the stamped version. Non-fatal + staleness-guarded inside.
-    if (window.SearchStamp) { try { window.SearchStamp.onDocShown(doc); } catch (e) { console.error('stamp toggle:', e); } }
+    if (window.SearchStamp) { try { window.SearchStamp.onDocShown(merged); } catch (e) { console.error('stamp toggle:', e); } }
   } catch (err) {
     if (s.selectedDoc !== mine) return;   // don't overwrite a newer selection's state
     _showPreviewLoadError(ph, doc, err);

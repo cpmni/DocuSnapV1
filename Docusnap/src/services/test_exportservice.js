@@ -19,18 +19,23 @@ const db = new Database(':memory:');
 db.exec(`
   CREATE TABLE document_types (id INTEGER PRIMARY KEY, name TEXT, slug TEXT, ref_field_key TEXT, date_field_key TEXT);
   CREATE TABLE documents (id INTEGER PRIMARY KEY, status TEXT, supplier_name TEXT, doc_date TEXT,
-    reference_number TEXT, original_filename TEXT, folder_path TEXT, overall_confidence INTEGER,
-    confirmed_at TEXT, document_type_id INTEGER);
+    reference_number TEXT, original_filename TEXT, folder_path TEXT, stored_path TEXT, overall_confidence INTEGER,
+    confirmed_at TEXT, confirmed_by_username TEXT, document_type_id INTEGER);
   CREATE TABLE extractions (id INTEGER PRIMARY KEY, document_id INTEGER, field_key TEXT, raw_value TEXT, display_value TEXT);
   CREATE TABLE corrections (id INTEGER PRIMARY KEY, document_id INTEGER, field_key TEXT, corrected_value TEXT);
 `);
 db.prepare(`INSERT INTO document_types VALUES (1,'Invoice','invoice','invoice_number','invoice_date')`).run();
-const doc = (id, status, sup, ref, when) => db.prepare(
-  `INSERT INTO documents VALUES (?,?,?,?,?,?,?,?,?,1)`).run(id, status, sup, '01-06-2026', ref, `f${id}.pdf`, `C:/Filing/${sup}`, 90, when);
+const doc = (id, status, sup, ref, when, confirmer) => db.prepare(
+  `INSERT INTO documents (id,status,supplier_name,doc_date,reference_number,original_filename,folder_path,
+     stored_path,overall_confidence,confirmed_at,confirmed_by_username,document_type_id)
+   VALUES (?,?,?,?,?,?,?,?,?,?,?,1)`).run(
+  id, status, sup, '01-06-2026', ref, `f${id}.pdf`, `C:/Filing/${sup}`,
+  status === 'confirmed' ? `C:/Filing/Output/${sup}/2026/June/Invoice.01-06-2026.${ref}.pdf` : null,
+  90, status === 'confirmed' ? when : null, confirmer || null);
 const ext = (docId, k, v) => db.prepare(`INSERT INTO extractions (document_id,field_key,raw_value,display_value) VALUES (?,?,?,?)`).run(docId, k, v, v);
 const corr = (docId, k, v) => db.prepare(`INSERT INTO corrections (document_id,field_key,corrected_value) VALUES (?,?,?)`).run(docId, k, v);
 
-doc(1, 'confirmed', 'Acme, Ltd', 'INV-001', '2026-06-10T09:00:00Z');
+doc(1, 'confirmed', 'Acme, Ltd', 'INV-001', '2026-06-10T09:00:00Z', 'jane');
 ext(1, 'total_amount', '90'); corr(1, 'total_amount', '100.00');           // human answer wins
 ext(1, 'serial_numbers', 'SN1; SN2; SN3');                                  // list-type field
 ext(1, 'note', '=SUM(A1)+2');                                              // formula-injection value
@@ -61,6 +66,26 @@ check('empty typeSlugs array = nothing (opt-in default)', xp.gather(db, { typeSl
 check('empty suppliers array = nothing (opt-in default)', xp.gather(db, { suppliers: [] }, SEL).count === 0);
 check('absent filter still = all confirmed', xp.gather(db, {}, SEL).count === 2);
 check('includeNeedsReview → 3', xp.gather(db, { includeNeedsReview: true }, SEL).count === 3);
+
+console.log('Chris r2 findings 2+3 — Filed folder = actual filed folder; Confidence = confirmer, not score:');
+{
+  const g2 = xp.gather(db, {}, { metaKeys: ['_reference', '_folder', '_confidence'], fields: [] });
+  const a = g2.rows.find(r => r._reference === 'INV-001');   // confirmed by a person
+  const b = g2.rows.find(r => r._reference === 'INV-002');   // confirmed, no recorded confirmer (auto-filed)
+  check('finding 2: Filed folder = dirname(stored_path), the Company/Year/Month folder',
+        a._folder === path.dirname('C:/Filing/Output/Acme, Ltd/2026/June/Invoice.01-06-2026.INV-001.pdf'));
+  check('finding 2: Filed folder is NOT the source-scan folder_path', a._folder !== 'C:/Filing/Acme, Ltd');
+  check('finding 3: a person-confirmed doc shows the ACTUAL confirmer, never a raw score or "by you"',
+        a._confidence === 'Confirmed by jane');
+  check('finding 3: a confirmed doc with no recorded confirmer shows plain "Confirmed"',
+        b._confidence === 'Confirmed');
+}
+{
+  const g3 = xp.gather(db, { includeNeedsReview: true }, { metaKeys: ['_reference', '_folder', '_confidence'], fields: [] });
+  const c = g3.rows.find(r => r._reference === 'INV-003');   // needs_review (un-confirmed)
+  check('finding 3: an un-confirmed doc keeps the raw read score', c && String(c._confidence) === '90');
+  check('finding 2: an un-filed doc has a blank Filed folder', c && c._folder === '');
+}
 
 console.log('_csvCell — formula neutralise BEFORE quote, numbers exempt:');
 check('=formula → leading apostrophe', xp._csvCell('=SUM(1)') === "'=SUM(1)");
@@ -111,7 +136,8 @@ check('docTo before their date → 0', xp.gather(db, { docTo: '2026-05-31' }, SE
 check('same-day range is inclusive', xp.gather(db, { docFrom: '2026-06-01', docTo: '2026-06-01' }, SEL).count === 2);
 // a confirmed doc with an unparseable/empty doc_date participates normally, but is excluded the
 // moment a doc-date RANGE is set (it has no known document date to fall in the range).
-db.prepare(`INSERT INTO documents VALUES (4,'confirmed','Acme, Ltd','','INV-004','f4.pdf','C:/Filing/x',90,'2026-06-13T09:00:00Z',1)`).run();
+db.prepare(`INSERT INTO documents (id,status,supplier_name,doc_date,reference_number,original_filename,folder_path,overall_confidence,confirmed_at,document_type_id)
+  VALUES (4,'confirmed','Acme, Ltd','','INV-004','f4.pdf','C:/Filing/x',90,'2026-06-13T09:00:00Z',1)`).run();
 check('undated confirmed doc counts with NO doc-date filter', xp.gather(db, {}, SEL).count === 3);
 check('undated confirmed doc EXCLUDED when a doc-date range is set', xp.gather(db, { docFrom: '2026-06-01' }, SEL).count === 2);
 check('filed-date range still works independently', xp.gather(db, { filedFrom: '2026-06-13' }, SEL).count === 1);

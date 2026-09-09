@@ -682,7 +682,7 @@ function _asShort(ev) {
     // A zero-filed File All is the run that most needs a receipt (Chris r5 card 2) — say "kept back", not "you filed 0".
     case 'approved':   return n === 0 && kept ? `Nothing filed — ${kept} kept back` : `You filed ${n}`;
     case 'class_fix':  return `${n} corrected`;
-    case 'issuer_fill': return `${n} more ready to file`;
+    case 'issuer_fill': return `${n} more offered in File All Ready`;   // MANUAL bulk availability — NOT the auto "files by itself" countdown (Chris r2 finding 5)
     case 'put_back':   return `${n} put back`;
     case 'convention': return 'Filing rule learned';
     default:           return `${n} document${s}`;
@@ -2076,9 +2076,16 @@ function _senderReadinessLabel(supplier) {
     .map(r => ({ ...r, left: Math.max(1, (r.needed || 0) - (r.confirms || 0)) }))
     .sort((a, b) => a.left - b.left)
     .map(r => (mine.length > 1 && r.typeName)
-      ? `${r.left} more ${escHtml(r.typeName).toLowerCase()}`
-      : `${r.left} more`);
-  const label = bits.length === 1 ? `${bits[0]} to file by itself` : `${bits.join(' · ')} to file by themselves`;
+      ? `${r.left} more ${escHtml(r.typeName).toLowerCase()} confirmed`
+      : `${r.left} more confirmed`);
+  // Chris r2 finding 5: this is a graduation THRESHOLD (confirms remaining), NOT a count of documents
+  // that will auto-file — the old "N more to file by itself" collided with the issuer_fill banner's
+  // "ready to file", so one sender read "3" in one place and "4" in another. Name the unit (confirmed)
+  // and frame it as the threshold. "files by itself" stays the exclusive label of the graduated ✓ badge
+  // above; here we say "files on its own" for the same state, worded as the countdown to it.
+  const label = bits.length === 1
+    ? `${bits[0]} before this sender files on its own`
+    : `${bits.join(' · ')} before it files these on its own`;
   return `<span class="qgh-ready near" title="Once this sender has enough confirmed documents, the rest that read cleanly file themselves. Confirming these counts towards that.">`
        + `${label}</span>`;
 }
@@ -3514,7 +3521,29 @@ function renderReviewReason(doc) {
   // early-return above so an identity-only doc (flagN>=1) still reaches this block. They are excluded
   // from the format-check COUNT (an inferred identity is not a format check) and the generic note list.
   const idNotes = _relevant.filter(e => isInferredIdentityNote(e.validation_note));
-  const otherFlagN = Math.max(0, flagN - idNotes.length);
+  // Chris r2 finding 1 (the phantom "Format check · N"): the count must RECONCILE with a marker the
+  // eye can land on. The old `flagN - idNotes.length` double-counted — a field already shown as
+  // "Low confidence" was billed AGAIN as a format check (the amber Issuer, conf<70 + a non-inferred
+  // identity note, appeared in BOTH chips, so the summary claimed a second problem field that does not
+  // exist), and a bare corrected_to (an applied auto-fix, no validation_note) — which shows its own
+  // calm on-row "auto-corrected" badge, not a "wrong for its format" marker — inflated it too. So
+  // "Format check" now = fields with a VISIBLE non-inferred format NOTE that are NOT the low field.
+  // (flagN above is untouched — it still gates the clean early-return; the date red-herring is real:
+  // a <366-day future date carries no note/cap, so a green 94% date is correctly uncounted.)
+  const lowKeys = new Set(
+    _relevant.filter(e => e.confidence != null && Number(e.confidence) < 70).map(e => e.field_key)
+  );
+  const otherFlagN = _relevant.filter(e =>
+    e.validation_note && !isInferredIdentityNote(e.validation_note) && !lowKeys.has(e.field_key)
+  ).length;
+
+  // With low-confidence fields and bare corrected_to no longer counted here, a doc held ONLY by one of
+  // those (nothing low, no non-inferred note, no identity note) has nothing flag-shaped to surface —
+  // explain the hold plainly (same as the clean-hold path) instead of an empty "Format check" banner.
+  if (lowN === 0 && otherFlagN === 0 && idNotes.length === 0) {
+    if (doc.status === 'needs_review' || doc.status === 'deferred') renderCleanHoldReason(el, doc);
+    return;
+  }
 
   const parts = [];
   if (lowN)       parts.push(`${lowN} field${lowN === 1 ? ' was' : 's were'} read with low confidence`);
@@ -11027,7 +11056,13 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       bits.push("Why: the value's shape differs from the format learned from this field's confirmed history.");
     else if (n.includes('candidate') || n.includes('correction'))
       bits.push('Why: a likely OCR fix was found in learned data and offered as a suggestion.');
-    else if (n.includes('character') || n.includes('charset') || n.includes('symbol'))
+    else if (n.includes('clip') || n.includes('drift') || n.includes('taught box'))
+      // A GEOMETRY note (the taught box drifted/clipped) — NOT a charset finding. It must not read as
+      // "unexpected characters": the note says "clipping the first character", which is about the box
+      // POSITION; the committed value can be perfectly clean (owner exhibit: DN-57601 flagged as an
+      // "OCR symbol misread" when nothing was wrong with it). (2026-09-09)
+      bits.push('Why: the taught reading box has drifted/clipped on this scan — the value beside its label was read and kept; re-teach the box for this template.');
+    else if (n.includes('charset') || n.includes('symbol') || (n.includes('character') && !n.includes('clip')))
       bits.push("Why: the value contains characters not expected for this field type (likely an OCR symbol misread).");
     else if (n.includes('date'))
       bits.push('Why: the date was recovered/normalised from a noisy read; confidence capped pending review.');

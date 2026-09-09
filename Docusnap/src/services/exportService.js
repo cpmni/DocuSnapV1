@@ -16,11 +16,15 @@
  *  - Scope defaults to status='confirmed' (reviewed data only). A cap
  *    (EXPORT_ROW_CAP) protects against an accidental whole-corpus dump; the
  *    caller surfaces `truncated` with a "narrow your filter" note.
- *  - Path columns: `folder_path` (the user's OWN filed location) is OPT-IN and
- *    OFF by default; `stored_path` / `working_path` are NEVER exported (the same
- *    fields the /v1 DTO deliberately hides).
+ *  - Path columns: "Filed folder" is OPT-IN + OFF by default and reports the ACTUAL
+ *    filed location `dirname(stored_path)` (the Company/Year/Month folder), NOT the
+ *    source-scan `folder_path` (Chris r2 finding 2 — it pointed at the Processed
+ *    scans folder). The full `stored_path` and `working_path` are still never
+ *    exported: the /v1 DTO hides them for the NETWORK boundary, but this local,
+ *    admin-only, opt-in export deliberately surfaces the filed FOLDER (dirname only).
  */
 
+const path = require('path');
 const documents = require('../../database/modules/documents');
 const document_types = require('../../database/modules/document_types');
 
@@ -34,9 +38,14 @@ const META_COLUMNS = [
   { key: '_date',       label: 'Date',            def: true,  from: (d) => d.doc_date },
   { key: '_reference',  label: 'Reference',       def: true,  from: (d) => d.reference_number },
   { key: '_filename',   label: 'File name',       def: false, from: (d) => d.original_filename },
-  { key: '_confidence', label: 'Confidence',      def: false, from: (d) => (d.overall_confidence == null ? '' : d.overall_confidence) },
+  // Chris r2 finding 3: a document a PERSON confirmed shows a confirmed indicator, not a raw machine
+  // read-score (seeing "41%" on a doc you filed by hand is unsettling, and "confidence" is jargon).
+  // Names the ACTUAL confirmer (viewer-independent — never "by you", which misleads a different
+  // logged-in reader). An un-confirmed row (only via includeNeedsReview) still shows the raw score.
+  { key: '_confidence', label: 'Confidence',      def: false, from: (d) => d.confirmed_by_username ? `Confirmed by ${d.confirmed_by_username}` : (d.confirmed_at ? 'Confirmed' : (d.overall_confidence == null ? '' : d.overall_confidence)) },
   { key: '_filed_at',   label: 'Date filed',      def: false, from: (d) => d.confirmed_at },
-  { key: '_folder',     label: 'Filed folder',    def: false, from: (d) => d.folder_path },
+  // Chris r2 finding 2: the ACTUAL filed location (Company/Year/Month), not the source-scan folder_path.
+  { key: '_folder',     label: 'Filed folder',    def: false, from: (d) => (d.stored_path ? path.dirname(d.stored_path) : '') },
 ];
 const META_BY_KEY = new Map(META_COLUMNS.map((m) => [m.key, m]));
 
@@ -116,7 +125,7 @@ function _buildDocQuery(filters = {}) {
 
   const sql = `
     SELECT d.id, d.supplier_name, d.doc_date, d.reference_number, d.original_filename,
-           d.folder_path, d.overall_confidence, d.confirmed_at,
+           d.folder_path, d.stored_path, d.overall_confidence, d.confirmed_at, d.confirmed_by_username,
            dt.name AS type_name, dt.slug AS type_slug
     FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id
     WHERE ${where.join(' AND ')}

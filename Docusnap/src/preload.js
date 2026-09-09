@@ -514,6 +514,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   onProcessProgress:   (cb) => ipcRenderer.on('process-progress', (_e, m) => cb(m)),
   onWatchProgress:     (cb) => ipcRenderer.on('watch-progress',   (_e, m) => cb(m)),
   onDocAutoFiled:      (cb) => ipcRenderer.on('doc-auto-filed',   (_e, info) => cb(info)),
+  onDocConfirmed:      (cb) => ipcRenderer.on('doc-confirmed',    (_e, info) => cb(info)),   // manual-confirm row flip (Chris vet item B)
   onScopeAutoFiled:    (cb) => ipcRenderer.on('scope-auto-filed', (_e, info) => cb(info)),   // Slice 1: a sender's ready docs filed by itself
   onSweepInviewEligible: (cb) => ipcRenderer.on('sweep-inview-eligible', (_e, ev) => cb(ev)),   // in-view auto-file countdown offer (2026-09-01)
   // B1 (activity strip): the review activity ledger — event-id addressed, the renderer never sends doc ids

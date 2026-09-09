@@ -1310,6 +1310,11 @@ function register(ctx) {
                // IPC edge still dropped it, so showTypeSplitHold fell to its toast every time.
                ...(r.code === 'TYPE_SPLIT' ? { typeSplit: r.typeSplit } : {}) };
     }
+    // Mirror the auto-file row-flip signal for a MANUAL confirm: the main window's import result rows
+    // flip to "Filed" only on doc-auto-filed, so a manual confirm left the row stuck on "Confirm to
+    // file →" (Chris vet item B, open since 2026-09-03). Fire a per-doc event on the SUCCESS path only
+    // (r.ok — a refused/failed confirm returned above and must not fire it).
+    notifyMainWindow('doc-confirmed', { docId: payload.document_id });
     return r;   // { ok:true, success:true, ...filingResult, classFix? }
   });
 

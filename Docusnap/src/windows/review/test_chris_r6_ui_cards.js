@@ -70,13 +70,21 @@ check('_valueOnPageSepless is fail-open (no text / empty value → true) and a p
 check('the hint has a style (no unstyled inline span)', /\.field-note-hint \{/.test(html));
 
 // ── Card 6 — no countdown promise under a never-confirmed sender ────────────────────────────
-console.log('Card 6 — "N more to file by itself" only for a sender someone has confirmed');
+console.log('Card 6 / r2-5 — the graduation countdown shows only for a confirmed sender, framed as a threshold');
 {
   const s = renderer.indexOf('function _senderReadinessLabel(supplier)');
   const e = renderer.indexOf('function _sweepVisibleQueue()', s);
   const body = (s > -1 && e > -1) ? renderer.slice(s, e) : '';
+  // Strip comment lines — the design notes deliberately quote the banned "to file by itself" phrasing
+  // as the thing to avoid (same guard test_cold_start_countdown uses on the rendered strings).
+  const bodyCode = body.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
   check('zero confirms across every pending scope renders NOTHING, before the countdown is built',
-        /if \(pending\.every\(r => !\(Number\(r\.confirms\) > 0\)\)\) return '';[\s\S]{0,600}to file by itself/.test(body));
+        /if \(pending\.every\(r => !\(Number\(r\.confirms\) > 0\)\)\) return '';[\s\S]{0,800}files on its own/.test(bodyCode));
+  // Chris r2 finding 5: the countdown must NOT reuse the auto-file phrase "to file by itself" (it
+  // collided with the issuer_fill banner's "ready to file"); it names the unit (confirmed) and reads
+  // as a threshold ("N more confirmed before this sender files on its own").
+  check('the countdown no longer says "to file by itself"/"themselves" and names the unit (confirmed)',
+        !/to file by (itself|themselves)/.test(bodyCode) && /more confirmed/.test(bodyCode));
   check('the "✓ files by itself" and "learned · needs a layout" states are decided first (unchanged)',
         body.indexOf('✓ files by itself') < body.indexOf("Number(r.confirms) > 0")
         && body.indexOf('learned · needs a layout') < body.indexOf("Number(r.confirms) > 0"));

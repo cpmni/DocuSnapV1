@@ -44,11 +44,17 @@ function getDocumentDetail(db, id, deps = {}) {
   // Resolve it from document_type_id so callers can sync a doc-type dropdown to
   // the record (e.g. after a reprocess re-identifies the type).
   let typeSlug = doc.type_slug || null;
-  if (!typeSlug && doc.document_type_id) {
-    const t = db.prepare('SELECT slug FROM document_types WHERE id = ?').get(doc.document_type_id);
-    typeSlug = t ? t.slug : null;
+  let typeName = doc.type_name || null;
+  if ((!typeSlug || !typeName) && doc.document_type_id) {
+    const t = db.prepare('SELECT slug, name FROM document_types WHERE id = ?').get(doc.document_type_id);
+    if (t) { typeSlug = typeSlug || t.slug; typeName = typeName || t.name; }
   }
   doc.type_slug = typeSlug;
+  // Mailbox/workflow callers hand selectDoc a bare {id}; the base fetch (getWithExtractions→getById,
+  // SELECT *) has no join to document_types, so type_name was absent and the detail "Type" rendered "—"
+  // (Chris r2 vet item A). Resolve it here so it rides the DTO — projectDocumentDetail already
+  // allowlists type_name — to every detail consumer: mailbox, workflow, the /v1 client detail, Review.
+  doc.type_name = typeName;
 
   // Fields whose learned format is digits-only, so the UI can warn before
   // confirming a non-digit value on one.
