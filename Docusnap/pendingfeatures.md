@@ -68,6 +68,18 @@
      independent methods), ADOPT the corroborated date and let it auto-file if otherwise clean. This is BOTH a
      wrong-value correctness bug (precedence gave the tight misread priority over a 2-method corroboration) AND an
      auto-file gap. Advisor: gary + reggie (date validation) → Oracle; owner-gated + census.
+     **gary DESIGN DONE 2026-09-09 → BUILD-READY: DARK arc `template_pad_date_adopt` (mig 143).** Root:
+     `_maybe_pad_date_flag` Case 3 (template_mapper.py:2356-2366) keeps the tight misread + flags, never adopts; the
+     generic UV date-restore is walled off from template_mapping winners. Fix: the mapper stashes `_pad_date_witness`
+     on the Case-3 result; a new post-merge carve-out (engine.py ~11674, BEFORE `_universal_postmerge_verify` so the
+     corroboration record re-emits with the adopted value) swaps to the pad value when ALL: method ends `_paddisagree`,
+     both tight+pad parse as calendar dates + disagree, a SECOND independent family (keyword) agrees with pad, pad is
+     page-present, AND the tight read is the uncorroborated outlier (`_fallthrough_critical_corroborated` false). On
+     adopt: conf max(,90) clears the 88 floor; method `_padadopt` buckets to mapping → the record licenses on
+     mapping+keyword = 2 families → auto-files if clean. DARK, byte-identical OFF; HARD dependency on
+     `template_pad_window_read` ON. Gate: unit `test_pad_date_adopt.py` (adopt + pinned trade-offs: lone-pad→no,
+     tight-corroborated→no, not-page-present→no) + realdoc M=0 + fire census → Oracle. reggie: confirm
+     `_uv_date_agree`/page-present polarity on the leading-digit-clip family (04↔14, D-MM vs DD-MM) before flip.
 - **DONE 2026-09-09 (Q2, this session):** the type-split / prefix-outlier / issuer-near-match hold buttons
   (`.prefix-ack-btn`) had NO CSS → plain browser defaults. Added a shared app-token pill style in review/index.html +
   a regression pin (`test_chris_r2_review_cards.js` r2-btn). Convention: an in-app button never ships as a bare
