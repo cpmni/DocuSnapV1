@@ -226,7 +226,7 @@ console.log('5. structural pins');
         iIns > 0 && iDefer > iIns && iGate > 0);
 
   check('T1: the needs_review bail survives DARK — guarded by !trust._gateUnifyEnabled, not deleted',
-        /if \(!trust\._gateUnifyEnabled\(db\)\)[\s\S]{0,400}preFloor < 100 && msg\.needs_review/.test(handler));
+        /if \(!trust\._gateUnifyEnabled\(db\)\)[\s\S]{0,800}preFloor < 100 && msg\.needs_review/.test(handler));
   check('T1: ONE shared flag read — handler uses trust._gateUnifyEnabled (no second parser)',
         !/getSetting\(db, 'autofile_gate_unify'/.test(handler));
   check('C6: auto-file dispatches serialize through the module chain with a per-doc catch',
@@ -253,4 +253,16 @@ console.log('5. structural pins');
 }
 
 console.log(`\n${pass} ok, ${failn} failed`);
+// Slice 2 (optional_soft_flag_autofile, owner 2026-09-09): the import bail defers to the predicate for a
+// soft-only needs_review when the arc is on, keeping the empty-required safety inline. Byte-identical OFF.
+{
+  const hsrc = read('src/modules/processing/handler.js');
+  check('the import bail is arc-aware (arc off → blanket park; arc on → defer unless a required field is empty)',
+        /if \(preFloor < 100 && msg\.needs_review\) \{[\s\S]{0,400}optional_soft_flag_autofile[\s\S]{0,160}if \(!_softArcOn \|\| _anyRequiredFieldEmpty\(db, msg\)\) return;/.test(hsrc));
+  check('the empty-required safety is kept inline (a required field with no value still parks)',
+        /function _anyRequiredFieldEmpty\(db, msg\)[\s\S]{0,500}required = 1[\s\S]{0,600}if \(!v\) return true;/.test(hsrc));
+  check('_anyRequiredFieldEmpty fails safe (any error / missing doc → park)',
+        /function _anyRequiredFieldEmpty[\s\S]{0,700}\} catch \{ return true; \}/.test(hsrc));
+}
+
 process.exit(failn ? 1 : 0);

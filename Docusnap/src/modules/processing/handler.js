@@ -6505,6 +6505,26 @@ function _isLaneHoldNote(note) {
   const n = String(note || '');
   return n.includes('Read differently after learning') || n.includes('— confirm once.');
 }
+// Slice 2 of optional_soft_flag_autofile (owner 2026-09-09): the import-bail's ONE unique safety over the
+// predicate is that it parks a doc with an EMPTY REQUIRED field (the predicate's T2 missing-required refusal
+// is gate-unify-gated, so it isn't asked on the default path). Kept inline so the arc can otherwise defer the
+// bail to isAutoFileEligible. Authoritative source = the DB (extractions were inserted synchronously before
+// _maybeAutoFile runs — ordering pinned in test_import_autofile_gate.js). Any doubt → park (fail-safe).
+function _anyRequiredFieldEmpty(db, msg) {
+  try {
+    const documents = require('../../../database/modules/documents');
+    const doc = documents.getById(db, msg.db_id);
+    if (!doc || !doc.document_type_id) return true;
+    const req = db.prepare('SELECT key FROM fields WHERE document_type_id = ? AND required = 1').all(doc.document_type_id);
+    for (const r of req) {
+      const e = db.prepare('SELECT display_value, raw_value FROM extractions WHERE document_id = ? AND field_key = ?').get(msg.db_id, r.key);
+      const v = String((e && (e.display_value ?? e.raw_value)) ?? '').trim();
+      if (!v) return true;
+    }
+    return false;
+  } catch { return true; }
+}
+
 function _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger) {
   try {
     const learning = require('../../../database/modules/learning');
@@ -6529,8 +6549,15 @@ function _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger) {
     // (trust._gateUnifyEnabled) so T1 and T2 cannot drift.
     if (!trust._gateUnifyEnabled(db)) {
       // Any sub-100 auto-file (graduation or a lowered slider) must be a CLEAN doc — never one
-      // that processing flagged for review.
-      if (preFloor < 100 && msg.needs_review) return;
+      // that processing flagged for review. EXCEPT (optional_soft_flag_autofile, owner 2026-09-09,
+      // Slice 2): when that arc is on, a needs_review whose ONLY holds are soft-advisory notes on
+      // optional non-role fields is NOT blanket-parked here — the authoritative isAutoFileEligible in
+      // _autoFileDoc (which honours the arc + graduation) decides. The bail's one unique safety, an
+      // EMPTY REQUIRED field, is kept inline. OFF is byte-identical (the arc read short-circuits to return).
+      if (preFloor < 100 && msg.needs_review) {
+        const _softArcOn = learning.getSetting(db, 'optional_soft_flag_autofile', 'false') === 'true';
+        if (!_softArcOn || _anyRequiredFieldEmpty(db, msg)) return;
+      }
     }
     _autoFileChain = _autoFileChain.then(() =>
       _autoFileDoc(db, msg.db_id, folderPath, notifyMainWindow, logger)
