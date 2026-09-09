@@ -249,7 +249,18 @@
   read FAILURE must still surface (don't strand the user on a spinner — reuse the honest-failure pattern); Back/Cancel during the
   overlapped read must abort/ignore the stale read cleanly (staged-copy cleanup). Advisor: eric (renderer/lifecycle) if built.
 
-## 2026-09-08 — Clipped-name class: the keyword-superstring grow (Oracle SEND BACK → redirected; spec `docs/designs/KEYWORD_SUPERSTRING_GROW_2026-09-08.md`)
+## 2026-09-09 — Teach wizard: auto-select a newly-added catalog type when exactly ONE is added (owner ask)
+- **Request (owner):** in the teach wizard's pick-type step, when the user ADDS a document type from the catalog ("Add from
+  catalog…"), if they added exactly ONE type, that type should be auto-SELECTED as the wizard's chosen type (saves the extra
+  click of finding + selecting the thing they just added). If MULTIPLE types were added at once, keep today's behaviour (nothing
+  auto-selected — the user picks which of the several they want to teach).
+- **Why it's safe + right:** adding one type from the catalog is an unambiguous signal of intent — the user added it BECAUSE they
+  want to teach it now. Auto-selecting a single addition is pure friction removal with no ambiguity; the multi-add case stays a
+  deliberate choice (no guessing which of N). Pure UI/selection state — no correctness/learning surface.
+- **Code pointers:** teach wizard pick-type step (`src/windows/teach/renderer.js`, the doc-type list + the catalog-add path that
+  calls `add-doctype-presets`); after the add resolves, if `addedSlugs.length === 1` set the wizard's selected type to that slug +
+  refresh the list selection; else leave selection unchanged. Mirror wherever the wizard reloads the type list after a create.
+- **Class:** teach-wizard UX. Small. Advisor: none needed (UI selection); eric only if the list-reload lifecycle is fiddly. (Oracle SEND BACK → redirected; spec `docs/designs/KEYWORD_SUPERSTRING_GROW_2026-09-08.md`)
 - **GATE RAN 2026-09-08 evening (spec §7.1):** arms off/mapper/note on the post-137 reference copy — the first mapper run caught a SEAM (doc 67: belt 2b's name defer-cap reached `_edge_cut_relocate`, whose code-contract shape consent clean-committed a re-seated garble @90) → FIXED `f4a32a7` (a name defer-cap never reaches the relocate; RED-first pin). Fixed code: 129/129 would-file, 0 new filers, ref/date identical, ONE page-verified HEAL (#70 `Halcyon Leisure Gr` @94 silent-wrong → `Group`), 7 capped (review-bound, no consensus change). **The kw-note belt's corpus gate is VACUOUS (fired 0/63)** — its flip gate = a corpus where it fires or an in-app census on the owner's DB. All three stay DARK; the mapper pair's flip = the owner's call with the §7.1 table + the `_name_band_read` real-page pin (Oracle).
 - **BUILT 2026-09-08 (`139780a`, DARK, mig 140, 3 keys in TEST_SWITCH_KEYS):** steps 0-3 of the redirected order — census instrumentation
   (`entered`/`nolines`/`nocut`+neighbourhood/`band_abstain`/decline `new`), `template_name_grow_band_pick`, `template_name_cut_defer_cap`,
