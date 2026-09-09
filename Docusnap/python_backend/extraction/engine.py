@@ -625,6 +625,18 @@ INLINE_HARVEST_ABSENCE_HOLD = os.environ.get('INLINE_HARVEST_ABSENCE_HOLD', '0')
 # *_number/*_no/*reference*/date, custom included); text/numeric are Slice-2 (universal post-merge verify).
 CROSSCHECK_OUTLIER_RECONCILE = os.environ.get('CROSSCHECK_OUTLIER_RECONCILE', '0') != '0'
 
+# TEMPLATE_PAD_DATE_ADOPT (Q4, gary design; mig 143 DARK). The ADOPT twin of template_mapper's Case-3
+# pad-date DISAGREE flag: when the mapper stashed a `_pad_date_witness` (a wider row-bound read that
+# parses to a DIFFERENT calendar date than the tight committed read), and that pad value is CORROBORATED
+# by a second independent family (a keyword candidate calendar-equal to it) AND page-present AND the tight
+# committed read is itself the UNcorroborated outlier, SWAP the winner to the pad value: conf lifted to
+# clear the 88 floor, note/corrected_to cleared, method bucketed to mapping so the corroboration record
+# (built later in _resolve_corroborated_notes) licenses on mapping+keyword = 2 page families. Runs BEFORE
+# _universal_postmerge_verify so the restored value is subject to G1/Fix-A/the record like any other
+# winner. The witness is ALWAYS popped (even OFF, or when not adopted) so it never persists. Byte-
+# identical OFF (mapper stashes nothing). HARD dependency: TEMPLATE_PAD_WINDOW_READ must be ON.
+PAD_DATE_ADOPT = os.environ.get('TEMPLATE_PAD_DATE_ADOPT', '0') != '0'
+
 # Slice-2 UNIVERSAL post-merge verify (gary+reggie+007 → Oracle SIGN-OFF-W/COND 2026-08-03; see
 # docs/oracle_log.md). ONE reusable pass over every field's winner using the always-on candidate
 # ledger + raw ocr_text — the owner's "all types where possible" ask. Two independently-gated tiers:
@@ -2470,6 +2482,68 @@ def _uv_date_page_present(value, ocr_text) -> bool:
     except Exception:
         return False
     return False
+
+
+def _adopt_pad_date_winners(results, field_candidates, date_field_keys, ocr_text, adopt_on, log=None):
+    """TEMPLATE_PAD_DATE_ADOPT (Q4, mig 143). Pure post-merge carve-out. ALWAYS pops the transient
+    `_pad_date_witness` from EVERY field dict (so it never persists) and, when `adopt_on`, SWAPS a taught
+    DATE-role winner to the padded read IFF ALL hold:
+      - the field is a structural DATE role (`date_field_keys`) whose method ends `_paddisagree`
+        (template_mapper Case 3 stashed the witness — a wider read that PARSED to a different calendar date),
+      - the tight committed read genuinely calendar-DISAGREES with the pad witness,
+      - a SECOND page family (keyword/crop, via `_corrob_record_bucket`; NOT the winner's mapping family)
+        calendar-agrees with the pad witness — so the corroboration record built downstream licenses on >=2
+        page families,
+      - the pad witness is PAGE-PRESENT (`_uv_date_page_present`), and
+      - the tight read is itself the UNcorroborated outlier (`_fallthrough_critical_corroborated` False) — we
+        never override a corroborated tight read (fail toward the existing commit).
+    On adopt: value:=witness, confidence lifted to >=90 (clears the 88 critical floor), method bucketed to
+    `template_mapping_padadopt` (mapping page family), and validation_note/corrected_to/was_corrected cleared
+    so the corroborated correct date is auto-file-eligible. Returns the list of adopted field keys. Mutates
+    `results` in place. Byte-identical when `adopt_on` is False EXCEPT the (harmless, never-persisted) witness
+    pop — the mapper only stashes a witness when the arc env is set, so on a real OFF run there is none."""
+    adopted = []
+    for _pk in list(results.keys()):
+        _pd = results.get(_pk)
+        if not isinstance(_pd, dict):
+            continue
+        _witness = _pd.pop("_pad_date_witness", None)         # consumed from EVERY field — never persists
+        if not (adopt_on and _witness):
+            continue
+        if _pk not in (date_field_keys or ()):                # adopt only the structural date role
+            continue
+        # either mapper flag path stashed the witness: Case-3 disagree, or the clipped-first-digit
+        # containment hold (mig 132) — adopt sits above both when the pad value is corroborated.
+        if not str(_pd.get("method") or "").endswith(("_paddisagree", "_padcontain")):
+            continue
+        _tight = str(_pd.get("value") or "")
+        if not _tight or _uv_date_agree(_tight, _witness):    # only a genuine calendar disagreement
+            continue
+        _cands = (field_candidates or {}).get(_pk) or []
+        _second = False
+        for _c in _cands:
+            _b = _corrob_record_bucket(_c.get("stage"), _c.get("method"))
+            if not _b or _b[0] == "mapping":                  # exclude the winner's own (mapping) family
+                continue
+            if _b[0] in _CORROB_PAGE_FAMILIES and _uv_date_agree(_c.get("value"), _witness):
+                _second = True
+                break
+        if not _second:
+            continue
+        if not _uv_date_page_present(_witness, ocr_text):
+            continue
+        if _fallthrough_critical_corroborated(_pd, _cands, ocr_text, True):
+            continue
+        _pd["value"] = _witness
+        _pd["confidence"] = max(int(_pd.get("confidence") or 0), 90)   # clears the 88 critical floor
+        _pd["method"] = "template_mapping_padadopt"                    # buckets to the mapping page family
+        for _k in ("validation_note", "corrected_to", "was_corrected"):
+            _pd.pop(_k, None)
+        adopted.append(_pk)
+        if log:
+            log(f"  Pad-date adopt: {_pk} '{_tight}' -> corroborated pad read '{_witness}' "
+                f"(2nd family agrees, page-present, tight outlier) — flag dropped, conf>=90")
+    return adopted
 
 
 def _uv_text_tokens_agree(a, b) -> bool:
@@ -11671,6 +11745,14 @@ class ExtractionEngine:
                 results[_xk] = _restored
                 self.log(f"  Crosscheck-outlier reconcile: {_xk} flip '{_xd.get('value')}' refuted by "
                          f"corroborated '{_alt}' — restored + flag dropped")
+
+        # TEMPLATE_PAD_DATE_ADOPT (Q4, mig 143 — see the flag banner). ALWAYS pops the transient
+        # `_pad_date_witness` from every field so it can never persist; ADOPTS the pad read only under the
+        # arc + full corroboration. Placed here (BEFORE the post-merge verify + G1/Fix-A) so a restored
+        # value passes through their holds AND is captured by the corroboration record like any winner.
+        if _adopt_pad_date_winners(results, self._field_candidates, date_field_keys, ocr_text,
+                                   PAD_DATE_ADOPT, log=self.log):
+            results["_pad_date_adopted"] = True
 
         # Slice-2 universal post-merge verify (gary+reggie+007 → Oracle SIGN-OFF-W/COND 2026-08-03).
         # Runs AFTER Slice-1 (an anchor_crop_crosscheck winner is Slice-1's decided territory —

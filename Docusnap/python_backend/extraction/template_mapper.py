@@ -844,6 +844,12 @@ _PAD_DISAGREE_MARGIN = 15          # padded read's OCR conf must beat the TIGHT 
 _PAD_DATE_CONTAINMENT_ON = os.environ.get('TEMPLATE_PAD_DATE_CONTAINMENT_FLAG', '0') != '0'
 _PAD_DATE_CONTAIN_NOTE = ("A wider reading of this date box shows '{}' — the taught box may be clipping the "
                           "first digit; please check which is printed.")
+# TEMPLATE_PAD_DATE_ADOPT (Q4, gary design; engine mig 143 DARK). When ON, the Case-3 DISAGREE result
+# stashes the padded read as `_pad_date_witness` so the engine's post-merge carve-out can ADOPT it IF a
+# second family (keyword) corroborates the pad value + the tight read is the uncorroborated outlier.
+# HARD dependency on _PAD_WINDOW_READ_ON (no witness without a padded read). The stash is a transient the
+# engine ALWAYS pops; gated here on the arc so an OFF adopt is byte-identical (no extra key on the dict).
+_PAD_DATE_ADOPT_ON = os.environ.get('TEMPLATE_PAD_DATE_ADOPT', '0') != '0'
 _PAD_DATE_DISAGREE_NOTE = ("A wider reading of this date box shows '{}', which differs from the "
                            "value shown here — please check which is printed.")
 
@@ -2352,6 +2358,10 @@ def _maybe_pad_date_flag(page, target_box, val_type, result, tight_ocr_conf):
             out["method"] = (out.get("method") or "template_mapping") + "_padcontain"
             out["validation_note"] = _PAD_DATE_CONTAIN_NOTE.format(pad_val)
             out["corrected_to"] = pad_val            # one click away — never a silent swap
+            if _PAD_DATE_ADOPT_ON:
+                # ADOPT (mig 143) sits ABOVE the containment hold: the clipped-first-digit family IS its
+                # target class, so let the engine auto-file it when corroborated (else this hold stands).
+                out["_pad_date_witness"] = pad_val
             return out
     # Case 3 — DISAGREEMENT. Only flag when the padded read is confidently better than the TIGHT
     # read (not the synthetic 90 tier — that would never fire). Weak disagreement adds review load
@@ -2363,6 +2373,8 @@ def _maybe_pad_date_flag(page, target_box, val_type, result, tight_ocr_conf):
     out["confidence"] = min(out.get("confidence") or 90, 70)
     out["method"] = (out.get("method") or "template_mapping") + "_paddisagree"
     out["validation_note"] = _PAD_DATE_DISAGREE_NOTE.format(pad_val)
+    if _PAD_DATE_ADOPT_ON:
+        out["_pad_date_witness"] = pad_val    # engine mig-143 carve-out may ADOPT (if corroborated) — always popped there
     return out
 
 

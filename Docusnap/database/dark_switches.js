@@ -75,6 +75,13 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // arm137 + 605 — M=0 on ROLE values, wouldFile(ON)⊇wouldFile(OFF), new filers' ROLE fields==GT, census that
   // each new filer's ONLY prior blocker was a soft optional note → Oracle. Advisor: gary.
   'optional_soft_flag_autofile',
+  // template_pad_date_adopt (mig 143, 2026-09-09 Q4): the ADOPT twin of template_pad_date_containment_flag —
+  // a taught date box clipping the leading digit is read wide; when the pad value is corroborated by a second
+  // page family (keyword/crop) + page-present + the tight read is the uncorroborated outlier, SWAP to it
+  // (conf>=90, flag cleared, mapping-bucketed) so the corroborated correct date auto-files instead of holding.
+  // HARD dependency: template_pad_window_read ON. ⚑ FLIP GATE: unit adopt + pinned trade-offs + realdoc M=0 +
+  // fire census (every adopt==GT, no new wrong file) → Oracle. Advisor: gary + reggie (date polarity).
+  'template_pad_date_adopt',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

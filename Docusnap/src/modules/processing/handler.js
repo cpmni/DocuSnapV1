@@ -383,6 +383,11 @@ function _reconcileEnv(db) {
     // TEMPLATE_PAD_DATE_CONTAINMENT_FLAG (2026-09-07, Oracle C12): the pad-window date flag's clipped-first-digit
     // sub-case fires WITHOUT the +15 margin (≤70 + note + a one-click corrected_to; never a swap). DARK (mig 132).
     if (learning.getSetting(db, 'template_pad_date_containment_flag', 'false') === 'true') env.TEMPLATE_PAD_DATE_CONTAINMENT_FLAG = '1';
+    // TEMPLATE_PAD_DATE_ADOPT (2026-09-09, Q4, gary): the ADOPT twin of the pad-window date flag — when the
+    // wider read parses to a DIFFERENT date that a second family (keyword) corroborates + is page-present +
+    // the tight read is the uncorroborated outlier, SWAP to the pad value (conf>=90, flag cleared) so the
+    // corroborated correct date auto-files instead of being held. DARK (mig 143); requires pad_window_read ON.
+    if (learning.getSetting(db, 'template_pad_date_adopt', 'false') === 'true') env.TEMPLATE_PAD_DATE_ADOPT = '1';
     // Pad-window CODE read — the code sibling of the date slice above. A taught CODE box too tight for
     // its value clips the leading glyphs ('PO-48009' -> '-48009') or garbles it; a wider row-bounded
     // re-read of the SAME box either recovers the fuller code (consented strict-suffix SWAP) or FLAGS

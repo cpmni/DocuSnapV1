@@ -31,7 +31,7 @@ const get = (db, k) => { const r = db.prepare('SELECT value FROM settings WHERE 
 const stamped = (db) => new Set(db.prepare('SELECT version FROM migrations').all().map(r => r.version));
 
 // 24 at mig 137 (the 26 minus the two legitimate defaults) + 3 name-grow belts (mig 140, 2026-09-08).
-check('TEST_SWITCH_KEYS has 29 distinct keys', new Set(TEST_SWITCH_KEYS).size === 29 && TEST_SWITCH_KEYS.length === 29);
+check('TEST_SWITCH_KEYS has 30 distinct keys', new Set(TEST_SWITCH_KEYS).size === 30 && TEST_SWITCH_KEYS.length === 30);
 check('money_sign_capture + ocr_parallel_import_enabled are NOT listed', !TEST_SWITCH_KEYS.includes('money_sign_capture') && !TEST_SWITCH_KEYS.includes('ocr_parallel_import_enabled'));
 
 // 1. Fresh install.
