@@ -31,7 +31,7 @@ const get = (db, k) => { const r = db.prepare('SELECT value FROM settings WHERE 
 const stamped = (db) => new Set(db.prepare('SELECT version FROM migrations').all().map(r => r.version));
 
 // 24 at mig 137 (the 26 minus the two legitimate defaults) + 3 name-grow belts (mig 140, 2026-09-08).
-check('TEST_SWITCH_KEYS has 33 distinct keys', new Set(TEST_SWITCH_KEYS).size === 33 && TEST_SWITCH_KEYS.length === 33);  // 2026-09-09: confusable_soften added (147) then GRADUATED (148 @DEFAULT_FLIP) → 32; filing_sanity_confusable_prefix_autofile added DARK (149) → 33
+check('TEST_SWITCH_KEYS has 34 distinct keys', new Set(TEST_SWITCH_KEYS).size === 34 && TEST_SWITCH_KEYS.length === 34);  // 2026-09-09: confusable_soften added (147) then GRADUATED (148 @DEFAULT_FLIP); +confusable_prefix_autofile (149) +sweep_inview_recheck (150) → 34
 check('money_sign_capture + ocr_parallel_import_enabled are NOT listed', !TEST_SWITCH_KEYS.includes('money_sign_capture') && !TEST_SWITCH_KEYS.includes('ocr_parallel_import_enabled'));
 
 // 1. Fresh install.

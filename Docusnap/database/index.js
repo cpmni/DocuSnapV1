@@ -3044,6 +3044,23 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 149 (filing_sanity_confusable_prefix_autofile): ${e.message}`); }
   }
 
+  // ── migration 150: sweep_inview_recheck seeded OFF (2026-09-09). The in-view auto-file countdown
+  //    (sweep_inview_countdown, mig 103) can never re-offer an eligible held doc once the sweep's mid-load
+  //    'sweep-inview-eligible' event is dropped by the presence race (the queue auto-advanced before
+  //    currentDoc settled), so the doc sits with no countdown (owner report 2026-09-09: WS-95132, #40). When
+  //    ON, the renderer re-asks on view-settle (sweep-inview-recheck, READ-ONLY) and starts the countdown if
+  //    the doc is still the sole-local-viewer + isAutoFileEligible; the countdown's own expiry re-verifies
+  //    everything before filing. DARK (in TEST_SWITCH_KEYS); HARD dep sweep_inview_countdown. Byte-identical
+  //    OFF. ⚑ FLIP GATE: it offers the countdown for ANY eligible held doc on view (aligned with the owner's
+  //    max-auto-file rule + Stop + cancel-on-edit), so weigh whether that cadence is wanted before default-ON.
+  if (!applied.has(150)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('sweep_inview_recheck', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (150)').run();
+      console.log(`JS migration 150 applied: sweep_inview_recheck (re-offer the in-view countdown on view-settle) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 150 (sweep_inview_recheck): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

@@ -102,6 +102,12 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // (any_confirmed_shares_head, counter==0) + fail-safe. HARD dep: filing_sanity_confusable_soften ON. ⚑ FLIP
   // GATE: 605 + a constructed graduated scope, arc-inert vs arc-live decomposition, adversarial mirror set, M=0.
   'filing_sanity_confusable_prefix_autofile',
+  // sweep_inview_recheck (mig 150, 2026-09-09): re-offer the in-view auto-file countdown (sweep_inview_countdown)
+  // when the view SETTLES on an eligible held doc — the sweep's mid-load offer is dropped by the presence race
+  // (queue auto-advanced before currentDoc settled), leaving a ready doc with no countdown (owner: WS-95132).
+  // READ-ONLY recheck (files nothing; the countdown's expiry re-verifies). HARD dep sweep_inview_countdown ON.
+  // ⚑ FLIP GATE: it offers on ANY eligible held doc on view — weigh that cadence (Stop + cancel-on-edit guard it).
+  'sweep_inview_recheck',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

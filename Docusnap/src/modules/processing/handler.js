@@ -4485,6 +4485,35 @@ function register(ctx) {
     }
     return { ok: false, reason: (res && res.code) || 'confirm-failed' };
   });
+  // recheck: the sweep's countdown OFFER is DROPPED when it arrives mid-load — the sweep fires ~1s after a
+  // confirm, but the queue has already auto-advanced to the next held doc whose `currentDoc` hasn't settled
+  // yet, so the renderer discards the offer (the "presence race", renderer ~9959) and there is no retry, so
+  // an eligible held doc sits with no countdown (owner report 2026-09-09: WS-95132, and the #40 invoice).
+  // Once the doc has SETTLED and its presence heartbeat is registered, the renderer re-asks here. READ-ONLY:
+  // returns whether to start the countdown for THIS in-view doc using the SAME predicate as sweep-inview-file
+  // (setting + sole-local-viewer + isAutoFileEligible); nothing files here — the countdown's own expiry
+  // (sweep-inview-file) re-verifies everything before filing. DARK sweep_inview_recheck (HARD dep
+  // sweep_inview_countdown). OFF → the renderer's call returns {offer:false} → byte-identical.
+  ipcMain.handle('sweep-inview-recheck', (_event, { docId } = {}) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const learning = require('../../../database/modules/learning');
+    const trust = require('../../../database/modules/trust');
+    const { extractionsFingerprint } = require('../../services/sweepPredicate');
+    const presence = require('../../services/presenceService').shared();
+    if (learning.getSetting(db, 'sweep_inview_countdown', 'false') !== 'true') return { offer: false, reason: 'disabled' };
+    if (learning.getSetting(db, 'sweep_inview_recheck', 'false') !== 'true') return { offer: false, reason: 'disabled' };
+    const id = Number(docId);
+    const doc = id ? documents.getById(db, id) : null;
+    if (!doc || doc.status !== 'needs_review') return { offer: false, reason: 'not-queued' };
+    if (['pending', 'claimed'].includes(String(doc.workflow_status || ''))) return { offer: false, reason: 'workflow-locked' };
+    const u = getCurrentUser() || {};
+    if (u.id == null || !presence.onlyViewerIs(id, `desktop:${u.id}`)) return { offer: false, reason: 'not-sole-local-viewer' };
+    const t1 = trust.isAutoFileEligible(db, doc);
+    if (!t1.eligible) return { offer: false, reason: t1.reason || 'not-eligible' };
+    const rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(id);
+    return { offer: true, docId: id, fingerprint: extractionsFingerprint(rows) };
+  });
   // hold: the user pressed STOP (or navigated away with pending edits) — a durable put-back so the next
   // sweep won't re-offer it (trust.js refuses 'put-back' for every machine door). A human confirm clears it.
   ipcMain.handle('sweep-inview-hold', (_event, { docId } = {}) => {

@@ -2546,6 +2546,10 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   // (bulk). See _scheduleReextractFast — debounced, doc-guarded, edit-guarded; the kill-switch OFF path
   // returns {ok:false} so this is a no-op end-to-end.
   if (!fieldsOnly) _scheduleReextractFast(doc.id);
+  // In-view countdown RECHECK (DARK sweep_inview_recheck): the doc has settled + its presence heartbeat is
+  // registered, so re-ask whether this eligible held doc should start the countdown the sweep's mid-load
+  // offer may have dropped (the presence race). Fire-and-forget, doc-guarded; OFF → {offer:false} no-op.
+  if (!fieldsOnly) _maybeRecheckInview(doc.id);
 }
 
 // ── Page rendering ────────────────────────────────────────────────────────────
@@ -9985,6 +9989,22 @@ function _startInviewCountdown(ev, opts) {
   return true;
 }
 window.docusnap.onSweepInviewEligible?.((ev) => { try { _startInviewCountdown(ev); } catch {} });
+// View-settle RECHECK (DARK sweep_inview_recheck): the sweep's 'sweep-inview-eligible' offer is DROPPED when
+// it lands mid-load (before currentDoc settles — the presence race in _startInviewCountdown above) and there
+// is no retry, so an eligible held doc sits with no countdown (owner report 2026-09-09). Called from selectDoc
+// AFTER the doc has settled + its presence heartbeat is registered: re-ask the server whether THIS in-view
+// eligible held doc should start the countdown, and start it if so. Fire-and-forget, doc-guarded; no-op when
+// the flag is OFF (the server returns {offer:false}).
+async function _maybeRecheckInview(docId) {
+  try {
+    if (docId == null) return;
+    if (_inviewCd && _inviewCd.docId === docId) return;         // already counting this one
+    const r = await window.docusnap.sweepInviewRecheck?.(docId);
+    if (!r || !r.offer) return;
+    if (!currentDoc || currentDoc.id !== docId) return;         // user moved on while the recheck was pending
+    _startInviewCountdown({ docId, fingerprint: r.fingerprint });
+  } catch { /* best-effort */ }
+}
 // Cancel the moment a field is touched — an unsaved edit is invisible to the server's fingerprint
 // re-check, so the machine countdown must stand down (capture phase, synchronous, before any debounce).
 document.addEventListener('input',   (e) => { if (_inviewCd && e.target && e.target.classList && e.target.classList.contains('field-input')) _cancelInviewCountdown(); }, true);

@@ -285,6 +285,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   sweepScopeUndo:       (docIds)                                   => ipcRenderer.invoke('sweep-scope-undo', { docIds }),
   sweepInviewFile:      (docId, fingerprint) => ipcRenderer.invoke('sweep-inview-file', { docId, fingerprint }),   // in-view countdown expiry
   sweepInviewHold:      (docId)              => ipcRenderer.invoke('sweep-inview-hold', { docId }),                // in-view countdown STOP
+  sweepInviewRecheck:   (docId)              => ipcRenderer.invoke('sweep-inview-recheck', { docId }),             // in-view countdown re-offer on view-settle (DARK)
   notifyReviewComplete:        ()        => ipcRenderer.send('notify-review-complete'),
 
   // ── Zone OCR & learning ──────────────────────────────────────────────────────
