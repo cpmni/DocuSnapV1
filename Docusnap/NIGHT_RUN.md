@@ -6,6 +6,19 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
+## ✅ DONE 2026-09-09 NIGHT — DETECTION ANOMALY HUNT (`docs/designs/NIGHT_RUN_2026-09-09.md`; `HANDOVER_2026-09-10.md`)
+Ran the detection-anomaly plan on HEAD `4bb2efd` (auto; agents free; nothing built — approval-class logged).
+Results: (1) **123-doc anomaly sweep → found M (silent wrong date auto-file)**: Copperfield sales_order #77/#78
+read the wrong date (leading-day-digit CLIP from `teach_angle_compose_scan` box shift), high conf, no flag →
+would auto-file. **#78 real @200 DPI (M=1 new install), both @300 (M=2 older install).** 007 root-caused +
+fix-designed (`docs/designs/DATE_LEFT_CLIP_M2_2026-09-09.md`) — the role-disagreement refusal is bypassed at
+overall==100. Everything else read 100%. (2) **Arc A flip census → DON'T FLIP** (vacuous: its 1 target #45 is
+held by `trust_role_disagreement_refuse` anyway; `A_CENSUS_RESULT.md`). (3) **Born-digital lead → DEAD END for a
+fix** (gary: `bd` = armed not detected; gate is correct; add an Oakhaven test-arm only). (4) Chris **deferred**
+to a morning `/christest` (OCR contention + crash class). Artifacts: `TESTING/_measure/night_20260909/`.
+Repeat only if: the sweep is re-run after a detection change (watch M — it MUST be 0); re-run A's census only
+after the disagree-gate interaction changes.
+
 ## ✅ DONE 2026-09-08 NIGHT (see the DONE ledger + `HANDOVER_2026-09-09.md`) — was: `docs/designs/NIGHT_RUN_2026-09-08_NIGHT.md`** (start it on "going to bed"): 1 triage the 17 pre-existing red pins (`test_failure_creates_holding_row` FIRST) · 2 `--smoke-windows` + ONE rebuild at the end · 3 the Oracle's before-flip/census prerequisites (name-band real-page pin, tautological pins, `RR_ALLOW_ARMED` + C9) · 4 the heading-fold ARM over the 605 corpus + Hard Set · 5 read-only diagnoses + advisor designs for Chris's vet queue · 6 Chris round 2 on the unexercised surfaces (sandboxed) · 7 client/cert-tool `npm install` smoke. Approval-class items logged, not run. (Previous TONIGHT = ✅ DONE 2026-09-01 NIGHT, see the ledger.)
 **Owner order:** combine the two suggested night jobs — (#1) the Quick Reprocess INTEGRATION GATE on a
 self-built warm sandbox DB, and (#2) a Chris sandboxed round on the newest surfaces — then do a full
