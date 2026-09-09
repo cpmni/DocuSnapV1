@@ -48,17 +48,29 @@
      floor — the wordness NOTE is the true binding blocker. Gate: unit (test_scope_trust) + cold OFF/ON census on
      arm137 + 605 (M=0 on ROLE values, wouldFile(ON)⊇wouldFile(OFF), new filers' ROLE fields==GT, census that each new
      filer's ONLY prior blocker was a soft optional note) → Oracle. Full design in gary's 2026-09-09 report.
-  2. **95-floor / new-type-scope** — invoice_17 @93 overall (INVOICE NUMBER @90 dragged it under the 95 trusted floor;
-     and Marlowe graduated on Delivery Note, so INVOICE is a fresh type-scope with no relaxed floor). Read cleanly →
-     offered "Ready to file" (one-click), not auto-filed. Levers: the corroboration auto-file path
-     (`deskew_corrob_autofile` DARK, or a ≥2-family corrob floor in the 88-95 band), lowering `auto_file_threshold`, or
-     confidence calibration on the sub-95 field. Needs its own design + census.
-  3. **Type-split OVER-PROMPT vs a HUMAN-TAUGHT type (Q1)** — "files as Delivery Note (21 so far). File this one as
-     Invoice?" (`showTypeSplitHold`, review/renderer.js:6807; reviewService type-split refusal) is unnecessary when the
-     sender's type was explicitly chosen + confirmed in the TEACH WIZARD. Also a likely TYPE MISDETECTION (a delivery
-     docket typed Invoice despite the taught Delivery-Note template) → herald. Fix: (a) the taught template's type
-     should win the Stage-0 type detection (stop the misdetection); (b) suppress/soften the type-split ask when a
-     strong taught+confirmed convention exists (don't second-guess a human-taught type). Advisor: herald + gary → Oracle.
+  2. **95-floor / new-type-scope (Q3) — BUILT DARK 2026-09-09 (`5a07402`, `corrob_autofile_band88` mig 145).** invoice_17
+     @93 overall (INVOICE NUMBER @90 dragged it under the 95 trusted floor; Marlowe graduated on Delivery Note so INVOICE
+     is a fresh type-scope). gary root cause: the corroboration auto-file route was WALLED OFF below 95 (`_conf0 >=
+     TRUSTED_FLOOR` entry gate), so `_docFullyCorroborated` never fired at 93. FIX (gary option 1): widen that route's
+     lower bound + cap to the 88 critical floor when the arc is on (requires master `corroboration_autofile` ON); every
+     downstream safety unchanged. ⚠ HONEST LIMIT (pinned 19c): inert on a SINGLE-family clean @93 — if invoice_17's
+     number @90 was a lone keyword read, this does NOT help it (that wants confidence calibration, a separate change).
+     ⚑ FLIP GATE (owner's call): **reach census** (how much of the [88,95) pile is >=2-family corroborated vs single-
+     family — sizes whether this actually helps the owner's docs) + realdoc M=0 + wouldFile(ON)⊇wouldFile(OFF) role==GT +
+     both-ON with mig 142 → Oracle. Pins 19a-f in `test_corrob_autofile.js`.
+  3. **Type-split OVER-PROMPT vs a HUMAN-TAUGHT type (Q1) — BUILT DARK 2026-09-09 (`5a07402`, `type_split_teach_scope_
+     suppress` mig 144).** herald forensics: **NO Stage-0 misdetection** — the titles are legible, detection is correct;
+     the "Invoice" in the message is the current CORRECT type. The bug is axis-4: `checkTypeSplit` is a pure confirmed-
+     COUNT predicate, so a wizard-TAUGHT type sits at 1 confirmed doc, looks "unsupported", and the gate keeps asking
+     (the same grievance the 2026-09-07 wizard auto-ack closed for the taught doc — this closes it for the NEXT doc in
+     Review). FIX: stand the ask down iff a teach-origin template exists for (supplier, type) — a `templates` row
+     (name==supplier, document_type_slug==slug) with >=1 field mapping. Still asks for a cold, never-taught type
+     (Scenario B). Read-only, NOT in the auto-file path (pinned) → can't file a wrong type. Seam disabled = one catch: a
+     deliberately mis-typed teach (Scenario D) — the same residual the 2026-09-07 wizard change already accepts. ⚑ FLIP
+     GATE (owner's call): wouldAsk(ON)⊆wouldAsk(OFF) + wouldFile unchanged → Oracle. herald OPEN Q: `detected_type_name`
+     is NULL on 6/7 docs (not persisted on the template-match path) — a title-first version of the gate (also catches
+     Scenario D) is blocked until that's fixed (cheap one-line persistence fix in process_docs/engine). Pins in
+     `test_type_split_gate.js`.
   4. **Date read-widen + corroboration-ADOPT (Q4, invoice_date exhibit)** — a taught DATE box's tight read committed
      `14-02-2026` (WON precedence) while BOTH the wider row-bounded date read AND the keyword read `04-02-2026` (the
      value actually printed on the page). The date pad-window (`_maybe_pad_date_flag` / `template_pad_date_containment_flag`
@@ -68,7 +80,8 @@
      independent methods), ADOPT the corroborated date and let it auto-file if otherwise clean. This is BOTH a
      wrong-value correctness bug (precedence gave the tight misread priority over a 2-method corroboration) AND an
      auto-file gap. Advisor: gary + reggie (date validation) → Oracle; owner-gated + census.
-     **gary DESIGN DONE 2026-09-09 → BUILD-READY: DARK arc `template_pad_date_adopt` (mig 143).** Root:
+     **BUILT 2026-09-09 (commit `1f78d92`, DARK, 22 unit pins + mig pin green): DARK arc `template_pad_date_adopt`
+     (mig 143).** Root:
      `_maybe_pad_date_flag` Case 3 (template_mapper.py:2356-2366) keeps the tight misread + flags, never adopts; the
      generic UV date-restore is walled off from template_mapping winners. Fix: the mapper stashes `_pad_date_witness`
      on the Case-3 result; a new post-merge carve-out (engine.py ~11674, BEFORE `_universal_postmerge_verify` so the
@@ -80,6 +93,12 @@
      `template_pad_window_read` ON. Gate: unit `test_pad_date_adopt.py` (adopt + pinned trade-offs: lone-pad→no,
      tight-corroborated→no, not-page-present→no) + realdoc M=0 + fire census → Oracle. reggie: confirm
      `_uv_date_agree`/page-present polarity on the leading-digit-clip family (04↔14, D-MM vs DD-MM) before flip.
+     BUILT: `template_mapper.py` Case-3 disagree AND the `_padcontain` containment hold both stash `_pad_date_witness`
+     (gated on the arc; adopt sits ABOVE the containment hold — its exact target class); `engine.py`
+     `_adopt_pad_date_winners` (pure) runs before `_universal_postmerge_verify`, ALWAYS pops the witness, adopts only
+     under all conditions; env bridge `TEMPLATE_PAD_DATE_ADOPT`; TEST_SWITCH_KEYS→30. HARD dependency
+     `template_pad_window_read` (already ON by default via PROVEN_ON_DEFAULTS). ⚑ STILL owner-gated for the customer
+     default flip: realdoc M=0 + fire census + Oracle.
 - **DONE 2026-09-09 (Q2, this session):** the type-split / prefix-outlier / issuer-near-match hold buttons
   (`.prefix-ack-btn`) had NO CSS → plain browser defaults. Added a shared app-token pill style in review/index.html +
   a regression pin (`test_chris_r2_review_cards.js` r2-btn). Convention: an in-app button never ships as a bare
@@ -191,6 +210,19 @@
 - **GATE (before flip):** unit `test_inline_disagree_corrob_release.py` (heal + pin R2-held / no-entry-held / crop-only-held /
   money-name-refuse / OFF==ON) + realdoc M=0 + auto-file-eligibility delta `wouldFile(ON)⊇wouldFile(OFF)` & new filers'
   value==GT + fire census + the shared-label HYPOTHESIS (007). Then Oracle (it deferred Slice-2 — vet its two conditions).
+- **⏸ DEFERRED 2026-09-09 (gary re-verify, NOT built) — build/flip read-widen FIRST:** gary traced that the now-built
+  `template_code_read_widen` (mig 141) does NOT resolve docket-18 in all cases — `_widen_code_read` fires only on the
+  ABSOLUTE-box path (`_extract_one:2649`), NOT the `_pick_fuller_code` relocate path, and is fail-CLOSED on a cold scope
+  (needs `shapes`, >=3 confirms). So the release-net's residual reach is only {warm scope}×{relocate-path OR direct
+  shape-exact-miss}. **gary's STRONG RECOMMENDATION: flip read-widen first, run its fire census; build/flip the net ONLY
+  if that census shows a material warm residual AND the shared-label HYPOTHESIS is cleared** — trading the 88-floor+note
+  for a tiny residual is a poor exchange if read-widen already covers it. If built: new method `_try_inline_disagree_corrob_
+  release` dispatched BEFORE class-G (release tried first, G's reword the fallback); stash `_inline_disagree_rigid_conf` from
+  the mapper (`:1880`, mirror `_pad_date_witness`, always popped); **F STRICT rail fail-CLOSED (cold docket-18 stays HELD —
+  correct, symmetric with read-widen; the human confirm seeds the family, then it releases)**; R2 (rigid_conf<70) the sole
+  guard; conf→max(,90), note/corrected_to cleared, method `+inline_disagree_corrob_release`. SEAM: needs `corrob_note_
+  recompute_fc` ON for OVERALL to rise past the floor (the −12 format penalty otherwise holds it). mig 146; kill
+  `INLINE_DISAGREE_CORROB_RELEASE`. (Full recipe in the 2026-09-09 gary report.)
 - **DONE 2026-09-09 (cosmetic twin, shipped this session):** `renderer.js:11059` trace `validationWhy` printed "characters
   not expected… OCR symbol misread" for ANY note containing "character", so the geometry note "clipping the first character"
   masqueraded as a charset flag on the clean value DN-57601. Fixed: a clip/drift note now gets an honest geometry explanation;
