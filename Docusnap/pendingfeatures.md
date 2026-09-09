@@ -36,8 +36,18 @@
   gate on any auto-file-eligibility change.
 - **THREE distinct auto-file friction points seen in live testing (2026-09-09) — the "why don't my clean docs
   auto-file" set (each owner-gated + census):**
-  1. **Optional-field wordness block** — customer_name "Stonegate Property Mgmt" @70 "doesn't read like a name" holds
-     a delivery note whose ROLE fields are clean. **gary DESIGNING (2026-09-09).**
+  1. **Optional-field soft-flag block** — customer_name "Stonegate Property Mgmt" @70 "doesn't read like a name"
+     holds a delivery note whose ROLE fields are clean. **gary DESIGN DONE 2026-09-09 → BUILD-READY DARK arc
+     `optional_soft_flag_autofile`.** Root: `isAutoFileEligible` (trust.js:1076-85) + `docTrustGate` (trust.js:869-70)
+     refuse on ANY field's `validation_note`, field-/role-blind. Fix: a shared `isSoftAdvisory(key)` = non-role AND
+     required=0 AND type∉STRICT_TYPES; when the arc is ON + the scope is GRADUATED, a soft-advisory note on such a
+     field no longer counts as `flagged` (corrected_to still blocks; role/required/strict-typed fields + the 88 floor
+     unchanged; fail-toward-review for non-graduated scopes). Slice 2: the import bail (handler.js:6533) releases only
+     when graduated + all-notes-soft + no required-empty + no corrected_to. Share `isSoftAdvisory` with Chris card 1's
+     display fix (one helper). NOTE (gary): fresh install seeds `auto_file_threshold=90` (mig 71), so the 93 clears the
+     floor — the wordness NOTE is the true binding blocker. Gate: unit (test_scope_trust) + cold OFF/ON census on
+     arm137 + 605 (M=0 on ROLE values, wouldFile(ON)⊇wouldFile(OFF), new filers' ROLE fields==GT, census that each new
+     filer's ONLY prior blocker was a soft optional note) → Oracle. Full design in gary's 2026-09-09 report.
   2. **95-floor / new-type-scope** — invoice_17 @93 overall (INVOICE NUMBER @90 dragged it under the 95 trusted floor;
      and Marlowe graduated on Delivery Note, so INVOICE is a fresh type-scope with no relaxed floor). Read cleanly →
      offered "Ready to file" (one-click), not auto-filed. Levers: the corroboration auto-file path
@@ -62,6 +72,28 @@
   (`.prefix-ack-btn`) had NO CSS → plain browser defaults. Added a shared app-token pill style in review/index.html +
   a regression pin (`test_chris_r2_review_cards.js` r2-btn). Convention: an in-app button never ships as a bare
   unstyled `<button>` — see [[feedback_button_styling]].
+
+## 2026-09-09 — Multi-RESOLUTION re-OCR + corroboration for a single-char confusable misdetect (owner idea)
+- **Owner idea:** when a doc lands with a SINGLE-CHARACTER misdetect note (the confusable-glyph class — s↔$, i↔1,
+  o↔0, l↔1, B↔8, serif face), re-OCR the VALUE slice at the RESOLUTIONS we've proven correct, and look for
+  corroboration among the multi-res reads AND the keyword read. If they agree → adopt the corroborated value and
+  auto-file without human interaction. "Most useful for the s$/i1/o0 style errors."
+- **Why it's the right shape:** the multi-res + keyword agreement IS the safety (same corroboration-adopt pattern as
+  the code read-widen mig 141 and the date-adopt gap). A confusable is exactly where one recipe/DPI flips a glyph and
+  another doesn't — a vote across recipes resolves it.
+- **The one real build cost / seam:** the engine holds ONLY 200-DPI page bitmaps (established 2026-09-04) — so a
+  HIGHER-resolution re-read needs RENDER-PLUMBING: re-render the crop region from the source PDF at a target DPI
+  (`render/pages.py` can rasterise; the plumbing to request a per-crop higher-DPI render from the engine/process_docs
+  is NOT built — the "higher-DPI re-render witness" 09-04 flagged as unbuilt). Feasible, but that's the work.
+- **Prior art / feasible interim lever:** `RESOLVE_REF_POSITIONAL` (leg-a, mig 115) used a BINARISATION re-slice
+  witness (NOT DPI) precisely because higher-DPI re-render wasn't plumbed; the OE/0E & PI/P1 confusables resolved at
+  300 vs 200 (memory `project_ref_variance_relax_20260903` / the 09-08 confusable-glyph note). So v1 could be
+  binarisation/threshold-ladder votes (no new plumbing); v2 adds the higher-DPI re-render once plumbed.
+- **Design:** ladder of recipes (thresholds/binarisations at 200, then +higher-DPI re-render) on the confusable slice
+  → per-recipe read → vote + require the KEYWORD read to agree → adopt the majority/agreed value (review-bound first;
+  auto-file only on ≥2 independent-recipe + keyword agreement). Confusable-only (don't re-OCR every field). Advisor:
+  oscar (DPI/threshold recipes) + 007 (crop render/placement) → Oracle. Owner-gated + census (M=0, only confusable
+  slices touched, every adopt == GT).
 
 ## 2026-09-09 — Taught code/ref box CLIPS the leading glyph on WIDER pages (page-width variance) — 007 root cause
 - **Exhibit (owner):** Marlowe/Ridgeway delivery dockets — `delivery_number` taught box reads `-57601` / `UN-5033¢` /

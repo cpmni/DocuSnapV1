@@ -2914,6 +2914,23 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 141 (template_code_read_widen): ${e.message}`); }
   }
 
+  // ── migration 142: optional_soft_flag_autofile seeded OFF (2026-09-09, owner exhibit + gary design). A
+  //    wordness / format-variance `validation_note` on an OPTIONAL non-role non-strict field (e.g. a delivery
+  //    note's recipient customer_name @70 "doesn't read like a name") currently BLOCKS auto-file of the whole
+  //    doc even when the ROLE fields (issuer/date/ref) are clean and the sender is graduated. When ON, such a
+  //    soft-advisory note stops counting as a blocking flag on a GRADUATED (or corroborated) scope — the value
+  //    and the note stay, only the hold lifts. Role/required/strict-typed fields + a pending corrected_to still
+  //    block. DARK (in TEST_SWITCH_KEYS; armed by the runtime test-build road). Byte-identical OFF.
+  //    ⚑ FLIP GATE: OFF/ON on arm137 + the 605 corpus — M=0 on ROLE values + wouldFile(ON)⊇wouldFile(OFF) +
+  //    every new filer's ROLE fields==GT + the soft-only-blocker census → then Oracle.
+  if (!applied.has(142)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('optional_soft_flag_autofile', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (142)').run();
+      console.log(`JS migration 142 applied: optional_soft_flag_autofile (soft optional-field note no longer blocks a graduated auto-file) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 142 (optional_soft_flag_autofile): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

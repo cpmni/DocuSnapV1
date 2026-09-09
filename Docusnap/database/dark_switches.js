@@ -69,6 +69,12 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // shape-valid wider row-bounded re-read. ⚑ FLIP GATE: OFF/ON on arm137 + 605 corpus (M=0, wouldFile(ON)⊇
   // wouldFile(OFF) + new filers' value==GT, fire census on the docket corpus) → Oracle. Advisors 007 + gary.
   'template_code_read_widen',
+  // mig 142 (2026-09-09) — OPTIONAL SOFT-FLAG AUTO-FILE: a wordness/format-variance note on an OPTIONAL
+  // non-role non-strict field stops BLOCKING auto-file on a GRADUATED scope (value + note stay; only the hold
+  // lifts). Role/required/strict fields + a pending corrected_to still block. ⚑ FLIP GATE: OFF/ON on
+  // arm137 + 605 — M=0 on ROLE values, wouldFile(ON)⊇wouldFile(OFF), new filers' ROLE fields==GT, census that
+  // each new filer's ONLY prior blocker was a soft optional note → Oracle. Advisor: gary.
+  'optional_soft_flag_autofile',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

@@ -471,6 +471,44 @@ function _corrobAutofileEnabled(db) {
   } catch { return false; }
 }
 
+// ── OPTIONAL SOFT-FLAG AUTO-FILE (owner 2026-09-09, gary design) — DARK arc `optional_soft_flag_autofile` ──
+// A "soft advisory" flag = a wordness / format-variance note on a field that is NOT a filing ROLE, is
+// OPTIONAL (required=0), and is NOT a deterministically-validatable STRICT type. Such a note never reflects a
+// changed value or a deterministic invalidity, so on a GRADUATED scope it may stop BLOCKING auto-file (the
+// value + the note stay; only the hold lifts — e.g. a delivery note's recipient customer_name @70 "doesn't
+// read like a name"). Role / required / strict-typed fields, and a pending corrected_to, still block. Pure;
+// shared by isAutoFileEligible + docTrustGate (+ later handler's import bail + the review renderer). Missing
+// metadata → NOT soft (fail-safe). Off by default.
+function isSoftAdvisory(key, type, required, roleKeys) {
+  if (!key || (roleKeys && roleKeys.has(key))) return false;
+  if (Number(required) !== 0) return false;                 // required (or unknown) → blocks
+  return !STRICT_TYPES.has(String(type || '').toLowerCase());
+}
+function _optionalSoftFlagEnabled(db) {
+  const env = process.env.OPTIONAL_SOFT_FLAG_AUTOFILE;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return require('./learning').getSetting(db, 'optional_soft_flag_autofile', 'false') === 'true'; }
+  catch { return false; }
+}
+// Role-aware flagged count for the graduated soft-advisory non-block: a validation_note on an optional
+// non-role non-strict field does NOT count; a pending corrected_to and any role/required/strict note DO.
+// Self-contained (fetches its own dtRow + field metadata) so it never depends on a caller's scope.
+function _flaggedSoftAware(db, doc, opts, ctFlags) {
+  const dt = db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(doc.document_type_id) || {};
+  const roleKeys = new Set([...require('./document_types').COMPANY_KEYS, dt.ref_field_key, dt.date_field_key].filter(Boolean));
+  const meta = new Map();
+  try { for (const r of db.prepare('SELECT key, type, required FROM fields WHERE document_type_id = ?').all(doc.document_type_id)) meta.set(r.key, r); } catch {}
+  const rows = opts.extractions
+    || db.prepare('SELECT field_key, validation_note, corrected_to, display_value FROM extractions WHERE document_id = ?').all(doc.id);
+  return rows.filter(e => {
+    if (ctFlags(e.corrected_to, e.display_value)) return true;         // a pending correction always blocks
+    if (!String(e.validation_note || '').trim()) return false;         // no note → fine
+    const m = meta.get(e.field_key) || {};
+    return !isSoftAdvisory(e.field_key, m.type, m.required, roleKeys); // a soft-advisory note does not block
+  }).length;
+}
+
 // Critical-field floor relax by corroboration (2026-08-15, Oracle SIGN-OFF-W/COND). The 88 critical
 // per-field floor holds a ref/date read whose confidence is sub-floor even when TWO independent page
 // families read the SAME normalised string. This lets a LICENSED record (see _corrobLicensed) clear
@@ -819,10 +857,9 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
   const sup  = _norm(supplier);
   const sl   = String(slug || '').toLowerCase().trim();
   const fmts = _scopeFormats(db, sup, sl, opts.formats);
-  const fieldTypes = new Map(
-    db.prepare('SELECT key, type FROM fields WHERE document_type_id = ?').all(doc.document_type_id)
-      .map(r => [r.key, r.type])
-  );
+  const _fieldRows = db.prepare('SELECT key, type, required FROM fields WHERE document_type_id = ?').all(doc.document_type_id);
+  const fieldTypes = new Map(_fieldRows.map(r => [r.key, r.type]));
+  const _requiredByKey = new Map(_fieldRows.map(r => [r.key, r.required]));   // for the soft-advisory note check (opts.softOptionalNonblock)
   // extraction_method is selected for the SHADOW-ROW skip below. It is also the field the two
   // harness overlays (stress_test/realdoc_regression.js, services/sweepPredicate.js) were missing,
   // which would have made the gate for that skip VACUOUSLY GREEN — they now thread it too.
@@ -866,8 +903,12 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
   for (const e of exs) {
     const v = String(e.display_value ?? e.raw_value ?? '').trim();
     if (!v) continue;                                                    // empty → safe
-    if (e.validation_note && String(e.validation_note).trim())           // any flag → not safe
-      return { ok: false, reason: `flagged:${e.field_key}` };
+    if (e.validation_note && String(e.validation_note).trim()) {         // a flag → not safe…
+      // …UNLESS it is a SOFT-ADVISORY note on an optional non-role non-strict field AND the caller passed the
+      // graduated-scope non-block (owner 2026-09-09). Role / required / strict-typed notes still block.
+      if (!(opts.softOptionalNonblock && isSoftAdvisory(e.field_key, fieldTypes.get(e.field_key), _requiredByKey.get(e.field_key), roleKeys)))
+        return { ok: false, reason: `flagged:${e.field_key}` };
+    }
     // r19 (d): a filing-critical role read that an independent page family contradicts never files
     // by itself — the page said something else; a person decides which.
     if (_roleDisagreeOn && (e.field_key === _dtRow.ref_field_key || e.field_key === _dtRow.date_field_key)
@@ -1073,15 +1114,21 @@ function isAutoFileEligible(db, doc, opts = {}) {
     const d = String(dv ?? '').trim();
     return !(d && c === d);                                    // ignore only a non-empty exact-equal corrected_to
   };
-  const flagged = opts.extractions
-    ? opts.extractions.filter(e => String(e.validation_note || '').trim() || _ctFlags(e.corrected_to, e.display_value)).length
-    : (vacuousIgnore
-        ? db.prepare(
-            "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> '' AND NOT (display_value IS NOT NULL AND TRIM(display_value) <> '' AND TRIM(corrected_to) = TRIM(display_value))))"
-          ).get(doc.id).c
-        : db.prepare(
-            "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> ''))"
-          ).get(doc.id).c);
+  const _softFlagOn = (opts.optionalSoftFlag !== undefined) ? !!opts.optionalSoftFlag : _optionalSoftFlagEnabled(db);
+  // Graduated soft-advisory non-block (owner 2026-09-09): ONLY on a scope that has earned trust (graduated OR
+  // corroborated) does a soft optional-field note stop counting as a blocking flag — never on a cold scope.
+  const _softNonblock = _softFlagOn && (graduated || corroborated);
+  const flagged = _softNonblock
+    ? _flaggedSoftAware(db, doc, opts, _ctFlags)
+    : (opts.extractions
+        ? opts.extractions.filter(e => String(e.validation_note || '').trim() || _ctFlags(e.corrected_to, e.display_value)).length
+        : (vacuousIgnore
+            ? db.prepare(
+                "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> '' AND NOT (display_value IS NOT NULL AND TRIM(display_value) <> '' AND TRIM(corrected_to) = TRIM(display_value))))"
+              ).get(doc.id).c
+            : db.prepare(
+                "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> ''))"
+              ).get(doc.id).c));
   if (flagged) return { eligible: false, floor, trusted: t.trusted, reason: 'flagged' };
   // T2 (gate-unify slice): an EMPTY ref role / date role / required non-identity field refuses
   // with a reason instead of relying on the import pre-gate's blanket needs_review bail (which
@@ -1154,7 +1201,7 @@ function isAutoFileEligible(db, doc, opts = {}) {
   //    `flagged` check (validation_note / corrected_to) STILL applies at 100% regardless.
   const conf = doc.overall_confidence || 0;
   if (conf < 100) {
-    const g = docTrustGate(db, doc.id, doc.supplier_name, slug, opts);
+    const g = docTrustGate(db, doc.id, doc.supplier_name, slug, { ...opts, softOptionalNonblock: _softNonblock });
     if (!g.ok) return { eligible: false, floor, trusted: t.trusted, reason: g.reason };
   } else if ((opts.strict100 !== undefined ? opts.strict100
               : learning.getSetting(db, 'strict_100_autofile', 'false') === 'true')) {
@@ -1251,6 +1298,7 @@ function _currencyConsistentForField(db, supplier, slug, fieldKey, value) {
 
 module.exports = {
   TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES, _configuredWindow,
+  isSoftAdvisory,                  // shared soft-advisory predicate (optional_soft_flag_autofile; Chris card 1 twin)
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
   _dominantStructuredClass,        // exported for the contaminated-history pin (test_scope_trust.js §18b)
   _effectiveClass, _roleDominantEnabled,   // role-field dominant class (2026-08-22) — pinned in test_role_dominant_class.js
