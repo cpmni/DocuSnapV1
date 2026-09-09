@@ -28,28 +28,55 @@ new `-TEST` build; and after CLOSING the app, multiple tesseract.exe stayed aliv
   date-adopt `_read_pad_window_date`) on `delivery_number`/`delivery_date` — the exact fields on the docs
   being processed at crash time. **NOT PROVEN to be the trigger** — the decisive test is below.
 
-**Two REAL bugs identified (both owed, neither built):**
-1. **Orphan reaping (eric):** the app does NOT kill its `vendor/tesseract/tesseract.exe` (and Python worker)
-   children on exit; crashed/hung tesseract linger and respawn. Fix = kill the child process tree on app
-   quit + on a worker's death, and a timeout-reap for a hung tesseract child.
-2. **The tesseract abort itself (oscar — SPAWNED, running at reboot; RE-SPAWN with the brief below):** why a
-   bundled MinGW/libstdc++ tesseract aborts (0x40000015) on a SMALL crop in CLUSTERS under concurrency —
-   ranked: (a) a degenerate-but-bounds-valid crop (very short row strip / near-empty) tripping a
-   leptonica/tesseract assert; (b) a concurrency/thread-safety issue on high-fanout concurrent tesseract-CLI
-   on Windows (shared tessdata/tempdir/env, OMP); (c) a bundled-runtime (libstdc++/libgomp/leptonica) issue;
-   (d) tessdata contention. The crops ARE bounds-clamped with a `<4px` guard (`_read_pad_window_code`), so
-   (a) would be a very-short-but-≥4px strip. **Add tracing to capture the failing crop (dims + config
-   string) — that pinpoints it.**
+**oscar ROOT-CAUSED it (agent DONE — full report in this session's transcript). TWO distinct failures:**
+- **Failure A (the abort):** the bundled MinGW tesseract hits an **uncaught C++ exception → `std::terminate`
+  → `abort()`** (0x40000015). `libstdc++-6.dll` is where `terminate` LIVES — the MESSENGER, not the bug. A
+  fixed fault offset across the 3 near-simultaneous crashes = the SAME code path terminating repeatedly.
+- **Failure B (the wedge/orphan/popup):** the crashed child blocks on the **Windows Error Reporting modal**
+  (0 CPU, 9 min) and **there is NO per-call `timeout=` on ANY pytesseract call** (default `timeout=0` = wait
+  forever) → the parent `subprocess` blocks forever → the child is orphaned (watchdog `os._exit(0)` at
+  `process_docs.py:323`, no Job Object). This is what turned a recoverable per-field miss into a visible wedge.
+- **The crasher is the FIELD-CROP / pad-window layer, not full-page** (26–93 MB working sets = crop reads;
+  full-page @300 would be 150–400 MB+). Root cause ranked: **(a) MOST LIKELY** a degenerate/near-empty crop
+  the LSTM/Leptonica can't handle → uncaught throw. The `<4px` guard is in PAGE space; `_read_pad_window_*`
+  use `vpad=0.5*bh` (short strip) then `_prep` upscales with **NO white quiet-zone border and NO min-final-
+  height floor** (the ⊕ `ocr/region.py` reader DOES add a 20px quiet zone — a real asymmetry). Feeds an
+  extreme-aspect single-row strip flush-to-edge into PSM 6. **Clusters by layout** (same docket → both
+  `delivery_number` + `delivery_date` bad → 3 crashes in 6 s). (b) concurrency = AMPLIFIER; (c) MinGW
+  libstdc++/libgomp fragility under rapid concurrent spawns = AGGRAVATOR (why it crashes under fan-out but
+  not the serial harness). tessdata contention + `--dpi 0` RULED OUT.
+- **The newly-armed arcs (read-widen/pad/date-adopt) DO raise the abort rate** — extra small-crop calls on
+  `delivery_number`/`delivery_date` + the short-strip-no-quiet-zone feed = exactly sub-case (a).
+- **KEY INSIGHT:** the existing `except Exception: return None` around every crop read ALREADY degrades an
+  abort into a clean per-field miss — it just never runs because the child HANGS and never returns. Make the
+  child return fast and today's handling does its job.
 
-**DECISIVE next step (repro + attribution):** does the crash reproduce on the RELEASE build
-(`…-r20260908-1843-9251551.exe`, arcs DARK, but mig 139 parallel STILL on) vs the `-TEST` build (arcs armed)?
-- Release crashes too → it's the parallel-OCR/reaping class, NOT this session's arcs.
-- Only -TEST crashes → the armed small-crop arcs (read-widen/pad/date-adopt) are implicated → gate the extra
-  crops behind a concurrent-tesseract ceiling, or serialize field-crop OCR.
+**Fix plan (oscar, ranked smallest-correct first — BUILD #1 FIRST next session):**
+1. **Per-call `timeout=` on every pytesseract call + `SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX|
+   SEM_NOOPENFILEERRORBOX)` at worker startup** (ctypes, PSF; no new dep). Tiny, zero seam, highest value —
+   fixes Failure B entirely, makes A recoverable via the existing `except`. Generous timeout full-page
+   (~60–120 s), short for tiny crops. `timeout=` is the GUARANTEED backstop (WER-inheritance varies by build).
+2. **Crop-conditioning in `_prep` + the two pad readers:** white quiet-zone border (≥10–20px), min FINAL
+   prepped height (≥~20–24px, pad canvas white), cap the upscale factor, skip autocontrast on a near-uniform
+   crop, reject degenerate final dims (→ abstain). Guard on FINAL pixel dims, not page-space 4px. Removes the
+   TRIGGER. ⚠ **SEAM:** the pad-window path is a FLAG PRODUCER (`_maybe_pad_date_flag` caps@70 + `corrected_to`)
+   — a conditioned read that now SUCCEEDS must STAY subject to the pad disagree/containment flag + conf cap,
+   never sail past the checkpoint just because it stopped crashing. A cleaner read is not a righter read.
+3. Global concurrent-tesseract ceiling (semaphore, independent of worker count; narrow the fields pool
+   `anchor.py:1832`). 4. Retry-once-serial on a caught abort (value-neutral — NEVER a corroboration witness).
+   5. Job Object `KILL_ON_JOB_CLOSE` so the watchdog never orphans (the eric piece; overlaps #1/#5).
+- **Logging to catch the exact crop:** a breadcrumb written BEFORE each pytesseract call + cleared AFTER
+  (survives a hang; mirror the `_watch` idiom) recording field_key/stage/original box/**final prepped
+  dims+upscale**/config/pool-state; save the failing crop PNG pre+post `_prep` behind the diag/`--slice-dir`
+  gate. That single artifact settles (a) vs (c).
 
-**Immediate mitigations to offer the owner:** after reboot, if it recurs — Settings → Processing → lower
-concurrency; and/or turn OFF `ocr_parallel_import_enabled` (isolates whether the per-doc pools are the
-trigger). A **global concurrent-tesseract ceiling** (independent of worker count) is the likely proper fix.
+**DECISIVE attribution test (still worth running):** does the crash reproduce on the RELEASE build
+(`…-r20260908-1843-9251551.exe`, arcs DARK, mig 139 parallel STILL on) vs `-TEST`? Release too → the
+parallel-OCR/no-timeout class (pre-existing); only -TEST → the armed small-crop arcs amplify it. Either way
+fix #1+#2 cover it.
+
+**Immediate mitigations for the owner (after reboot, if it recurs):** Settings → Processing → lower
+concurrency; and/or turn OFF `ocr_parallel_import_enabled`.
 
 ---
 
@@ -110,12 +137,13 @@ auto-file toast + eligibility progress bar (`13036dc`).
 
 ---
 
-## 5. Advisors at reboot
-- **oscar** — running the tesseract-abort root cause (§1 bug 2). Will be LOST on reboot — RE-SPAWN with the
-  §1 evidence (faulting libstdc++, 0x40000015, small clustered concurrent aborts, parallel-OCR default-on,
-  the armed small-crop arcs).
-- **eric** — NOT yet spawned; needed for the orphan-reaping fix (§1 bug 1).
-- gary (release-net + Q3) · herald (Q1) · Oracle (read-widen) — all DONE, folded in above.
+## 5. Advisors
+- **oscar** — DONE; the tesseract-abort root cause + ranked fix are folded into §1. (Full report in the
+  session transcript.) NEXT SESSION: build fix #1 (per-call timeout + WER SetErrorMode) first — tiny, zero
+  seam, fixes the visible wedge — then #2 crop-conditioning (honour the flag-producer seam).
+- **eric** — NOT spawned; the Job Object / child-reaping piece is oscar's fix #5 (build with #1). Spawn eric
+  only if the process-tree kill needs Electron-side lifecycle work.
+- gary (release-net + Q3) · herald (Q1) · Oracle (read-widen) · oscar (tesseract abort) — all DONE.
 
 ## 6. Measurement dirs (untracked, in TESTING/_measure)
 `clip_census_20260909/` (read-widen PASS) · `date_adopt_census_20260909/` (SAFE, 0 fires) ·
