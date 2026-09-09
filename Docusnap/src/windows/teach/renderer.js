@@ -19,6 +19,13 @@ const state = {
   minStep: 0,          // floor — 2 when launched at a known doc (skip welcome + doc-pick)
   docs: [],            // review-queue rows to choose from
   doc: null,           // chosen row {id, folder_path, original_filename, supplier_name}
+  // Teach IMPORT overlap (owner 2026-09-09): the ~30s OCR read no longer blocks Continue. The read is
+  // held here so the user can advance to type-select while it runs; step 3 (field-pointing) re-collects it.
+  readPromise: null,   // the in-flight import read (a Promise resolving to the matched review-queue row, or null)
+  importToken: 0,      // ++ per import; guards a stale completion from clobbering a doc the user picked after
+  stagedImport: null,  // {folder, filename} of the import in flight
+  readStartMs: 0,      // when the in-flight read began (elapsed readout)
+  _readMsg: '',        // the current read-progress base message (from teachProgress)
   pageDataUrl: null,
   img: null,           // loaded Image (natural size) — the STRAIGHTENED render while deskew is on, else rawImg
   rawImg: null,        // the RAW page render (always) — boxes are STORED in this frame
@@ -95,7 +102,7 @@ function renderFooter(){
 }
 function canAdvance(){
   switch(state.step){
-    case 1: return !!state.doc;
+    case 1: return !!state.doc || !!state.readPromise;   // an in-flight teach import lets step-2 proceed while the read runs (owner 2026-09-09)
     case 2: return !!$('type-grid').querySelector('.card.sel') &&
                    (!isNewTypeSelected() || newTypeReady());
     case 3: return state.fields.length>0 && state.fields.every(f => {
@@ -164,7 +171,7 @@ async function renderDocPicker(){
   }
   // Open with one card already big, so the step starts in the state a click produces
   // rather than with every card the same size and nothing to look at.
-  if (!state.doc && shown.length){
+  if (!state.doc && shown.length && !state.readPromise){   // don't auto-pick a queue doc over an import in flight
     state.doc = shown[0];
     _prefetchTeachPage();                  // prefetch the default pick too, so accepting it is instant
     const first = grid.querySelector('.card');
@@ -204,7 +211,6 @@ $('btn-import-teach')?.addEventListener('click', async () => {
   if (staged.error) { if (st) st.textContent = 'Could not open that file.'; return; }
   const lbl = btn.textContent;
   btn.disabled = true; btn.textContent = 'Importing…';
-  if (st) st.textContent = 'Reading the document…';
   const bar = $('teach-import-progress');
   if (bar) bar.classList.add('active');
   // Owner 2026-09-07: show the picked document AT ONCE — a provisional card with its page-1 thumbnail
@@ -215,33 +221,66 @@ $('btn-import-teach')?.addEventListener('click', async () => {
   // double-register; window-scoped ipcRenderer, so removeAllListeners clears only this window's.
   D.removeProgress && D.removeProgress();
   D.onProgress && D.onProgress(teachProgress);
-  try {
-    await D.processFolder(staged.folder, { autoFile: false });  // same import path, but DON'T auto-file (keep it in Review to teach)
-    _prov.remove();
-    state.docs = await D.getReviewQueue() || [];
-    const match = state.docs.filter(d => d.original_filename === staged.filename).sort((a, b) => b.id - a.id)[0];
-    if (match) { state.doc = match; _prefetchTeachPage(); }   // read done -> start the page render in the background
-    await renderDocPicker(); renderFooter();
-    if (st) st.textContent = match ? 'Imported — selected below.' : 'Imported. Pick it below.';
-  } catch (e) {
-    _prov.remove();
-    if (st) st.textContent = 'Import failed: ' + (e.message || 'unknown error');
-  } finally {
-    D.removeProgress && D.removeProgress();
-    if (bar) bar.classList.remove('active');
-    btn.disabled = false; btn.textContent = lbl;
-  }
+  // Owner 2026-09-09: the ~30s OCR read no longer BLOCKS Continue. Hold it as state.readPromise so the user
+  // can advance to type-select immediately (type-select needs nothing from the read); step 3 (field-pointing)
+  // re-collects the wait via startRegionStep. `token` guards a stale completion from clobbering a doc the
+  // user picked afterwards; the button stays disabled + progress attached until the read SETTLES, which keeps
+  // the "imports are strictly sequential" staging invariant (a 2nd import can't start mid-read).
+  const token = ++state.importToken;
+  state.stagedImport = { folder: staged.folder, filename: staged.filename };
+  state._readMsg = 'Reading the document…';
+  _startReadTicker();
+  state.readPromise = (async () => {
+    try {
+      await D.processFolder(staged.folder, { autoFile: false });  // same import path, but DON'T auto-file (keep it in Review to teach)
+      const docs = await D.getReviewQueue() || [];
+      const match = docs.filter(d => d.original_filename === staged.filename).sort((a, b) => b.id - a.id)[0] || null;
+      if (token !== state.importToken) return match;   // a newer pick/import owns the wizard now — don't clobber it
+      _stopReadTicker();
+      _prov.remove();
+      state.docs = docs;
+      if (match) { state.doc = match; _prefetchTeachPage(); }   // read done -> start the page render in the background
+      await renderDocPicker(); renderFooter();
+      if (st) st.textContent = match ? 'Imported — selected below.' : 'Imported. Pick it below.';
+      return match;
+    } catch (e) {
+      if (token === state.importToken) { _stopReadTicker(); _prov.remove(); if (st) st.textContent = 'Import failed: ' + (e.message || 'unknown error'); }
+      return null;
+    } finally {
+      if (token === state.importToken) {
+        _stopReadTicker();                        // idempotent safety
+        D.removeProgress && D.removeProgress();
+        if (bar) bar.classList.remove('active');
+        btn.disabled = false; btn.textContent = lbl;
+        state.readPromise = null;                 // settled — the gate no longer needs it (state.doc holds if matched)
+        state.stagedImport = null;
+      }
+    }
+  })();
+  renderFooter();   // re-enable Continue at once — canAdvance() is now true via state.readPromise
 });
 
 // Import read-progress readout. A single doc's OCR has no sub-% (start -> file_begin -> file_pages
 // -> file_done), so the bar is indeterminate (animated) and only the TEXT is event-driven.
+// Read-progress readout, shared by step 1 (the import status line) and step 3 (the #rg-loading overlay,
+// when the user advanced while the read was still running). A single doc's OCR has no sub-% (start ->
+// file_begin -> file_pages -> file_done), so the message is event-driven TEXT + an elapsed-seconds ticker
+// (owner 2026-09-09: "a message or progress bar indicating how much time is left").
+let _readTick = null;
+function _paintRead() {
+  const el = Math.max(0, Math.round((Date.now() - (state.readStartMs || Date.now())) / 1000));
+  const txt = (state._readMsg || 'Reading the document…') + (el ? ` (${el}s)` : '');
+  const a = $('import-teach-status'); if (a) a.textContent = txt;
+  const b = $('rg-loading-msg');      if (b) b.textContent = txt;
+}
+function _startReadTicker() { _stopReadTicker(); state.readStartMs = Date.now(); _paintRead(); _readTick = setInterval(_paintRead, 1000); }
+function _stopReadTicker()  { if (_readTick) { clearInterval(_readTick); _readTick = null; } }
 function teachProgress(msg) {
-  const st = $('import-teach-status');
-  if (!msg || !st) return;
-  if (msg.type === 'file_begin')      st.textContent = 'Reading the document…';
-  else if (msg.type === 'file_pages' && (msg.pages > 1))
-                                       st.textContent = 'Multi-page document (' + msg.pages + ' pages)…';
-  else if (msg.type === 'file_done')  st.textContent = 'Read complete.';
+  if (!msg) return;
+  if (msg.type === 'file_begin')                          state._readMsg = 'Reading the document…';
+  else if (msg.type === 'file_pages' && (msg.pages > 1))  state._readMsg = `Reading a ${msg.pages}-page document…`;
+  else if (msg.type === 'file_done')                      state._readMsg = 'Read complete.';
+  _paintRead();
 }
 
 // ── Step 2: choose / create type ─────────────────────────────────────────────
@@ -765,6 +804,18 @@ function _setPageLoading(on){ const el = $('rg-loading'); if (el) el.classList.t
 
 async function startRegionStep(){
   canvas=$('pageCanvas'); ctx=canvas.getContext('2d');
+  // Teach IMPORT overlap (owner 2026-09-09): the user may have advanced to here while the import read was
+  // still running (canAdvance let them through on state.readPromise). Re-collect the wait now — the page
+  // render + per-field read-back below genuinely need state.doc. The #rg-loading overlay shows live
+  // read-progress (the ticker is still running); on a null/failed read, route to the honest "couldn't
+  // read" state rather than dereferencing a null state.doc (or leaving a stuck spinner).
+  if (!state.doc && state.readPromise){
+    const p = state.readPromise;
+    _setPageLoading(true); _paintRead();
+    let m = null; try { m = await p; } catch { m = null; }
+    if (!state.doc && m) state.doc = m;
+    if (!state.doc){ _setPageLoading(false); $('rg-prompt').textContent = "Couldn't read that document — go back and pick another one."; return; }
+  }
   const _loading = !state.img;
   if (_loading){
     // Prefer the background prefetch started when the doc was chosen; fetch now only if it's absent

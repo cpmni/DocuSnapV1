@@ -717,6 +717,14 @@
     .field-note-hint { display: block; color: var(--muted); font-family: var(--sans); margin-top: 2px; }
     /* Two independent method families read the same value (owner principle 2026-08-11). */
     .field-note.corroborated { color: var(--ok); }
+    /* Inline hold-note ACTION buttons — the type-split ("Change the type"/"Keep …"), prefix-outlier and
+       issuer-near-match holds all render `button.prefix-ack-btn`. ONE shared style so an in-note button is
+       NEVER an unstyled browser default (owner 2026-09-09). Uses the app tokens, pill shape like the rest. */
+    .prefix-ack-btn { font-family: var(--sans); font-size: 11px; font-weight: 600; line-height: 1.4;
+      padding: 3px 10px; margin: 3px 4px 0 0; border-radius: var(--r-pill);
+      border: 1px solid var(--border2); background: var(--surface2); color: var(--text); cursor: pointer; }
+    .prefix-ack-btn:hover { background: var(--surface3); border-color: var(--accent); color: var(--accent2); }
+    .prefix-ack-btn:active { transform: translateY(1px); }
     .corrected-badge { display: inline-block; font-family: var(--sans); font-size: 9px;
       font-weight: 600; line-height: 1; padding: 2px 6px; margin-right: 4px; border-radius: var(--r-pill);
       background: rgba(31,157,99,.16); color: var(--ok); vertical-align: baseline; }

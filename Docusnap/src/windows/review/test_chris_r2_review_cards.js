@@ -18,6 +18,7 @@ let fails = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
 
 const renderer = rd('src/windows/review/renderer.js');
+const html = rd('src/windows/review/index.html');
 
 // ── Finding 1 — the "Format check · N" count reconciles with a visible field ─────────────────────
 console.log('r2-1 — Format-check count excludes the low-confidence field and bare corrected_to');
@@ -49,6 +50,13 @@ console.log('r2-5 — issuer_fill banner names the MANUAL File All Ready action,
   check('the issuer_fill chip no longer says "ready to file" (the phrase that collided with the countdown)',
         !/case 'issuer_fill': return `\$\{n\} more ready to file`/.test(body));
 }
+
+// ── Q2 (owner 2026-09-09): inline hold-note buttons must be STYLED, never a plain browser default ──────
+console.log('r2-btn — hold-note action buttons (.prefix-ack-btn) carry an app style, not a browser default');
+check('.prefix-ack-btn has a style rule in review/index.html (type-split / prefix / near-match holds share it)',
+      /\.prefix-ack-btn\s*\{/.test(html));
+check('the type-split hold renders its buttons with the shared .prefix-ack-btn class',
+      /prefix-ack-btn tsh-change-btn/.test(renderer) && /prefix-ack-btn tsh-keep-btn/.test(renderer));
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

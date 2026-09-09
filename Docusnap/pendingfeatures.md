@@ -9,6 +9,60 @@
 
 ---
 
+## 2026-09-09 — Auto-file VISIBILITY: progress bar on graduation + autofile toast + in-view countdown (owner ask)
+- **Context (owner, fresh -TEST install):** after enough confirms the owner expects a sender's clean docs to
+  AUTO-file, but sees them offered as a MANUAL "File up to N / files by itself" bulk instead, and the current doc
+  held by a flag ("Nothing looks wrong — a value was flagged by a formatting check · 93% · waiting for your check").
+  The auto-file work is invisible, so it looks like nothing is happening.
+- **Request (3 parts):**
+  1. **Progress bar at the top of the preview window** when the Nth doc (owner: the 3rd) of a new sender/type is
+     confirmed: e.g. "Checking eligible docs from <sender> for Autofile" — so the customer knows the background
+     eligibility sweep is running.
+  2. **Toast on autofile:** "N docs successfully autofiled — check the history panel above to see them."
+  3. **In-view countdown** when the CURRENTLY-VIEWED doc is autofiled, before it leaves the queue (this exists as
+     `sweep_inview_countdown`, mig 103 ON — verify it fires on the graduation sweep, not only the reprocess sweep).
+- **Existing machinery to build on (verify, don't rebuild):** the graduation/scope sweep (`scope_sweep_enabled` /
+  `scope_sweep_auto_accept`, mig 80), `sweep_inview_countdown` (mig 103), the `issuer_fill` activity chip + the
+  activity/history panel (top-left "N filed themselves"), the "File up to N" bulk, `trust.isAutoFileEligible`,
+  `database/modules/scopeReadiness.isReady`. The toast + history-panel already partly exist (the "N filed themselves"
+  strip) — the ask is a clearer progress→toast→countdown arc around the SAME events.
+- **THE DEEPER BEHAVIOUR QUESTION (root of "back to seeing this message"):** a sender's clean docs should AUTO-file
+  once graduated, not just offer a manual bulk. AND an OPTIONAL VARIABLE field (customer_name on a delivery note)
+  tripping name-wordness ("Stonegate Property Mgmt" @70 "doesn't read like a name") currently BLOCKS auto-file of the
+  whole doc — likely on most delivery notes. Decide: should an optional non-role field's wordness/format flag block
+  auto-file when the role fields (issuer/date/ref) are clean + graduated? (Advisor: gary + oscar/oracle; auto-file
+  eligibility → owner-gated + census.) The progress/toast/countdown is the UX; this is the behaviour it makes visible.
+- Advisor: eric (renderer/toast/progress lifecycle) + gary (the eligibility-sweep trigger on the Nth confirm). Oracle
+  gate on any auto-file-eligibility change.
+- **THREE distinct auto-file friction points seen in live testing (2026-09-09) — the "why don't my clean docs
+  auto-file" set (each owner-gated + census):**
+  1. **Optional-field wordness block** — customer_name "Stonegate Property Mgmt" @70 "doesn't read like a name" holds
+     a delivery note whose ROLE fields are clean. **gary DESIGNING (2026-09-09).**
+  2. **95-floor / new-type-scope** — invoice_17 @93 overall (INVOICE NUMBER @90 dragged it under the 95 trusted floor;
+     and Marlowe graduated on Delivery Note, so INVOICE is a fresh type-scope with no relaxed floor). Read cleanly →
+     offered "Ready to file" (one-click), not auto-filed. Levers: the corroboration auto-file path
+     (`deskew_corrob_autofile` DARK, or a ≥2-family corrob floor in the 88-95 band), lowering `auto_file_threshold`, or
+     confidence calibration on the sub-95 field. Needs its own design + census.
+  3. **Type-split OVER-PROMPT vs a HUMAN-TAUGHT type (Q1)** — "files as Delivery Note (21 so far). File this one as
+     Invoice?" (`showTypeSplitHold`, review/renderer.js:6807; reviewService type-split refusal) is unnecessary when the
+     sender's type was explicitly chosen + confirmed in the TEACH WIZARD. Also a likely TYPE MISDETECTION (a delivery
+     docket typed Invoice despite the taught Delivery-Note template) → herald. Fix: (a) the taught template's type
+     should win the Stage-0 type detection (stop the misdetection); (b) suppress/soften the type-split ask when a
+     strong taught+confirmed convention exists (don't second-guess a human-taught type). Advisor: herald + gary → Oracle.
+  4. **Date read-widen + corroboration-ADOPT (Q4, invoice_date exhibit)** — a taught DATE box's tight read committed
+     `14-02-2026` (WON precedence) while BOTH the wider row-bounded date read AND the keyword read `04-02-2026` (the
+     value actually printed on the page). The date pad-window (`_maybe_pad_date_flag` / `template_pad_date_containment_flag`
+     mig 132) only FLAGS the disagreement (`template_mapping_paddisagree`) — it does NOT adopt the ≥2-method-corroborated
+     value, so the app SHOWS the WRONG date + holds. The code read-widen arc (mig 141) is CODE-ONLY. Fix = the DATE
+     analog: when the tight date read disagrees with a wider read AND a keyword read that AGREE with each other (≥2
+     independent methods), ADOPT the corroborated date and let it auto-file if otherwise clean. This is BOTH a
+     wrong-value correctness bug (precedence gave the tight misread priority over a 2-method corroboration) AND an
+     auto-file gap. Advisor: gary + reggie (date validation) → Oracle; owner-gated + census.
+- **DONE 2026-09-09 (Q2, this session):** the type-split / prefix-outlier / issuer-near-match hold buttons
+  (`.prefix-ack-btn`) had NO CSS → plain browser defaults. Added a shared app-token pill style in review/index.html +
+  a regression pin (`test_chris_r2_review_cards.js` r2-btn). Convention: an in-app button never ships as a bare
+  unstyled `<button>` — see [[feedback_button_styling]].
+
 ## 2026-09-09 — Taught code/ref box CLIPS the leading glyph on WIDER pages (page-width variance) — 007 root cause
 - **Exhibit (owner):** Marlowe/Ridgeway delivery dockets — `delivery_number` taught box reads `-57601` / `UN-5033¢` /
   `JN-72756` (leading `D` cut) → `template_mapping_shapewarn`@70 + "the box may be clipping the first character" → HELD.

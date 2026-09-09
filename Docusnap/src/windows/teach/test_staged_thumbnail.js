@@ -29,8 +29,9 @@ check('never throws to the renderer', /catch \(err\) \{[\s\S]{0,200}return null;
 
 console.log('2 the road');
 check('preload forwards (folder, filename)', /getStagedTeachThumbnail: \(folder, filename\) => ipcRenderer\.invoke\('get-staged-teach-thumbnail', folder, filename\)/.test(pre));
-check('the card is shown BEFORE processFolder and removed after', /const _prov = _showProvisionalCard\(staged\);[\s\S]{0,900}await D\.processFolder\(staged\.folder, \{ autoFile: false \}\);\s*_prov\.remove\(\);/.test(tw));
-check('…and removed on error', /\} catch \(e\) \{\s*_prov\.remove\(\);/.test(tw));
+check('the card is shown BEFORE processFolder and removed after the read (now inside the held readPromise, token-guarded)',
+      /const _prov = _showProvisionalCard\(staged\);[\s\S]{0,1400}await D\.processFolder\(staged\.folder, \{ autoFile: false \}\);[\s\S]{0,400}_prov\.remove\(\);/.test(tw));
+check('…and removed on error (in the held-read catch)', /catch \(e\) \{[\s\S]{0,120}_prov\.remove\(\);/.test(tw));
 check('the provisional card carries the thumbnail from the staged copy', /function _showProvisionalCard\(staged\)[\s\S]{0,900}D\.getStagedTeachThumbnail\(staged\.folder, staged\.filename\)/.test(tw));
 check('a missing grid or thumbnail is harmless (plain card / no-op remove)', /if\(!grid\) return \{ remove\(\)\{\} \};/.test(tw) && /return \{ remove\(\)\{ try\{ c\.remove\(\); \}catch\{\} \} \};/.test(tw));
 
