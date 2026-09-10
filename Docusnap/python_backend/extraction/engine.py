@@ -2046,8 +2046,14 @@ _FILING_SANITY_ABSENT_MARK = "doesn't appear on this page as written"
 # STILL a validation_note, so trust.isAutoFileEligible keeps the doc REVIEW-BOUND: auto-file behaviour is
 # byte-identical, the mirror (true value = the minority spelling) is HELD for a human, never silently filed.
 _FILING_SANITY_SOFTEN_MARK = "please confirm the reference before filing"
-_FILING_SANITY_SOFTEN_NOTE = ("This reference reads as '{}' where it is labelled, but the full-page text "
-                              "reads it as '{}' — " + _FILING_SANITY_SOFTEN_MARK + ".")
+# 2026-09-10 (owner: "very wordy message"): the old copy juxtaposed the two readings ("reads as 'SO-47966'
+# … but reads it as 'SO-47966'") — but the two forms differ only by a scan look-alike (O vs 0, I vs 1), so
+# they print IDENTICALLY and the sentence reads as nonsense/noise. Name the value ONCE and explain the
+# look-alike instead. Still ONE {} so the existing .format(rv, form) calls are unchanged (the form arg is
+# ignored); the MARK substring is preserved verbatim so its three consumers still match; still a
+# validation_note so auto-file stays byte-identical (review-bound).
+_FILING_SANITY_SOFTEN_NOTE = ("The reference '{}' has a character that can look like another on a scan "
+                              "(O/0, I/1) — " + _FILING_SANITY_SOFTEN_MARK + ".")
 # FILING_SANITY_REF_HISTORY_SOFTEN (2026-09-04; Oracle SIGN-OFF-W/COND, extends the mig-111 live soften).
 # The live soften needs >=2 live page families to AGREE on the committed value; but when the correct value
 # came from a `+corrected` adopt with NO live agreement (every reader read the page's confusable form), the
