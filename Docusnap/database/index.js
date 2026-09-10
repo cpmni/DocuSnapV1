@@ -3061,6 +3061,29 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 150 (sweep_inview_recheck): ${e.message}`); }
   }
 
+  // ── migration 151: template_edge_clip_heal seeded OFF (2026-09-10; Oracle SIGN-OFF-W/COND C1-C7,
+  //    docs/designs/EDGE_CLIP_HEAL_2026-09-10.md). The taught-box edge-clip class 007 root-caused: on a
+  //    skewed sibling scan the composed axis-aligned target box severs ONE edge glyph, and the garble is
+  //    HIGH OCR-confidence + same-length shape-valid (YN-#####↔DN-#####), so every existing healer misses it
+  //    (edge-cut overhang < ~8px threshold; widen wants shape-INVALID; _maybe_pad_code's two-sided consent
+  //    BLOCKS a both-forms-confirmed substitution; the +15 conf margin is defeated). When ON, a committed
+  //    taught CODE/ref (and an OPTIONAL non-issuer name) value is re-read row-bounded + certified by
+  //    PLACEMENT via _snap_union_witness (un-cut-edge anchor + ≥0.6 slot-fill + contiguity, NOT OCR
+  //    confidence): a clean clip-containment ADOPTS the recovered value capped 87 (<88 floor); garbled-both-
+  //    sides / a healed ISSUER FLAGS (cap ≤70 + note + corrected_to); uncertified = byte-identical. DATES
+  //    excluded (C3 — the mig-143 _pad_date route owns them). DARK (in TEST_SWITCH_KEYS); byte-identical OFF.
+  //    HARD dep template_pad_window_read ON. ⚑ FLIP GATE (Oracle C5/C7): the 88-floor relax for an adopted
+  //    value requires _corrobLicensedKeyword (page-text, not box-crop common-mode) scoped to the _edgeclipheal
+  //    method family; realdoc M=0 (zero new silent wrong commits + zero new wrong auto-files) + fire census
+  //    (every adopt==page truth, hand-checked) + the constructed adversarial neighbour set → Oracle.
+  if (!applied.has(151)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('template_edge_clip_heal', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (151)').run();
+      console.log(`JS migration 151 applied: template_edge_clip_heal (placement-certified taught-box edge-clip recover/flag) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 151 (template_edge_clip_heal): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

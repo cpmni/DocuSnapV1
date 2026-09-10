@@ -108,6 +108,16 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // READ-ONLY recheck (files nothing; the countdown's expiry re-verifies). HARD dep sweep_inview_countdown ON.
   // ⚑ FLIP GATE: it offers on ANY eligible held doc on view — weigh that cadence (Stop + cancel-on-edit guard it).
   'sweep_inview_recheck',
+  // template_edge_clip_heal (mig 151, 2026-09-10, 007 + Oracle C1-C7): the taught-box edge-clip class — a
+  // skewed sibling's composed axis-aligned box severs ONE edge glyph, committing a HIGH-confidence same-
+  // length shape-valid garble (YN-#####↔DN-#####) that edge-cut/widen/pad-code all miss. When ON a committed
+  // taught CODE/ref (+ optional non-issuer name) is re-read row-bounded + certified by PLACEMENT
+  // (_snap_union_witness un-cut-edge anchor + slot-fill, NOT OCR conf): clean clip-containment ADOPTS @87
+  // (<88 floor); garbled-both-sides / healed ISSUER FLAGS (≤70 + note); uncertified byte-identical. Dates
+  // excluded (mig-143 owns them). HARD dep template_pad_window_read ON. ⚑ FLIP GATE: 88-floor relax needs
+  // _corrobLicensedKeyword scoped to the _edgeclipheal family + realdoc M=0 + fire census + adversarial
+  // neighbour set → Oracle. docs/designs/EDGE_CLIP_HEAL_2026-09-10.md.
+  'template_edge_clip_heal',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */
