@@ -1188,7 +1188,7 @@ function isAutoFileEligible(db, doc, opts = {}) {
         // `corroboration` selected ONLY when the relax is armed — keeps the OFF path byte-identical
         // and resilient to a minimal fixture / pre-mig-63 DB that has no such column.
         const sql = critRelax
-          ? 'SELECT field_key, display_value, raw_value, confidence, corroboration FROM extractions WHERE document_id = ?'
+          ? 'SELECT field_key, display_value, raw_value, confidence, corroboration, extraction_method FROM extractions WHERE document_id = ?'
           : 'SELECT field_key, display_value, raw_value, confidence FROM extractions WHERE document_id = ?';
         for (const e of db.prepare(sql).all(doc.id))
           byKey.set(e.field_key, e);
@@ -1204,9 +1204,20 @@ function isAutoFileEligible(db, doc, opts = {}) {
           // string) AND the value matches the scope's dominant learned shape clears the floor for
           // this field. opts.extractions rows without a `corroboration` field fail closed
           // (_corrobLicensed(undefined) === false) — an un-threaded overlay never widens.
-          if (critRelax && _corrobLicensed(e.corroboration)) {
-            const fmt = scopeFmts && scopeFmts.get(k);
-            if (fmt && valueMatchesShape(v, fmt.cls, fmt.sampleValues)) continue;
+          if (critRelax) {
+            // C5 (edge-clip heal, mig 151): a value ADOPTED by the placement-certified edge-clip heal
+            // changed the cut-edge glyph, so two box-crop families are common-mode on the SAME clip and the
+            // dominant-shape leg can't tell DN-38627 from DN-38626 — its 88-floor relax must ride a
+            // genuinely INDEPENDENT page-text keyword witness (_corrobLicensedKeyword), not the
+            // box-crop-satisfiable _corrobLicensed. Every other method keeps the existing licence.
+            const method = String((e.extraction_method || e.method) || '');
+            const licensed = method.includes('_edgeclipheal')
+              ? _corrobLicensedKeyword(e.corroboration)
+              : _corrobLicensed(e.corroboration);
+            if (licensed) {
+              const fmt = scopeFmts && scopeFmts.get(k);
+              if (fmt && valueMatchesShape(v, fmt.cls, fmt.sampleValues)) continue;
+            }
           }
           return { eligible: false, floor, trusted: t.trusted, reason: `weak-critical-field:${k}` };
         }

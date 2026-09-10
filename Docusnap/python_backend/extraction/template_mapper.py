@@ -881,6 +881,17 @@ _PAD_WINDOW_CODE_ON = os.environ.get('TEMPLATE_PAD_WINDOW_CODE', '0') != '0'
 # is replaced by a shape-VALID wider row-bounded re-read of the SAME spot, UPSTREAM of every healer.
 _CODE_READ_WIDEN_ON = os.environ.get('TEMPLATE_CODE_READ_WIDEN', '0') != '0'
 _READ_WIDEN_FIRES = []   # diag/census only: (field_key, tight, recovered) — read by the OFF/ON fire census
+# ── EDGE-CLIP HEAL (mig 151, 2026-09-10 — 007 root cause, Oracle SIGN-OFF-W/COND C1-C7) ────────────
+# The same-length SUBSTITUTION-at-a-clipped-edge class: a skewed sibling's composed axis-aligned target box
+# severs ONE edge glyph, committing a HIGH-confidence, shape-valid garble (YN-#####<->DN-#####). It defeats
+# read-widen (the tight shape stays VALID), the edge-cut guard (overhang < ~8px), AND _maybe_pad_code (the
+# +15 conf margin blocks it before consent, and its two-sided consent would FLAG not swap). When ON, a
+# CERTIFIED clip is arbitrated by PLACEMENT (_snap_union_witness un-cut-edge anchor + slot-fill, NOT OCR
+# confidence) and the recovered value is ADOPTED capped 87 (<88 floor). Runs INSIDE _maybe_pad_code so it
+# reuses that ONE pad read (Oracle C2). HARD dep _PAD_WINDOW_CODE_ON — inert (strict subset) without it.
+_EDGE_CLIP_HEAL_ON = _PAD_WINDOW_CODE_ON and os.environ.get('TEMPLATE_EDGE_CLIP_HEAL', '0') != '0'
+_EDGE_CLIP_MIN_INTACT = 3   # >=3 un-cut-side glyphs must match between the tight and recovered reads
+_EDGE_CLIP_FIRES = []       # diag/census only: (field_key, tight, recovered, edges)
 _PAD_CODE_MIN_SUFFIX = _CLIP_COMMIT_MIN_PREFIX   # >=4 tight-read chars must survive as the padded suffix
 # The note is composed from a hoisted MARK so a reader elsewhere can recognise the class without
 # re-typing the prose (engine's P adopt lane reads this constant, 2026-08-19). Reword the tail
@@ -2378,7 +2389,7 @@ def _maybe_pad_date_flag(page, target_box, val_type, result, tight_ocr_conf):
     return out
 
 
-def _read_pad_window_code(page, target_box, validation_patterns):
+def _read_pad_window_code(page, target_box, validation_patterns, return_geom=False):
     """PAD-WINDOW CODE READ (Slice 1b). The CODE sibling of `_read_pad_window_date`: read a ROW-BOUNDED
     padded window around the taught box and return (RAW SURFACE, mean_word_conf) for the CODE-shaped
     qualifier NEAREST the box centre — or None (nothing / ambiguous / abstain). Geometry is IDENTICAL to
@@ -2442,10 +2453,12 @@ def _read_pad_window_code(page, target_box, validation_patterns):
         if not _validate_code(surf, rc):         # must be a real digit-bearing code, not a caption word
             continue
         try:
-            cx = (int(data["left"][i]) + int(data["width"][i]) / 2.0) / iw
+            wl = int(data["left"][i]); wt = int(data["top"][i])
+            ww = int(data["width"][i]); wh = int(data["height"][i])
+            cx = (wl + ww / 2.0) / iw
         except Exception:
-            cx = 0.5
-        cands.append((surf, conf, cx))
+            wl = wt = ww = wh = 0; cx = 0.5
+        cands.append((surf, conf, cx, wl, wt, ww, wh))   # box tail read only by the return_geom branch
     if not cands:
         return None
     cands.sort(key=lambda c: abs(c[2] - tcx))
@@ -2454,7 +2467,83 @@ def _read_pad_window_code(page, target_box, validation_patterns):
     if (len(cands) >= 2 and _code_norm(cands[1][0]) != _code_norm(cands[0][0])
             and abs(abs(cands[1][2] - tcx) - abs(cands[0][2] - tcx)) < 0.15):
         return None
-    return (cands[0][0], cands[0][1])
+    best = cands[0]
+    if not return_geom:
+        return (best[0], best[1])
+    # C4 (edge-clip heal): convert the winning word's crop-pixel box (in `prepped`, iw x ih) to the
+    # PAGE-normalised frame of target_box — the crop maps page-pixels [px0,px1] x [py0,py1], and _prep
+    # scales uniformly — so _snap_union_witness can compare the recovered token's un-cut edge against the
+    # taught box in ONE frame. Returns (surface, conf, page_norm_box|None).
+    _, _, _, wl, wt, ww, wh = best
+    cw = px1 - px0; chh = py1 - py0
+    if ww <= 0 or wh <= 0 or cw <= 0 or chh <= 0 or iw <= 0 or ih <= 0 or pw <= 0 or ph <= 0:
+        return (best[0], best[1], None)
+    bx1 = (px0 + (wl / iw) * cw) / pw
+    bx2 = (px0 + ((wl + ww) / iw) * cw) / pw
+    by1 = (py0 + (wt / ih) * chh) / ph
+    by2 = (py0 + ((wt + wh) / ih) * chh) / ph
+    cand_box = {"x_norm": bx1, "y_norm": by1, "w_norm": bx2 - bx1, "h_norm": by2 - by1, "text": best[0]}
+    return (best[0], best[1], cand_box)
+
+
+def _clip_edges(cand_box, target_box):
+    """Which side of the taught box the recovered token overhangs — 'L' (value extends past the box LEFT
+    edge = the box clipped the leading glyph), 'R' (past the RIGHT edge = trailing glyph clipped), 'LR'
+    (both — no single un-cut edge to anchor, no clean promotion), or None (fits, no clip). The magnitude
+    guard stays with _snap_union_witness (the un-cut-edge anchor); this only names the plausible cut side."""
+    try:
+        ux1 = float(cand_box["x_norm"]); ux2 = ux1 + float(cand_box["w_norm"])
+        tx1 = float(target_box["x_norm"]); tx2 = tx1 + float(target_box["w_norm"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    left_cut = ux1 < tx1
+    right_cut = ux2 > tx2
+    if left_cut and right_cut:
+        return 'LR'
+    if left_cut:
+        return 'L'
+    if right_cut:
+        return 'R'
+    return None
+
+
+def _row_aligned(cand_box, target_box, tol=0.6):
+    """The recovered token must sit on the taught box's ROW (vertical centres within tol*max-height, the
+    same row-band convention _snap_union_witness uses). The pad reader is already row-bound, so this is
+    defence-in-depth — a SELF-CONTAINED row guard for the certification, independent of the reader's window
+    (the un-cut-edge anchor is X-only, so a same-column different-row token could otherwise slip through)."""
+    try:
+        cy = float(cand_box["y_norm"]) + float(cand_box["h_norm"]) / 2.0
+        ch = float(cand_box["h_norm"])
+        ty = float(target_box["y_norm"]) + float(target_box["h_norm"]) / 2.0
+        th = float(target_box["h_norm"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return abs(cy - ty) <= tol * max(ch, th, 1e-9)
+
+
+def _clip_contained(p, t, edges, max_diff=2):
+    """CLIP-CONTAINMENT (edge-clip heal): the recovered code `p` and the tight read `t` (both already
+    _code_norm) must differ ONLY at the CUT-side glyph(s) — the un-cut side is byte-identical for
+    >= _EDGE_CLIP_MIN_INTACT glyphs and the differing head/tail is <= max_diff each. This is what makes the
+    same-length substitution (YN-38626 vs DN-38626: common suffix 'n38626', heads 'y'/'d') a clean clip and
+    rejects a value that differs in the middle or wholesale. edges 'L' = right/suffix intact; 'R' = prefix."""
+    if not p or not t or p == t:
+        return False
+    n = min(len(p), len(t))
+    if edges == 'L':                         # left cut -> compare from the RIGHT (suffix intact)
+        i = 0
+        while i < n and p[len(p) - 1 - i] == t[len(t) - 1 - i]:
+            i += 1
+        ph, th = len(p) - i, len(t) - i      # the differing heads
+        return i >= _EDGE_CLIP_MIN_INTACT and 0 < (ph + th) and ph <= max_diff and th <= max_diff
+    if edges == 'R':                         # right cut -> compare from the LEFT (prefix intact)
+        i = 0
+        while i < n and p[i] == t[i]:
+            i += 1
+        pt, tt = len(p) - i, len(t) - i      # the differing tails
+        return i >= _EDGE_CLIP_MIN_INTACT and 0 < (pt + tt) and pt <= max_diff and tt <= max_diff
+    return False
 
 
 def _validate_code(value, reference_code_patterns):
@@ -2537,13 +2626,50 @@ def _maybe_pad_code(page, target_box, val_type, result, tight_ocr_conf,
     committed = result.get("value")
     if not committed:                            # empty tight → the keyword/relocate path owns it (C1)
         return result
-    pad = _read_pad_window_code(page, target_box, validation_patterns)
+    # Request the winning token's geometry ONLY when the heal is armed — the OFF call is the EXACT pre-heal
+    # signature (byte-identical; existing callers + stubs unaffected).
+    if _EDGE_CLIP_HEAL_ON:
+        pad = _read_pad_window_code(page, target_box, validation_patterns, return_geom=True)
+    else:
+        pad = _read_pad_window_code(page, target_box, validation_patterns)
     if pad is None:
         return result
-    pad_val, pad_conf = pad
+    if len(pad) == 3:
+        pad_val, pad_conf, pad_box = pad
+    else:
+        pad_val, pad_conf = pad
+        pad_box = None
     t, p = _code_norm(committed), _code_norm(pad_val)
     if not t or not p or p == t:                 # nothing to reconcile
         return result
+    # ── EDGE-CLIP HEAL (mig 151, Oracle C1-C5) ────────────────────────────────────────────────────
+    # A same-length SUBSTITUTION at a clipped edge reaches here with a HIGH tight OCR conf, so the margin
+    # gate below (pad_conf < tight + _PAD_DISAGREE_MARGIN) returns it unhealed, and the two-sided consent
+    # further down would FLAG not swap. Arbitrate by PLACEMENT, not confidence: the recovered token must
+    # occupy the taught slot (un-cut-edge anchor + >=0.6 slot-fill via _snap_union_witness) AND differ from
+    # the tight read ONLY at the cut-side glyph (clip-containment). C1: note-first (above) plus never lift an
+    # already-healed/adopted read. C4: never a swallowed label tail. ADOPT capped 87 (<88 floor) so a
+    # single-witness heal never cold-auto-files; the trust.js 88-floor relax additionally requires page-text
+    # keyword corroboration for the `_edgeclipheal` method family (C5) before it can auto-file.
+    if (_EDGE_CLIP_HEAL_ON and pad_box is not None
+            and not str(result.get("method") or "").endswith(
+                ("_rawadopt", "_rawwitness", "_readwiden", "_edgegrow", "_edgeclipheal"))):
+        _edges = _clip_edges(pad_box, target_box)
+        if (_edges in ('L', 'R') and _row_aligned(pad_box, target_box)
+                and _clip_contained(p, t, _edges)
+                and not _pad_label_glued(p, anchor_text)
+                and _snap_union_witness([{"words": [pad_box]}], pad_box,
+                                        float(pad_box["x_norm"]),
+                                        float(pad_box["x_norm"]) + float(pad_box["w_norm"]),
+                                        pad_val, target_box, _edges)):
+            _EDGE_CLIP_FIRES.append((field_key, committed, pad_val, _edges))
+            out = _mapping_result(pad_val, full_confidence, expanded, False, anchor,
+                                  ocr_conf=pad_conf, val_type=val_type)
+            out["confidence"] = min(out.get("confidence") or 90, _PAD_CODE_PROVISIONAL_CAP)
+            out["method"] = (out.get("method") or "template_mapping") + "_edgeclipheal"
+            out["_heal"] = "edge_clip"
+            out["edge_clip_from"] = committed         # diag-only breadcrumb
+            return out
     # Padded must clear the OCR-confidence margin over the tight read (else the disagreement is weak —
     # keep the commit; fail toward MAX auto-file). The padded value already passed the hard pattern
     # inside the reader.

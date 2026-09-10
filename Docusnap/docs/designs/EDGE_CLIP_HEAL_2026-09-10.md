@@ -96,16 +96,36 @@ taught field that committed a value. The machinery already exists — this is **
 
 Excluded: **currency** (the totals `_skip_rigid` regime). **dates** (C3).
 
-## Slices
-- **Slice 0 (DONE):** mig 151 `template_edge_clip_heal` seed OFF + TEST_SWITCH_KEYS entry (armed by the
-  -TEST build only). Byte-identical OFF.
-- **Slice 1:** `_read_pad_window_name` + the recover step (code reuses `_read_pad_window_code`).
-- **Slice 2:** placement certification — `_snap_union_witness` from the pad window's own `image_to_data`,
-  C4 frame conversion.
-- **Slice 3:** the decide logic — single decision point (C2), note-first (C1), adopt/flag/abstain classes,
-  issuer flag-only (C6). Method `_edgeclipheal`, cap 87.
-- **Slice 4:** trust.js C5 — `_corrobLicensedKeyword`-scoped 88-floor relax for the `_edgeclipheal` family.
-- **Slice 5:** pins (i-vii, each proven to fail with the guard removed) + realdoc M=0 + fire census.
+## Dependency
+HARD dep **`template_pad_window_code`** (`TEMPLATE_PAD_WINDOW_CODE`) — the edge-clip branch lives INSIDE
+`_maybe_pad_code` and reuses its single pad read, so `_EDGE_CLIP_HEAL_ON = _PAD_WINDOW_CODE_ON and
+env(TEMPLATE_EDGE_CLIP_HEAL)`. Inert (strict subset, byte-identical) without the parent. (An earlier draft
+said `template_pad_window_read` — that gates the DATE reader; the CODE reader is `template_pad_window_code`.)
+
+## Slices — what shipped
+- **Slice 0 (DONE):** mig 151 `template_edge_clip_heal` seed OFF + TEST_SWITCH_KEYS entry.
+- **Slices 1-4 CODE heal (DONE 2026-09-10):**
+  - `_EDGE_CLIP_HEAL_ON` + `_EDGE_CLIP_MIN_INTACT` + `_EDGE_CLIP_FIRES` module flags (template_mapper.py).
+  - `_read_pad_window_code(..., return_geom=True)` returns the winning token's **page-normalized** box
+    (C4 crop-pixel→page-norm conversion); existing callers byte-identical (2-tuple default).
+  - `_clip_edges` (which side overhangs) + `_clip_contained` (only the cut-side glyph differs, `_EDGE_CLIP_MIN_INTACT`
+    un-cut glyphs match).
+  - The decide branch **inside `_maybe_pad_code`** (C2 one decision point / one pad read): certify via
+    `_snap_union_witness([{words:[cand_box]}], cand_box, …, target_box, edges)` → ADOPT the recovered code,
+    method `_edgeclipheal`, cap 87. Note-first + healed-method-suffix guard (C1). `_pad_label_glued` reject (C4).
+  - JS env plumbing `template_edge_clip_heal → TEMPLATE_EDGE_CLIP_HEAL` nested in the code-reader block.
+  - trust.js **C5**: the 88-floor relax requires `_corrobLicensedKeyword` (page-text) for the `_edgeclipheal`
+    method family (added `extraction_method` to the critRelax SELECT); every other method unchanged.
+- **Slice 5 (DONE):** pins `test_edge_clip_heal.py` — see below.
+- **DEFERRED — the NAME half (own slice):** issuer FLAG-only (C6) + non-issuer name ADOPT. Needs a new
+  `_read_pad_window_name` (row-bound psm6 `image_to_data`, contiguous run nearest centre via
+  `cluster_value_words`, anchor-tail cut via `_pad_label_glued`) AND a **name-specific** placement witness —
+  `_snap_union_witness` is code-only (`_code_norm` internally), and `_name_grow_shape_ok` supplies the RIGHT-cut
+  completion shape. Logged rather than rushed onto the core read path; the switch, once flipped, heals codes
+  in v1. Issuer, when built, is FLAG-only while the docTrustGate `overall==100` bypass stands (C6).
+
+The CODE heal is the owner's delivery_number exhibit (the auto-file-relevant field); the NAME clip
+(`Bluefin Marine Li`, doc139 customer_name) is a display-quality field and rides the deferred slice.
 
 ## Flip gate (owner-gated; Oracle C5/C7 + the verification gate)
 Realdoc OFF==ON outside the fire set; **M=0** (zero new silent wrong commits AND zero new wrong auto-files);

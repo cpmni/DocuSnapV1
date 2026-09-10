@@ -3072,7 +3072,7 @@ function runJsMigrations(db, applied) {
   //    confidence): a clean clip-containment ADOPTS the recovered value capped 87 (<88 floor); garbled-both-
   //    sides / a healed ISSUER FLAGS (cap ≤70 + note + corrected_to); uncertified = byte-identical. DATES
   //    excluded (C3 — the mig-143 _pad_date route owns them). DARK (in TEST_SWITCH_KEYS); byte-identical OFF.
-  //    HARD dep template_pad_window_read ON. ⚑ FLIP GATE (Oracle C5/C7): the 88-floor relax for an adopted
+  //    HARD dep template_pad_window_code ON. ⚑ FLIP GATE (Oracle C5/C7): the 88-floor relax for an adopted
   //    value requires _corrobLicensedKeyword (page-text, not box-crop common-mode) scoped to the _edgeclipheal
   //    method family; realdoc M=0 (zero new silent wrong commits + zero new wrong auto-files) + fire census
   //    (every adopt==page truth, hand-checked) + the constructed adversarial neighbour set → Oracle.

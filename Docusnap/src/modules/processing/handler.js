@@ -414,6 +414,15 @@ function _reconcileEnv(db) {
       if (learning.getSetting(db, 'template_pad_window_code_labelled', 'false') === 'true') {
         env.TEMPLATE_PAD_WINDOW_CODE_LABELLED = '1';
       }
+      // TEMPLATE_EDGE_CLIP_HEAL (2026-09-10, mig 151, 007 → Oracle SIGN-OFF-W/COND C1-C7): STRICT SUBSET of
+      // the code reader — the same-length substitution-at-a-clipped-edge class read-widen/edge-cut/pad-code
+      // all miss (a HIGH-conf, shape-valid garble YN-#####<->DN-#####). When ON, a PLACEMENT-certified clip
+      // (un-cut-edge anchor + slot-fill, NOT OCR confidence) ADOPTS the recovered code capped 87 (<88 floor);
+      // the trust.js floor relax then requires a page-text keyword witness for this family (C5). Byte-identical
+      // OFF. Nested here so the child env can't be set without its parent read. DARK (mig 151).
+      if (learning.getSetting(db, 'template_edge_clip_heal', 'false') === 'true') {
+        env.TEMPLATE_EDGE_CLIP_HEAL = '1';
+      }
     }
     // CURATED SUPPLIER vs a MISREAD LETTERHEAD (Oracle 2026-08-06). A taught template stores the
     // supplier as a non-variable `fixed_value`, seeded at conf 95 (method `template_fixed`). The
