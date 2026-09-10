@@ -102,6 +102,13 @@ HARD dep **`template_pad_window_code`** (`TEMPLATE_PAD_WINDOW_CODE`) — the edg
 env(TEMPLATE_EDGE_CLIP_HEAL)`. Inert (strict subset, byte-identical) without the parent. (An earlier draft
 said `template_pad_window_read` — that gates the DATE reader; the CODE reader is `template_pad_window_code`.)
 
+**Labelled-box caveat (arm for the flip test):** the commit block calls `_maybe_pad_code` only when
+`(not anchor_text) or _pad_labelled_ok`, and `_pad_labelled_ok` needs `template_pad_window_code_labelled`
+ON (plus no inline witness / not expanded / not edge-healed). So to heal a **labelled** code clip (e.g. a
+`Delivery No.`-anchored delivery_number) the flip test must arm **`template_pad_window_code` +
+`template_pad_window_code_labelled` + `template_edge_clip_heal`**. A label-less code box needs only the
+first + third.
+
 ## Slices — what shipped
 - **Slice 0 (DONE):** mig 151 `template_edge_clip_heal` seed OFF + TEST_SWITCH_KEYS entry.
 - **Slices 1-4 CODE heal (DONE 2026-09-10):**
