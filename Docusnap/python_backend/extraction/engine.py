@@ -11042,6 +11042,40 @@ class ExtractionEngine:
                         n_flagged += 1
                         format_anomaly_flagged = True
                         continue
+                # ── Deterministic non-name guard (mig 156, DARK NAME_ROLE_NONNAME_FLAG) — reggie+gary → Oracle
+                # SIGN-OFF-W/COND. A NAME-ROLE field whose WHOLE value is a bare postcode/email/GB-VAT/IBAN is a
+                # wrong-type read (a template_mapping zone drifted onto the postcode line of a multi-line customer
+                # block, then auto-filed SILENTLY because customer_name is optional and no gate saw it). Unlike
+                # the wordness gate above, this is DETERMINISTIC content-nature, so it fires on TAUGHT reads too
+                # (no `not _authoritative`, no `word_like`) and even when the wordness gate is OFF — that is
+                # exactly why nothing catches CH1 2HU today. FLAG+HOLD: keep the value (it is the evidence the
+                # zone drifted), append the `+nonname_flag` method sentinel so trust.js never soft-clears the
+                # note on the OPTIONAL customer_name (mig-142), cap ≤69 (UX only — on an optional field the NOTE
+                # is the sole hold, overall is scored from required fields), route to review (format_anomaly_
+                # flagged → needs_review). Exempts curated/human methods + accepted_names / dominant-confirmed
+                # so a supplier's legitimate recurring value (a Ship-To depot postcode, a contact email) never
+                # stalls its batch. Defers to any existing note (one-note-per-field). OFF ⇒ byte-identical.
+                if os.environ.get("NAME_ROLE_NONNAME_FLAG", "0") != "0" \
+                        and value_quality.is_name_like_field(key) \
+                        and not str(data.get('validation_note') or '').strip() \
+                        and self._accept_norm(val) not in self.accepted_names:
+                    _nn_m = str(data.get('method') or '')
+                    _nn_curated = any(x in _nn_m for x in
+                                      ('template_fixed', 'override', 'fixed', 'manual', '+confirmed_adopt', '+name_snap'))
+                    if not _nn_curated:
+                        _nn = value_quality.nonname_structured_match(str(val), self.patterns.get('validation_patterns') or {})
+                        if _nn:
+                            _nn_label = {'postcode_uk': 'a postcode', 'email': 'an email address',
+                                         'vat_gb': 'a VAT number', 'iban': 'a bank account (IBAN)'}.get(_nn, 'a code')
+                            results[key] = {
+                                **data,
+                                'confidence':      min(data.get('confidence') or 0, 69),
+                                'validation_note': f"This reads like {_nn_label}, not a name — please check the value.",
+                                'method':          f"{data.get('method') or 'unknown'}+nonname_flag",
+                            }
+                            n_flagged += 1
+                            format_anomaly_flagged = True
+                            continue
                 # Supplier-scoped format first; fall back to the doc-type-scoped one ('' supplier)
                 # so qualification works even when the supplier is never identified (document-
                 # agnostic learning). The IDENTITY fields (supplier_name/customer_name) get this

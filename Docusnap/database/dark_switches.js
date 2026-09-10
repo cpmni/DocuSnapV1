@@ -153,6 +153,17 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // checkpoint). Byte-identical OFF. ⚑ FLIP GATE: pins + fire-census on a real docket corpus (zero fires ⇒ stay
   // DARK) + the both-ON mig-142 pins + realdoc M=0 → Oracle. docs/designs/ANCHOR_AXIS_LOCK_2026-09-10.md.
   'anchor_axis_lock',
+  // name_role_nonname_flag (mig 156, 2026-09-10, reggie+gary → Oracle SIGN-OFF-W/COND): a NAME-ROLE field
+  // (customer_name/supplier_name) whose WHOLE value is a deterministic non-name shape — a bare UK postcode
+  // (CH1 2HU), email, GB VAT or IBAN — is a wrong-type read (a template_mapping zone drifted onto the
+  // postcode line of a multi-line customer block). Flag+hold: keep the value, stamp a note + `+nonname_flag`
+  // method sentinel, cap ≤69, route to review. The sentinel makes the note NON-SOFT so mig-142 can't dissolve
+  // it on the optional customer_name (isNonNameFlagRow, trust.js). Exempts human methods + accepted_names /
+  // dominant-confirmed (a supplier's legitimate recurring value never stalls its batch). Deterministic subset
+  // ONLY — a word-like wrong line still needs the parked below-relocate placement arc. Byte-identical OFF.
+  // ⚑ FLIP GATE: predicate pins (postcode/email/vat/iban flag; real names incl. postcode-containing don't) +
+  // the both-ON mig-142 pin + accepted_names batch-stall pin + realdoc M=0 + the live Vellum doc → Oracle.
+  'name_role_nonname_flag',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

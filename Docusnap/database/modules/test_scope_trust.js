@@ -991,6 +991,44 @@ function main() {
           trust.docTrustGate(db, axl, 'Anconia Corp', 'invoice', {}).reason === 'flagged:item');
   }
 
+  // ── 27. mig 156: non-name flag note is never soft-cleared (the postcode-in-name ship-blocker) ──
+  // A NAME-ROLE field reading a bare postcode/email/VAT/IBAN is flagged + held. On the OPTIONAL customer_name
+  // the note is soft-advisory, so without the carve-out mig-142 (optional_soft_flag_autofile) would dissolve
+  // it and re-open the silent misfile. isNonNameFlagRow keys on the `+nonname_flag` method sentinel (structured,
+  // not the copy) so the note is NEVER soft-cleared. reggie+gary → Oracle SIGN-OFF-W/COND.
+  section('27. mig 156 — non-name flag note is never soft-cleared (postcode-in-name)');
+  {
+    const rr = trust.isNonNameFlagRow;
+    check("isNonNameFlagRow: +nonname_flag method + note → true",
+          rr({ extraction_method: 'template_mapping+nonname_flag', validation_note: 'reads like a postcode' }) === true);
+    check("isNonNameFlagRow: +nonname_flag method but EMPTY note → false",
+          rr({ extraction_method: 'template_mapping+nonname_flag', validation_note: '' }) === false);
+    check("isNonNameFlagRow: a plain template_mapping note → false (still soft-clearable)",
+          rr({ extraction_method: 'template_mapping', validation_note: 'doesn’t read like a name' }) === false);
+  }
+  {
+    const db = makeDb(); const tid = seedType(db);
+    seedCleanScope(db, tid, 10, 'Anconia Corp', i => ({ item: ['Alpha Holdings', 'Beta Trading', 'Gamma Services'][i % 3] }));
+    const mkNoted = () => seedDoc(db, tid, {
+      supplier: 'Anconia Corp', when: '2026-06-02T10:00:00Z', status: 'needs_review', conf: 98,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '07-06-2026', invoice_number: 'INV1099',
+                total: '150.50', item: 'CH1 2HU' },
+      notes: { item: 'This reads like a postcode, not a name — please check the value.' },
+    });
+    // CONTROL — a plain soft note (method keyword): mig-142's soft-clear releases it.
+    const ctrl = mkNoted();
+    check("control: a plain optional note is CLEARED under softOptionalNonblock (mig-142)",
+          trust.docTrustGate(db, ctrl, 'Anconia Corp', 'invoice', { softOptionalNonblock: true }).ok === true);
+    // NON-NAME FLAG — same note but the +nonname_flag method sentinel: the carve-out keeps it BLOCKING
+    // even under mig-142 (the ship-blocker fix). Without isNonNameFlagRow this would return ok:true = misfile.
+    const nnf = mkNoted();
+    db.prepare("UPDATE extractions SET extraction_method = 'template_mapping+nonname_flag' WHERE document_id = ? AND field_key = 'item'").run(nnf);
+    check("non-name flag: the note STILL blocks under softOptionalNonblock (mig-142 can't dissolve it)",
+          trust.docTrustGate(db, nnf, 'Anconia Corp', 'invoice', { softOptionalNonblock: true }).reason === 'flagged:item');
+    check("non-name flag: blocks with softOptionalNonblock OFF too (baseline)",
+          trust.docTrustGate(db, nnf, 'Anconia Corp', 'invoice', {}).reason === 'flagged:item');
+  }
+
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails === 0 ? 0 : 1);
 }

@@ -91,6 +91,43 @@ def is_name_like_field(field_key, label=None):
     return bool(set(hay.split()) & {"cust"})
 
 
+# The non-name structured types a name-role field's WHOLE value can deterministically be, but never
+# legitimately IS as a company/person name (reggie+gary → Oracle SIGN-OFF-W/COND, mig 156). Reused from the
+# SHARED validation_patterns — NEVER new literals. Deliberately EXCLUDES bare-number / reference_code /
+# currency / percentage / date: a bare number is a legitimate recurring name-like value (a numeric account
+# ref in a "Bill To" field) and those patterns are loose/un-anchored, so they would stall legitimate batches.
+_NONNAME_STRUCTURED_TYPES = ("postcode_uk", "email", "vat_gb", "iban")
+
+
+def nonname_structured_match(value, validation_patterns):
+    """Does a NAME-ROLE field's WHOLE value deterministically match a non-name shape (a bare UK postcode
+    `CH1 2HU`, an email, a GB VAT, or an IBAN)? Returns the matched validation-pattern TYPE, or None.
+
+    WHOLE-VALUE only (re.fullmatch on the trimmed value), so a real company name that CONTAINS a postcode
+    ("Beaumont Care CH1 2HU") never matches — the leading name tokens fail the full match. This is the
+    deterministic content-nature belt for the "template zone drifted onto the postcode line of a multi-line
+    customer block" misfile: it applies to TAUGHT reads too (the caller does not gate on _authoritative),
+    but ONLY to the shapes above, which a legitimate whole company name is never one of. Case-insensitive,
+    matching how the shared consumers apply these patterns. Never mutates; the caller flags + holds."""
+    v = str(value if value is not None else "").strip()
+    if not v:
+        return None
+    vps = validation_patterns or {}
+    for t in _NONNAME_STRUCTURED_TYPES:
+        pats = vps.get(t)
+        if not pats:
+            continue
+        for p in (pats if isinstance(pats, (list, tuple)) else [pats]):
+            if not p:
+                continue
+            try:
+                if re.fullmatch(p, v, re.IGNORECASE):
+                    return t
+            except re.error:
+                continue
+    return None
+
+
 def contains_structured_sibling(name_value, sibling_value):
     """CROSS-FIELD DUPLICATION predicate (Slice 1, 2026-07-10 night — the KO_wor_41
     "customer = Reference 'WS703182" case; gary-designed, built on user policy override of

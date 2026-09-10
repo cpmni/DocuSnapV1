@@ -3160,6 +3160,25 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 155 (anchor_axis_lock): ${e.message}`); }
   }
 
+  // ── migration 156: name_role_nonname_flag seeded OFF (2026-09-10; reggie+gary → Oracle SIGN-OFF-W/COND,
+  //    docs/designs/NAME_ROLE_NONNAME_FLAG_2026-09-10.md). A NAME-ROLE field (customer_name/supplier_name)
+  //    whose WHOLE value deterministically matches a non-name shape (bare UK postcode CH1 2HU, email, GB VAT,
+  //    IBAN) is a wrong-type read — a template_mapping zone drifted onto the postcode line of a multi-line
+  //    customer block, auto-filing silently because the field is optional. When ON, the read is FLAGGED +
+  //    HELD (value kept, note + `+nonname_flag` method sentinel, cap ≤69, needs_review). The sentinel makes
+  //    the note NON-SOFT so optional_soft_flag_autofile (mig 142) can't dissolve it (isNonNameFlagRow). Exempts
+  //    human methods + accepted_names / dominant-confirmed so a supplier's legitimate recurring value never
+  //    stalls its batch. Deterministic subset ONLY (a word-like wrong line needs the parked placement arc).
+  //    DARK (in TEST_SWITCH_KEYS); byte-identical OFF. ⚑ FLIP GATE: predicate pins + both-ON mig-142 pin +
+  //    accepted_names batch-stall pin + realdoc M=0 + the live Vellum & Crane doc reprocess → Oracle.
+  if (!applied.has(156)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('name_role_nonname_flag', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (156)').run();
+      console.log(`JS migration 156 applied: name_role_nonname_flag (flag+hold a name field reading a bare postcode/email/VAT/IBAN) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 156 (name_role_nonname_flag): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

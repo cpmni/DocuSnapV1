@@ -359,6 +359,11 @@ function _reconcileEnv(db) {
     // candidate reconstructs the value's left edge from the LOCATED label column (width-invariant) and
     // competes only where no authoritative read won. DARK (mig 155), byte-identical OFF.
     if (learning.getSetting(db, 'anchor_axis_lock', 'false') === 'true') env.ANCHOR_AXIS_LOCK = '1';
+    // NAME_ROLE_NONNAME_FLAG (2026-09-10, reggie+gary → Oracle SIGN-OFF-W/COND): a name-role field whose whole
+    // value is a deterministic non-name shape (bare postcode/email/VAT/IBAN — a drifted mapping onto the
+    // postcode line of a multi-line customer block) is flagged + held for review instead of silently auto-filed.
+    // DARK (mig 156), byte-identical OFF.
+    if (learning.getSetting(db, 'name_role_nonname_flag', 'false') === 'true') env.NAME_ROLE_NONNAME_FLAG = '1';
     // INLINE_DISAGREE_CORROB_SOFTEN (2026-09-07, gary → Oracle SIGN-OFF-W/COND G1-G7): class G rewords the
     // box-clip value-doubt note (never clears) when an independent KEYWORD read corroborates the value —
     // review-bound, conf never lifted. DARK (mig 135; mig 136 = TEST force-ON). Env uses the '1' idiom.

@@ -553,6 +553,17 @@ function isAxisLockNoteRow(e) {
   const m = String((e && (e.extraction_method || e.method)) || '');
   return m.includes('anchor_axis_locked') && !!String((e && e.validation_note) || '').trim();
 }
+// C-seam twin (mig 156, Oracle SIGN-OFF-W/COND): the NAME_ROLE_NONNAME_FLAG arc flags a name-role field
+// (customer_name/supplier_name) whose whole value is a deterministic non-name shape (bare postcode/email/
+// VAT/IBAN) and holds it for review. Same optional-field trap as the axis-lock note: on an OPTIONAL
+// customer_name the note is soft-advisory, so optional_soft_flag_autofile (mig 142) would dissolve it and
+// re-open the silent misfile. The engine appends the `+nonname_flag` sentinel to the extraction_method (never
+// replacing the template_mapping/anchor_* prefix), and a row so marked is NEVER soft-cleared — its note
+// always blocks. Inert when the switch is OFF (no row carries the sentinel) → byte-identical.
+function isNonNameFlagRow(e) {
+  const m = String((e && (e.extraction_method || e.method)) || '');
+  return m.includes('nonname_flag') && !!String((e && e.validation_note) || '').trim();
+}
 function _optionalSoftFlagEnabled(db) {
   const env = process.env.OPTIONAL_SOFT_FLAG_AUTOFILE;
   if (env === '1') return true;
@@ -573,7 +584,7 @@ function _flaggedSoftAware(db, doc, opts, ctFlags) {
   return rows.filter(e => {
     if (ctFlags(e.corrected_to, e.display_value)) return true;         // a pending correction always blocks
     if (!String(e.validation_note || '').trim()) return false;         // no note → fine
-    if (isAxisLockNoteRow(e)) return true;                             // C1: axis-lock note is never soft-cleared
+    if (isAxisLockNoteRow(e) || isNonNameFlagRow(e)) return true;      // never soft-cleared: axis-lock (mig 155) / non-name flag (mig 156)
     const m = meta.get(e.field_key) || {};
     return !isSoftAdvisory(e.field_key, m.type, m.required, roleKeys); // a soft-advisory note does not block
   }).length;
@@ -1003,7 +1014,7 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
     if (e.validation_note && String(e.validation_note).trim()) {         // a flag → not safe…
       // …UNLESS it is a SOFT-ADVISORY note on an optional non-role non-strict field AND the caller passed the
       // graduated-scope non-block (owner 2026-09-09). Role / required / strict-typed notes still block.
-      if (isAxisLockNoteRow(e)                                    // C1: axis-lock note is never soft-cleared (mig 155)
+      if (isAxisLockNoteRow(e) || isNonNameFlagRow(e)            // never soft-cleared: axis-lock (mig 155) / non-name flag (mig 156)
           || !(opts.softOptionalNonblock && isSoftAdvisory(e.field_key, fieldTypes.get(e.field_key), _requiredByKey.get(e.field_key), roleKeys)))
         return { ok: false, reason: `flagged:${e.field_key}` };
     }
@@ -1449,6 +1460,7 @@ module.exports = {
   TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES, _configuredWindow,
   isSoftAdvisory,                  // shared soft-advisory predicate (optional_soft_flag_autofile; Chris card 1 twin)
   isAxisLockNoteRow,               // C1 (mig 155): axis-lock note is never soft-cleared — pinned in test_scope_trust.js
+  isNonNameFlagRow,                // mig 156: non-name flag note is never soft-cleared — pinned in test_scope_trust.js
   _optionalSoftFlagEnabled,        // exported so the both-ON mig-142 pin reads the same default
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
   classifyRefShape, _refRoleShapeEnabled,   // ref-role shape verify (mig 154) — pinned in test_scope_trust.js
