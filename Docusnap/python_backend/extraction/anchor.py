@@ -698,6 +698,7 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
         _caption_bleed = False   # fix #2: the relocate read the field's OWN caption (landed on the label)
         _read_box = None         # picker: the winning read's VALUE box (top-left norm) for name candidates
         _rec_alnum_debris = []   # charset-debris strips from THIS anchor's rigid recovery (Oracle C4 refutation)
+        _axislock = None         # ANCHOR_AXIS_LOCK (mig 155, DARK): additive width-invariant column candidate
         if value and val_type in (None, "text", "multiline_text", "currency") \
                 and (anchor.get("anchor_label") or "").strip() \
                 and anchor.get("offset_dy_norm") is not None and page0 is not None:
@@ -881,6 +882,14 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                     if _dband_reject and not _relocate_guard_note:
                         _relocate_guard_note = ("The value beside this document's own caption was the "
                                                 "caption itself — please verify.")
+                    # ANCHOR_AXIS_LOCK (mig 155, DARK): an ADDITIVE width-invariant label-column read,
+                    # stashed for the engine's post-merge reconciler. Does NOT touch value/method here —
+                    # it competes only where no authoritative read won (_override_eligible) and is
+                    # review-bound (≤87 + note). Inherits _dloc + the position-veto above. OFF ⇒ skipped.
+                    if os.environ.get("ANCHOR_AXIS_LOCK", "0") != "0":
+                        _axislock = _axislock_read(page0, anchor, direction, val_type, field_key, value,
+                                                   _dloc, validation_patterns, format_lookup,
+                                                   text_field_keys, label, _verify, line_cache)
             except Exception:
                 pass  # dev/robustness: the guard must never break a read
 
@@ -1683,6 +1692,10 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                 # C1 (gated): carry the pre-flip crop read to the engine as a transient private
                 # key — read + popped by _reconcile_crosscheck_outlier, never persisted.
                 results[field_key]["_crosscheck_original"] = _xcheck_preflip
+            if _axislock is not None:
+                # ANCHOR_AXIS_LOCK (mig 155): transient private candidate — read + popped by the engine's
+                # _reconcile_axislock post-merge, never persisted, never a corroboration witness.
+                results[field_key]["_axislock_candidate"] = _axislock
             if method == "anchor_crop_slipfix":
                 # Recover-and-flag: surface as an auto-correction (value==corrected_to) routed to
                 # review, the same posture as a salvaged date / weak name-repair.
@@ -4318,6 +4331,118 @@ def _label_right_limit(field_key, located, anchor, direction, val_type, validati
     if not ib or ib.get("x_norm") is None or ib.get("w_norm") is None:
         return None
     return _clamp01(float(ib["x_norm"]) + float(ib["w_norm"]))
+
+
+# ANCHOR_AXIS_LOCK note (mig 155): its persisted method 'anchor_axis_locked' is the STRUCTURED sentinel
+# the trust.js C1 carve-out keys on (isAxisLockNoteRow) so optional_soft_flag_autofile can never dissolve
+# this note. The reconciler (engine.py) owns the commit + the ≤87/≤69 cap; this note is the shared text.
+AXISLOCK_VERIFY_NOTE = "Read from the label's own column — please verify."
+
+
+def _axislock_read(page0, anchor, direction, val_type, field_key, value,
+                   located, validation_patterns, format_lookup, text_field_keys,
+                   label, verify_fn, line_cache=None):
+    """ANCHOR_AXIS_LOCK (mig 155, DARK; 007+reggie+gary → Oracle SIGN-OFF-W/COND). ADDITIVE, never
+    mutates the caller's value/method. A taught anchor stores the value box CENTRE, so on a doc whose
+    value is NARROWER than the teach sample the read-box drifts to the side (the free-text twin of the
+    template_code_read_widen clip). This reconstructs the value's LEFT edge from the LOCATED label
+    column (width-invariant: label_box.x + offset_dx − w/2, the _label_left_limit formula that fn
+    refuses for free-text/below) and the RIGHT edge from the value row's OWN column via
+    cluster_value_words (the med_h*1.2 gap split — the SOLE precision defence against a merged
+    neighbour). Returns a candidate dict {value,conf,min_conf,box,method} for the engine reconciler, or
+    None. NAME-LIKE free-text ONLY; competes only where no authoritative read won; review-bound at the
+    reconciler. Any failure → None (the caller's except also backstops)."""
+    try:
+        if val_type not in (None, "text", "multiline_text"):
+            return None
+        if direction not in ("below", "above", "right"):
+            return None
+        odx, ody = anchor.get("offset_dx_norm"), anchor.get("offset_dy_norm")
+        if odx is None or ody is None or (not odx and not ody):
+            return None
+        lb = (located or {}).get("label_box")
+        if not lb or lb.get("x_norm") is None:
+            return None
+        from extraction.value_quality import strip_name_edges, is_name_like_field
+        if not is_name_like_field(field_key):     # names/companies only (reggie): no strict pattern to reject a merge
+            return None
+        vw = anchor.get("w_norm") or 0.0
+        vh = anchor.get("h_norm") or 0.0
+        if vw <= 0 or vh <= 0:
+            return None
+        Lx, Ly = float(lb["x_norm"]), float(lb["y_norm"])
+        col_left = _clamp01(Lx + float(odx) - vw / 2.0)   # width-invariant value LEFT edge
+
+        cl_left = cl_right = cl_cy = cl_h = None
+        if direction == "right":
+            # value on the label's SAME row → its column is the located inline_box (already
+            # cluster_value_words-bounded); lock Y to that row, flow X.
+            ib = (located or {}).get("inline_box")
+            if not ib or ib.get("x_norm") is None or ib.get("w_norm") is None:
+                return None
+            cl_left = float(ib["x_norm"]); cl_right = float(ib["x_norm"]) + float(ib["w_norm"])
+            cl_cy = float(ib["y_norm"]) + float(ib.get("h_norm") or vh) / 2.0
+            cl_h = float(ib.get("h_norm") or vh)
+        else:
+            # below/above: the value is on its OWN row. OCR a full-width strip at the value row and
+            # cluster from col_left to isolate the value's column (drop the neighbour column).
+            from extraction.template_mapper import cluster_value_words, _ocr_lines
+            W, H = page0.size
+            vcy = _clamp01(Ly + float(ody))               # value CENTRE y (offset = value_centre − label_top_left)
+            band_y = _clamp01(vcy - vh * 1.25)
+            band_h = min(max(vh * 2.5, 0.02), 1.0 - band_y)
+            strip = page0.crop((0, int(band_y * H), W, int((band_y + band_h) * H)))
+            lines = _ocr_lines(strip) or []
+            if not lines:
+                return None
+            def _pw(wd):   # crop(strip)-relative → page space; strip is full-width so x/w are already page
+                return {"text": wd.get("text", ""), "x_norm": float(wd["x_norm"]), "w_norm": float(wd["w_norm"]),
+                        "y_norm": band_y + float(wd["y_norm"]) * band_h, "h_norm": float(wd["h_norm"]) * band_h}
+            best = min(lines, key=lambda ln: abs((band_y + (float(ln.get("y_norm", 0)) + float(ln.get("h_norm", 0)) / 2.0) * band_h) - vcy))
+            row = [_pw(wd) for wd in (best.get("words") or []) if wd.get("x_norm") is not None]
+            cluster = cluster_value_words(row, expect_x=col_left)
+            if not cluster:
+                return None
+            cl_left = min(w["x_norm"] for w in cluster)
+            cl_right = max(w["x_norm"] + w["w_norm"] for w in cluster)
+            cl_cy = sum((w["y_norm"] + w["h_norm"] / 2.0) for w in cluster) / len(cluster)
+            cl_h = max(w["h_norm"] for w in cluster)
+
+        cw = max(0.0, cl_right - cl_left)
+        if cw <= 0:
+            return None
+        cx = cl_left + cw / 2.0
+        meta = {}
+        av = _crop_and_ocr(page0, cx, cl_cy, cw, cl_h, val_type, verify_fn=verify_fn, meta=meta)
+        if not av:
+            return None
+        av = strip_name_edges(av).strip()
+        if not av:
+            return None
+        # Full existing gate stack (reggie): code-reject → credibility → learned-format → junk → bare-label → caption-band.
+        if _name_field_code_reject(av, field_key):
+            return None
+        if not _crop_is_credible(av, val_type, validation_patterns, label):
+            return None
+        if not _qualify_against_format(av, field_key, format_lookup, text_field_keys):
+            return None
+        if _name_junk_shaped(av, field_key):
+            return None
+        if _is_bare_label(av, anchor.get("anchor_label")):
+            return None
+        if _is_caption_band_read(av, anchor.get("anchor_label"), field_key, lb,
+                                 (cx, cl_cy, cw, cl_h), val_type, page0.size, None):
+            return None
+        # C4 EMIT-GATE: only the clip signature — EMPTY incumbent, or a strictly LONGER read (the value
+        # un-clipped). A shorter/equal read (a multi-line recipient truncation) is never offered.
+        rv = (value or "").strip()
+        if rv and len(av) <= len(rv):
+            return None
+        return {"value": av, "conf": meta.get("conf"), "min_conf": meta.get("min_conf"),
+                "box": (_clamp01(cl_left), _clamp01(cl_cy - cl_h / 2.0), cw, cl_h),
+                "method": "anchor_axis_locked"}
+    except Exception:
+        return None
 
 
 def _reads_disagree(a, b, val_type) -> bool:

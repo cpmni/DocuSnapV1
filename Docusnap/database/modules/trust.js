@@ -542,6 +542,17 @@ function isSoftAdvisory(key, type, required, roleKeys) {
   if (Number(required) !== 0) return false;                 // required (or unknown) → blocks
   return !STRICT_TYPES.has(String(type || '').toLowerCase());
 }
+// C1 (mig 155, Oracle SIGN-OFF-W/COND): the ANCHOR_AXIS_LOCK arc commits a review-bound value with a
+// "please verify" note on an OPTIONAL non-role field — exactly the note-class optional_soft_flag_autofile
+// (mig 142) is designed to DISSOLVE. On an optional field the ≤87 cap is inert (the 88 floor is ref/date
+// only; overall is scored from required fields), so the note is the SOLE checkpoint — and mig-142 would
+// silently clear it, letting a possibly-wrong axis-lock read auto-file. The carve-out keys on a STRUCTURED
+// sentinel — the `anchor_axis_locked` extraction_method persisted on the row — NOT the human note copy (a
+// copy edit must not re-arm the seam). A row so marked is NEVER soft-cleared: its note always blocks.
+function isAxisLockNoteRow(e) {
+  const m = String((e && (e.extraction_method || e.method)) || '');
+  return m.includes('anchor_axis_locked') && !!String((e && e.validation_note) || '').trim();
+}
 function _optionalSoftFlagEnabled(db) {
   const env = process.env.OPTIONAL_SOFT_FLAG_AUTOFILE;
   if (env === '1') return true;
@@ -558,10 +569,11 @@ function _flaggedSoftAware(db, doc, opts, ctFlags) {
   const meta = new Map();
   try { for (const r of db.prepare('SELECT key, type, required FROM fields WHERE document_type_id = ?').all(doc.document_type_id)) meta.set(r.key, r); } catch {}
   const rows = opts.extractions
-    || db.prepare('SELECT field_key, validation_note, corrected_to, display_value FROM extractions WHERE document_id = ?').all(doc.id);
+    || db.prepare('SELECT field_key, validation_note, corrected_to, display_value, extraction_method FROM extractions WHERE document_id = ?').all(doc.id);
   return rows.filter(e => {
     if (ctFlags(e.corrected_to, e.display_value)) return true;         // a pending correction always blocks
     if (!String(e.validation_note || '').trim()) return false;         // no note → fine
+    if (isAxisLockNoteRow(e)) return true;                             // C1: axis-lock note is never soft-cleared
     const m = meta.get(e.field_key) || {};
     return !isSoftAdvisory(e.field_key, m.type, m.required, roleKeys); // a soft-advisory note does not block
   }).length;
@@ -991,7 +1003,8 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
     if (e.validation_note && String(e.validation_note).trim()) {         // a flag → not safe…
       // …UNLESS it is a SOFT-ADVISORY note on an optional non-role non-strict field AND the caller passed the
       // graduated-scope non-block (owner 2026-09-09). Role / required / strict-typed notes still block.
-      if (!(opts.softOptionalNonblock && isSoftAdvisory(e.field_key, fieldTypes.get(e.field_key), _requiredByKey.get(e.field_key), roleKeys)))
+      if (isAxisLockNoteRow(e)                                    // C1: axis-lock note is never soft-cleared (mig 155)
+          || !(opts.softOptionalNonblock && isSoftAdvisory(e.field_key, fieldTypes.get(e.field_key), _requiredByKey.get(e.field_key), roleKeys)))
         return { ok: false, reason: `flagged:${e.field_key}` };
     }
     // r19 (d): a filing-critical role read that an independent page family contradicts never files
@@ -1435,6 +1448,8 @@ function _currencyConsistentForField(db, supplier, slug, fieldKey, value) {
 module.exports = {
   TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES, _configuredWindow,
   isSoftAdvisory,                  // shared soft-advisory predicate (optional_soft_flag_autofile; Chris card 1 twin)
+  isAxisLockNoteRow,               // C1 (mig 155): axis-lock note is never soft-cleared — pinned in test_scope_trust.js
+  _optionalSoftFlagEnabled,        // exported so the both-ON mig-142 pin reads the same default
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
   classifyRefShape, _refRoleShapeEnabled,   // ref-role shape verify (mig 154) — pinned in test_scope_trust.js
   _dominantStructuredClass,        // exported for the contaminated-history pin (test_scope_trust.js §18b)

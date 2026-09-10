@@ -3142,6 +3142,24 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 154 (trust_ref_role_shape): ${e.message}`); }
   }
 
+  // ── migration 155: anchor_axis_lock seeded OFF (2026-09-10; 007+reggie+gary → Oracle SIGN-OFF-W/COND,
+  //    docs/designs/ANCHOR_AXIS_LOCK_2026-09-10.md). The FREE-TEXT twin of template_code_read_widen (mig 141):
+  //    a below/above/right taught anchor stores the value box CENTRE, so a wider teach sample pins the read-box
+  //    off to the side on a narrower doc (the owner's Vellum & Crane delivery-docket customer_name drifting
+  //    right of "Deliver To"). When ON, an ADDITIVE review-bound candidate reconstructs the value LEFT edge from
+  //    the LOCATED label column (width-invariant), grows to the column-gap, and competes ONLY where no
+  //    authoritative read won (_override_eligible). Kept OUT of the corroboration ledger; always-note + ≤87 cap.
+  //    C1 (mig-142 seam): its note is a NON-SOFT kind so optional_soft_flag_autofile can't dissolve the
+  //    checkpoint. DARK (in TEST_SWITCH_KEYS); byte-identical OFF. ⚑ FLIP GATE: unit pins + a fire-census on a
+  //    real docket/free-text corpus (zero fires ⇒ stay DARK) + the both-ON mig-142 pins + realdoc M=0 → Oracle.
+  if (!applied.has(155)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('anchor_axis_lock', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (155)').run();
+      console.log(`JS migration 155 applied: anchor_axis_lock (additive width-invariant label-column read for below/right free-text) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 155 (anchor_axis_lock): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

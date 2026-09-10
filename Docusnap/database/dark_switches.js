@@ -142,6 +142,17 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // returns at the 'date' STRICT arm). Mixed ref history → 'freetext' → Review. Byte-identical OFF. ⚑ FLIP
   // GATE: unit pins + realdoc M=0 AND new would-file ref == GT + live-DB re-judge of the 20 held → Oracle.
   'trust_ref_role_shape',
+  // anchor_axis_lock (mig 155, 2026-09-10, 007+reggie+gary → Oracle SIGN-OFF-W/COND): the FREE-TEXT twin of
+  // template_code_read_widen. A below/above/right taught anchor stores the value box CENTRE, so a wider teach
+  // sample (Brightwater Dental Practice, 27ch) pins the read-box right of a narrower value (Halcyon Leisure
+  // Group, 21ch). When ON, an ADDITIVE review-bound candidate `anchor_axis_locked` reconstructs the value LEFT
+  // edge from the LOCATED label column (width-invariant, reusing the _label_left_limit formula), grows to the
+  // column-gap, and competes ONLY where no authoritative read won (precedence via _override_eligible). Kept OUT
+  // of the corroboration ledger; always-note + ≤87 cap (review-assist, never a silent auto-file). C1: its note
+  // is a NON-SOFT kind excluded from optional_soft_flag_autofile's soft-clear (else mig-142 dissolves the
+  // checkpoint). Byte-identical OFF. ⚑ FLIP GATE: pins + fire-census on a real docket corpus (zero fires ⇒ stay
+  // DARK) + the both-ON mig-142 pins + realdoc M=0 → Oracle. docs/designs/ANCHOR_AXIS_LOCK_2026-09-10.md.
+  'anchor_axis_lock',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

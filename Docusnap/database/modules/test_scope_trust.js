@@ -943,6 +943,54 @@ function main() {
           trust.docTrustGate(db, repeat, 'Anconia Corp', 'invoice', { refRoleShape: false }).ok === true);
   }
 
+  // ── 26. C1: axis-lock note survives mig-142 soft-clear (the ANCHOR_AXIS_LOCK ship-blocker) ──
+  // mig-142 (optional_soft_flag_autofile) lets a soft note on an optional non-role field stop blocking
+  // auto-file. The axis-lock arc (mig 155) commits a review-bound value with a "please verify" note on
+  // exactly such a field — so without a carve-out, both-ON would let a possibly-wrong axis-lock read
+  // auto-file. isAxisLockNoteRow keys on the anchor_axis_locked extraction_method (a structured sentinel,
+  // not the copy) so the note is NEVER soft-cleared. This section reproduces the misfile (control) and
+  // proves the carve-out holds. 007+reggie+gary → Oracle C1.
+  section('26. C1 — axis-lock note is never soft-cleared (mig-142 seam)');
+  {
+    const rr = trust.isAxisLockNoteRow;
+    check("isAxisLockNoteRow: axis-lock method + note → true",
+          rr({ extraction_method: 'anchor_axis_locked', validation_note: 'please verify' }) === true);
+    check("isAxisLockNoteRow: axis-lock method but EMPTY note → false",
+          rr({ extraction_method: 'anchor_axis_locked', validation_note: '' }) === false);
+    check("isAxisLockNoteRow: a normal soft note (keyword) → false (still soft-clearable)",
+          rr({ extraction_method: 'keyword', validation_note: 'doesn’t read like a name' }) === false);
+  }
+  {
+    const db = makeDb(); const tid = seedType(db);
+    // graduated Anconia scope; seed `item` with ≥3 distinct free-text names so its learned shape is
+    // 'freetext' with no dominant structure → the non-role lenient path exempts it (so the ONLY thing
+    // the gate weighs on `item` here is the note, isolating the C1 behaviour).
+    seedCleanScope(db, tid, 10, 'Anconia Corp', i => ({ item: ['Alpha Holdings', 'Beta Trading', 'Gamma Services'][i % 3] }));
+    // A needs_review doc: optional `item` field carries a value + a note. Everything else is clean/shaped.
+    const mkNoted = () => {
+      const id = seedDoc(db, tid, {
+        supplier: 'Anconia Corp', when: '2026-06-02T10:00:00Z', status: 'needs_review', conf: 98,
+        fields: { supplier_name: 'Anconia Corp', invoice_date: '07-06-2026', invoice_number: 'INV1099',
+                  total: '150.50', item: 'Halcyon Leisure Group' },
+        notes: { item: 'Read from the label column — please verify.' },
+      });
+      return id;
+    };
+    // CONTROL — a normal soft note (method keyword): with mig-142's soft-clear on, docTrustGate does NOT block.
+    const ctrl = mkNoted();
+    check("control: a soft optional note is CLEARED under softOptionalNonblock (mig-142 behaviour)",
+          trust.docTrustGate(db, ctrl, 'Anconia Corp', 'invoice', { softOptionalNonblock: true }).ok === true);
+    // AXIS-LOCK — same field/note but method anchor_axis_locked: the carve-out keeps it BLOCKING even with
+    // softOptionalNonblock on (the ship-blocker fix). Without isAxisLockNoteRow this would return ok:true = misfile.
+    const axl = mkNoted();
+    db.prepare("UPDATE extractions SET extraction_method = 'anchor_axis_locked' WHERE document_id = ? AND field_key = 'item'").run(axl);
+    check("axis-lock: the note STILL blocks under softOptionalNonblock (mig-142 can't dissolve it)",
+          trust.docTrustGate(db, axl, 'Anconia Corp', 'invoice', { softOptionalNonblock: true }).reason === 'flagged:item');
+    // And with mig-142 OFF, both block (baseline — no soft-clear at all).
+    check("axis-lock: blocks with softOptionalNonblock OFF too (baseline)",
+          trust.docTrustGate(db, axl, 'Anconia Corp', 'invoice', {}).reason === 'flagged:item');
+  }
+
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails === 0 ? 0 : 1);
 }

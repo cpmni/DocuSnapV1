@@ -2532,6 +2532,52 @@ def _uv_date_page_present(value, ocr_text) -> bool:
     return False
 
 
+def _reconcile_axislock_winners(results, override_eligible, log=None):
+    """ANCHOR_AXIS_LOCK reconcile (mig 155 — 007+reggie+gary → Oracle SIGN-OFF-W/COND). Consumes the
+    transient `_axislock_candidate` the anchor emitter stashed (a width-invariant read off the LOCATED
+    label column). ADDITIVE + REVIEW-BOUND: replaces ONLY a generic/auto incumbent (`override_eligible`
+    — never an authoritative ⊕ anchor, a Stage-0.5 mapping, or an admin label → the motivating exhibit's
+    authoritative anchor_crop is popped + discarded, INERT), caps ≤87 (agrees/fills) or ≤69 (a longer
+    DISAGREEING read → stronger review), and ALWAYS carries anchor.AXISLOCK_VERIFY_NOTE (its
+    'anchor_axis_locked' method is the C1 sentinel trust.js keys on, so mig-142 can't dissolve the note).
+    NEVER touches field_candidates (C3: not a corroboration witness). ALWAYS pops the stash. Pure over
+    `results`; returns True if anything changed. Byte-identical when no field carries the stash."""
+    changed = False
+    for _lk in list(results.keys()):
+        _ld = results.get(_lk)
+        if _lk.startswith("_") or not isinstance(_ld, dict):
+            continue
+        _lc = _ld.pop("_axislock_candidate", None)          # consumed — never persist
+        if not _lc:
+            continue
+        if not override_eligible(_ld):                       # authoritative / Stage-0.5 / admin → discard
+            continue
+        _av = str(_lc.get("value") or "").strip()
+        if not _av:
+            continue
+        _inc = str(_ld.get("value") or "").strip()
+        if not _inc:
+            _cap = 87                                        # empty fill
+        elif _inc.lower() in _av.lower():
+            _cap = 87                                        # the value un-clipped (superset) — agrees
+        else:
+            _cap = 69                                        # longer but DIFFERENT — disagreement → review
+        try:
+            _newconf = min(int(_lc.get("conf") or _cap), _cap)
+        except (TypeError, ValueError):
+            _newconf = _cap
+        results[_lk] = {**_ld,
+                        "value":           _av,
+                        "method":          "anchor_axis_locked",
+                        "confidence":      _newconf,
+                        "validation_note": anchor.AXISLOCK_VERIFY_NOTE,
+                        "box":             _lc.get("box") or _ld.get("box")}
+        if log:
+            log(f"  Axis-lock reconcile: {_lk} '{_inc}' → '{_av}' (label-column read, capped {_newconf}, review-bound)")
+        changed = True
+    return changed
+
+
 def _adopt_pad_date_winners(results, field_candidates, date_field_keys, ocr_text, adopt_on, log=None):
     """TEMPLATE_PAD_DATE_ADOPT (Q4, mig 143). Pure post-merge carve-out. ALWAYS pops the transient
     `_pad_date_witness` from EVERY field dict (so it never persists) and, when `adopt_on`, SWAPS a taught
@@ -11971,6 +12017,21 @@ class ExtractionEngine:
         if _adopt_pad_date_winners(results, self._field_candidates, date_field_keys, ocr_text,
                                    PAD_DATE_ADOPT, log=self.log):
             results["_pad_date_adopted"] = True
+
+        # ANCHOR_AXIS_LOCK reconcile (mig 155 — 007+reggie+gary → Oracle SIGN-OFF-W/COND). Consumes the
+        # transient `_axislock_candidate` anchor.py stashed (a width-invariant read off the LOCATED label
+        # column). ADDITIVE + REVIEW-BOUND: it may replace ONLY a generic/auto incumbent (_override_eligible
+        # — never an authoritative ⊕ anchor, Stage-0.5 mapping, or admin label → the motivating exhibit's
+        # authoritative anchor_crop is popped + discarded, inert), caps ≤87 (agrees/fills) or ≤69 (a longer
+        # DISAGREEING read → stronger review), and ALWAYS carries the axis-lock note. NEVER pushed into
+        # self._field_candidates (C3: not a corroboration witness). ALWAYS pops the stash so it never
+        # persists. OFF ⇒ anchor.py never stashes the key ⇒ this whole block is skipped (byte-identical).
+        # ANCHOR_AXIS_LOCK reconcile (mig 155): consume the transient axis-lock candidate. OFF ⇒ anchor.py
+        # never stashes the key ⇒ the helper's loop finds nothing ⇒ byte-identical. Placed AFTER pad-date-
+        # adopt + all _remember_candidates, BEFORE the post-merge verify + G1/Fix-A so a healed value is
+        # subject to their holds like any other winner.
+        if os.environ.get("ANCHOR_AXIS_LOCK", "0") != "0":
+            _reconcile_axislock_winners(results, self._override_eligible, log=self.log)
 
         # Slice-2 universal post-merge verify (gary+reggie+007 → Oracle SIGN-OFF-W/COND 2026-08-03).
         # Runs AFTER Slice-1 (an anchor_crop_crosscheck winner is Slice-1's decided territory —

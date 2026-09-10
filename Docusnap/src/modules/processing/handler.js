@@ -353,6 +353,12 @@ function _reconcileEnv(db) {
     // docket WIDER than the teach sample (page-width variance). When ON, a shape-INVALID tight read is
     // replaced by a shape-VALID wider row-bounded re-read of the same spot. DARK (mig 141), byte-identical OFF.
     if (learning.getSetting(db, 'template_code_read_widen', 'false') === 'true') env.TEMPLATE_CODE_READ_WIDEN = '1';
+    // ANCHOR_AXIS_LOCK (2026-09-10, 007/reggie/gary → Oracle SIGN-OFF-W/COND): the FREE-TEXT twin of
+    // template_code_read_widen. A below/above/right taught anchor stores the value box CENTRE, so a wider
+    // teach sample pins the read-box off to the side on a narrower doc. When ON, an ADDITIVE review-bound
+    // candidate reconstructs the value's left edge from the LOCATED label column (width-invariant) and
+    // competes only where no authoritative read won. DARK (mig 155), byte-identical OFF.
+    if (learning.getSetting(db, 'anchor_axis_lock', 'false') === 'true') env.ANCHOR_AXIS_LOCK = '1';
     // INLINE_DISAGREE_CORROB_SOFTEN (2026-09-07, gary → Oracle SIGN-OFF-W/COND G1-G7): class G rewords the
     // box-clip value-doubt note (never clears) when an independent KEYWORD read corroborates the value —
     // review-bound, conf never lifted. DARK (mig 135; mig 136 = TEST force-ON). Env uses the '1' idiom.
