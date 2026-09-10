@@ -883,6 +883,7 @@ ${_putBackBody(ev)}`)) return;
 }
 async function initActivityStrip() {
   try { _asOn = (await window.docusnap.getSetting('review_activity_strip')) === 'true'; } catch { _asOn = false; }
+  try { _sweepAutoAcceptOn = (await window.docusnap.getSetting('scope_sweep_auto_accept')) === 'true'; } catch { _sweepAutoAcceptOn = false; }
   if (!_asOn) { renderActivityStrip(); return; }
   try { _asEvents = (await window.docusnap.getReviewEvents?.()) || []; } catch { _asEvents = []; }
   renderActivityStrip();
@@ -7373,7 +7374,8 @@ async function _acceptReprocessOffer(bar) {
 // consent bar: File N · Review them · Not now, with a per-doc untick list. The accept path
 // re-validates EVERYTHING server-side (fingerprint + the same gate) and files through the one
 // shared confirm with confirmed_via='scope_sweep'; Undo all reverses cleanly.
-let _sweepTimer = null, _sweepState = null;
+let _sweepTimer = null, _sweepState = null, _sweepAutoAcceptOn = false, _sweepCountdown = null;
+const SWEEP_COUNTDOWN_SECS = 6;   // the auto-proceed countdown on a viewed-but-eligible sweep offer (Oracle 2026-09-10)
 const _sweepDismissed = new Set();          // per-scope "Not now" (session-only)
 let _sweepFilterIds = null;                 // "Review them" queue filter (Set<docId> | null)
 
@@ -7631,18 +7633,22 @@ function renderSweepConsentBar() {
     const readLine = s.via === 'quiet'
       ? `were re-read just now and pass every check.`
       : `already read cleanly and now pass every check — nothing was re-read.`;
+    const countdownLine = (typeof s._countdown === 'number')
+      ? `<div class="scb-muted">⏳ Filing automatically in ${s._countdown}s — press <b>Not now</b> to keep them in Review.</div>` : '';
     bar.innerHTML =
         `<b>${n}</b> <b>${escHtml(s.supplier)}</b> ${escHtml(typeName)} document${n === 1 ? '' : 's'} `
       + readLine
-      + heldLine + otherLine + rows
+      + heldLine + otherLine + countdownLine + rows
       + `<div class="scb-actions">`
       + `<button class="scb-btn primary" data-scb="file" ${n === 0 || s.phase === 'filing' ? 'disabled' : ''}>`
-      + (s.phase === 'filing' ? 'Filing…' : `✓ File up to ${n}`) + `</button>`
+      + (s.phase === 'filing' ? 'Filing…'
+         : (typeof s._countdown === 'number' ? `✓ File ${n} now · ${s._countdown}s` : `✓ File up to ${n}`)) + `</button>`
       + `<button class="scb-btn" data-scb="review" ${s.phase === 'filing' ? 'disabled' : ''}>Review them</button>`
       + `<button class="scb-btn" data-scb="later" ${s.phase === 'filing' ? 'disabled' : ''}>Not now</button>`
       + `<span class="scb-toggle" data-scb="toggle">${s.listOpen ? 'Hide list' : 'Choose which…'}</span>`
       + `</div>`;
     bar.style.display = 'block';
+    _maybeStartSweepCountdown(s);       // start/refresh the auto-proceed countdown (no-op unless armed)
     return;
   }
   if (s.phase === 'done' && _asOn) {
@@ -7671,9 +7677,46 @@ function renderSweepConsentBar() {
   }
 }
 
+// ── Sweep offer auto-proceed countdown (owner ask + Oracle direction, 2026-09-10) ─────────────────
+// Owner: the "File up to N" offer is a click the customer always taps, so the doc should just file.
+// Oracle: suppress the CLICK, keep the SIGNAL — for an eligible doc the operator is VIEWING (silent
+// auto-accept skips a viewed doc, so it lands here as an offer), turn the offer into a visible,
+// cancellable countdown that auto-proceeds. ONLY when scope_sweep_auto_accept is on (an auto-accept-OFF
+// customer kept manual control — never auto-proceed on them); NEVER while a field editor is focused (an
+// edit in progress — the countdown holds); ANY bar interaction cancels it (s._noCountdown). On expiry it
+// reuses the existing accept path by clicking the file button — no separate filing code.
+function _clearSweepCountdown() {
+  if (_sweepCountdown) { try { clearInterval(_sweepCountdown.timer); } catch {} _sweepCountdown = null; }
+}
+function _sweepEditorBusy() {
+  const el = document.activeElement;
+  if (!el || (el.closest && el.closest('#sweep-consent-bar'))) return false;   // ignore the bar's own controls
+  return el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT';
+}
+function _maybeStartSweepCountdown(s) {
+  if (!_sweepAutoAcceptOn || !s || s._noCountdown || s.phase !== 'offer'
+      || (s.candidates.length - s.unticked.size) <= 0) { _clearSweepCountdown(); return; }
+  const sig = _sweepScopeKey(s.supplier, s.typeSlug);
+  if (_sweepCountdown && _sweepCountdown.sig === sig) return;                    // already ticking for this scope
+  _clearSweepCountdown();
+  s._countdown = SWEEP_COUNTDOWN_SECS;
+  _sweepCountdown = { sig, timer: setInterval(() => {
+    if (_sweepState !== s || s.phase !== 'offer' || s._noCountdown) { _clearSweepCountdown(); return; }
+    if (_sweepEditorBusy()) { s._countdown = SWEEP_COUNTDOWN_SECS; renderSweepConsentBar(); return; }   // hold while editing
+    s._countdown -= 1;
+    if (s._countdown > 0) { renderSweepConsentBar(); return; }
+    _clearSweepCountdown();
+    const btn = document.querySelector('#sweep-consent-bar [data-scb="file"]');
+    if (btn && !btn.disabled) btn.click();                                       // reuse the existing accept path
+  }, 1000) };
+  renderSweepConsentBar();                                                       // paint the initial "· Ns" (guard above blocks re-entry)
+}
+
 document.getElementById('sweep-consent-bar')?.addEventListener('click', async (e) => {
   const s = _sweepState;
   if (!s) return;
+  // Any click on the bar = the operator is deciding → stop the auto-proceed for this offer.
+  s._noCountdown = true; _clearSweepCountdown();
   const cb = e.target.closest('input[data-scb-doc]');
   if (cb) {
     const id = Number(cb.dataset.scbDoc);
