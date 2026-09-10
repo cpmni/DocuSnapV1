@@ -134,6 +134,14 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // template_pad_window_code ON. ⚑ FLIP GATE: neighbour-bleed positional guard + adversarial neighbour census
   // (must NOT adopt) + realdoc M=0 → Oracle. docs/designs/TAUGHT_CORROB_ADOPT_2026-09-10.md.
   'template_taught_corrob_adopt',
+  // trust_ref_role_shape (mig 154, 2026-09-10, reggie+gary → Oracle SIGN-OFF-W/COND): verify a REFERENCE
+  // role (ref_field_key) by the SHAPE of its confirmed samples (classifyRefShape), not 'constant' set-
+  // membership — a ref number is high-cardinality by nature, so a ≤2-distinct (duplicate-confirmed) history
+  // classified 'constant' else refuses every genuinely-new value (`unverifiable-value:invoice_number`; 20
+  // clean Thornbury invoices held live). Ref role ONLY (company key keeps identity membership, date role
+  // returns at the 'date' STRICT arm). Mixed ref history → 'freetext' → Review. Byte-identical OFF. ⚑ FLIP
+  // GATE: unit pins + realdoc M=0 AND new would-file ref == GT + live-DB re-judge of the 20 held → Oracle.
+  'trust_ref_role_shape',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

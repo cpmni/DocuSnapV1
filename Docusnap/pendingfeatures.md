@@ -5012,3 +5012,16 @@ would have lost. Those need a per-BULLET pass, not a per-section move — left f
 - **Pre-existing red pin `src/windows/teach/test_teach_multipage.js`** ("every rendered page is kept"): the check's regex matches a COMMENT that quotes `getDocumentPages(...)` and `pages[0]`; the comment-strip only strips `//` not preceded by `:`. Fix the pin's strip or reword the comment.
 - **Left-edge clip-commit slack flip gate (2026-09-07, `5ee8cd4`, mig 133 DARK):** the mirror of the Oracle-signed trailing slack — NOT yet Oracle-vetted itself. Flip only after the OFF/ON arm on the HEALED copy (`TESTING/_measure/clip_left_slack_20260907/`: every diff = the same value committed clean; M=0; the wouldFile delta vetted against the pages) and a short Oracle look at the seam with `unclip`/`frag_clean` (branch order is load-bearing).
 - **Poisoned GT on the owner's fresh DB (2026-09-07):** invoice docs #42/#25/#27/#40 carry confirmed dates that are the NULL-angle clipped reads (`03-01-2026` for a page printing `28/01/2026`); Learning Repair them, then re-run the realdoc baseline (the 4 'silent regressions' vanish).
+
+## Ref-role shape verify (mig 154) — deferred follow-ups (2026-09-10)
+Parent: `trust_ref_role_shape` (DARK) + `docs/designs/REF_ROLE_SHAPE_2026-09-10.md`. Two deferred slices,
+each its own gate:
+- **Slice B — teachFollowup promise alignment.** `src/services/teachFollowup.js` counts `confirmed_count`
+  (TOTAL, not deduped — learning.js:1746) toward FORMAT_SOLID_MIN=3, but the gate needs a consistent
+  SHAPE. Consult the effective ref class (classifyRefShape) gated on the same `trust_ref_role_shape`
+  read; never promise "files after N confirms" while the gate switch is OFF (Oracle: don't tell the
+  operator it will auto-file while the OFF gate still refuses).
+- **Per-scope ref SKELETON (reggie).** The shape check's residual = a wrong-but-code-shaped ref
+  (`INV-45153`←`INV-45152`) can auto-file on a common-mode misread (parity with the 'digits' role today).
+  A finer per-scope prefix + digit-run-length skeleton derived from the confirmed samples narrows it
+  below parity. New mechanism, own length/prefix-consistency design + pins + gate. DEFERRED.

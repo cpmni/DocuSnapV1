@@ -875,6 +875,74 @@ function main() {
       rS2.eligible === false && rS2.reason === 'flagged');
   }
 
+  // ── 25. ref-role shape verify (mig 154, trust_ref_role_shape) ───────────────
+  // A reference role (ref_field_key) is verified by the SHAPE of its samples, never 'constant' set-
+  // membership — a ref number is high-cardinality by nature, so a ≤2-distinct (duplicate-confirmed)
+  // history classified 'constant' else refuses every genuinely-new value. Ref role ONLY; the company
+  // key keeps identity membership; the date role returns at the STRICT 'date' arm. reggie+gary → Oracle.
+  section('25. ref-role shape verify (trust_ref_role_shape)');
+  {
+    const rs = trust.classifyRefShape;
+    check("classifyRefShape: 2-distinct code refs → 'code' (never 'constant')",
+          rs(['INV-71940', 'INV-71940', 'INV-50540']) === 'code');
+    check("classifyLearnedShape UNCHANGED: same samples still 'constant' (identity path untouched)",
+          trust.classifyLearnedShape(['INV-71940', 'INV-71940', 'INV-50540']) === 'constant');
+    check("classifyRefShape: 2-distinct bare digits → 'digits'", rs(['100045', '100046']) === 'digits');
+    check("classifyRefShape: code + word → 'freetext' (one odd sample collapses it)",
+          rs(['INV-100', 'Information']) === 'freetext');
+    check("classifyRefShape: a space-bearing (garble) ref → 'freetext'", rs(['INV-100', 'ORDER 55']) === 'freetext');
+    check("classifyRefShape: no samples → 'none'", rs([]) === 'none');
+  }
+  // Graduated scope with a 2-DISTINCT (duplicate) invoice_number history → classifies 'constant'.
+  const seedRefDupScope = (db, tid, refs, supplier = 'Anconia Corp') => {
+    for (let i = 1; i <= 10; i++) seedDoc(db, tid, {
+      supplier, when: `2026-06-01T10:00:${String(i).padStart(2, '0')}Z`,
+      fields: { supplier_name: supplier, invoice_date: `0${(i % 9) + 1}-06-2026`,
+                invoice_number: refs[i % refs.length], total: `${100 + i}.50` },
+    });
+  };
+  {
+    const db = makeDb(); const tid = seedType(db);
+    seedRefDupScope(db, tid, ['INV-71940', 'INV-50540']);   // 2 distinct code refs → 'constant'
+    check("a 2-distinct-ref scope STILL graduates ('constant' ref is verifiable — graduation untouched)",
+          trust.scopeTrust(db, 'Anconia Corp', 'invoice').trusted === true);
+    const mk = (ref, extra = {}) => seedDoc(db, tid, {
+      supplier: 'Anconia Corp', when: '2026-06-02T10:00:00Z', status: 'needs_review', conf: 98,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '07-06-2026', invoice_number: ref, total: '150.50', ...extra },
+    });
+    const newRef = mk('INV-45152');
+    check("OFF: a genuinely-new code-shaped ref → refused unverifiable (the live bug reproduced)",
+          trust.docTrustGate(db, newRef, 'Anconia Corp', 'invoice', { refRoleShape: false }).reason === 'unverifiable-value:invoice_number');
+    check("ON: the same new ref matches the learned 'code' shape → OK (the heal)",
+          trust.docTrustGate(db, newRef, 'Anconia Corp', 'invoice', { refRoleShape: true }).ok === true);
+    const garble = mk('Information');
+    check("ON: a wordy garble (no digit) in the ref field → STILL blocked (anti-over-file)",
+          trust.docTrustGate(db, garble, 'Anconia Corp', 'invoice', { refRoleShape: true }).reason === 'unverifiable-value:invoice_number');
+    const wrongSup = seedDoc(db, tid, {
+      supplier: 'Anconia Corp', when: '2026-06-02T10:02:00Z', status: 'needs_review', conf: 98,
+      fields: { supplier_name: 'Globex Ltd', invoice_date: '07-06-2026', invoice_number: 'INV-99999', total: '150.50' },
+    });
+    check("ON: a wrong supplier VALUE → still blocked on the company key (identity membership preserved, Ironbridge N2)",
+          trust.docTrustGate(db, wrongSup, 'Anconia Corp', 'invoice', { refRoleShape: true }).reason === 'unverifiable-value:supplier_name');
+    const badDate = mk('INV-88888', { invoice_date: '99-99-2026' });
+    check("ON: an invalid date STILL blocks at the STRICT 'date' arm (date role never widened — the 09-09 M class)",
+          trust.docTrustGate(db, badDate, 'Anconia Corp', 'invoice', { refRoleShape: true }).reason === 'invalid-date:invoice_date');
+  }
+  {
+    // Correction 2 (Oracle): a MIXED 2-distinct ref history → 'freetext' → even a REPEAT value now routes
+    // to Review (was: filed under 'constant' membership). Strictly fail-safer; pinned as INTENDED.
+    const db = makeDb(); const tid = seedType(db);
+    seedRefDupScope(db, tid, ['INV-100', 'ORDER 55']);   // one code + one space-bearing → mixed
+    const repeat = seedDoc(db, tid, {
+      supplier: 'Anconia Corp', when: '2026-06-02T10:00:00Z', status: 'needs_review', conf: 98,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '07-06-2026', invoice_number: 'INV-100', total: '150.50' },
+    });
+    check("ON: a mixed-shape ref history → 'freetext' → even a REPEAT value routes to Review (intended, not a regression)",
+          trust.docTrustGate(db, repeat, 'Anconia Corp', 'invoice', { refRoleShape: true }).reason === 'unverifiable-value:invoice_number');
+    check("OFF: the same repeat value FILES under old 'constant' membership (documents the pre-fix behaviour)",
+          trust.docTrustGate(db, repeat, 'Anconia Corp', 'invoice', { refRoleShape: false }).ok === true);
+  }
+
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails === 0 ? 0 : 1);
 }

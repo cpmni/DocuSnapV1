@@ -281,6 +281,33 @@ function classifyLearnedShape(sampleValues) {
 }
 
 /**
+ * The learned shape of a REFERENCE-ROLE field (ref_field_key: invoice/PO/SO/remittance number).
+ * Identical to classifyLearnedShape EXCEPT it omits the `distinct.size <= 2 → 'constant'`
+ * short-circuit. A reference number is HIGH-CARDINALITY by nature — every document carries a new
+ * one — so a sparse ref history (e.g. a duplicate/misread confirm giving 2 distinct values) must
+ * NOT be treated as a fixed 'constant' whose set-membership then refuses the genuinely-new next
+ * value (`INV-45152` on a scope that has only ever confirmed `INV-71940`/`INV-50540`). Instead the
+ * SHAPE is derived directly: a structured class is returned ONLY on a UNANIMOUS every()-test, so
+ * one odd sample collapses the field to 'freetext' (→ routes to Review, fail-safe) exactly as the
+ * strict classifier does. This is STRICTER than the at100 path (which files a 'constant' ref with
+ * no shape check) and STRICTER than set-membership for a mixed history (a wordy/space-bearing
+ * garble in the ref field — `_codeish` requires a single token with a digit — never matches).
+ * Used ONLY for the ref role, ONLY behind `trust_ref_role_shape` (DARK); the identity/company key
+ * keeps its 'constant' set-membership (the Ironbridge N2 safety at trust.js ~701). Not the same as
+ * `_dominantStructuredClass` (which needs ≥5 samples + a majority vote) — this fires on 2 unanimous
+ * samples, which is the exhibit's case, and demands unanimity, not a majority.
+ */
+function classifyRefShape(sampleValues) {
+  const vals = (sampleValues || []).map(v => String(v == null ? '' : v).trim()).filter(Boolean);
+  if (vals.length === 0)           return 'none';
+  if (vals.every(_digits))         return 'digits';
+  if (vals.every(_dateish))        return 'date';
+  if (vals.every(_currencyish))    return 'currency';
+  if (vals.every(_codeish))        return 'code';
+  return 'freetext';                                     // mixed / wordy → unverifiable → Review
+}
+
+/**
  * The DOMINANT structured class of a scope's confirmed samples, or null when the field is
  * genuinely free text (Oracle, 2026-07-20).
  *
@@ -386,6 +413,21 @@ function _roleDominantEnabled(db) {
   if (env === '0') return false;
   try {
     return require('./learning').getSetting(db, 'role_field_dominant_class', 'false') === 'true';
+  } catch { return false; }
+}
+
+// REF-ROLE SHAPE (mig 154, 2026-09-10; reggie+gary → Oracle SIGN-OFF-W/COND). A reference role
+// (ref_field_key) is verified by the SHAPE of its confirmed samples (classifyRefShape) instead of
+// 'constant' set-membership, so a genuinely-new ref number on a sparse/duplicate-confirmed scope
+// files instead of being refused `unverifiable-value`. Setting `trust_ref_role_shape`, env
+// TRUST_REF_ROLE_SHAPE wins both directions; hoisted to ONE read per docTrustGate call and
+// threadable via `opts.refRoleShape` (the _shadowRowSkipEnabled/_roleDominantEnabled idiom). DARK.
+function _refRoleShapeEnabled(db) {
+  const env = process.env.TRUST_REF_ROLE_SHAPE;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try {
+    return require('./learning').getSetting(db, 'trust_ref_role_shape', 'false') === 'true';
   } catch { return false; }
 }
 // The ONE class a required/role field is judged by, at all three sites (scopeTrust's required-field
@@ -923,6 +965,7 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
   // ONE read per document, not one per row (Oracle C4) — mirrors how formats/gradOn/optOut are
   // hoisted through opts by autoFileEligibleIds so a whole queue costs one lookup, not N×rows.
   const _roleDomOn = (opts.roleDominant !== undefined) ? !!opts.roleDominant : _roleDominantEnabled(db);
+  const _refShapeOn = (opts.refRoleShape !== undefined) ? !!opts.refRoleShape : _refRoleShapeEnabled(db);
   const _shadowSkipOn = (opts.shadowRowSkip !== undefined)
     ? !!opts.shadowRowSkip : _shadowRowSkipEnabled(db);
 
@@ -1039,7 +1082,19 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
       // verify against the effective class. With the switch on, a role field whose strict class
       // collapsed to 'freetext' under ONE confirmed outlier is judged by its DOMINANT structured
       // class instead of refused forever — verification, never exemption (the outlier itself fails).
-      const _cls = (_roleDomOn && _rolesComplete && roleKeys.has(e.field_key)) ? _effectiveClass(f, true) : f.cls;
+      //
+      // REF-ROLE SHAPE (mig 154): the REFERENCE role ONLY (ref_field_key) is verified by the shape
+      // of its samples (classifyRefShape) instead of 'constant' set-membership — a ref number is
+      // variable by nature, so a sparse/duplicate-confirmed scope classified 'constant' would else
+      // refuse every genuinely-new value. Scoped to e.field_key === ref_field_key so the company
+      // key keeps its 'constant' identity membership (Ironbridge N2) and the date role — which
+      // returned already at the STRICT_TYPES 'date' arm above — is never reached here. A mixed ref
+      // history → 'freetext' → valueMatchesShape false → routes to Review (fail-safe). Byte-
+      // identical OFF (falls through to _cls below).
+      const _cls =
+        (_refShapeOn && _rolesComplete && e.field_key === _dtRow.ref_field_key)
+          ? classifyRefShape(f.sampleValues)
+          : (_roleDomOn && _rolesComplete && roleKeys.has(e.field_key)) ? _effectiveClass(f, true) : f.cls;
       if (!valueMatchesShape(v, _cls, f.sampleValues)) {
         return { ok: false, reason: `unverifiable-value:${e.field_key}` };
       }
@@ -1244,6 +1299,12 @@ function isAutoFileEligible(db, doc, opts = {}) {
               : _corrobLicensed(e.corroboration);
             if (licensed) {
               const fmt = scopeFmts && scopeFmts.get(k);
+              // NOTE (mig 154, Oracle C4 — DELIBERATELY NOT ref-shape here): this crit-floor (<88)
+              // corroboration relax still uses fmt.cls, so a corroborated NOVEL ref on a 'constant'
+              // ref scope reading BELOW 88 stays refused (weak-critical-field → Review) — fail-safe.
+              // Folding classifyRefShape in here would widen the corrob-relax seam (which already
+              // rides the _edgeclipheal/_corrobadopt keyword-witness logic above) and needs its own
+              // vet. Left intentionally inconsistent; pinned in test_scope_trust.js.
               if (fmt && valueMatchesShape(v, fmt.cls, fmt.sampleValues)) continue;
             }
           }
@@ -1317,9 +1378,10 @@ function autoFileEligibleIds(db, docs, opts = {}) {
   const roleDominant = (opts.roleDominant !== undefined) ? !!opts.roleDominant : _roleDominantEnabled(db);
   const roleDisagreementRefuse = (opts.roleDisagreementRefuse !== undefined) ? !!opts.roleDisagreementRefuse : _roleDisagreementRefuseEnabled(db);   // r19 (d)
   const roleDisagreeAt100 = (opts.roleDisagreeAt100 !== undefined) ? !!opts.roleDisagreeAt100 : _roleDisagreeAt100Enabled(db);   // M=2 belt (mig 152)
+  const refRoleShape = (opts.refRoleShape !== undefined) ? !!opts.refRoleShape : _refRoleShapeEnabled(db);   // ref-role shape verify (mig 154)
   const ids = [];
   for (const d of (docs || [])) {
-    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile, gateUnify, critFieldCorrobRelax, vacuousCorrectedToIgnore, roleDominant, roleDisagreementRefuse, roleDisagreeAt100 }).eligible) ids.push(d.id);
+    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile, gateUnify, critFieldCorrobRelax, vacuousCorrectedToIgnore, roleDominant, roleDisagreementRefuse, roleDisagreeAt100, refRoleShape }).eligible) ids.push(d.id);
   }
   return ids;
 }
@@ -1374,6 +1436,7 @@ module.exports = {
   TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES, _configuredWindow,
   isSoftAdvisory,                  // shared soft-advisory predicate (optional_soft_flag_autofile; Chris card 1 twin)
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
+  classifyRefShape, _refRoleShapeEnabled,   // ref-role shape verify (mig 154) — pinned in test_scope_trust.js
   _dominantStructuredClass,        // exported for the contaminated-history pin (test_scope_trust.js §18b)
   _effectiveClass, _roleDominantEnabled,   // role-field dominant class (2026-08-22) — pinned in test_role_dominant_class.js
   _nonRoleLenientEnabled,          // single source of the default, so tests can't drift from it

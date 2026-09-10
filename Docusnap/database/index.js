@@ -3122,6 +3122,26 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 153 (template_taught_corrob_adopt): ${e.message}`); }
   }
 
+  // ── migration 154: trust_ref_role_shape seeded OFF (2026-09-10; reggie+gary → Oracle SIGN-OFF-W/COND,
+  //    docs/designs/REF_ROLE_SHAPE_2026-09-10.md). A REFERENCE role (ref_field_key: invoice/PO/SO/remittance
+  //    number) is verified by the SHAPE of its confirmed samples (classifyRefShape), not 'constant' set-
+  //    membership. Root cause: a ref number is high-cardinality by nature, but classifyLearnedShape collapses
+  //    a ≤2-distinct history (a duplicate/misread confirm) to 'constant', so docTrustGate's sub-100 role
+  //    branch refused every genuinely-new value (`unverifiable-value:invoice_number`) — 20 clean Thornbury
+  //    invoices held on the owner's live DB. Scoped to the ref role ONLY: the company key keeps 'constant'
+  //    identity membership (Ironbridge N2), the date role returns earlier at the STRICT_TYPES 'date' arm.
+  //    A mixed ref history → 'freetext' → routes to Review (fail-safe). DARK (in TEST_SWITCH_KEYS); byte-
+  //    identical OFF. ⚑ FLIP GATE: unit pins (heal ON files / OFF refuses; garbage + new-supplier + mixed-
+  //    history + date-role all still block) + realdoc M=0 AND every new would-file's ref == confirmed GT +
+  //    a live-DB re-judge of the 20 held Thornbury docs → Oracle.
+  if (!applied.has(154)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('trust_ref_role_shape', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (154)').run();
+      console.log(`JS migration 154 applied: trust_ref_role_shape (verify a reference role by learned shape, never 'constant' set-membership) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 154 (trust_ref_role_shape): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
