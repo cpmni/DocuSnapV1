@@ -2489,18 +2489,30 @@ function register(ctx) {
   // hidden inspector window is open, OR diagnostic logging is on (passed in, since
   // it's computed per-handler), OR the in-Review dev console requested it
   // (ctx.reviewTraceActive, set by review-trace-set).
-  const traceWanted = (diagOn) => !!(ctx.windows && ctx.windows['dev-inspector'])
-    || !!diagOn || !!ctx.reviewTraceActive;
+  // BACKGROUND paths (folder import, the Reprocess-All / quiet-lane shards) arm --trace only for
+  // the inspector window or the diag log — NOT for the in-Review SFDEV console alone, whose events
+  // they no longer feed (see routeTrace's `toReview`). So when the operator has ONLY the Review
+  // console open, background OCR is byte-identical to an untraced run (no slice-dir churn, no
+  // trace stream produced then dropped). Owner ask 2026-09-10: the console must show ONE doc.
+  const traceWantedBg = (diagOn) => !!(ctx.windows && ctx.windows['dev-inspector']) || !!diagOn;
+  // The FOREGROUND single-doc reprocess (the "process" button on the doc in view) ALSO feeds the
+  // in-Review console, so it wants the trace whenever the console is active.
+  const traceWanted = (diagOn) => traceWantedBg(diagOn) || !!ctx.reviewTraceActive;
 
   // Route a trace event to every active sink: the session registry (so the
   // inspector/Review console can PULL it via dev-get-session-doc), the inspector
   // window, the Review window (only when its console is active), and the diag log.
   // Each sink self-gates (notify* are no-ops when their window is absent), so this
   // is safe to call unconditionally on any received trace message.
-  const routeTrace = (msg) => {
+  // `toReview` is passed ONLY by the FOREGROUND single-doc reprocess (the "process" button on the
+  // doc the operator is watching in Review). Background work routes to the inspector + session
+  // registry + diag log but NOT to the in-Review console, so background reads never flood the panel
+  // the operator is using to monitor ONE doc (owner ask 2026-09-10). The dev-inspector WINDOW is
+  // unaffected — it stays session-wide (it gets every path's trace via notifyDevInspector).
+  const routeTrace = (msg, toReview) => {
     _recordDevTrace(msg);
     notifyDevInspector?.('process-trace', msg);
-    if (ctx.reviewTraceActive) notifyReview?.('process-trace', msg);
+    if (toReview && ctx.reviewTraceActive) notifyReview?.('process-trace', msg);
     diaglog.write(msg);
   };
 
@@ -3042,7 +3054,7 @@ function register(ctx) {
       // rides the 'manual' arrival — import-fenced by design (still DEFAULT OFF and UNRULED; a flip needs
       // the Oracle pass + a realdoc arm, since at import a read can AUTO-FILE).
       let sliceDir = null;
-      const wantTrace = traceWanted(diagOn);   // dev inspector open OR diagnostic logging on
+      const wantTrace = traceWantedBg(diagOn);   // background import: inspector open OR diag logging — NOT the Review console alone
       if (wantTrace) { try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); sliceDir = ctx.devSliceDir; } catch {} }
       const { scriptArgs, env: builtEnv } = buildWorkerCommand(db, {
         pyFolder: folderPath, tesseract: tesseractPath(), filesFile, mode: procMode,
@@ -3387,7 +3399,7 @@ function register(ctx) {
     const _emitMerge = (field, decision, oldV, newV) => {
       if (!traceWanted(diagOn)) return;
       routeTrace({ type: 'trace', doc: filename, event: 'reprocess_merge',
-                   field, decision, old: oldV ?? null, new: newV ?? null });
+                   field, decision, old: oldV ?? null, new: newV ?? null }, true);
     };
 
     // Resolve the reprocessed doc type BEFORE merging: a reprocess that CHANGES the
@@ -3426,7 +3438,7 @@ function register(ctx) {
         + (result.type_overridden ? " (machine-assigned type overridden by the doc's own title)" : ''));
       if (traceWanted(diagOn)) {
         routeTrace({ type: 'trace', doc: filename, event: 'reprocess_type_change',
-                     from: oldName, to: reprocType.name, overridden: !!result.type_overridden });
+                     from: oldName, to: reprocType.name, overridden: !!result.type_overridden }, true);
       }
     }
 
@@ -3500,7 +3512,7 @@ function register(ctx) {
       try { _reprocessContested.add(docId); } catch {}
       for (const c of _contested) {
         try { routeTrace({ type: 'trace', doc: filename, event: 'reprocess_imageless_contested',
-                           field: c.field, old: c.old ?? null, new: c.new ?? null }); } catch {}
+                           field: c.field, old: c.old ?? null, new: c.new ?? null }, true); } catch {}
       }
       logger?.log?.(`  Quick imageless: doc ${docId} held (image-family field disagreed with the cached text) — ${_contested.map(c => c.field).join(', ')}`);
     }
@@ -3898,7 +3910,7 @@ function register(ctx) {
           if (!trimmed) continue;
           try {
             const msg = JSON.parse(trimmed);
-            if (msg.type === 'trace') { routeTrace(msg); continue; }
+            if (msg.type === 'trace') { routeTrace(msg, true); continue; }   // foreground single-doc reprocess → the in-Review console
             if (msg.type === 'file_done') _recordDevDoc(msg);
             // Single-doc reprocess stays on event.sender (short, window-bound). NOTE the asymmetry:
             // Reprocess-ALL uses mirrorReprocess (the LIVE review window) so it survives close+reopen.
@@ -5085,7 +5097,7 @@ function register(ctx) {
       // with --deskew-pages (a straighten needs the pixels; deskewAll forces the whole batch Full).
       if (reextract) scriptArgs.push('--reextract');
       if (deskewAll) scriptArgs.push('--deskew-pages', '--deskew-min-angle', String(deskewMinAngle));   // C3: straighten pages tilted past the operator's floor before reading (Python no-ops below it / on born-digital)
-      if (traceWanted(diagOn)) {
+      if (traceWantedBg(diagOn)) {
         scriptArgs.push('--trace');
         try { fs.mkdirSync(ctx.devSliceDir, { recursive: true }); scriptArgs.push('--slice-dir', ctx.devSliceDir); } catch {}
       }

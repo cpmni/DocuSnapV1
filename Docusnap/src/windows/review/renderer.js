@@ -10765,11 +10765,13 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
   const inField = (el) => !!el && (el.isContentEditable
     || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
 
-  // Subscribe ONCE. Events only arrive while reviewTraceActive is set in main, so
-  // this is inert until the console is unlocked. During a single-doc reprocess the
-  // stream belongs to the doc the user just acted on, so we buffer it as-is rather
-  // than filtering on filename (a reprocess runs under a temp filename — the known
-  // trace-orphan case — so a filename filter would drop its events).
+  // Subscribe ONCE. Events only arrive while reviewTraceActive is set in main, AND main forwards
+  // ONLY the FOREGROUND single-doc reprocess to this console — background import / Reprocess-All /
+  // quiet-lane shards route to the inspector + diag log, never here (routeTrace's `toReview` gate in
+  // processing/handler.js, owner ask 2026-09-10: the console must show ONE doc, not everything
+  // background OCR touches). So the stream already belongs to the doc the operator acted on; we
+  // buffer it as-is rather than filtering on filename (a reprocess runs under a temp filename — the
+  // known trace-orphan case — so a filename filter would drop its own events).
   window.docusnap.onProcessTrace((ev) => {
     if (!active || !ev) return;
     traceBuf.push(ev);
