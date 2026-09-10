@@ -1,6 +1,11 @@
 # Silent wrong-date auto-file (sales_order #77/#78) — 007 diagnosis + fix design
 
-**Date:** 2026-09-09 night · **Status:** DIAGNOSED — fix is APPROVAL-CLASS (not built). Found by the night-run
+**Date:** 2026-09-09 night · **Status:** RECOMMENDED FIX BUILT DARK 2026-09-10 (mig 152 `role_disagree_refuse_at100`,
+owner-authorised; Oracle C6/C7 of the edge-clip arc named this the lowest-blast-radius safety, "land it regardless").
+The belt runs the `_pageFamilyDisagrees` role leg at `overall==100` (roleDisagreeOnly), NOT the over-blocking full
+at100 gate; HARD dep `trust_role_disagreement_refuse` ON; seed OFF in TEST_SWITCH_KEYS; pin
+`database/modules/test_role_disagree_refuse_at100.js` (all green, incl. an OFF pin documenting the live misfile).
+Complementary B (make a 94 role drag `overall` below 100) + Complementary C (cure the read) remain open. Found by the night-run
 123-doc anomaly sweep (`TESTING/_measure/night_20260909/`). 007 (general-purpose + persona) root-caused it with
 pixel renders + end-to-end engine repro. Scratch: `scratchpad/007_dateclip/`.
 

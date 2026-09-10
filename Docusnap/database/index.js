@@ -3084,6 +3084,25 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 151 (template_edge_clip_heal): ${e.message}`); }
   }
 
+  // ── migration 152: role_disagree_refuse_at100 seeded OFF (2026-09-10; the DATE_LEFT_CLIP_M2 recommended
+  //    fix, Oracle C6/C7, docs/designs/DATE_LEFT_CLIP_M2_2026-09-09.md). The M=2 SILENT wrong-date auto-file
+  //    (Copperfield sales_order #77/#78): a leading-day-digit CLIP from teach_angle_compose_scan emits
+  //    overall_confidence==100 despite a 94 order_date and NO note, so it rides the gate-free 100% path — the
+  //    trust_role_disagreement_refuse leg that WOULD catch it (an independent PAGE family read a different
+  //    value on a ref/date role) only runs sub-100. When ON, isAutoFileEligible runs THAT leg alone
+  //    (roleDisagreeOnly) at overall==100 too — high-precision, fail-toward-review, the correct value is in
+  //    the corroboration record. NOT the over-blocking full at100 gate (strict_100_autofile stays OFF). HARD
+  //    dep trust_role_disagreement_refuse ON (a customer default; else corroboration isn't selected and the
+  //    leg is inert). DARK (in TEST_SWITCH_KEYS); byte-identical OFF. ⚑ FLIP GATE: unit (date role disagree at
+  //    100 → refused; agree/absent → files) + realdoc wouldAutoFile(ON) ⊆ wouldAutoFile(OFF) + M=0 → Oracle.
+  if (!applied.has(152)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('role_disagree_refuse_at100', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (152)').run();
+      console.log(`JS migration 152 applied: role_disagree_refuse_at100 (run the role-family disagreement refusal at overall==100) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 152 (role_disagree_refuse_at100): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

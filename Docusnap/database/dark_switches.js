@@ -118,6 +118,14 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // _corrobLicensedKeyword scoped to the _edgeclipheal family + realdoc M=0 + fire census + adversarial
   // neighbour set → Oracle. docs/designs/EDGE_CLIP_HEAL_2026-09-10.md.
   'template_edge_clip_heal',
+  // role_disagree_refuse_at100 (mig 152, 2026-09-10, DATE_LEFT_CLIP_M2 recommended fix, Oracle C6/C7): the
+  // M=2 SILENT wrong-date auto-file (Copperfield sales_order #77/#78) — a leading-digit date clip emits
+  // overall==100 despite a 94 role + NO note, riding the gate-free 100% path (the role-disagreement leg only
+  // runs sub-100). When ON, isAutoFileEligible runs the trust_role_disagreement_refuse page-family leg at
+  // overall==100 too (roleDisagreeOnly), NOT the over-blocking full at100 gate. Fail-toward-review; the
+  // correct value is in the corroboration record. HARD dep trust_role_disagreement_refuse ON. ⚑ FLIP GATE:
+  // unit + realdoc wouldFile(ON)⊆wouldFile(OFF) + M=0 → Oracle. docs/designs/DATE_LEFT_CLIP_M2_2026-09-09.md.
+  'role_disagree_refuse_at100',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

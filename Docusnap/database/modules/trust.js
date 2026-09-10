@@ -588,6 +588,16 @@ function _roleDisagreementRefuseEnabled(db) {
   try { return require('./learning').getSetting(db, 'trust_role_disagreement_refuse', 'false') === 'true'; }
   catch { return false; }
 }
+// M=2 belt (mig 152, 2026-09-10; the DATE_LEFT_CLIP_M2 recommended fix, Oracle C6/C7). Runs the SAME
+// high-precision page-family role-disagreement refusal at overall==100 that already guards the sub-100
+// path — the leading-digit date clip (sales_order #77/#78) emits overall 100 despite a 94 role and NO
+// note, so it rides the gate-free 100% path today. Reads ONLY the _pageFamilyDisagrees leg, never the
+// over-blocking full at100 gate. HARD dep trust_role_disagreement_refuse ON (else corroboration isn't
+// even selected and the leg is inert). DARK, seed OFF, byte-identical OFF.
+function _roleDisagreeAt100Enabled(db) {
+  try { return require('./learning').getSetting(db, 'role_disagree_refuse_at100', 'false') === 'true'; }
+  catch { return false; }
+}
 function _pageFamilyDisagrees(record) {
   let rec = record;
   if (typeof rec === 'string') { try { rec = JSON.parse(rec); } catch { return null; } }
@@ -868,7 +878,7 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
   // stored row) — the reliability harness uses this to ask "would THIS reprocessed read auto-file".
   const templateMatched = (opts.templateMatched !== undefined) ? opts.templateMatched : !!doc.template_id;
   // at100 trusts the full read → no template requirement (else logo-only 100% suppliers regress).
-  if (!opts.at100 && opts.requireTemplate !== false && !templateMatched) return { ok: false, reason: 'no-template' };
+  if (!opts.at100 && !opts.roleDisagreeOnly && opts.requireTemplate !== false && !templateMatched) return { ok: false, reason: 'no-template' };
 
   const sup  = _norm(supplier);
   const sl   = String(slug || '').toLowerCase().trim();
@@ -915,6 +925,22 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
   const _roleDomOn = (opts.roleDominant !== undefined) ? !!opts.roleDominant : _roleDominantEnabled(db);
   const _shadowSkipOn = (opts.shadowRowSkip !== undefined)
     ? !!opts.shadowRowSkip : _shadowRowSkipEnabled(db);
+
+  // ROLE-DISAGREE-ONLY (M=2 belt, mig 152): the caller (isAutoFileEligible at overall==100) wants ONLY the
+  // high-precision page-family role-disagreement refusal, not the over-blocking full at100 re-checks. Scan
+  // the ref/date roles for an independent PAGE family that read a DIFFERENT value and refuse; everything
+  // else files exactly as the gate-free 100% path does today. Inert unless _roleDisagreeOn (then the exs
+  // query above carries `corroboration`). Returns early — never touches the strict/shape/note loop below.
+  if (opts.roleDisagreeOnly) {
+    if (_roleDisagreeOn) {
+      for (const e of exs) {
+        if ((e.field_key === _dtRow.ref_field_key || e.field_key === _dtRow.date_field_key)
+            && 'corroboration' in e && _pageFamilyDisagrees(e.corroboration))
+          return { ok: false, reason: `disagreeing-read:${e.field_key}` };
+      }
+    }
+    return { ok: true, reason: 'role-disagree-only' };
+  }
 
   for (const e of exs) {
     const v = String(e.display_value ?? e.raw_value ?? '').trim();
@@ -1242,6 +1268,16 @@ function isAutoFileEligible(db, doc, opts = {}) {
               : learning.getSetting(db, 'strict_100_autofile', 'false') === 'true')) {
     const g = docTrustGate(db, doc.id, doc.supplier_name, slug, { ...opts, at100: true });
     if (!g.ok) return { eligible: false, floor, trusted: t.trusted, reason: g.reason };
+  } else if (opts.roleDisagreeAt100 !== undefined ? opts.roleDisagreeAt100
+             : _roleDisagreeAt100Enabled(db)) {
+    // M=2 belt (mig 152): even on the gate-free 100% path, a filing-critical ROLE whose value an
+    // independent PAGE family contradicts must not silently auto-file — the leading-digit date clip
+    // (sales_order #77/#78: overall==100 despite a 94 order_date, no note, keyword family on `disagree`).
+    // Runs ONLY the _pageFamilyDisagrees leg (roleDisagreeOnly), not the over-blocking full at100 gate.
+    // Fail-toward-review; the correct value is in the corroboration record for the human. HARD dep
+    // trust_role_disagreement_refuse ON. Byte-identical when the switch is OFF.
+    const g = docTrustGate(db, doc.id, doc.supplier_name, slug, { ...opts, roleDisagreeOnly: true });
+    if (!g.ok) return { eligible: false, floor, trusted: t.trusted, reason: g.reason };
   }
   // `basis` names WHICH route lowered the floor (or none) — the auto-file claim stamps
   // confirmed_via from it (Oracle C2: 'auto_corroborated' is excluded from the graduation
@@ -1278,9 +1314,10 @@ function autoFileEligibleIds(db, docs, opts = {}) {
   // 2026-08-22 role-field dominant class (C1.3) — one settings read per batch.
   const roleDominant = (opts.roleDominant !== undefined) ? !!opts.roleDominant : _roleDominantEnabled(db);
   const roleDisagreementRefuse = (opts.roleDisagreementRefuse !== undefined) ? !!opts.roleDisagreementRefuse : _roleDisagreementRefuseEnabled(db);   // r19 (d)
+  const roleDisagreeAt100 = (opts.roleDisagreeAt100 !== undefined) ? !!opts.roleDisagreeAt100 : _roleDisagreeAt100Enabled(db);   // M=2 belt (mig 152)
   const ids = [];
   for (const d of (docs || [])) {
-    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile, gateUnify, critFieldCorrobRelax, vacuousCorrectedToIgnore, roleDominant, roleDisagreementRefuse }).eligible) ids.push(d.id);
+    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile, gateUnify, critFieldCorrobRelax, vacuousCorrectedToIgnore, roleDominant, roleDisagreementRefuse, roleDisagreeAt100 }).eligible) ids.push(d.id);
   }
   return ids;
 }
