@@ -3198,6 +3198,23 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 157 (template_drift_override_guard): ${e.message}`); }
   }
 
+  // ── migration 158: note_topic_dedup seeded OFF (2026-09-10 night; gary → Oracle SIGN-OFF-W/COND,
+  //    docs/designs/NOTE_TOPIC_DEDUP_2026-09-10.md). A reference field accumulated a WALL of overlapping
+  //    "check the O/0 confusable ref" notes (owner: "very wordy message"). The engine self-limits to one
+  //    note per run, but the JS merge sites (handler.js LANE-HOLD SURVIVAL + rereadHolds.js S3-C5) blind-append
+  //    across reprocess runs. When ON, composeNote collapses two SAME-ref-recheck-topic notes to the higher-rank
+  //    one (the lane-hold survives → the hold survives; the ABSENT mark never de-dups; different topics concat).
+  //    trust.js keys on note PRESENCE + method sentinels, never text → auto-file byte-identical. DARK (in
+  //    TEST_SWITCH_KEYS); byte-identical OFF. ⚑ FLIP GATE: unit pins + realdoc M=0 + auto-file set-equality
+  //    (isAutoFileEligible set ON==OFF across the corpus).
+  if (!applied.has(158)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('note_topic_dedup', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (158)').run();
+      console.log(`JS migration 158 applied: note_topic_dedup (collapse stacked same-topic ref-recheck notes to one) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 158 (note_topic_dedup): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

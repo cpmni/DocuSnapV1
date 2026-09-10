@@ -1661,7 +1661,12 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hidd
       const keep = String(ex.validation_note || '').trim();
       const fresh = String(row.validation_note || '').trim();
       trace(row.field_key, 'kept_lane_hold', ex.display_value, row.display_value);
-      return { ...row, validation_note: fresh && !keep.includes(fresh) ? `${keep} ${fresh}` : keep,
+      // NOTE-TOPIC DE-DUP (mig 158, DARK note_topic_dedup): when the carried lane-hold + the fresh note are
+      // the SAME ref-recheck topic, collapse to the higher-rank one (the lane-hold survives) instead of
+      // stacking a second sentence. OFF (opts.noteTopicDedup falsey) ⇒ the exact current concat ⇒ byte-identical.
+      const _cnDedup = opts.noteTopicDedup ? require('./composeNote').composeNote(keep, fresh) : null;
+      return { ...row, validation_note: _cnDedup != null ? _cnDedup
+                 : (fresh && !keep.includes(fresh) ? `${keep} ${fresh}` : keep),
                corrected_to: row.corrected_to || ex.corrected_to || null };
     }
     // IMAGELESS PRESERVE (Quick Reprocess). The fresh value is text-only; if it DIFFERS from a stored
@@ -3525,7 +3530,8 @@ function register(ctx) {
     const _contested = [];
     const _mergeStats = { imagelessKept: 0 };
     const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge, _hiddenKeys,
-      { imageless: _imageless, taughtKeys: _taughtKeys, contestedOut: _contested, stats: _mergeStats });
+      { imageless: _imageless, taughtKeys: _taughtKeys, contestedOut: _contested, stats: _mergeStats,
+        noteTopicDedup: require('./composeNote').noteDedupOn(db) });   // mig 158 DARK — off ⇒ byte-identical
 
     // C7: an imageless run never blanks a stored supplier (the logo identity arm never runs, so a
     // text-only blank read must not NULL the column). C4: when a guard kept ≥1 stored image/taught read,

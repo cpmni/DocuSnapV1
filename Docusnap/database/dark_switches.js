@@ -174,6 +174,15 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // still catches a genuine drift (Oracle C1). Byte-identical OFF. ⚑ FLIP GATE: unit pins incl. the seam pin
   // (weak match + real page transform → arbiter still fires) + census the floor + realdoc M=0 + live #243.
   'template_drift_override_guard',
+  // note_topic_dedup (mig 158, 2026-09-10 night, gary → Oracle SIGN-OFF-W/COND): a ref field accumulated a WALL
+  // of overlapping "check the O/0 confusable ref" notes — the engine self-limits to one note/run, but the JS
+  // merge sites (handler.js LANE-HOLD SURVIVAL :1664 + rereadHolds.js S3-C5 :135) blind-append across reprocess
+  // runs. When ON, `composeNote` collapses two SAME-ref-recheck-topic notes to the higher-rank one (the lane-hold
+  // survives → the hold survives); every other note pair + the ABSENT mark fall through to the current concat.
+  // trust.js keys on note PRESENCE + method sentinels (never text) → auto-file byte-identical. Byte-identical OFF.
+  // ⚑ FLIP GATE: unit pins (lane-hold survives both ways; absent+advisory both kept; different-topic not merged;
+  // OFF concat-identical; mark-sync) + realdoc M=0 + the auto-file set-equality corpus gate (ON==OFF).
+  'note_topic_dedup',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

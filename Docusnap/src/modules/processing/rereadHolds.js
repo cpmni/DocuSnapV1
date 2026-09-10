@@ -132,7 +132,15 @@ function create(deps = {}) {
       }
       // Chris round 20 card 7: a Reprocess that re-reads the SAME value carries the earlier hold
       // (mergeReprocessRows) — never print the same sentence twice.
-      if (!prior.includes(note)) upd.run(prior ? `${prior} ${note}` : note, docId, key);
+      // NOTE-TOPIC DE-DUP (mig 158, DARK note_topic_dedup): when `prior` is a same-topic ref advisory, the
+      // incoming lane-hold `note` outranks it — write the lane-hold ALONE (drops the redundant advisory)
+      // instead of stacking. OFF ⇒ the exact current concat (skip-write when prior already includes note).
+      const _cn = require('./composeNote');
+      if (_cn.noteDedupOn(db)) {
+        const _d = _cn.composeNote(prior, note);
+        if (_d != null) { if (_d !== prior) upd.run(_d, docId, key); }
+        else if (!prior.includes(note)) upd.run(prior ? `${prior} ${note}` : note, docId, key);
+      } else if (!prior.includes(note)) upd.run(prior ? `${prior} ${note}` : note, docId, key);
       // Chris round 20 card 2: the one-click "Use <old>" is for dates/references — never for the IDENTITY.
       // An old issuer read ('Ticket Type', 'DOCUMENT OLUTIONS') is a garble the arbiters already replaced;
       // offering it back one click from Confirm filed a worksheet under Ticket-Type6\January with no
