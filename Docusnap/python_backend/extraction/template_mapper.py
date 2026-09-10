@@ -2729,7 +2729,13 @@ def _maybe_pad_code(page, target_box, val_type, result, tight_ocr_conf,
         # Part A (mig 153): surface the pad-window recovery so the engine's _taught_flag_corrob_adopt arc can
         # ADOPT it IFF an INDEPENDENT page-text (keyword) family corroborates the SAME value + a positional
         # guard (Oracle C1). A `_`-key the engine pops at merge; inert unless the arc is armed downstream.
-        out["_pad_witness"] = {"value": pad_val, "confidence": pad_conf}
+        # `box` = the taught target box [x,y,w,h] norm, so the engine can row-check the keyword witness (C1).
+        try:
+            _tb = [float(target_box.get("x_norm")), float(target_box.get("y_norm")),
+                   float(target_box.get("w_norm")), float(target_box.get("h_norm"))]
+        except (TypeError, ValueError, AttributeError):
+            _tb = None
+        out["_pad_witness"] = {"value": pad_val, "confidence": pad_conf, "box": _tb}
     return out
 
 

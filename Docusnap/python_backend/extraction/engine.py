@@ -660,6 +660,15 @@ UNIVERSAL_VERIFY_CENSUS  = os.environ.get('UNIVERSAL_VERIFY_CENSUS', '0') != '0'
 # cannot FAIL that gate, so numeric/percentage stay dark behind their own switch until the
 # numeric/text GT arm (Customer Doc Test corpus) exists. RESTORE alone arms ref+date (stage 2a).
 UNIVERSAL_VERIFY_NUMERIC = os.environ.get('UNIVERSAL_VERIFY_NUMERIC', '0') != '0'
+# TAUGHT-CORROB-ADOPT (mig 153, 2026-09-10 — gary+007 → Oracle SIGN-OFF-W/COND C1-C4). The MIRROR of the class
+# _universal_postmerge_verify EXCLUDES: a Stage-0.5 taught winner that raised a pad-window _padcodeflag (a
+# self-declared clip) whose pad recovery the INDEPENDENT keyword page-text family corroborates. Adopts the
+# recovered value PHASE 1 review-bound (cap < 88 + softened note, NO auto-file; Phase 2's @90 is census-gated).
+# DARK: OFF ⇒ the arc returns immediately ⇒ byte-identical. HARD dep template_pad_window_code (produces _pad_witness).
+_TAUGHT_CORROB_ADOPT_ON = os.environ.get('TEMPLATE_TAUGHT_CORROB_ADOPT', '0') != '0'
+_TCA_PHASE1_CAP = 87   # Oracle C2: review-bound, below the 88 critical auto-file floor (Phase 2 raises to 90)
+_TCA_ADOPT_NOTE = ("Corrected from the taught box's clipped read to '{}' — an independent reading of the page "
+                   "agrees. Please confirm.")
 
 # NAME-UNCLIP reconcile (reggie design → Oracle SIGN-OFF-W/COND 2026-08-04 — docs/oracle_log.md).
 # The free-text complement of _reconcile_clipped_suffix (which SKIPS name-like fields): a Stage-0.5
@@ -7717,6 +7726,113 @@ class ExtractionEngine:
             pass
         return None
 
+    def _tca_keyword_box_far(self, cands, alt, taught_box):
+        """C1 positional guard (Oracle) for the taught-corrob-adopt. True when the keyword witness for `alt`
+        has a LOCATED box that is OFF the taught box's row-band (a neighbour bleed — the full-page keyword
+        regex has no positional binding, so it can latch a spatially-adjacent same-shape code). False when the
+        keyword box is row-aligned OR no located keyword box exists (Phase-1 review-bound tolerates the latter;
+        Phase-2 auto-file must additionally require a located box). Fail-safe: any error → False (don't block P1)."""
+        try:
+            tb = taught_box
+            if not (isinstance(tb, (list, tuple)) and len(tb) >= 4):
+                return False                                    # no taught box → can't judge → don't block P1
+            ty, th = float(tb[1]), float(tb[3])
+            tcy = ty + th / 2.0
+            akey = "".join(c for c in _cmp_norm(str(alt)) if c.isalnum())
+            for c in (cands or []):
+                if _crosscheck_witness_bucket((c or {}).get('stage'), (c or {}).get('method')) != ('keyword', False):
+                    continue
+                cv = "".join(ch for ch in _cmp_norm(str((c or {}).get('value') or '')) if ch.isalnum())
+                if cv != akey:
+                    continue
+                box = (c or {}).get('box')
+                if not (isinstance(box, (list, tuple)) and len(box) >= 2):
+                    continue                                    # this keyword cand isn't located → try others
+                ky = float(box[1])
+                if abs(ky - tcy) <= max(0.03, 1.5 * th):
+                    return False                                # row-aligned with the taught box → not a neighbour
+                return True                                     # a located keyword box OFF the taught row → bleed
+            return False                                        # no located keyword box → don't block Phase 1
+        except Exception:
+            return False
+
+    def _taught_flag_corrob_adopt(self, results, field_defs, ref_field_key,
+                                  date_field_keys, ocr_text, supplier_name, document_slug):
+        """TAUGHT-CORROB-ADOPT (mig 153, gary+007 → Oracle SIGN-OFF-W/COND C1-C4; docs/designs/
+        TAUGHT_CORROB_ADOPT_2026-09-10.md). The MIRROR of the class _universal_postmerge_verify EXCLUDES: a
+        Stage-0.5 taught winner that raised a pad-window `_padcodeflag` (a self-declared clip — the taught box
+        read a different value than its own widened window) whose pad recovery the INDEPENDENT keyword page-text
+        family corroborates. On the exhibit (Thornbury delivery_number): taught box committed `IN-64470`, the
+        page prints `DN-64472`, the keyword family read `DN-64472` — ADOPT `DN-64472`.
+
+        Guardrail (Oracle C5-equivalent): the agreeing set MUST contain the `keyword` family (a page-text read,
+        genuinely independent of the box crop) — never two box-crops of the same clip. Plus the C1 positional
+        guard (the keyword witness sits on the taught box's row, not a neighbour) and _uv_restore_demotion
+        credibility (a digit-slip / date-shaped / outlier alternative is refused). PHASE 1: adopt review-bound —
+        cap _TCA_PHASE1_CAP (< 88) + a softened note KEPT so the doc is held for one confirm and any residual
+        bleed still surfaces; Phase 2's @90 band-88 auto-file is census-gated. Returns True if any field adopted
+        (the caller folds it into the recompute guard). OFF / no `_pad_witness` / no keyword slot ⇒ byte-identical."""
+        if not _TAUGHT_CORROB_ADOPT_ON:
+            return False
+        adopted = False
+        try:
+            type_by_key = {f.get('key'): (f.get('type') or '').lower() for f in (field_defs or [])}
+            field_patterns = _seed_field_patterns(self.patterns.get('field_patterns') or {}, field_defs)
+            validation_patterns = self.patterns.get('validation_patterns') or {}
+            for key, data in list(results.items()):
+                if key.startswith('_') or not isinstance(data, dict):
+                    continue
+                pw = data.get('_pad_witness')
+                if not (isinstance(pw, dict) and pw.get('value')):
+                    continue                                    # only a mapper-declared clip carries this (Part A)
+                m = str(data.get('method') or '')
+                if not (_is_stage05_located(m) and m.endswith('_padcodeflag')):
+                    continue                                    # exactly the Stage-0.5 flagged class UV excludes
+                wv = str(data.get('value') or '').strip()
+                if not wv:
+                    continue
+                tier = _uv_tier(key, type_by_key.get(key), ref_field_key, date_field_keys)
+                if tier not in _UV_RESTORE_TIERS:               # ref/numeric/percentage (date owns _pad_date_witness)
+                    continue
+                cands = list((self._field_candidates or {}).get(key) or [])
+                # Add the pad recovery as a mapping/crop leg: it supplies the 2nd family + the crop leg the
+                # ≥2/crop bar needs; the INDEPENDENT keyword cand (already in the ledger) is what the guardrail
+                # below actually requires. The pad alone (same family as the winner) can never license.
+                cands.append({'value': pw['value'], 'method': 'template_mapping',
+                              'stage': '0.5_mapping', 'box': pw.get('box')})
+                slot = _uv_corroborated_alternative(data, cands, ocr_text, tier,
+                                                    type_by_key.get(key), require_crop=True)
+                if not slot:
+                    continue
+                if 'keyword' not in slot['fams']:               # THE GUARDRAIL: page-text independence required
+                    continue
+                alt = slot['raw']
+                if self._uv_restore_demotion(key, tier, wv, alt, supplier_name,
+                                             document_slug, field_patterns, validation_patterns):
+                    continue                                    # digit-slip / date-shaped / outlier → keep the flag
+                if self._tca_keyword_box_far(cands, alt, pw.get('box')):
+                    continue                                    # C1: keyword witness off the taught row → neighbour bleed
+                base = m[:-len('_padcodeflag')] if m.endswith('_padcodeflag') else m
+                data['value'] = alt
+                if 'display_value' in data:
+                    data['display_value'] = alt
+                data['method'] = (base or 'template_mapping') + '_corrobadopt'   # KEEP mapping family (emit same-family-skips the deposed value)
+                # The adopted value is the corroborated recovery — carry ITS confidence, capped at the
+                # Phase-1 review-bound tier (< 88). Phase 2 raises the cap to 90 for band-88 auto-file.
+                data['confidence'] = min(int(pw.get('confidence') or 90), _TCA_PHASE1_CAP)
+                data['validation_note'] = _TCA_ADOPT_NOTE.format(alt)
+                data.pop('corrected_to', None)
+                data.pop('was_corrected', None)
+                data.pop('_pad_witness', None)                  # consume
+                adopted = True
+                self.log(f"  Taught-corrob-adopt: {key} '{wv}' -> '{alt}' (keyword-corroborated over a flagged "
+                         f"taught box; review-bound @{data['confidence']})")
+                self._t('taught_corrob_adopt', field=key, tier=tier, was=wv, value=alt,
+                        fams=sorted(slot['fams']))
+        except Exception as e:
+            self.log(f"  Taught-corrob-adopt error (fail-safe, no adopt): {e}")
+        return adopted
+
     def _universal_postmerge_verify(self, results, field_defs, ref_field_key,
                                     date_field_keys, ocr_text, supplier_name, document_slug):
         """Slice-2 UNIVERSAL post-merge verify (gary+reggie+007 → Oracle SIGN-OFF-W/COND
@@ -11939,6 +12055,11 @@ class ExtractionEngine:
         # read it — so `_demote_recon_total_corroborated_note` sees the crop-side witness it requires.
         # Commits nothing; off ⇒ returns 0 ⇒ byte-identical.
         self._reslice_witness_sweep(results, field_defs)
+        # TAUGHT-CORROB-ADOPT (mig 153): adopt a keyword-corroborated pad recovery over a FLAGGED Stage-0.5
+        # taught box BEFORE the emit is built, so the rebuilt record reflects the adopted winner (agree=[keyword],
+        # disagree=[] — the deposed taught value is same-family-skipped). Byte-identical OFF / when nothing adopts.
+        _adopted_tca = self._taught_flag_corrob_adopt(results, field_defs, ref_field_key,
+                                                      date_field_keys, ocr_text, supplier_name, document_slug)
         _corrob = self._build_corroboration_emit(results)
         for _rk, _rw in (getattr(self, '_reslice_witness', None) or {}).items():
             if isinstance(_corrob.get(_rk), dict):
@@ -11965,7 +12086,7 @@ class ExtractionEngine:
         # `ocr_text` reaches the resolver for the P lane's W3 witness only (is the adopted string
         # printed on the page?). Defaulted in the signature so a direct unit call stays valid.
         _d4 = self._resolve_corroborated_notes(results, field_defs, _corrob, matched_tmpl, ocr_text)
-        if _d1 or _d2 or _d3 or _d4:   # all pre-evaluated; inline `or` would short-circuit
+        if _d1 or _d2 or _d3 or _d4 or _adopted_tca:   # all pre-evaluated; inline `or` would short-circuit
             # Oracle B1: overall/_needs_review were computed upstream — recompute or a demoted
             # doc parks with no visible reason. Same exclusion + format delta; needs_review
             # drops ONLY when the demoted note was the doc's LAST (the any-note guard keeps

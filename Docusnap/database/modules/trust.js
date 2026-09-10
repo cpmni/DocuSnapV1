@@ -1237,7 +1237,9 @@ function isAutoFileEligible(db, doc, opts = {}) {
             // genuinely INDEPENDENT page-text keyword witness (_corrobLicensedKeyword), not the
             // box-crop-satisfiable _corrobLicensed. Every other method keeps the existing licence.
             const method = String((e.extraction_method || e.method) || '');
-            const licensed = method.includes('_edgeclipheal')
+            // Every ADOPT-over-a-taught-box family (_edgeclipheal + _corrobadopt, mig 151/153) must ride the
+            // page-text keyword witness, not the box-crop common-mode _corrobLicensed (007 + Oracle C5).
+            const licensed = (method.includes('_edgeclipheal') || method.includes('_corrobadopt'))
               ? _corrobLicensedKeyword(e.corroboration)
               : _corrobLicensed(e.corroboration);
             if (licensed) {
