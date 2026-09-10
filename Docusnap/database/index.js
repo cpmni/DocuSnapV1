@@ -3179,6 +3179,25 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 156 (name_role_nonname_flag): ${e.message}`); }
   }
 
+  // ── migration 157: template_drift_override_guard seeded OFF (2026-09-10; 007 → Oracle SIGN-OFF-W/COND C1,
+  //    docs/designs/DRIFT_OVERRIDE_GUARD_2026-09-10.md). The Stage-0.5 drift guard DISCARDS a credible absolute
+  //    read and relocates off the located label; _locate_anchor's fuzzy fallback can match a cross-word stranger
+  //    (the address line "Chester" scores 0.667 vs "Customer", above the 0.6 threshold) ~2.5 lines below the
+  //    taught anchor → a PHANTOM drift that relocates customer_name onto the postcode line (Vellum & Crane #243:
+  //    "Larch & Hollow Cafe Co" @95 discarded for "CH1 2HU"). When ON, a drift-override that discards the
+  //    absolute read requires the taught label (exact/inline) OR match_score ≥ 0.8 (in the measured 0.667/0.82
+  //    gap); a weak match FALLS THROUGH with anchor_stable=False so the registration arbiter still catches a
+  //    genuine drift (Oracle C1 — the reg arbiter is an independent page-transform signal, not the label OCR).
+  //    DARK (in TEST_SWITCH_KEYS); byte-identical OFF. ⚑ FLIP GATE: unit pins incl. the seam pin (weak match +
+  //    real page transform → arbiter still fires) + census the floor + realdoc M=0 + the live #243 confirm.
+  if (!applied.has(157)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('template_drift_override_guard', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (157)').run();
+      console.log(`JS migration 157 applied: template_drift_override_guard (a drift-relocate may only discard the absolute read on a credible label match) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 157 (template_drift_override_guard): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

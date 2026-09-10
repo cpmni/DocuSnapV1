@@ -364,6 +364,11 @@ function _reconcileEnv(db) {
     // postcode line of a multi-line customer block) is flagged + held for review instead of silently auto-filed.
     // DARK (mig 156), byte-identical OFF.
     if (learning.getSetting(db, 'name_role_nonname_flag', 'false') === 'true') env.NAME_ROLE_NONNAME_FLAG = '1';
+    // TEMPLATE_DRIFT_OVERRIDE_GUARD (2026-09-10, 007 → Oracle SIGN-OFF-W/COND): the Stage-0.5 drift override may
+    // only DISCARD a credible absolute read when the label was CREDIBLY located (taught/exact, or match_score
+    // ≥ floor) — stops a cross-word fuzzy match ("Chester" vs "Customer") relocating customer_name onto the
+    // postcode line. DARK (mig 157), byte-identical OFF.
+    if (learning.getSetting(db, 'template_drift_override_guard', 'false') === 'true') env.TEMPLATE_DRIFT_OVERRIDE_GUARD = '1';
     // INLINE_DISAGREE_CORROB_SOFTEN (2026-09-07, gary → Oracle SIGN-OFF-W/COND G1-G7): class G rewords the
     // box-clip value-doubt note (never clears) when an independent KEYWORD read corroborates the value —
     // review-bound, conf never lifted. DARK (mig 135; mig 136 = TEST force-ON). Env uses the '1' idiom.

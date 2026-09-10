@@ -75,6 +75,14 @@ _UNSET = object()         # "located not provided" sentinel (distinct from a Non
 # still needs a REAL move, not OCR jitter, to count as drift (see _label_drifted).
 _DRIFT_FLOOR = 0.02
 
+# DRIFT-OVERRIDE MATCH FLOOR (mig 157, DARK TEMPLATE_DRIFT_OVERRIDE_GUARD — 007 → Oracle SIGN-OFF-W/COND).
+# The minimum _locate_anchor match_score for a drift-relocate to be allowed to DISCARD a credible absolute
+# read. A fuzzy cross-word stranger (the address line "Chester" scores 0.667 vs "Customer") must not be
+# trusted to relocate the read onto the wrong line. Measured gap: spurious cross-word ≈0.667; genuine label
+# garbles ≥0.82 ("Costomers"), 1.0 (exact). Placed by census (extend _exactness_census to log match_score);
+# 0.8 sits cleanly in the gap. Consulted ONLY when the guard env is on; OFF ⇒ byte-identical.
+_DRIFT_OVERRIDE_MATCH_FLOOR = 0.8
+
 # ── S-D VACUOUS-FIT GATE, second call site (2026-08-06; Oracle SEND-BACK -> this slice) ───────────
 # A similarity fit surviving on n_inliers <= 2 is EXACTLY DETERMINED: `registration.fit_transform`
 # scores it on the very points that produced it, so its residual is 0.0000 BY CONSTRUCTION and it
@@ -1581,8 +1589,12 @@ def _exactness_census(field_key, val_type, anchor_text, located):
         return
     try:
         matched = (located or {}).get("matched_text")
+        # mig 157 / Oracle C2: also record match_score so the drift-override match FLOOR
+        # (_DRIFT_OVERRIDE_MATCH_FLOOR) can be PLACED from the census — separating the wrong (low-score,
+        # cross-word) overrides from the right (high-score, garbled-label) ones — instead of a 2-point gap.
         rec = {"field": field_key, "type": val_type, "anchor": anchor_text,
-               "matched": matched, "exact": bool(_label_is_the_taught_one(anchor_text, matched))}
+               "matched": matched, "exact": bool(_label_is_the_taught_one(anchor_text, matched)),
+               "match_score": (located or {}).get("match_score")}
         with open('%s.%d.jsonl' % (_EXACTNESS_CENSUS_PATH, os.getpid()), 'a',
                   encoding='utf-8') as fh:
             fh.write(json.dumps(rec) + '\n')
@@ -2838,16 +2850,33 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
         # "Beaumont Care Homes Ltd - Comber" → "pantionahe MUGS Liu COTVCE". Genuine drift
         # that the per-label test misses is caught by the REGISTRATION ARBITER just below.)
         _exactness_census(field_key, val_type, anchor_text, drift_located)   # ORACLE C7, inert by default
+        # DRIFT-OVERRIDE MATCH GUARD (mig 157, DARK TEMPLATE_DRIFT_OVERRIDE_GUARD — 007 → Oracle SIGN-OFF-W/COND).
+        # This branch DISCARDS the credible absolute read and relocates off the located label — trustworthy ONLY
+        # when the label was credibly located. But _locate_anchor's fuzzy fallback can match a cross-word stranger
+        # (the address line "Chester" scores 0.667 vs "Customer", above _FUZZY_MATCH_THRESHOLD=0.6), ~2.5 lines
+        # below the taught anchor → a PHANTOM drift that relocates onto the postcode line and throws away the
+        # correct name (Vellum & Crane #243: absolute read "Larch & Hollow Cafe Co" @95 discarded for "CH1 2HU").
+        # When the guard is ON, the override requires the taught label (exact/inline) OR match_score >=
+        # _DRIFT_OVERRIDE_MATCH_FLOOR. A weak cross-word match does NOT relocate — and (Oracle C1) does NOT set
+        # anchor_stable True: it FALLS THROUGH with anchor_stable still False, so the independent REGISTRATION
+        # ARBITER below still arbitrates a genuinely-drifted page (its page-transform signal does not depend on
+        # the label OCR lottery — the counter-case where a real drift garbles the label to 0.6-0.8). OFF ⇒
+        # byte-identical (the guard-off path relocates exactly as before).
         if (drift_located and drift_located.get("matched_text") is not None
                 and _label_drifted(anchor_box, drift_located, anchor_text)):
-            relocated = _relocate_and_read(page, mapping, anchor_box, target_box,
-                                           drift_located, val_type, ocr_text_fn,
-                                           expansion, validation_patterns,
-                                           format_lookup, slice_capture, page_idx,
-                                           field_key, ocr_lines_fn, line_cache,
-                                           provisional_lookup=provisional_lookup)
-            if relocated:
-                return relocated
+            _do_strong = (os.environ.get("TEMPLATE_DRIFT_OVERRIDE_GUARD", "0") == "0") \
+                or _label_is_the_taught_one(anchor_text, drift_located.get("matched_text")) \
+                or (drift_located.get("match_score") or 0.0) >= _DRIFT_OVERRIDE_MATCH_FLOOR
+            if _do_strong:
+                relocated = _relocate_and_read(page, mapping, anchor_box, target_box,
+                                               drift_located, val_type, ocr_text_fn,
+                                               expansion, validation_patterns,
+                                               format_lookup, slice_capture, page_idx,
+                                               field_key, ocr_lines_fn, line_cache,
+                                               provisional_lookup=provisional_lookup)
+                if relocated:
+                    return relocated
+            # weak match under the guard: fall through with anchor_stable=False → the registration arbiter decides
         elif drift_located:
             anchor_stable = True
     # ── REGISTRATION ARBITER (global page transform) — FALLBACK ONLY ────────────

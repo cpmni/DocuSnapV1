@@ -164,6 +164,16 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // ⚑ FLIP GATE: predicate pins (postcode/email/vat/iban flag; real names incl. postcode-containing don't) +
   // the both-ON mig-142 pin + accepted_names batch-stall pin + realdoc M=0 + the live Vellum doc → Oracle.
   'name_role_nonname_flag',
+  // template_drift_override_guard (mig 157, 2026-09-10, 007 → Oracle SIGN-OFF-W/COND C1): the Stage-0.5 drift
+  // guard DISCARDS a credible absolute read and relocates off the located label — but _locate_anchor's fuzzy
+  // fallback can match a cross-word stranger (address line "Chester" scores 0.667 vs "Customer") ~2.5 lines
+  // below the taught anchor → a PHANTOM drift onto the postcode line (Vellum & Crane customer_name = CH1 2HU,
+  // the correct "Larch & Hollow Cafe Co" @95 thrown away). When ON, a drift-override that discards the absolute
+  // read requires the taught label (exact/inline) OR match_score ≥ _DRIFT_OVERRIDE_MATCH_FLOOR (0.8, in the
+  // measured 0.667/0.82 gap); a weak match falls through with anchor_stable=False so the registration arbiter
+  // still catches a genuine drift (Oracle C1). Byte-identical OFF. ⚑ FLIP GATE: unit pins incl. the seam pin
+  // (weak match + real page transform → arbiter still fires) + census the floor + realdoc M=0 + live #243.
+  'template_drift_override_guard',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */
