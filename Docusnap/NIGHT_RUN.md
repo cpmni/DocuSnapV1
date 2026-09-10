@@ -6,6 +6,21 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
+## ✅ DONE 2026-09-10 NIGHT — FLIP-GATE MEASUREMENTS + NOTE-COMPOSITION (`docs/designs/NIGHT_RUN_2026-09-10.md`; `HANDOVER_2026-09-11.md`)
+The day built six DARK arcs (mig 152-157 + a note reword, all Oracle-gated, LOCAL/unpushed). Night ran their
+flip-gate MEASUREMENTS on a copy of the owner's LIVE DB (read-only reprocess, no writes; `TESTING/_measure/
+night_20260910/GATE_RESULTS.md`): **all three live arcs M=0** (no new silent auto-file on the owner's real docs).
+(1) **mig 157 drift-override** — 19 Vellum sales orders: ONLY #243 changed `CH1 2HU`→`Larch & Hollow Cafe Co`
+(the correction), 18 byte-identical, 0 new auto-files. (2) **mig 156 non-name** — flags ONLY #243's postcode,
+spares all 18 real company names (0 false positives; only REMOVES an auto-file). (3) **mig 154 ref-role** — 21
+Thornbury invoices: 0 changes, 0 regressions. (4) **NOTE-COMPOSITION de-dup** (owner "very wordy message"):
+gary+Oracle SIGN-OFF-W/COND — the wall is a cross-run JS blind-append artifact (handler.js:1664 + rereadHolds.js:135);
+a topic-aware `composeNote` keeps the higher-rank lane-hold, drops the redundant advisory; trust.js keys on
+note PRESENCE not marks → auto-file-safe; built DARK `note_topic_dedup` mig 158. Also `7bbf48f` reworded the
+filing-sanity soften note concise. Repeat only if: after any note-writer/OCR change, re-run the 3 arc gates
+(M MUST stay 0) + the note-dedup exhibit pin. **Owner-owed (morning):** the flips + push + the per-arc 605 M=0
+/ census. Chris NOT run this night (session length) — queued.
+
 ## ✅ DONE 2026-09-09 NIGHT — DETECTION ANOMALY HUNT (`docs/designs/NIGHT_RUN_2026-09-09.md`; `HANDOVER_2026-09-10.md`)
 Ran the detection-anomaly plan on HEAD `4bb2efd` (auto; agents free; nothing built — approval-class logged).
 Results: (1) **123-doc anomaly sweep → found M (silent wrong date auto-file)**: Copperfield sales_order #77/#78
