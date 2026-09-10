@@ -73,3 +73,15 @@ soft-cleared, at BOTH soft-clear sites (`_flaggedSoftAware` + docTrustGate). Pin
   **zero real fires ⇒ STAY DARK** (do-nothing-in-practice; not worth the merge-tail blast radius). Include
   a constructed mis-resolved-supplier / abutting-column (gap ≤ med_h*1.2) adversarial. Note the corpus
   gate runs mig-142 OFF, so it is BLIND to C1 — the §26 both-ON pins are the only gate that reproduces it.
+
+## Fire-census RESULT (2026-09-10) — STAYS DARK
+Ran the C6 fire-census on the owner's live DB (227 confirmed docs, 81 delivery notes + 42 worksheets — a
+DB copy; the 605 Test Corpus is not in a reprocessable DB post-reset). **The corpus holds exactly ONE
+below/right free-text taught anchor: Vellum & Crane "Deliver To" `customer_name` below** (the exhibit's
+own scope; `delivery_number` right is a ref field → gated out, names-only). Direct OFF-vs-ON reprocess of
+that scope's 20 docs: **0 axis-lock wins, 0 committed `customer_name` changes.** The anchor is
+AUTHORITATIVE → the reconciler discards the candidate on every doc (`_override_eligible` = false, the
+designed inert behaviour). No passive/weak below-label free-text field exists for it to heal.
+**VERDICT (Oracle C6): zero real fires ⇒ STAY DARK** — the arc is dormant insurance against the latent
+fragility (a future doc whose value slides out of the taught box), not a current heal. It remains built +
+pinned + committed DARK; no flip. Census script: scratchpad `axislock_census.js` (session-mortal).
