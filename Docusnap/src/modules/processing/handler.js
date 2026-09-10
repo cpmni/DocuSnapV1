@@ -423,6 +423,14 @@ function _reconcileEnv(db) {
       if (learning.getSetting(db, 'template_edge_clip_heal', 'false') === 'true') {
         env.TEMPLATE_EDGE_CLIP_HEAL = '1';
       }
+      // TEMPLATE_TAUGHT_CORROB_ADOPT (2026-09-10, mig 153, gary+007 → Oracle SIGN-OFF-W/COND C1-C4): STRICT
+      // SUBSET of the code reader — adopt a keyword-corroborated pad recovery over a FLAGGED taught box (the
+      // two-ended-garble class the edge-clip heal can't adopt). Part A stashes _pad_witness only in the pad-code
+      // FLAG branch; the engine arc adopts iff the independent keyword family corroborates + a positional guard.
+      // Phase 1 review-bound (cap 87, no auto-file). Byte-identical OFF. Nested so the child needs its parent.
+      if (learning.getSetting(db, 'template_taught_corrob_adopt', 'false') === 'true') {
+        env.TEMPLATE_TAUGHT_CORROB_ADOPT = '1';
+      }
     }
     // CURATED SUPPLIER vs a MISREAD LETTERHEAD (Oracle 2026-08-06). A taught template stores the
     // supplier as a non-variable `fixed_value`, seeded at conf 95 (method `template_fixed`). The

@@ -126,6 +126,14 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // correct value is in the corroboration record. HARD dep trust_role_disagreement_refuse ON. ⚑ FLIP GATE:
   // unit + realdoc wouldFile(ON)⊆wouldFile(OFF) + M=0 → Oracle. docs/designs/DATE_LEFT_CLIP_M2_2026-09-09.md.
   'role_disagree_refuse_at100',
+  // template_taught_corrob_adopt (mig 153, 2026-09-10, gary+007 → Oracle C1-C4): the two-ended-garble class the
+  // edge-clip heal FLAGS but can't adopt — a Stage-0.5 taught winner that raised a _padcodeflag whose pad
+  // recovery is corroborated by the INDEPENDENT keyword page-text family (+ a positional guard) ADOPTS the
+  // recovered value. NOT a two-crop common-mode adopt (keyword required, Oracle C5-equivalent). PHASE 1 =
+  // review-bound (cap 87 + softened note, no auto-file); PHASE 2 (@90 auto-file) is census-gated. HARD dep
+  // template_pad_window_code ON. ⚑ FLIP GATE: neighbour-bleed positional guard + adversarial neighbour census
+  // (must NOT adopt) + realdoc M=0 → Oracle. docs/designs/TAUGHT_CORROB_ADOPT_2026-09-10.md.
+  'template_taught_corrob_adopt',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

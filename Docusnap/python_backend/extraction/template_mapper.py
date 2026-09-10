@@ -892,6 +892,13 @@ _READ_WIDEN_FIRES = []   # diag/census only: (field_key, tight, recovered) — r
 _EDGE_CLIP_HEAL_ON = _PAD_WINDOW_CODE_ON and os.environ.get('TEMPLATE_EDGE_CLIP_HEAL', '0') != '0'
 _EDGE_CLIP_MIN_INTACT = 3   # >=3 un-cut-side glyphs must match between the tight and recovered reads
 _EDGE_CLIP_FIRES = []       # diag/census only: (field_key, tight, recovered, edges)
+# ── TAUGHT-CORROB-ADOPT (mig 153, 2026-09-10 — gary+007 → Oracle SIGN-OFF-W/COND C1-C4) ────────────
+# The two-ended-garble class the edge-clip heal FLAGS but cannot adopt (Thornbury IN-64470↔DN-64472 differ at
+# BOTH ends): the taught box loses to its own wider pad read, but an INDEPENDENT page-text keyword family read
+# the correct value. Part A here surfaces the pad recovery as `_pad_witness` on the FLAG result; the engine's
+# `_taught_flag_corrob_adopt` arc (Part B) adopts it IFF the keyword family independently corroborates the same
+# value + a positional guard. Strict subset of _PAD_WINDOW_CODE_ON (Part A only fires in the pad-code FLAG).
+_TAUGHT_CORROB_ADOPT_ON = _PAD_WINDOW_CODE_ON and os.environ.get('TEMPLATE_TAUGHT_CORROB_ADOPT', '0') != '0'
 _PAD_CODE_MIN_SUFFIX = _CLIP_COMMIT_MIN_PREFIX   # >=4 tight-read chars must survive as the padded suffix
 # The note is composed from a hoisted MARK so a reader elsewhere can recognise the class without
 # re-typing the prose (engine's P adopt lane reads this constant, 2026-08-19). Reword the tail
@@ -2718,6 +2725,11 @@ def _maybe_pad_code(page, target_box, val_type, result, tight_ocr_conf,
     out["confidence"] = min(out.get("confidence") or 90, 70)
     out["method"] = (out.get("method") or "template_mapping") + "_padcodeflag"
     out["validation_note"] = _PAD_CODE_DISAGREE_NOTE.format(pad_val)
+    if _TAUGHT_CORROB_ADOPT_ON:
+        # Part A (mig 153): surface the pad-window recovery so the engine's _taught_flag_corrob_adopt arc can
+        # ADOPT it IFF an INDEPENDENT page-text (keyword) family corroborates the SAME value + a positional
+        # guard (Oracle C1). A `_`-key the engine pops at merge; inert unless the arc is armed downstream.
+        out["_pad_witness"] = {"value": pad_val, "confidence": pad_conf}
     return out
 
 

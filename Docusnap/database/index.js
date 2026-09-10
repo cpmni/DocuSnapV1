@@ -3103,6 +3103,25 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 152 (role_disagree_refuse_at100): ${e.message}`); }
   }
 
+  // ── migration 153: template_taught_corrob_adopt seeded OFF (2026-09-10; gary+007 → Oracle SIGN-OFF-W/COND
+  //    C1-C4, docs/designs/TAUGHT_CORROB_ADOPT_2026-09-10.md). The two-ended-garble class the edge-clip heal
+  //    FLAGS but cannot adopt (Thornbury delivery_number: taught box read IN-64470, page prints DN-64472; the
+  //    keyword page-text family read DN-64472 independently but lost to taught authority + only a flag fired).
+  //    When ON, a Stage-0.5 taught winner that raised a _padcodeflag (a self-declared clip) whose pad recovery
+  //    is corroborated by the INDEPENDENT keyword family (+ a positional guard, Oracle C1) ADOPTS the recovered
+  //    value. PHASE 1 (this build): review-bound — cap 87 (<88 floor) + softened note, NO auto-file; PHASE 2
+  //    (@90 band-88 auto-file) is census-gated. Not a two-crop common-mode adopt (keyword required). HARD dep
+  //    template_pad_window_code ON. DARK (in TEST_SWITCH_KEYS); byte-identical OFF. ⚑ FLIP GATE (Oracle
+  //    C1/G1-G3): the neighbour-bleed positional guard + a direct integration fixture incl. the adversarial
+  //    same-shape-neighbour census (must NOT adopt) + realdoc M=0 → Oracle.
+  if (!applied.has(153)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('template_taught_corrob_adopt', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (153)').run();
+      console.log(`JS migration 153 applied: template_taught_corrob_adopt (keyword-corroborated adopt over a flagged taught box) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 153 (template_taught_corrob_adopt): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
