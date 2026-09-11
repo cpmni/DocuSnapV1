@@ -379,6 +379,11 @@ function _reconcileEnv(db) {
     // on-page, dominant-prefix, exact-shape keyword candidate over it — review-bound (cap ≤69 + note, no
     // corrections row). HARD dep filing_value_sanity_flags ON. DARK (mig 160), byte-identical OFF.
     if (learning.getSetting(db, 'filing_sanity_ref_reinstate', 'false') === 'true') env.FILING_SANITY_REF_REINSTATE = '1';
+    // TEMPLATE_CODE_LEFT_GROW (2026-09-11, 007+gary → Oracle B1-C7; Ridgeway crop clip). ARC A: a shape-VALID
+    // but PAGE-ABSENT taught code read (a bounds-clip that severed the leading glyph) is recovered by a
+    // placement-certified row-bounded wider re-read and adopted REVIEW-BOUND (cap ≤87 + note; never auto-files
+    // — Phase 1). Composes with Arc B (A upstream). DARK (mig 161), byte-identical OFF.
+    if (learning.getSetting(db, 'template_code_left_grow', 'false') === 'true') env.TEMPLATE_CODE_LEFT_GROW = '1';
     // INLINE_DISAGREE_CORROB_SOFTEN (2026-09-07, gary → Oracle SIGN-OFF-W/COND G1-G7): class G rewords the
     // box-clip value-doubt note (never clears) when an independent KEYWORD read corroborates the value —
     // review-bound, conf never lifted. DARK (mig 135; mig 136 = TEST force-ON). Env uses the '1' idiom.

@@ -2408,6 +2408,102 @@ def _maybe_pad_date_flag(page, target_box, val_type, result, tight_ocr_conf):
     return out
 
 
+# ── ARC A: page-absent code LEFT-GROW (mig 161, DARK TEMPLATE_CODE_LEFT_GROW; 007+gary → Oracle B1-C7) ──
+# The shape-VALID twin of read-widen. A taught code read that PASSES its learned shape but appears NOWHERE
+# on the page as a whole token is a bounds-clip (the frozen box left edge severed the leading glyph on a
+# wider/skewed sibling — "WS-73673" committed as "VS-72672"). read-widen's shape-INVALID trigger can't see
+# it; the edge-clip heal's _clip_contained needs glyph continuity the scattered garble lacks. Recover by a
+# row-bounded wider re-read, certified by PLACEMENT (not shape/OCR-conf): the recovered code must (C2) be a
+# whole token on the page by Gate C's EXACT raw-surface tokeniser, (C4) overhang ONLY the taught box LEFT
+# edge, be row-aligned, (C5) match the confirmed learned shape exactly, not be a swallowed label tail, and
+# (C1) pass _snap_union_witness fed the INDEPENDENT full-page locate words (NOT the pad self-box the mig-151
+# path uses). Phase 1 = REVIEW-BOUND (adopt the value + cap ≤87 + note; never auto-files). Byte-identical OFF.
+_CODE_LEFT_GROW_NOTE = ("'{}' — the taught box clipped the leading character (it read '{}', which isn't "
+                        "printed on the page) — please confirm the reference before filing.")
+_LEFT_GROW_FIRES = []   # diag/census list, mirrors _READ_WIDEN/_EDGE_CLIP fire lists
+
+
+def _full_page_lines(page, ocr_lines_fn, line_cache):
+    """The INDEPENDENT full-page locate-tier words (a genuine 2nd OCR pass vs the pad crop), memoised on the
+    shared (id(page),0,0,1,1) key — the same page-wide lines _target_word_snap uses. Returns the lines list
+    or None. Oracle C1: this is what _snap_union_witness must be fed, never the pad read's own box."""
+    if page is None or ocr_lines_fn is None:
+        return None
+    key = (id(page), 0.0, 0.0, 1.0, 1.0)
+    if line_cache is not None and key in line_cache:
+        return line_cache[key]
+    try:
+        crop = _crop(page, {"x_norm": 0.0, "y_norm": 0.0, "w_norm": 1.0, "h_norm": 1.0})
+        if crop is None:
+            return None
+        lines = ocr_lines_fn(crop)
+        if line_cache is not None and lines is not None:
+            line_cache[key] = lines
+        return lines
+    except Exception:
+        return None
+
+
+def _gatec_tokens(lines):
+    """The page's whole-token set with Gate C's EXACT normalisation (engine.py:7621 —
+    `t.strip('.,;:()[]{}"\\'').casefold()`), RAW surface (hyphens retained) so 'WS-73673' stays 'ws-73673'.
+    Built from the independent full-page words (Oracle C2)."""
+    toks = set()
+    for ln in (lines or ()):
+        for wd in (ln.get("words") or ()):
+            t = str(wd.get("text") or "").strip('.,;:()[]{}"\'').casefold()
+            if t:
+                toks.add(t)
+    return toks
+
+
+def _grow_code_left_read(page, target_box, tight_text, field_key, anchor_text,
+                         validation_patterns, format_lookup, ocr_lines_fn, line_cache):
+    """Return (recovered_surface, conf) to adopt REVIEW-BOUND, else None. All of Oracle B1-C7 required:
+    shape-VALID + page-ABSENT tight; recovered code page-PRESENT (raw surface) + single-side 'L' clip +
+    row-aligned + exact learned shape + not label-glued + placement-certified by independent words. Never
+    raises. Per-call env read (byte-identical OFF)."""
+    if os.environ.get('TEMPLATE_CODE_LEFT_GROW', '0') != '1':
+        return None
+    try:
+        tight = str(tight_text or '').strip()
+        if not tight:
+            return None
+        entry = format_lookup(field_key) if format_lookup else None
+        if not entry or not entry.get('shapes'):
+            return None                                    # cold-start ⇒ abstain (flag path / Arc B catch it)
+        if shape_match_score(tight, entry) != 1.0:
+            return None                                    # shape-INVALID ⇒ read-widen's job (disjoint, C3)
+        lines = _full_page_lines(page, ocr_lines_fn, line_cache)
+        if not lines:
+            return None
+        toks = _gatec_tokens(lines)
+        if not toks or tight.casefold() in toks:
+            return None                                    # C2: only when the committed value is PAGE-ABSENT
+        pad = _read_pad_window_code(page, target_box, validation_patterns, return_geom=True)
+        if not pad or len(pad) != 3:
+            return None
+        pad_val, pad_conf, pad_box = pad
+        recovered = str(pad_val or '').strip()
+        if not recovered or not pad_box or _code_norm(recovered) == _code_norm(tight):
+            return None
+        if recovered.casefold() not in toks:               # C2: the recovery must itself be a page whole-token
+            return None
+        if _clip_edges(pad_box, target_box) != 'L' or not _row_aligned(pad_box, target_box):
+            return None                                    # C4: single-side LEFT clip on the taught row only
+        if shape_match_score(recovered, entry) != 1.0:
+            return None                                    # C5: recovery matches the confirmed shape exactly
+        if _pad_label_glued(_code_norm(recovered), anchor_text):
+            return None                                    # never a swallowed label tail
+        gx1 = float(pad_box['x_norm']); gx2 = gx1 + float(pad_box['w_norm'])
+        if not _snap_union_witness(lines, pad_box, gx1, gx2, recovered, target_box, 'L'):
+            return None                                    # C1: placement certified by INDEPENDENT words
+        _LEFT_GROW_FIRES.append((field_key, tight, recovered))
+        return (recovered, pad_conf)
+    except Exception:
+        return None
+
+
 def _read_pad_window_code(page, target_box, validation_patterns, return_geom=False):
     """PAD-WINDOW CODE READ (Slice 1b). The CODE sibling of `_read_pad_window_date`: read a ROW-BOUNDED
     padded window around the taught box and return (RAW SURFACE, mean_word_conf) for the CODE-shaped
@@ -3031,6 +3127,26 @@ def _extract_one(page, mapping, field_patterns, ocr_lines_fn, ocr_text_fn,
             _r["confidence"] = min(_r["confidence"], 70)
             _r["method"] += "_edgecut"
             _r["validation_note"] = _EDGE_CUT_NOTE
+        # ── CODE LEFT-GROW (mig 161, DARK TEMPLATE_CODE_LEFT_GROW; 007+gary → Oracle B1-C7) ──────────
+        # Phase 1, REVIEW-BOUND: a shape-VALID committed code that is PAGE-ABSENT is a bounds-clip; a
+        # placement-certified wider re-read recovers the on-page value. Runs before the pad-window flags so
+        # its note short-circuits them; respects an existing note (edge-cut/witness) and the read-widen path.
+        # Adopt the value + cap ≤87 + a note → held for review (Gate C then passes on the on-page value, and
+        # Arc B never fires). Never auto-files (Phase 2 = separate census-gated arc). Byte-identical OFF.
+        if (val_type in _CODE_CROSSCHECK_TYPES and not abs_expanded
+                and not _abs_meta.get('read_widened') and not _r.get("validation_note")
+                and os.environ.get('TEMPLATE_CODE_LEFT_GROW', '0') == '1'):
+            _lg = _grow_code_left_read(page, target_box, _r.get("value"), field_key,
+                                       mapping.get("anchor_text"), validation_patterns,
+                                       format_lookup, ocr_lines_fn, line_cache)
+            if _lg is not None:
+                _r["left_grown_from"] = _r.get("value")
+                _r["value"] = _lg[0]
+                _r["display_value"] = _lg[0]
+                _r["confidence"] = min(_r.get("confidence") or 90, _PAD_CODE_PROVISIONAL_CAP)
+                _r["method"] = (_r.get("method") or "template_mapping") + "_leftgrow"
+                _r["_heal"] = "code_left_grow"
+                _r["validation_note"] = _CODE_LEFT_GROW_NOTE.format(_lg[0], _r["left_grown_from"])
         # PAD-WINDOW DATE READ (Slice 1): cross-check the committed taught date against a wider
         # row-bounded read and FLAG a confident disagreement (the silent still-parses misread class).
         # No-op unless armed + val_type=='date' + not already flagged. Tight OCR conf is the margin base.

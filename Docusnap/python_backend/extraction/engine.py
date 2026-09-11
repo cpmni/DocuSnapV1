@@ -6646,6 +6646,8 @@ class ExtractionEngine:
                 return                                          # only the genuinely page-ABSENT verdict
             wv = str(data.get('value') or '').strip()
             page = str(ocr_text or '')
+            if self._trace:
+                self._t('ref_reinstate_enter', field=ref_field_key, winner=wv, page_len=len(page))
             if not wv or len(page) <= 200:
                 return
             toks = {t.strip('.,;:()[]{}"\'').casefold() for t in re.split(r'\s+', page)}
@@ -6670,6 +6672,13 @@ class ExtractionEngine:
             cands = self._field_candidates.get(ref_field_key) or []
             cv = _ref_reinstate_candidate(wv, str(data.get('method') or ''), cands,
                                           toks, fmt_entry, dominant, others, page)
+            if self._trace:   # diagnostic: WHY it did/didn't reinstate (trace-only, inert unless the inspector is open)
+                self._t('ref_reinstate', field=ref_field_key, winner=wv, has_fmt=bool(fmt_entry),
+                        dominant=dominant, shapes=sorted((fmt_entry or {}).get('shapes') or [])[:6],
+                        cands=[{'v': str(c.get('value')), 'm': str(c.get('method') or ''),
+                                'conf': c.get('confidence'), 'noted': bool(c.get('noted')),
+                                'on_page': str(c.get('value') or '').casefold() in toks} for c in cands],
+                        reinstated=cv)
             if not cv:
                 return
             cmethod = next((str(c.get('method') or '') for c in cands
@@ -6685,7 +6694,10 @@ class ExtractionEngine:
                      f"candidate '{cv}' ({cmethod}), review-bound @{data['confidence']}")
             if self._trace:
                 self._t('ref_reinstate_page_present', field=ref_field_key, winner=wv, reinstated=cv, method=cmethod)
-        except Exception:
+        except Exception as _e:
+            if self._trace:
+                try: self._t('ref_reinstate_error', field=ref_field_key, error=str(_e)[:160])
+                except Exception: pass
             pass   # advisory guard — must never break extraction
 
     def _reconcile_clipped_suffix(self, results, field_defs, supplier_name, document_slug):

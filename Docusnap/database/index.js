@@ -3255,6 +3255,27 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 160 (filing_sanity_ref_reinstate): ${e.message}`); }
   }
 
+  // ── migration 161: template_code_left_grow seeded OFF (2026-09-11; 007+gary → Oracle SIGN-OFF-W/COND
+  //    B1-C7, docs/designs/CODE_LEFT_GROW_2026-09-11.md; Ridgeway WS-73673 crop clip = the "why are the
+  //    crops so bad" root cause). ARC A, the UPSTREAM half: a Stage-0.5 taught code read that PASSES its
+  //    confirmed learned shape yet appears NOWHERE on the page as a whole token is a bounds-clip (the frozen
+  //    box left edge severed the leading glyph on a wider/skewed sibling — "WS-73673" committed as
+  //    "VS-72672"). When ON, a row-bounded wider re-read certified by PLACEMENT (_snap_union_witness fed the
+  //    INDEPENDENT full-page locate words, single-side LEFT clip, row-aligned, exact learned shape) + Gate-C
+  //    raw-surface page-presence recovers the on-page value and adopts it REVIEW-BOUND (value swapped, cap
+  //    ≤87, note; never auto-files — Phase 1). Composes with Arc B (mig 160): A upstream → the value is
+  //    on-page → Gate C passes → Arc B never fires. DARK (in TEST_SWITCH_KEYS); byte-identical OFF. ⚑ FLIP
+  //    GATE: unit pins (recover/adopt; clean & page==teach → byte-identical; neighbour-swallow refusal;
+  //    shape-invalid → defer to mig-141; disjointness) + the worksheet_07 regression PIN + realdoc 605+Demo
+  //    OFF-vs-ON M=0, fire census pixel-adjudicated, wouldFile(ON)⊆wouldFile(OFF); zero fires ⇒ STAYS DARK.
+  if (!applied.has(161)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('template_code_left_grow', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (161)').run();
+      console.log(`JS migration 161 applied: template_code_left_grow (placement-certified wider re-read for a page-absent taught code clip) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 161 (template_code_left_grow): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

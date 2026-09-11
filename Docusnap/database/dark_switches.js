@@ -200,6 +200,15 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // confirmed prefix + exact learned shape + whole-token on-page + exactly-one + not-another-field's-value.
   // HARD dep filing_value_sanity_flags ON. Byte-identical OFF. docs/designs/REF_ARBITER_REINSTATE_2026-09-11.md.
   'filing_sanity_ref_reinstate',
+  // template_code_left_grow (mig 161, 2026-09-11, 007+gary → Oracle SIGN-OFF-W/COND B1-C7; Ridgeway
+  // WS-73673 crop clip). ARC A — the UPSTREAM crop fix: a shape-VALID taught code read that is PAGE-ABSENT
+  // is a bounds-clip (the frozen box left edge severed the leading glyph on a wider page → VS-72672). A
+  // row-bounded wider re-read certified by PLACEMENT (_snap_union_witness fed INDEPENDENT full-page words,
+  // NOT the pad self-box) + Gate-C raw-surface page tests recovers the on-page value. Phase 1 REVIEW-BOUND
+  // (adopt value + cap ≤87 + note; never auto-files — Phase 2 auto-file is a separate census-gated arc that
+  // requires an independent family, per Oracle C5). Composes with Arc B (mig 160): A upstream → value
+  // on-page → Gate C passes → B never fires. Byte-identical OFF. docs/designs/CODE_LEFT_GROW_2026-09-11.md.
+  'template_code_left_grow',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */
