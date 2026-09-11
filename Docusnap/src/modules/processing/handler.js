@@ -374,6 +374,11 @@ function _reconcileEnv(db) {
     // is capped ≤69 + noted so it holds for review instead of auto-filing a wrong filename. FLAG-ONLY, no-history
     // fallback, glyph-attestation disarm, born-digital skipped. DARK (mig 159), byte-identical OFF.
     if (learning.getSetting(db, 'ref_confusable_flag', 'false') === 'true') env.REF_CONFUSABLE_FLAG = '1';
+    // FILING_SANITY_REF_REINSTATE (2026-09-11, 007+reggie+gary → Oracle B1-B5; Ridgeway VS-72672 vs page
+    // WS-73673): after Gate C flags a Stage-0.5 located ref winner as page-ABSENT, reinstate a retained
+    // on-page, dominant-prefix, exact-shape keyword candidate over it — review-bound (cap ≤69 + note, no
+    // corrections row). HARD dep filing_value_sanity_flags ON. DARK (mig 160), byte-identical OFF.
+    if (learning.getSetting(db, 'filing_sanity_ref_reinstate', 'false') === 'true') env.FILING_SANITY_REF_REINSTATE = '1';
     // INLINE_DISAGREE_CORROB_SOFTEN (2026-09-07, gary → Oracle SIGN-OFF-W/COND G1-G7): class G rewords the
     // box-clip value-doubt note (never clears) when an independent KEYWORD read corroborates the value —
     // review-bound, conf never lifted. DARK (mig 135; mig 136 = TEST force-ON). Env uses the '1' idiom.

@@ -3235,6 +3235,26 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 159 (ref_confusable_flag): ${e.message}`); }
   }
 
+  // ── migration 160: filing_sanity_ref_reinstate seeded OFF (2026-09-11; 007+reggie+gary → Oracle
+  //    SIGN-OFF-W/COND B1-B5, docs/designs/REF_ARBITER_REINSTATE_2026-09-11.md; Ridgeway exhibit). The ref
+  //    arbiter keeps a Stage-0.5 located winner by AUTHORITY (a keyword read can never beat it on confidence),
+  //    so a wrong OFF-PAGE value (a clipped taught crop, "VS-72672" where the page prints "WS-73673") commits
+  //    and Gate C only FLAGS it — the correct on-page keyword read sits discarded in the candidate ledger.
+  //    When ON, a pass after Gate C reinstates that retained candidate REVIEW-BOUND (cap ≤69 + a truthful note
+  //    naming both, no corrections row) IFF it is on-page (the same whole-token test that condemned the winner)
+  //    + exact learned shape + the dominant confirmed prefix + exactly-one-qualifying + not another field's
+  //    value. FLAG-ONLY safety unchanged (the ref-role note blocks auto-file; mig-142 can't soft-clear a role
+  //    note; wouldFile(ON)==wouldFile(OFF)). HARD dep filing_value_sanity_flags ON. DARK (in TEST_SWITCH_KEYS);
+  //    byte-identical OFF. ⚑ FLIP GATE: unit pins + the adversarial same-shape-neighbour fixture + the mig-158
+  //    dedup pin + realdoc M=0 AND wouldFile(ON)==wouldFile(OFF) set-equality, adjudicated AT THE PIXELS.
+  if (!applied.has(160)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('filing_sanity_ref_reinstate', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (160)').run();
+      console.log(`JS migration 160 applied: filing_sanity_ref_reinstate (reinstate an on-page ref candidate over a page-absent winner) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 160 (filing_sanity_ref_reinstate): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

@@ -2046,6 +2046,13 @@ _FILING_SANITY_ABSENT_MARK = "doesn't appear on this page as written"
 # STILL a validation_note, so trust.isAutoFileEligible keeps the doc REVIEW-BOUND: auto-file behaviour is
 # byte-identical, the mirror (true value = the minority spelling) is HELD for a human, never silently filed.
 _FILING_SANITY_SOFTEN_MARK = "please confirm the reference before filing"
+# Ref REINSTATEMENT note (Chris/owner Ridgeway exhibit, 2026-09-11; mig 160 filing_sanity_ref_reinstate).
+# .format(reinstated_on_page_value, discarded_page_absent_winner). Ends with the SOFTEN_MARK so it joins the
+# ref-advisory family (mig-158 note_topic_dedup rank-1) and is NOT the ABSENT mark → the renderer's
+# _neitherOnPage "draw the box again" affordance rightly stops (the value IS now on the page). Still a
+# validation_note → the doc stays review-bound (role-field note blocks auto-file, mig-142 can't soft-clear).
+_FILING_SANITY_REINSTATE_NOTE = ("'{}' — read from the page; the taught box read '{}', which isn't "
+                                 "printed here — " + _FILING_SANITY_SOFTEN_MARK + ".")
 # 2026-09-10 (owner: "very wordy message"): the old copy juxtaposed the two readings ("reads as 'SO-47966'
 # … but reads it as 'SO-47966'") — but the two forms differ only by a scan look-alike (O vs 0, I vs 1), so
 # they print IDENTICALLY and the sentence reads as nonsense/noise. Name the value ONCE and explain the
@@ -2158,6 +2165,57 @@ def _sepless_line_windows(page):
             for j in range(i + 1, min(i + 4, len(words) + 1)):
                 windows.append((''.join(words[i:j]), j - i))
     return windows
+
+
+def _ref_reinstate_candidate(winner_val, winner_method, cands, toks, fmt_entry, dominant, others, page):
+    """PURE decision for the ref-arbiter reinstatement (Chris/owner Ridgeway exhibit; reggie+gary+007 →
+    Oracle SIGN-OFF-W/COND B1/B2, 2026-09-11). Given a Gate-C page-ABSENT ref winner and the retained
+    candidate ledger, return the single candidate VALUE to reinstate, else None (fail-toward-review).
+    Conditions, ALL required: the winner is Stage-0.5 located AND not a user literal (the authority case a
+    keyword read can never beat at the merge); a scope learned shape + dominant confirmed prefix exist; and
+    EXACTLY ONE ledger candidate C that — disagrees with the winner, is un-noted, conf>=60, is a real
+    page-read family (keyword/anchor/mapping), is ON THE PAGE by the SAME whole-token test Gate C used
+    (`cv.casefold() in toks` — Oracle B1, deliberately NOT the looser _page_presence_corroborated), matches
+    the learned shape EXACTLY (shape_match_score==1.0), carries the DOMINANT confirmed prefix, is not another
+    committed field's value (`others`), and is not a sepless-substring of a longer same-line page token (the
+    clip guard). Pure/deterministic; ≥2 qualifying ⇒ None (ambiguity → review). No engine state, no writes."""
+    if not _is_stage05_located(winner_method):
+        return None
+    if any(m in (winner_method or '') for m in ('override', 'manual', 'template_fixed', 'operator_pin', 'keyword_override')):
+        return None
+    if not fmt_entry or not dominant:
+        return None
+    wv_norm = _cmp_norm(winner_val)
+    tok_strips = None
+    good = {}
+    for c in (cands or []):
+        cv = str(c.get('value') or '').strip()
+        if not cv or _cmp_norm(cv) == wv_norm:
+            continue
+        if c.get('noted') or int(c.get('confidence') or 0) < 60:
+            continue
+        m = str(c.get('method') or '')
+        if not any(fam in m for fam in ('keyword', 'anchor', 'mapping')):
+            continue
+        if cv.casefold() not in toks:                          # B1: the whole-token test that condemned the winner
+            continue
+        try:
+            if float(format_anomaly_checker.shape_match_score(cv, fmt_entry)) < 1.0:
+                continue
+        except Exception:
+            continue
+        if ocr_corrector.code_prefix(cv) != dominant:          # the DOMINANT confirmed prefix, not the poisonable known-set
+            continue
+        if _cmp_norm(cv) in others:                            # not another committed field's value
+            continue
+        csl = _strip_all_alnum(cv)                             # clip guard: not a proper sepless-substring of a longer SINGLE page token
+        if csl:                                                # (the whole-token `in toks` test above already rejects a standalone clip fragment;
+            if tok_strips is None:                             #  this catches a fragment that happens to also be a token, e.g. WS-736 ⊂ WS-73673)
+                tok_strips = [_strip_all_alnum(t) for t in re.split(r'\s+', page)]
+            if any(len(j) > len(csl) and csl in j for j in tok_strips):
+                continue
+        good[cv.casefold()] = cv
+    return next(iter(good.values())) if len(good) == 1 else None
 
 
 def _page_carries_sepless(page, value) -> bool:
@@ -6562,6 +6620,71 @@ class ExtractionEngine:
             if self._trace:
                 self._t('ref_confusable_flag', field=ref_field_key, value=val, rule=hit.get('rule'),
                         pos=hit.get('pos'), frm=hit.get('from'))
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
+    def _reinstate_page_absent_ref(self, results, ref_field_key, ocr_text, supplier_name, document_slug):
+        """REF-ARBITER REINSTATEMENT (Chris/owner Ridgeway exhibit; reggie+gary+007 → Oracle SIGN-OFF-W/COND
+        B1-B5, 2026-09-11). The merge protects a Stage-0.5 located winner by AUTHORITY, so a wrong OFF-PAGE
+        value (a clipped taught crop — "VS-72672" where the page prints "WS-73673") is committed and only
+        FLAGGED by Gate C, while the correct on-page keyword read sits discarded in the candidate ledger.
+        When ON, swap to that retained candidate REVIEW-BOUND: cap conf<=69, REPLACE the ABSENT note with the
+        truthful reinstate note naming both (still a note → held; the ref role note blocks auto-file and
+        mig-142 can't soft-clear it), method → the candidate's (honest provenance), NO corrected_to / NO
+        corrections-learning row (a machine reinstatement is not a human correction — a corrected_to would
+        re-arm the renderer's _neitherOnPage/Use-Keep affordances). Runs immediately AFTER Gate C, keyed on
+        the _FILING_SANITY_ABSENT_MARK it wrote (so it only fires on the genuinely page-absent case, never on
+        a soften). HARD dep filing_value_sanity_flags ON (else Gate C never marks absence). DARK env
+        FILING_SANITY_REF_REINSTATE; OFF byte-identical. Best-effort — never raises."""
+        if os.environ.get('FILING_SANITY_REF_REINSTATE', '0') != '1' or not ref_field_key:
+            return
+        try:
+            data = results.get(ref_field_key)
+            if not isinstance(data, dict):
+                return
+            if _FILING_SANITY_ABSENT_MARK not in str(data.get('validation_note') or ''):
+                return                                          # only the genuinely page-ABSENT verdict
+            wv = str(data.get('value') or '').strip()
+            page = str(ocr_text or '')
+            if not wv or len(page) <= 200:
+                return
+            toks = {t.strip('.,;:()[]{}"\'').casefold() for t in re.split(r'\s+', page)}
+            _sup_v = results.get('supplier_name')
+            s_lower = str(supplier_name or results.get('_supplier_name')
+                          or (_sup_v.get('value') if isinstance(_sup_v, dict) else None) or '')
+            slug = str(document_slug or results.get('_document_slug') or '')
+            try:
+                _lk = self._make_format_lookup(s_lower, slug)
+                fmt_entry = _lk(ref_field_key) if _lk else None
+            except Exception:
+                fmt_entry = None
+            dominant = None
+            try:
+                if self.prefix_index:
+                    rec = ocr_corrector.lookup_prefix(self.prefix_index, ref_field_key, s_lower, slug)
+                    dominant = rec.get('dominant') if rec else None
+            except Exception:
+                dominant = None
+            others = {_cmp_norm(str(d.get('value'))) for k, d in results.items()
+                      if not k.startswith('_') and isinstance(d, dict) and k != ref_field_key and d.get('value')}
+            cands = self._field_candidates.get(ref_field_key) or []
+            cv = _ref_reinstate_candidate(wv, str(data.get('method') or ''), cands,
+                                          toks, fmt_entry, dominant, others, page)
+            if not cv:
+                return
+            cmethod = next((str(c.get('method') or '') for c in cands
+                            if str(c.get('value') or '').strip() == cv), 'keyword')
+            data['value'] = cv
+            data['display_value'] = cv
+            data['method'] = cmethod
+            data['confidence'] = min(int(data.get('confidence') or 0), 69)
+            data['validation_note'] = _FILING_SANITY_REINSTATE_NOTE.format(cv, wv)
+            data['was_corrected'] = False
+            data.pop('corrected_to', None)
+            self.log(f"  Ref reinstate: {ref_field_key} winner '{wv}' page-absent → reinstated on-page "
+                     f"candidate '{cv}' ({cmethod}), review-bound @{data['confidence']}")
+            if self._trace:
+                self._t('ref_reinstate_page_present', field=ref_field_key, winner=wv, reinstated=cv, method=cmethod)
         except Exception:
             pass   # advisory guard — must never break extraction
 
@@ -11548,6 +11671,12 @@ class ExtractionEngine:
         # or a year that is not printed on the page file itself silently.
         self._flag_filing_value_sanity(results, ref_field_key, date_field_keys, ocr_text,
                                        supplier_name=supplier_name, document_slug=document_slug)
+        # ── REF-ARBITER REINSTATEMENT (DARK; Chris/owner Ridgeway exhibit; reggie+gary+007 → Oracle B1-B5) ──
+        # Immediately after Gate C, keyed on the ABSENT mark it just wrote: when a Stage-0.5 located winner is
+        # page-absent (a clipped taught crop) and the correct on-page shape-matching keyword read sits in the
+        # ledger, reinstate it review-bound (cap ≤69 + a truthful note, no corrections row). env
+        # FILING_SANITY_REF_REINSTATE; OFF byte-identical. HARD dep filing_value_sanity_flags ON.
+        self._reinstate_page_absent_ref(results, ref_field_key, ocr_text, supplier_name, document_slug)
         # THE PAGE'S OWN WORDING IS NOT A VALUE (CAPTION_VALUE_REFUSE, default OFF — 2026-08-09 NIGHT).
         # Measured against what is actually PRINTED on 200 documents: `account_no` is committed on 40
         # pages that carry no account number at all (the job reference next to it wins), and `serials`

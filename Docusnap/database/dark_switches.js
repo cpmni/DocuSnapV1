@@ -192,6 +192,14 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // repeat supplier's legitimate glyph never batch-stalls; born-digital skipped (a text-layer 0 is real). Byte-
   // identical OFF. docs/designs/REF_CONFUSABLE_FLAG_2026-09-11.md.
   'ref_confusable_flag',
+  // filing_sanity_ref_reinstate (mig 160, 2026-09-11, 007+reggie+gary → Oracle SIGN-OFF-W/COND B1-B5;
+  // Ridgeway VS-72672 vs page WS-73673): the ref arbiter protects a Stage-0.5 located winner by AUTHORITY,
+  // so a wrong OFF-PAGE value (a clipped taught crop) commits and Gate C only FLAGS it while the correct
+  // on-page keyword read sits discarded in the ledger. When ON, reinstate that candidate REVIEW-BOUND
+  // (cap ≤69 + truthful note, no corrections row) — keyed on Gate C's ABSENT mark, guarded by dominant
+  // confirmed prefix + exact learned shape + whole-token on-page + exactly-one + not-another-field's-value.
+  // HARD dep filing_value_sanity_flags ON. Byte-identical OFF. docs/designs/REF_ARBITER_REINSTATE_2026-09-11.md.
+  'filing_sanity_ref_reinstate',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

@@ -31,7 +31,7 @@ const get = (db, k) => { const r = db.prepare('SELECT value FROM settings WHERE 
 const stamped = (db) => new Set(db.prepare('SELECT version FROM migrations').all().map(r => r.version));
 
 // 24 at mig 137 (the 26 minus the two legitimate defaults) + 3 name-grow belts (mig 140, 2026-09-08).
-check('TEST_SWITCH_KEYS has 43 distinct keys', new Set(TEST_SWITCH_KEYS).size === 43 && TEST_SWITCH_KEYS.length === 43);  // 2026-09-09: confusable_soften added (147) then GRADUATED (148 @DEFAULT_FLIP); +confusable_prefix_autofile (149) +sweep_inview_recheck (150) → 34; 2026-09-10: +template_edge_clip_heal (151) +role_disagree_refuse_at100 (152) +template_taught_corrob_adopt (153) +trust_ref_role_shape (154) +anchor_axis_lock (155) +name_role_nonname_flag (156) +template_drift_override_guard (157) +note_topic_dedup (158) → 42; 2026-09-11: +ref_confusable_flag (159) → 43
+check('TEST_SWITCH_KEYS has 44 distinct keys', new Set(TEST_SWITCH_KEYS).size === 44 && TEST_SWITCH_KEYS.length === 44);  // 2026-09-09: confusable_soften added (147) then GRADUATED (148 @DEFAULT_FLIP); +confusable_prefix_autofile (149) +sweep_inview_recheck (150) → 34; 2026-09-10: +template_edge_clip_heal (151) +role_disagree_refuse_at100 (152) +template_taught_corrob_adopt (153) +trust_ref_role_shape (154) +anchor_axis_lock (155) +name_role_nonname_flag (156) +template_drift_override_guard (157) +note_topic_dedup (158) → 42; 2026-09-11: +ref_confusable_flag (159) → 43
 check('money_sign_capture + ocr_parallel_import_enabled are NOT listed', !TEST_SWITCH_KEYS.includes('money_sign_capture') && !TEST_SWITCH_KEYS.includes('ocr_parallel_import_enabled'));
 
 // 1. Fresh install.
