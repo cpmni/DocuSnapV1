@@ -21,7 +21,32 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-09 (the 2026-09-08 NIGHT RUN — items 1-7 all done, 6 commits, none pushed):
+## ⏭ LATEST — 2026-09-11 (customer_name postcode-drift ROOT-CAUSE fix + 5 DARK arcs + a night of flip-gates):
+**READ `HANDOVER_2026-09-11.md` FIRST** (cold-start + the "NEEDS YOUR APPROVAL" queue), then `docs/oracle_log.md`
+(7 new 2026-09-10 verdicts) + the per-arc design docs. Branch `feat/teach-side-overnight`; **9 commits ahead of
+origin, NONE pushed** (owner's call). Everything this session is DARK (byte-identical OFF, kill switch, in
+`TEST_SWITCH_KEYS` → **42**), Oracle-gated, pinned; `npm run test:pins` 341/342 (the 1 red = pre-existing
+`test_activity_strip`).
+**SHIPPED** (owner live-exhibit loop + night): mig 154 `trust_ref_role_shape` `1383bef` (a REF role verified by
+learned SHAPE, never 'constant' set-membership — fixes the 20-held-Thornbury-invoices blocker); mig 155
+`anchor_axis_lock` `1b4a956` (additive width-invariant label-column read — **CENSUSED 0 fires → STAYS DARK**
+`a5de4ab`); mig 156 `name_role_nonname_flag` `02dcd93` (flag+hold a name field whose whole value is a bare
+postcode/email/VAT/IBAN); ⭐ **mig 157 `template_drift_override_guard` `55a6271` — the customer_name postcode-drift
+ROOT CAUSE**: the Stage-0.5 drift guard fuzzy-matched the address word "Chester" (0.667) as "Customer" → phantom
+drift → relocated customer_name onto the postcode line, discarding the correct name read @95; fix = a
+drift-relocate may only discard the absolute read on a credible label match (match_score ≥ 0.8); Oracle C1 keeps
+the registration arbiter live; **LIVE-CONFIRMED #243 `CH1 2HU`→`Larch & Hollow Cafe Co`**; mig 158
+`note_topic_dedup` `40be4cc` (collapse stacked ref-confusable notes into one — owner "very wordy message");
+`7bbf48f` soften-note reword. **NIGHT** (`e97cf99`): 3 flip-gate measurements on a COPY of the live DB —
+drift/non-name/ref-role **ALL M=0** on the owner's real docs (`TESTING/_measure/night_20260910/GATE_RESULTS.md`).
+**Owner queue (morning, in the handover):** push · flip (drift-override first, highest-value/cleanest) · each
+arc's 605 M=0 + census before a customer default · the dev arm-marker clear command (handover #4 — `TEST_BUILD=1`
+noops once armed) · Chris (queued, NOT run — session length) · the parked Larkspur word-like-wrong-line residual.
+**GOTCHAS:** the live DB `%APPDATA%\ScanFinder\docusnap.db` is BLOCKED to Claude's script tools (read+write fail
+even app-closed — copy `.db`+`-wal`+`-shm` to scratch to inspect; live writes = owner `!` commands); the dev arm
+marker `dev` is STICKY. Memory `project_night_run_20260910.md` + `project_{drift_override_guard,nonname_flag,ref_role_shape,anchor_axis_lock}_20260910.md`.
+
+## Prior — 2026-09-09 (the 2026-09-08 NIGHT RUN — items 1-7 all done, 6 commits, none pushed):
 **READ `HANDOVER_2026-09-09.md` FIRST** (morning summary + the “NEEDS YOUR APPROVAL” queue), then
 `docs/CHRIS_FULL_APP_REVIEW_2026-09-09.md` (round 2, verdict YES + 7 cards) and
 `docs/CHRIS_VET_DIAGNOSES_2026-09-08_NIGHT.md` (item-5 fix designs). Branch `feat/teach-side-overnight`; 6 night
