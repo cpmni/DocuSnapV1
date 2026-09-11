@@ -9,6 +9,34 @@
 
 ---
 
+## 2026-09-11 — Ref arbiter: REINSTATE the on-page, shape-matching candidate when the winner fails page-presence (owner: "worrying the wrong value won when WS was a candidate")
+- **Exhibit (Ridgeway Plant Hire Worksheet, live trace):** page prints "Reference No. **WS-73673**". `keyword`
+  read **WS-73673** (correct, on-page) @85 → **LOST** ("lower confidence 85% < 90%"). `template_mapping`
+  (Stage-0.5, authoritative) committed **VS-72672** (wrong prefix AND digits) @90 → **WON**. Gate C fired
+  ("'VS-72672' doesn't appear on this page … please check") → HELD, not auto-filed (overall 83% also holds).
+  So no silent misfile — but the CORRECT on-page value was discarded and a wrong one surfaced. Supplier's
+  confirmed refs are all **WS-** (owner).
+- **Root cause:** the ref arbiter is CONFIDENCE-FIRST — the Stage-0.5 template_mapping winner takes precedence
+  on raw conf (90>85); the anchor stage sees "already resolved — kept" and defers; Gate C (page-presence) +
+  the learned-shape check run AFTER and only FLAG the winner — they never RE-SELECT the retained losing
+  keyword candidate. The correct value sits in the candidate ledger, thrown away.
+- **Not covered by existing arcs:** `_crosscheck_corroborated_alternative` (engine.py:2357) is scoped to
+  `winner.method=='anchor_crop_crosscheck'` ONLY — a template_mapping winner is not covered. Adjacent to the
+  parked "ANCHOR-WINS-OVER-CORROB" class + DARK mig-153 `template_taught_corrob_adopt` (pad-recovery, not a
+  wholesale wrong read).
+- **Fix direction:** when the ref-role WINNER fails Gate-C page-presence AND a LOSING candidate is (a) on-page
+  and (b) matches the scope's confirmed learned shape (WS-shape) — REINSTATE that candidate (review-bound at
+  minimum; auto-file only census-gated). The correct value is recoverable, not just flaggable. Higher value
+  than the O/0 flag (mig 159) because it RECOVERS the right value rather than only holding the wrong one.
+- **Sub-questions for advisors:** (a) does an existing DARK arc (mig-153 / resolve_ref family) already cover
+  this once flipped, or is it a new arc? (b) why did template_mapping produce `VS-72672` when its own crop
+  reads `VS-73673` — a STALE remembered value, or a fresh W→V + digit misread? (verify at the source).
+- **Gate:** 007 + reggie + gary → Oracle SIGN OFF WITH CONDITIONS. **Arc B BUILT DARK** (`filing_sanity_ref_reinstate`,
+  mig 160 — reinstate an on-page shape-matching ledger candidate over a Gate-C page-absent winner, review-bound;
+  `docs/designs/REF_ARBITER_REINSTATE_2026-09-11.md`); **Arc A (Stage-0.5 clip heal) SENT BACK / parked** — the
+  exhibit defeats `_clip_contained`; needs 007's pixel measurements first (DO-NOTHING if source-pixel severance or
+  a text-typed ref field). B flip owner-owed: the mig-158 note-dedup pin + the 605 census (M=0 + wouldFile set-equality).
+
 ## 2026-09-11 — Disambiguation picker: AUTO-ADOPT the confirmed near-miss instead of asking (owner: "text so long → automatic fix")
 - **Exhibit (screenshot):** Silverbeck sales order, "Which is correct?" for Customer — (1) "Bramblewood Joinery
   Ltd" beside the label, position not marked, **confirmed 3×**; (2) "Bramblexood Joinery Ltd" from the taught box.
