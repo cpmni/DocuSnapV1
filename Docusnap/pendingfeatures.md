@@ -9,6 +9,73 @@
 
 ---
 
+## 2026-09-11 — Disambiguation picker: AUTO-ADOPT the confirmed near-miss instead of asking (owner: "text so long → automatic fix")
+- **Exhibit (screenshot):** Silverbeck sales order, "Which is correct?" for Customer — (1) "Bramblewood Joinery
+  Ltd" beside the label, position not marked, **confirmed 3×**; (2) "Bramblexood Joinery Ltd" from the taught box.
+  The page reads Bramble**w**ood; (2) is a one-glyph **w→x** OCR garble from the taught-box read. The field holds
+  the garble @70 + "Suggested name correction: Bramblewood Joinery Ltd" + Resolve; overall 100% waiting for check.
+- **Owner:** given the value is LONG, a 1-glyph difference is overwhelmingly an OCR garble, not a genuine second
+  value — with one variant confirmed 3× and the other an unbacked one-off, don't ask the human; AUTO-ADOPT the
+  confirmed literal and file.
+- **Trigger (proposed):** two candidates near-identical (edit distance ≤1, or a similarity ratio scaled by LENGTH —
+  the length IS the safety) AND one is a machine-confirmed literal (≥N confirms / dominant) AND the other is
+  UNBACKED → adopt the confirmed one, **clear the formatting-flag hold, and AUTO-FILE** (owner: "and file!" — no
+  picker, no check). Fail-safe: both confirmed, OR the diff is large, OR neither backed → keep the picker
+  (byte-identical to today).
+- **This is the AUTO-FILE tier, not review-bound** — a bigger checkpoint removal than `resolve_ref_near_miss`
+  (which stops at a pre-fill). Model the gate on `filing_sanity_confusable_prefix_autofile` (mig 149, the confusable
+  AUTO-FILE half — confirmed history resolves the confusable → Gate-C suppresses the note → the field files):
+  same shape, extended from a ref prefix to a whole long NAME value, and triggered by the near-miss-vs-confirmed
+  asymmetry rather than a prefix table.
+- **Overlaps existing (build ON, don't reinvent):** `resolve_ref_near_miss` (mig 113, DARK, REF, review-bound) +
+  the confusable family (mig 147/149) + `name_match.py` STRONG (auto-applies on doc_freq≥0.9 but its lexicon is
+  DEAD on 33/36 name scopes — confirmed-BACKING is a better, live trigger than doc_freq). This extends the near-miss
+  resolver to NAMES + AUTO-ADOPT (vs the ref review-bound leg).
+- **Risk/seam:** removes a human checkpoint (auto-adopt). customer_name is optional (wrong = wrong metadata, not a
+  mis-file) but a wrong adopt still poisons learning → the confirmed-3× asymmetry is the safety. Adversarial case =
+  two genuinely-distinct entities differing by one glyph on a long name → the UNBACKED-other requirement guards it
+  (adopt only over a one-off, never over a second confirmed value).
+- **Gate:** reggie (edit-distance/length/confusable predicate + the confirmed-backing threshold) + gary (auto-adopt
+  safety, fail-toward-picker, tests) → Oracle (checkpoint removal → fail-toward-review conditions + census: over the
+  corpus, how often auto-adopt would fire and whether every fire == the confirmed value). Memory
+  `project_disambiguation_picker`. NOT built.
+
+## 2026-09-11 — TEACH wizard: pre-offer detected values as one-click "This is correct" + auto-locate the box (owner idea)
+- **Context:** import already extracts field values (keyword/anchor), often correct. The teach wizard today = DRAW a
+  box around each value → OCR read-back → auto-detect the nearby label → Stage-0.5 mapping; a type-a-value path
+  already finds it on the page and draws the box.
+- **Idea:** on loading a doc into teach, run the current extraction and PRE-OFFER each detected value with a "This
+  is correct" confirm — auto-LOCATE its box on the page, present it exactly as if drawn (with the auto-detected
+  label), one-click accept. No box locatable → fall back to the draw-a-box card. Teaching becomes mostly CONFIRM,
+  not draw (owner north star: minimal interaction, max correct auto-file).
+- **KEY RISK (make-or-break):** pre-offer + one-click "This is correct" invites RUBBER-STAMPING a WRONG import read
+  → teaches a BAD anchor (casual-confirm poisoning, a known scar). Drawing at least forces the user to LOOK.
+- **Fix direction (agreed with owner):** locate from the extraction's OWN read position, NOT a blind value-string
+  search (multi-occurrence trap — same code in a header/footer); value shown big + EDITABLE; consider gating the
+  pre-offer on read confidence/corroboration (low-conf → straight to draw); PAD the auto box like a human draw (the
+  leading-glyph clip class — see the below-relocate arc); fallback ladder = extraction-position box → string-search
+  +disambiguate → draw-a-box. Never worse than today.
+- **Barry (2026-09-11, memo):** the mechanism ALREADY SHIPS for the type-a-value path — `locateValueInWords`
+  → `showLocatedPick` (draws box, rings it, resets zoom, scrolls into view, gates "Yes teach this spot") →
+  `autoLabel` → same `store()` — at `src/windows/teach/renderer.js:1180-1279`. Feature = auto-feed the import
+  read's values into that per field. Frame as a C2-SIBLING harm (the 2026-08-02 teach-first steering ruling: a
+  wrong pick the user waves through → badge + mismatch confirm). Load-bearing doctrine to inherit: renderer.js
+  :1153-1166 "a located box is evidence about WHERE, never WHETHER" (the `vat_no='VAT'` census). SAFETY SPINE
+  (non-negotiable): the confirm is always of a SPOT SEEN RINGED IN THE VIEWPORT, never a re-typed value list —
+  a "Confirm all" list IS the poisoning vector; build a rapid one-at-a-time STEP-THROUGH instead. SELECTIVITY:
+  only pre-offer green = strong read + SINGLE locate hit + shape-valid + auto-label AGREES with the field role;
+  amber (multi-hit / low-conf / label↔role disagree) → stated as a question; grey (not located) → existing draw
+  card. Issuer special-cased: never silent green (folder + learning scope; the gibberish-issuer scar) → plausibility
+  warning. Don't auto-learn from a rejection (own poisoning surface) — just fall to draw. Sizing L2 mechanism /
+  L3 differentiator ("the scanner already read it; you just check"); should-have, high, gated. FLIP CENSUS = over
+  the corpus, the rate of (a) pre-offer locating a value whose auto-label disagrees with the field role and (b)
+  locating a value the import read WRONG — those two are the poisoning exposure; selectivity must drive them near-0.
+- **Gate:** barry DONE → next: reggie (shape/role-plausibility green-vs-amber + label↔role agreement check) +
+  007 (does `locateValueInWords` on an IMPORT-read value behave like on a TYPED value — the frames differ) +
+  gary (the selectivity predicate + the don't-learn-from-rejection invariant + the census design) → Oracle
+  (C2-sibling: expect conditions on the seen-the-spot gate + the issuer special-case). Key file
+  `src/windows/teach/renderer.js` (1180-1279). NOT built.
+
 ## 2026-09-09 — Auto-file VISIBILITY: progress bar on graduation + autofile toast + in-view countdown (owner ask)
 - **Context (owner, fresh -TEST install):** after enough confirms the owner expects a sender's clean docs to
   AUTO-file, but sees them offered as a MANUAL "File up to N / files by itself" bulk instead, and the current doc
