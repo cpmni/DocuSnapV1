@@ -302,6 +302,11 @@
   caption for `below` on multi-line blocks + pads in `h_norm` units — page-wide blast radius → DARK arc + census, POST-LAUNCH.
   Pre-existing (any rigid failure exposes it at any DPI). Gate: the warm arm on the post-137 copy (`TESTING/_measure/
   efficiency_bundle_20260908/`, `reset_arm_compare.js` now compares VALUES), then realdoc M=0. Advisor: 007, then Oracle.
+  → **DESIGN 2026-09-11: `docs/designs/BELOW_RELOCATE_ARC_2026-09-11.md` — Oracle SEND BACK → v2 FLAG-FIRST** (007 design
+  sent back: the row-1 heal premise is false — `cap_bottom` ≡ the mislocated label height, so it inherits H-a and can't recover
+  H-b; and the abstain path still auto-files an empty optional field). v2 = flag-first (≥2 credible lines → review, never guess);
+  heal-to-row-1 deferred to a measured sub-case. Switches `anchor_below_row1`/`anchor_pad_hnorm` (pad scoped to free-text). **2
+  PRE-BUILD blockers:** measure H-a/H-b on the real docket · close the fail-safe hole (anchor.py:1457/1652/1735, RED-first pin).
 - **Ironbridge 200-DPI type-refuse (warm arm, 2026-09-08):** 5/147 docs (#47/#62/#87/#92/#105, ONE supplier's PO/worksheets) hit the
   `_type_refused` hold (`engine.py` ~11534-11544 "Couldn't match this document to the supplier's saved … layout") at 200 but match at
   300 on geometry taught at 300 — a heading/identity read that changes with DPI; review-bound, self-heals on confirm. Moot for
