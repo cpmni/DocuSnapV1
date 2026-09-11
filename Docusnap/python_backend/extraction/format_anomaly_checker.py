@@ -890,6 +890,128 @@ def confusion_correct(value, format_entry, min_len: int = 10):
     return {'value': corrected, 'pos': p, 'from': v[p], 'to': b, 'support_docs': docs}
 
 
+# ── REF-ROLE letter/digit confusable OUTLIER (Chris Card 1, 2026-09-11; reggie predicate, Oracle C1-C5) ──
+# FLAG-ONLY, value-shape only. Catches a class-outlier letter/digit OCR confusable a ref value carries when
+# NO relational arc can (a self-consistent whole-page misread on a new supplier: no second reader disagrees,
+# no history) — a digit standing where a letter belongs, or a letter in a digit run. Reuses the reviewed
+# _is_letter_digit_confusable map (no new confusable table) with an uppercase/tier FILTER: the census-gated
+# 7/T and 9/g,q classes stay OUT of v1 (Oracle "there is a tier/case filter"). Pure/deterministic.
+_REF_OUTLIER_SEPS = frozenset('-/. _')
+# Admitted LETTER forms for this arm (uppercase + the two lowercase the confusable map treats specially):
+# 0<-O/o/Q, 1<-I/l/L, 5<-S, 2<-Z, 8<-B, 6<-G. Excludes 7<-T, 9<-g/q (tier-3, census-gated) and the
+# symbol/lowercase noise in engine._PREFIX_CONFUSE_CLASSES.
+_REF_OUTLIER_LETTERS = frozenset('OoQIlLSZBG')
+_REF_OUTLIER_DIGITS = frozenset('012568')
+_REF_PREFIX_STOPWORDS = frozenset({'NO', 'NUMBER', 'NUM', 'REF', 'REFERENCE', 'ID', 'CODE',
+                                   'THE', 'OF', 'YOUR', 'OUR', 'DATE'})
+
+
+def _ref_outlier_confusable(letter: str, digit: str) -> bool:
+    """True iff (letter, digit) is an admitted (uppercase/tier) letter<->digit confusable for this arm."""
+    return letter in _REF_OUTLIER_LETTERS and _is_letter_digit_confusable(letter, digit)
+
+
+def _ref_outlier_letter_has_digit_form(letter: str) -> bool:
+    return letter in _REF_OUTLIER_LETTERS and any(_is_letter_digit_confusable(letter, d) for d in _REF_OUTLIER_DIGITS)
+
+
+def _ref_class_run(tok: str, i: int, step: int) -> int:
+    """Length of the maximal same-CLASS (alpha vs digit) run of `tok` from index i moving by `step`."""
+    if not (0 <= i < len(tok)):
+        return 0
+    is_dig = tok[i].isdigit()
+    n, j = 0, i
+    while 0 <= j < len(tok) and tok[j].isdigit() == is_dig:
+        n += 1
+        j += step
+    return n
+
+
+def ref_canonical_prefixes(labels, known_prefixes=None):
+    """Derive the canonical ALPHA prefix set for a ref field from its config labels
+    (field_patterns[key].labels) + any confirmed known prefixes. Over-inclusive is SAFE (Rule B only flags
+    on a digit-for-letter spelling match); under-inclusive only misses. Sources: (a) an explicit all-caps
+    alpha token 2-4 in a label ("SO No" -> SO); (b) the acronym of the label's significant words
+    ("Sales Order No" -> SO); (c) confirmed known prefixes passed in."""
+    out = {str(p).upper() for p in (known_prefixes or ()) if p and str(p).isalpha() and 1 <= len(str(p)) <= 4}
+    for lab in (labels or ()):
+        s = str(lab)
+        for w in re.findall(r"\b[A-Z]{2,4}\b", s):
+            out.add(w)
+        words = re.findall(r"[A-Za-z]+", s)
+        sig = [w for w in words if w.upper() not in _REF_PREFIX_STOPWORDS]
+        if 2 <= len(sig) <= 4:
+            out.add(''.join(w[0].upper() for w in sig))
+        elif len(sig) == 1 and 2 <= len(sig[0]) <= 4:
+            out.add(sig[0].upper())
+    return {p for p in out if 1 <= len(p) <= 4 and p.isalpha()}
+
+
+def ref_confusable_class_outlier(value, prefix_set=None):
+    """FLAG-ONLY class-outlier confusable detector for a REF value. Returns {'pos','from','to','rule','head'}
+    (pos ABSOLUTE in `value`; head = the leading run tested by Rule B, fed to the gate's length-agnostic
+    any_confirmed_shares_head disarm; None for Rule A) or None. Rule A = interior class-outlier (a char whose
+    class is the outlier in its token, flanked BOTH sides by the opposite class, >=1 flank run >=2). Rule B =
+    the leading run of token 1 spells a canonical prefix under >=1 digit-standing-for-a-letter substitution
+    ("S0"->"SO"). Never raises for a str; malformed input -> None."""
+    try:
+        v = (value or '').strip()
+    except Exception:
+        return None
+    if not v:
+        return None
+    # token boundaries in the ORIGINAL string, so `pos` is absolute
+    tokens, i = [], 0
+    while i < len(v):
+        if v[i] in _REF_OUTLIER_SEPS:
+            i += 1
+            continue
+        j = i
+        while j < len(v) and v[j] not in _REF_OUTLIER_SEPS:
+            j += 1
+        tokens.append((i, v[i:j]))
+        i = j
+    if not tokens:
+        return None
+
+    # ── Rule B — prefix class-outlier (the exhibit; needs prefix_set) ──
+    prefixes = {str(p).upper() for p in (prefix_set or ())
+                if p and str(p).isalpha() and 1 <= len(str(p)) <= 4}
+    if prefixes:
+        t_start, t0 = tokens[0]
+        for p in sorted(prefixes, key=len, reverse=True):
+            if len(t0) < len(p):
+                continue
+            cand = t0[:len(p)]
+            ok, sub_pos = True, None
+            for k in range(len(p)):
+                c = cand[k]
+                if c == p[k]:
+                    continue
+                if c.isdigit() and _ref_outlier_confusable(p[k], c):
+                    if sub_pos is None:
+                        sub_pos = k
+                    continue
+                ok = False
+                break
+            if ok and sub_pos is not None:
+                return {'pos': t_start + sub_pos, 'from': cand[sub_pos], 'to': p[sub_pos],
+                        'rule': 'B', 'head': cand}
+
+    # ── Rule A — interior class-outlier (standalone; no prefix needed) ──
+    for t_start, tok in tokens:
+        for k in range(1, len(tok) - 1):
+            c, left, right = tok[k], tok[k - 1], tok[k + 1]
+            hit = False
+            if c.isdigit() and left.isalpha() and right.isalpha() and c in _REF_OUTLIER_DIGITS:
+                hit = True                       # a digit alone in a letter run
+            elif c.isalpha() and left.isdigit() and right.isdigit() and _ref_outlier_letter_has_digit_form(c):
+                hit = True                       # a letter alone in a digit run
+            if hit and max(_ref_class_run(tok, k - 1, -1), _ref_class_run(tok, k + 1, +1)) >= 2:
+                return {'pos': t_start + k, 'from': c, 'to': None, 'rule': 'A', 'head': None}
+    return None
+
+
 # ── Digits-only OCR cleanup + correction proposal (Stage 2) ──────────────────
 
 # Reuse the extractor's existing OCR confusable map (l/I→1, O→0, S→5, …) rather

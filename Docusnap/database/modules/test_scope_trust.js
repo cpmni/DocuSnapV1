@@ -1029,6 +1029,36 @@ function main() {
           trust.docTrustGate(db, nnf, 'Anconia Corp', 'invoice', {}).reason === 'flagged:item');
   }
 
+  // ── 28. anti-silent-file: a REF-ROLE note always blocks auto-file (the ref-confusable-flag seam, mig 159) ──
+  // The ref_confusable_flag arc (mig 159) holds a doc by a validation_note on the REF role. Oracle verified
+  // (roleKeys ∪ {ref_field_key}) that such a note blocks auto-file with NO sentinel + NO trust.js change, EVEN
+  // with mig-142 (optional_soft_flag_autofile) ON — unlike the OPTIONAL-field arcs (§26/§27) which needed a
+  // carve-out. Pin the seam so a future dev can't "simplify" isSoftAdvisory and silently restore the
+  // wrong-filename auto-file. reggie+gary → Oracle SIGN-OFF-W/COND C1-C5.
+  section('28. mig 159 — a ref-role note always blocks auto-file (ref-confusable-flag seam)');
+  {
+    const db = makeDb(); const tid = seedType(db);
+    seedCleanScope(db, tid, 10, 'Anconia Corp', i => ({ item: ['Alpha Holdings', 'Beta Trading', 'Gamma Services'][i % 3] }));
+    const REFNOTE = "The reference 'S0-47966' has a character an OCR often confuses (O/0, I/1, S/5) — please check it against the page before filing.";
+    // Same scope-compatible ref value ('INV1099', proven eligible in §27) both ways — the NOTE is the only difference.
+    const mk = (withNote) => seedDoc(db, tid, {
+      supplier: 'Anconia Corp', when: '2026-06-02T10:00:00Z', status: 'needs_review', conf: 98,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: '07-06-2026', invoice_number: 'INV1099', total: '150.50', item: 'Alpha Holdings' },
+      notes: withNote ? { invoice_number: REFNOTE } : {},
+    });
+    // CONTROL — no ref note: the graduated scope auto-files at 98 (proves the note is the ONLY blocker here).
+    check("control: clean ref (no note) at 98 on a graduated scope → eligible",
+          trust.isAutoFileEligible(db, getDoc(db, mk(false))).eligible === true);
+    // The ref-role note blocks isAutoFileEligible …
+    check("ref-role note → NOT auto-file-eligible",
+          trust.isAutoFileEligible(db, getDoc(db, mk(true))).eligible === false);
+    // … AND docTrustGate blocks it EVEN under softOptionalNonblock (a ROLE note is never soft-cleared; no sentinel).
+    check("ref-role note blocks under softOptionalNonblock (mig-142 can't dissolve a role note)",
+          trust.docTrustGate(db, mk(true), 'Anconia Corp', 'invoice', { softOptionalNonblock: true }).reason === 'flagged:invoice_number');
+    check("ref-role note blocks with softOptionalNonblock OFF too (baseline)",
+          trust.docTrustGate(db, mk(true), 'Anconia Corp', 'invoice', {}).reason === 'flagged:invoice_number');
+  }
+
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails === 0 ? 0 : 1);
 }

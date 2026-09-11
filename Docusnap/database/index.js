@@ -3215,6 +3215,26 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 158 (note_topic_dedup): ${e.message}`); }
   }
 
+  // ── migration 159: ref_confusable_flag seeded OFF (2026-09-11; reggie + gary → Oracle,
+  //    docs/designs/REF_CONFUSABLE_FLAG_2026-09-11.md; Chris Card 1). A scanned NEW-supplier Sales Order read
+  //    its ref "SO-47966" (letter O) as "S0-47966" (digit 0) — a VALID shape with no confirmed history, so the
+  //    relational confusable arcs (Gate-C soften mig 147/148, prefix-autofile mig 149, near_miss) are all inert
+  //    and it auto-filed a wrong FILENAME with no note. When ON, a 5th content-nature ref-flag (alongside
+  //    S-A/prefix/S-B/D1) flags a class-outlier letter/digit confusable on the REF role: cap ≤69 + validation_note
+  //    → held via the ref-role note (no trust.js change). FLAG-ONLY (never edits the value). No-history fallback
+  //    (runs after the confusion-precedence/resolver arcs, skips if a note/corrected_to already set); glyph-
+  //    attestation disarm (no batch-stall); born-digital skipped. DARK (in TEST_SWITCH_KEYS); byte-identical OFF.
+  //    ⚑ FLIP GATE: predicate + gate pins (each fails with the guard removed) + the anti-silent-file JS pin +
+  //    realdoc M=0 + the newly-flagged census (dominated by true confusables, ~0 false alarms, esp. born-digital
+  //    + repeat-supplier) + wouldFile(ON) ⊆ wouldFile(OFF).
+  if (!applied.has(159)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('ref_confusable_flag', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (159)').run();
+      console.log(`JS migration 159 applied: ref_confusable_flag (flag a class-outlier letter/digit confusable on the ref role) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 159 (ref_confusable_flag): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

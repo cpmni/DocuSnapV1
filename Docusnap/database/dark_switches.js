@@ -183,6 +183,15 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // ⚑ FLIP GATE: unit pins (lane-hold survives both ways; absent+advisory both kept; different-topic not merged;
   // OFF concat-identical; mark-sync) + realdoc M=0 + the auto-file set-equality corpus gate (ON==OFF).
   'note_topic_dedup',
+  // ref_confusable_flag (mig 159, 2026-09-11, reggie+gary → Oracle; Chris Card 1): a REF-role value with a
+  // letter/digit OCR confusable that is a class-outlier in its token (a digit-0 read where a letter-O belongs —
+  // "SO"→"S0" on a scan) is a VALID shape with no history, so no format/soften/near-miss arc catches it and it
+  // auto-files a wrong FILENAME silently. When ON, a 5th content-nature ref-flag caps ≤69 + sets a validation_note
+  // (held via the ref-role note — no trust.js change), FLAG-ONLY (never auto-corrects; SO vs S0 is unknowable
+  // without history). No-history FALLBACK (skips when a history arc already spoke); glyph-attestation disarm so a
+  // repeat supplier's legitimate glyph never batch-stalls; born-digital skipped (a text-layer 0 is real). Byte-
+  // identical OFF. docs/designs/REF_CONFUSABLE_FLAG_2026-09-11.md.
+  'ref_confusable_flag',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

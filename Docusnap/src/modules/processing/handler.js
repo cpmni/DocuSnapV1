@@ -369,6 +369,11 @@ function _reconcileEnv(db) {
     // ≥ floor) — stops a cross-word fuzzy match ("Chester" vs "Customer") relocating customer_name onto the
     // postcode line. DARK (mig 157), byte-identical OFF.
     if (learning.getSetting(db, 'template_drift_override_guard', 'false') === 'true') env.TEMPLATE_DRIFT_OVERRIDE_GUARD = '1';
+    // REF_CONFUSABLE_FLAG (2026-09-11, reggie+gary → Oracle; Chris Card 1): a REF-role value with a class-outlier
+    // letter/digit OCR confusable ("SO"→"S0" on a scan) — a valid shape with no history that no other arc catches —
+    // is capped ≤69 + noted so it holds for review instead of auto-filing a wrong filename. FLAG-ONLY, no-history
+    // fallback, glyph-attestation disarm, born-digital skipped. DARK (mig 159), byte-identical OFF.
+    if (learning.getSetting(db, 'ref_confusable_flag', 'false') === 'true') env.REF_CONFUSABLE_FLAG = '1';
     // INLINE_DISAGREE_CORROB_SOFTEN (2026-09-07, gary → Oracle SIGN-OFF-W/COND G1-G7): class G rewords the
     // box-clip value-doubt note (never clears) when an independent KEYWORD read corroborates the value —
     // review-bound, conf never lifted. DARK (mig 135; mig 136 = TEST force-ON). Env uses the '1' idiom.

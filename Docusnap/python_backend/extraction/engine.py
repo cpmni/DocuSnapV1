@@ -6493,6 +6493,78 @@ class ExtractionEngine:
         except Exception:
             pass   # advisory guard — must never break extraction
 
+    def _flag_ref_confusable_ambiguous(self, results, field_defs, supplier_name, document_slug,
+                                       ref_field_key, page_provenance=None):
+        """REF-ROLE CONFUSABLE FLAG (Chris Card 1, 2026-09-11; reggie predicate + gary gate → Oracle
+        SIGN-OFF-W/COND C1-C5). A class-outlier letter/digit OCR confusable in the ref-ROLE value
+        ("SO"->"S0" on a scan) is a VALID shape with no history, so the relational confusable arcs
+        (Gate-C soften mig 147/148, prefix-autofile mig 149, near_miss) are all inert and it auto-files
+        a wrong FILENAME silently. FLAG-ONLY: cap conf<=69 + a validation_note -> held via the ref-role
+        note (trust.js roleKeys blocks auto-file, NO trust.js change, note persists to the row). NEVER
+        edits the value (SO vs S0 is unknowable without history). No-history FALLBACK: runs AFTER the
+        confusion-precedence/resolver arcs; skips a field a prior arm already noted/corrected.
+          C1 DISARM (the real mig-149 seam guard): for a Rule-B PREFIX hit reuse
+            ocr_corrector.any_confirmed_shares_head (length-AGNOSTIC, counter-strict — the SAME primitive
+            mig-149's mirror guard uses) so a genuine digit-prefix supplier disarms after ONE confirm (no
+            batch-stall) AND a mig-149-cleared doc is never re-blocked; a Rule-A INTERIOR hit uses the
+            position-specific _confusion_from_attested.
+          C3: only on an all-OCR (scanned) doc; never flag a born-digital-read value (unknown provenance
+            -> do not flag). DARK env REF_CONFUSABLE_FLAG; OFF byte-identical. Best-effort — never raises."""
+        if os.environ.get('REF_CONFUSABLE_FLAG', '0') != '1' or not ref_field_key:
+            return
+        try:
+            data = results.get(ref_field_key)
+            if not isinstance(data, dict):
+                return
+            val = data.get('value')
+            if not val or not str(val).strip():
+                return
+            method = str(data.get('method') or '')
+            if any(m in method for m in ('override', 'manual', 'template_fixed')):
+                return                                   # human-set literal, not an OCR read
+            if str(data.get('validation_note') or '').strip() or data.get('corrected_to'):
+                return                                   # one-note-per-field; a prior arm spoke
+            # C3 — born-digital gating: only a pure-scan doc; a text-layer '0' is real, not a misread.
+            if not (page_provenance and all(p == 'ocr' for p in page_provenance)):
+                return
+            # canonical prefix set: config labels (new supplier) + any confirmed known prefixes (repeat)
+            labels = ((self.patterns.get('field_patterns') or {}).get(ref_field_key) or {}).get('labels') or []
+            known = None
+            try:
+                if self.prefix_index:
+                    rec = ocr_corrector.lookup_prefix(self.prefix_index, ref_field_key, supplier_name, document_slug)
+                    known = rec.get('known') if rec else None
+            except Exception:
+                known = None
+            prefix_set = format_anomaly_checker.ref_canonical_prefixes(labels, known)
+            hit = format_anomaly_checker.ref_confusable_class_outlier(str(val), prefix_set)
+            if not hit:
+                return
+            # C1 — attestation disarm: does this sender legitimately use the read glyph/head?
+            s_lower = (supplier_name or '').lower().strip()
+            dt_lower = (document_slug or '').lower().strip()
+            fe = (self.format_class_index.get((s_lower, dt_lower, ref_field_key)) if s_lower else None) \
+                 or self.format_class_index.get(('', dt_lower, ref_field_key))
+            vc = (fe or {}).get('value_counts') or {}
+            if hit.get('rule') == 'B' and hit.get('head'):
+                if ocr_corrector.any_confirmed_shares_head(vc, hit['head']):
+                    return                               # established digit-prefix convention -> no flag
+            else:
+                lits = format_anomaly_checker._confusion_refusal_literals(fe) if fe else set()
+                if format_anomaly_checker._confusion_from_attested(len(str(val)), hit['pos'], hit['from'], lits):
+                    return
+            data['confidence'] = min(int(data.get('confidence') or 0), 69)
+            data['validation_note'] = (
+                f"The reference '{val}' has a character an OCR often confuses (O/0, I/1, S/5) — "
+                f"please check it against the page before filing.")
+            self.log(f"  Ref-confusable flag: {ref_field_key} '{val}' rule {hit.get('rule')} "
+                     f"pos {hit.get('pos')} ('{hit.get('from')}') — flagged for review")
+            if self._trace:
+                self._t('ref_confusable_flag', field=ref_field_key, value=val, rule=hit.get('rule'),
+                        pos=hit.get('pos'), frm=hit.get('from'))
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
     def _reconcile_clipped_suffix(self, results, field_defs, supplier_name, document_slug):
         """CLIPPED-SUFFIX RECONCILIATION (Oracle amended verdict 2026-07-31; kill switch
         CANDIDATE_SUFFIX_RECONCILE, default ON — flipped same day after the full gate set:
@@ -11523,6 +11595,13 @@ class ExtractionEngine:
         # same site and the same reasoning as 2a below; precedence leg-b → leg-a → 2a by call order.
         _rc_fired = self._apply_ref_resolvers(results, field_defs, supplier_name, document_slug, ref_field_key)
         _cp_fired = self._apply_confusion_precedence(results, field_defs, supplier_name, document_slug)
+        # ── REF-ROLE CONFUSABLE FLAG (DARK; Chris Card 1; reggie+gary → Oracle C1-C5) ── the NO-HISTORY
+        # fallback: a class-outlier letter/digit confusable ("SO"→"S0" on a scan) that no relational arc
+        # caught (whole-page misread self-consistent → Gate C never fired; no history → near_miss silent).
+        # AFTER the resolvers/2a (a prior note makes it skip) and BEFORE the boost (:11542 skips noted
+        # fields, so the ≤69 cap can never be re-lifted). Flag-only; the ref-role note blocks auto-file.
+        self._flag_ref_confusable_ambiguous(results, field_defs, supplier_name, document_slug,
+                                            ref_field_key, page_provenance)
 
         # ── LEARNED-AGREEMENT CONFIDENCE BOOST ────────────────────────────────
         # A value that is CONSISTENT with a well-supported learned format for its scope is
