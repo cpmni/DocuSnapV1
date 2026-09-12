@@ -3276,6 +3276,32 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 161 (template_code_left_grow): ${e.message}`); }
   }
 
+  // ── migration 162: deskew_retry_field_adopt seeded OFF (2026-09-12; gary → Oracle SIGN-OFF-W/COND C1-C11,
+  //    docs/designs/DESKEW_RETRY_FIELD_ADOPT_2026-09-12.md; the Ridgeway #358 skew exhibit). The review-bound
+  //    whole-page straighten retry (deskew_review_retry_enabled, ON live) has two gates that make it inert on a
+  //    skew-garbled ROLE field: its DOOR keys on the engine's `_needs_review`, which is FALSE for a doc held only
+  //    by a role note (Gate C sets no flag), and its WHOLE-DOC adopt refuses when a confident garble @95 inflates
+  //    the raw overall above the correct review-bound rescue (83 > 79 on #358). When ON: the door also opens on a
+  //    noted, non-authoritative ref/date role field (C1 — never a supplier-only note), and when the whole-doc gate
+  //    refuses, a FIELD-SCOPED adopt splices ONLY such a field whose straightened read is keyword-corroborated
+  //    (no disagree + a page-text witness), shape-consistent, on-page and from the SAME supplier/template (C5),
+  //    keeps a hold note (lane-hold appended when the adopted note is machine-clearable, C4), never offers a
+  //    page-absent raw value as a put-back (C6), and sets overall = min(raw, straightened) (C3). The whole-doc
+  //    population is byte-identical ON vs OFF (pinned). CHILD of deskew_review_retry_enabled (env bridged only
+  //    under the parent, handler._reconcileEnv). HARD dep for the exhibit class: template_taught_corrob_adopt
+  //    (mig 153) + template_pad_window_code ON (the straightened taught box still garbles; TCA is what recovers
+  //    it — C2). DARK (in TEST_SWITCH_KEYS); byte-identical OFF. ⚑ FLIP GATE (C11): 605 corpus REQUIRED + Demo
+  //    369, cells {162 OFF/ON} × {153 OFF/ON} + the DESKEW_CORROB_AUTOFILE cell, M=0 AND wouldFile(ON)==
+  //    wouldFile(OFF) set-equality in EVERY cell, fires partitioned by door adjudicated at the pixels, door
+  //    census (supplier-only passes = 0), live #358 → WS-73673 @82 held; zero fires ⇒ STAYS DARK.
+  if (!applied.has(162)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('deskew_retry_field_adopt', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (162)').run();
+      console.log(`JS migration 162 applied: deskew_retry_field_adopt (role-note door + field-scoped corroborated adopt for the straighten retry) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 162 (deskew_retry_field_adopt): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

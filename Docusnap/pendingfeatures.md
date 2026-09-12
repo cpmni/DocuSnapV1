@@ -9,6 +9,21 @@
 
 ---
 
+## 2026-09-12 — PRE-EXISTING seam: the whole-doc deskew retry's "Read differently after straightening" note on an OPTIONAL field is soft-advisory to mig 142 (found by gary while designing mig 162; NOT mig 162's fault)
+- **Hole:** the whole-doc adopt leg (`process_docs.py` `_deskew_retry_apply_holds`) stamps `_DESKEW_CHANGED_NOTE`
+  ("— confirm once.") on every straightening-CHANGED field. On an OPTIONAL non-strict field with no `corrected_to`
+  (e.g. a first-filled `was=''`), `trust.isSoftAdvisory` (text-blind, trust.js:532-571) treats that note as
+  soft-advisory → with `optional_soft_flag_autofile` (mig 142, DARK) ON and the scope graduated/corroborated, the
+  note dissolves and a straightening-changed optional value AUTO-FILES — contradicting the retry's charter
+  ("a straightening-CHANGED value is never silently auto-filed"). Role fields are unaffected (`isSoftAdvisory`
+  is False for every role key).
+- **Fix direction:** a structured non-soft sentinel for the deskew-changed note (the `isAxisLockNoteRow` /
+  `isNonNameFlagRow` carve-out pattern — method sentinel or a note-mark carve-out in `isSoftAdvisory`), pinned
+  both-ON with mig 142. Must land BEFORE mig 142's customer flip. Owner/Oracle to schedule.
+- **Oracle ruling (C10 of mig 162, 2026-09-12): a NAMED FLIP PRECONDITION on `optional_soft_flag_autofile` —
+  `_flaggedSoftAware` (trust.js:577) must treat any `_isLaneHoldNote` row ("Read differently after …",
+  "— confirm once.") as NEVER soft. Also noted in the mig-142 comment in `database/dark_switches.js`.
+
 ## 2026-09-11 — Ref arbiter: REINSTATE the on-page, shape-matching candidate when the winner fails page-presence (owner: "worrying the wrong value won when WS was a candidate")
 - **Exhibit (Ridgeway Plant Hire Worksheet, live trace):** page prints "Reference No. **WS-73673**". `keyword`
   read **WS-73673** (correct, on-page) @85 → **LOST** ("lower confidence 85% < 90%"). `template_mapping`
@@ -5005,6 +5020,10 @@ Context: `docs/designs/CORROB_RESLICE_SWEEP_2026-08-30.md` (REVISED banner), `HA
 - **Deskew retry trigger misses note-only holds.** `_deskew_retry_should_run` keys on engine `_needs_review`
   (required-empty OR field<70); a doc held only by a note never fires it (0/20 on Nordwind). Consider "any note"
   as a trigger (Oracle — cost: every noted doc with skew ≥0.3° re-OCRs).
+  **→ SUPERSEDED 2026-09-12** by `docs/designs/DESKEW_RETRY_FIELD_ADOPT_2026-09-12.md` (mig 162, DARK): a
+  narrower ROLE-note door (never soft-clearable, review-bound by construction) that reaches ONLY a field-scoped
+  keyword-corroborated adopt — measured on Ridgeway #358 (the retry never ran; forced open, the whole-doc gate
+  refused a corroborated `WS-73673` @82 rescue because the raw garble @95 inflates overall 83 > 79).
 - **Money fold in `_corrob_values_agree` — NOT built (no measured target).** `_EDGE_RE` + whitespace collapse
   already fold `£`/edge symbols; 19/20 Nordwind totals record `agree:['keyword']`. reggie's design (both strict →
   cents + sign equality; note the sign-flip behaviour change: today `-160.32` ≡ `160.32`) is ready if a census

@@ -2092,6 +2092,10 @@ _FILING_SANITY_CONFUSABLE_SOFTEN = os.environ.get("FILING_SANITY_CONFUSABLE_SOFT
 _FILING_SANITY_CONFUSABLE_PREFIX_AUTOFILE = os.environ.get("FILING_SANITY_CONFUSABLE_PREFIX_AUTOFILE", "0") == "1"
 _FILING_SANITY_ABSENT_NOTE = ("'{}' " + _FILING_SANITY_ABSENT_MARK
                               + " — please check the reference before filing.")
+# Gate B's DATE page-absence claim ("the year 2026 isn't printed anywhere on this page — …"), hoisted so a consumer
+# can recognise it without matching prose (2026-09-12, Oracle C6 of DESKEW_RETRY_FIELD_ADOPT: a straightened date
+# adopted over this raw note must not offer the raw value as a one-click put-back — the ref ABSENT rule's date twin).
+_FILING_SANITY_YEAR_ABSENT_MARK = "isn't printed anywhere on this page"
 
 
 def _nearest_confusable_page_token(page, rv) -> str:
@@ -7743,7 +7747,7 @@ class ExtractionEngine:
                 year = m.group(0)
                 if year in page:
                     continue                      # the page prints it -> believe it
-                if _note(key, f"the year {year} isn't printed anywhere on this page — please check "
+                if _note(key, f"the year {year} {_FILING_SANITY_YEAR_ABSENT_MARK} — please check "
                               f"the date before filing."):
                     self._t('filing_sanity_date', field=key, value=val, year=year)
                     self.log(f"  Filing sanity: {key} '{val}' — year {year} absent from the page, "

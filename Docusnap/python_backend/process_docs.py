@@ -45,10 +45,15 @@ def log(text: str, level: str = ""):
 # Two pure decisions, factored out so the safety invariants are unit-pinned (a future dev can't quietly
 # drop the review-bound gate or loosen the adopt comparison). See the block after engine.extract().
 
-def _deskew_retry_should_run(enabled, needs_review, deskew_pages, reextract, has_pages) -> bool:
+def _deskew_retry_should_run(enabled, needs_review, deskew_pages, reextract, has_pages, note_held=False) -> bool:
     """Run the straighten retry ONLY on a doc already heading to review — so it can never demote a clean
-    auto-file — and never on an already-deskewed run or a reprocess (--reextract), and never with no pages."""
-    return bool(enabled) and bool(needs_review) and not deskew_pages and not reextract and bool(has_pages)
+    auto-file — and never on an already-deskewed run or a reprocess (--reextract), and never with no pages.
+    `note_held` (2026-09-12, DESKEW_RETRY_FIELD_ADOPT, Oracle C1): the engine's `_needs_review` is FALSE for a
+    doc held ONLY by a role-field note (Gate C's absent note sets no flag; engine.py:12427 can only clear), yet
+    such a doc is review-bound on the JS side (a noted ref/date role refuses auto-file at every floor). The
+    caller passes True only when `_deskew_field_adopt_door_keys` found a field the field-scoped adopt could
+    actually touch — never for a supplier-only note. Default False = the pre-change door, byte-identical."""
+    return bool(enabled) and (bool(needs_review) or bool(note_held)) and not deskew_pages and not reextract and bool(has_pages)
 
 def _ocr_recipe_emit_keys(reextract, cached_text, born_digital, bd_used) -> dict:
     """Which of {ocr_recipe, imageless} the file_done emit carries (Quick Reprocess, 2026-09-01;
@@ -219,6 +224,185 @@ def _deskew_retry_apply_holds(raw_results, straightened_results):
             if not str(d.get("corrected_to") or "").strip() and _put_back_offerable(was, now):
                 d["corrected_to"] = was          # the raw read, one click away — only when plausible
     return changed
+
+
+# ── DESKEW_RETRY_FIELD_ADOPT (2026-09-12; gary → Oracle SIGN-OFF-W/COND C1-C11; mig 162, DARK; design
+# docs/designs/DESKEW_RETRY_FIELD_ADOPT_2026-09-12.md). The Ridgeway #358 exhibit: a 1.7° skew mis-seats the
+# taught ref box → a shape-valid garble `VS-72672` @95 + Gate C's absent note. The retry above never ran (the
+# engine flag is False for a note-only hold) and, forced open, its WHOLE-DOC gate refused the straightened
+# pass because the confident garble inflates raw overall (83) above the correct review-bound rescue (79 — the
+# straightened ref `WS-73673` @82 via TAUGHT-CORROB-ADOPT). Two legs, both fail-toward-review:
+#   1. the DOOR also opens on a ref/date ROLE note whose field the field path could actually touch (C1) —
+#      a role note is never soft-clearable (trust.isSoftAdvisory is False for every role key), so the doc is
+#      review-bound by construction; the whole-doc adopt stays gated on the RAW engine flag (its population is
+#      byte-identical ON vs OFF — a note-only hold never gets a whole-doc adopt, pinned);
+#   2. when the whole-doc gate refuses, a FIELD-SCOPED adopt splices ONLY a noted, non-authoritative ref/date
+#      role field whose straightened read is keyword-corroborated (>=2 independent page families, no disagree,
+#      a page-text witness), shape-consistent, on-page, from the SAME supplier/template, and keeps a hold note
+#      (never the deposed value's put-back when the raw note was a page-absence claim). Overall becomes
+#      min(raw, straightened) (C3). NEVER consults DESKEW_CORROB_AUTOFILE. `== "1"` (EMPTY never reads as ON).
+_DESKEW_FIELD_ADOPT_ON = os.environ.get("DESKEW_RETRY_FIELD_ADOPT", "0") == "1"
+_DESKEW_HUMAN_METHOD_FAMILIES = ("manual", "override", "operator_pin", "keyword_override", "template_fixed")
+_DESKEW_PAGE_FAMILIES = ("mapping", "crop", "keyword")
+# JS twin: src/services/classFixService.js CLEARABLE_NOTE_MARKS (the human class-fix road may clear these) —
+# pinned equal in tests/test_deskew_retry_field_adopt.py. A straightened field carrying ONLY such a note (or a
+# class-F verification-doubt note) would hand the adopted value a machine-clearable hold → C4 appends the
+# lane-hold note so the surviving hold is deny-by-default.
+_DESKEW_MACHINE_CLEARABLE_MARKS = ("one character differs", "— likely a one-character misread",
+                                   "A wider reading of this box shows", "doesn't appear on this page as written")
+
+
+def _deskew_engine_mark(name):
+    """A hoisted engine note-mark constant, resolved lazily (the engine import is heavy and the helpers here
+    must stay unit-testable without it). None when unavailable — callers treat None as 'refuse' (fail-closed)."""
+    try:
+        from extraction import engine as _eng
+        return getattr(_eng, name, None)
+    except Exception:
+        return None
+
+
+def _deskew_note_machine_clearable(note) -> bool:
+    """C4: is this note one a MACHINE road may later clear (class-F verification doubt, or a class-fix
+    clearable mark)? Fail toward True (= append the lane-hold) when the engine cannot be consulted."""
+    n = str(note or "").strip()
+    if not n:
+        return True
+    if any(m in n for m in _DESKEW_MACHINE_CLEARABLE_MARKS):
+        return True
+    try:
+        from extraction.engine import _is_verification_doubt_note as _vd
+        return bool(_vd(n))
+    except Exception:
+        return True
+
+
+def _deskew_same_identity(raw_results, straightened_results) -> bool:
+    """C5: the straightened pass may resolve a DIFFERENT supplier/template (a deskewed letterhead heals
+    identity) — a value read under another scope's shape/corroboration must never be spliced into this doc.
+    Supplier compared text_normalise-equal; template id compared exactly; a missing side is not equal."""
+    r = raw_results or {}
+    s = straightened_results or {}
+    if (r.get("_template_id") or None) != (s.get("_template_id") or None):
+        return False
+    def _norm(v):
+        try:
+            from extraction import text_normalise as _tn
+            return "".join(_tn.normalise_for_tokens(str(v or "")).split())
+        except Exception:
+            return "".join(str(v or "").strip().lower().split())
+    return _norm(r.get("_supplier_name")) == _norm(s.get("_supplier_name"))
+
+
+def _deskew_field_adopt_door_keys(raw_results, role_keys):
+    """C1 + F1 + F5 — the fields the field-scoped adopt could actually touch: a ref/date ROLE key (never the
+    company key — splicing it would desync `_supplier_name`, the identity invariant) whose RAW dict carries a
+    non-empty validation_note, a non-human/non-authoritative method, no corrected_to and no was_corrected.
+    The DOOR opens only when this is non-empty, so a supplier-only-noted doc never pays a straighten pass."""
+    out = []
+    for key in sorted(k for k in (role_keys or ()) if k and k != "supplier_name"):
+        d = (raw_results or {}).get(key)
+        if not isinstance(d, dict):
+            continue
+        if not str(d.get("validation_note") or "").strip():
+            continue
+        m = str(d.get("method") or "")
+        if any(fam in m for fam in _DESKEW_HUMAN_METHOD_FAMILIES):
+            continue
+        if str(d.get("corrected_to") or "").strip() or d.get("was_corrected"):
+            continue
+        out.append(key)
+    return out
+
+
+def _deskew_retry_field_adopt(raw_results, straightened_results, role_keys, date_keys=(), enabled=False):
+    """The field-scoped adopt (leg 2). Mutates `raw_results` IN PLACE (never re-assigns the dict); returns
+    [(key, was, now)] for every adopted field, [] when disabled/refused. Per field, ALL must hold:
+      F1/F5  the raw field is a door key (`_deskew_field_adopt_door_keys`);
+      F2     the straightened value is non-empty and differs (whitespace-insensitive, case-sensitive);
+      F3     `_corrob_licensed_keyword` on the straightened record (>=2 independent page families, no disagree,
+             a KEYWORD page-text witness — a different Tesseract invocation from the box crop);
+      F6     the straightened winner is a page-read family (mapping/crop/keyword), never memory/hint;
+      F4     the straightened note carries no page-ABSENT mark and `_shape_ok[key]` is not False;
+      F7     a date role parses as a calendar date;
+      C5     same supplier + template as the raw pass (doc-level, checked once).
+    Adopt = the straightened dict WHOLE (method verbatim — a suffix corrupts the corroboration bucket), the
+    per-field `_corroboration_emit`/`_shape_ok`/`_field_candidate_emit` mirrored, `_needs_review` forced True,
+    `_overall_confidence` = min(raw, straightened) (C3). Hold: the lane-hold note is appended when the adopted
+    dict's note is empty or machine-clearable (C4). Put-back: `corrected_to = was` only when plausible AND the
+    raw note was NOT a page-absence claim (ref ABSENT mark / date YEAR-ABSENT mark — C6). NEVER consults
+    DESKEW_CORROB_AUTOFILE (Phase 1 = always held)."""
+    if not enabled:
+        return []
+    raw = raw_results
+    st = straightened_results or {}
+    if not isinstance(raw, dict) or not st:
+        return []
+    if not _deskew_same_identity(raw, st):                                            # C5
+        return []
+    absent = _deskew_engine_mark("_FILING_SANITY_ABSENT_MARK")
+    year_absent = _deskew_engine_mark("_FILING_SANITY_YEAR_ABSENT_MARK")
+    if absent is None:                                                                 # F4 must be decidable
+        return []
+    corrob = st.get("_corroboration_emit") or {}
+    shape_ok = st.get("_shape_ok") or {}
+    adopted = []
+    for key in _deskew_field_adopt_door_keys(raw, role_keys):
+        d0 = raw.get(key)
+        d1 = st.get(key)
+        if not isinstance(d1, dict):
+            continue
+        was = str(d0.get("value") or "").strip()
+        now = str(d1.get("value") or "").strip()
+        if not now or " ".join(now.split()) == " ".join(was.split()):                  # F2
+            continue
+        rec = corrob.get(key)
+        if not _corrob_licensed_keyword(rec):                                          # F3
+            continue
+        if str((rec or {}).get("winner_family") or "") not in _DESKEW_PAGE_FAMILIES:  # F6
+            continue
+        if absent in str(d1.get("validation_note") or ""):                            # F4a
+            continue
+        if shape_ok.get(key) is False:                                                 # F4b
+            continue
+        if key in (date_keys or ()):                                                   # F7
+            try:
+                from extraction import validator as _v
+                if _v.parse_date(now) is None:
+                    continue
+            except Exception:
+                continue
+        new = dict(d1)
+        note = str(new.get("validation_note") or "").strip()
+        if _deskew_note_machine_clearable(note):                                       # C4
+            changed = _DESKEW_CHANGED_NOTE.format(was=was or "(empty)", now=now)
+            new["validation_note"] = (note + " " + changed).strip() if note else changed
+        n0 = str(d0.get("validation_note") or "")
+        raw_absent = (absent in n0) or (bool(year_absent) and key in (date_keys or ()) and year_absent in n0)
+        if raw_absent:                                                                 # C6 (+ the ref rule)
+            new.pop("corrected_to", None)
+        elif not str(new.get("corrected_to") or "").strip() and _put_back_offerable(was, now):
+            new["corrected_to"] = was
+        raw[key] = new
+        for meta in ("_corroboration_emit", "_shape_ok", "_field_candidate_emit"):
+            src = st.get(meta)
+            if isinstance(src, dict) and key in src:
+                dst = raw.get(meta)
+                if not isinstance(dst, dict):
+                    dst = raw[meta] = {}
+                dst[key] = src[key]
+            elif isinstance(raw.get(meta), dict):
+                raw[meta].pop(key, None)
+        adopted.append((key, was, now))
+    if adopted:
+        raw["_needs_review"] = True
+        o0 = raw.get("_overall_confidence", 0)
+        o1 = st.get("_overall_confidence", 0)
+        try:
+            raw["_overall_confidence"] = o0 if float(o0 or 0) <= float(o1 or 0) else o1   # C3: never above either
+        except (TypeError, ValueError):
+            pass
+    return adopted
 
 
 # ── Per-file watchdog ─────────────────────────────────────────────────────────
@@ -1287,10 +1471,19 @@ def main():
             # demote a clean auto-file; the adopted read is FORCED needs_review (a deskewed read is never
             # silently auto-filed — Oracle's hole was auto-file, not review); skips upright/born-digital pages,
             # a reprocess (--reextract), and an already-deskewed run. Off ⇒ the whole block is inert.
+            # DESKEW_RETRY_FIELD_ADOPT (mig 162, DARK — see the helpers above): the door ALSO opens on a
+            # noted, non-authoritative ref/date ROLE field (C1); the whole-doc adopt below stays gated on the
+            # RAW engine flag; the field-scoped adopt runs in the else-branch. OFF ⇒ door + branch byte-identical.
+            _fa_on = _DESKEW_FIELD_ADOPT_ON
+            _role_keys = {k for k in ("supplier_name", _ref_key, _date_key) if k}
+            _date_role_keys = {k for k in (_date_key,) if k}
+            _door_keys = _deskew_field_adopt_door_keys(raw_extractions, _role_keys) if _fa_on else []
+            _raw_flag = bool(raw_extractions.get("_needs_review", True))
             if _deskew_retry_should_run(
                     os.environ.get("DESKEW_REVIEW_RETRY", "0") != "0",
                     raw_extractions.get("_needs_review", True),
-                    _deskew_pages, getattr(args, 'reextract', False), page_images):
+                    _deskew_pages, getattr(args, 'reextract', False), page_images,
+                    note_held=bool(_door_keys)):
                 try:
                     _rmin = max(0.2, min(5.0, float(os.environ.get("DESKEW_REVIEW_MIN_ANGLE", "0.3") or 0.3)))
                     from ocr.tesseract import detect_skew_angle as _detect_skew
@@ -1321,7 +1514,7 @@ def main():
                                 **_stable2)
                             _oc0 = float(raw_extractions.get("_overall_confidence", 0) or 0)
                             _oc1 = float(raw2.get("_overall_confidence", 0) or 0)
-                            if _deskew_retry_adopt(_oc0, _oc1):
+                            if _raw_flag and _deskew_retry_adopt(_oc0, _oc1):
                                 raw2["_needs_review"] = True   # engine-side flag (the handler honours it only with gate-unify OFF)
                                 # The REAL review bind (2026-08-30): a "— confirm once." note on every field
                                 # straightening CHANGED — isAutoFileEligible refuses a noted field at every floor.
@@ -1331,7 +1524,26 @@ def main():
                                     + (": " + ", ".join(k for k, _w, _n in _chg) if _chg else ""))
                                 raw_extractions = raw2
                             else:
-                                log(f"  Straighten+reread: kept raw (straightened overall {_oc1:.0f} not higher than {_oc0:.0f})")
+                                if _raw_flag:
+                                    log(f"  Straighten+reread: kept raw (straightened overall {_oc1:.0f} not higher than {_oc0:.0f})")
+                                else:
+                                    log("  Straighten+reread: whole-doc adopt not applicable (note-only hold)")   # C9
+                                if _fa_on:
+                                    # Field-scoped fallback (mig 162): splice ONLY a noted role field whose straightened
+                                    # read is keyword-corroborated + same identity; the doc stays held (role note).
+                                    _fa = _deskew_retry_field_adopt(raw_extractions, raw2, _role_keys,
+                                                                    date_keys=_date_role_keys, enabled=True)
+                                    for _k, _w, _n in _fa:
+                                        _fd = raw_extractions.get(_k) if isinstance(raw_extractions.get(_k), dict) else {}
+                                        _rec = (raw_extractions.get("_corroboration_emit") or {}).get(_k) or {}
+                                        log(f"  Straighten+reread: FIELD-ADOPTED {_k} '{_w}' -> '{_n}' @{_fd.get('confidence')} "
+                                            f"(keyword-corroborated on the straightened page; held)")
+                                        emit_trace({"event": "deskew_field_adopt", "field": _k,
+                                                    "door": "flag" if _raw_flag else "note", "was": _w, "now": _n,
+                                                    "conf": _fd.get("confidence"), "method": _fd.get("method"),
+                                                    "fams": sorted({str(_rec.get("winner_family") or "")}
+                                                                   | {str(f) for f in (_rec.get("agree") or [])}),
+                                                    "overall": raw_extractions.get("_overall_confidence")})
                         else:
                             log("  Straighten+reread: no page exceeded the floor after render — kept raw")
                 except Exception as _dre:

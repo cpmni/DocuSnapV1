@@ -159,7 +159,13 @@ function _reconcileEnv(db) {
     // overall confidence, and it stays needs_review (never silently auto-filed). Only ever touches a doc
     // already review-bound, so it cannot demote a clean auto-file. Unset => off => byte-identical. Measured
     // to heal 6/8 skew-garbled supplier names on the Nordwind corpus at 200 DPI.
-    if (learning.getSetting(db, 'deskew_review_retry_enabled', 'false') === 'true') env.DESKEW_REVIEW_RETRY = '1';
+    if (learning.getSetting(db, 'deskew_review_retry_enabled', 'false') === 'true') {
+      env.DESKEW_REVIEW_RETRY = '1';
+      // DESKEW_RETRY_FIELD_ADOPT (mig 162, 2026-09-12, gary → Oracle C1-C11, DARK): the role-note door + the
+      // field-scoped corroborated adopt for the straighten retry. CHILD of the retry — nested so the env can
+      // never outlive its parent (the C7 pattern DESKEW_CORROB_AUTOFILE uses below). Parent output unchanged.
+      if (learning.getSetting(db, 'deskew_retry_field_adopt', 'false') === 'true') env.DESKEW_RETRY_FIELD_ADOPT = '1';
+    }
     { const a = learning.getSetting(db, 'deskew_review_min_angle', ''); if (a) env.DESKEW_REVIEW_MIN_ANGLE = String(a); }
     // DESKEW_CORROB_AUTOFILE (2026-08-31, owner ask; Oracle SIGN-OFF-WITH-CONDITIONS, DARK). A
     // straighten-CHANGED field that is a VERIFIED corroborated rescue (raw read not credible, >=2

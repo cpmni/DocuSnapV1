@@ -126,10 +126,16 @@ function runP(folder, snapArgs, files, manifest, onDoc, ctl) {
     const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs],
       { windowsHide: true, env: Object.keys(appEnv).length ? { ...process.env, ...appEnv } : undefined });
     procs.push(p);
-    let out = '', tail = '';
+    let out = '', tail = '', curDoc = null;
+    // RR_LOG_MATCH + RR_LOG_OUT (2026-09-12, the mig-162 C11 door/fire census): env-gated → inert when unset.
+    // Python `log` lines are otherwise DISCARDED by this harness (only file_done is scored), so an arc whose
+    // effect is a log-visible decision (a straighten pass, a field adopt) had no census road. Matching log
+    // lines are appended as {doc, text} to RR_LOG_OUT, keyed by the shard's last file_begin. Observe-only.
+    const _logRe = process.env.RR_LOG_MATCH ? new RegExp(process.env.RR_LOG_MATCH) : null;
+    const _logOut = _logRe && process.env.RR_LOG_OUT ? process.env.RR_LOG_OUT : null;
     p.stdout.on('data', d => {
       out += d;
-      if (!onDoc) return;
+      if (!onDoc && !_logOut) return;
       // Line-buffered live parse. The final partial line stays in `tail` until its newline arrives,
       // so a message split across two chunks is never parsed half-formed. `out` is still the source
       // of truth for the scoring pass below — this only OBSERVES.
@@ -138,7 +144,11 @@ function runP(folder, snapArgs, files, manifest, onDoc, ctl) {
       for (const ln of lines) {
         const t = ln.trim(); if (t[0] !== '{') continue;
         let m; try { m = JSON.parse(t); } catch { continue; }
-        if (m.type === 'file_done') { try { onDoc(m); } catch {} }
+        if (m.type === 'file_begin') curDoc = m.filename || curDoc;
+        if (_logOut && m.type === 'log' && _logRe.test(String(m.text || ''))) {
+          try { fs.appendFileSync(_logOut, JSON.stringify({ doc: curDoc, text: String(m.text).trim() }) + '\n'); } catch {}
+        }
+        if (onDoc && m.type === 'file_done') { try { onDoc(m); } catch {} }
       }
     });
     p.stderr.on('data', () => {}); p.on('close', () => res(out)); p.on('error', () => res(''));

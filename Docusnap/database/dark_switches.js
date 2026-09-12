@@ -74,6 +74,11 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // lifts). Role/required/strict fields + a pending corrected_to still block. ⚑ FLIP GATE: OFF/ON on
   // arm137 + 605 — M=0 on ROLE values, wouldFile(ON)⊇wouldFile(OFF), new filers' ROLE fields==GT, census that
   // each new filer's ONLY prior blocker was a soft optional note → Oracle. Advisor: gary.
+  // ⚑ NAMED FLIP PRECONDITION (2026-09-12, Oracle C10 of mig 162): the whole-doc straighten retry's
+  //   "Read differently after straightening — … — confirm once." note on an OPTIONAL non-strict field is
+  //   text-blind SOFT to trust.isSoftAdvisory → this arc ON would dissolve a straightening-CHANGED value (a
+  //   design violation: a soft note never reflects a changed value). `_flaggedSoftAware` must treat any
+  //   `_isLaneHoldNote` row as never-soft BEFORE this key flips. pendingfeatures.md 2026-09-12 entry.
   'optional_soft_flag_autofile',
   // template_pad_date_adopt (mig 143, 2026-09-09 Q4): the ADOPT twin of template_pad_date_containment_flag —
   // a taught date box clipping the leading digit is read wide; when the pad value is corroborated by a second
@@ -209,6 +214,20 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // requires an independent family, per Oracle C5). Composes with Arc B (mig 160): A upstream → value
   // on-page → Gate C passes → B never fires. Byte-identical OFF. docs/designs/CODE_LEFT_GROW_2026-09-11.md.
   'template_code_left_grow',
+  // deskew_retry_field_adopt (mig 162, 2026-09-12, gary → Oracle SIGN-OFF-W/COND C1-C11; Ridgeway #358 1.7° skew):
+  // the review-bound straighten retry's DOOR keys on the engine `_needs_review` (FALSE for a role-note-only hold)
+  // and its WHOLE-DOC adopt refuses when a confident garble @95 inflates raw overall over the correct review-bound
+  // rescue. When ON: the door also opens on a noted, non-authoritative ref/date ROLE field (never supplier-only),
+  // and a FIELD-SCOPED keyword-corroborated, same-identity, shape-consistent adopt runs when the whole-doc gate
+  // refuses — always held (role note; lane-hold appended over a machine-clearable note; no put-back of a page-
+  // absent raw value; overall = min(raw, straightened)). Whole-doc population byte-identical ON vs OFF. CHILD of
+  // deskew_review_retry_enabled. HARD dep (exhibit class): template_taught_corrob_adopt (mig 153) +
+  // template_pad_window_code ON — flip 153 before/with 162. Byte-identical OFF.
+  // ⚑ FLIP GATE (C11): 605 corpus REQUIRED + Demo 369; cells {162 OFF/ON} × {153 OFF/ON} + DESKEW_CORROB_AUTOFILE
+  //   cell; M=0 AND wouldFile(ON)==wouldFile(OFF) set-equality in EVERY cell; fires partitioned by door (note|flag),
+  //   adjudicated AT THE PIXELS; door census (supplier-only passes = 0); live #358 → WS-73673 @82 held; zero fires
+  //   ⇒ STAYS DARK. Runner: TESTING/_measure/deskew_field_adopt_20260912/run_gate.sh.
+  'deskew_retry_field_adopt',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */
