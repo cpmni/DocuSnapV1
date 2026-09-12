@@ -21,7 +21,27 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-11 (customer_name postcode-drift ROOT-CAUSE fix + 5 DARK arcs + a night of flip-gates):
+## ⏭ LATEST — 2026-09-12 (the Ridgeway SKEW exhibit MEASURED → mig 162 DARK built; the Quick File + Departments PLAN):
+**READ `HANDOVER_2026-09-12_EVENING.md` FIRST** (the gate is RUNNING at wrap + the live-#358 test recipe + the owner
+queue), then `HANDOVER_2026-09-12.md` (the morning cold-start). Branch `feat/teach-side-overnight`; **2 commits
+`79cb655`+`7fd1400` NOT pushed.** `npm run test:pins` 342/343 (the 1 red = pre-existing `test_activity_strip`).
+**MEASURED** (full `process_docs` path on inbox/358.pdf, app env mirrored): `VS-72672`@95 is the CURRENT read (NO
+Learning Repair owed); the straighten retry NEVER RAN (its door keys on engine `_needs_review`, False on a note-only
+hold — H3); forced open, the straightened pass reads `WS-73673`@82 (TCA mig 153, licensed mapping+keyword) but the
+WHOLE-DOC gate refuses (79<83, the confident garble inflates raw — H2); Arc B abstains by its own bar (3 human
+confirms <5). **BUILT DARK mig 162 `deskew_retry_field_adopt`** (gary → Oracle C1-C11, `docs/designs/
+DESKEW_RETRY_FIELD_ADOPT_2026-09-12.md`): a ROLE-note door (never supplier-only) + a field-scoped keyword-corroborated
+same-identity adopt when the whole-doc gate refuses, always held (overall=min; lane-hold over a machine-clearable
+note; no put-back of a page-absent raw). Whole-doc population byte-identical. HARD dep mig 153 +
+`template_pad_window_code`. `TEST_SWITCH_KEYS` → **46**. Pins 62 py + the mig-162 JS pin (C7 the note is the SOLE
+checkpoint; C8 Quick reprocess KEEPS the adopted read). Harness gained env-gated `RR_LOG_MATCH`/`RR_LOG_OUT`. Gate
+runner `TESTING/_measure/deskew_field_adopt_20260912/run_gate.sh` (armed + base cells; 605 corpus still owed).
+**PLAN (owner ask): `docs/designs/QUICKFILE_AND_DEPARTMENTS_PLAN_2026-09-12.md`** — "Quick File" (non-OCR submission +
+management) + Departments (visibility gating); barry+eric → Oracle SIGN-OFF-W/COND Q-C1-12 + D-C1-12; order = the
+**pre-existing security fix D-C6 first** (`ACCESS_GATE_ENABLED` has no `isPackaged` guard). Nothing built.
+Memory `project_deskew_field_adopt_20260912.md` + `project_quickfile_departments_plan_20260912.md`.
+
+## Prior — 2026-09-11 (customer_name postcode-drift ROOT-CAUSE fix + 5 DARK arcs + a night of flip-gates):
 **READ `HANDOVER_2026-09-11.md` FIRST** (cold-start + the "NEEDS YOUR APPROVAL" queue), then `docs/oracle_log.md`
 (7 new 2026-09-10 verdicts) + the per-arc design docs. Branch `feat/teach-side-overnight`; **9 commits ahead of
 origin, NONE pushed** (owner's call). Everything this session is DARK (byte-identical OFF, kill switch, in
