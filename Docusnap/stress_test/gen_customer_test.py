@@ -471,17 +471,21 @@ def draw_meta(p, issuer, y, pairs, rng):
     return yy + 24
 
 
-def draw_parties(p, issuer, y, doc, rng, vendor=None):
+def draw_parties(p, issuer, y, doc, rng, vendor=None, cust_first_line=None):
     owner_lines = [OWNER["name"]] + OWNER["address"]
+    # Failure-mode injector (name_nonname): the CUSTOMER block's first line (the name the
+    # customer_name mapping reads) is overridden — a code on the history docs, a bare postcode on
+    # the test docs. A SEPARATE list so the shared owner_lines (Deliver To) is never mutated.
+    cust_lines = ([cust_first_line] + OWNER["address"]) if cust_first_line else owner_lines
     if doc["type"] == "purchase_order":
         v = vendor or issuer            # the REAL supplier — never the style dict (it may be owner-mutated)
         left = ("Supplier", [v["name"]] + v["address"])
         right = ("Deliver To", owner_lines)
     elif doc["type"] in ("sales_order", "quote"):
-        left = ("Customer", owner_lines)
+        left = ("Customer", cust_lines)
         right = ("Delivery Address", owner_lines)
     else:
-        left = (rng.choice(["Bill To", "Invoice To", "Customer"]), owner_lines)
+        left = (rng.choice(["Bill To", "Invoice To", "Customer"]), cust_lines)
         right = (rng.choice(["Deliver To", "Ship To", "Site Address"]), owner_lines)
     for x, (cap, lines) in ((40, left), (PAGE_W / 2 + 10, right)):
         p.t(x, y, cap.upper(), 8, bold=True, rgb=issuer["rgb"])
@@ -542,7 +546,7 @@ def draw_totals(p, issuer, y, net, labels, cur="£", sign=1):
 
 
 # ── One document ───────────────────────────────────────────────────────────────────────
-def build_doc(issuer, dtype, idx, logos, rng):
+def build_doc(issuer, dtype, idx, logos, rng, setname="live", inject_mode=None):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     p = Page(c, issuer["font"])
@@ -555,6 +559,28 @@ def build_doc(issuer, dtype, idx, logos, rng):
     tmpl = random.Random(f"{issuer['slug']}|{dtype}")
     date, year = make_date(rng)
     ref = make_ref(issuer["ref"][dtype], rng, year)
+    # ── FAILURE-MODE INJECTORS (flip-test corpus; gary design 2026-09-12) ──────────────────
+    # DARK VALUE-SHAPE modes with no shipped handler (mig 156 / 159 / format_class_join). The
+    # HISTORY docs (setname=='manual' → confirmed, learning-ON) carry the ATTESTATION shape that
+    # defeats the shipped pre-empt gate; the TEST docs (live) carry the failure shape the flag holds.
+    #   ref_confusable (mig 159): history 'S{2-9}-#####' (@#-#####, head≠s0 so C1 disarm never trips),
+    #     test 'S0-#####' — SAME fine shape so the Stage-4.5 shape-check can't pre-empt; the digit-0
+    #     is a class-outlier of canonical 'SO' (config labels) on the SCAN → the flag fires.
+    #   format_class_join (mig 120): ref alternates 'SO-#####' (upper_alphanum_sep) / '#######'
+    #     (digits_only) so the 3 newest distinct span two classes → classify_format→FREETEXT → the
+    #     entry is dropped OFF, the join keeps it ON (index-level proof, not a realdoc hold diff).
+    #   name_nonname (mig 156): customer_name history is a space-free CODE (word_like=False → the
+    #     wordness gate abstains), test is a bare UK postcode → nonname_structured_match fires.
+    is_history = (setname == "manual")
+    cust_override = None
+    if inject_mode == "ref_confusable":
+        ref = (f"S{rng.randint(2, 9)}-{rng.randint(10000, 99999)}" if is_history
+               else f"S0-{rng.randint(10000, 99999)}")
+    elif inject_mode == "format_class_join":
+        ref = f"SO-{rng.randint(10000, 99999)}" if idx % 2 == 0 else str(rng.randint(1000000, 9999999))
+    elif inject_mode == "name_nonname":
+        cust_override = (f"{rng.choice(['AB', 'CD', 'EF', 'GH', 'JK'])}{rng.randint(1000, 9999)}" if is_history
+                         else rng.choice(["CH1 2HU", "SW1A 1AA", "EH11 3PL", "BT1 1HE"]))
     title = tmpl.choice(TYPE_TITLES[dtype])
     gt = dict(issuer=issuer["name"], type_slug=dtype, ref=ref, date=date, total=None,
               vat_no=issuer["vat"], account_no=issuer["acct"],
@@ -573,6 +599,10 @@ def build_doc(issuer, dtype, idx, logos, rng):
               # carries the printed value, and the scorer swaps to it for buyer-issued types exactly
               # as it already swaps issuer/customer.
               printed_vat_no=(OWNER["vat"] if dtype == "purchase_order" else issuer["vat"]))
+    if inject_mode:
+        gt["failure_mode"] = inject_mode
+    if cust_override:
+        gt["customer"] = cust_override
 
     if dtype == "purchase_order":
         # The OWNER issues every purchase order, so every PO shares ONE Bramblewood layout
@@ -609,7 +639,7 @@ def build_doc(issuer, dtype, idx, logos, rng):
     if dtype == "service_worksheet":
         meta.append(("Job Ref", job_ref)); gt["job_ref"] = job_ref
     y = draw_meta(p, issuer_style, y + 8, meta, rng)
-    y = draw_parties(p, issuer_style, y + 4, dict(type=dtype), tmpl, vendor=issuer)
+    y = draw_parties(p, issuer_style, y + 4, dict(type=dtype), tmpl, vendor=issuer, cust_first_line=cust_override)
 
     cur = "£"
     if dtype == "statement":
@@ -697,9 +727,9 @@ def scanify(pdf_bytes, rng):
 
 def render_one(job):
     """Build ONE document's content, write BOTH renditions (digital + simulated scan)."""
-    issuer, dtype, idx, setname, digital_path, scan_path = job
+    issuer, dtype, idx, setname, digital_path, scan_path, inject_mode = job
     rng = random.Random(f"{issuer['slug']}|{dtype}|{setname}|{idx}")
-    pdf, gt = build_doc(issuer, dtype, idx, _LOGOS, rng)
+    pdf, gt = build_doc(issuer, dtype, idx, _LOGOS, rng, setname, inject_mode)
     rows = []
     os.makedirs(os.path.dirname(digital_path), exist_ok=True)
     with open(digital_path, "wb") as f:
@@ -731,10 +761,20 @@ def main():
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--issuers", default="", help="comma-separated issuer slugs to limit to (default: all)")
     ap.add_argument("--types", default="", help="comma-separated doc types to limit to (default: each issuer's own set)")
+    ap.add_argument("--inject", action="append", default=[],
+                    help="failure-mode injector MODE=issuer_slug/dtype (repeatable); MODE in "
+                         "{ref_confusable, format_class_join, name_nonname}")
     a = ap.parse_args()
     live_n, manual_n = (2, 1) if a.smoke else (a.live, a.manual)
     sel_iss = {x.strip() for x in a.issuers.split(",") if x.strip()}
     sel_typ = {x.strip() for x in a.types.split(",") if x.strip()}
+    inject = {}
+    for spec in a.inject:
+        mode, _, where = spec.partition("=")
+        slug, _, dt = where.partition("/")
+        inject[(slug.strip(), dt.strip())] = mode.strip()
+    if inject:
+        print("injectors:", ", ".join(f"{m} -> {s}/{t}" for (s, t), m in inject.items()))
 
     os.makedirs(LOGODIR, exist_ok=True)
     _pool_init()
@@ -755,7 +795,7 @@ def main():
                     dpath = os.path.join(DIGITAL, live_name, issuer["slug"], dtype, fn)
                     live_name_s = LIVE_SCAN_NAME if setname == "live" else MANUAL_NAME
                     spath = os.path.join(SCANNED, live_name_s, issuer["slug"], dtype, fn)
-                    jobs.append((issuer, dtype, i, setname, dpath, spath))
+                    jobs.append((issuer, dtype, i, setname, dpath, spath, inject.get((issuer["slug"], dtype))))
 
     print(f"generating {len(jobs)} documents x 2 renditions into {ROOT} ...")
     if a.workers <= 1:
