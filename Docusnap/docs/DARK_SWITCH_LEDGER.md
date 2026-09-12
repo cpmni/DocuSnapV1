@@ -19,6 +19,16 @@
 **The headline:** ~40 of the 47 are 🟡 WAITING on the same missing safety test. The 700-doc test set is the key
 that unblocks the pile.
 
+**2026-09-12 UPDATE — the 700-doc test set is BUILT and the first censuses have run.** `Desktop\Flip Corpus 700\`
+(warm DB `warm_700.db`) is sound at the faithful operating point (ref 97% / date 99% / 179-of-400 auto-file /
+0 wrong filing-field auto-files). Full method + results: `TESTING/_measure/flip_corpus_20260912/CENSUS.md`.
+Two fixes PASSED (M=0 + a real fire + a clean file→hold) and are **flip-ready, awaiting the owner's go** (a flip
+is a customer-default = approval-class, so it was NOT done autonomously): **`ref_confusable_flag` (159)** and
+**`name_role_nonname_flag` (156)**. `format_class_join` is M=0 but showed a broader blast radius than its pins
+claim (re-arms total-format checks on unrelated invoices) → stays WAITING pending a look. `trust_ref_role_shape`
+(154) + `template_drift_override_guard` (157) safety-passed on the synthetic set (M=0); their efficacy is the
+live re-judge already done 2026-09-10.
+
 ---
 
 ## 🟢 READY — safety test passed, awaiting your go (2)
@@ -39,9 +49,9 @@ that unblocks the pile.
 - **template_edge_clip_heal** — recover a code with a single edge glyph cut off.
 - **template_drift_override_guard** — don't relocate a value onto a look-alike label (the "CH1 2HU" root cause; live-confirmed).
 - **trust_ref_role_shape** — verify a reference by its learned *shape*, not a fixed list (unblocks 20 held Thornbury invoices).
-- **name_role_nonname_flag** — flag a "name" field that's actually a postcode / email / VAT number.
+- **name_role_nonname_flag** — flag a "name" field that's actually a postcode / email / VAT number. **✅ census PASSED 2026-09-12 (M=0, fires on 5 postcodes, 1 file→hold) — flip-ready, awaiting owner go.**
 - **note_topic_dedup** — collapse a wall of duplicate "check this code" notes into one.
-- **ref_confusable_flag** — flag an O-vs-0 style confusable in a reference so it can't silently misfile.
+- **ref_confusable_flag** — flag an O-vs-0 style confusable in a reference so it can't silently misfile. **✅ census PASSED 2026-09-12 (M=0, fires on 6 confusable refs, 2 file→hold) — flip-ready, awaiting owner go.**
 
 **Dates:**
 - **template_date_left_clip_grow** — recover a date whose leading digit was clipped.
@@ -62,7 +72,7 @@ that unblocks the pile.
 - **filing_sanity_ref_corrob_soften**, **filing_sanity_ref_history_soften** — soften a reference flag when live/history agreement backs it.
 - **resolve_ref_near_miss**, **resolve_ref_positional** — pre-fill a confirmed reference on a unique backed slip / positional consensus.
 - **confusion_precedence** — correct a never-seen serial from the supplier's own OCR-confusion history.
-- **format_class_join** — stop a mixed-code field losing its whole learned format.
+- **format_class_join** — stop a mixed-code field losing its whole learned format. **⚠ census 2026-09-12: M=0 + index-join proven, BUT broader blast radius than its pins claim (re-arms total-format checks on unrelated invoices → 7 review-bound total notes) — stays OFF pending a look.**
 
 **Type / heading / layout:**
 - **type_uninstalled_heading_fold** — re-detect a type from a dropped printed heading.
