@@ -41,9 +41,8 @@ function _watchFolderConflict(learning, db, folder) {
   return null;
 }
 
-const SUPPORTED_EXTENSIONS = new Set(
-  ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp']
-);
+// OCR input extensions — the ONE shared list (src/lib/fileKinds.js). Byte-equal to the former literal.
+const { OCR_EXTS: SUPPORTED_EXTENSIONS } = require('../../lib/fileKinds');
 
 const POLL_INTERVAL_MS    = 5000;
 const STABILITY_DELAY_MS  = 10000;

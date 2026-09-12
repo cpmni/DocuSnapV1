@@ -1517,12 +1517,11 @@ function _saveDebugTable(ctx, payload) {
   return { ok: true, file, doc_count: rows.length, flags, slices };
 }
 
-// Supported input extensions — mirrors python_backend ocr.tesseract.SUPPORTED_EXTENSIONS
-// and watch/handler.js. Used only to enumerate + shard files for the parallel
-// worker pool; the per-document pipeline (and its file detection) is unchanged.
-const BATCH_SUPPORTED_EXTS = new Set(
-  ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.bmp']
-);
+// Supported OCR input extensions — the ONE shared list (src/lib/fileKinds.js), byte-equal to the
+// former literal and to watch/handler.js. Python keeps its own copy (tesseract.py), pinned equal.
+// Used only to enumerate + shard files for the parallel worker pool; the per-document pipeline
+// (and its file detection) is unchanged.
+const { OCR_EXTS: BATCH_SUPPORTED_EXTS } = require('../../lib/fileKinds');
 
 // Round-robin split so worker file counts stay balanced regardless of order.
 function partitionRoundRobin(items, n) {
