@@ -161,6 +161,8 @@ is the SOLE checkpoint (`test_migration162_deskew_field_adopt.js` §3); **C8** t
 precondition (`pendingfeatures.md` + the mig-142 `dark_switches.js` comment); **C11** the gate = §6 + the
 605 corpus REQUIRED + cells {162 OFF/ON} × {153 OFF/ON} + the DESKEW_CORROB_AUTOFILE cell + fires partitioned by
 door (runner `TESTING/_measure/deskew_field_adopt_20260912/run_gate.sh`, harness `RR_LOG_MATCH`/`RR_LOG_OUT`).
-Render-determinism ×3 on 358: DONE (identical). Built 2026-09-12: `process_docs.py` (helpers + call site),
+Render-determinism ×3 on 358: DONE (identical). **Gate, armed cell (369 Demo docs, mig 153 ON), 2026-09-12: PASS —
+M=0, filer set identical, ALL value deltas 0; whole-doc adopts 9 = 9 (population freeze holds); note-door passes 8;
+field adopts 0 ⇒ stays DARK on this corpus; the 605 corpus still required.** Built 2026-09-12: `process_docs.py` (helpers + call site),
 `engine.py` (the hoisted year-absent mark), mig 162, `dark_switches.js` (46), `_reconcileEnv` nesting,
 pins `python_backend/tests/test_deskew_retry_field_adopt.py` (62) + `database/modules/test_migration162_deskew_field_adopt.js`.
