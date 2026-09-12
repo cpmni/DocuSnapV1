@@ -148,6 +148,16 @@ function teachTemplate(P) {
   let n = 0;
   for (const m of out.mappings) {
     if (!(m.field_key in typeByKey)) continue;
+    // Failure-mode injector — CODE-CLIP class (fires mig 141/151/161): cut the taught REF box so it clips a
+    // leading (TEACH_JITTER_LEFT) or trailing (TEACH_JITTER) glyph, exactly the human cutting-draw disease the
+    // corpus scorer uses. Scoped to the ref key so the class is clean. OFF ⇒ a shape-invalid clipped read held;
+    // ON ⇒ the widen/left-grow re-read rescues it. Unset ⇒ GT-perfect boxes (byte-identical).
+    if (m.field_key === refKeyBySlug[slug]) {
+      const JL = parseFloat(process.env.TEACH_JITTER_LEFT || '0');
+      if (JL > 0) { const cut = m.target.w * JL; m.target.x += cut; m.target.w -= cut; }
+      const JR = parseFloat(process.env.TEACH_JITTER || '0');
+      if (JR > 0) m.target.w = m.target.w * (1 - JR);
+    }
     templates.saveMapping(db, tid, {
       field_key: m.field_key, page_number: 0, anchor_text: m.anchor_text,
       anchor_x_norm: m.anchor.x, anchor_y_norm: m.anchor.y, anchor_w_norm: m.anchor.w, anchor_h_norm: m.anchor.h,
