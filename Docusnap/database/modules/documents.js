@@ -50,7 +50,11 @@ function update(db, id, changes) {
                    'review_acknowledged_at', 'page_count', 'confirmed_by_username', 'supplier_pin',
                    // mig 51. This whitelist SILENTLY DROPS anything not listed, so a column added
                    // to insert() but not here writes once and can never be cleared again.
-                   'detected_type_name'];
+                   'detected_type_name',
+                   // mig 164/165 (QuickFile+Departments): the department tag + set-by provenance, and the
+                   // Quick File intake marker + notes. Whitelisted so re-file / re-tag / set-department can
+                   // write them; NULL for every OCR doc keeps the pipeline byte-identical.
+                   'department_id', 'department_set_by', 'intake', 'intake_notes'];
   const sets = Object.keys(changes)
     .filter(k => allowed.includes(k))
     .map(k => `${k} = @${k}`)
