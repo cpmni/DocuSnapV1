@@ -68,7 +68,8 @@ confirm writes no correction row.
 
 ## 4. The SECOND task — the Quick File + Departments PLAN (owner asked while away) — DONE, nothing built
 `docs/designs/QUICKFILE_AND_DEPARTMENTS_PLAN_2026-09-12.md` (read §1 summary → §5 rulings → §6 security → §7 order →
-§8 questions → §9 Oracle). Companions: `docs/brainstorms/BARRY_2026-09-12_quickfile_departments.md` (product),
+§8 questions → §9 Oracle). Readable-anywhere page (private artifact, same content, the ten questions with defaults):
+https://claude.ai/code/artifact/c93e7a50-036d-40af-bf88-b802fb55c25e Companions: `docs/brainstorms/BARRY_2026-09-12_quickfile_departments.md` (product),
 `docs/designs/QUICKFILE_DEPARTMENTS_ERIC_ARCH_2026-09-12.md` (architecture, F1-F19 facts). Oracle: **SIGN OFF WITH
 CONDITIONS on both** (Q-C1-12, D-C1-12, `docs/oracle_log.md`). Headlines:
 - **Quick File** = an ordinary confirmed `documents` row with typed `extractions` (`intake='direct'`), filed via the
