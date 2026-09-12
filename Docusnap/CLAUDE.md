@@ -21,7 +21,53 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-12 (the Ridgeway SKEW exhibit MEASURED → mig 162 DARK built; the Quick File + Departments PLAN):
+## ⏭ LATEST — 2026-09-13 (overnight: flip-corpus CENSUSES + the "general doc filing" = QuickFile+Departments FOUNDATION + Chris):
+**READ `HANDOVER_2026-09-13_NIGHT.md` FIRST** (its NEEDS-YOUR-APPROVAL queue is the morning to-do). Branch
+`feat/teach-side-overnight`; **23 commits ahead of origin, NONE pushed** (owner's call); HEAD `b9811ea`; tree clean.
+Two owner directives ran overnight. **(1) FLIP-CORPUS:** built failure-mode injectors (`gen_customer_test.py
+--inject`, pin `test_inject_shapes.py`), scaled to a 700-doc warm corpus (`Desktop\Flip Corpus 700\warm_700.db`,
+SOUND at `RR_APP_ENV=1`), ran censuses → **mig 159 `ref_confusable_flag` + mig 156 `name_role_nonname_flag` PASS
+(M=0 + fire + file→hold) = FLIP-READY** (+ mig 143 `template_pad_date_adopt` PASS in the partial widen);
+`format_class_join` M=0 but a blast-radius finding (HOLD); 154/157 safety-pass. `TESTING/_measure/flip_corpus_20260912/CENSUS.md`.
+**⚠ TWO CORRECTIONS:** the census baseline MUST be `RR_APP_ENV=1` (`=0` is the vacuous-arm trap, ref→47%); the
+3 switches' lever is **SHELL ENV not a DB write** (read outside the mirrored `_appSpawnEnv` functions). NO flip
+done (customer-default = approval-class). **(2) QUICKFILE + DEPARTMENTS** (owner: "general document management …
+docs that don't require OCR … departmental roles + security gating"; plan `docs/designs/QUICKFILE_AND_DEPARTMENTS_PLAN_2026-09-12.md`,
+Oracle Q-C1-12+D-C1-12): built the **safe, tested, DARK+byte-identical-OFF+pinned FOUNDATION of both features**
+(7 commits `c348df3`→`202456e`: D-C6 security fix · `src/lib/fileKinds.js` · migs 164/165 · Q-C1 non-switchable
+learning-exclusion · `directIntakeService.submit` · Departments enforcement core `accessService.departmentDecision`
++ `departmentService`). Honest scope: a ~15-slice multi-day feature — **the D2 list-reader SWEEP (must be COMPLETE
+to be safe) + the UIs REMAIN** (finish path = handover PART 2). **(3) CHRIS** sandboxed vet (port 9223) →
+`docs/CHRIS_FULL_APP_REVIEW_2026-09-13.md`. `npm run test:pins` green bar the pre-existing `test_activity_strip`.
+Memory `project_flip_corpus_pipeline_20260912.md` + `project_quickfile_departments_plan_20260912.md` (both updated).
+
+## Prior — 2026-09-12 NIGHT (the FLIP-TEST corpus PIPELINE built + pilot VALIDATED; mig 163 shipped; 2 arcs Oracle DO-NOTHING):
+**READ `HANDOVER_2026-09-12_NIGHT.md` FIRST** — its §ACTIVE TASK is the resume point. Branch
+`feat/teach-side-overnight`; **14 commits ahead of origin, NONE pushed** (owner's call); HEAD `4683447`; tree CLEAN.
+Dev app RUNNING (46/47 dark switches armed; mig 163 off until next `npm start`; mig 162 flipped ON for the
+Ridgeway preview — it works). `npm run test:pins` 343 green (1 red = pre-existing `test_activity_strip`).
+**Owner concern → built a way to ensure DARK fixes reach the build:** (1) `docs/DARK_SWITCH_LEDGER.md` — the
+plain-English tracker of all **47** built-but-off fixes (READY 2 / HELD 5 / WAITING ~39 / PARKED 1 / DONE);
+(2) `database/build_arming.js` **auto-re-arm** (`928243c`) — a same-rev dev arm now DELTA-arms only new keys
+(companion `test_build_armed_keys`), so a fix added since the last arm activates on the next `TEST_BUILD=1
+npm start` without a full re-arm + never clobbers an operator OFF (pin +3); (3) `stress_test/build_warm_db.js`
+(`1eb9c4b`+`4683447`) — builds a synthetic RELEASE-shaped WARM DB from `gen_customer_test.py` (which ALREADY
+enforces one-fixed-template-per-supplier+type) + `ground_truth.json` so `realdoc_regression.js` (RR_DB) runs
+UNCHANGED. **Pilot at `Desktop\Flip Corpus Pilot` VALIDATED** (ref/date/supplier 12/12; 18/24 auto-file →
+graduation works). **KEY FINDING (load-bearing):** the SHIPPED keyword read + default-ON pad-window recover the
+EASY geometry failure → a synthetic clip/skew CANNOT fire the DARK geometry fixes (141/151/161/162/163) → the
+corpus is a strong **SAFETY gate** (M=0/no-regression), geometry **efficacy** stays on REAL exhibits, and
+injectable-mode efficacy is only the VALUE-shape modes (mig 156 non-name / mig 159 confusable / format_class_join).
+NEXT (HANDOVER §ACTIVE TASK): inject injectable modes → scale to 700 → OFF-vs-ON safety censuses → flip passers.
+**mig 163 `deskew_false_absent_reflag`** DARK (`2d15445`, `TEST_SWITCH_KEYS` → **47**); its auto-file RELEASE leg
+(would be mig 164) **Oracle DO NOTHING** (`b0eefba`; inert on default install + a cross-raster overall-inheritance
+misfile seam). **Suspect-code label re-read arc Oracle DO NOTHING, NOT built** (`a724055`; `VS-72672` is
+SHAPE-VALID so its trigger never fires + `_relocate_and_read` runs the tilt-unsafe geometric read first).
+**Owner standing rule (`feedback_simple_explanations`): ALL explanations to the owner in plain, non-technical
+terms.** Memory `project_flip_corpus_pipeline_20260912.md` + `project_deskew_false_absent_reflag_20260912.md` +
+`project_suspect_code_label_reread_20260912.md`.
+
+## Prior — 2026-09-12 (the Ridgeway SKEW exhibit MEASURED → mig 162 DARK built; the Quick File + Departments PLAN):
 **READ `HANDOVER_2026-09-12_EVENING.md` FIRST** (the gate is RUNNING at wrap + the live-#358 test recipe + the owner
 queue), then `HANDOVER_2026-09-12.md` (the morning cold-start). Branch `feat/teach-side-overnight`; **2 commits
 `79cb655`+`7fd1400` NOT pushed.** `npm run test:pins` 342/343 (the 1 red = pre-existing `test_activity_strip`).
