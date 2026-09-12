@@ -90,6 +90,11 @@ def _deskew_retry_adopt(base_overall, retry_overall) -> bool:
 # the "— confirm once." lane-hold family (handler._isLaneHoldNote), so it survives a reprocess merge. Fields
 # whose value is unchanged get no note (nothing new to check; a confidence rise alone is not a change).
 _DESKEW_CHANGED_NOTE = "Read differently after straightening — was '{was}', now '{now}' — confirm once."
+# The TRUTHFUL replacement for a FALSE page-absent note (mig 163 deskew_false_absent_reflag; the value is
+# UNCHANGED and the straightened frame keyword-corroborates it on the page). A "— confirm once." lane-hold
+# (handler._isLaneHoldNote), out of every CLEARABLE_NOTE_MARKS / class-F set — the human confirms once; it is
+# never machine-cleared and, on a ref/date ROLE field, never soft (mig 142 cannot dissolve it).
+_DESKEW_VERIFIED_NOTE = "'{val}' was confirmed on the straightened page — confirm once."
 
 
 def _deskew_retry_changed_fields(raw_results, straightened_results):
@@ -242,6 +247,13 @@ def _deskew_retry_apply_holds(raw_results, straightened_results):
 #      (never the deposed value's put-back when the raw note was a page-absence claim). Overall becomes
 #      min(raw, straightened) (C3). NEVER consults DESKEW_CORROB_AUTOFILE. `== "1"` (EMPTY never reads as ON).
 _DESKEW_FIELD_ADOPT_ON = os.environ.get("DESKEW_RETRY_FIELD_ADOPT", "0") == "1"
+# mig 163 deskew_false_absent_reflag (2026-09-12; gary → Oracle: SEND BACK the note-DROP/auto-file "release"
+# leg, SIGN OFF WITH CONDITIONS on this HOLD leg). Phase 1: when the straighten retry reads the SAME value for
+# a role field Gate C falsely marked page-ABSENT and the straightened frame keyword-corroborates it, REPLACE
+# the false absent note with a truthful review-bound hold. Removes NO checkpoint (still held). The release leg
+# (drop the note → auto-file) is SEND BACK — the Q2 cross-raster overall-inheritance misfile seam + the Q6
+# overall-stomp + a cross-supplier census; conditions in docs/oracle_log.md + pendingfeatures.md 2026-09-12.
+_DESKEW_FALSE_ABSENT_REFLAG_ON = os.environ.get("DESKEW_FALSE_ABSENT_REFLAG", "0") == "1"
 _DESKEW_HUMAN_METHOD_FAMILIES = ("manual", "override", "operator_pin", "keyword_override", "template_fixed")
 _DESKEW_PAGE_FAMILIES = ("mapping", "crop", "keyword")
 # JS twin: src/services/classFixService.js CLEARABLE_NOTE_MARKS (the human class-fix road may clear these) —
@@ -403,6 +415,72 @@ def _deskew_retry_field_adopt(raw_results, straightened_results, role_keys, date
         except (TypeError, ValueError):
             pass
     return adopted
+
+
+def _deskew_retry_false_absent_reflag(raw_results, straightened_results, role_keys,
+                                      date_keys=(), exclude=(), enabled=False):
+    """mig 163 deskew_false_absent_reflag — Phase 1 (gary → Oracle: SIGN OFF WITH CONDITIONS on this HOLD leg;
+    the note-DROP/auto-file "release" leg was SENT BACK). When the review-bound straighten retry reads the SAME
+    value for a role field that Gate C falsely marked page-ABSENT (the whole-page text pass garbled the token on
+    the skewed raster, though the crop read it right and the page prints it), and the straightened frame
+    keyword-corroborates that same value, REPLACE the false absent note with a truthful review-bound lane-hold
+    note. Removes NO checkpoint (the doc stays held on a role note; a role note is never soft, so mig 142 cannot
+    dissolve it). Mutates `raw_results` IN PLACE (never re-assigns the dict, never touches value / confidence /
+    method / `_overall_confidence` / `_needs_review` — only the note text); returns [(key, value)] reflagged,
+    [] when disabled/refused. Per door key, ALL must hold (Oracle P1):
+      entry  the RAW note IS the page-absent mark (ref ABSENT / date YEAR-ABSENT) — a shape/relocation/other
+             note is out of scope ("the value is now on the page" does not answer a shape warning);
+      F1/F5  the raw field is a door key (`_deskew_field_adopt_door_keys` — ref/date role, non-supplier, noted,
+             non-human method, no corrected_to / was_corrected);
+      F2     the straightened value is non-empty and EQUALS the raw value (whitespace-insensitive) — a CHANGED
+             value is mig-162's job (adopt + hold), never re-noted here (163/162 mutually exclusive on F2);
+      F3     `_corrob_licensed_keyword` on the straightened record (>=2 independent page families, no disagree,
+             a KEYWORD page-text witness — the exact-normalised `_corrob_values_agree` refuses a truncation
+             garble, so a wrong value whose page keyword reads the true longer token disagrees → refused);
+      F4a    the straightened field carries no page-ABSENT mark of its own (the straightened pass found it);
+      C5     same supplier + template as the raw pass (`_deskew_same_identity`, checked once).
+    The release/auto-file leg was SEND BACK (the Q2 cross-raster `_overall_confidence` inheritance can misfile a
+    non-adopted required field, e.g. a confident wrong DATE; the Q6 overall-stomp when mig 162 also fired; a
+    cross-supplier + length-distribution census). Conditions: docs/oracle_log.md + pendingfeatures.md 2026-09-12."""
+    if not enabled:
+        return []
+    raw = raw_results
+    st = straightened_results or {}
+    if not isinstance(raw, dict) or not st:
+        return []
+    if not _deskew_same_identity(raw, st):                                            # C5
+        return []
+    absent = _deskew_engine_mark("_FILING_SANITY_ABSENT_MARK")
+    year_absent = _deskew_engine_mark("_FILING_SANITY_YEAR_ABSENT_MARK")
+    if absent is None:                                                                 # the entry gate must be decidable
+        return []
+    corrob = st.get("_corroboration_emit") or {}
+    reflagged = []
+    for key in _deskew_field_adopt_door_keys(raw, role_keys):
+        if key in (exclude or ()):                                                     # mutual exclusion with mig 162
+            continue
+        d0 = raw.get(key)
+        d1 = st.get(key)
+        if not isinstance(d0, dict) or not isinstance(d1, dict):
+            continue
+        n0 = str(d0.get("validation_note") or "")
+        raw_absent = (absent in n0) or (bool(year_absent) and key in (date_keys or ()) and year_absent in n0)
+        if not raw_absent:                                                             # entry: only the FALSE absent note
+            continue
+        was = str(d0.get("value") or "").strip()
+        now = str(d1.get("value") or "").strip()
+        if not now or " ".join(now.split()) != " ".join(was.split()):                  # F2 — UNCHANGED (162 boundary)
+            continue
+        if not _corrob_licensed_keyword(corrob.get(key)):                              # F3
+            continue
+        n1 = str(d1.get("validation_note") or "")
+        if absent in n1:                                                               # F4a
+            continue
+        if bool(year_absent) and key in (date_keys or ()) and year_absent in n1:
+            continue
+        d0["validation_note"] = _DESKEW_VERIFIED_NOTE.format(val=now)                  # the only mutation — a truthful hold
+        reflagged.append((key, now))
+    return reflagged
 
 
 # ── Per-file watchdog ─────────────────────────────────────────────────────────
@@ -1475,9 +1553,10 @@ def main():
             # noted, non-authoritative ref/date ROLE field (C1); the whole-doc adopt below stays gated on the
             # RAW engine flag; the field-scoped adopt runs in the else-branch. OFF ⇒ door + branch byte-identical.
             _fa_on = _DESKEW_FIELD_ADOPT_ON
+            _hr_reflag_on = _DESKEW_FALSE_ABSENT_REFLAG_ON   # mig 163 Phase-1: truthful re-flag of a false absent note
             _role_keys = {k for k in ("supplier_name", _ref_key, _date_key) if k}
             _date_role_keys = {k for k in (_date_key,) if k}
-            _door_keys = _deskew_field_adopt_door_keys(raw_extractions, _role_keys) if _fa_on else []
+            _door_keys = _deskew_field_adopt_door_keys(raw_extractions, _role_keys) if (_fa_on or _hr_reflag_on) else []
             _raw_flag = bool(raw_extractions.get("_needs_review", True))
             if _deskew_retry_should_run(
                     os.environ.get("DESKEW_REVIEW_RETRY", "0") != "0",
@@ -1528,6 +1607,7 @@ def main():
                                     log(f"  Straighten+reread: kept raw (straightened overall {_oc1:.0f} not higher than {_oc0:.0f})")
                                 else:
                                     log("  Straighten+reread: whole-doc adopt not applicable (note-only hold)")   # C9
+                                _fa = []
                                 if _fa_on:
                                     # Field-scoped fallback (mig 162): splice ONLY a noted role field whose straightened
                                     # read is keyword-corroborated + same identity; the doc stays held (role note).
@@ -1543,6 +1623,20 @@ def main():
                                                     "conf": _fd.get("confidence"), "method": _fd.get("method"),
                                                     "fams": sorted({str(_rec.get("winner_family") or "")}
                                                                    | {str(f) for f in (_rec.get("agree") or [])}),
+                                                    "overall": raw_extractions.get("_overall_confidence")})
+                                if _hr_reflag_on:
+                                    # Phase-1 (mig 163): the value is UNCHANGED but the straightened frame keyword-
+                                    # corroborates it — replace Gate C's FALSE page-absent note with a truthful hold
+                                    # (still held; a role note is never soft). exclude = the mig-162-adopted keys (a
+                                    # changed value can never also be unchanged, but keep the two legs disjoint by build).
+                                    _rf = _deskew_retry_false_absent_reflag(
+                                        raw_extractions, raw2, _role_keys, date_keys=_date_role_keys,
+                                        exclude={_k for _k, _w, _n in _fa}, enabled=True)
+                                    for _k, _v in _rf:
+                                        log(f"  Straighten+reread: RE-FLAGGED {_k} '{_v}' "
+                                            f"(verified on the straightened page; false page-absent note replaced with a hold)")
+                                        emit_trace({"event": "deskew_false_absent_reflag", "field": _k, "value": _v,
+                                                    "door": "flag" if _raw_flag else "note",
                                                     "overall": raw_extractions.get("_overall_confidence")})
                         else:
                             log("  Straighten+reread: no page exceeded the floor after render — kept raw")

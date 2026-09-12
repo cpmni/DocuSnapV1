@@ -9,7 +9,20 @@
 
 ---
 
-## 2026-09-12 — Skew-induced FALSE page-absent flag: straightening CLEARS it (a hold-RELEASE class, NOT mig 162's adopt) — 6/369 Demo docs
+## 2026-09-12 — Skew-induced FALSE page-absent flag: straightening CLEARS it — Phase-1 BUILT (mig 163); the auto-file RELEASE leg SEND BACK
+- **STATUS (2026-09-12): Phase-1 truthful-note HOLD leg BUILT DARK** = mig 163 `deskew_false_absent_reflag`
+  (gary → Oracle FORK: SIGN OFF W/COND the hold leg, SEND BACK the release leg;
+  `docs/designs/DESKEW_FALSE_ABSENT_REFLAG_2026-09-12.md`, `docs/oracle_log.md`). It REPLACES the false absent note
+  with a truthful "— confirm once." role hold when the straighten retry corroborates the SAME value (F2 unchanged +
+  F3 keyword + F4a + C5) — removes NO checkpoint, closes the mig-162 S2 side-door for free. Empirical gate (6 docs,
+  OFF vs ON): re-flags #130/#139/#140, refuses #136/#144/#145, **wouldFile delta 0**. 605-corpus set-equality gate
+  still owed before a flip. Pins: `test_deskew_false_absent_reflag.py` + `test_migration163_deskew_false_absent_reflag.js`.
+- **The note-DROP / auto-file RELEASE leg is SEND BACK — before it may be built even DARK:** H1 (Phase-1 shipped +
+  measured), **C-Q2** required-field cross-raster VALUE-PARITY (else a confident wrong DATE on the raw raster rides
+  the straightened pass's clean overall → silent misfile — Oracle's sharp catch), **C-Q6** skip-if-mig-162-adopted
+  (the doc-level overall write stomps mig-162's C3), **C-Q3** a length-distribution census + a length-blind
+  adversarial that refuses, **H3-H5** S_AUTO ≥ 10 distinct docs+values across **≥2 SUPPLIERS** (the Saltmarsh cohort
+  is one) + a 0-misfile independent-GT census. Right layer, not WRONG LAYER — premature + unsound-as-drawn.
 - **Census fact (mig 162 armed-cell gate, ON arm, `stress_test/out/deskew_field_adopt_20260912/armed_on.straighten.jsonl`):**
   the role-note door admitted 8 docs; the field adopt refused all 8 (0 fires). Traced two: **doc 130** (Saltmarsh
   delivery note): raw `DN-92961` @90 + Gate C absent note (the full-page pass garbled the token to `DN-9296]` on the

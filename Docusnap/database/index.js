@@ -3302,6 +3302,29 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 162 (deskew_retry_field_adopt): ${e.message}`); }
   }
 
+  // ── migration 163: deskew_false_absent_reflag seeded OFF (2026-09-12; gary → Oracle: SEND BACK the note-DROP/
+  //    auto-file "release" leg, SIGN OFF WITH CONDITIONS on this HOLD leg; docs/designs/DESKEW_FALSE_ABSENT_REFLAG_
+  //    2026-09-12.md; the 6 Saltmarsh delivery-note class, mirror of #358). Gate C falsely marks a role field
+  //    page-ABSENT when the whole-page text pass garbles the token on a ~1.5° skewed raster, though the crop read
+  //    it right and the page PRINTS it — a −12 penalty holds the doc forever with a lie ("doesn't appear on this
+  //    page"). When ON: the straighten retry re-reads; if the value is UNCHANGED and the straightened frame
+  //    keyword-corroborates it (>=2 independent page families, no disagree, a page-text witness) from the SAME
+  //    supplier/template, it REPLACES the false absent note with a truthful review-bound "— confirm once." hold.
+  //    Removes NO checkpoint (still held; a role note is never soft → mig 142 cannot dissolve it). Value /
+  //    confidence / method / overall / _needs_review all UNCHANGED — only the note text. CHILD of
+  //    deskew_review_retry_enabled (env bridged only under the parent, handler._reconcileEnv). DARK; byte-identical
+  //    OFF. The RELEASE (note-DROP → auto-file) leg is SEND BACK (the Q2 cross-raster overall-inheritance misfile
+  //    seam + Q6 overall-stomp + a cross-supplier/length census); its H1-H5 + C-Q2/Q6/Q3 conditions live in
+  //    dark_switches.js + docs/oracle_log.md. ⚑ FLIP GATE (this hold leg): wouldFile(ON)==wouldFile(OFF)
+  //    set-equality (removes NO filer); the truthful note out of every CLEARABLE_NOTE_MARKS / class-F set.
+  if (!applied.has(163)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('deskew_false_absent_reflag', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (163)').run();
+      console.log(`JS migration 163 applied: deskew_false_absent_reflag (truthful re-flag of a false page-absent note on a straighten-verified role field) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 163 (deskew_false_absent_reflag): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

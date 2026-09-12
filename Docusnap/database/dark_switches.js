@@ -228,6 +228,22 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   adjudicated AT THE PIXELS; door census (supplier-only passes = 0); live #358 → WS-73673 @82 held; zero fires
   //   ⇒ STAYS DARK. Runner: TESTING/_measure/deskew_field_adopt_20260912/run_gate.sh.
   'deskew_retry_field_adopt',
+  // deskew_false_absent_reflag (mig 163, 2026-09-12, gary → Oracle: SEND BACK the note-DROP/auto-file "release"
+  // leg, SIGN OFF WITH CONDITIONS on this HOLD leg; the 6 Saltmarsh delivery-note class, mirror of the #358 skew).
+  // Phase 1: when the straighten retry reads the SAME value for a role field Gate C falsely marked page-ABSENT
+  // (the whole-page text pass garbled the token on the skewed raster; the crop read it right and the page PRINTS
+  // it) and the straightened frame keyword-corroborates it, REPLACE the false absent note with a truthful
+  // review-bound "— confirm once." hold. Removes NO checkpoint (still held; a role note is never soft → mig 142
+  // cannot dissolve it → it closes the mig-162 S2 side-door for free). CHILD of deskew_review_retry_enabled.
+  // Byte-identical OFF. Census (3/6 reflag correct; #145 refused by F2; 0 wrong): TESTING/_measure/deskew_hold_release_20260912/CENSUS.md.
+  // ⚑ The RELEASE (note-DROP → auto-file) leg is SEND BACK — before it may be built even DARK: H1 (this hold leg
+  //   shipped + measured), C-Q2 required-field cross-raster value-parity (else a confident wrong DATE rides st's
+  //   clean overall → silent misfile), C-Q6 skip-if-mig-162-adopted (overall-stomp), C-Q3 length-distribution
+  //   census + a length-blind adversarial that refuses, H3-H5 S_AUTO≥10 across ≥2 SUPPLIERS + 0-misfile GT census.
+  //   Full conditions: docs/oracle_log.md + pendingfeatures.md + docs/designs/DESKEW_FALSE_ABSENT_REFLAG_2026-09-12.md.
+  // ⚑ FLIP GATE (this hold leg): wouldFile(ON)==wouldFile(OFF) set-equality (removes NO filer — any delta is a bug);
+  //   the truthful note out of every CLEARABLE_NOTE_MARKS / class-F set (bilingual pin); the doc still flagged/held.
+  'deskew_false_absent_reflag',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

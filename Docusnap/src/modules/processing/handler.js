@@ -165,6 +165,10 @@ function _reconcileEnv(db) {
       // field-scoped corroborated adopt for the straighten retry. CHILD of the retry — nested so the env can
       // never outlive its parent (the C7 pattern DESKEW_CORROB_AUTOFILE uses below). Parent output unchanged.
       if (learning.getSetting(db, 'deskew_retry_field_adopt', 'false') === 'true') env.DESKEW_RETRY_FIELD_ADOPT = '1';
+      // DESKEW_FALSE_ABSENT_REFLAG (mig 163, 2026-09-12, gary → Oracle SEND-BACK-release / SIGN-OFF-W/COND-hold,
+      // DARK): Phase-1 truthful re-flag of a FALSE page-absent note on a straighten-verified role field. Same
+      // CHILD-of-the-retry nesting as mig 162 (can never outlive the parent). Removes no checkpoint (still held).
+      if (learning.getSetting(db, 'deskew_false_absent_reflag', 'false') === 'true') env.DESKEW_FALSE_ABSENT_REFLAG = '1';
     }
     { const a = learning.getSetting(db, 'deskew_review_min_angle', ''); if (a) env.DESKEW_REVIEW_MIN_ANGLE = String(a); }
     // DESKEW_CORROB_AUTOFILE (2026-08-31, owner ask; Oracle SIGN-OFF-WITH-CONDITIONS, DARK). A
