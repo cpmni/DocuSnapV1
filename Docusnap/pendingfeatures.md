@@ -17,12 +17,28 @@
   F3 keyword + F4a + C5) — removes NO checkpoint, closes the mig-162 S2 side-door for free. Empirical gate (6 docs,
   OFF vs ON): re-flags #130/#139/#140, refuses #136/#144/#145, **wouldFile delta 0**. 605-corpus set-equality gate
   still owed before a flip. Pins: `test_deskew_false_absent_reflag.py` + `test_migration163_deskew_false_absent_reflag.js`.
-- **The note-DROP / auto-file RELEASE leg is SEND BACK — before it may be built even DARK:** H1 (Phase-1 shipped +
-  measured), **C-Q2** required-field cross-raster VALUE-PARITY (else a confident wrong DATE on the raw raster rides
-  the straightened pass's clean overall → silent misfile — Oracle's sharp catch), **C-Q6** skip-if-mig-162-adopted
-  (the doc-level overall write stomps mig-162's C3), **C-Q3** a length-distribution census + a length-blind
-  adversarial that refuses, **H3-H5** S_AUTO ≥ 10 distinct docs+values across **≥2 SUPPLIERS** (the Saltmarsh cohort
-  is one) + a 0-misfile independent-GT census. Right layer, not WRONG LAYER — premature + unsound-as-drawn.
+- **The note-DROP / auto-file RELEASE leg (mig 164 `deskew_hold_release`) = Oracle DO NOTHING (2026-09-12 re-vet;
+  NOT built — design only).** gary's v2 design closed C-Q3 (an additive engine `_shape_len_ok` emit, fail-closed),
+  C-Q6 (skip-if-mig-162-adopted, double-enforced) and the F2 case-sensitivity near-miss — but Oracle SENT IT BACK
+  again on THREE findings before it may be built even DARK:
+  - **R1 (ship-blocker) — the `_needs_review` seam:** on a DEFAULT install `_maybeAutoFile` parks on
+    `_needs_review`/overall<95 (handler.js:6675/6694) BEFORE `isAutoFileEligible` is consulted, and the Saltmarsh
+    crop @89 drags overall <95 → the release is INERT (fires only with gate-unify/soft-arc ON = an unstated
+    cross-arc dep); worse, dropping the note while leaving `needs_review=True` = a doc held with NO reason (a
+    regression vs Phase-1). Fix: either clear `needs_review=False` + fall-through = the Phase-1 truthful hold, OR
+    **move the release DECISION to trust.js** (Oracle's WRONG-LAYER lean — a graduated corroboration-licensed
+    scope files a doc whose only hold is `_DESKEW_VERIFIED_NOTE`; note+floor+needs_review stay coherent).
+  - **R2 — whole-doc value parity (not required-only):** the default filename is `{docType}.{date}.{ref}.{title}`
+    and `{title}` is OCR-derived + `required:0` — a filing-deciding NON-required field C-Q2 missed; safe today ONLY
+    by the coincidence that `title` lives on General Document (auto-file-barred). Compare EVERY non-`_` field
+    raw-vs-st (case-sensitive F2 comparator) → this also makes field-splice ≡ whole-doc-adopt.
+  - **R3 — census in the FIRING config** with ≥1 REAL fire (a default-config census measures an inert arc),
+    wouldFile(ON)⊇wouldFile(OFF), every added filer's full filed identity (filename+folder) pixel-correct, M=0,
+    zero per-field accuracy drop, **≥2 SUPPLIERS**, + adversarials {poisoned-short length, shorter-token same-fold
+    mis-seat, case-variant, confident-wrong non-released required}. Corpus-blocked (no ≥2-supplier/605 DB on disk).
+  - **RESTING STATE = DO NOTHING** — Phase-1's truthful hold (mig 163, shipped) already kills the lie; auto-filing
+    ~6 held-but-not-wrong docs is not worth a shared-auto-file-path change that can't be censused. Revisit only when
+    the corpus exists AND the trust.js re-layer (R1) + whole-doc parity (R2) are designed. Full block: `docs/oracle_log.md` 2026-09-12.
 - **Census fact (mig 162 armed-cell gate, ON arm, `stress_test/out/deskew_field_adopt_20260912/armed_on.straighten.jsonl`):**
   the role-note door admitted 8 docs; the field adopt refused all 8 (0 fires). Traced two: **doc 130** (Saltmarsh
   delivery note): raw `DN-92961` @90 + Gate C absent note (the full-page pass garbled the token to `DN-9296]` on the
