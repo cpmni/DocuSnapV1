@@ -9,6 +9,25 @@
 
 ---
 
+## 2026-09-12 — Skew-induced FALSE page-absent flag: straightening CLEARS it (a hold-RELEASE class, NOT mig 162's adopt) — 6/369 Demo docs
+- **Census fact (mig 162 armed-cell gate, ON arm, `stress_test/out/deskew_field_adopt_20260912/armed_on.straighten.jsonl`):**
+  the role-note door admitted 8 docs; the field adopt refused all 8 (0 fires). Traced two: **doc 130** (Saltmarsh
+  delivery note): raw `DN-92961` @90 + Gate C absent note (the full-page pass garbled the token to `DN-9296]` on the
+  1.5° skewed page); the STRAIGHTENED pass reads the SAME `DN-92961` @89 `anchor_crop`, corroboration
+  `{crop; agree [keyword, mapping]; independent_agree true}`, **overall 100, no note** — the absent flag was a skew
+  artefact of the page-text pass, not the crop. mig 162 refuses by F2 (value unchanged) and the whole-doc leg is
+  FROZEN for note-only holds (Oracle S1) → the doc stays held @82 with a false note. Same shape on the other 5
+  delivery notes (#136/#139/#140/#144/#145 — `.straighten.jsonl`); **doc 246** (Vellum sales order) refuses
+  correctly (straightened `SO-46731` @69 with a live mapping disagree).
+- **Class:** "same value, straightened frame corroborates it, raw hold was a page-text garble" = a **hold RELEASE**
+  (it ENABLES auto-file), the mirror of #358. Not mig 162's contract (a review-bound value adopt). Belongs with the
+  DESKEW_CORROB_AUTOFILE / release-net family: adopt the straightened dict when value==raw AND the straightened
+  record is `_corrob_licensed_keyword` AND no straightened note AND same identity → drop the raw absent note (or
+  replace with a truthful soften) → then the normal auto-file predicate decides. Approval-class (Oracle; census the
+  6 at the pixels first — GT = the confirmed `DN-` values, all equal to the straightened read).
+- **Why it matters:** on the Demo corpus this class is 6× larger than the #358 value-heal class (0 members outside
+  #358). The 605 corpus census for mig 162 should count BOTH classes.
+
 ## 2026-09-12 — PRE-EXISTING seam: the whole-doc deskew retry's "Read differently after straightening" note on an OPTIONAL field is soft-advisory to mig 142 (found by gary while designing mig 162; NOT mig 162's fault)
 - **Hole:** the whole-doc adopt leg (`process_docs.py` `_deskew_retry_apply_holds`) stamps `_DESKEW_CHANGED_NOTE`
   ("— confirm once.") on every straightening-CHANGED field. On an OPTIONAL non-strict field with no `corrected_to`

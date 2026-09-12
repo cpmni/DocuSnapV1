@@ -50,8 +50,13 @@ PRECONDITION measurement (run inbox/358.pdf through the FULL process_docs path w
 wrong 0, new filer==GT 0, **ALL value deltas OFF→ON = 0** (byte-identical outcome); door census OFF: 15 straighten
 passes / 9 whole-doc adopts / 0 note-door → ON: 23 passes / **9 whole-doc adopts (population freeze holds)** / 8
 note-door passes / **FIELD ADOPTS = 0** ⇒ per C11 "zero fires ⇒ STAYS DARK" on this corpus. The 8 note-door docs
-paid a straighten pass and the field adopt refused (cost-bounded; ids in the ON `.straighten.jsonl`). The 605 corpus
-(the Nordwind skew class) is still REQUIRED before any flip decision.
+(#130/136/139/140/144/145 delivery notes with a page-absent `DN-` ref; #246/#269 drifted sales orders) paid a
+straighten pass and the field adopt refused. **Traced (scratch `probe_doc130.log`/`probe_doc246.log`): the 6 delivery
+notes are a DIFFERENT class — the straightened pass reads the SAME value, now on-page + corroborated (crop+keyword+
+mapping, overall 100, no note): the raw absent flag was a skew artefact of the full-page pass. mig 162 refuses by
+design (F2 same value; whole-doc leg frozen for note-only holds) → a hold-RELEASE class, logged at the top of
+`pendingfeatures.md` (needs its own Oracle-gated arc; it enables auto-file).** #246 refuses correctly (a live
+disagree). The 605 corpus (the Nordwind skew class) is still REQUIRED before any flip decision.
 **⚠ The dev app was KILLED by the system for LOW MEMORY at ~15:30 while the gate + pin suite ran** (the 09-12 morning
 `TEST_BUILD=1 npm start` background task) — it is DOWN at wrap; relaunch with the arming dance (§3) so the new key
 (46) arms.

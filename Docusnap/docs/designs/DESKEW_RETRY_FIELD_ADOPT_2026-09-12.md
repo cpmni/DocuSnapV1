@@ -163,6 +163,8 @@ precondition (`pendingfeatures.md` + the mig-142 `dark_switches.js` comment); **
 door (runner `TESTING/_measure/deskew_field_adopt_20260912/run_gate.sh`, harness `RR_LOG_MATCH`/`RR_LOG_OUT`).
 Render-determinism ×3 on 358: DONE (identical). **Gate, armed cell (369 Demo docs, mig 153 ON), 2026-09-12: PASS —
 M=0, filer set identical, ALL value deltas 0; whole-doc adopts 9 = 9 (population freeze holds); note-door passes 8;
-field adopts 0 ⇒ stays DARK on this corpus; the 605 corpus still required.** Built 2026-09-12: `process_docs.py` (helpers + call site),
+field adopts 0 ⇒ stays DARK on this corpus; the 605 corpus still required. Census note: 6 of the 8 note-door docs
+are a DIFFERENT class — same value, straightened frame corroborates it (the raw absent note was a page-text skew
+garble) — refused by F2 on purpose; a hold-RELEASE arc, logged in `pendingfeatures.md` 2026-09-12.** Built 2026-09-12: `process_docs.py` (helpers + call site),
 `engine.py` (the hoisted year-absent mark), mig 162, `dark_switches.js` (46), `_reconcileEnv` nesting,
 pins `python_backend/tests/test_deskew_retry_field_adopt.py` (62) + `database/modules/test_migration162_deskew_field_adopt.js`.
