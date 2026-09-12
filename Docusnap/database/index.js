@@ -3325,6 +3325,83 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 163 (deskew_false_absent_reflag): ${e.message}`); }
   }
 
+  // ── migration 164: DEPARTMENTS (who may see what) — additive, BYTE-IDENTICAL WHEN EMPTY (2026-09-13;
+  //    QuickFile+Departments plan §4 + eric A.1 → Oracle D-C1..D-C12). The ONE rule: a NULL
+  //    documents.department_id = shared = visible to everyone, so zero backfill and every existing row is
+  //    unchanged. departments/user_departments tables; documents.department_id (ON DELETE RESTRICT — SET NULL
+  //    would silently un-restrict on delete = fail-open; the service refuses a hard delete while referenced,
+  //    admins retire via is_active=0); documents.department_set_by ('rule'|'user'; D-C2 — a human tag is never
+  //    re-derived); document_types.default_department_id (per-type default; SET NULL on delete); users.
+  //    all_departments (the "accountant" flag — sees everything, is NOT admin); doctype_grants.department_id
+  //    (RESERVED third subject kind for a later D7, inert now). The read gate keys off DATA (a tagged doc is
+  //    restricted regardless of the switch — fail-closed); departments_enabled gates only the admin UI + write
+  //    side. Idempotent (tableExists/hasColumn guards). REFERENCES columns default NULL (SQLite ALTER rule).
+  if (!applied.has(164)) {
+    try {
+      if (!tableExists(db, 'departments')) {
+        db.exec(`CREATE TABLE departments (
+          id         INTEGER PRIMARY KEY AUTOINCREMENT,
+          name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+          slug       TEXT NOT NULL UNIQUE,
+          is_active  INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )`);
+      }
+      if (!tableExists(db, 'user_departments')) {
+        db.exec(`CREATE TABLE user_departments (
+          user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+          created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+          PRIMARY KEY (user_id, department_id)
+        )`);
+      }
+      if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'department_id')) {
+        db.exec(`ALTER TABLE documents ADD COLUMN department_id INTEGER REFERENCES departments(id) ON DELETE RESTRICT`);
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_department ON documents(department_id)`);
+      }
+      if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'department_set_by')) {
+        db.exec(`ALTER TABLE documents ADD COLUMN department_set_by TEXT`);   // 'rule' | 'user' | NULL
+      }
+      if (tableExists(db, 'document_types') && !hasColumn(db, 'document_types', 'default_department_id')) {
+        db.exec(`ALTER TABLE document_types ADD COLUMN default_department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL`);
+      }
+      if (tableExists(db, 'users') && !hasColumn(db, 'users', 'all_departments')) {
+        db.exec(`ALTER TABLE users ADD COLUMN all_departments INTEGER NOT NULL DEFAULT 0`);
+      }
+      if (tableExists(db, 'doctype_grants') && !hasColumn(db, 'doctype_grants', 'department_id')) {
+        db.exec(`ALTER TABLE doctype_grants ADD COLUMN department_id INTEGER REFERENCES departments(id) ON DELETE CASCADE`);
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_doctype_grants_dept ON doctype_grants(department_id, document_type_id)`);
+      }
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('departments_enabled', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (164)').run();
+      console.log('JS migration 164 applied: departments (departments + user_departments + documents.department_id/set_by + document_types.default_department_id + users.all_departments + doctype_grants.department_id), departments_enabled seeded OFF (DARK) — byte-identical when empty');
+    } catch (e) { console.warn(`  migration 164 (departments): ${e.message}`); }
+  }
+
+  // ── migration 165: QUICK FILE (non-OCR direct intake) columns — additive, byte-identical (2026-09-13;
+  //    plan §3 + eric B.2 → Oracle Q-C1..Q-C12). document_types.reading_mode ('read'|'none'; a 'none' type is
+  //    a plain typed-metadata form that NEVER OCRs and NEVER detects — Q-C8); documents.intake ('direct'|NULL,
+  //    the marker the non-switchable learningExcludedSql clause + the write-side refusal family key on) +
+  //    intake_notes. NULL intake = the OCR pipeline, unchanged. direct_intake_enabled gates the UI/write side;
+  //    the exclusion is DATA-driven (a 'direct' row is ignored by learning regardless). Idempotent.
+  if (!applied.has(165)) {
+    try {
+      if (tableExists(db, 'document_types') && !hasColumn(db, 'document_types', 'reading_mode')) {
+        db.exec(`ALTER TABLE document_types ADD COLUMN reading_mode TEXT NOT NULL DEFAULT 'read'`);
+      }
+      if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'intake')) {
+        db.exec(`ALTER TABLE documents ADD COLUMN intake TEXT`);            // 'direct' | NULL
+        db.exec(`CREATE INDEX IF NOT EXISTS idx_documents_intake ON documents(intake)`);
+      }
+      if (tableExists(db, 'documents') && !hasColumn(db, 'documents', 'intake_notes')) {
+        db.exec(`ALTER TABLE documents ADD COLUMN intake_notes TEXT`);
+      }
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('direct_intake_enabled', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (165)').run();
+      console.log("JS migration 165 applied: quick-file intake (document_types.reading_mode='read', documents.intake/intake_notes), direct_intake_enabled seeded OFF (DARK) — byte-identical");
+    } catch (e) { console.warn(`  migration 165 (quick-file intake): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

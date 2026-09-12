@@ -244,6 +244,13 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // ⚑ FLIP GATE (this hold leg): wouldFile(ON)==wouldFile(OFF) set-equality (removes NO filer — any delta is a bug);
   //   the truthful note out of every CLEARABLE_NOTE_MARKS / class-F set (bilingual pin); the doc still flagged/held.
   'deskew_false_absent_reflag',
+  // ── QuickFile + Departments (2026-09-13, plan docs/designs/QUICKFILE_AND_DEPARTMENTS_PLAN_2026-09-12.md;
+  //    Oracle SIGN-OFF-W/COND Q-C1..12 + D-C1..12). Both are FEATURE MASTER switches (not reading toggles):
+  //    they gate the admin UI + the WRITE side only. The read/exclusion behaviour is DATA-driven and
+  //    fail-closed (a department-tagged doc is restricted, a documents.intake='direct' row is learning-excluded,
+  //    regardless of the switch). Seeded OFF by migs 164/165; byte-identical when the tables/columns are empty.
+  'departments_enabled',
+  'direct_intake_enabled',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */
