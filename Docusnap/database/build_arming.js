@@ -28,6 +28,11 @@
 const { TEST_SWITCH_KEYS } = require('./dark_switches');
 
 const MARKER = 'test_build_armed_rev';
+// The set of keys a prior arm recorded (JSON list). Lets a SAME-rev arm turn on ONLY keys never armed
+// before (a fix added since the last arm) without clobbering an operator's deliberate OFF on an
+// already-armed key — so a newly-added DARK fix is active on the next `TEST_BUILD=1 npm start` with no
+// full re-arm dance. Generic settings key (NOT a TEST_SWITCH_KEY literal → the release gate still sees 0 hits).
+const ARMED_KEYS = 'test_build_armed_keys';
 
 function _get(db, key) {
   const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
@@ -38,6 +43,18 @@ function _setAll(db, value) {
   let n = 0;
   for (const k of TEST_SWITCH_KEYS) n += up.run(k, value).changes;
   return n;
+}
+/** The keys a prior arm recorded. Missing (a DB armed before this bookkeeping existed) ⇒ infer from the
+ *  keys currently 'true', so the first same-rev arm after this change touches ONLY currently-off keys (a
+ *  new fix), never re-arming one an operator turned off. */
+function _armedKeySet(db) {
+  const r = db.prepare('SELECT value FROM settings WHERE key = ?').get(ARMED_KEYS);
+  if (r && r.value) { try { const a = JSON.parse(r.value); if (Array.isArray(a)) return a; } catch { /* fall through */ } }
+  return TEST_SWITCH_KEYS.filter(k => _get(db, k) === 'true');
+}
+function _recordArmedKeys(db) {
+  db.prepare(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+    .run(ARMED_KEYS, JSON.stringify([...TEST_SWITCH_KEYS]));
 }
 
 /** The rev a marker was written under: 'r1' → 'r1', 'manual@r1' → 'r1'. */
@@ -56,6 +73,7 @@ function writeArmMarker(db, value) {
 function disarmTestSwitches(db) {
   const n = _setAll(db, 'false');
   db.prepare('DELETE FROM settings WHERE key = ?').run(MARKER);
+  db.prepare('DELETE FROM settings WHERE key = ?').run(ARMED_KEYS);
   return { action: 'disarmed', n };
 }
 
@@ -68,9 +86,22 @@ function armTestSwitches(db, identity) {
   const rev = String(buildRev || 'dev');
   const marker = _get(db, MARKER);
   if (testBuild) {
-    if (marker === rev) return { action: 'noop', n: 0, marker };
-    const n = _setAll(db, 'true');
+    if (markerRev(marker) === rev) {
+      // Same build (dev is always rev 'dev'): arm ONLY keys never armed before (a fix added since the last
+      // arm). An operator's deliberate OFF on an already-armed key is in `prior` → never re-armed. This is
+      // what makes a newly-added DARK fix active on the next `TEST_BUILD=1 npm start` without a full re-arm.
+      const prior = _armedKeySet(db);
+      const newKeys = TEST_SWITCH_KEYS.filter(k => !prior.includes(k));
+      if (newKeys.length === 0) return { action: 'noop', n: 0, marker };
+      const up = db.prepare(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`);
+      let n = 0; for (const k of newKeys) n += up.run(k, 'true').changes;
+      writeArmMarker(db, rev);
+      _recordArmedKeys(db);
+      return { action: 'armed', n, marker: rev, newKeys };
+    }
+    const n = _setAll(db, 'true');   // a DIFFERENT rev (a new test build): full re-arm — prior OFFs are stale
     writeArmMarker(db, rev);
+    _recordArmedKeys(db);
     return { action: 'armed', n, marker: rev };
   }
   if (marker == null) return { action: 'noop', n: 0, marker: null };
@@ -92,4 +123,4 @@ function resolveIdentity() {
   return { testBuild: process.env.TEST_BUILD === '1', buildRev: 'dev' };
 }
 
-module.exports = { MARKER, armTestSwitches, disarmTestSwitches, writeArmMarker, markerRev, resolveIdentity };
+module.exports = { MARKER, ARMED_KEYS, armTestSwitches, disarmTestSwitches, writeArmMarker, markerRev, resolveIdentity };

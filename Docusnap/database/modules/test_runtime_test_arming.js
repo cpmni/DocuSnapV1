@@ -43,6 +43,18 @@ r = arming.armTestSwitches(db, T2);
 check('a NEW test rev re-arms everything', r.action === 'armed' && allAre(db, 'true') && get(db, arming.MARKER) === T2.buildRev);
 check('money_sign_capture (mig 93 default) + ocr_parallel_import_enabled (mig 139 promotion) untouched by arming', get(db, 'money_sign_capture') === untouchedBefore.msc && get(db, 'ocr_parallel_import_enabled') === untouchedBefore.opi && untouchedBefore.msc === 'true');
 
+// The AUTO-RE-ARM fix (2026-09-12): a fix ADDED since the last arm is turned on on the SAME rev, WITHOUT
+// clobbering an operator's deliberate OFF. On the T2-armed DB (companion = every key): OFF key[3] (already
+// armed), and key[5] = a freshly-added dark switch (seeded 'false', absent from the recorded armed set).
+db.prepare("UPDATE settings SET value='false' WHERE key=?").run(TEST_SWITCH_KEYS[3]);
+db.prepare("UPDATE settings SET value='false' WHERE key=?").run(TEST_SWITCH_KEYS[5]);
+const _rec = JSON.parse(get(db, arming.ARMED_KEYS)).filter(k => k !== TEST_SWITCH_KEYS[5]);
+db.prepare("INSERT INTO settings (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(arming.ARMED_KEYS, JSON.stringify(_rec));
+r = arming.armTestSwitches(db, T2);
+check('AUTO-RE-ARM: a newly-added fix is turned on on the same test rev', r.action === 'armed' && get(db, TEST_SWITCH_KEYS[5]) === 'true');
+check("AUTO-RE-ARM: an operator's OFF on an already-armed key is NOT clobbered", get(db, TEST_SWITCH_KEYS[3]) === 'false');
+check('AUTO-RE-ARM: nothing new on the same rev ⇒ noop again', arming.armTestSwitches(db, T2).action === 'noop');
+
 r = arming.armTestSwitches(db, REL);
 check('a release build after a test build DISARMS once + drops the marker (the reference-DB road, C3)', r.action === 'disarmed' && allAre(db, 'false') && get(db, arming.MARKER) === null);
 r = arming.armTestSwitches(db, REL);

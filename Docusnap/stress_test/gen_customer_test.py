@@ -729,8 +729,12 @@ def main():
     ap.add_argument("--live", type=int, default=100)
     ap.add_argument("--manual", type=int, default=10)
     ap.add_argument("--workers", type=int, default=8)
+    ap.add_argument("--issuers", default="", help="comma-separated issuer slugs to limit to (default: all)")
+    ap.add_argument("--types", default="", help="comma-separated doc types to limit to (default: each issuer's own set)")
     a = ap.parse_args()
     live_n, manual_n = (2, 1) if a.smoke else (a.live, a.manual)
+    sel_iss = {x.strip() for x in a.issuers.split(",") if x.strip()}
+    sel_typ = {x.strip() for x in a.types.split(",") if x.strip()}
 
     os.makedirs(LOGODIR, exist_ok=True)
     _pool_init()
@@ -739,7 +743,11 @@ def main():
 
     jobs = []
     for issuer in ISSUERS:
+        if sel_iss and issuer["slug"] not in sel_iss:
+            continue
         for dtype in issuer["types"]:
+            if sel_typ and dtype not in sel_typ:
+                continue
             for setname, lo, hi in (("manual", 1, manual_n), ("live", manual_n + 1, manual_n + live_n)):
                 for i in range(lo, hi + 1):
                     fn = f"{issuer['slug']}_{dtype}_{i:04d}.pdf"
