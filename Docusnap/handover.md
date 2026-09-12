@@ -1,51 +1,58 @@
-# Handover — TEST build install + arm dev
-Branch: feat/teach-side-overnight · Updated: 2026-09-09
+# Handover — mig 162 skew arc + Quick File/Departments plan
+Branch: feat/teach-side-overnight · Updated: 2026-09-12
 
 ## Goal
-Get the owner a FRESH-state TEST build (200 DPI + all 27 test toggles ON) installed, and arm the dev run.
-The 2026-09-08 NIGHT run (items 1-7) is DONE — full detail in `HANDOVER_2026-09-09.md` (read it for night context).
+Ridgeway #358 skew exhibit (ref `VS-72672` vs page `WS-73673`): measure, fix DARK, gate. Then the owner's plan for a
+non-OCR "Quick File" lane + department-scoped document visibility. Both done; gate half-run. Full detail:
+`HANDOVER_2026-09-12_EVENING.md` (read first), `CLAUDE.md` LATEST block.
 
 ## Done (committed, NONE pushed — owner's call)
-- Night run: 6 commits `5db333e`,`82843a0`,`790c7d1`,`9097b31`,`ef12f72`,`2e3d5e5` (see HANDOVER_2026-09-09.md).
-- **TEST build made + verified:** `dist/ScanFinder Setup 2.0.0-r20260909-0800-2e3d5e5-TEST.exe`.
-  Fresh `--smoke-boot` proved: 27/27 TEST_SWITCH_KEYS armed · ocr_dpi 200 · parallel-import on · testBuild:true.
-- Two dist artifacts: the `-TEST` one (toggles ON, plain — for testing) and `…-2238-ef12f72.exe`
-  (RELEASE, toggles OFF, hardened — production candidate / click-through target).
+- `79cb655` feat mig 162 `deskew_retry_field_adopt` DARK (`process_docs.py` helpers + call site, `engine.py` hoisted `_FILING_SANITY_YEAR_ABSENT_MARK`, mig 162, `dark_switches.js` → 46, `_reconcileEnv` nesting, harness `RR_LOG_MATCH`/`RR_LOG_OUT`, pins 62 py + `test_migration162_deskew_field_adopt.js`, runner `TESTING/_measure/deskew_field_adopt_20260912/run_gate.sh`)
+- `7fd1400` docs plan `docs/designs/QUICKFILE_AND_DEPARTMENTS_PLAN_2026-09-12.md` (+ eric arch doc, barry brainstorm); Oracle blocks in `docs/oracle_log.md`
+- `a1529a1` `93cf1ec` `cd39307` `6588b0d` handover/docs (gate result, census, dev-app kill note)
+- Published plan page: https://claude.ai/code/artifact/c93e7a50-036d-40af-bf88-b802fb55c25e
 
-## In progress — no uncommitted CODE (tree clean); an external install/arm task, mid-flight
-- Owner will run the installer themselves (perMachine NSIS = UAC; I can't elevate).
-- Fresh install needs `%APPDATA%\ScanFinder` EMPTY at first run. Owner chose **wipe, no backup**.
-- BLOCKED: clearing that folder needs the dev app **PID 23828** closed (it WAL-locks the DB). I tried to
-  kill it — **auto-mode classifier BLOCKED the process-kill** (reasonable). Waiting for the owner to quit
-  the dev app; then delete `%APPDATA%\ScanFinder` (that delete may ALSO trip the classifier → owner does it
-  in Explorer; the owner's "clear it" is the authorization).
+## In progress — UNCOMMITTED
+- Nothing tracked. Untracked `HANDOVER_2026-09-12.md` (the morning handover, previous session) — leave or add like the others.
+- Gate BASE cell (RR_APP_ENV=0 + parent, = mig 153 OFF) still running detached at wrap: OFF arm done, ON arm in flight;
+  outputs `stress_test/out/deskew_field_adopt_20260912/base_{off,on}.*`, diff prints to `<scratchpad>/gate_all.log`
+  (session scratch — if lost, re-run `bash TESTING/_measure/deskew_field_adopt_20260912/run_gate.sh base`).
 
 ## Next steps
-1. Owner quits the dev app (tray → Exit / close window, PID 23828).
-2. Delete `%APPDATA%\ScanFinder` (fresh). Attempt via tool; if blocked, owner deletes in Explorer.
-3. Owner runs `dist/ScanFinder Setup 2.0.0-r20260909-0800-2e3d5e5-TEST.exe` (UAC) + launches → fresh: 200 DPI + 27 armed.
-4. Arm dev: `TEST_BUILD=1 npm start` (arms all 27 on boot; stays armed across later plain `npm start`).
-5. (Owner queue from the night — `HANDOVER_2026-09-09.md` "NEEDS YOUR APPROVAL": push · security vet of the
-   backup device-binding (Chris card 7) · Chris cards · item-5 fix builds · flips · client/cert-tool E44 finish.)
+1. Push (owner). Relaunch the dev app — the system KILLED it for low memory during the gate; arming dance for key 46
+   (`HANDOVER_2026-09-12_EVENING.md` §3), then FULL reprocess #358 → expect `WS-73673` @82 held, no `Use` button.
+2. Read the base-cell diff; pass = M=0 + wouldFile set-EQUALITY. Armed cell already PASS (M=0, 0 deltas, 0 fires).
+3. Flip decision for 162 needs the 605 corpus (`RR_DB` → a DB holding it; none on disk) + Oracle; zero fires ⇒ DARK.
+4. Plan: answer the 10 questions (§8 of the plan doc); approve D-C6 = `accessService.gateEnabled()` ignores
+   `ACCESS_GATE_ENABLED` when `app.isPackaged` (one line, pattern `processing/handler.js:2286-2294`, pin
+   `src/services/test_access_service.js:117-127`) as its own commit BEFORE anything else.
+5. Learning Repair candidates from the baseline: #163 (`DN-64470` confirmed, page prints `DN-64472`), #273 (Marlowe SO
+   confirmed under Vellum & Crane). Adjudicate at the pixels.
+6. New backlog item (top of `pendingfeatures.md`): the hold-RELEASE class — 6 delivery notes whose raw "doesn't appear
+   on this page" was a skew garble of the full-page pass; straightening corroborates the SAME value @100. Own Oracle arc.
 
 ## Decisions & rationale (non-obvious)
-- Built `build:test` (not `build:release`): release bakes testBuild:false → all 27 toggles OFF. `TEST_BUILD=1`
-  → testBuild:true → `build_arming.js` arms the 27 at first boot. Plain (unhardened) = right for pre-production.
-- "Fresh" ⇒ empty `%APPDATA%\ScanFinder`: packaged app + `npm start` dev SHARE that one userData (packaged
-  can't be re-pointed). mig 138 seeds ocr_dpi=200 ONLY on a rowless install; an install with taught templates
-  keeps 300 (the frame it was taught under) — so a non-empty folder = 300 DPI.
-- Did NOT force-kill the owner's app or probe/write their live DB (WAL-locked; also the Chris boundary incident).
+- Retry door = ref/date ROLE note only (never supplier-only): a role note is never soft-clearable → review-bound by
+  construction; a supplier-only note would pay a full straighten pass for zero upside (Oracle C1).
+- Whole-doc adopt stays gated on the RAW engine flag: opening it to note-only docs would also widen the dev-armed
+  `DESKEW_CORROB_AUTOFILE` population, the one road that skips a hold (Oracle S1).
+- Field adopt requires `_corrob_licensed_keyword` (no disagree + keyword witness), not bare `independent_agree`.
+- Overall becomes min(raw, straightened): the 88 floor is NOT a second checkpoint (floor relax for licensed records) —
+  the role NOTE is the sole checkpoint (pinned C7).
+- Plan rulings: dept delete = RESTRICT + retire (SET NULL is fail-open); typed docs marked `intake='direct'` with a
+  NON-switchable learning clause (not `confirmed_via`); drag-drop v1.1 (changes the audit's M4/M9 boundary).
 
 ## Gotchas
-- **Shared-userData disarm fight:** on that same folder, a PLAIN `npm start` DISARMS a test build's switches
-  (build_arming C3). Keep dev on `TEST_BUILD=1 npm start`, or give dev its own `DOCUSNAP_USERDATA`.
-- Wiping the folder clears the cached license token → the fresh installed TEST build will show the
-  activation/trial gate (re-activate with this machine's seat/backend).
-- Every harness/pin launch needs `ELECTRON_RUN_AS_NODE=1` (an unflagged `electron.exe script.js` never exits).
-- Nothing pushed. Don't push without the owner's go.
+- Parent pin `test_deskew_review_retry.py` C14 uses `str.find` first occurrence — never write the literals
+  `_deskew_retry_apply_holds(raw_extractions, raw2)` / `raw_extractions = raw2` above the retry block.
+- `_appSpawnEnv` spreads `{...process.env, ...appEnv}`: an explicit env var only wins when the DB lacks the key 'true';
+  a mig-153-OFF cell needs `RR_APP_ENV=0` + `DESKEW_REVIEW_RETRY=1` explicitly.
+- Bash heredocs with backticks/quotes broke twice — write a scratch file, `cat >>` it.
+- Live DB read-only via `ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe <script>`; writes = owner `!`.
+- Arc B (mig 160) abstains on #358 by its own bar (3 human confirms < 5) — not a bug; don't "fix" it.
 
 ## Verify
-- Re-prove the TEST build's armed state (throwaway userData, touches nothing real):
-  `SCANFINDER_SMOKE_DIR=<tmp> "dist/win-unpacked/ScanFinder.exe" --smoke-boot` then
-  `ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe <scratch>/verify_armed.js <tmp>/docusnap.db`
-  (expect 27/27, ocr_dpi 200). Pins: `npm run test:pins` = 325/325.
+- `PYTHONIOENCODING=utf-8 py -3.12 python_backend/tests/test_deskew_retry_field_adopt.py` (62) · `…/test_deskew_review_retry.py` (36)
+- `ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe database/modules/test_migration162_deskew_field_adopt.js` · `…test_migration137_test_switch_reset.js` (46)
+- `npm run test:pins` → 342/343 (red = pre-existing `test_activity_strip`)
+- `bash TESTING/_measure/deskew_field_adopt_20260912/run_gate.sh armed|base|all`
