@@ -127,6 +127,20 @@ console.log('§4 kill switch — ACCESS_GATE_ENABLED off ⇒ predicate unchanged
   // (each seam wraps `if (gateEnabled()) …`), so OFF is byte-identical legacy behaviour.
 }
 
+console.log('§4b D-C6 — on a PACKAGED build the env kill switch is IGNORED (a customer cannot disable the gate)');
+{
+  // isPackaged is injectable so both branches are pinned without touching the real electron app.
+  for (const v of ['0', 'false', 'off', 'no', '']) {
+    process.env.ACCESS_GATE_ENABLED = v;
+    check(`packaged build ignores ACCESS_GATE_ENABLED='${v}' → gate stays ON`, accessService.gateEnabled(true) === true);
+  }
+  // Unpackaged (dev / electron-as-node test): the env override is still honoured (control-test lever).
+  process.env.ACCESS_GATE_ENABLED = '0';
+  check('unpackaged still honours the env override (dev control test)', accessService.gateEnabled(false) === false);
+  delete process.env.ACCESS_GATE_ENABLED;
+  check('unpackaged default ON', accessService.gateEnabled(false) === true);
+}
+
 console.log('§5 user shape — accepts both transports (userId vs id)');
 {
   const db = makeDb();

@@ -34,8 +34,18 @@
 const documentsDb = require('../../database/modules/documents');
 const workflowDb   = require('../../database/modules/workflow');
 
+// isPackaged probe (D-C6): default false when electron/app is unavailable (dev, electron-as-node
+// tests) — the same guard shape as _realCanonical (handler.js) and the licence-key pinning.
+const _app = (() => { try { return require('electron').app || { isPackaged: false }; }
+                      catch { return { isPackaged: false }; } })();
+
 // Env kill switch. Absent/anything-but-a-disable-token => ON.
-function gateEnabled() {
+// D-C6 (2026-09-13, Oracle F1, QuickFile+Departments plan §6): a security boundary must NOT be
+// switchable off by an environment variable on a customer machine. On a PACKAGED build the read gate
+// is ALWAYS ON; `ACCESS_GATE_ENABLED` (for per-slice control tests) is honoured only when
+// !app.isPackaged. `isPackaged` is injectable so the pin can exercise both branches.
+function gateEnabled(isPackaged = _app.isPackaged) {
+  if (isPackaged) return true;                        // packaged build: env override ignored
   const v = String(process.env.ACCESS_GATE_ENABLED || '').trim().toLowerCase();
   return !(v === '0' || v === 'false' || v === 'off' || v === 'no');
 }
