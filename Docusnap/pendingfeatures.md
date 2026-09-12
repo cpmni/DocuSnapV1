@@ -9,6 +9,45 @@
 
 ---
 
+## 2026-09-12 — Suspect-code label re-read (first-pass, text-led) — Oracle SEND BACK → DO NOTHING (NOT built; do not re-attempt without a real exhibit)
+- **STATUS (Oracle re-vet 2026-09-12, both pillars verified false at source — DO NOTHING):** the arc is vacuous +
+  unsafe as drawn. (1) `VS-72672` is SHAPE-VALID (`_fold_shape` folds it + `WS-73673` both to `@@-#`; mig-160 says
+  verbatim "the shape-valid VS-72672") → the trigger `shape_match_score != 1.0` NEVER fires on the motivating
+  exhibit; the Ridgeway ref is the shape-valid + page-absent LEFT-CLIP class, already healed by mig-161
+  `template_code_left_grow` (first-pass) + mig-162 (review-bound). The shape-INVALID-tilt-garble class the trigger
+  targets has NO exhibit in 605/Demo → "zero fires ⇒ stays DARK". (2) the safety-by-construction claim is INVERTED:
+  `_relocate_and_read` (template_mapper.py:2140) returns `_geometric() or _inline()` — the tilt-UNSAFE box re-crop
+  runs FIRST → on a stacked-code layout it can adopt a shape-valid WRONG-ROW neighbour (page-present + `@@-#` =
+  passes the gate). Also a RELOCATE at :2901 pre-empts the drift/registration arbiter (mig-157 C1 counter-case).
+  **Do NOT build.** To ever revive: a REAL measured shape-invalid-inline-code exhibit mig-161/162 miss (200 DPI),
+  call `_inline()` DIRECTLY (never adopt a `_geometric` return), site it AFTER the arbiter, census the tilted
+  shape-valid wrong-row-neighbour casualty. Full verdict: `docs/oracle_log.md` 2026-09-12. Design doc retained as
+  the (rejected) record.
+- **Owner ask:** "position shouldn't matter — if the doc is straightened and the label is located, the value
+  should be available naturally"; floated loosening the ~1.4-line drift floor. **Viability:** the floor-loosen is
+  the WRONG lever (007) — the Ridgeway garble is a READING-window-ORIENTATION defect (an axis-aligned crop over a
+  tilted line reads across rows by `w·tanθ`), NOT placement; moving the seat can't fix it and `_geometric` re-crop
+  reproduces the garble; lowering the floor also re-opens the fuzzy-caption casualties it accidentally guards.
+- **The lever (007 + reggie converged):** a SUSPECT-READ trigger — a CODE/ref whose absolute read fails the scope's
+  learned shape (`_abs_code_read_suspect`: `_CODE_CROSSCHECK_TYPES` + entry has `shapes` + `shape_match_score != 1.0`
+  + not a confirmed literal; the EXACT gate `_widen_code_read` uses; NOT low-conf, NOT date/currency) → ONE guarded
+  `_relocate_and_read` off the credibly-located label (`match_score ≥ _DRIFT_OVERRIDE_MATCH_FLOOR` 0.8) → adopt ONLY
+  if shape-EXACT + page-present; else abs stands byte-identical. The shape-exact exit AUTO-selects the tilt-robust
+  `_inline()` line-word read and REFUSES the tilt-unsafe `_geometric()` re-crop → can only swap a shape-INVALID read
+  for a shape-VALID, page-present one. INLINE class = first-pass-safe (this arc); LABEL-ABOVE = refused here, falls
+  to the review-bound straighten-retry (mig 162/163). The off-label sibling of `_widen_code_read`/`_grow_code_left_read`.
+- **Outcome tier:** Phase 1 REVIEW-BOUND (lane-hold "read from the label after the box looked wrong — confirm once");
+  Phase 2 auto-file census-gated (page-present witness = the safety); page-absent→present ALWAYS held.
+- **Guards:** +the match-floor ON THE SUSPECT PATH (mig 157 only covered the `_label_drifted` branch; the suspect
+  trigger fires when drift is False); keep caption-band-reject / tie-break / layout guard; objective trigger (shape,
+  not confidence); no `_method` suffix (corroboration bucket); no new validation pattern / renderer twin (JS↔Python
+  aligned by construction). **Seam:** on refusal keep `anchor_stable=False` (mig-157 C1 — registration arbiter live).
+- **Design:** `docs/designs/SUSPECT_CODE_LABEL_REREAD_2026-09-12.md`. **Gate:** DARK switch; M=0 on 605 +
+  `wouldFile(ON)==wouldFile(OFF)` + zero per-field drop; TILT-STRATIFIED; casualties MUST refuse (Vellum & Crane
+  #243 Chester/0.667, Nordwind totals, "Credit Ref"→"Credit Date", "Beaumont" whole-line garble); page-absent→present
+  all held; `_DRIFT_FLOOR` unchanged pin; cold-start OFF==ON; live #358 (WS-73673 or refused, honestly). **NEXT:
+  Oracle adversarial vet → build DARK.**
+
 ## 2026-09-12 — Skew-induced FALSE page-absent flag: straightening CLEARS it — Phase-1 BUILT (mig 163); the auto-file RELEASE leg SEND BACK
 - **STATUS (2026-09-12): Phase-1 truthful-note HOLD leg BUILT DARK** = mig 163 `deskew_false_absent_reflag`
   (gary → Oracle FORK: SIGN OFF W/COND the hold leg, SEND BACK the release leg;
