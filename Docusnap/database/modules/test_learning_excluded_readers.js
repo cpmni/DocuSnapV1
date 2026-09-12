@@ -226,11 +226,13 @@ learning.setSetting(armed, 'template_freeze_issuer_only', 'false');
 const S = seedScope(armed);
 {
   const db = armed, s = S;
-  check('mig 90 column present, switch ON by default, fragment carries the alias it was given',
+  // Post-mig-165 the fragment carries TWO clauses: the switchable learning_excluded_at clause AND the
+  // NON-SWITCHABLE Quick File intake clause (Q-C1). Both carry the caller's alias.
+  check('mig 90+165 columns present, switch ON, fragment carries BOTH clauses with the given alias',
         _hasLearningExcludedColumn(db) && learningExcludeEnabled(db)
-        && learningExcludedSql(db) === ' AND d.learning_excluded_at IS NULL'
-        && learningExcludedSql(db, '') === ' AND learning_excluded_at IS NULL'
-        && learningExcludedSql(db, 'x') === ' AND x.learning_excluded_at IS NULL');
+        && learningExcludedSql(db) === " AND d.learning_excluded_at IS NULL AND COALESCE(d.intake, '') <> 'direct'"
+        && learningExcludedSql(db, '') === " AND learning_excluded_at IS NULL AND COALESCE(intake, '') <> 'direct'"
+        && learningExcludedSql(db, 'x') === " AND x.learning_excluded_at IS NULL AND COALESCE(x.intake, '') <> 'direct'");
   const s0 = snapshot(db, s);
   check('control: the scope is GRADUATED before any stamp (5 human confirms, W=3, clean)' + (s0.trust.trusted ? '' : ` (got ${JSON.stringify(s0.trust)})`),
         s0.trust.trusted === true && s0.trust.confirmedCount === 5);
@@ -285,7 +287,8 @@ console.log('4. KILL — env LEARNING_EXCLUDE_DOCS=0 / setting learning_exclude_
   const fragOff = learningExcludedSql(db);
   const k = snapshot(db, s);
   delete process.env.LEARNING_EXCLUDE_DOCS;
-  check('env=0: the fragment is empty', fragOff === '');
+  // env=0 turns OFF the switchable clause; the NON-SWITCHABLE Quick File intake clause remains (Q-C1).
+  check("env=0: only the non-switchable intake clause remains", fragOff === " AND COALESCE(d.intake, '') <> 'direct'");
   check('env=0: everything is counted again (graduated 5, 5 values, dominant 5/5, gazetteer 5, prefix 5, site variable)',
         k.trust.trusted === true && k.trust.confirmedCount === 5 && k.values.length === 5
         && k.dom && k.dom.count === 5 && k.near.confirms === 5 && k.prefix === 5 && k.siteVar === true);
@@ -339,6 +342,37 @@ console.log('5. COLUMN ABSENT (pre-mig-90 fixture) — the fragment is empty, ev
   check('no column: legacy counts (graduated 5, 5 values, dominant 5/5, gazetteer 5, prefix 5, site variable, search 5)',
         snap && snap.trust.trusted === true && snap.trust.confirmedCount === 5 && snap.values.length === 5
         && snap.dom && snap.dom.count === 5 && snap.near.confirms === 5 && snap.prefix === 5 && snap.siteVar === true && snap.search === 5);
+  db.close();
+}
+
+console.log('6. Q-C1 — a Quick File (intake=direct) row NEVER teaches, stays searchable, NON-switchably');
+{
+  const db = new Database(':memory:');
+  runMigrations(db);
+  const s = seedScope(db);   // 5 OCR human confirms (INV1001..5), intake NULL
+  // A typed Quick File doc in the SAME scope, distinct value, method 'typed', intake='direct'.
+  const qf = db.prepare(`INSERT INTO documents (document_type_id, original_filename, folder_path, status, supplier_name,
+                           overall_confidence, confirmed_at, template_id, ocr_text, reference_number, doc_date, intake)
+                         VALUES (?, 'contract.docx', '/in', 'confirmed', ?, NULL, datetime('now'), ?, ?, 'QF-DIRECT-1', '01-06-2026', 'direct')`)
+    .run(s.inv, SUP, s.tid, `A typed contract for ${SUP}`).lastInsertRowid;
+  db.prepare(`INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method)
+              VALUES (?, 'invoice_number', 'QF-DIRECT-1', 'QF-DIRECT-1', 100, 'typed')`).run(qf);
+  const grp = () => (learning.getFieldFormats(db, { includeProvisional: true }) || [])
+    .find(g => g.supplier_name === SUP && g.field_key === 'invoice_number');
+  check('Q-C1: the typed value is EXCLUDED from learning (getFieldFormats never sees it; count stays 5)',
+        grp() && !Object.keys(grp().value_counts).includes('QF-DIRECT-1') && grp().confirmed_count === 5);
+  check('Q-C1: scopeTrust ignores the typed doc (5 human confirms, not 6)', trust.scopeTrust(db, SUP, 'invoice').confirmedCount === 5);
+  check('Q-C1: the near-match gazetteer + prefix model ignore it (5, at floor)',
+        learning.findNearMatchIdentity(db, 'Anconia Corporatoin', { minConfirms: 1 }).confirms === 5
+        && ((learning.getPrefixModelForScope(db, SUP, 'invoice', 'invoice_number') || {}).total || 0) === 5);
+  check('Q-C1: the typed doc IS searchable (filed + findable — a Quick File doc is not hidden)',
+        documents.search(db, { docType: 'invoice' }).length === 6);
+  // NON-SWITCHABLE: the Learning Repair switch OFF does NOT re-admit a typed doc.
+  process.env.LEARNING_EXCLUDE_DOCS = '0';
+  const off = grp();
+  delete process.env.LEARNING_EXCLUDE_DOCS;
+  check('Q-C1: LEARNING_EXCLUDE_DOCS=0 does NOT re-admit the typed doc (non-switchable clause)',
+        off && !Object.keys(off.value_counts).includes('QF-DIRECT-1') && off.confirmed_count === 5);
   db.close();
 }
 

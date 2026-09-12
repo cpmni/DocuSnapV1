@@ -38,7 +38,8 @@ const MACHINE_VIAS_SET = new Set(MACHINE_VIAS);
 // which RE-ADMITS stamped docs to learning; it does NOT undo a forget (the learning rows are gone).
 // Readers that must NOT carry it (pinned as a NEGATIVE list): search, dashboard/workflow counters,
 // the purge/rename WRITERS (they act on everything), the recycle bin.
-const _colCache = new WeakMap();
+const _colCache = new WeakMap();      // documents.learning_excluded_at present?
+const _intakeColCache = new WeakMap(); // documents.intake present? (mig 165)
 function _hasLearningExcludedColumn(db) {
   if (!db) return false;
   let v = _colCache.get(db);
@@ -46,6 +47,16 @@ function _hasLearningExcludedColumn(db) {
     try { v = db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name = 'learning_excluded_at'").get() != null; }
     catch { v = false; }
     _colCache.set(db, v);
+  }
+  return v;
+}
+function _hasIntakeColumn(db) {
+  if (!db) return false;
+  let v = _intakeColCache.get(db);
+  if (v === undefined) {
+    try { v = db.prepare("SELECT 1 FROM pragma_table_info('documents') WHERE name = 'intake'").get() != null; }
+    catch { v = false; }
+    _intakeColCache.set(db, v);
   }
   return v;
 }
@@ -58,12 +69,26 @@ function learningExcludeEnabled(db) {
     return !(row && String(row.value) === 'false');
   } catch { return true; }
 }
-/** SQL fragment (leading ` AND …`) that drops learning-excluded documents from a learning reader. */
+/**
+ * SQL fragment (leading ` AND …`) that drops non-teaching documents from a learning reader. TWO
+ * independent, column-guarded clauses (either may be empty; both empty ⇒ byte-identical SQL on a
+ * pre-migration fixture):
+ *   1. SWITCHABLE (Learning Repair) — `learning_excluded_at IS NULL`, applied only when the column
+ *      exists AND learning_exclude_docs is on.
+ *   2. NON-SWITCHABLE (Quick File, Q-C1) — `COALESCE(intake,'') <> 'direct'`, applied whenever the
+ *      intake column exists. A direct-intake row was TYPED, never read; it must NEVER teach the
+ *      scanner (formats, graduation window, hints, templates, name presence) — there is no switch to
+ *      turn that off (the safe state for a typed doc is not a design choice). NOTE this is a LEARNING
+ *      exclusion only: search / counts / the bin do NOT call this helper, so a Quick File doc stays
+ *      fully searchable and visible.
+ */
 function learningExcludedSql(db, alias = 'd') {
-  if (!_hasLearningExcludedColumn(db) || !learningExcludeEnabled(db)) return '';
   const a = alias ? `${alias}.` : '';
-  return ` AND ${a}learning_excluded_at IS NULL`;
+  let sql = '';
+  if (_hasLearningExcludedColumn(db) && learningExcludeEnabled(db)) sql += ` AND ${a}learning_excluded_at IS NULL`;
+  if (_hasIntakeColumn(db)) sql += ` AND COALESCE(${a}intake, '') <> 'direct'`;
+  return sql;
 }
 
 module.exports = { MACHINE_VIAS, MACHINE_VIAS_SQL, MACHINE_VIAS_SET,
-                   learningExcludedSql, learningExcludeEnabled, _hasLearningExcludedColumn };
+                   learningExcludedSql, learningExcludeEnabled, _hasLearningExcludedColumn, _hasIntakeColumn };
