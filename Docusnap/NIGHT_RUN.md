@@ -6,6 +6,27 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
+## ✅ DONE 2026-09-12/13 NIGHT — FLIP-CORPUS CENSUSES + QUICKFILE/DEPARTMENTS FOUNDATION + CHRIS (`HANDOVER_2026-09-13_NIGHT.md`)
+Two owner directives across the night. **(1) Flip-corpus** ("kick off the night run"): built the failure-mode
+injectors (`gen_customer_test.py --inject`, 3 value-shape modes, all proven firing, pin `test_inject_shapes.py`),
+scaled to a 700-doc warm corpus (`Desktop\Flip Corpus 700\warm_700.db`, SOUND at RR_APP_ENV=1: ref 97%/date
+99%/179-of-400 auto-file), ran censuses: **mig 159 ref_confusable + mig 156 name_role_nonname PASS (M=0 +
+fire + file→hold) = flip-ready**; format_class_join M=0 but a blast-radius finding (HOLD); 154/157 safety-pass
+(live efficacy done 09-10); widen partial (**mig 143 pad_date_adopt PASS**, 1 date heal). Report
+`TESTING/_measure/flip_corpus_20260912/CENSUS.md`; ledger updated. **CORRECTED two load-bearing facts:** baseline
+MUST be RR_APP_ENV=1 (RR_APP_ENV=0 = vacuous-arm trap, ref→47%); the 3 switches' lever is SHELL ENV not a DB
+write (read outside the mirrored `_appSpawnEnv` functions). **(2) QuickFile+Departments** ("general doc filing
+… fully implemented + tested tomorrow"): built the safe, tested, DARK+byte-identical-OFF+pinned FOUNDATION of
+both features (7 commits `c348df3`→`202456e`: D-C6 security fix, `fileKinds.js`, migs 164/165, Q-C1 non-switchable
+learning exclusion, `directIntakeService.submit`, Departments enforcement core). Honest scope: a ~15-slice
+multi-day feature — the D2 list-reader SWEEP (must be COMPLETE to be safe) + the UIs remain (finish path mapped
+in the handover PART 2). **(3) Chris** sandboxed vet (port 9223) — report `docs/CHRIS_FULL_APP_REVIEW_2026-09-13.md`.
+`npm run test:pins` green after fixing the two TEST_SWITCH_KEYS count pins (47→49); test_activity_strip stays the
+1 pre-existing red. **~24 commits LOCAL, none pushed.** Owner queue = the handover's NEEDS YOUR APPROVAL (flip
+156/159/143 · push · format_class_join decision · continue the QuickFile build · Chris cards). **Repeat only if:**
+never as-is; the censuses re-run only after an extraction change (M must stay 0); the QuickFile build CONTINUES
+(not repeats) from PART 2's finish path.
+
 ## ✅ DONE 2026-09-10 NIGHT — FLIP-GATE MEASUREMENTS + NOTE-COMPOSITION (`docs/designs/NIGHT_RUN_2026-09-10.md`; `HANDOVER_2026-09-11.md`)
 The day built six DARK arcs (mig 152-157 + a note reword, all Oracle-gated, LOCAL/unpushed). Night ran their
 flip-gate MEASUREMENTS on a copy of the owner's LIVE DB (read-only reprocess, no writes; `TESTING/_measure/

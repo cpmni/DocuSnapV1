@@ -45,6 +45,15 @@ the key from `dark_switches.js` `TEST_SWITCH_KEYS` in the same commit (the relea
 `'true'` write while the key is still listed). NOT done autonomously (non-DARK customer-default =
 approval-class). Owner: approve the flip commits + push.
 
+## Widen batch (partial — 2 of 7; stopped to free CPU for the Chris vet + the QuickFile build)
+Same arm mechanism, over all 400. Reusable runner: `widen_run.sh`.
+- **template_pad_date_adopt (mig 143): PASS** — M=0, **1 correct date HEAL** (#279 `13-04-2020`→`23-04-2026`),
+  0 new wrong files. A real efficacy fire → flip candidate.
+- **template_date_left_clip_grow: M=0, inert** (no fire on this corpus) — safety pass only.
+- NOT run: template_code_read_widen, template_locate_role_qualifier, anchor_labelless_currency_refuse,
+  template_fragment_containment_yield, type_uninstalled_heading_fold (geometry-inert on the synthetic set;
+  low value). Re-run: `bash TESTING/_measure/flip_corpus_20260912/widen_run.sh` (edit the SWITCHES list).
+
 ## format_class_join finding (for the morning)
 Its env flag changes `total_amount` format-checking on suppliers with NO joined scope (Meadowvale +
 Quillstone invoices), adding review-bound "format differs from the usual" notes on correctly-read totals
