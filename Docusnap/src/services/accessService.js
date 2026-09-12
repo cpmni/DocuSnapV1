@@ -79,6 +79,14 @@ function canAccessDocument(db, user, docId, deps = {}) {
 
   if (doc.status === 'deleted') return { allow: false, reason: 'deleted' };   // non-admin never sees a soft-deleted doc
 
+  // ── DEPARTMENT tag decision (D2, QuickFile+Departments plan §4 / eric A.2) — after admin + open-route
+  // party + deleted, BEFORE the role grants. A document tagged to a department the actor is not in is
+  // denied ('department_restricted'). INERT + byte-identical when no departments exist (the tables are
+  // empty / absent) or the doc is untagged (department_id NULL = shared). The read gate keys off DATA, not
+  // the departments_enabled switch, so a tagged doc is restricted fail-closed regardless of the switch.
+  const dd = (deps.departmentDecision || departmentDecision)(db, user, doc, deps);
+  if (dd && dd.deny) return { allow: false, reason: 'department_restricted' };
+
   // ── Stage 8 extension seam (INERT groundwork) — per-doc-type / per-document authorization ─────
   // When the doctype_grants scaffold (migration 56) is populated and activated, a role's or user's
   // access to a specific document TYPE is restricted HERE — applied to the role-based grants below,
@@ -109,4 +117,42 @@ function doctypeGrantDecision(_db, _user, _doc, _deps) {
   return { deny: false };
 }
 
-module.exports = { canAccessDocument, gateEnabled, doctypeGrantDecision };
+// ── Department per-doc decision (D2). Fail-closed but INERT when nothing is configured:
+//   • doc untagged (department_id NULL = shared)     -> allow
+//   • no departments table / no rows (pre-mig-164)   -> allow (byte-identical)
+//   • admin / all_departments flag                   -> allow (sees everything)
+//   • member of the doc's department                 -> allow
+//   • else                                           -> DENY
+// Table-guarded (a fixture without the tables never throws); memoisation is per-request via `deps`
+// (membership must be live — never cache across requests). Injectable for the pins.
+// Cache ONLY the table-existence (schema — immutable per handle). The "any departments exist" check is
+// queried LIVE every call so a department created mid-session takes effect on the next request, never a
+// restart (eric A.2: membership/config must be live, never memoised per process).
+const _deptTablesCache = new WeakMap();
+function _departmentsConfigured(db) {
+  let hasTables = _deptTablesCache.get(db);
+  if (hasTables === undefined) {
+    try { hasTables = db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name IN ('departments','user_departments')").get().n === 2; }
+    catch { hasTables = false; }
+    _deptTablesCache.set(db, hasTables);
+  }
+  if (!hasTables) return false;
+  try { return db.prepare('SELECT 1 FROM departments LIMIT 1').get() != null; } catch { return false; }
+}
+function departmentDecision(db, user, doc, deps = {}) {
+  const deptId = doc && doc.department_id;
+  if (deptId == null) return { deny: false };                 // shared
+  if (!_departmentsConfigured(db)) return { deny: false };    // nothing configured -> inert
+  const role = user && user.role;
+  if (role === 'admin') return { deny: false };               // (admin returns above too; belt)
+  const uid = user ? (user.userId != null ? user.userId : user.id) : null;
+  if (uid == null) return { deny: true };
+  try {
+    const u = db.prepare('SELECT all_departments FROM users WHERE id = ?').get(uid);
+    if (u && u.all_departments) return { deny: false };       // the "accountant" flag
+    const member = db.prepare('SELECT 1 FROM user_departments WHERE user_id = ? AND department_id = ?').get(uid, deptId);
+    return { deny: !member };
+  } catch { return { deny: false }; }                          // never throw the gate closed on a schema gap
+}
+
+module.exports = { canAccessDocument, gateEnabled, doctypeGrantDecision, departmentDecision };
