@@ -233,6 +233,38 @@ function getDocumentPage(db, { docId, folderPath, filename, index, scale }, deps
 }
 
 /**
+ * Cheap PAGE COUNT for a PDF (render/pages.py --count) — opens the doc and returns its page count with
+ * NO rendering. Lets the lazy preview size its page array + show page nav instantly for a doc whose
+ * page_count wasn't recorded (e.g. a Quick File doc), instead of rendering every page to learn the count.
+ * Returns a positive integer, or null (non-PDF / unresolved / failure — caller falls back).
+ * @returns {Promise<number|null>}
+ */
+function getDocumentPageCount(db, { docId, folderPath, filename }, deps) {
+  const { path, spawn, pythonExe, pythonArgs, renderScript } = deps;
+  const log = deps.log || console.log;
+  if (!folderPath || !filename) return Promise.resolve(null);
+  const filePath = _resolveDocFile(db, { docId, folderPath, filename }, deps);
+  if (!filePath) return Promise.resolve(null);
+  if (path.extname(filePath).toLowerCase() !== '.pdf') return Promise.resolve(null);
+  const py = pythonExe();
+  return new Promise((resolve) => {
+    const proc = spawn(py, pythonArgs(renderScript, '--file', filePath, '--count'), { windowsHide: true });
+    let out = '', err = '';
+    proc.stdout.on('data', d => { out += d.toString(); });
+    proc.stderr.on('data', d => { err += d.toString(); });
+    proc.on('error', (e) => { log(`[count] spawn error for ${filePath}: ${e.message}`); resolve(null); });
+    proc.on('close', (code) => {
+      try { const n = JSON.parse(out).pages; resolve(Number.isFinite(n) && n > 0 ? n : null); }
+      catch (e) {
+        log(`[count] failed for ${filePath} — exit=${code} parse_error=${e.message}`
+          + (err ? ` stderr=${err.trim().slice(0, 200)}` : ''));
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
  * Render a small page-1 thumbnail for a document — a single base64 data-URL, or
  * null when nothing renderable can be resolved (caller keeps its fallback). Used
  * by the document/file lists + the add-template picker. Reuses the SAME file
@@ -364,4 +396,4 @@ function getSpreadsheetGrid(db, { docId, folderPath, filename }, deps) {
   catch (e) { log(`[grid] parse failed for ${filePath}: ${e.message}`); return null; }
 }
 
-module.exports = { getDocumentDetail, getDocumentPages, getDocumentPage, getThumbnail, findInDocument, getSpreadsheetGrid, resolveDocFile: _resolveDocFile };
+module.exports = { getDocumentDetail, getDocumentPages, getDocumentPage, getDocumentPageCount, getThumbnail, findInDocument, getSpreadsheetGrid, resolveDocFile: _resolveDocFile };

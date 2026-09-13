@@ -1067,6 +1067,27 @@ function register(ctx) {
     });
   });
 
+  // ── Cheap page COUNT (no render) — lets the lazy preview show page nav instantly for a doc whose
+  //    page_count wasn't recorded (e.g. a Quick File doc), instead of rendering every page to learn it.
+  ipcMain.handle('get-document-page-count', async (_e, docId) => {
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    let rFolder = null, rFile = null;
+    if (row) {
+      const pick = row.working_path || row.stored_path
+        || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null);
+      if (pick) { rFolder = path.dirname(pick); rFile = path.basename(pick); }
+    }
+    if (!rFolder || !rFile) return null;
+    return previewService.getDocumentPageCount(db, { docId, folderPath: rFolder, filename: rFile }, {
+      fs, path, spawn, pythonExe, pythonArgs,
+      renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
+    });
+  });
+
   // ── Locate a search term in a document (preview jump/next/highlight) ─────────
   // Returns page-fraction match boxes for the renderer to overlay. Same SERVER-SIDE path
   // resolution as get-document-pages (client paths are never trusted). Born-digital PDFs only.

@@ -366,12 +366,19 @@ async function selectDoc(doc) {
         s.currentPages[0] = first;
         s.currentPage = 0;
         if (_pageCount <= 1) {
-          // Count unknown (NULL/0) — page 1 is up; load the full set in the BACKGROUND only to populate
-          // page nav. Staleness-guarded; a genuinely single-page doc simply re-confirms one page.
-          window.docusnap.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE).then((all) => {
+          // Count unknown (NULL/0 — e.g. a Quick File doc whose page count was never recorded): PROBE the
+          // count cheaply (open the PDF, read len, NO render) so page nav appears at once and the rest
+          // render on demand in _showPage. Avoids rendering every page in the background just to learn the
+          // count (that made nav take ~15s on a 34-page doc). Staleness-guarded; probe failure → single page.
+          window.docusnap.getDocumentPageCount(doc.id).then((cnt) => {
             if (s.selectedDoc !== mine) return;
-            if (Array.isArray(all) && all.length > 1) { s.currentPages = all; _syncPageNav(); }
-          }).catch(() => { /* page 1 already shown */ });
+            if (Number.isFinite(cnt) && cnt > 1) {
+              const arr = new Array(cnt);
+              arr[0] = s.currentPages[0];        // keep the page 1 already rendered
+              s.currentPages = arr;
+              _syncPageNav();
+            }
+          }).catch(() => { /* page 1 already shown; nav stays single */ });
         }
       } else {                                          // page-1 render failed — fall back to the full render
         s.currentPages = await window.docusnap.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE);

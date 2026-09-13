@@ -61,9 +61,17 @@ def main():
     parser.add_argument('--page', type=int, default=0, help='page index for --thumb (default 0)')
     parser.add_argument('--scale', type=float, default=None,
                         help='render scale (default 1.5 full / 0.3 thumb)')
+    # COUNT MODE: open the PDF and print ONLY its page count as JSON — no rendering. Lets the preview
+    # size its lazy page array (and show page nav) instantly for a doc whose page_count wasn't recorded
+    # (e.g. a Quick File doc), instead of rendering every page just to learn how many there are.
+    parser.add_argument('--count', action='store_true', help='print {"pages":N} and exit — no render')
     args = parser.parse_args()
 
     doc = pdfium.PdfDocument(_win_long_path(args.file))
+
+    if args.count:
+        print(json.dumps({"pages": len(doc)}), flush=True)
+        return
 
     if args.thumb:
         scale = args.scale if args.scale is not None else 0.3

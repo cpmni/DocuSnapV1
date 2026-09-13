@@ -20,7 +20,8 @@ console.log('1. service renders ONE page (pdf-only, null fallback)');
   const ps = read('src/services/previewService.js');
   // (?!s) so "getDocumentPages" — which CONTAINS "getDocumentPage" — can't false-pass this: the SINGLE
   // -page fn must be its own export (it was defined but unexported until 2026-09-13, and this pin missed it).
-  check('getDocumentPage (singular) is exported', /module\.exports = \{[^}]*getDocumentPage(?!s)/.test(ps));
+  check('getDocumentPage (singular) is exported', /module\.exports = \{[^}]*getDocumentPage(?!s|Count)/.test(ps));
+  check('getDocumentPageCount is exported', /module\.exports = \{[^}]*getDocumentPageCount/.test(ps));
   const body = ps.slice(ps.indexOf('function getDocumentPage'), ps.indexOf('function getThumbnail'));
   check('non-PDF → null (caller uses full render / grid instead)', /!== '\.pdf'\) return Promise\.resolve\(null\)/.test(body));
   check("uses pages.py single-page mode (--thumb --page)", /'--thumb', '--page'/.test(body));
@@ -43,8 +44,9 @@ console.log('3. renderer renders ONLY page 1 for a multi-page PDF, then loads th
   check('page-1 render via getDocumentPage(doc.id, 0, …)', /getDocumentPage\(doc\.id, 0, SEARCH_RENDER_SCALE\)/.test(pv));
   check('SPARSE page array when count known; single-page array otherwise (NOT all pages up front)',
         /s\.currentPages = _pageCount > 1 \? new Array\(_pageCount\) : \[first\]/.test(pv));
-  check('unknown count (NULL/0): page 1 shown, full set discovered in the BACKGROUND for nav',
-        /if \(_pageCount <= 1\)[\s\S]{0,400}getDocumentPages\(doc\.id, null, null, SEARCH_RENDER_SCALE\)\.then/.test(pv));
+  check('unknown count (NULL/0): page 1 shown, count PROBED cheaply (no all-pages render) for nav',
+        /if \(_pageCount <= 1\)[\s\S]{0,700}getDocumentPageCount\(doc\.id\)\.then/.test(pv)
+        && /const arr = new Array\(cnt\);[\s\S]{0,80}arr\[0\] = s\.currentPages\[0\]/.test(pv));
   check('_showPage is lazy: fetches a hole via getDocumentPage(mine.id, idx, …)',
         /async function _showPage/.test(pv) && /getDocumentPage\(mine\.id, idx, SEARCH_RENDER_SCALE\)/.test(pv));
   check('full getDocumentPages is only the FALLBACK/else path, not the multi-page happy path',
