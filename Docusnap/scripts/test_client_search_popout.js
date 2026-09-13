@@ -157,14 +157,16 @@ console.log('B. source — the Oracle S1 conditions');
   check('client adapter: a read-only user\'s 403 on /v1/doc-types yields an empty type list, not a failed boot', /if \(r && r\.status === 403\) return \[\];/.test(adapter));
 
   const main = read('client', 'main.js');
-  check('main: a single pop-out (module ref; focus if alive, null on closed)', /let searchWin = null;/.test(main) && /if \(searchWin && !searchWin\.isDestroyed\(\)\)/.test(main) && /w\.on\('closed', \(\) => \{ if \(searchWin === w\) searchWin = null; \}\)/.test(main));
+  check('main: a single pop-out (module ref; focus if alive, null on closed)', /let searchWin = null;/.test(main) && /if \(searchWin && !searchWin\.isDestroyed\(\)\)/.test(main) && /w\.on\('closed', \(\) => \{[^\n]*if \(searchWin === w\) searchWin = null; \}\)/.test(main));
+  check('main: the pop-out is revealed on ready-to-show AND by a fallback timer (a renderer that never paints must not leave a window that "doesn\'t open")',
+        /w\.once\('ready-to-show', \(\) => reveal\('ready-to-show'\)\)/.test(main) && /setTimeout\(\(\) => reveal\('fallback-timer'\), 2500\)/.test(main) && /if \(shown \|\| w\.isDestroyed\(\)\) return;/.test(main));
   check('main: the pop-out loads from INSIDE the navGuard root (client/renderer/search/index.html) with the SAME webPreferences posture', /path\.join\(__dirname, 'renderer', 'search', 'index\.html'\)/.test(main) && /contextIsolation: true,\s*nodeIntegration: false,\s*sandbox: true,\s*\},\s*\}\);\s*searchWin = w;/.test(main));
   check('main: logout closes the pop-out', /ipcMain\.handle\('client-logout',[\s\S]{0,200}closeSearchWindow\(\);/.test(main));
   check('main: main-window close closes the pop-out', /win\.on\('closed', \(\) => \{ win = null; closeSearchWindow\(\); \}\)/.test(main));
   check('main: connection lost/restored broadcast to EVERY window', /for \(const w of BrowserWindow\.getAllWindows\(\)\)[\s\S]{0,200}client-connection-restored' : 'client-connection-lost'/.test(main));
   check('main: client-current-user serves role/name from the login response, null when signed out, never a token', /currentUser = \{ role: u\.role \|\| null, username: u\.username \|\| null, displayName/.test(main) && /ipcMain\.handle\('client-current-user', \(\) => \(client && client\.isAuthenticated\(\)\) \? currentUser : null\)/.test(main) && !/currentUser = \{[^}]*token/.test(main));
   check('main: the pop-out 401 report is sender-scoped and signs the main window out', /ipcMain\.on\('client-popout-session-expired', \(e\) => \{\s*if \(!searchWin \|\| e\.sender !== searchWin\.webContents\) return;/.test(main) && /win\.webContents\.send\('client-session-expired'\)/.test(main));
-  check('main: client-open-search refuses when not signed in; bounds persisted', /if \(!client \|\| !client\.isAuthenticated\(\)\) return \{ ok: false, error: 'not signed in' \};/.test(main) && /search-window-state\.json/.test(main) && /w\.on\('close', \(\) => saveSearchState\(w\)\)/.test(main));
+  check('main: client-open-search refuses when not signed in (logged); bounds persisted', /if \(!client \|\| !client\.isAuthenticated\(\)\) \{[\s\S]{0,300}return \{ ok: false, error: 'not signed in' \};/.test(main) && /search-window-state\.json/.test(main) && /w\.on\('close', \(\) => saveSearchState\(w\)\)/.test(main));
   check('main: show:false + ready-to-show (no blank flash)', /show: false, backgroundColor/.test(main) && /w\.once\('ready-to-show'/.test(main));
 
   const pre = read('client', 'preload.js');
