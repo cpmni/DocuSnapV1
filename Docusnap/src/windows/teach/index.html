@@ -34,7 +34,10 @@
   .step.active{display:block}
   /* The "point out the details" step gets more room so the page preview can use the
      window width when maximised (the page itself stays sharp — buffer is full-res). */
-  .step[data-step="3"]{max-width:1320px}
+  /* Step 2 hosts the shared DocTypeEditor (nt-editor-host); at the default 880px the field-name
+     column is squeezed until names truncate (owner 2026-09-13, mirrors the Settings panel widen).
+     Step 3 (the point-out-fields grid) was already widened. */
+  .step[data-step="2"],.step[data-step="3"]{max-width:1320px}
   @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   h1{font-size:26px;font-weight:650;margin-bottom:14px;letter-spacing:-.01em}
   h2{font-size:21px;font-weight:620;margin-bottom:10px}
