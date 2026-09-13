@@ -26,8 +26,11 @@ const SEARCH_ROW_FIELDS = [
 ];
 
 // Extra non-path fields safe to expose on the single-document detail view.
+// page_count (a plain integer, already on the review-queue row) lets the Search preview
+// take the fast-first-page path for big multi-page PDFs — without it merged.page_count is
+// undefined so the >1 gate never fires and the whole page set renders before anything shows.
 const DETAIL_EXTRA_FIELDS = [
-  'document_type_id', 'confirmed_at', 'processed_at', 'digit_only_fields',
+  'document_type_id', 'confirmed_at', 'processed_at', 'digit_only_fields', 'page_count',
 ];
 
 // Per-extraction display fields — display_value (what the UI shows), confidence,
