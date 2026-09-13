@@ -47,7 +47,11 @@ pre-merge** — the DARK code is safe as landed.
   deferred to Q-C12; a drop cue would be a false affordance).
 - **C2 APPLIED** — receipt "Open folder" uses the de-pathed `showDocumentInExplorer(docId)` (no filed path
   into the renderer).
-- **C3 OWED (pre-flip)** — a manual ON/OFF click-through + a Chris pane pass before flipping for shared use.
+- **C3 PARTLY DONE** — live CDP smoke on the sandbox (reloaded to the new code) PASSED **ON** (pane is the
+  active view; `#qf-dropzone` + receipt + "File documents" present; the 4 Quick File types listed; modal
+  gone) **and OFF** (nav hidden, `QuickFileView.enabled` false, a stray `showView('quickfile')` no-ops →
+  stays Home). STILL MANUAL: filing a doc end-to-end through the pane's native file picker (couldn't
+  automate the OS picker — same limit Chris hit). Sandbox left on the pane (port 9223) for you to try live.
 - **C4 STANDING** — do NOT flip `direct_intake_enabled` before Q-C1/Q-C2 land: a Quick-Filed doc is still a
   confirmed row reachable by the four UNBUILT write-side doors (Put-back/Learning-Repair send-back,
   Edit-in-Review, reprocess, requeue) — the "learning rows for a doc nobody read" seam.
