@@ -460,8 +460,10 @@ $('nav-home').addEventListener('click', () => setView('home'));
 // Search opens in its own window: the SHARED search screen (the same code the core Search window runs).
 // Main opens/focuses the pop-out; this page stays where it is.
 async function openSearchWindow(opts) {
-  try { const r = await api.openSearch(opts || {}); if (!(r && r.ok)) toast('Sign in to search.', 'err'); }
-  catch { toast('Could not open Search.', 'err'); }
+  try {
+    const r = await api.openSearch(opts || {});
+    if (!(r && r.ok)) toast(r && r.error === 'not signed in' ? 'Sign in first, then open Search.' : `Could not open Search${r && r.error ? ' — ' + r.error : ''}.`, 'err');
+  } catch (e) { toast(`Could not open Search — ${(e && e.message) || 'unknown error'}.`, 'err'); }
 }
 $('nav-search').addEventListener('click', () => openSearchWindow());
 $('nav-mailbox').addEventListener('click', () => setView('mailbox'));

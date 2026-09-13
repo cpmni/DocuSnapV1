@@ -176,18 +176,36 @@ function openSearchWindow(opts) {
   });
   searchWin = w;
   if (w.removeMenu) w.removeMenu();
-  w.loadFile(path.join(__dirname, 'renderer', 'search', 'index.html'));   // inside the navGuard root
-  w.once('ready-to-show', () => { try { if (st.maximized) w.maximize(); w.show(); } catch {} });
+  const dbg = (m) => { try { console.error('[search-popout] ' + m); } catch {} };   // stderr — a launcher's log captures it
+  dbg(`created (state ${JSON.stringify(st)})`);
+  w.webContents.on('did-fail-load', (_e, code, desc) => dbg(`did-fail-load ${code} ${desc}`));
+  w.webContents.on('render-process-gone', (_e, d) => dbg(`render-process-gone ${d && d.reason}`));
+  w.webContents.on('preload-error', (_e, p, err) => dbg(`preload-error ${err && err.message}`));
+  w.loadFile(path.join(__dirname, 'renderer', 'search', 'index.html')).catch((e) => dbg(`loadFile failed: ${e && e.message}`));   // inside the navGuard root
+  let shown = false;
+  const reveal = (why) => {
+    if (shown || w.isDestroyed()) return;
+    shown = true;
+    try { if (st.maximized) w.maximize(); w.show(); w.focus(); dbg(`shown (${why})`); } catch (e) { dbg(`show failed: ${e && e.message}`); }
+  };
+  w.once('ready-to-show', () => reveal('ready-to-show'));
+  // Safety net: a renderer that never reports ready-to-show (a paint that never happens) must not leave the
+  // user with a window that "doesn't open" — show it anyway after a moment; the page is loading behind it.
+  setTimeout(() => reveal('fallback-timer'), 2500);
   const grabFocus = () => { try { if (w && !w.isDestroyed()) w.webContents.focus(); } catch {} };
   w.webContents.on('did-finish-load', grabFocus);
   w.on('focus', grabFocus);
   w.on('show', grabFocus);
   w.on('close', () => saveSearchState(w));
-  w.on('closed', () => { if (searchWin === w) searchWin = null; });
+  w.on('closed', () => { dbg('closed'); if (searchWin === w) searchWin = null; });
 }
 ipcMain.handle('client-open-search', (_e, opts) => {
-  if (!client || !client.isAuthenticated()) return { ok: false, error: 'not signed in' };
-  openSearchWindow(opts);
+  if (!client || !client.isAuthenticated()) {
+    try { console.error('[search-popout] refused: not signed in (client ' + (client ? 'built' : 'absent') + ')'); } catch {}
+    return { ok: false, error: 'not signed in' };
+  }
+  try { openSearchWindow(opts); }
+  catch (e) { try { console.error('[search-popout] open failed: ' + (e && e.stack || e)); } catch {} return { ok: false, error: (e && e.message) || 'open failed' }; }
   return { ok: true };
 });
 // Pulled ONCE by the pop-out on load: the deep-link it was opened with (then cleared).
@@ -203,6 +221,7 @@ ipcMain.handle('client-server-info', () => ({
 // The pop-out saw a 401: the session is gone. Close it and let the main window sign out.
 ipcMain.on('client-popout-session-expired', (e) => {
   if (!searchWin || e.sender !== searchWin.webContents) return;   // sender-scoped
+  try { console.error('[search-popout] the pop-out saw a 401 — closing it and signing the main window out'); } catch {}
   closeSearchWindow();
   try { if (win && !win.isDestroyed()) win.webContents.send('client-session-expired'); } catch {}
 });
