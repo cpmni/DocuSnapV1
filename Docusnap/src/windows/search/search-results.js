@@ -102,7 +102,7 @@ function _resultItem(doc) {
 
   el.innerHTML = `
     <div class="result-row">
-      <img class="result-thumb" alt="${escHtml(name)}">
+      <span class="result-thumb"><img class="result-thumb-img" alt=""></span>
       <div class="result-main">
         <div class="result-header">
           <span class="result-supplier" title="${escHtml(supplier)}">${escHtml(supplier)}</span>
@@ -116,7 +116,7 @@ function _resultItem(doc) {
   if (window.Thumbs) {
     // DE-PATHED: the thumbnail handler resolves the file server-side by docId; rows no
     // longer carry paths at all.
-    window.Thumbs.lazy(el.querySelector('.result-thumb'), { id: doc.id });
+    window.Thumbs.lazy(el.querySelector('.result-thumb-img'), { id: doc.id });
   }
 
   el.addEventListener('click', (e) => _onRowClick(e, doc));

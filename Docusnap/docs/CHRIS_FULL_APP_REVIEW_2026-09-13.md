@@ -127,3 +127,45 @@ Flags that don't earn their place at the start. My first batch shouted "20 need 
 - **Approve/Reject and Stamp-it-myself/Save-a-copy I could not complete** — as a one-person office I could only send to myself, and the self-stamp path wasn't clearly reachable. My cards on those note the uncertainty.
 - I **took the "nothing leaves this PC" claims at face value** — I can't watch network traffic.
 - I checked that all 19 filenames were sensible (right company, varied dates/numbers, no duplicates) but **did not open all 19 filed PDFs** to confirm every read was perfect.
+
+---
+
+# ROUND 2 — Quick File focus (autonomous sandbox vet, 2026-09-13 afternoon)
+
+Sandbox: isolated instance port 9223 (PID 1368), own userData + a COPY of Demo Docs + two seeded non-OCR
+files (Office Supplies Order.xlsx, Meeting Notes.txt), `direct_intake_enabled` ON. Chris briefed to focus
+on Quick File. NOTE: the sandbox launched before the submit-PANE commit, so Chris vetted the MODAL submit
+flow + the shipped preview features (xlsx grid, find-in-doc, fast page). Findings queue for the owner —
+IMPLEMENT NOTHING without the owner's go (except finding 4, which is the owner's own prior request; fixed).
+
+**VERDICT: YES — "I'd keep using it."** Core promise holds: type details → pick file → filed into
+Company/Year/Month with tidy names + metadata XML, searchable within seconds (content indexed: "Stapler"
+a cell value, "kickoff" a notes line, "Bramblewood" PDF text), and NEVER entered Review (verified empty).
+xlsx grid preview "a delight"; multi-file batch smooth; delete/restore safe (originals kept); onboarding
+safety gates good.
+
+**8 findings (ranked by harm):**
+1. **"Send back to Review" strands a Quick File doc in un-fileable limbo** (highest harm). Clicking the
+   prominent blue "Send back to Review" on a filed Quick File doc → Review shows "The scanned page for this
+   document is no longer available… nothing to file", **Confirm & File is DISABLED**, and there's no path
+   back to Filed. The file IS on disk but nothing says so ("scanned page no longer available" implies loss).
+   Warning "It stays filed until you re-confirm it" is MISLEADING (you can't re-confirm). → For non-scanned
+   docs, hide "Send back to Review" OR keep it with honest copy + keep an Edit-details/Confirm path.
+2. **.txt shows "No preview available"** though its content is searchable (xlsx shows a grid) — reads as a
+   bug via the inconsistency. → show text inline (already extracted) or "This is a text file — Open File".
+3. **Jargon** in the modal: "It never runs OCR and never teaches the scanner." → plain rewrite / drop it.
+4. **Office/text docs show broken-image thumbnails in Search results** (verified `<img>` naturalWidth 0,
+   empty src, filename as alt; PDF row fine). *[= the owner's earlier request; FIXED this session — clean
+   document-glyph placeholder replaces the broken img.]*
+5. **Quick File undiscoverable** beyond the nav rail (tour + setup checklist never mention it).
+6. **Duplicates filed silently** (only "Filed 1 document(s)"; a -DUPLICATE.xlsx appears with no notice).
+7. **"Find in this document" only works on PDFs**, not the Excel/text files Quick File promotes.
+8. **"100% / High confidence" shown on hand-typed fields** — odd ("100% of what?").
+
+**Warnings truth-table:** Delete → TRUE; Restore → TRUE (grammar "all 1 document" odd); Send back to
+Review → MISLEADING for Quick File (says re-confirm, but can't); File duplicate → no warning (silent copy).
+
+**Couldn't test (humility):** the native "Choose files" picker (drove via SendKeys); only .xlsx/.txt/.pdf
+(+ an unsupported .log) — NOT .docx/.eml/.msg, a very large file, or interrupting the progress; did not
+press "Open File" (external app). First-impression single-session; some (broken thumbs) may differ on a
+packaged install.
