@@ -27,7 +27,12 @@ const argv = process.argv.slice(2);
 const argOf = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : null; };
 const REPORT = argOf('--report');
 const DUMP = argOf('--dump');
-const HTML = argOf('--html') || path.join(ROOT, 'src', 'windows', 'search', 'index.html');
+// --client: drive the detached CLIENT's search pop-out instead (client/renderer/search/index.html with the
+// client's preload + its IPC channel names and { status, json } envelopes). Same shared UI, different transport.
+const CLIENT = argv.includes('--client');
+const HTML = argOf('--html') || (CLIENT ? path.join(ROOT, 'client', 'renderer', 'search', 'index.html')
+                                        : path.join(ROOT, 'src', 'windows', 'search', 'index.html'));
+const PRELOAD = CLIENT ? path.join(ROOT, 'client', 'preload.js') : path.join(ROOT, 'src', 'preload.js');
 
 // Throwaway userData BEFORE ready (never the live one; also a different single-instance key).
 const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-search-harness-'));
@@ -49,7 +54,29 @@ const byId = (id) => [...ROWS.confirmed, ...ROWS.uncommitted, ...DELETED].find(r
 
 const calls = [];   // [channel, args]
 function stub(channel, fn) { ipcMain.handle(channel, (_e, ...a) => { calls.push([channel, a]); return fn(...a); }); }
-stub('get-all-doc-types', () => [{ slug: 'invoice', name: 'Invoice' }, { slug: 'purchase_order', name: 'Purchase Order' }]);
+const DOC_TYPES = [{ slug: 'invoice', name: 'Invoice' }, { slug: 'purchase_order', name: 'Purchase Order' }];
+const detailOf = (id) => { const r = byId(id); return r ? { ...r, extractions: [{ field_key: 'total_amount', display_value: '£120.00', confidence: 95, validation_note: null }] } : null; };
+const pagesOf = (id) => { const r = byId(id); if (!r || !/\.pdf$/i.test(r.original_filename)) return []; return new Array(Number(id) === 3 ? 2 : (r.page_count || 1)).fill(PNG); };
+if (CLIENT) {
+  // The client bridge: every read returns a { status, json } envelope (what client/main.js hands back).
+  const ok = (json) => ({ status: 200, json });
+  stub('client-doc-types', () => ok({ types: DOC_TYPES }));
+  stub('client-search', () => ok({ confirmed: ROWS.confirmed, uncommitted: ROWS.uncommitted }));
+  stub('client-recycle-list', () => ok({ deleted: DELETED }));
+  stub('client-get-document', (id) => { const d = detailOf(id); return d ? ok(d) : { status: 404, json: { error: 'not found' } }; });
+  stub('client-get-pages', (id) => ok({ pages: pagesOf(id) }));
+  stub('client-get-thumbnail', () => ok({ thumbnail: PNG }));
+  stub('client-entitlement', () => ok({ entitled: true, workflow: { entitled: false } }));
+  stub('client-current-user', () => ({ role: 'admin', username: 'harness', displayName: 'Harness' }));
+  stub('client-search-target', () => ({ query: 'inv', docId: null }));
+  stub('client-server-info', () => ({ serverVersion: '1.2.0', clientContract: '1.2.0', mode: 'ok' }));
+  stub('client-recycle-delete', () => ok({ ok: true }));
+  stub('client-recycle-restore', () => ok({ ok: true }));
+  stub('client-recycle-purge', () => ok({ ok: true }));
+  stub('client-recycle-purge-all', () => ok({ ok: true }));
+  stub('client-retry-connection', () => ({ ok: true }));
+} else {
+stub('get-all-doc-types', () => DOC_TYPES);
 stub('search-documents', () => ({ confirmed: ROWS.confirmed, uncommitted: ROWS.uncommitted }));
 stub('get-deleted-queue', () => DELETED);
 stub('get-document-detail', (id) => { const r = byId(id); return r ? { ...r, extractions: [{ field_key: 'total_amount', display_value: '£120.00', confidence: 95, validation_note: null }] } : null; });
@@ -67,9 +94,14 @@ stub('print-available', () => true);
 stub('get-setting', (key) => (key === 'keep_processed_originals' ? 'true' : null));
 stub('get-search-target', () => 'inv');
 stub('get-search-view-target', () => null);
+}
 
 // ── The drive (runs INSIDE the page) ───────────────────────────────────────────
+// CLIENT = the pop-out over the S1 /v1 surface: no lazy single page / count probe / find / spreadsheet grid
+// (caps false → those controls HIDE), no desktop-local actions, no send-back, no Restore-all; pages come
+// from the full render. Everything else is the same screen.
 const DRIVE = `(async () => {
+  const CLIENT = ${CLIENT};
   const checks = [];
   const ok = (name, cond) => checks.push({ name, ok: !!cond });
   const $ = (s) => document.querySelector(s);
@@ -97,39 +129,52 @@ const DRIVE = `(async () => {
   ok('preview: page 1 painted (lazy single-page read)', await until(() => ($('#preview-img').src || '').startsWith('data:image/png') && vis($('#preview-img-wrap'))));
   ok('preview: fields table rendered (Company/Type/Reference/Date/Status + extras)', $$('.pf-row').length >= 6);
   ok('preview: no confidence band on a CONFIRMED doc', !$('.pf-confband'));
-  ok('preview: page nav shown with 1 / 3 (sparse array from page_count)', await until(() => vis($('#page-nav')) && $('#page-label').textContent.trim() === '1 / 3'));
-  ok('preview: Find cluster shown (caps.find) and seeded with the list term', vis($('#match-nav')) && $('#inp-find-doc').value === 'inv');
-  ok('preview: the list term is highlighted on page 1 (1 / 1)', await until(() => $$('#preview-hl-layer .pv-hl').length === 1 && $('#match-label').textContent.trim() === '1 / 1'));
-  ok('actions (admin, confirmed, has_file): Send back + Explorer + Open File + Print + Delete', (() => { const b = btns(); return ['Send back to Review', 'Open in Explorer', 'Open File', 'Print', 'Delete'].every(x => b.some(t => t.includes(x))); })());
+  ok('preview: page nav shown with 1 / 3 (' + (CLIENT ? 'full render' : 'sparse array from page_count') + ')', await until(() => vis($('#page-nav')) && $('#page-label').textContent.trim() === '1 / 3'));
+  if (CLIENT) {
+    ok('preview (client): Find cluster HIDDEN (caps.find false — no /v1 find yet)', await until(() => !vis($('#match-nav')) && !vis($('#match-sep'))));
+    ok('preview (client): no highlight overlay drawn', $$('#preview-hl-layer .pv-hl').length === 0);
+    ok('actions (client, admin, confirmed): Delete only — no Explorer / Open File / Print / Send back', (() => { const b = btns(); return b.some(t => t === 'Delete') && !b.some(t => /Explorer|Open File|Print|Send back|Edit in Review/.test(t)); })());
+  } else {
+    ok('preview: Find cluster shown (caps.find) and seeded with the list term', vis($('#match-nav')) && $('#inp-find-doc').value === 'inv');
+    ok('preview: the list term is highlighted on page 1 (1 / 1)', await until(() => $$('#preview-hl-layer .pv-hl').length === 1 && $('#match-label').textContent.trim() === '1 / 1'));
+    ok('actions (admin, confirmed, has_file): Send back + Explorer + Open File + Print + Delete', (() => { const b = btns(); return ['Send back to Review', 'Open in Explorer', 'Open File', 'Print', 'Delete'].every(x => b.some(t => t.includes(x))); })());
+  }
   ok('actions: no Stamp button when stamp.can says no + no workflow', !btns().some(t => /stamp|Send…/i.test(t)));
   ok('status chip reads Confirmed', ($('.ap-chip') || {}).textContent === 'Confirmed');
 
-  // 3 — lazy page nav: next page renders a hole on demand
+  // 3 — page nav: next page (core: a hole rendered on demand; client: the pre-rendered page)
   click($('#btn-page-next'));
-  ok('page nav: next → 2 / 3 (hole rendered on demand)', await until(() => $('#page-label').textContent.trim() === '2 / 3'));
+  ok('page nav: next → 2 / 3', await until(() => $('#page-label').textContent.trim() === '2 / 3'));
 
-  // 4 — find box: a term with no matches → no-match state; Esc clears
-  const fi = $('#inp-find-doc'); fi.value = 'zzz'; fi.dispatchEvent(new Event('input', { bubbles: true }));
-  ok('find: a no-match term marks the box + 0 / 0', await until(() => fi.classList.contains('no-match') && $('#match-label').textContent.trim() === '0 / 0'));
-  fi.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-  ok('find: Esc clears the box', await until(() => fi.value === '' && !fi.classList.contains('no-match')));
+  if (!CLIENT) {
+    // 4 — find box: a term with no matches → no-match state; Esc clears
+    const fi = $('#inp-find-doc'); fi.value = 'zzz'; fi.dispatchEvent(new Event('input', { bubbles: true }));
+    ok('find: a no-match term marks the box + 0 / 0', await until(() => fi.classList.contains('no-match') && $('#match-label').textContent.trim() === '0 / 0'));
+    fi.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    ok('find: Esc clears the box', await until(() => fi.value === '' && !fi.classList.contains('no-match')));
+  }
 
-  // 5 — an UNCONFIRMED doc: confidence band + Edit in Review, no Send back
+  // 5 — an UNCONFIRMED doc: confidence band (+ Edit in Review on the core), no Send back
   click($('.result-item[data-id="3"]'));
   ok('unconfirmed preview: confidence band shown', await until(() => !!$('.pf-confband')));
-  ok('unconfirmed preview: Edit in Review offered, Send back not', (() => { const b = btns(); return b.some(t => t.includes('Edit in Review')) && !b.some(t => t.includes('Send back')); })());
-  ok('unconfirmed preview: unknown page_count → probed → 1 / 2 nav', await until(() => vis($('#page-nav')) && $('#page-label').textContent.trim() === '1 / 2'));
+  if (CLIENT) ok('unconfirmed preview (client): neither Edit in Review nor Send back (no desktop, no /v1 send-back)', (() => { const b = btns(); return !b.some(t => t.includes('Edit in Review')) && !b.some(t => t.includes('Send back')); })());
+  else ok('unconfirmed preview: Edit in Review offered, Send back not', (() => { const b = btns(); return b.some(t => t.includes('Edit in Review')) && !b.some(t => t.includes('Send back')); })());
+  ok('unconfirmed preview: ' + (CLIENT ? '2 rendered pages → 1 / 2 nav' : 'unknown page_count → probed → 1 / 2 nav'), await until(() => vis($('#page-nav')) && $('#page-label').textContent.trim() === '1 / 2'));
 
-  // 6 — an .xlsx: no page image, the grid draws, page nav hidden
+  // 6 — an .xlsx: no page image → the grid (core) / the honest "No preview available" (client, caps.spreadsheet false)
   click($('.result-item[data-id="2"]'));
-  ok('xlsx preview: cell grid rendered', await until(() => !!$('#preview-img-placeholder .xlsx-table')));
+  if (CLIENT) ok('xlsx preview (client): honest "No preview available" (no /v1 grid yet)', await until(() => /No preview available/.test($('#preview-img-placeholder').textContent)));
+  else {
+    ok('xlsx preview: cell grid rendered', await until(() => !!$('#preview-img-placeholder .xlsx-table')));
+    ok('xlsx preview: 2 data rows + column letters', $$('.xlsx-table .xlsx-rownum').length === 2 && $$('.xlsx-table .xlsx-colhdr').length === 2);
+  }
   ok('xlsx preview: page nav hidden', !vis($('#page-nav')));
-  ok('xlsx preview: 2 data rows + column letters', $$('.xlsx-table .xlsx-rownum').length === 2 && $$('.xlsx-table .xlsx-colhdr').length === 2);
 
   // 7 — the recycle bin
   click($('#btn-recycle'));
   ok('bin: RECYCLE BIN section with the deleted row', await until(() => $$('.section-header').some(h => /RECYCLE BIN/.test(h.textContent)) && !!$('.result-item[data-id="9"]')));
-  ok('bin: Restore all + Empty bin shown to an admin', vis($('#btn-restore-all')) && vis($('#btn-empty-bin')));
+  if (CLIENT) ok('bin (client): Empty bin shown to an admin, Restore all HIDDEN (no /v1 restore-all)', vis($('#btn-empty-bin')) && !vis($('#btn-restore-all')));
+  else ok('bin: Restore all + Empty bin shown to an admin', vis($('#btn-restore-all')) && vis($('#btn-empty-bin')));
   ok('bin: the toggle relabelled', /Back to search/.test($('#btn-recycle').textContent));
   click($('.result-item[data-id="9"]'));
   ok('bin: a deleted doc offers Restore + Delete permanently', await until(() => { const b = btns(); return b.some(t => t === 'Restore') && b.some(t => t.includes('Delete permanently')); }));
@@ -144,7 +189,18 @@ const DRIVE = `(async () => {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
   ok('keys: ArrowDown moves the selection to the next row', await until(() => !!$('.result-item[data-id="2"].active')));
 
-  return { checks, globals: ['SearchTransport', 'SearchState', 'SearchThumbs', 'SearchActions', 'SearchResults', 'SearchPreview', 'SearchQuery', 'SearchUI', 'SearchWorkflow', 'SearchMailbox', 'SearchStamp'].filter(g => window[g] === undefined) };
+  if (CLIENT) {
+    // 9 — client specifics: the capability hint stays hidden (server + client both 1.2.0 → nothing remediable),
+    //     and the theme attributes came from themeBoot (the shared theme.css is the live stylesheet).
+    ok('client: "newer core needed" hint hidden when nothing is remediable', !$('#popout-note').classList.contains('show'));
+    ok('client: theme attributes applied by themeBoot', !!document.documentElement.getAttribute('data-theme') && !!document.documentElement.getAttribute('data-mode'));
+    ok('client: the shared theme.css is live (a token the search CSS needs resolves)', getComputedStyle(document.documentElement).getPropertyValue('--doc-bg').trim() !== '');
+    ok('client: the connection banner starts hidden', !$('#popout-banner').classList.contains('show'));
+  }
+
+  const need = ['SearchTransport', 'SearchMarkup', 'SearchState', 'SearchThumbs', 'SearchActions', 'SearchResults', 'SearchPreview', 'SearchQuery', 'SearchUI']
+    .concat(CLIENT ? ['ClientTheme'] : ['SearchWorkflow', 'SearchMailbox', 'SearchStamp']);
+  return { checks, globals: need.filter(g => window[g] === undefined) };
 })()`;
 
 const DUMP_JS = `(() => {
@@ -177,7 +233,7 @@ app.whenReady().then(async () => {
   try {
     win = new BrowserWindow({
       show: false, width: 1400, height: 900, skipTaskbar: true, backgroundThrottling: false,
-      webPreferences: { preload: path.join(ROOT, 'src', 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+      webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true },
     });
     const wc = win.webContents;
     wc.on('console-message', (e, level, message) => { if (level >= 3 || /Uncaught|ReferenceError|TypeError/.test(message)) consoleErrors.push(message); });

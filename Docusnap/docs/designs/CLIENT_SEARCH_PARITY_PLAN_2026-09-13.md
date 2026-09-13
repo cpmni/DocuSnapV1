@@ -57,6 +57,25 @@ the core search replicates to the client automatically** (no fork that rots).
 >   date-range-note, body]` (`TESTING/_measure/search_parity_20260913/dom_s0_baseline.json` vs `dom_s0b.json`);
 >   the functional harness pin now also asserts the mount contract + the height chain + the cascade order.
 >   `scripts/check-help-coverage.js` scans `searchMarkup.js` as part of the Search window's markup (16 keys).
+> - **S1 STATUS: BUILT 2026-09-13** — the client search POP-OUT: `client/renderer/search/{index.html,
+>   clientTransport.js, popout.js}` (own CSP with `style-src 'self'`; loads the REAL synced `theme.css` +
+>   `searchUI.css` + `searchComponents.css` in cascade order + the generated search-ui modules; the adapter
+>   unwraps `{status,json}`, rejects on non-200 like the core bridge, reports a 401 to main, flips a cap on
+>   404/426/402; S1 caps: bin true, everything else false until S2/S4; capability gate = client methods AND
+>   server ≥ 1.3.0; "Some tools need a newer ScanFinder on the core PC" hint only for remediable drift).
+>   `client/main.js`: single-instance `searchWin` (bounds persisted, show-on-ready, grabFocus), `client-open-search`
+>   ({query, docId} → live push when up), `client-search-target` (pulled once), `client-current-user` (role/name
+>   from the login response, null when signed out, never a token), `client-server-info`, sender-scoped
+>   `client-popout-session-expired` → main window signs out; connection lost/restored broadcast to EVERY window;
+>   logout + main-window close destroy the pop-out. `client/renderer/themeBoot.js` = the one theme applier for
+>   both client pages (localStorage `sf-client-theme` + `storage` event → live cross-window sync; the main page's
+>   `applyTheme` delegates). The in-pane search is a LAUNCHER (nav/Home/recent rows open the window with a deep-link);
+>   `#view-search` survives only as the mailbox's document viewer (`legacy-viewer` hides its search bar + list).
+>   Sync sets: search-ui + `theme.css` + `fonts/` + `patterns/` → `client/renderer/shared/` (binary-safe mirror).
+>   GATES: `scripts/test_client_search_popout.js` (the real pop-out page driven over stubbed client IPC — 86 checks:
+>   S1 posture, mount contract, height chain, cascade + script order, IPC arity, the Oracle S1 source conditions,
+>   a client twin of the collision pin) + `test_client_search_sync.js` (29). Owner live test owed (the client app was
+>   restarted on the new code).
 
 ## The mandate's answer (enforced auto-replication)
 The search UI becomes ONE canonical source both apps drive through an injected **transport**. Drift is made

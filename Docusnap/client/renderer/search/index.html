@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="warm" data-mode="light"><!-- default at parse time → no flash before themeBoot runs -->
+<head>
+  <meta charset="UTF-8"/>
+  <!-- style-src 'self' is REQUIRED here (the main client page's CSP lacks it and would block the shared
+       stylesheets); font-src 'self' for the shared theme's self-hosted IBM Plex; img-src 'self' data: for the
+       rendered page images + the seasonal pattern tiles (Oracle S1 condition). -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <title>ScanFinder — Search</title>
+  <!-- THE SHARED SEARCH SCREEN (client search parity S1, 2026-09-13). Every file under ../shared/ is a
+       GENERATED copy of the core's src/windows/shared/ (scripts/sync-client-search.js) — the pop-out runs the
+       exact code, markup and styles the core Search window runs. Edit the core's shared files, never these.
+       Cascade order is load-bearing: theme tokens → the screen's layout styles → the component re-skin. -->
+  <link rel="stylesheet" href="../shared/theme.css" />
+  <link rel="stylesheet" href="../shared/search-ui/searchUI.css" />
+  <link rel="stylesheet" href="../shared/search-ui/searchComponents.css" />
+  <style>
+    /* Pop-out chrome only: the connection banner + the "newer core needed" hint. Everything else is shared. */
+    #popout-banner { display: none; padding: 7px 14px; font-size: 12px; background: var(--warn-bg, #fff4d6); color: var(--warn, #b07816);
+      border-bottom: 1px solid var(--border); align-items: center; gap: 10px; flex-shrink: 0; }
+    #popout-banner.show { display: flex; }
+    #popout-banner button { padding: 4px 12px; border-radius: var(--r-pill, 999px); border: 1px solid var(--border2); background: var(--surface);
+      color: var(--text); font-family: var(--sans); font-size: 12px; cursor: pointer; }
+    #popout-note { display: none; padding: 4px 14px; font-size: 11px; color: var(--muted); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    #popout-note.show { display: block; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="popout-banner" role="alert"><span id="popout-banner-text">Connection lost — the ScanFinder server is unreachable.</span><button type="button" id="popout-retry">Retry now</button></div>
+  <div id="popout-note">Some tools need a newer ScanFinder on the core PC.</div></div><!-- #app: the shared search screen is mounted
+                       here by search-ui/searchMarkup.js as DIRECT children (the #app flex-column → #body flex:1 height
+                       chain). Nothing may follow the note here. -->
+
+<script src="../themeBoot.js"></script>
+<script src="clientTransport.js"></script>
+<script src="../shared/search-ui/searchMarkup.js"></script>
+<script src="../shared/search-ui/searchState.js"></script>
+<script src="../shared/search-ui/searchThumbs.js"></script>
+<script src="../shared/search-ui/searchActions.js"></script>
+<script src="../shared/search-ui/searchResults.js"></script>
+<script src="../shared/search-ui/searchPreview.js"></script>
+<script src="../shared/search-ui/searchQuery.js"></script>
+<script src="../shared/search-ui/searchInit.js"></script>
+<script src="popout.js"></script>
+</body>
+</html>

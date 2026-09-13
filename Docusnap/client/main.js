@@ -34,6 +34,15 @@ const ALLOW_SELF_SIGNED = !app.isPackaged && process.env.SCANFINDER_CLIENT_ALLOW
 let win = null;
 let serverConfig = null;   // { host, port, tls } | null
 let client = null;         // rebuilt whenever the server changes
+// Search pop-out (client search parity S1, 2026-09-13; Oracle-vetted): a SECOND top-level window that runs the
+// SHARED search UI (client/renderer/shared/search-ui — generated from the core's src/windows/shared/search-ui).
+// Single instance; bounds persisted; closed on logout and when the main window closes (no zombie pop-out with
+// no sign-in surface). The session token never reaches it — it calls the same IPC bridge as the main window.
+let searchWin = null;
+let pendingSearch = null;  // { query, docId } handed to the pop-out once on load (client-search-target)
+let currentUser = null;    // { role, username, displayName } from the login response — the pop-out cannot learn
+                           // the role any other way (no /v1/auth/me); null when signed out → the shared UI is read-only
+let lastHandshake = null;  // the last /v1/health verdict ({ serverVersion, mode }) — the pop-out's capability gate
 
 const configPath = () => path.join(app.getPath('userData'), 'scanfinder-client.json');
 const clientIdPath = () => path.join(app.getPath('userData'), 'scanfinder-client-id');
@@ -118,7 +127,85 @@ function createWindow() {
   win.webContents.on('did-finish-load', grabFocus);
   win.on('focus', grabFocus);
   win.on('show', grabFocus);
+  // The main window is the sign-in surface: when it goes, the search pop-out goes with it (Oracle seam 7).
+  win.on('closed', () => { win = null; closeSearchWindow(); });
 }
+
+// ── Search pop-out window ──────────────────────────────────────────────────────
+const searchStatePath = () => path.join(app.getPath('userData'), 'search-window-state.json');
+function loadSearchState() { try { return JSON.parse(fs.readFileSync(searchStatePath(), 'utf8')); } catch { return null; } }
+function saveSearchState(w) {
+  try {
+    if (!w || w.isDestroyed()) return;
+    const b = w.getNormalBounds();
+    fs.writeFileSync(searchStatePath(), JSON.stringify({ ...b, maximized: w.isMaximized() }));
+  } catch { /* best-effort */ }
+}
+function closeSearchWindow() {
+  try { if (searchWin && !searchWin.isDestroyed()) searchWin.destroy(); } catch {}
+  searchWin = null;
+  pendingSearch = null;
+}
+// Open (or focus) the pop-out. `opts` = { query, docId }: a term to pre-fill / a document to open. When the
+// pop-out is ALREADY up the request is pushed to it live (mirrors the core's search-set-query / search-goto).
+function openSearchWindow(opts) {
+  const o = opts && typeof opts === 'object' ? opts : {};
+  if (searchWin && !searchWin.isDestroyed()) {
+    try {
+      if (o.query != null) searchWin.webContents.send('client-search-set-query', String(o.query));
+      if (o.docId != null) searchWin.webContents.send('client-search-goto-doc', Number(o.docId));
+      if (searchWin.isMinimized()) searchWin.restore();
+      searchWin.show(); searchWin.focus();
+    } catch {}
+    return;
+  }
+  pendingSearch = { query: o.query != null ? String(o.query) : null, docId: o.docId != null ? Number(o.docId) : null };
+  const st = loadSearchState() || {};
+  const w = new BrowserWindow({
+    width: st.width || 1280, height: st.height || 820, minWidth: 900, minHeight: 560,
+    x: Number.isFinite(st.x) ? st.x : undefined, y: Number.isFinite(st.y) ? st.y : undefined,
+    show: false, backgroundColor: '#0c0e14',
+    title: 'ScanFinder — Search',
+    icon: path.join(__dirname, 'assets', 'icon.ico'),
+    webPreferences: {                       // SAME posture as the main window — the bridge is the only door
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  searchWin = w;
+  if (w.removeMenu) w.removeMenu();
+  w.loadFile(path.join(__dirname, 'renderer', 'search', 'index.html'));   // inside the navGuard root
+  w.once('ready-to-show', () => { try { if (st.maximized) w.maximize(); w.show(); } catch {} });
+  const grabFocus = () => { try { if (w && !w.isDestroyed()) w.webContents.focus(); } catch {} };
+  w.webContents.on('did-finish-load', grabFocus);
+  w.on('focus', grabFocus);
+  w.on('show', grabFocus);
+  w.on('close', () => saveSearchState(w));
+  w.on('closed', () => { if (searchWin === w) searchWin = null; });
+}
+ipcMain.handle('client-open-search', (_e, opts) => {
+  if (!client || !client.isAuthenticated()) return { ok: false, error: 'not signed in' };
+  openSearchWindow(opts);
+  return { ok: true };
+});
+// Pulled ONCE by the pop-out on load: the deep-link it was opened with (then cleared).
+ipcMain.handle('client-search-target', () => { const t = pendingSearch; pendingSearch = null; return t; });
+// The signed-in user's role/name for the pop-out (null = signed out → the shared UI shows read-only actions).
+ipcMain.handle('client-current-user', () => (client && client.isAuthenticated()) ? currentUser : null);
+// What the pop-out may expect of the server (its capability gate) + what this client was built for.
+ipcMain.handle('client-server-info', () => ({
+  serverVersion: lastHandshake ? lastHandshake.serverVersion : null,
+  clientContract: require('./apiClient').CLIENT_CONTRACT,
+  mode: lastHandshake ? lastHandshake.mode : null,
+}));
+// The pop-out saw a 401: the session is gone. Close it and let the main window sign out.
+ipcMain.on('client-popout-session-expired', (e) => {
+  if (!searchWin || e.sender !== searchWin.webContents) return;   // sender-scoped
+  closeSearchWindow();
+  try { if (win && !win.isDestroyed()) win.webContents.send('client-session-expired'); } catch {}
+});
 
 // Renderer-driven keyboard-focus repair (Windows): the preload requests this when a
 // click enters a text field while the render widget lacks OS keyboard focus (the
@@ -138,6 +225,7 @@ ipcMain.handle('client-set-server', async (_e, cfg) => {
                  caPem: (cfg.caPem && String(cfg.caPem)) || null };
   buildClient(norm);
   let h; try { h = await client.connect(); } catch (e) { return { ok: false, mode: 'block', reason: e.message }; }
+  lastHandshake = h;
   if (h.ok) { serverConfig = norm; saveServerConfig(norm); } // persist only when reachable + compatible
   return h;
 });
@@ -213,8 +301,11 @@ const HEARTBEAT_MS = 5000;
 function markConnection(alive) {
   if (alive === connAlive) return;                 // edge-triggered: only on change
   connAlive = alive;
-  if (win && !win.isDestroyed()) {
-    try { win.webContents.send(alive ? 'client-connection-restored' : 'client-connection-lost'); } catch { /* window gone */ }
+  // EVERY live window (the main window AND the search pop-out) — a pop-out that misses the overlay would
+  // keep offering controls against a dead server (Oracle 2026-09-13 seam 7).
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (w.isDestroyed()) continue;
+    try { w.webContents.send(alive ? 'client-connection-restored' : 'client-connection-lost'); } catch { /* window gone */ }
   }
 }
 function isNetworkError(e) {
@@ -251,7 +342,12 @@ ipcMain.handle('client-retry-connection', async () => {
 });
 
 ipcMain.handle('client-config',       () => ({ apiUrl: serverConfig ? urlOf(serverConfig) : null }));
-ipcMain.handle('client-connect',      () => client ? client.connect() : { ok: false, mode: 'block', reason: 'No server configured.' });
+ipcMain.handle('client-connect',      async () => {
+  if (!client) return { ok: false, mode: 'block', reason: 'No server configured.' };
+  const h = await client.connect();
+  lastHandshake = h;
+  return h;
+});
 ipcMain.handle('client-login',        async (_e, { username, password, totp }) => {
   if (!client) return { ok: false, error: 'No server configured.' };
   // A network hiccup at login (DNS/TLS/timeout) used to REJECT the invoke, leaving the
@@ -260,10 +356,20 @@ ipcMain.handle('client-login',        async (_e, { username, password, totp }) =
   let r;
   try { r = await client.login(username, password, totp); }
   catch (e) { return { ok: false, error: (e && e.message) || 'Could not reach the server.' }; }
-  if (client.isAuthenticated()) startHeartbeat();   // watch the connection for this session
+  if (client.isAuthenticated()) {
+    startHeartbeat();   // watch the connection for this session
+    // Cache the signed-in identity for the search pop-out (no token — role + names only).
+    const u = (r && r.user) || {};
+    currentUser = { role: u.role || null, username: u.username || null, displayName: u.displayName || u.username || null };
+  }
   return r;
 });
-ipcMain.handle('client-logout',       () => { stopHeartbeat(); pageCache.clear(); return client ? client.logout() : { ok: true }; });
+ipcMain.handle('client-logout',       () => {
+  stopHeartbeat(); pageCache.clear();
+  currentUser = null;
+  closeSearchWindow();   // the pop-out must not outlive the session (Oracle seam 7)
+  return client ? client.logout() : { ok: true };
+});
 ipcMain.handle('client-change-password', async (_e, { currentPassword, newPassword } = {}) => {
   if (!client) return { ok: false, error: 'Not connected to a server.' };
   try { return await client.changePassword(currentPassword, newPassword); }

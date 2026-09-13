@@ -28,10 +28,22 @@ contextBridge.exposeInMainWorld('scanfinder', {
   getPages:        (id) => ipcRenderer.invoke('client-get-pages', id),
   getThumbnail:    (id) => ipcRenderer.invoke('client-get-thumbnail', id),
   isAuthenticated: () => ipcRenderer.invoke('client-authed'),
-  // Connection watch: main pushes lost/restored; the renderer can force a re-check.
+  // Connection watch: main pushes lost/restored (to EVERY window); the renderer can force a re-check.
   onConnectionLost:     (cb) => ipcRenderer.on('client-connection-lost',     () => cb()),
   onConnectionRestored: (cb) => ipcRenderer.on('client-connection-restored', () => cb()),
   retryConnection:      () => ipcRenderer.invoke('client-retry-connection'),
+  // Search pop-out (client search parity S1, 2026-09-13). openSearch({ query, docId }) opens/focuses the
+  // pop-out (main window); the pop-out pulls its deep-link once (searchTarget), learns who is signed in
+  // (currentUser — role/name only, never a token) and what the server can do (serverInfo), receives live
+  // deep-links while open, and reports a 401 so the main window signs out.
+  openSearch:           (opts) => ipcRenderer.invoke('client-open-search', opts || {}),
+  searchTarget:         () => ipcRenderer.invoke('client-search-target'),
+  currentUser:          () => ipcRenderer.invoke('client-current-user'),
+  serverInfo:           () => ipcRenderer.invoke('client-server-info'),
+  onSearchSetQuery:     (cb) => ipcRenderer.on('client-search-set-query', (_e, q) => cb(q)),
+  onSearchGotoDoc:      (cb) => ipcRenderer.on('client-search-goto-doc', (_e, id) => cb(id)),
+  popoutSessionExpired: () => ipcRenderer.send('client-popout-session-expired'),
+  onSessionExpired:     (cb) => ipcRenderer.on('client-session-expired', () => cb()),
   about:           () => ipcRenderer.invoke('client-about'),
   openLicenses:    () => ipcRenderer.invoke('client-open-licenses'),
   recycle: {

@@ -25,29 +25,27 @@ let docTypesCache = null;  // [{slug,name,ref_field_key,date_field_key,fields:[.
 let rvCurrentId = null;    // doc open in the Review detail pane
 let rvHeartbeat = null;    // presence "I'm viewing this" timer
 
-// ── Theme (mirrors the main app's six named themes; persisted on this device) ──
-const THEMES = ['light', 'warm', 'slate', 'dark', 'midnight', 'graphite',
-                'spring', 'summer', 'autumn', 'winter', 'festive', 'festivelight', 'spooky'];
-const DARK_THEMES = new Set(['dark', 'midnight', 'graphite', 'festive', 'spooky']);
+// ── Theme (mirrors the main app's named themes; persisted on this device) ──
+// The applier itself lives in themeBoot.js (shared with the search pop-out — one localStorage key, live
+// cross-window sync via the storage event). This page keeps only its own controls (select/toggle/logo).
+const THEMES = window.ClientTheme.THEMES;
+const DARK_THEMES = window.ClientTheme.DARK_THEMES;
 const _ls = {
   get: (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } },
   set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
 };
-function currentTheme() { const t = _ls.get('sf-client-theme', 'warm'); return THEMES.includes(t) ? t : 'warm'; }
+function currentTheme() { return window.ClientTheme.current(); }
 // Real logo path for the current mode; syncLogos swaps every brand img on a theme change.
 function _logoSrc() { return DARK_THEMES.has(currentTheme()) ? '../assets/logo-mark-dark.svg' : '../assets/logo-mark.svg'; }
 function syncLogos() { document.querySelectorAll('img[data-logo]').forEach((im) => { im.src = _logoSrc(); }); }
 function applyTheme(name) {
-  const t = THEMES.includes(name) ? name : 'warm';
-  const root = document.documentElement;
-  root.setAttribute('data-theme', t);
-  root.setAttribute('data-mode', DARK_THEMES.has(t) ? 'dark' : 'light');
-  _ls.set('sf-client-theme', t);
-  _ls.set(DARK_THEMES.has(t) ? 'sf-client-dark' : 'sf-client-light', t);   // remember last light/dark pick
+  const t = window.ClientTheme.apply(name);
   const sel = $('theme-select'); if (sel) sel.value = t;
   const tog = $('side-dark-toggle'); if (tog) tog.checked = DARK_THEMES.has(t);
   syncLogos();
 }
+// A theme change written by another client page re-syncs this page's controls + logo.
+window.ClientTheme.onChange((t) => { const sel = $('theme-select'); if (sel) sel.value = t; const tog = $('side-dark-toggle'); if (tog) tog.checked = DARK_THEMES.has(t); syncLogos(); });
 function toggleDarkMode() {
   const cur = currentTheme();
   applyTheme(DARK_THEMES.has(cur) ? _ls.get('sf-client-light', 'warm') : _ls.get('sf-client-dark', 'dark'));
@@ -182,6 +180,8 @@ function showConnect(reason) { showOnly('connect'); $('connect-err').textContent
 function showConnLost() { $('conn-lost')?.classList.remove('hidden'); setConn('block', 'Connection lost'); }
 function hideConnLost() { $('conn-lost')?.classList.add('hidden'); }
 function wireConnLost() {
+  // The search pop-out saw a 401 (session expired/revoked): main closed it — sign this window out too.
+  api.onSessionExpired?.(() => { if (role) { doLogout(); toast('Your session ended — please sign in again.', 'err'); } });
   api.onConnectionLost?.(() => { _connAlive = false; showConnLost(); });   // Slice 1: pause the badge poll too
   api.onConnectionRestored?.(() => {
     _connAlive = true; hideConnLost(); setConn('ok', 'Reconnected');
@@ -435,9 +435,13 @@ function setView(view) {
   navActive($('nav-quickfile'), view === 'quickfile');
   navActive($('nav-settings'), view === 'settings');
   navActive($('nav-recycle'), view === 'recycle');
+  // Search now lives in its OWN window (the shared search screen — client search parity S1). The in-pane
+  // #view-search survives ONLY as the mailbox's document viewer ("View doc" / the decision bar): its legacy
+  // search bar + results column are hidden there so it reads as a viewer, not a second, weaker search.
+  $('view-search').classList.toggle('legacy-viewer', view === 'search');
   const meta = {
     home:     ['Home', 'Your dashboard'],
-    search:   ['Search', 'Find and preview filed documents'],
+    search:   ['Document', 'From your mailbox — to search, use Search in the sidebar (opens in its own window)'],
     mailbox:  ['Mailbox', 'Approvals routed to and from you'],
     review:   ['Review', 'Check and file documents waiting in the queue'],
     quickfile:['Quick File', 'Send a document that needs no scanning straight to filing'],
@@ -447,14 +451,19 @@ function setView(view) {
   $('vh-title').textContent = meta[0];
   $('vh-sub').textContent = meta[1];
   if (view === 'home') loadHome();
-  if (view === 'search' && !searchPrimed) { searchPrimed = true; runSearch(); }   // prime once
   if (view === 'mailbox') loadMailbox();
   if (view === 'review') loadReview();
   if (view === 'quickfile') loadQuickFile();
   if (view === 'recycle') loadRecycleBin();
 }
 $('nav-home').addEventListener('click', () => setView('home'));
-$('nav-search').addEventListener('click', () => setView('search'));
+// Search opens in its own window: the SHARED search screen (the same code the core Search window runs).
+// Main opens/focuses the pop-out; this page stays where it is.
+async function openSearchWindow(opts) {
+  try { const r = await api.openSearch(opts || {}); if (!(r && r.ok)) toast('Sign in to search.', 'err'); }
+  catch { toast('Could not open Search.', 'err'); }
+}
+$('nav-search').addEventListener('click', () => openSearchWindow());
 $('nav-mailbox').addEventListener('click', () => setView('mailbox'));
 $('nav-review').addEventListener('click', () => setView('review'));
 $('nav-quickfile').addEventListener('click', () => setView('quickfile'));
@@ -924,10 +933,8 @@ $('side-dark-toggle')?.addEventListener('change', toggleDarkMode);
 
 // ── Home dashboard ───────────────────────────────────────────────────────────────
 function homeSearch() {
-  $('f-text').value = $('home-search-input').value.trim();
-  searchPrimed = true;          // Home drives the run; stop setView from double-running
-  setView('search');
-  runSearch();
+  // Home's search box hands the term to the search WINDOW (opens it, or pushes the term live if it's up).
+  openSearchWindow({ query: $('home-search-input').value.trim() });
 }
 $('home-search-btn')?.addEventListener('click', homeSearch);
 $('home-search-input')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') homeSearch(); });
@@ -951,7 +958,7 @@ function recentCard(rows) {
     const row = document.createElement('button'); row.className = 'hc-row';
     row.innerHTML = `<span class="hc-row-nm">${esc(d.supplier_name || d.original_filename || 'Untitled')}</span>
       <span class="hc-row-meta mono">${esc(d.reference_number || '—')} · ${esc(d.doc_date || '')}</span>`;
-    row.addEventListener('click', () => { searchPrimed = true; setView('search'); openDocument(d.id); });
+    row.addEventListener('click', () => openSearchWindow({ docId: d.id }));   // open it in the search window
     list.appendChild(row);
   }
   return el;

@@ -912,6 +912,12 @@
     </div>
   </div>
 
+  <!-- Search lives in its own window since S1 (client search parity, 2026-09-13). #view-search is kept ONLY
+       as the mailbox's document viewer: in that role its legacy search bar + results column hide. -->
+  <style>
+    #view-search.legacy-viewer .searchbar, #view-search.legacy-viewer .results, #view-search.legacy-viewer .pane-resizer { display: none !important; }
+  </style>
+  <script src="themeBoot.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

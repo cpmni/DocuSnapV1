@@ -30,8 +30,9 @@ console.log('1. the input lives in the preview Find cluster (top-right nav bar)'
         /id="btn-match-prev"[^>]*disabled/.test(nav) && /id="btn-match-next"[^>]*disabled/.test(nav));
   check('the .mn-input has a style rule', /\.mn-input\s*\{/.test(css));
   const shell = read('src/windows/search/index.html');
+  const tag = (f) => shell.indexOf(`<script src="../shared/search-ui/${f}"></script>`);   // the SCRIPT TAG, not a comment naming the file
   check('the core page mounts the shared markup (searchMarkup.js loads before the other shared scripts)',
-        shell.indexOf('search-ui/searchMarkup.js') > 0 && shell.indexOf('search-ui/searchMarkup.js') < shell.indexOf('search-ui/searchState.js'));
+        tag('searchMarkup.js') > 0 && tag('searchMarkup.js') < tag('searchState.js'));
 }
 
 console.log('2. the Find cluster is shown whenever a doc is previewed (input always usable)');
