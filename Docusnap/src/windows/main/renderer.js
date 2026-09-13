@@ -817,6 +817,7 @@ const HELP_TEXTS = {
   'backup':        'When you last exported the settings backup — and a button to do it now.',
   'clients':       'Search-client seats in use on your network, and who is connected.',
   'begin-import':  'Pick a folder of scans and process them into the queue.',
+  'quick-file':    'File a document that needs no scanning (Word, Excel, email, PDF): type the company and title and it files straight into your folders, searchable, without OCR.',
   'source-folder': 'The folder Scan Finder imports from. Click to choose a different one.',
   'process':       'Start processing the selected source folder into documents.',
   'review':        'Open the Review window to check, correct and confirm extracted data before filing. The badge shows how many items are waiting.',

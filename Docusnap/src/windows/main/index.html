@@ -759,6 +759,11 @@
       <button class="rail-item" id="btn-import" data-view="import" data-help-key="begin-import">
         <svg class="ico" aria-hidden="true"><use href="#i-folder"/></svg><span>Import</span>
       </button>
+      <!-- Quick File (non-OCR intake) — hidden unless direct_intake_enabled; wired by quickfile.js. No
+           data-view (it opens a modal, not a view), so the view-switcher never grabs it. -->
+      <button class="rail-item" id="nav-quickfile" data-help-key="quick-file" style="display:none;" title="File a document that needs no scanning (Word, Excel, email, PDF)">
+        <svg class="ico" aria-hidden="true"><use href="#i-sparkles"/></svg><span>Quick File</span>
+      </button>
       <button class="rail-item" id="btn-review" data-help-key="review">
         <svg class="ico" aria-hidden="true"><use href="#i-inbox"/></svg><span>Review</span>
         <span id="review-badge" class="rail-badge">0</span>

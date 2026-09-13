@@ -20,10 +20,16 @@
   const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
   document.addEventListener('DOMContentLoaded', async () => {
-    const btn = document.getElementById('btn-quickfile');
-    if (!btn) return;
-    try { const r = await D.quickFileDocTypes(); if (r && r.ok && r.enabled) btn.style.display = ''; } catch { /* stays hidden */ }
-    btn.addEventListener('click', openModal);
+    // Two entry points: the nav-rail item (the Home menu) + the import-actions button. Both hidden until
+    // direct_intake_enabled is on; both open the same modal.
+    const triggers = ['nav-quickfile', 'btn-quickfile'].map((id) => document.getElementById(id)).filter(Boolean);
+    if (!triggers.length) return;
+    let enabled = false;
+    try { const r = await D.quickFileDocTypes(); enabled = !!(r && r.ok && r.enabled); } catch { /* stays hidden */ }
+    for (const t of triggers) {
+      t.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); openModal(); });
+      if (enabled) t.style.display = '';   // remove the inline `none`; CSS (.rail-item / .btn) takes over
+    }
   });
 
   let overlay = null;
