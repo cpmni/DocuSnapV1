@@ -8835,7 +8835,15 @@ document.getElementById('lh-body').addEventListener('click', async (e) => {
     return;
   }
   const edit = e.target.closest('.lh-edit');
-  if (edit) { _lhEditing = _lhRendered[+edit.dataset.idx]?.value ?? null; _lhPending = null; renderLearningHistory(); return; }
+  if (edit) {
+    // Clean blur BEFORE the innerHTML rebuild. The clicked ✎ button is the active element; wiping
+    // lh-body's innerHTML while it holds focus unroutes Chromium's keyboard widget — the new input
+    // then shows a caret and accepts Backspace but drops typed characters (owner 2026-09-13, "caret
+    // ok, could backspace but no typing"). Moving focus to <body> first keeps key routing intact so
+    // the rAF focus on the new #lh-edit-input (see renderLearningHistory) can actually receive input.
+    try { edit.blur(); } catch {}
+    _lhEditing = _lhRendered[+edit.dataset.idx]?.value ?? null; _lhPending = null; renderLearningHistory(); return;
+  }
   if (e.target.closest('.lh-ecancel')) { _lhEditing = null; renderLearningHistory(); return; }
   const save = e.target.closest('.lh-save');
   if (save) { const inp = document.getElementById('lh-edit-input'); if (inp) await commitLhEdit(inp); return; }
