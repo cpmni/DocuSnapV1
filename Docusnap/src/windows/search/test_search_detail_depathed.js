@@ -18,17 +18,31 @@ const path = require('path');
 let fails = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
 
-// 1 — no search-window script may call the FULL read (source pin over the window's scripts).
+// 1 — no search-window script may call the FULL read (source pin over the window's scripts). The set
+// spans the window's OWN scripts AND the shared search-ui module it loads (../shared/search-ui/*.js —
+// since the 2026-09-13 extraction; a `/`-less filter alone would leave those unscanned = a vacuous
+// green, the Oracle's seam 2). The common shared scripts (theme/helpmode/dialogFocus) are out of scope.
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-const locals = [...html.matchAll(/<script src="([^"]+\.js)"><\/script>/g)].map(m => m[1])
-  .filter(f => !f.includes('/'));
-const offenders = locals.filter(f => {
+const scripts = [...html.matchAll(/<script src="([^"]+\.js)"><\/script>/g)].map(m => m[1])
+  .filter(f => !f.includes('/') || f.includes('/search-ui/'));
+const offenders = scripts.filter(f => {
   try { return fs.readFileSync(path.join(__dirname, f), 'utf8').includes('getDocumentWithExtractions'); }
   catch { return false; }
 });
-check(`no search-window script calls getDocumentWithExtractions (checked ${locals.length})`
+check(`the scanned set includes the shared search-ui module (${scripts.filter(f => f.includes('/search-ui/')).length} files)`,
+      scripts.some(f => f.includes('/search-ui/')));
+check(`no search-window or shared search-ui script calls getDocumentWithExtractions (checked ${scripts.length})`
       + (offenders.length ? ` — OFFENDERS: ${offenders.join(', ')}` : ''),
       offenders.length === 0);
+// The shared preview reaches the detail ONLY via the transport, and the core adapter maps THAT to the
+// PROJECTED getDocumentDetail bridge call (a positive assertion — the shared module never names the
+// bridge, so without this the pin could not tell a projected read from a full one on the core).
+const sharedPreview = fs.readFileSync(path.join(__dirname, '..', 'shared', 'search-ui', 'searchPreview.js'), 'utf8');
+const adapter = fs.readFileSync(path.join(__dirname, 'coreTransport.js'), 'utf8');
+check('the shared preview fetches the selected doc through SearchTransport.getDocumentDetail',
+      /window\.SearchTransport\.getDocumentDetail\(doc\.id\)/.test(sharedPreview) && !/window\.docusnap/.test(sharedPreview));
+check('coreTransport.getDocumentDetail is a pass-through to window.docusnap.getDocumentDetail (the projected DTO read)',
+      /getDocumentDetail:\s*\(\.\.\.a\) => d\.getDocumentDetail\(\.\.\.a\)/.test(adapter) && /const d = window\.docusnap;/.test(adapter));
 
 // 2 — the projection itself: /v1 FORBIDDEN fields never survive; extractions are projected.
 const dto = require(path.join(__dirname, '..', '..', 'services', 'dto.js'));

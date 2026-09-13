@@ -1076,7 +1076,9 @@ const _SMOKE_WINDOWS = [
   { name: 'main',          globals: ['docusnap'] },
   { name: 'review',        globals: ['docusnap', 'ListCaption', 'ReviewReadiness', 'ReviewReadiness.partition', 'ReviewReadiness.classify'] },
   { name: 'settings',      globals: ['docusnap'] },
-  { name: 'search',        globals: ['docusnap', 'SearchState', 'SearchActions', 'SearchResults', 'SearchPreview', 'SearchQuery', 'SearchWorkflow', 'SearchMailbox', 'SearchStamp'] },
+  // SearchTransport/SearchUI/SearchThumbs = the shared search-ui adapter + module (2026-09-13): a dropped
+  // adapter script would leave every shared module throwing at first use — the class this probe exists for.
+  { name: 'search',        globals: ['docusnap', 'SearchTransport', 'SearchTransport.caps', 'SearchState', 'SearchThumbs', 'SearchActions', 'SearchResults', 'SearchPreview', 'SearchQuery', 'SearchUI', 'SearchWorkflow', 'SearchMailbox', 'SearchStamp'] },
   { name: 'teach',         globals: ['docusnap'] },
   { name: 'help',          globals: ['docusnap'] },
   { name: 'welcome',       globals: ['docusnap'] },

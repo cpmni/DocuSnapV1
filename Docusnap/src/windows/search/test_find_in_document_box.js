@@ -30,9 +30,10 @@ console.log('1. the input lives in the preview Find cluster (top-right nav bar)'
 
 console.log('2. the Find cluster is shown whenever a doc is previewed (input always usable)');
 {
-  const pv = read('src/windows/search/search-preview.js');
+  const pv = read('src/windows/shared/search-ui/searchPreview.js');   // the shared search UI (2026-09-13)
   const sync = pv.slice(pv.indexOf('function _syncPageNav'), pv.indexOf('function _showPage'));
-  check("_syncPageNav reveals #match-nav when pages exist", /getElementById\('match-nav'\)[^\n]*display = ''/.test(sync));
+  check("_syncPageNav reveals #match-nav when pages exist (hidden ONLY when the transport cannot find — caps.find === false)",
+        /const findOn = _cap\('find'\);/.test(sync) && /getElementById\('match-nav'\)[^\n]*display = findOn \? '' : 'none'/.test(sync));
   check('_updateMatchNav no longer hides the whole group (only count + disable steppers)',
         !/getElementById\('match-nav'\); if \(nav\) nav\.style\.display/.test(pv)
         && /btn-match-prev'\); if \(prev\) prev\.disabled = !on/.test(pv));
@@ -40,7 +41,7 @@ console.log('2. the Find cluster is shown whenever a doc is previewed (input alw
 
 console.log('3. the input searches ONLY the current doc, with step/clear keys');
 {
-  const pv = read('src/windows/search/search-preview.js');
+  const pv = read('src/windows/shared/search-ui/searchPreview.js');   // the shared search UI (2026-09-13)
   check('runDocFind calls findInDocument for the SELECTED doc', /findInDocument\(doc\.id, term\)/.test(pv));
   check('a stale-selection guard protects a late result', /if \(s\.selectedDoc !== doc\) return;/.test(pv));
   check('no-match state is shown on the input', /classList\.add\('no-match'\)/.test(pv));
@@ -55,7 +56,7 @@ console.log('3. the input searches ONLY the current doc, with step/clear keys');
 
 console.log('4. opening a doc from a search seeds the box with the list term');
 {
-  const pv = read('src/windows/search/search-preview.js');
+  const pv = read('src/windows/shared/search-ui/searchPreview.js');   // the shared search UI (2026-09-13)
   check('selectDoc sets the input value to the active query', /findInput\.value = q;/.test(pv));
 }
 

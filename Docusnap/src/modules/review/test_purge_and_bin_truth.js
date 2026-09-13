@@ -117,7 +117,7 @@ console.log('1. "including their PDF files" is now true');
 
 // ── source pins: the renderer must not gate a bin action on a rendered count ─────────────────
 console.log('\n2. the bin is counted from the database, not the screen');
-const sq = fs.readFileSync(path.join(REPO, 'src', 'windows', 'search', 'search-query.js'), 'utf8');
+const sq = fs.readFileSync(path.join(REPO, 'src', 'windows', 'shared', 'search-ui', 'searchQuery.js'), 'utf8');   // the shared search UI (2026-09-13)
 check('there is one shared bin-contents read', /async function _binRows\(\)/.test(sq));
 check('Restore all counts the BIN', /const rows = await _binRows\(\);[\s\S]{0,200}Restore all/.test(sq));
 check('Empty bin counts the BIN', /const rows = await _binRows\(\);[\s\S]{0,300}Permanently delete/.test(sq));

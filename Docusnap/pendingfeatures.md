@@ -5291,3 +5291,11 @@ taught date yields to a sub-90 label-matched keyword date, KW leg only, auto-fil
   a learned anchor on the same date field) AND higher-risk (a low-conf anchor's confidence often reflects
   LOCATION uncertainty — a drifted anchor may read a different date), so it needs its own real exhibit +
   gate. The KW-leg-only scope is pinned (test_taught_date_invalid_yield.py) so a "symmetrise it" edit trips.
+
+## 2026-09-13 — Search: confidence pips missing on the FIRST paint (pre-existing, found by the S0 functional harness)
+`SearchUI.init` (formerly renderer.js `_init`) runs `doSearch()` BEFORE `getEntitlement()` resolves (the
+deliberate results-first ordering), and nothing re-renders the LIST once `SearchState.entitled` flips true — so
+an unconfirmed row's confidence pip (and the enhanced tints) only appear on the NEXT list render (typing, a
+focus refresh, a bin round-trip). Pinned AS-IS in `scripts/search-window-harness.js` for the S0 byte-identity
+gate. Fix (tiny, after S0b): after the entitlement resolves, if `entitled` became true and the list is idle,
+re-run `doSearch()` once (or re-decorate the rows) — must stay debounced + not yank a selected doc.

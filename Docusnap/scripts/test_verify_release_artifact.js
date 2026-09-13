@@ -80,6 +80,15 @@ check('html-asset: a page whose script refs all resolve passes (external/absolut
 const HTML_BAD = { '/src/windows/review/index.html': '<script src="../shared/theme.js"></script><script src="../shared/listCaption.js"></script>' };
 check('html-asset: a deleted renderer-served script (the hardened-build P0) → refused, naming the resolved path', (() => { const p = htmlAssetProblems(ENTRIES, HTML_BAD); return p.length === 1 && /\/src\/windows\/shared\/listCaption\.js/.test(p[0]); })());
 check('evaluate() runs the asset belt when htmlByPath is given', has(evaluate({ ...GOOD, htmlByPath: HTML_BAD }), /html-asset/));
+// The REAL Search page against the REAL source tree (client search parity 2026-09-13, Oracle C5): its scripts
+// now span ../shared/search-ui/ — every <script src>/<link href> must resolve to a file that `files: src/**`
+// would pack. A typo'd shared path or a dropped adapter script fails here before any build.
+{ const walk = (dir, out = []) => { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, e.name); if (e.isDirectory()) walk(p, out); else out.push('/' + path.relative(path.join(__dirname, '..'), p).split(path.sep).join('/')); } return out; };
+  const realEntries = walk(path.join(__dirname, '..', 'src', 'windows'));
+  const searchHtml = fs.readFileSync(path.join(__dirname, '..', 'src', 'windows', 'search', 'index.html'), 'utf8');
+  const problems = htmlAssetProblems(realEntries, { '/src/windows/search/index.html': searchHtml });
+  check('html-asset: the REAL Search page resolves every script/link against the real src/windows tree (shared search-ui included)' + (problems.length ? ` — ${problems.join('; ')}` : ''), problems.length === 0);
+  check('html-asset: the Search page loads the shared search-ui module + its adapter', /coreTransport\.js/.test(searchHtml) && /\.\.\/shared\/search-ui\/searchInit\.js/.test(searchHtml)); }
 check('identity: the smoke-resolved buildRev must equal the packaged package.json (bundle can see the manifest)', has(evaluate({ ...GOOD, smokeIdentity: { testBuild: false, buildRev: 'packaged' } }), /cannot see the packaged package\.json/) && !has(evaluate({ ...GOOD, smokeIdentity: { testBuild: false, buildRev: GOOD.pkg.buildRev } }), /identity:/));
 check('window-smoke: a clean run (exit 0 + ok report) adds no problem', !has(evaluate(GOOD), /window-smoke/));
 check('window-smoke: a failed window (exit 5, missing load-bearing global — the dropped-reviewReadiness.js P0 class) → refused, naming the window + global',

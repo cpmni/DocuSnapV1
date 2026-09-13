@@ -102,7 +102,7 @@ for (const name of ['getReviewEvents', 'onReviewEvent', 'markReviewEventsSeen', 
 
 console.log(LF + 'Chris round 17 cards 4 / 5a / 6 / 8 (eric batch):');
 const rh = read('..', '..', 'modules', 'review', 'handler.js'), ph = read('..', '..', 'modules', 'processing', 'handler.js');
-const rsvc = read('..', '..', 'services', 'repairService.js'), sa = read('..', 'search', 'search-actions.js');
+const rsvc = read('..', '..', 'services', 'repairService.js'), sa = read('..', 'shared', 'search-ui', 'searchActions.js');   // the shared search UI (2026-09-13)
 const tile = fn('async function refreshAutoCommittedBar');
 check('card 4: under the strip the tile yields (early return on _asOn) — placed AFTER the "viewing" back-bar branch',
       /if \(typeof _asOn !== 'undefined' && _asOn\) \{ bar\.style\.display = 'none'; bar\.innerHTML = ''; return; \}/.test(tile)

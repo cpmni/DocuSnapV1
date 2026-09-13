@@ -67,7 +67,7 @@ console.log('3. the Search window subscribes (push leg) and keeps the focus belt
 {
   const pre = read('src/preload.js');
   check('preload exposes onBinChanged', /onBinChanged:\s+\(cb\) => ipcRenderer\.on\('bin-changed', \(\) => cb\(\)\)/.test(pre));
-  const sq = read('src/windows/search/search-query.js');
+  const sq = read('src/windows/shared/search-ui/searchQuery.js');   // the shared search UI (2026-09-13)
   check('subscriber re-pulls only in bin mode, on a trailing debounce with its OWN timer',
         /onBinChanged\(\(\) => \{\s*\n\s*if \(!\(window\.SearchState && window\.SearchState\.binMode\)\) return;\s*\n\s*clearTimeout\(binTimer\)/.test(sq));
   check('the focus-refresh belt is kept', /window\.addEventListener\('focus', \(\) => \{\s*\n\s*if \(window\.SearchState && window\.SearchState\.binMode\) doSearch\(\);/.test(sq));

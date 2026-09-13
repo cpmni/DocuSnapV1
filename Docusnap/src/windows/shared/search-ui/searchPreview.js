@@ -1,5 +1,8 @@
 'use strict';
 // Preview panel: document image viewer with page navigation + fields sidebar.
+// SHARED SEARCH UI — IO only through window.SearchTransport (see searchState.js header).
+// Capability gates (client parity): caps.singlePage / pageCount / find / spreadsheet — absent = true,
+// so the core (every cap true) runs exactly the code path it always did.
 
 // ── Fields sidebar ────────────────────────────────────────────────────────────
 
@@ -75,8 +78,10 @@ function _syncPageNav() {
   nav.style.display = '';                                    // reverts to the CSS flex row
   // Find-in-document is available whenever a page is shown (born-digital PDF text). The stepper counts
   // stay 0/0 with the ‹ › disabled until a term matches — the input itself is always ready to type in.
-  const mnav = document.getElementById('match-nav'); if (mnav) mnav.style.display = '';
-  const msep = document.getElementById('match-sep'); if (msep) msep.style.display = '';
+  // A transport that cannot find (caps.find === false) hides the whole Find cluster instead.
+  const findOn = _cap('find');
+  const mnav = document.getElementById('match-nav'); if (mnav) mnav.style.display = findOn ? '' : 'none';
+  const msep = document.getElementById('match-sep'); if (msep) msep.style.display = findOn ? '' : 'none';
   const multi = s.currentPages.length > 1;
   document.querySelectorAll('#page-nav .pn-pages').forEach(el => { el.style.display = multi ? '' : 'none'; });
   if (multi) {
@@ -97,7 +102,7 @@ async function _showPage(idx) {
   if (!s.currentPages[idx]) {
     const mine = s.selectedDoc;
     let uri = null;
-    try { uri = await window.docusnap.getDocumentPage(mine.id, idx, SEARCH_RENDER_SCALE); } catch { /* leave the hole */ }
+    try { uri = await window.SearchTransport.getDocumentPage(mine.id, idx, SEARCH_RENDER_SCALE); } catch { /* leave the hole */ }
     if (s.selectedDoc !== mine || s.currentPage !== idx) return;   // a newer selection / page won meanwhile
     if (uri) s.currentPages[idx] = uri;
   }
@@ -234,7 +239,7 @@ async function runDocFind(term) {
   term = String(term || '').trim();
   if (!doc || !term) { _findTerm = ''; _clearMatches(); if (input) input.classList.remove('no-match'); return; }
   let res;
-  try { res = await window.docusnap.findInDocument(doc.id, term); }
+  try { res = await window.SearchTransport.findInDocument(doc.id, term); }
   catch { _findTerm = term; _clearMatches(); return; }
   if (s.selectedDoc !== doc) return;          // a newer selection now owns the preview pane
   _findTerm = term;
@@ -337,7 +342,7 @@ async function selectDoc(doc) {
   // update, a DB hiccup, the doc deleted mid-click, an IPC error) shows an honest state
   // instead of leaving the spinner forever — the silent-failure class Chris keeps catching.
   try {
-    const full = await window.docusnap.getDocumentDetail(doc.id);   // PROJECTED — no paths/ocr_text (Document-detail DTO)
+    const full = await window.SearchTransport.getDocumentDetail(doc.id);   // PROJECTED — no paths/ocr_text (Document-detail DTO)
     if (s.selectedDoc !== mine) return;   // a newer selection now owns the preview pane
     // `full` (getDocumentDetail) now carries type_name (previewService resolves it) alongside the
     // extractions; the passed `doc` may be a BARE {id} from a mailbox/workflow row. Merge ONCE and use
@@ -356,21 +361,22 @@ async function selectDoc(doc) {
     // showing. Other pages render on demand in _showPage. When the count is known we size a sparse array
     // so nav is live at once; when it's unknown we show page 1, then discover the rest in the BACKGROUND
     // (page 1 is already visible, so the user is never blocked). Images / office = one cheap render.
+    // A transport without a single-page read (caps.singlePage === false) takes the full-render path.
     const _pageCount = Number(merged.page_count) || 0;
     const _isPdf = /\.pdf$/i.test(merged.original_filename || merged.stored_filename || '');
-    if (_isPdf) {
-      const first = await window.docusnap.getDocumentPage(doc.id, 0, SEARCH_RENDER_SCALE);
+    if (_isPdf && _cap('singlePage')) {
+      const first = await window.SearchTransport.getDocumentPage(doc.id, 0, SEARCH_RENDER_SCALE);
       if (s.selectedDoc !== mine) return;
       if (first) {
         s.currentPages = _pageCount > 1 ? new Array(_pageCount) : [first];   // sparse when count known
         s.currentPages[0] = first;
         s.currentPage = 0;
-        if (_pageCount <= 1) {
+        if (_pageCount <= 1 && _cap('pageCount')) {
           // Count unknown (NULL/0 — e.g. a Quick File doc whose page count was never recorded): PROBE the
           // count cheaply (open the PDF, read len, NO render) so page nav appears at once and the rest
           // render on demand in _showPage. Avoids rendering every page in the background just to learn the
           // count (that made nav take ~15s on a 34-page doc). Staleness-guarded; probe failure → single page.
-          window.docusnap.getDocumentPageCount(doc.id).then((cnt) => {
+          window.SearchTransport.getDocumentPageCount(doc.id).then((cnt) => {
             if (s.selectedDoc !== mine) return;
             if (Number.isFinite(cnt) && cnt > 1) {
               const arr = new Array(cnt);
@@ -381,14 +387,14 @@ async function selectDoc(doc) {
           }).catch(() => { /* page 1 already shown; nav stays single */ });
         }
       } else {                                          // page-1 render failed — fall back to the full render
-        s.currentPages = await window.docusnap.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE);
+        s.currentPages = await window.SearchTransport.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE);
         if (s.selectedDoc !== mine) return;
         s.currentPage = 0;
       }
     } else {
       // DE-PATHED (owner 2026-08-02): rows no longer carry paths; fetch by docId alone — an
       // unresolvable file simply yields []. One render call (single page / image = cheap).
-      s.currentPages = await window.docusnap.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE);
+      s.currentPages = await window.SearchTransport.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE);
       if (s.selectedDoc !== mine) return;
       s.currentPage = 0;
     }
@@ -401,9 +407,9 @@ async function selectDoc(doc) {
       const findInput = document.getElementById('inp-find-doc');
       if (findInput) { findInput.value = q; findInput.classList.remove('no-match'); }
       // Jump to / highlight the active search term (born-digital PDFs; best-effort, staleness-guarded).
-      if (q) {
+      if (q && _cap('find')) {
         try {
-          const res = await window.docusnap.findInDocument(doc.id, q);
+          const res = await window.SearchTransport.findInDocument(doc.id, q);
           if (s.selectedDoc !== mine) return;    // a newer selection now owns the pane
           _findTerm = q;
           _matches = (res && Array.isArray(res.matches)) ? res.matches : [];
@@ -513,8 +519,9 @@ function _wireColResize(ph) {
 async function _tryRenderSpreadsheet(doc, ph) {
   const fn = doc.original_filename || doc.stored_filename || '';
   if (!/\.xlsx$/i.test(fn)) return false;           // grid preview is xlsx-only
+  if (!_cap('spreadsheet')) return false;           // a transport without a grid read → the honest "no preview"
   let grid = null;
-  try { grid = await window.docusnap.getSpreadsheetGrid(doc.id); } catch { return false; }
+  try { grid = await window.SearchTransport.getSpreadsheetGrid(doc.id); } catch { return false; }
   if (window.SearchState.selectedDoc !== doc) return true;   // a newer selection owns the pane
   if (!grid || !Array.isArray(grid.sheets) || !grid.sheets.length) return false;
   const multi = grid.sheets.length > 1;

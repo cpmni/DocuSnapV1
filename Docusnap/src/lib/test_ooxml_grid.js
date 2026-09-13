@@ -57,7 +57,7 @@ console.log('3. wiring — service, IPC, preload, renderer');
   const pre = read('src/preload.js');
   check('preload exposes getSpreadsheetGrid', /getSpreadsheetGrid:\s+\(id\)\s+=> ipcRenderer\.invoke\('get-spreadsheet-grid', id\)/.test(pre));
 
-  const pv = read('src/windows/search/search-preview.js');
+  const pv = read('src/windows/shared/search-ui/searchPreview.js');   // the shared search UI (2026-09-13)
   check('renderer tries the grid when a doc has no image pages', /_tryRenderSpreadsheet\(merged, ph\)/.test(pv));
   check('grid render is xlsx-gated + calls the bridge', /\/\\\.xlsx\$\/i\.test\(fn\)/.test(pv) && /getSpreadsheetGrid\(doc\.id\)/.test(pv));
 

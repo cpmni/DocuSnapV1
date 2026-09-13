@@ -504,15 +504,23 @@
 
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
-<script src="../shared/thumbs.js"></script>
+<!-- NOTE: ../shared/thumbs.js is deliberately NOT loaded here — the shared search UI ships its own
+     transport-fed loader (search-ui/searchThumbs.js, global SearchThumbs); two scripts assigning
+     window.Thumbs would be load-order roulette the collision pin cannot see (Oracle 2026-09-13). -->
 <!-- Focus repair: arms this window's native confirm()/alert() dialogs + provides focusField()
      for programmatic input focus (the workflow note). Search had no dialog wrapper before. -->
 <script src="../shared/dialogFocus.js"></script>
-<script src="search-state.js"></script>
-<script src="search-actions.js"></script>
-<script src="search-results.js"></script>
-<script src="search-preview.js"></script>
-<script src="search-query.js"></script>
+<!-- SHARED SEARCH UI (client search parity, 2026-09-13): the adapter FIRST (defines window.SearchTransport),
+     then the ONE canonical search screen under ../shared/search-ui/ (also driven by the detached client via
+     a generated copy — edit the shared files, never a copy), then the core-only modules. -->
+<script src="coreTransport.js"></script>
+<script src="../shared/search-ui/searchState.js"></script>
+<script src="../shared/search-ui/searchThumbs.js"></script>
+<script src="../shared/search-ui/searchActions.js"></script>
+<script src="../shared/search-ui/searchResults.js"></script>
+<script src="../shared/search-ui/searchPreview.js"></script>
+<script src="../shared/search-ui/searchQuery.js"></script>
+<script src="../shared/search-ui/searchInit.js"></script>
 <script src="search-workflow.js"></script>
 <script src="search-mailbox.js"></script>
 <script src="search-stamp.js"></script>

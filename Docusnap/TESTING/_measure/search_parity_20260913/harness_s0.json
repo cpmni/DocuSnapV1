@@ -1,0 +1,379 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "results: 3 rows rendered (2 confirmed + 1 unconfirmed)",
+      "ok": true
+    },
+    {
+      "name": "results: section headers CONFIRMED + UNCONFIRMED",
+      "ok": true
+    },
+    {
+      "name": "doc-type dropdown seeded from the transport (All types + 2)",
+      "ok": true
+    },
+    {
+      "name": "quick-find deep-link pre-filled the full-text box",
+      "ok": true
+    },
+    {
+      "name": "admin sees the Recycle bin button",
+      "ok": true
+    },
+    {
+      "name": "first paint: no confidence pip yet (entitlement resolves after the results-first search)",
+      "ok": true
+    },
+    {
+      "name": "thumbnail loader attached an image to each row",
+      "ok": true
+    },
+    {
+      "name": "preview: page 1 painted (lazy single-page read)",
+      "ok": true
+    },
+    {
+      "name": "preview: fields table rendered (Company/Type/Reference/Date/Status + extras)",
+      "ok": true
+    },
+    {
+      "name": "preview: no confidence band on a CONFIRMED doc",
+      "ok": true
+    },
+    {
+      "name": "preview: page nav shown with 1 / 3 (sparse array from page_count)",
+      "ok": true
+    },
+    {
+      "name": "preview: Find cluster shown (caps.find) and seeded with the list term",
+      "ok": true
+    },
+    {
+      "name": "preview: the list term is highlighted on page 1 (1 / 1)",
+      "ok": true
+    },
+    {
+      "name": "actions (admin, confirmed, has_file): Send back + Explorer + Open File + Print + Delete",
+      "ok": true
+    },
+    {
+      "name": "actions: no Stamp button when stamp.can says no + no workflow",
+      "ok": true
+    },
+    {
+      "name": "status chip reads Confirmed",
+      "ok": true
+    },
+    {
+      "name": "page nav: next → 2 / 3 (hole rendered on demand)",
+      "ok": true
+    },
+    {
+      "name": "find: a no-match term marks the box + 0 / 0",
+      "ok": true
+    },
+    {
+      "name": "find: Esc clears the box",
+      "ok": true
+    },
+    {
+      "name": "unconfirmed preview: confidence band shown",
+      "ok": true
+    },
+    {
+      "name": "unconfirmed preview: Edit in Review offered, Send back not",
+      "ok": true
+    },
+    {
+      "name": "unconfirmed preview: unknown page_count → probed → 1 / 2 nav",
+      "ok": true
+    },
+    {
+      "name": "xlsx preview: cell grid rendered",
+      "ok": true
+    },
+    {
+      "name": "xlsx preview: page nav hidden",
+      "ok": true
+    },
+    {
+      "name": "xlsx preview: 2 data rows + column letters",
+      "ok": true
+    },
+    {
+      "name": "bin: RECYCLE BIN section with the deleted row",
+      "ok": true
+    },
+    {
+      "name": "bin: Restore all + Empty bin shown to an admin",
+      "ok": true
+    },
+    {
+      "name": "bin: the toggle relabelled",
+      "ok": true
+    },
+    {
+      "name": "bin: a deleted doc offers Restore + Delete permanently",
+      "ok": true
+    },
+    {
+      "name": "bin: the deleted row names its file",
+      "ok": true
+    },
+    {
+      "name": "bin: back to the search results",
+      "ok": true
+    },
+    {
+      "name": "re-render: an unconfirmed row now shows its confidence pip (entitled, enhanced search)",
+      "ok": true
+    },
+    {
+      "name": "keys: ArrowDown moves the selection to the next row",
+      "ok": true
+    }
+  ],
+  "consoleErrors": [],
+  "calls": [
+    [
+      "get-all-doc-types",
+      []
+    ],
+    [
+      "get-setting",
+      [
+        "theme"
+      ]
+    ],
+    [
+      "get-search-target",
+      []
+    ],
+    [
+      "search-documents",
+      [
+        {
+          "fullText": "inv",
+          "totalOp": "eq",
+          "includeUncommitted": true
+        }
+      ]
+    ],
+    [
+      "get-entitlement",
+      []
+    ],
+    [
+      "auth-get-current-user",
+      []
+    ],
+    [
+      "stamp-can",
+      []
+    ],
+    [
+      "print-available",
+      []
+    ],
+    [
+      "get-search-view-target",
+      []
+    ],
+    [
+      "get-document-thumbnail",
+      [
+        1,
+        null,
+        null
+      ]
+    ],
+    [
+      "get-document-thumbnail",
+      [
+        2,
+        null,
+        null
+      ]
+    ],
+    [
+      "get-document-thumbnail",
+      [
+        3,
+        null,
+        null
+      ]
+    ],
+    [
+      "get-document-detail",
+      [
+        1
+      ]
+    ],
+    [
+      "get-document-page",
+      [
+        1,
+        0,
+        3
+      ]
+    ],
+    [
+      "find-in-document",
+      [
+        1,
+        "inv"
+      ]
+    ],
+    [
+      "stamp-list",
+      [
+        {
+          "documentId": 1
+        }
+      ]
+    ],
+    [
+      "get-document-page",
+      [
+        1,
+        1,
+        3
+      ]
+    ],
+    [
+      "find-in-document",
+      [
+        1,
+        "zzz"
+      ]
+    ],
+    [
+      "get-document-detail",
+      [
+        3
+      ]
+    ],
+    [
+      "get-document-page",
+      [
+        3,
+        0,
+        3
+      ]
+    ],
+    [
+      "get-document-page-count",
+      [
+        3
+      ]
+    ],
+    [
+      "find-in-document",
+      [
+        3,
+        "inv"
+      ]
+    ],
+    [
+      "stamp-list",
+      [
+        {
+          "documentId": 3
+        }
+      ]
+    ],
+    [
+      "get-document-detail",
+      [
+        2
+      ]
+    ],
+    [
+      "get-document-pages",
+      [
+        2,
+        null,
+        null,
+        3
+      ]
+    ],
+    [
+      "get-spreadsheet-grid",
+      [
+        2
+      ]
+    ],
+    [
+      "stamp-list",
+      [
+        {
+          "documentId": 2
+        }
+      ]
+    ],
+    [
+      "get-deleted-queue",
+      []
+    ],
+    [
+      "get-document-detail",
+      [
+        9
+      ]
+    ],
+    [
+      "get-document-page",
+      [
+        9,
+        0,
+        3
+      ]
+    ],
+    [
+      "get-document-page-count",
+      [
+        9
+      ]
+    ],
+    [
+      "find-in-document",
+      [
+        9,
+        "inv"
+      ]
+    ],
+    [
+      "stamp-list",
+      [
+        {
+          "documentId": 9
+        }
+      ]
+    ],
+    [
+      "search-documents",
+      [
+        {
+          "fullText": "inv",
+          "totalOp": "eq",
+          "includeUncommitted": true
+        }
+      ]
+    ],
+    [
+      "get-document-detail",
+      [
+        1
+      ]
+    ],
+    [
+      "get-document-detail",
+      [
+        2
+      ]
+    ]
+  ],
+  "missingGlobals": [],
+  "html": "C:\\GIT Projects\\Docusnap\\src\\windows\\search\\index.html"
+}

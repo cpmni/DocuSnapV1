@@ -1,8 +1,52 @@
 # Client Search Parity + Pop-out — design & sliced plan (2026-09-13)
 
-eric-designed, Oracle-vet PENDING. Owner mandate: bring the detached **client** search up to the **core**
+eric-designed. **Oracle 2026-09-13: SIGN OFF WITH CONDITIONS for S0 as re-proposed** (see `docs/oracle_log.md`
+2026-09-13 — the plan AS WRITTEN below would have been SEND BACK on three facts; the amendments in the box
+supersede the matching sections). Owner mandate: bring the detached **client** search up to the **core**
 search window's feature set, pop search out into its own window, AND build it so **every future change to
 the core search replicates to the client automatically** (no fork that rots).
+
+> ## AMENDMENTS (Oracle-vetted, binding — supersede the sections below where they differ)
+> - **Location is `src/windows/shared/search-ui/`, NOT `src/shared/`.** `scripts/harden-js.js` keeps only
+>   `src/windows/**` on disk and `verify-release-artifact.js` PLAINTEXT_FORBIDDEN never flags `src/shared/` — a
+>   file there is neither protected nor refused. Pins for the module live at `src/windows/shared/test_search_ui_*.js`
+>   (run-pins discovers one level under `src/windows/` only).
+> - **Module style = plain `<script>` globals + an adapter global `window.SearchTransport`** loaded BEFORE the shared
+>   scripts (core: `src/windows/search/coreTransport.js`, a PURE pass-through to the preload bridge — same method
+>   names + positional arity, no catch/envelope; client: its own adapter, S1). Not ESM `initSearchUI(transport)`.
+>   The `--smoke-windows` probe and `test_no_global_collisions` depend on this posture.
+> - **Transport surface = the IO audit, not the table below.** The shared UI touches 24 bridge methods + `stamp.can`
+>   + `onBinChanged`; three have NO `/v1` backing (`repairDeconfirm` send-back, `restoreAllDeleted`, the desktop-local
+>   Explorer/Open File/Print trio). **caps** = `singlePage pageCount find spreadsheet bin restoreAll sendBack
+>   localFile review print stamps settings` (absent = true; `_cap()` in searchState.js); each gates ONE decision.
+> - **Markup + CSS sharing is REQUIRED by the mandate but is its own slice S0b, BEFORE S1**, gated by a headless
+>   old-vs-new DOM-equivalence + computed-style diff (`#app.outerHTML` + display/flex/height of
+>   `#app,#body,#results-pane,#preview-pane,#preview-sidebar`) — a `<div id="search-root">` WRAPPER inside `#app`
+>   would break the `#app{flex column;100vh}`→`#body{flex:1}` height chain; inject as direct children / replace the
+>   placeholder. CSS cascade order theme → searchUI → components is load-bearing.
+> - **Committed generated copy** (`client/renderer/shared/search-ui/`, `scripts/sync-client-search.js`, client
+>   `prestart`/`predist`) — not symlink (Developer Mode / winCodeSign trap), not extraResources (outside the asar +
+>   the navGuard root), not a bundler. Checker `scripts/test_client_search_sync.js` is CRLF-normalised, banner-aware,
+>   mirror semantics.
+> - **`shared/thumbs.js` is NOT loaded by the core Search page any more**; the module ships `searchThumbs.js` on its
+>   OWN global `window.SearchThumbs` (two scripts assigning `window.Thumbs` = load-order roulette).
+> - **Q-F: the pop-out becomes the client's ONLY search**; the in-pane search (`client/renderer/renderer.js:985-1224`)
+>   reduces to a launcher in S1 (its preview kept for the mailbox decision path until S4). Mounting the shared module in
+>   the SAME page as renderer.js is the `_btn` collision class (`confLevel` is declared in both).
+> - **S1 conditions:** pop-out CSP `style-src 'self' 'unsafe-inline'` (the client's `style-src 'unsafe-inline'` blocks a
+>   linked stylesheet); **`theme.css` joins the sync set + a shared client theme-boot** (the client's hand-copied token
+>   sheet lacks `--sans/--accent-bg/--accent-border/--err-bg/--warn-bg/--ok-bg/--doc-bg` → highlights render
+>   TRANSPARENT); **`client-current-user` IPC** (no `/v1/auth/me`; main caches `{role,username,displayName}` from the
+>   login response, cleared on logout; null → read-only, fail-safe); logout + main-window close KILL the pop-out;
+>   connection-lost/restored broadcast to ALL windows; a client twin of the collision pin; a cap false for a
+>   REMEDIABLE reason (contract drift) shows one line "Some tools need a newer ScanFinder on the core PC" — inherently
+>   desktop actions just hide.
+> - **S2 conditions:** `client-find` NOT `guarded()` + a long `timeoutMs` + timeout → a visible "Find took too long on
+>   this scan" (apiClient's 20 s idle timeout matches `isNetworkError` → a slow scanned find would show "Connection
+>   lost"); server caps the `/v1` OCR-fallback page count + returns `kind:'partial'`; `/page/:index?scale=` clamps
+>   scale (cap 4) + index ≥ 0; `FIND_MAX_INFLIGHT` + `q ≥ 2`; never log `q`; contract 1.2.0→1.3.0 MINOR with
+>   `CLIENT_CONTRACT` lockstep; `binRestoreAll` = cap false or a new endpoint.
+> - **S0 STATUS: BUILT 2026-09-13** (this session) — see the commit + `docs/oracle_log.md`.
 
 ## The mandate's answer (enforced auto-replication)
 The search UI becomes ONE canonical source both apps drive through an injected **transport**. Drift is made

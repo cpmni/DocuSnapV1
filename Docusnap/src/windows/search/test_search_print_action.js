@@ -28,10 +28,21 @@ const mkEl = (tag) => ({
   addEventListener() {}, remove() {}, isConnected: true,
 });
 const panel = mkEl('div');
-global.window = { SearchState: { role: 'admin', printAvailable: true }, docusnap: {} };
+// The shared module reaches IO only through window.SearchTransport (an empty stub here — renderActions
+// only READS transport methods into click handlers, never calls them at render); no caps = every cap on.
+global.window = { SearchState: { role: 'admin', printAvailable: true }, SearchTransport: {} };
 global.document = { createElement: (t) => mkEl(t), getElementById: (id) => (id === 'preview-actions' ? panel : null) };
 
-require(path.join(__dirname, 'search-actions.js'));   // sets window.SearchActions
+// The shared search UI (2026-09-13). Its files are PLAIN scripts sharing ONE global scope in the window
+// (searchState.js declares the _cap() helper searchActions.js calls) — a Node require() would wall each
+// file into its own module scope, so load them the way the page does: concatenated into one vm context,
+// in index.html order.
+const vm = require('vm');
+const fs = require('fs');
+const UI = path.join(__dirname, '..', 'shared', 'search-ui');
+const ctx = vm.createContext({ window: global.window, document: global.document, console, setTimeout, clearTimeout, Promise });
+vm.runInContext(['searchState.js', 'searchActions.js'].map(f => fs.readFileSync(path.join(UI, f), 'utf8')).join('\n'), ctx);
+// (window is the same object inside and out — window.SearchActions is set by the shared code.)
 
 const buttons = (el, out = []) => { for (const c of (el.children || [])) { if (c.tag === 'button') out.push(c.textContent); buttons(c, out); } return out; };
 const render = (printAvailable, opts = {}) => {

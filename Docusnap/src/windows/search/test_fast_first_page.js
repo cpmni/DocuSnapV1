@@ -38,20 +38,22 @@ console.log('2. IPC + preload');
 
 console.log('3. renderer renders ONLY page 1 for a multi-page PDF, then loads the rest LAZILY on demand');
 {
-  const pv = read('src/windows/search/search-preview.js');
-  check('page 1 painted first for ANY PDF (not gated on a known page_count)',
-        /if \(_isPdf\)/.test(pv) && /const _pageCount = Number\(merged\.page_count\) \|\| 0;/.test(pv));
+  const pv = read('src/windows/shared/search-ui/searchPreview.js');   // the shared search UI (2026-09-13)
+  check('page 1 painted first for ANY PDF (not gated on a known page_count; only the transport CAP gates it)',
+        /if \(_isPdf && _cap\('singlePage'\)\)/.test(pv) && /const _pageCount = Number\(merged\.page_count\) \|\| 0;/.test(pv));
   check('page-1 render via getDocumentPage(doc.id, 0, …)', /getDocumentPage\(doc\.id, 0, SEARCH_RENDER_SCALE\)/.test(pv));
   check('SPARSE page array when count known; single-page array otherwise (NOT all pages up front)',
         /s\.currentPages = _pageCount > 1 \? new Array\(_pageCount\) : \[first\]/.test(pv));
   check('unknown count (NULL/0): page 1 shown, count PROBED cheaply (no all-pages render) for nav',
-        /if \(_pageCount <= 1\)[\s\S]{0,700}getDocumentPageCount\(doc\.id\)\.then/.test(pv)
+        /if \(_pageCount <= 1 && _cap\('pageCount'\)\)[\s\S]{0,700}getDocumentPageCount\(doc\.id\)\.then/.test(pv)
         && /const arr = new Array\(cnt\);[\s\S]{0,80}arr\[0\] = s\.currentPages\[0\]/.test(pv));
   check('_showPage is lazy: fetches a hole via getDocumentPage(mine.id, idx, …)',
         /async function _showPage/.test(pv) && /getDocumentPage\(mine\.id, idx, SEARCH_RENDER_SCALE\)/.test(pv));
   check('full getDocumentPages is only the FALLBACK/else path, not the multi-page happy path',
         pv.indexOf('getDocumentPage(doc.id, 0') < pv.indexOf('getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE)'));
-  check('staleness-guarded (a newer selection wins)', /const first = await window\.docusnap\.getDocumentPage[\s\S]{0,80}if \(s\.selectedDoc !== mine\) return;/.test(pv));
+  check('staleness-guarded (a newer selection wins)', /const first = await window\.SearchTransport\.getDocumentPage[\s\S]{0,80}if \(s\.selectedDoc !== mine\) return;/.test(pv));
+  check('every page read goes through the transport (never window.docusnap — the shared module is app-agnostic)',
+        !/window\.docusnap/.test(pv));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
