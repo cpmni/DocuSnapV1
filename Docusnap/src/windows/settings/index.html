@@ -59,6 +59,11 @@
     /* The Template Manager packs in a lot (preview + editor + field tables), so let it use
        the FULL window width instead of the centred 1100px column. */
     #panel-templates { max-width:none; }
+    /* Document Types is a master-detail with a wide field editor (name+key, Type, Required,
+       Enabled, Keywords per row). At 1100px the field-NAME column — the row's only flexible
+       track — was squeezed until names truncated to "D…"/"Inv…" (owner 2026-09-13). Widen the
+       panel so the name column has room; capped so controls don't scatter on an ultra-wide screen. */
+    #panel-doctypes { max-width:1500px; }
 
     /* ── Sections ── */
     .section { margin-bottom:28px; }
