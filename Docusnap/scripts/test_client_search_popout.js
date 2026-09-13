@@ -178,7 +178,7 @@ console.log('B. source — the Oracle S1 conditions');
   check('renderer: the Search nav opens the pop-out (not the in-pane view)', /\$\('nav-search'\)\.addEventListener\('click', \(\) => openSearchWindow\(\)\)/.test(rend) && !/\$\('nav-search'\)\.addEventListener\('click', \(\) => setView\('search'\)\)/.test(rend));
   check('renderer: Home search + recent rows go to the pop-out (query / docId deep-links)', /openSearchWindow\(\{ query: \$\('home-search-input'\)\.value\.trim\(\) \}\)/.test(rend) && /openSearchWindow\(\{ docId: d\.id \}\)/.test(rend));
   check('renderer: the in-pane view is the mailbox viewer only (legacy-viewer class, no search priming)', /classList\.toggle\('legacy-viewer', view === 'search'\)/.test(rend) && !/if \(view === 'search' && !searchPrimed\)/.test(rend));
-  check('renderer: a session-expired push from main signs out', /api\.onSessionExpired\?\.\(\(\) => \{ if \(role\) \{ doLogout\(\);/.test(rend));
+  check('renderer: a session-expired push from main signs out AND always tells the user why', /api\.onSessionExpired\?\.\(\(\) => \{ if \(role\) doLogout\(\); toast\('Your session ended/.test(rend));
   check('renderer: theme applier delegated to the shared themeBoot', /window\.ClientTheme\.apply\(name\)/.test(rend) && /const THEMES = window\.ClientTheme\.THEMES;/.test(rend));
   const mainHtml = read('client', 'renderer', 'index.html');
   check('main page loads themeBoot.js before renderer.js + hides the legacy search bar in viewer mode', mainHtml.indexOf('themeBoot.js') > 0 && mainHtml.indexOf('themeBoot.js') < mainHtml.indexOf('src="renderer.js"') && /#view-search\.legacy-viewer \.searchbar/.test(mainHtml));

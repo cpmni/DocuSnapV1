@@ -180,8 +180,10 @@ function showConnect(reason) { showOnly('connect'); $('connect-err').textContent
 function showConnLost() { $('conn-lost')?.classList.remove('hidden'); setConn('block', 'Connection lost'); }
 function hideConnLost() { $('conn-lost')?.classList.add('hidden'); }
 function wireConnLost() {
-  // The search pop-out saw a 401 (session expired/revoked): main closed it — sign this window out too.
-  api.onSessionExpired?.(() => { if (role) { doLogout(); toast('Your session ended — please sign in again.', 'err'); } });
+  // The search pop-out saw a 401 (session expired/revoked): main closed it — sign this window out too, and ALWAYS
+  // say why (the heartbeat may already have signed us out, silently; the user still needs to know the window they
+  // just opened vanished because the session ended — night run 2026-09-13, phase 2).
+  api.onSessionExpired?.(() => { if (role) doLogout(); toast('Your session ended — the search window closed. Please sign in again.', 'err'); });
   api.onConnectionLost?.(() => { _connAlive = false; showConnLost(); });   // Slice 1: pause the badge poll too
   api.onConnectionRestored?.(() => {
     _connAlive = true; hideConnLost(); setConn('ok', 'Reconnected');
