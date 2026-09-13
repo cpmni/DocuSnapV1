@@ -82,3 +82,60 @@ every future core-search change replicate to the client automatically — is BUI
   doc `docs/designs/CLIENT_SEARCH_PARITY_PLAN_2026-09-13.md` carries the binding AMENDMENTS box + per-slice status.
 - Docs: `docs/detached-client.md` (the four endpoints + the pop-out), `docs/designs/…PLAN…`, this handover, memory
   `project_client_search_parity_20260913.md`.
+
+---
+
+## ADDENDUM — NIGHT RUN 2026-09-13 (`docs/designs/NIGHT_RUN_2026-09-13_LATE.md`; ledger in `NIGHT_RUN.md`)
+
+**Commits (all pushed):** `8b374ce` red-pin hygiene + first-paint pips · `5195bfa` the "session ended" message always
+shows when the pop-out closes on a 401 · `593335f` the real-core evidence + driver scripts · this docs commit.
+
+### 1. `npm run test:pins` → **360/360 GREEN** (first fully green run)
+- `render/pdf_find.py` was missing from the compile gate's `SPAWN_ENTRIES` (`scripts/compile-python-bytecode.js`) —
+  a real packaging-gate gap (it is spawned by the desktop find-in-document AND the new /v1 find). Added.
+- TEST_SWITCH_KEYS count pins 49 → 50 (mig 166's `template_date_invalid_yield_lowconf` is present, verified).
+- `test_activity_strip` card 8: `repairService` gained a Quick-check send-back door between the two the pin knew — the
+  pin now allows further named doors.
+
+### 2. First-paint confidence pips — FIXED (shared module, both apps)
+`SearchResults.redecorate()` re-renders the LAST result set once the entitlement is known (results-first ordering
+kept; pinned: `search-documents` runs exactly twice in the harness session — initial + back-from-bin, never a third).
+
+### 3. "The search window in the client doesn't open" — proven OK on REAL core code (20/20)
+`TESTING/_measure/night_20260913/POPOUT_REAL_CORE.md`. A sandbox dev core (seeded licence + two users, `TEST_BUILD=1`,
+real `/v1` on 8797) + the REAL client over CDP: refusal before sign-in (with a message) · open · 2 rows · role/entitlement
+· S2 caps ON · theme follows · logout closes it · **a core restart under a signed-in client → the stale token makes the
+pop-out appear-and-vanish and drops the client to its login screen** (correct; the message was SKIPPED when the heartbeat
+had already signed out → fixed `5195bfa`, now always says "Your session ended — the search window closed") · read-only
+user (403 on the writer-gated `/v1/doc-types` no longer matters). **Likeliest reading of the owner's report:** the
+stale-session path — the main session restarted the core twice while the owner was testing. Morning question for the
+owner: at that moment, had the client dropped to its login screen?
+
+### 4. Chris (sandboxed, BOTH apps) → `docs/CHRIS_FULL_APP_REVIEW_2026-09-14.md` (report verbatim + triage table)
+Verdict YES; the pop-out opened 4/4 for him (two users), Find on scanned pages / stamp / approve over the network all
+worked. **8 cards, NOTHING implemented (owner vets):**
+1. **APPROVAL-CLASS, morning #1 — the `/v1` purge leaves the filed PDF + `.metadata` xml on disk** while saying "and its
+   file". PRE-EXISTING: `api/handler.js _purgeDocFiles` still deletes `[resolveFilePath(doc), working_path]` (the working
+   copy only) — the desktop's `_purgeOne` got the stored_path + xml fix on 2026-08-13; the /v1 lane never did. Fix = route
+   the /v1 purge/purge-all through the same helper + a /v1 pin. A destructive path → your go.
+2. The client pop-out's bin view "won't let go": (a) a purge from the rail/menu clears the selection but not the pane —
+   on the core the `bin-changed` push clears it, the client has no push; (b) a Home deep-link arriving in bin mode
+   searches the deleted queue ("Pelican 0 / 0" beside "The recycle bin is empty"). Shared-module fix, small.
+3. Client Quick File lists no types on a fresh install — the core pane offers the catalog presets (create-on-first-use);
+   the client renders `installed` only. Client Quick File lane.
+4. Granting "Can stamp" doesn't reach an open Search window (canStamp read once at init) — re-read when the popup opens.
+5. Client Home "AWAITING OTHERS" counts approved routes (no state filter). 6. Read-only FYI items have no "Got it" in the
+   client's main-window mailbox. 7. Stamp history prints the UTC hour + raw username. 8. Titles: the client's main window
+   shares the pop-out's title; dialogs say "scanfinder-client".
+Also noted: a 34-page stack imported from `.sf_separated_originals` came in as 34 BLANK pages (a driver choice of folder,
+but worth a look); Demo Docs has no .xlsx/.docx so the grid path was not exercised by Chris (it is by the harness).
+
+### Running at wrap
+- The OWNER's core (`TEST_BUILD=1`) + client are RUNNING on the latest code (client relaunched on `5195bfa`).
+- The SANDBOX is left running for you to poke: core CDP 9223 (`/v1` on 8797, users `nightadmin`/`Night-Admin-9`,
+  `nightreader`/`Night-Reader-9`), client CDP 9226; everything under `scratchpad\night-sandbox\` (session-mortal).
+  Kill filters: cmdline `*remote-debugging-port=9223*` (core) / `*9226*` (client).
+
+### Approval-class (logged, not done)
+The `/v1` purge fix (card 1) · the `/v1` MINOR for the pop-out's hidden workflow bits · the mig 166 flip gate · any
+customer-default flip · the client `npm run dist` in lockstep (contract 1.3.0).

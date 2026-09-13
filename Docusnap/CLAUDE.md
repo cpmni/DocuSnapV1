@@ -36,9 +36,14 @@ patterns synced; `client-current-user`; logout/main-close kill it; in-pane searc
 + Send-or-stamp popup + Mailbox shared (owner live-test: "no workflow actions on the client") + client Quick File centred.
 **Extending:** edit ONLY the shared files → `node scripts/sync-client-search.js`; a new IO call → both adapters; a control
 the client can't back → `_cap()` + client cap false. **RUNNING:** core dev app `TEST_BUILD=1` + the client (relaunched on
-`d9cee32`) — **owner live test owed** (Search opens a window; workflow popup; Quick File centred; core unchanged). Pins:
-355+/359 (4 pre-existing reds). Follow-ups: a `/v1` MINOR for the pop-out's hidden bits (docHistory/docRoutes/admin
-cancel/stamp create/stamped viewer), first-paint pips (pre-existing, pinned), client `npm run dist` in lockstep. Memory
+`d9cee32`) — **owner live test owed** (Search opens a window; workflow popup; Quick File centred; core unchanged).
+**NIGHT RUN (handover ADDENDUM + `NIGHT_RUN.md`):** pins **360/360 GREEN** (pdf_find.py into the compile gate's
+SPAWN_ENTRIES; count pins 49→50; activity-strip pin) · first-paint pips FIXED (`SearchResults.redecorate`) · the owner's
+"search window doesn't open" PROVEN OK on real core code (sandbox dev core + real client over CDP, 20/20; the look-alike =
+a stale session after a core restart → now says so, `5195bfa`) · Chris on both apps → `docs/CHRIS_FULL_APP_REVIEW_2026-09-14.md`
+(YES; **card 1 = the `/v1` purge leaves the filed PDF + xml on disk — PRE-EXISTING, APPROVAL-CLASS, morning #1**; card 2
+client bin pane won't let go; card 3 client Quick File lists no types). Sandbox left running (core CDP 9223 · client 9226).
+Follow-ups: the /v1 purge fix, a `/v1` MINOR for the pop-out's hidden bits, client `npm run dist` in lockstep. Memory
 `project_client_search_parity_20260913.md`.
 
 ## Prior — 2026-09-13 EVENING (Search/Quick File UX batch + date-precedence fix + CLIENT Quick File shipped + search-parity PLAN):

@@ -6,6 +6,27 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
+## ✅ DONE 2026-09-13 LATE NIGHT — CLIENT SEARCH POP-OUT PROVEN ON REAL CORE CODE + ALL PINS GREEN + CHRIS ON THE NEW SURFACES (`docs/designs/NIGHT_RUN_2026-09-13_LATE.md`; `HANDOVER_2026-09-13_LATE.md` ADDENDUM)
+Owner: "a night run of your choosing". (1) **Red-pin hygiene → `npm run test:pins` 360/360 GREEN** (first all-green run):
+`render/pdf_find.py` added to the compile gate's SPAWN_ENTRIES (a REAL packaging-gate gap — it is spawned by the desktop
+find and the /v1 find), the TEST_SWITCH_KEYS count pins 49→50 (mig 166 present), the activity-strip pin allows the Quick-
+check send-back door. (2) **First-paint confidence pips FIXED** in the shared search UI (`SearchResults.redecorate()` once
+the entitlement is known; pinned: no second search). (3) **THE OWNER'S "search window doesn't open" — proven OK on REAL
+core code:** a sandbox dev core (`TEST_BUILD=1`, real `/v1` on 8797) + the REAL client driven over CDP — **20/20** across
+refusal-before-sign-in / open / rows / theme sync / logout closes it / a CORE RESTART under a signed-in client (the stale
+token closes the pop-out + signs out — now WITH a message: `5195bfa`) / read-only user (`TESTING/_measure/night_20260913/
+POPOUT_REAL_CORE.md` + the driver scripts). Likeliest reading of the owner's report = that stale-session path (the main
+session restarted the core twice mid-test); morning question: did the client show its login screen again? (4) **Chris**
+(sandboxed, BOTH apps, CDP 9223/9226) → `docs/CHRIS_FULL_APP_REVIEW_2026-09-14.md` + triage: verdict YES; the pop-out
+opened 4/4 for him; **8 cards — top = the `/v1` purge leaves the filed PDF + xml on disk (PRE-EXISTING: the /v1 lane never
+got the 2026-08-13 desktop purge fix; APPROVAL-CLASS destructive path)**, the client bin view "won't let go" (no push channel
+→ stale pane; deep-links land in bin mode), client Quick File lists no types (presets not offered over /v1), can-stamp not
+re-read while a window is open, client Home counts approved routes, read-only FYI items have no "Got it", stamp history
+prints the UTC hour, window/dialog titles. NOTHING from the cards implemented. Commits `8b374ce` `5195bfa` `593335f` +
+docs, all PUSHED. Sandbox left RUNNING (core CDP 9223 / client CDP 9226, scratchpad `night-sandbox`). **Repeat only if:**
+the real-core drive (`drive_popout_real.js` phases 1-3) after ANY change to the client main/preload/adapter or the /v1 auth
+path; Chris again only on the surfaces the cards change.
+
 ## ✅ DONE 2026-09-12/13 NIGHT — FLIP-CORPUS CENSUSES + QUICKFILE/DEPARTMENTS FOUNDATION + CHRIS (`HANDOVER_2026-09-13_NIGHT.md`)
 Two owner directives across the night. **(1) Flip-corpus** ("kick off the night run"): built the failure-mode
 injectors (`gen_customer_test.py --inject`, 3 value-shape modes, all proven firing, pin `test_inject_shapes.py`),
