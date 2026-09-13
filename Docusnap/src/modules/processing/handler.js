@@ -2746,6 +2746,13 @@ function register(ctx) {
     const db = getDb();
     const row = db.prepare('SELECT id, stored_path FROM documents WHERE id = ?').get(Number(docId));
     if (!row) return { success: false, error: 'Document not found.' };
+    // D2 per-document gate (QuickFile+Departments plan §6): role + containment is not enough — an edit
+    // user could otherwise open ANY filed doc by id, incl. a department-restricted one. canAccessDocument
+    // is inert/byte-identical when no departments exist (and admins always pass). Lazy-require (rare path).
+    try {
+      const _acc = require('../../services/accessService').canAccessDocument(db, getCurrentUser(), row.id);
+      if (!_acc.allow) { logger?.warn?.(`[security] blocked ${mode}: ${_acc.reason}`); return { success: false, error: 'You don’t have access to this document.' }; }
+    } catch { /* fail-open only on a wiring error — role + containment below still apply */ }
     if (!row.stored_path || !fs.existsSync(row.stored_path)) return { success: false, error: 'This document has no filed copy on disk.' };
     if (!_isOpenablePath(db, row.stored_path)) {
       logger?.warn?.(`[security] blocked ${mode} for a disallowed resolved path`);

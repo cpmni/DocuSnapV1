@@ -145,5 +145,15 @@ console.log('§7 documents.search honours the threaded viewer (the main list sur
   check('search: NO departments → un-threaded caller returns all (byte-identical)', documents.search(db2, {}).length === 3);
 }
 
+console.log('§8 source contract — the by-id open path runs the per-doc gate (D2 §6, F3)');
+{
+  const fs = require('fs'); const path = require('path');
+  const h = fs.readFileSync(path.join(__dirname, '..', 'modules', 'processing', 'handler.js'), 'utf8');
+  const i = h.indexOf('_openResolvedDoc = ');
+  const seg = i >= 0 ? h.slice(i, i + 1200) : '';
+  check('_openResolvedDoc calls canAccessDocument(getCurrentUser) before opening the file',
+    /canAccessDocument\(db,\s*getCurrentUser\(\)/.test(seg));
+}
+
 console.log(`\n${fails ? 'FAIL' : 'PASS'} — ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);
