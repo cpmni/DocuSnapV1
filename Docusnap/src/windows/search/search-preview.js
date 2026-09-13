@@ -464,8 +464,11 @@ function _sheetTableHtml(sheet) {
   const rows = sheet.rows || [];
   const width = rows.reduce((w, r) => Math.max(w, r.length), 0);
   // A <colgroup> drives the (fixed-layout) column widths so each column is drag-resizable. col 0 = the
-  // row-number gutter; the data columns start at index 1.
-  let h = '<table class="xlsx-table"><colgroup><col style="width:46px">';
+  // row-number gutter; the data columns start at index 1. The table gets an EXPLICIT total width (= sum of
+  // the cols) so a widened column grows the table (→ horizontal scroll) instead of the fixed layout just
+  // redistributing width inside the container (which made a drag look like it did nothing).
+  const _total = 46 + width * 132;
+  let h = `<table class="xlsx-table" style="width:${_total}px"><colgroup><col style="width:46px">`;
   for (let c = 0; c < width; c++) h += '<col style="width:132px">';
   h += '</colgroup><tbody>';
   h += '<tr><td class="xlsx-corner"></td>';
@@ -491,7 +494,12 @@ function _wireColResize(ph) {
       if (!col) return;
       const startX = e.clientX;
       const startW = parseInt(col.style.width, 10) || 132;
-      const move = (ev) => { col.style.width = Math.max(40, startW + (ev.clientX - startX)) + 'px'; };
+      const startTableW = parseInt(table.style.width, 10) || table.offsetWidth;
+      const move = (ev) => {
+        const newW = Math.max(40, startW + (ev.clientX - startX));
+        col.style.width = newW + 'px';
+        table.style.width = (startTableW + (newW - startW)) + 'px';   // grow the table so the change shows
+      };
       const up = () => {
         window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
         document.body.style.cursor = '';
