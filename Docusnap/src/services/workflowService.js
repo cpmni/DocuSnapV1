@@ -167,6 +167,12 @@ function createWorkflowService(deps = {}) {
   const canStamp = deps.canStamp || ((d, userId) => {
     try { return require('../modules/auth/stampPermission').canStamp(d, userId); } catch { return false; }
   });
+  // Department decision (D-C1) — DEPARTMENT axis only, injectable. Used to refuse routing a
+  // department-restricted document to a recipient outside that department. Deliberately NOT the full
+  // canAccessDocument (which would regress today's routing: readonly recipients + needs_review docs are
+  // routable). Inert/byte-identical when no departments exist.
+  const departmentDecision = deps.departmentDecision
+    || ((d, user, doc) => { try { return require('./accessService').departmentDecision(d, user, doc); } catch { return { deny: false }; } });
 
   function _ver(route, expectedVersion) {
     return expectedVersion == null ? route.version : expectedVersion;
@@ -189,6 +195,16 @@ function createWorkflowService(deps = {}) {
     const recipient = dbAuth.getUserById(db, toUserId);
     if (!recipient) return fail('NOT_FOUND', 'Recipient not found.');
     if (!recipient.is_active) return fail('INACTIVE_RECIPIENT', 'Recipient account is disabled.');
+    // D-C1: department gate at ASSIGN time — a department-restricted document cannot be routed to a
+    // recipient outside its department (incl. SYSTEM routes; amountRouting picks recipients by role and
+    // would otherwise leak a restricted doc to any edit user). DEPARTMENT decision only (never the full
+    // read gate). Inert/byte-identical when no departments exist. A member removed mid-route keeps the
+    // route until it closes (documented; auto-close = v2).
+    const dd = departmentDecision(db, { role: recipient.role, id: recipient.id }, doc);
+    if (dd && dd.deny) {
+      return fail('RECIPIENT_NO_ACCESS',
+        `${recipient.username} isn't in the department this document belongs to, so it can't be routed to them.`);
+    }
     return { ok: true, recipient };
   }
 
