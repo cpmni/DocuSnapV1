@@ -70,9 +70,10 @@ check("branch present, gated on the switch GROUP as FIRST conjunct + date key + 
 check("placed AFTER _kw_ok is defined and BEFORE the _blind_reg swap (Oracle C2)",
       i_kwdef != -1 and i_blind != -1 and i_kwdef < i_branch < i_blind)
 _slice = src[i_branch:i_blind]
-check("arms 'impossible' ONLY under INVALID switch and 'future' ONLY under FUTURE switch (C4)",
-      "_reason == 'impossible' and TEMPLATE_DATE_INVALID_YIELD" in _slice
-      and "_reason == 'future' and TEMPLATE_DATE_FUTURE_YIELD" in _slice)
+check("kw-leg fire decision is the pure helper _date_yield_fires (not swappable inline)",
+      "if _date_yield_fires(_reason, _kw_ok):" in _slice)
+check("kw-leg outer condition lets LOWCONF relax the floor (via _kw_present)",
+      "TEMPLATE_DATE_INVALID_YIELD_LOWCONF and _kw_present" in _slice)
 check("note is accurate per reason (both phrasings present, keyed on _reason)",
       "isn't a valid calendar date" in _slice and "is far in the future" in _slice)
 check("commits keyword value via {**data} + validation_note (Review-bound) + own continue",
@@ -82,6 +83,26 @@ check("predicate uses parse_date + salvage_date + days_in_future (single clock; 
           for s in ('validator.parse_date', 'validator.salvage_date', 'validator.days_in_future')))
 check("future trigger on its OWN constant _DATE_YIELD_FUTURE_DAYS (decoupled from the 366 flag)",
       E._DATE_YIELD_FUTURE_DAYS > TOL and '_DATE_YIELD_FUTURE_DAYS' in inspect.getsource(E._invalid_taught_date_yields))
+
+# ── _date_yield_fires: the LOWCONF trade-off (mig 166, 2026-09-13). future ALWAYS keeps the 90 floor;
+#    impossible relaxes it ONLY under LOWCONF. A future dev restoring the floor for impossible trips these.
+def _fires(reason, conf_ok, inv, fut, low):
+    E.TEMPLATE_DATE_INVALID_YIELD, E.TEMPLATE_DATE_FUTURE_YIELD, E.TEMPLATE_DATE_INVALID_YIELD_LOWCONF = inv, fut, low
+    return E._date_yield_fires(reason, conf_ok)
+try:
+    check("LOWCONF off: impossible + conf<90 does NOT fire (byte-identical to the shipped floor)",
+          _fires('impossible', False, True, False, False) is False)
+    check("LOWCONF on: impossible + conf<90 FIRES (the mig-166 fix)",
+          _fires('impossible', False, True, False, True) is True)
+    check("impossible + conf>=90 fires under INVALID regardless of LOWCONF",
+          _fires('impossible', True, True, False, False) is True and _fires('impossible', True, True, False, True) is True)
+    check("future ALWAYS keeps the 90 floor — never on conf<90 even with LOWCONF, fires on conf>=90",
+          _fires('future', False, True, True, True) is False and _fires('future', True, False, True, True) is True)
+    check("INVALID off: impossible never fires even with LOWCONF on",
+          _fires('impossible', True, False, False, True) is False)
+    check("'' reason never fires", _fires('', True, True, True, True) is False)
+finally:
+    E.TEMPLATE_DATE_INVALID_YIELD, E.TEMPLATE_DATE_FUTURE_YIELD, E.TEMPLATE_DATE_INVALID_YIELD_LOWCONF = False, False, False
 
 # ── Lever Z (2026-08-20): the despatch_date class + the ANCHOR-loop yield leg (Oracle Z-1/Z-2) ──
 # The year-floor dependency (validator.py:123, year<1000) is what makes a clipped year classify
@@ -111,6 +132,8 @@ check("anchor leg calls _invalid_taught_date_yields (predicate not swappable) + 
       and "_reason_z == 'future' and TEMPLATE_DATE_FUTURE_YIELD" in _zslice)
 check("anchor leg commits {**data} + min(_CONFLICT_CAP) + validation_note + own continue",
       '{**data,' in _zslice and '_CONFLICT_CAP' in _zslice and 'validation_note' in _zslice and _zslice.rstrip().endswith('continue'))
+check("SCOPE (mig 166): LOWCONF is the KW leg only — the anchor leg keeps its own >=90 floor, no LOWCONF token",
+      'TEMPLATE_DATE_INVALID_YIELD_LOWCONF' not in _zslice)
 
 print()
 if FAILED:

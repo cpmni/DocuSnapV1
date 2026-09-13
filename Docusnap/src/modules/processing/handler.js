@@ -416,6 +416,10 @@ function _reconcileEnv(db) {
     // Invalid taught date yields (Oracle 2026-08-06): an IMPOSSIBLE taught date ('33/04/2026') no
     // longer wins over a valid, confident keyword date — the valid read is kept, flagged for review.
     if (learning.getSetting(db, 'template_date_invalid_yield', 'false') === 'true') env.TEMPLATE_DATE_INVALID_YIELD = '1';
+    // Impossible-date yield, LOW-CONF relax (mig 166, 2026-09-13): the impossible arm may fire on a valid
+    // label-matched keyword date below the 90 floor (seeded custom date fields structurally read 85); an
+    // impossible taught date has nothing valid to protect. DARK; kw leg only; auto-file-neutral.
+    if (learning.getSetting(db, 'template_date_invalid_yield_lowconf', 'false') === 'true') env.TEMPLATE_DATE_INVALID_YIELD_LOWCONF = '1';
     // Far-future taught date yields (Oracle 2026-08-06): a taught date OCR-misread into an absurdly
     // future year ('2026'->'2096') no longer wins over a valid non-future keyword date; kept flagged.
     if (learning.getSetting(db, 'template_date_future_yield', 'false') === 'true') env.TEMPLATE_DATE_FUTURE_YIELD = '1';

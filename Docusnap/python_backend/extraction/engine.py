@@ -708,6 +708,30 @@ TEMPLATE_DATE_INVALID_YIELD = os.environ.get('TEMPLATE_DATE_INVALID_YIELD', '0')
 # since the doc was already flagged). OFF = byte-identical; INVALID-on / FUTURE-off = the shipped
 # impossible-only behaviour. Pins: tests/test_taught_date_invalid_yield.py.
 TEMPLATE_DATE_FUTURE_YIELD = os.environ.get('TEMPLATE_DATE_FUTURE_YIELD', '0') != '0'
+# TEMPLATE_DATE_INVALID_YIELD_LOWCONF (2026-09-13, gary root cause → Oracle pass) — the impossible-date
+# yield's keyword floor (_KEYWORD_TRUST_FLOOR=90) is STRUCTURALLY unreachable by a seeded custom date
+# field: keyword.py base_confidence 80 (+5 inline) = 85, permanently < 90. So a genuinely-IMPOSSIBLE
+# taught date (parse AND salvage both None) is kept over a valid, label-matched keyword date purely
+# because the challenger reads 85 — even though the 90 floor exists to protect a VALID taught date and
+# here there is nothing valid to protect (the exhibit: template_mapping "October 10, 202€" kept over
+# keyword_override "October 10, 2026"). This relaxes the floor for reason=='impossible' ONLY (future
+# keeps it); the kw leg ONLY (the anchor leg's own >=90 guard is untouched — a mis-located anchor is a
+# weaker witness). Auto-file-NEUTRAL: the yield always writes a validation_note, so the doc is held
+# either way — only WHICH held value the operator reviews changes (a valid date, not a garble). OFF =
+# byte-identical (the disjunct collapses to _kw_ok). Pins: tests/test_taught_date_invalid_yield.py.
+TEMPLATE_DATE_INVALID_YIELD_LOWCONF = os.environ.get('TEMPLATE_DATE_INVALID_YIELD_LOWCONF', '0') != '0'
+
+
+def _date_yield_fires(reason, conf_ok):
+    """Whether the located-date merge yields to the keyword read, given the yield REASON and whether the
+    keyword cleared the confidence floor (_kw_ok). impossible → yield when INVALID is on AND (the floor is
+    cleared OR LOWCONF relaxes it — there is no valid taught value to protect). future → yield only on the
+    floor (it drops a VALID taught value, so the weak-challenger guard stays). Pure for unit-pinning."""
+    if reason == 'impossible':
+        return bool(TEMPLATE_DATE_INVALID_YIELD and (conf_ok or TEMPLATE_DATE_INVALID_YIELD_LOWCONF))
+    if reason == 'future':
+        return bool(TEMPLATE_DATE_FUTURE_YIELD and conf_ok)
+    return False
 # Fix #2 (Oracle 2026-08-28 SIGN-OFF-W/COND): the AUTHORITATIVE-side sibling of Lever Z (which
 # excludes authoritative reads). An authoritative date anchor OCR-misread into an implausible
 # value (a date-shaped confusable reference, e.g. "PI/26/2361"->"1/26/2361"->year 2361) must not
@@ -9681,11 +9705,16 @@ class ExtractionEngine:
                 # Stage 4's clean-date floor makes the cap cosmetic). Own continue; method stays keyword
                 # (do NOT re-grant the taught shape-gate exemption). Env is the first conjunct so OFF is
                 # byte-identical and salvage_date runs only on the rare invalid-taught case.
+                # LOWCONF (2026-09-13): the impossible arm may fire on a label-matched keyword read that
+                # is below the 90 floor (seeded custom date fields structurally read 85), since an
+                # impossible taught date has nothing valid to protect. future still requires _kw_ok. The
+                # decision lives in _date_yield_fires; OFF (LOWCONF) collapses the disjunct to _kw_ok.
+                _kw_present = (data.get("method") in ("keyword", "keyword_override") and data.get("value"))
                 if ((TEMPLATE_DATE_INVALID_YIELD or TEMPLATE_DATE_FUTURE_YIELD)
-                        and key in date_field_keys and _kw_ok):
+                        and key in date_field_keys
+                        and (_kw_ok or (TEMPLATE_DATE_INVALID_YIELD_LOWCONF and _kw_present))):
                     _reason = _invalid_taught_date_yields(existing.get("value"), data.get("value"))
-                    if ((_reason == 'impossible' and TEMPLATE_DATE_INVALID_YIELD)
-                            or (_reason == 'future' and TEMPLATE_DATE_FUTURE_YIELD)):
+                    if _date_yield_fires(_reason, _kw_ok):
                         # Reason-keyed note: accurate per case (an impossible date is NOT "far in the
                         # future" and vice-versa) + NAMES the dropped taught value so a correct-but-far-
                         # future taught date stays operator-recoverable.

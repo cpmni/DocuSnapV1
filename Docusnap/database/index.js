@@ -3402,6 +3402,25 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 165 (quick-file intake): ${e.message}`); }
   }
 
+  // ── migration 166: template_date_invalid_yield_lowconf seeded OFF (2026-09-13; gary root cause → Oracle
+  //    pass). The impossible-date yield's keyword floor (_KEYWORD_TRUST_FLOOR=90) is structurally
+  //    unreachable by a seeded custom date field (keyword.py base_confidence 80 (+5 inline) = 85 < 90), so
+  //    a genuinely-IMPOSSIBLE taught date (parse AND salvage both None) is kept over a valid, label-matched
+  //    keyword date purely because the challenger reads 85 — the exhibit: template_mapping "October 10,
+  //    202€" kept over keyword_override "October 10, 2026". When ON: the impossible arm (ONLY) may fire on a
+  //    sub-90 keyword read (future keeps the floor; kw leg only — the anchor leg's own >=90 guard untouched).
+  //    Auto-file-NEUTRAL — the yield always writes a validation_note, so the doc is held either way; only
+  //    WHICH held value the operator reviews changes (a valid date, not a garble). DARK (in TEST_SWITCH_KEYS);
+  //    byte-identical OFF. ⚑ FLIP GATE: realdoc M=0 + wouldFile(ON)==wouldFile(OFF) set-equality + zero
+  //    per-field date-accuracy drop, and a fresh Oracle pass (this relaxes the 2026-08-06 Oracle 90-floor belt).
+  if (!applied.has(166)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('template_date_invalid_yield_lowconf', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (166)').run();
+      console.log(`JS migration 166 applied: template_date_invalid_yield_lowconf (an impossible taught date yields to a sub-90 label-matched keyword date) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 166 (template_date_invalid_yield_lowconf): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

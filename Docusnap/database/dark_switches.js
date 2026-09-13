@@ -251,6 +251,11 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //    regardless of the switch). Seeded OFF by migs 164/165; byte-identical when the tables/columns are empty.
   'departments_enabled',
   'direct_intake_enabled',
+  // template_date_invalid_yield_lowconf (mig 166, 2026-09-13, gary → Oracle pass): an IMPOSSIBLE taught
+  // date (parse+salvage both None) yields to a valid label-matched keyword date even below the 90 floor
+  // (seeded custom date fields structurally read 85). impossible arm only; kw leg only; auto-file-neutral
+  // (always held+noted). ⚑ FLIP GATE: realdoc M=0 + set-equal wouldFile + zero date-accuracy drop + Oracle.
+  'template_date_invalid_yield_lowconf',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */
