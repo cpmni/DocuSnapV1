@@ -364,4 +364,4 @@ function getSpreadsheetGrid(db, { docId, folderPath, filename }, deps) {
   catch (e) { log(`[grid] parse failed for ${filePath}: ${e.message}`); return null; }
 }
 
-module.exports = { getDocumentDetail, getDocumentPages, getThumbnail, findInDocument, getSpreadsheetGrid, resolveDocFile: _resolveDocFile };
+module.exports = { getDocumentDetail, getDocumentPages, getDocumentPage, getThumbnail, findInDocument, getSpreadsheetGrid, resolveDocFile: _resolveDocFile };

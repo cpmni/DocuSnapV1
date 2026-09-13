@@ -18,7 +18,9 @@ const check = (name, ok) => { if (ok) { pass++; console.log(`  ok  ${name}`); } 
 console.log('1. service renders ONE page (pdf-only, null fallback)');
 {
   const ps = read('src/services/previewService.js');
-  check('getDocumentPage exported', /getDocumentPage\b/.test(ps) && /module\.exports = \{[^}]*getDocumentPage/.test(ps));
+  // (?!s) so "getDocumentPages" — which CONTAINS "getDocumentPage" — can't false-pass this: the SINGLE
+  // -page fn must be its own export (it was defined but unexported until 2026-09-13, and this pin missed it).
+  check('getDocumentPage (singular) is exported', /module\.exports = \{[^}]*getDocumentPage(?!s)/.test(ps));
   const body = ps.slice(ps.indexOf('function getDocumentPage'), ps.indexOf('function getThumbnail'));
   check('non-PDF → null (caller uses full render / grid instead)', /!== '\.pdf'\) return Promise\.resolve\(null\)/.test(body));
   check("uses pages.py single-page mode (--thumb --page)", /'--thumb', '--page'/.test(body));
