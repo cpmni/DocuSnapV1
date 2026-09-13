@@ -141,10 +141,17 @@ Oracle's order, and stopped before the risky wiring. Nothing here changes the ap
   9→1 count-broadcast collapse to a per-viewer `notifyCounts`. Pattern is set (see `4e89ba6`): add an
   optional `viewer`, append the fragment, thread the actor from the handler. eric's exact site list:
   `docs/designs/QUICKFILE_DEPARTMENTS_ERIC_ARCH_2026-09-12.md` §A.2.
-- **Quick File rest** (presets/Q-C8/preview DONE in `91486ee`): the Home button + form + IPC/preload (the
-  UI) wiring `directIntakeService` — IPCs `direct-intake-pick|stage|submit|update|replace|list` + the preload
-  bridge + the `_intakeStaged` token map (eric B.1/B.5); update/replace/bulk + `document_versions`; the
-  OOXML/PDF-text search extraction (Q2, `src/lib/ooxmlText.js` + `python_backend/render/pdf_text.py`).
+- **Quick File UI DONE** (`26dfa19`): the ⚡ Home button (hidden unless `direct_intake_enabled`) + a
+  self-contained modal (`src/windows/main/quickfile.js`) + `src/modules/directIntake/handler.js` (IPCs
+  direct-intake-pick/doctypes/add-type/submit + the MAIN-side token map) + preload bridge, registered in
+  main.js. Also fixed directIntakeService.submit → async awaiting commitDocument's real
+  {success,filename,filePath} contract. **⚠ OWNER LIVE SMOKE (manual — the native file picker can't be
+  automated):** Settings → set `direct_intake_enabled` true → the ⚡ button appears on Home → click →
+  "Choose files" (pick a .docx/.xlsx) → add a Quick File type if prompted → File → confirm it lands in
+  `Company/Year/Month/Type.Date.Title.ext` + is searchable + never entered Review.
+- **Quick File rest:** update/replace/bulk + `document_versions`; the OOXML/PDF-text search extraction
+  (Q2, `src/lib/ooxmlText.js` + `python_backend/render/pdf_text.py`) so office/PDF body text is searchable
+  (today `ocr_text` = title + notes only).
 - **Departments rest:** the taggers (insert/confirm defaults, D3), the Settings "Users & Departments" UI +
   the enable sentence (D4), the `{department}` folder token (D5).
 - **Deferred by the plan (own Oracle pass):** Q7 `/v1` upload, drag-drop (Q-C12).

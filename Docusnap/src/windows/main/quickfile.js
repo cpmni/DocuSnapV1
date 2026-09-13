@@ -36,7 +36,7 @@
 
     const card = el('div', { className: 'qf-card', style: {
       background: 'var(--surface)', color: 'var(--text)', borderRadius: 'var(--r)', width: 'min(680px, 94vw)',
-      maxHeight: '90vh', overfl: 'auto', overflowY: 'auto', boxShadow: '0 18px 50px rgba(0,0,0,.35)', padding: '22px 24px' } });
+      maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 18px 50px rgba(0,0,0,.35)', padding: '22px 24px' } });
     overlay = el('div', { className: 'qf-overlay', 'data-help-ignore': '1', style: {
       position: 'fixed', inset: '0', background: 'rgba(20,24,34,.55)', display: 'flex',
       alignItems: 'center', justifyContent: 'center', zIndex: '9999' } }, [card]);
