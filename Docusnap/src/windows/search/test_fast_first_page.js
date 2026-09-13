@@ -36,11 +36,13 @@ console.log('2. IPC + preload');
 console.log('3. renderer renders ONLY page 1 for a multi-page PDF, then loads the rest LAZILY on demand');
 {
   const pv = read('src/windows/search/search-preview.js');
-  check('multi-page PDF gate (page_count > 1 AND .pdf)',
-        /if \(_pageCount > 1 && _isPdf\)/.test(pv) && /const _pageCount = Number\(merged\.page_count\) \|\| 0;/.test(pv));
+  check('page 1 painted first for ANY PDF (not gated on a known page_count)',
+        /if \(_isPdf\)/.test(pv) && /const _pageCount = Number\(merged\.page_count\) \|\| 0;/.test(pv));
   check('page-1 render via getDocumentPage(doc.id, 0, …)', /getDocumentPage\(doc\.id, 0, SEARCH_RENDER_SCALE\)/.test(pv));
-  check('SPARSE page array sized to page_count (holes filled on demand, NOT all pages up front)',
-        /s\.currentPages = new Array\(_pageCount\)/.test(pv));
+  check('SPARSE page array when count known; single-page array otherwise (NOT all pages up front)',
+        /s\.currentPages = _pageCount > 1 \? new Array\(_pageCount\) : \[first\]/.test(pv));
+  check('unknown count (NULL/0): page 1 shown, full set discovered in the BACKGROUND for nav',
+        /if \(_pageCount <= 1\)[\s\S]{0,400}getDocumentPages\(doc\.id, null, null, SEARCH_RENDER_SCALE\)\.then/.test(pv));
   check('_showPage is lazy: fetches a hole via getDocumentPage(mine.id, idx, …)',
         /async function _showPage/.test(pv) && /getDocumentPage\(mine\.id, idx, SEARCH_RENDER_SCALE\)/.test(pv));
   check('full getDocumentPages is only the FALLBACK/else path, not the multi-page happy path',

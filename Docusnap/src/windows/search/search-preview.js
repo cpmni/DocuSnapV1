@@ -349,22 +349,34 @@ async function selectDoc(doc) {
     renderPreviewFields(merged);
     window.SearchActions.renderActions(merged);
 
-    // LAZY PAGE LOADING (owner 2026-09-13: big multi-page scans were slow to open because EVERY page
-    // rendered up front — ~6.5s + 37MB over IPC for a 34-page doc). A multi-page PDF now renders ONLY
-    // page 1 at open; the rest render on demand in _showPage as the operator navigates (cached per
-    // selection). page_count (now carried on the detail DTO) sizes the sparse array so page nav is live
-    // immediately. Images / single-page / unknown-count docs keep the one-shot render (already cheap).
+    // LAZY PAGE LOADING (owner 2026-09-13: big multi-page scans were slow to show ANYTHING because EVERY
+    // page rendered up front — ~6.5s + 37MB over IPC for a 34-page doc; a single page is ~0.3s). For ANY
+    // PDF we render + paint page 1 FIRST, independent of a known page_count — a separated original /
+    // pre-mig-37 doc can have page_count NULL, and must NOT fall back to rendering every page before
+    // showing. Other pages render on demand in _showPage. When the count is known we size a sparse array
+    // so nav is live at once; when it's unknown we show page 1, then discover the rest in the BACKGROUND
+    // (page 1 is already visible, so the user is never blocked). Images / office = one cheap render.
     const _pageCount = Number(merged.page_count) || 0;
     const _isPdf = /\.pdf$/i.test(merged.original_filename || merged.stored_filename || '');
-    if (_pageCount > 1 && _isPdf) {
-      s.currentPages = new Array(_pageCount);          // sparse: holes filled on demand by _showPage
-      s.currentPage = 0;
+    if (_isPdf) {
       const first = await window.docusnap.getDocumentPage(doc.id, 0, SEARCH_RENDER_SCALE);
       if (s.selectedDoc !== mine) return;
-      if (first) s.currentPages[0] = first;
-      else {                                           // page-1 render failed — fall back to the full render
+      if (first) {
+        s.currentPages = _pageCount > 1 ? new Array(_pageCount) : [first];   // sparse when count known
+        s.currentPages[0] = first;
+        s.currentPage = 0;
+        if (_pageCount <= 1) {
+          // Count unknown (NULL/0) — page 1 is up; load the full set in the BACKGROUND only to populate
+          // page nav. Staleness-guarded; a genuinely single-page doc simply re-confirms one page.
+          window.docusnap.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE).then((all) => {
+            if (s.selectedDoc !== mine) return;
+            if (Array.isArray(all) && all.length > 1) { s.currentPages = all; _syncPageNav(); }
+          }).catch(() => { /* page 1 already shown */ });
+        }
+      } else {                                          // page-1 render failed — fall back to the full render
         s.currentPages = await window.docusnap.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE);
         if (s.selectedDoc !== mine) return;
+        s.currentPage = 0;
       }
     } else {
       // DE-PATHED (owner 2026-08-02): rows no longer carry paths; fetch by docId alone — an
