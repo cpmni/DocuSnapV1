@@ -8,7 +8,7 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from process_docs import (_deskew_retry_should_run, _deskew_retry_adopt,
                           _deskew_retry_changed_fields, _deskew_retry_apply_holds, _DESKEW_CHANGED_NOTE,
-                          _put_back_offerable)
+                          _DESKEW_FOUND_NOTE, _put_back_offerable)
 
 fails = []
 def check(name, cond):
@@ -32,7 +32,9 @@ check("was/now carried", ("supplier_name", "Jordwind Refrigeration Ltd", "Nordwi
 _deskew_retry_apply_holds(raw, straight)
 check("changed identity carries the confirm-once note",
       straight["supplier_name"].get("validation_note") == _DESKEW_CHANGED_NOTE.format(was="Jordwind Refrigeration Ltd", now="Nordwind Refrigeration Ltd"))
-check("first-filled date says was (empty)", "was '(empty)'" in straight["quote_date"].get("validation_note", ""))
+check("first-filled date says 'Found ...' (not the silly 'was (empty)'; owner 2026-09-13)",
+      straight["quote_date"].get("validation_note", "") == _DESKEW_FOUND_NOTE.format(now="01-02-2026")
+      and "(empty)" not in straight["quote_date"].get("validation_note", ""))
 check("the note is a lane-hold family member ('— confirm once.')", straight["supplier_name"]["validation_note"].endswith("— confirm once."))
 check("unchanged ref gets NO note", not straight["quote_number"].get("validation_note"))
 check("an existing writer note is never overwritten (one note per field)", straight["total_amount"]["validation_note"] == "existing writer note")

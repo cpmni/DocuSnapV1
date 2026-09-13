@@ -95,6 +95,21 @@ _DESKEW_CHANGED_NOTE = "Read differently after straightening — was '{was}', no
 # (handler._isLaneHoldNote), out of every CLEARABLE_NOTE_MARKS / class-F set — the human confirms once; it is
 # never machine-cleared and, on a ref/date ROLE field, never soft (mig 142 cannot dissolve it).
 _DESKEW_VERIFIED_NOTE = "'{val}' was confirmed on the straightened page — confirm once."
+# When the field was EMPTY before straightening, finding a value IS the point of straightening — not a
+# discrepancy — so the "was '(empty)', now 'X'" framing reads as a silly warning (owner 2026-09-13).
+# Say "Found 'X'" instead. Still a lane-hold ("confirm once" + "after straightening"), so the field is
+# held for one human confirm either way (isAutoFileEligible refuses any note).
+_DESKEW_FOUND_NOTE = "Found '{now}' after straightening — confirm once."
+
+
+def _deskew_changed_note(was, now):
+    """Confirm-once hold note for a straighten-CHANGED field. Empty-before → "Found 'X'"; otherwise the
+    "was 'A', now 'B'" comparison. Both stay in the lane-hold family so behaviour (held for one confirm,
+    survives a reprocess merge) is unchanged — only the empty-before copy differs. Pure."""
+    w, n = str(was or "").strip(), str(now or "").strip()
+    if not w:
+        return _DESKEW_FOUND_NOTE.format(now=n or "(empty)")
+    return _DESKEW_CHANGED_NOTE.format(was=w, now=n or "(empty)")
 
 
 def _deskew_retry_changed_fields(raw_results, straightened_results):
@@ -225,7 +240,7 @@ def _deskew_retry_apply_holds(raw_results, straightened_results):
             if _DESKEW_CORROB_AUTOFILE and _deskew_corrob_autofile_ok(
                     key, was, now, d, _corrob.get(key), _now_shape.get(key), _was_shape.get(key)):
                 continue                          # verified rescue → no note, no corrected_to → auto-files
-            d["validation_note"] = _DESKEW_CHANGED_NOTE.format(was=was or "(empty)", now=now or "(empty)")
+            d["validation_note"] = _deskew_changed_note(was, now)
             if not str(d.get("corrected_to") or "").strip() and _put_back_offerable(was, now):
                 d["corrected_to"] = was          # the raw read, one click away — only when plausible
     return changed
@@ -387,7 +402,7 @@ def _deskew_retry_field_adopt(raw_results, straightened_results, role_keys, date
         new = dict(d1)
         note = str(new.get("validation_note") or "").strip()
         if _deskew_note_machine_clearable(note):                                       # C4
-            changed = _DESKEW_CHANGED_NOTE.format(was=was or "(empty)", now=now)
+            changed = _deskew_changed_note(was, now)
             new["validation_note"] = (note + " " + changed).strip() if note else changed
         n0 = str(d0.get("validation_note") or "")
         raw_absent = (absent in n0) or (bool(year_absent) and key in (date_keys or ()) and year_absent in n0)
