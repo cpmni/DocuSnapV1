@@ -747,6 +747,51 @@ const PRESET_CATALOG = [
       { key: 'date',          label: 'Date',            type: 'date', required: 1 },
     ],
   },
+  // ── QUICK FILE presets (reading_mode 'none' — QuickFile+Departments plan §3). Typed metadata forms:
+  //    no OCR, no Review, no learning, and NEVER a detection candidate (Q-C8 — no title_aliases, and
+  //    process_docs excludes reading_mode='none' from known_type_names). ref_field_key:null keeps
+  //    Reference genuinely optional (directIntakeService stores it under 'reference_number' when set).
+  //    Party is the issuer role labelled "Company / Person". NO detection `labels` on any field.
+  {
+    name: 'Contract / Agreement', ref_field_key: null, date_field_key: 'document_date',
+    company_key: 'supplier_name', reading_mode: 'none', quick_file: true,
+    fields: [
+      { key: 'supplier_name',    label: 'Company / Person', type: 'text', required: 1 },
+      { key: 'title',            label: 'Title',            type: 'text', required: 1 },
+      { key: 'document_date',    label: 'Date',             type: 'date', required: 1 },
+      { key: 'reference_number', label: 'Reference',        type: 'text', required: 0 },
+    ],
+  },
+  {
+    name: 'Correspondence', ref_field_key: null, date_field_key: 'document_date',
+    company_key: 'supplier_name', reading_mode: 'none', quick_file: true,
+    fields: [
+      { key: 'supplier_name',    label: 'Company / Person', type: 'text', required: 1 },
+      { key: 'title',            label: 'Title',            type: 'text', required: 1 },
+      { key: 'document_date',    label: 'Date',             type: 'date', required: 1 },
+      { key: 'reference_number', label: 'Reference',        type: 'text', required: 0 },
+    ],
+  },
+  {
+    name: 'Spreadsheet / Report', ref_field_key: null, date_field_key: 'document_date',
+    company_key: 'supplier_name', reading_mode: 'none', quick_file: true,
+    fields: [
+      { key: 'supplier_name',    label: 'Company / Person', type: 'text', required: 1 },
+      { key: 'title',            label: 'Title',            type: 'text', required: 1 },
+      { key: 'document_date',    label: 'Date',             type: 'date', required: 1 },
+      { key: 'reference_number', label: 'Reference',        type: 'text', required: 0 },
+    ],
+  },
+  {
+    name: 'Filed Document', ref_field_key: null, date_field_key: 'document_date',
+    company_key: 'supplier_name', reading_mode: 'none', quick_file: true,
+    fields: [
+      { key: 'supplier_name',    label: 'Company / Person', type: 'text', required: 1 },
+      { key: 'title',            label: 'Title',            type: 'text', required: 1 },
+      { key: 'document_date',    label: 'Date',             type: 'date', required: 1 },
+      { key: 'reference_number', label: 'Reference',        type: 'text', required: 0 },
+    ],
+  },
 ];
 
 // The Generic fallback type is identified by its FROZEN slug — a deliberate convention,
@@ -776,6 +821,8 @@ function getPresetCatalog(db) {
     ref_field_key: p.ref_field_key,
     date_field_key: p.date_field_key,
     company_key: p.company_key,
+    reading_mode: p.reading_mode || 'read',   // 'none' = a Quick File (no-OCR) preset — the catalog UI groups these
+    quick_file: !!p.quick_file,
     fields: p.fields.map(f => ({ key: f.key, label: f.label, type: f.type, required: !!f.required })),
     already_present: have.has(presetSlug(p.name)),
   }));
@@ -813,6 +860,10 @@ function addPresetTypes(db, slugs) {
           sort += 10;
         }
         ensureStructuralRoles(db, typeId);   // honours a customer_name company field (Sales Invoice/Remittance)
+        // Quick File presets are typed-metadata forms (no OCR/Review/learning, never detected — Q-C8).
+        if (preset.reading_mode === 'none') {
+          try { db.prepare("UPDATE document_types SET reading_mode = 'none' WHERE id = ?").run(typeId); } catch {}
+        }
         const realSlug = db.prepare('SELECT slug FROM document_types WHERE id = ?').get(typeId).slug;
         let labelsSeeded = 0;
         for (const f of preset.fields) {

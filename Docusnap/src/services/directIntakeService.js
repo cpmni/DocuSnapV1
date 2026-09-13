@@ -57,6 +57,7 @@ function submit(db, actor, input, deps = {}) {
 
   const dt = db.prepare('SELECT * FROM document_types WHERE id = ?').get(documentTypeId);
   if (!dt) return { ok: false, error: 'unknown_type' };
+  const refKey = dt.ref_field_key || 'reference_number';   // Quick File presets carry no ref role
 
   const party = (input.party || '').trim();
   const title = (input.title || (deps.path ? deps.path.parse(srcPath).name : '') || 'Document').trim();
@@ -95,7 +96,7 @@ function submit(db, actor, input, deps = {}) {
       const add = (k, v) => { if (k && v != null && String(v).trim() !== '') insertEx.run(docId, k, String(v), String(v)); };
       add('supplier_name', party);
       add(dt.date_field_key, docDate);
-      add(dt.ref_field_key, (input.reference || '').trim());
+      add(refKey, (input.reference || '').trim());   // Quick File presets have ref_field_key null → 'reference_number'
       add('title', title);
     });
     tx();
@@ -107,7 +108,7 @@ function submit(db, actor, input, deps = {}) {
       ? deps.ensureWorkingCopy(deps.fs, deps.path, deps.inboxDir, srcPath, docId, originalFilename)
       : srcPath;
     const allValues = { supplier_name: party, title,
-                        [dt.date_field_key]: docDate, [dt.ref_field_key]: (input.reference || '').trim() };
+                        [dt.date_field_key]: docDate, [refKey]: (input.reference || '').trim() };
     const filed = deps.commitDocument({
       db, fs: deps.fs, path: deps.path, outputRoot: deps.outputRoot, folderPath: staged,
       originalFilename, workingPath, existingFiledPath: null, allValues,

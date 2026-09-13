@@ -22,6 +22,7 @@
  */
 
 const documents = require('../../database/modules/documents');
+const fileKinds = require('../lib/fileKinds');
 
 /**
  * Fetch a document with its extractions, enriched with the resolved type slug and
@@ -154,6 +155,10 @@ function getDocumentPages(db, { docId, folderPath, filename, scale, exact }, dep
 
   const ext = path.extname(filePath).toLowerCase();
   if (ext !== '.pdf') {
+    // Q-C6: only PDFs + images render inline. A Quick File office/text/email doc is NOT renderable —
+    // return no pages so the caller shows a list icon, never a broken-image data-URL (F12). Also caps a
+    // huge non-image read (a 50 MB .xlsx must not be base64'd over IPC).
+    if (!fileKinds.isRenderable(ext)) return Promise.resolve([]);
     const data = fs.readFileSync(filePath);
     const mime = ext === '.png' ? 'image/png' : 'image/jpeg';
     return Promise.resolve([`data:${mime};base64,${data.toString('base64')}`]);
@@ -208,6 +213,8 @@ function getThumbnail(db, { docId, folderPath, filename }, deps) {
 
   const ext = path.extname(filePath).toLowerCase();
   if (ext !== '.pdf') {
+    // Q-C6: office/text/email Quick File docs are not renderable → null (the list shows an ext icon).
+    if (!fileKinds.isRenderable(ext)) return Promise.resolve(null);
     // Image files render in the <img> tag directly; the browser scales the
     // displayed thumb. No new dependency, no downscale step.
     try {

@@ -1116,8 +1116,14 @@ def main():
                         try: _bd_doc.close()
                         except Exception: pass
 
-            # Detect document type
-            known_type_names = [dt["name"] for dt in doc_types] if doc_types else None
+            # Detect document type. Q-C8 (QuickFile+Departments): a reading_mode='none' type is a
+            # typed-metadata "Quick File" form — it must NEVER be a detection candidate (else a scanned
+            # page headed e.g. "AGREEMENT" would type as the form-only "Contract / Agreement" and route
+            # through a lane that does no OCR). Excluded from known_type_names, so it drops out of the
+            # main detect call AND every heading-reread path below. Absent reading_mode ⇒ 'read' (byte-
+            # identical for every existing type / a doc-types-file that predates the column).
+            known_type_names = [dt["name"] for dt in doc_types
+                                if str((dt.get("reading_mode") or "read")).lower() != "none"] if doc_types else None
             # Per-type title aliases (extra printed-title phrases that also detect this type).
             # getAllWithFields parses the stored JSON to an array; be defensive if a str slips through.
             type_aliases = None

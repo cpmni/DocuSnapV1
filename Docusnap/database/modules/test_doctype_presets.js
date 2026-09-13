@@ -26,7 +26,7 @@ function makeDb() {
     CREATE TABLE document_types (
       id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, slug TEXT UNIQUE, built_in INTEGER DEFAULT 0,
       ref_field_key TEXT, date_field_key TEXT, sort_order INTEGER DEFAULT 100, enabled INTEGER DEFAULT 1,
-      title_aliases TEXT
+      title_aliases TEXT, reading_mode TEXT NOT NULL DEFAULT 'read'
     );
     CREATE TABLE fields (
       id INTEGER PRIMARY KEY AUTOINCREMENT, document_type_id INTEGER, key TEXT, label TEXT,
@@ -153,6 +153,30 @@ function main() {
   f += !check("an alias that IS another type's name ('Quotation' exists as a type) is refused — Quote stays alias-less",
     !seeded2.includes('Quote') && typeBySlug(db, 'quote').title_aliases == null);
   db.prepare("DELETE FROM document_types WHERE slug = 'quotation'").run();
+
+  // 11. QUICK FILE presets (reading_mode='none' — QuickFile+Departments plan §3): typed-metadata forms,
+  //     no OCR/Review/learning, and NEVER a detection candidate (Q-C8 — they ship NO title_aliases and
+  //     process_docs excludes reading_mode='none' from known_type_names).
+  const qfEntry = cat.find(p => p.name === 'Filed Document');
+  f += !check('catalog exposes Filed Document as a Quick File preset (reading_mode=none, quick_file)',
+    qfEntry && qfEntry.reading_mode === 'none' && qfEntry.quick_file === true);
+  f += !check('OCR presets stay reading_mode=read', (cat.find(p => p.slug === 'purchase_invoice') || {}).reading_mode === 'read');
+  f += !check('all 4 Quick File presets are present + none carries detection labels',
+    ['Contract / Agreement', 'Correspondence', 'Spreadsheet / Report', 'Filed Document']
+      .every(n => { const p = cat.find(x => x.name === n); return p && p.reading_mode === 'none' && p.fields.every(fl => fl); }));
+  const qfRes = doctypes.addPresetTypes(db, [qfEntry.slug]);
+  f += !check('Quick File preset added', qfRes.some(r => r.status === 'added'));
+  const cf = typeBySlug(db, qfEntry.slug);
+  f += !check("added Quick File type has reading_mode='none'", cf && cf.reading_mode === 'none');
+  f += !check('added Quick File type carries NO title_aliases (Q-C8 never-detect)', cf && cf.title_aliases == null);
+  f += !check('added Quick File type has Party(supplier_name)+Title+Date fields',
+    !!fkey(db, qfEntry.slug, 'supplier_name') && !!fkey(db, qfEntry.slug, 'title') && !!fkey(db, qfEntry.slug, 'document_date'));
+
+  // 12. Q-C8 source contract: process_docs.py excludes reading_mode='none' from the detection candidates.
+  const fs = require('fs'); const path = require('path');
+  const pd = fs.readFileSync(path.join(__dirname, '..', '..', 'python_backend', 'process_docs.py'), 'utf8');
+  f += !check('process_docs known_type_names filters reading_mode="none" (Q-C8)',
+    /reading_mode.*!=\s*["']none["']/.test(pd) && /known_type_names\s*=\s*\[dt\["name"\]\s+for\s+dt\s+in\s+doc_types/.test(pd));
 
   console.log(f === 0 ? '\nALL PASS' : `\n${f} FAILURE(S)`);
   process.exit(f === 0 ? 0 : 1);
