@@ -128,7 +128,7 @@ function createWindow() {
   win.on('focus', grabFocus);
   win.on('show', grabFocus);
   // The main window is the sign-in surface: when it goes, the search pop-out goes with it (Oracle seam 7).
-  win.on('closed', () => { win = null; closeSearchWindow(); });
+  win.on('closed', () => { win = null; closeSearchWindow('main-window-closed'); });
 }
 
 // ── Search pop-out window ──────────────────────────────────────────────────────
@@ -141,7 +141,8 @@ function saveSearchState(w) {
     fs.writeFileSync(searchStatePath(), JSON.stringify({ ...b, maximized: w.isMaximized() }));
   } catch { /* best-effort */ }
 }
-function closeSearchWindow() {
+function closeSearchWindow(reason = 'main') {
+  if (searchWin && !searchWin.isDestroyed()) { try { console.error('[search-popout] closed by main: ' + reason); } catch {} }
   try { if (searchWin && !searchWin.isDestroyed()) searchWin.destroy(); } catch {}
   searchWin = null;
   pendingSearch = null;
@@ -221,8 +222,7 @@ ipcMain.handle('client-server-info', () => ({
 // The pop-out saw a 401: the session is gone. Close it and let the main window sign out.
 ipcMain.on('client-popout-session-expired', (e) => {
   if (!searchWin || e.sender !== searchWin.webContents) return;   // sender-scoped
-  try { console.error('[search-popout] the pop-out saw a 401 — closing it and signing the main window out'); } catch {}
-  closeSearchWindow();
+  closeSearchWindow('session-expired (the pop-out saw a 401) — signing the main window out');
   try { if (win && !win.isDestroyed()) win.webContents.send('client-session-expired'); } catch {}
 });
 
@@ -386,7 +386,7 @@ ipcMain.handle('client-login',        async (_e, { username, password, totp }) =
 ipcMain.handle('client-logout',       () => {
   stopHeartbeat(); pageCache.clear();
   currentUser = null;
-  closeSearchWindow();   // the pop-out must not outlive the session (Oracle seam 7)
+  closeSearchWindow('logout');   // the pop-out must not outlive the session (Oracle seam 7)
   return client ? client.logout() : { ok: true };
 });
 ipcMain.handle('client-change-password', async (_e, { currentPassword, newPassword } = {}) => {
