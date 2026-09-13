@@ -59,5 +59,14 @@ console.log('4. opening a doc from a search seeds the box with the list term');
   check('selectDoc sets the input value to the active query', /findInput\.value = q;/.test(pv));
 }
 
+console.log('5. scanned-page OCR fallback is wired (tesseract path threaded to pdf_find)');
+{
+  const svc = read('src/services/previewService.js');
+  check('findInDocument forwards --tesseract when provided', /if \(deps\.tesseract\) args\.push\('--tesseract', deps\.tesseract\)/.test(svc));
+  const rh = read('src/modules/review/handler.js');
+  check('find-in-document handler supplies the tesseract path',
+        /find-in-document'[\s\S]{0,1200}tesseract: typeof tesseractPath === 'function' \? tesseractPath\(\) : tesseractPath/.test(rh));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

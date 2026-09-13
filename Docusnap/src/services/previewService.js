@@ -312,13 +312,16 @@ function findInDocument(db, { docId, folderPath, filename, query }, deps) {
   const filePath = _resolveDocFile(db, { docId, folderPath, filename }, deps);
   if (!filePath) return Promise.resolve(EMPTY);
 
-  // Only born-digital PDFs carry a searchable text layer with geometry. Images / office / scanned
-  // PDFs (no text layer) return nothing to highlight — the doc is still found by the list search.
+  // PDFs only. A born-digital PDF matches via its text layer; a SCANNED PDF (no text layer) matches via
+  // pdf_find.py's OCR word-box fallback (needs the tesseract path). Images / office return nothing to
+  // highlight — the doc is still found by the list search.
   if (path.extname(filePath).toLowerCase() !== '.pdf') return Promise.resolve(EMPTY);
 
   const py = pythonExe();
+  const args = ['--file', filePath, '--query', term];
+  if (deps.tesseract) args.push('--tesseract', deps.tesseract);   // enables the scanned-page OCR fallback
   return new Promise((resolve) => {
-    const proc = spawn(py, pythonArgs(findScript, '--file', filePath, '--query', term), { windowsHide: true });
+    const proc = spawn(py, pythonArgs(findScript, ...args), { windowsHide: true });
     let out = '', err = '';
     proc.stdout.on('data', d => { out += d.toString(); });
     proc.stderr.on('data', d => { err += d.toString(); });

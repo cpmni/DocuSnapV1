@@ -1085,6 +1085,7 @@ function register(ctx) {
     if (!rFolder || !rFile) return { kind: 'none', pages: 0, matches: [] };
     return previewService.findInDocument(db, { docId, folderPath: rFolder, filename: rFile, query }, {
       fs, path, spawn, pythonExe, pythonArgs,
+      tesseract: typeof tesseractPath === 'function' ? tesseractPath() : tesseractPath,   // scanned-page OCR fallback
       findScript: ctx.resourcePath('python_backend', 'render', 'pdf_find.py'),
     });
   });
