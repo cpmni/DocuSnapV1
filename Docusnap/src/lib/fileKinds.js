@@ -53,13 +53,27 @@ const OPEN_EXTS = new Set([...OCR_EXTS, ...INTAKE_EXTS, '.xml'].filter((e) => !N
 // broken-image data-URL (previewService seam, F12/Q-C6).
 const RENDERABLE_EXTS = setOf(['.pdf', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.gif']);
 
+// UPLOAD lane (Quick File over /v1, Oracle 2026-09-13) — a SAFE SUBSET of INTAKE_EXTS for bytes that
+// arrive over the network. An uploaded file carries NO Mark-of-the-Web (and commitDocument's copy strips
+// any ADS anyway), so Office Protected View can't fire — so the upload lane DROPS the macro/OLE/active
+// formats (.doc/.xls/.ppt/.rtf/.odt/.ods/.eml/.msg) that the local-pick lane admits, keeping only inert
+// modern formats. This NARROWS the upload lane only; INTAKE_EXTS (the local dialog + drag-drop) is
+// unchanged. Revisit if/when MOTW preservation (Q-C11) is built for the filed copy.
+const UPLOAD_INTAKE_EXTS = setOf([
+  '.pdf', '.docx', '.xlsx', '.pptx', '.txt', '.md', '.csv',
+  '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.gif',
+]);
+
 const isOcr = (x) => OCR_EXTS.has(normExt(x));
 const isIntake = (x) => INTAKE_EXTS.has(normExt(x));
+// Upload-lane admits only the safe subset AND never an OCR/local-only quirk — intersect with isIntake so
+// the two can never drift apart, and re-apply the never-open denylist as belt-and-braces.
+const isUploadIntake = (x) => { const e = normExt(x); return UPLOAD_INTAKE_EXTS.has(e) && INTAKE_EXTS.has(e) && !NEVER_OPEN.has(e); };
 const isNeverOpen = (x) => NEVER_OPEN.has(normExt(x));
 const isOpenable = (x) => { const e = normExt(x); return OPEN_EXTS.has(e) && !NEVER_OPEN.has(e); };
 const isRenderable = (x) => RENDERABLE_EXTS.has(normExt(x));
 
 module.exports = {
-  normExt, OCR_EXTS, INTAKE_EXTS, OPEN_EXTS, NEVER_OPEN, RENDERABLE_EXTS,
-  isOcr, isIntake, isNeverOpen, isOpenable, isRenderable,
+  normExt, OCR_EXTS, INTAKE_EXTS, UPLOAD_INTAKE_EXTS, OPEN_EXTS, NEVER_OPEN, RENDERABLE_EXTS,
+  isOcr, isIntake, isUploadIntake, isNeverOpen, isOpenable, isRenderable,
 };

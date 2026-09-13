@@ -59,7 +59,7 @@ async function main() {
   // Incompatible client (2.0.0) — health open, everything else 426.
   const bad = createClient({ baseUrl, expectedContract: '2.0.0' });
   h = await bad.connect();
-  check('incompatible client connect -> block (sees server v1.1.0)', h.mode === 'block' && h.serverVersion === '1.1.0');
+  check('incompatible client connect -> block (sees server v1.2.0)', h.mode === 'block' && h.serverVersion === '1.2.0');
   li = await bad.login('admin', PWD);
   check('incompatible client login refused -> 426', li.status === 426);
   const s = await bad.search({});

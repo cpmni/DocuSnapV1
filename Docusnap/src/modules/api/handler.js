@@ -46,7 +46,7 @@ const path              = require('path');
 const WF_HTTP = { FORBIDDEN: 403, STAMP_FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
 const wfStatus = (code) => WF_HTTP[code] || 400;
 
-const API_CONTRACT_VERSION = '1.1.0';   // NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
+const API_CONTRACT_VERSION = '1.2.0';   // 1.2.0: + POST /v1/documents/intake (Quick File upload). NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
                                         // handshake checks MAJOR only. Keep server + client in lockstep.
 const API_PREFIX = '/v1';
 const CLIENT_CONTRACT_HEADER = 'x-scanfinder-client-contract';
@@ -76,6 +76,29 @@ const MAX_BODY_BYTES = 1 * 1024 * 1024;
 // out unbounded Tesseract child processes on the host. Module-level (single process).
 const OCR_MAX_INFLIGHT = 3;
 let _ocrInFlight = 0;
+
+// Quick File UPLOAD (POST /v1/documents/intake) — the first body-bearing WRITE on /v1 (Oracle
+// 2026-09-13, SIGN-OFF-W/COND). Its body may be large (a base64 file), so it does NOT reuse the 1 MB
+// readJsonBody — a dedicated capped reader below, with the higher cap kept LOCAL. In-flight bounded so N
+// clients can't fan out N × (base64 + decoded) buffers + filing I/O on the host.
+const INTAKE_MAX_INFLIGHT = 2;
+let _intakeInFlight = 0;
+const INTAKE_MAX_MB_CEIL = 100;         // hard ceiling on the admin-settable direct_intake_max_mb for THIS lane
+
+// Read a size-capped body (bytes) for the upload lane. Rejects past `maxBytes` mid-stream + destroys the
+// socket. Returns the raw Buffer; the caller JSON-parses (the base64 rides inside the JSON envelope).
+function readCappedBody(req, maxBytes) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > maxBytes) { reject(new Error('body too large')); try { req.destroy(); } catch {} return; }
+      chunks.push(c);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+  });
+}
 
 function isLoopback(addr) {
   return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
@@ -621,6 +644,102 @@ function createRequestListener(ctx) {
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
         const rows = documents.getDeletedQueue(getDb());
         return sendJson(res, 200, { deleted: dto.projectSearchResult({ confirmed: rows, uncommitted: [] }).confirmed });
+      }
+
+      // ── Quick File (non-OCR direct intake) over /v1 — the doc-type list + the enabled probe ──────
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/documents/intake/doc-types`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const db = getDb();
+        const svc = require('../../services/directIntakeService');
+        const installed = doctypes.getAllWithFieldsAll(db)
+          .filter(t => String(t.reading_mode || 'read') === 'none')
+          .map(t => ({ id: t.id, name: t.name, slug: t.slug }));
+        const presets = (doctypes.getPresetCatalog(db) || [])
+          .filter(p => p.quick_file)
+          .map(p => ({ name: p.name, slug: p.slug, already_present: p.already_present }));
+        return sendJson(res, 200, { enabled: svc.enabled(db), installed, presets });
+      }
+
+      // ── Quick File UPLOAD — the first body-bearing WRITE on /v1 (Oracle SIGN-OFF-W/COND 2026-09-13).
+      //    base64-in-JSON body {documentTypeId, filename, contentBase64, party, date, title, reference,
+      //    notes}. Order of guards BEFORE buffering: session → writer → feature-enabled → in-flight cap →
+      //    Content-Length pre-check → capped read → decode → SAFE-subset ext → temp → submit → temp cleanup.
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/documents/intake`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const db = getDb();
+        const svc = require('../../services/directIntakeService');
+        const fileKinds = require('../../lib/fileKinds');
+        if (!svc.enabled(db)) return sendJson(res, 409, { code: 'FEATURE_DISABLED', error: "Quick File isn't enabled on this server." });
+        if (_intakeInFlight >= INTAKE_MAX_INFLIGHT) return sendJson(res, 429, { error: 'too many uploads — retry' });
+        // Size cap (settings, clamped to the lane ceiling) → the max JSON envelope (base64 ~4/3 + slack).
+        const maxMb = Math.min(INTAKE_MAX_MB_CEIL, Number(learning.getSetting(db, 'direct_intake_max_mb', 50)) || 50);
+        const maxJsonBytes = Math.ceil(maxMb * 1024 * 1024 * 4 / 3) + 4096;
+        const clen = Number(req.headers['content-length'] || 0);
+        if (clen && clen > maxJsonBytes) return sendJson(res, 413, { code: 'TOO_LARGE', error: `file exceeds ${maxMb} MB` });
+
+        _intakeInFlight++;
+        let done = false; let tmp = null;
+        const fsx = ctx.fs || require('fs'); const P = ctx.path || path;
+        const finish = (status, payload) => {
+          if (done) return; done = true; _intakeInFlight--;
+          if (tmp) { try { fsx.unlinkSync(tmp); } catch {} }
+          sendJson(res, status, payload);
+        };
+        // A client abort/socket error must release the in-flight slot (no slot leak).
+        req.on('aborted', () => finish(400, { error: 'aborted' }));
+        req.on('error', () => finish(400, { error: 'request error' }));
+        try {
+          let buf; try { buf = await readCappedBody(req, maxJsonBytes); }
+          catch { return finish(413, { code: 'TOO_LARGE', error: `file exceeds ${maxMb} MB` }); }
+          let body; try { body = JSON.parse(buf.toString('utf8') || '{}'); }
+          catch { return finish(400, { error: 'invalid JSON body' }); }
+          const b64 = (body && typeof body.contentBase64 === 'string') ? body.contentBase64 : '';
+          const rawName = (body && typeof body.filename === 'string') ? body.filename : '';
+          if (!b64 || !rawName) return finish(400, { error: 'filename and contentBase64 are required' });
+          if (!body.documentTypeId) return finish(400, { error: 'documentTypeId is required' });
+          // SAFE-subset ext (drop macro/OLE formats for the upload lane). Sanitize name to a basename.
+          const baseName = P.basename(String(rawName));
+          const ext = fileKinds.normExt(baseName);
+          if (!fileKinds.isUploadIntake(ext)) return finish(415, { code: 'UNSUPPORTED_TYPE', error: 'that file type cannot be uploaded' });
+          let bytes; try { bytes = Buffer.from(b64, 'base64'); } catch { return finish(400, { error: 'bad file data' }); }
+          if (!bytes.length) return finish(400, { error: 'empty file' });
+          if (bytes.length > maxMb * 1024 * 1024) return finish(413, { code: 'TOO_LARGE', error: `file exceeds ${maxMb} MB` });
+          // Write the bytes to a MINTED temp under userData (never the client-supplied name).
+          const osMod = require('os');
+          tmp = P.join(osMod.tmpdir(), `ds_v1intake_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
+          try { fsx.writeFileSync(tmp, bytes); } catch { return finish(500, { error: 'could not stage the upload' }); }
+
+          const filing = require('../filing/handler');
+          const processing = require('../processing/handler');
+          const appMod = ctx.app || require('electron').app;
+          const deps = {
+            fs: fsx, path: P,
+            outputRoot: learning.getSetting(db, 'output_folder', null),
+            inboxDir: P.join(appMod.getPath('userData'), 'inbox'),
+            commitDocument: ctx.commitDocument || filing.commitDocument,
+            normaliseDate: ctx.normaliseDate || filing.normaliseDate,
+            ensureWorkingCopy: ctx.ensureWorkingCopy || processing.ensureWorkingCopy,
+            maxMb,
+            logAudit: (d, action, m) => { try { audit({ user_id: session.userId, action, action_category: 'document', outcome: 'success', ...(m || {}) }); } catch {} },
+          };
+          const input = {
+            srcPath: tmp, ext, size: bytes.length,
+            documentTypeId: body.documentTypeId,
+            party: body.party, date: body.date, title: body.title || baseName,
+            reference: body.reference, notes: body.notes,
+          };
+          let r; try { r = await svc.submit(db, actorOf(session), input, deps); }
+          catch (e) { log('[api] intake submit: ' + (e && e.message)); return finish(500, { error: 'filing failed' }); }
+          if (r && r.ok) {
+            try { audit({ user_id: session.userId, action: 'document_direct_intake', action_category: 'document',
+                          outcome: 'success', document_id: r.docId, metadata: { via: 'client', ip: clientIp(req), type: body.documentTypeId } }); } catch {}
+            return finish(200, { ok: true, docId: r.docId });
+          }
+          const map = { disabled: 409, forbidden: 403, unsupported_type: 415, too_large: 413, bad_date: 400, bad_request: 400, unknown_type: 400 };
+          return finish(map[r && r.error] || 500, { ok: false, error: (r && r.error) || 'failed' });
+        } catch (e) { return finish(500, { error: 'upload failed' }); }
       }
 
       const delMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/delete$`));

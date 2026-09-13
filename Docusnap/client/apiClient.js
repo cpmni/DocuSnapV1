@@ -23,7 +23,7 @@ const { URL } = require('url');
 
 // The contract version this client build targets — keep in lockstep with the
 // server's API_CONTRACT_VERSION (src/modules/api/handler.js).
-const CLIENT_CONTRACT = '1.1.0';   // keep in lockstep with the server's API_CONTRACT_VERSION
+const CLIENT_CONTRACT = '1.2.0';   // keep in lockstep with the server's API_CONTRACT_VERSION (1.2.0: + Quick File upload)
 
 function parseVer(v) {
   const m = String(v || '').match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -161,6 +161,14 @@ function createClient(opts = {}) {
   async function getThumbnail(id) {
     return request('GET', `/v1/documents/${encodeURIComponent(id)}/thumbnail`, { withAuth: true });
   }
+  // Quick File (non-OCR upload) — the doc-type list + the upload. Upload is a larger body (base64 file),
+  // so allow a generous idle timeout. Paths never cross here — client main reads the bytes.
+  async function intakeDocTypes() {
+    return request('GET', '/v1/documents/intake/doc-types', { withAuth: true });
+  }
+  async function intakeSubmit(body) {
+    return request('POST', '/v1/documents/intake', { withAuth: true, body, timeoutMs: 120000 });
+  }
   // Lightweight reachability probe (no auth). True if the server responds at all
   // (any status); false if the connection fails (server closed / unreachable) —
   // drives the client's connection-watch heartbeat.
@@ -238,6 +246,7 @@ function createClient(opts = {}) {
 
   return {
     connect, login, logout, changePassword, entitlement, search, getDocument, getPages, getThumbnail, ping, fetchCa, enroll,
+    intakeDocTypes, intakeSubmit,
     workflow: { list: wfList, counts: wfCounts, recipients, assign, claim, resolve, recall, stamped: wfStamped,
                 stampTypes, canStamp: stampCan, stampList, stampPlace, stampedDoc },
     recycle: { list: binList, delete: binDelete, restore: binRestore, purge: binPurge, purgeAll: binPurgeAll },
