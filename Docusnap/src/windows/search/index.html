@@ -183,12 +183,16 @@
     .xlsx-tab.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
     .xlsx-body { flex: 1; min-height: 0; display: flex; }
     .xlsx-scroll { flex: 1; overflow: auto; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); }
-    .xlsx-table { border-collapse: collapse; font-family: var(--mono); font-size: 11px; }
+    /* table-layout:fixed so the <colgroup> widths are authoritative → columns are drag-resizable. */
+    .xlsx-table { border-collapse: collapse; font-family: var(--mono); font-size: 11px; table-layout: fixed; }
     .xlsx-table td { border: 1px solid var(--border); padding: 2px 7px; white-space: nowrap;
-      max-width: 280px; overflow: hidden; text-overflow: ellipsis; color: var(--text); vertical-align: top; }
+      overflow: hidden; text-overflow: ellipsis; color: var(--text); vertical-align: top; }
     .xlsx-table .xlsx-colhdr, .xlsx-table .xlsx-rownum, .xlsx-table .xlsx-corner {
       background: var(--surface2); color: var(--muted); font-weight: 600; text-align: center; position: sticky; }
     .xlsx-table .xlsx-colhdr { top: 0; z-index: 1; }
+    /* Drag the right edge of a column header to widen/narrow that column. */
+    .xlsx-col-resize { position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; user-select: none; }
+    .xlsx-col-resize:hover { background: var(--accent); opacity: .45; }
     .xlsx-table .xlsx-rownum, .xlsx-table .xlsx-corner { left: 0; }
     .xlsx-table .xlsx-corner { top: 0; z-index: 2; }
     .xlsx-note { font-size: 10px; color: var(--muted); padding: 6px 2px 0; flex-shrink: 0; }

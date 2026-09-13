@@ -463,9 +463,13 @@ function _colLetter(i) { let s = ''; i++; while (i > 0) { const r = (i - 1) % 26
 function _sheetTableHtml(sheet) {
   const rows = sheet.rows || [];
   const width = rows.reduce((w, r) => Math.max(w, r.length), 0);
-  let h = '<table class="xlsx-table"><tbody>';
+  // A <colgroup> drives the (fixed-layout) column widths so each column is drag-resizable. col 0 = the
+  // row-number gutter; the data columns start at index 1.
+  let h = '<table class="xlsx-table"><colgroup><col style="width:46px">';
+  for (let c = 0; c < width; c++) h += '<col style="width:132px">';
+  h += '</colgroup><tbody>';
   h += '<tr><td class="xlsx-corner"></td>';
-  for (let c = 0; c < width; c++) h += `<td class="xlsx-colhdr">${_colLetter(c)}</td>`;
+  for (let c = 0; c < width; c++) h += `<td class="xlsx-colhdr">${_colLetter(c)}<span class="xlsx-col-resize" data-col="${c}" title="Drag to resize"></span></td>`;
   h += '</tr>';
   for (let ri = 0; ri < rows.length; ri++) {
     h += `<tr><td class="xlsx-rownum">${ri + 1}</td>`;
@@ -474,6 +478,28 @@ function _sheetTableHtml(sheet) {
   }
   h += '</tbody></table>';
   return h;
+}
+
+// Drag-resize the spreadsheet columns: each header's right-edge handle sets its <col>'s width.
+function _wireColResize(ph) {
+  ph.querySelectorAll('.xlsx-col-resize').forEach((handle) => {
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const table = handle.closest('table');
+      const cols = table && table.querySelectorAll('colgroup > col');
+      const col = cols && cols[parseInt(handle.dataset.col, 10) + 1];   // +1 skips the row-number gutter
+      if (!col) return;
+      const startX = e.clientX;
+      const startW = parseInt(col.style.width, 10) || 132;
+      const move = (ev) => { col.style.width = Math.max(40, startW + (ev.clientX - startX)) + 'px'; };
+      const up = () => {
+        window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up);
+        document.body.style.cursor = '';
+      };
+      window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+      document.body.style.cursor = 'col-resize';
+    });
+  });
 }
 
 async function _tryRenderSpreadsheet(doc, ph) {
@@ -496,6 +522,7 @@ async function _tryRenderSpreadsheet(doc, ph) {
   ph.style.display = '';
   ph.classList.add('xlsx-ph');
   ph.innerHTML = `<div class="xlsx-preview">${tabs}<div class="xlsx-body">${panels}</div>${note}</div>`;
+  _wireColResize(ph);   // make every sheet's columns drag-resizable
   if (multi) {
     ph.querySelectorAll('.xlsx-tab').forEach((btn) => btn.addEventListener('click', () => {
       const idx = btn.dataset.sheet;
