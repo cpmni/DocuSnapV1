@@ -21,7 +21,29 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-13 (overnight: flip-corpus CENSUSES + the "general doc filing" = QuickFile+Departments FOUNDATION + Chris):
+## ⏭ LATEST — 2026-09-13 EVENING (Search/Quick File UX batch + date-precedence fix + CLIENT Quick File shipped + search-parity PLAN):
+**READ `HANDOVER_2026-09-13_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `a35051c`; origin CURRENT
+(0 ahead — all pushed).** No installer. One uncommitted file: `docs/designs/CLIENT_SEARCH_PARITY_PLAN_2026-09-13.md`
+(commit it first). Owner-driven live-vet session, all pinned. **SHIPPED:** big docs open fast (page-1-first for
+ANY pdf + `pages.py --count` probe; `5ff8f22`/`15c8c2d`/`aad26aa`/`144dc17`) · in-document Find works on SCANNED
+docs (OCR word-box fallback in `pdf_find.py`, oscar+gary; `811f5fc`) · **date-precedence fix `mig 166
+template_date_invalid_yield_lowconf`** DARK, Oracle SIGN-OFF-W/COND (`2cc3a27`): an impossible taught date yields
+to a valid keyword date even below the 90 conf floor — a seeded custom date field structurally reads 85 so the
+garble could never lose; KW-leg only, impossible-arm only, auto-file-NEUTRAL; pin `test_taught_date_invalid_yield.py`
+42 · Quick File drag-drop works (preload-resolved paths — a contextBridge File is a proxy; `f846cd2`), pane restyled
++ centered, Document Types names un-truncated · spreadsheet columns drag-resizable (`a9ca638`/`6785960`) · **CLIENT
+Quick File end-to-end** — `/v1/documents/intake` upload (contract 1.1.0→**1.2.0**; capped reader, in-flight cap,
+`fileKinds.isUploadIntake` SAFE-subset, temp minted+cleaned; Oracle SIGN-OFF-W/COND; pin `test_v1_intake.js` 18)
++ client UI (`44b430f`/`1e2fdc7`/`a35051c`), LIVE-tested (client filed a doc on the core). **NEXT (resume):** the
+**client search parity + pop-out PLAN** (`docs/designs/CLIENT_SEARCH_PARITY_PLAN_2026-09-13.md`, eric-designed,
+ORACLE-VET PENDING) — a SHARED `src/shared/search-ui/` module + injected transport + a generated client copy with
+a staleness check + no-direct-IPC pin so every future core-search change auto-replicates to the client; S0 = extract
+the shared module (core byte-identical) then S1 pop-out, S2 four `/v1` endpoints, S3 grid, S4 stamps. **RUNNING at
+wrap:** core dev app `TEST_BUILD=1` (contract 1.2.0, mig 166 armed) + the detached CLIENT app. Flip gates owed:
+mig 166 (heal-vs-mislead census + Oracle), Quick File graduation (D2 sweep). `%APPDATA%\ScanFinder\docusnap.db`
+still blocked to Claude tools. Memory `project_client_quickfile_and_search_parity_20260913.md`.
+
+## Prior — 2026-09-13 (overnight: flip-corpus CENSUSES + the "general doc filing" = QuickFile+Departments FOUNDATION + Chris):
 **READ `HANDOVER_2026-09-13_NIGHT.md` FIRST** (its NEEDS-YOUR-APPROVAL queue is the morning to-do). Branch
 `feat/teach-side-overnight`; **23 commits ahead of origin, NONE pushed** (owner's call); HEAD `b9811ea`; tree clean.
 Two owner directives ran overnight. **(1) FLIP-CORPUS:** built failure-mode injectors (`gen_customer_test.py
