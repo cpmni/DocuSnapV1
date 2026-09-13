@@ -59,19 +59,30 @@ function register(ctx) {
     return '';
   }
 
+  // The Q-C10 validator options for THIS db (userData + filing output tree are off-limits; the size cap).
+  function _validateOpts(db) {
+    return {
+      userDataDir: app.getPath('userData'),
+      outputRoot: learning.getSetting(db, 'output_folder', null),
+      maxMb: Number(learning.getSetting(db, 'direct_intake_max_mb', svc.DEFAULT_MAX_MB)) || svc.DEFAULT_MAX_MB,
+    };
+  }
+
   // Stage validated source paths into the MAIN-side token map; the renderer only ever sees tokens.
-  function stagePaths(paths) {
+  // Every path — dialog OR renderer-supplied (drop) OR launch arg — goes through the ONE Q-C10 validator
+  // (svc.validateIntakePath): canonicalise once, real-file, not inside the app's data/output, type, size.
+  // A refused path returns a REASON so the caller can tell the user; it is never silently dropped.
+  function stagePaths(db, paths) {
     _sweep();
+    const opts = _validateOpts(db);
     const out = [];
     for (const p of (paths || [])) {
-      const name = path.basename(String(p));
-      const ext = fileKinds.normExt(p);
-      if (!fileKinds.isIntake(ext) || fileKinds.isNeverOpen(ext)) { out.push({ name, ext, refused: 'unsupported_type' }); continue; }
-      let st; try { st = fs.statSync(p); } catch { out.push({ name, ext, refused: 'unreadable' }); continue; }
-      if (!st.isFile()) { out.push({ name, ext, refused: 'not_a_file' }); continue; }
+      const name = path.basename(String(p || ''));
+      const v = svc.validateIntakePath(String(p || ''), opts);
+      if (!v.ok) { out.push({ name, ext: v.ext || fileKinds.normExt(p), refused: v.refused }); continue; }
       const token = _mint();
-      _staged.set(token, { path: String(p), ext, size: st.size, mtime: st.mtimeMs, expires: Date.now() + TTL_MS });
-      out.push({ token, name, ext, size: st.size });
+      _staged.set(token, { path: v.path, ext: v.ext, size: v.size, expires: Date.now() + TTL_MS });
+      out.push({ token, name, ext: v.ext, size: v.size });
     }
     return out;
   }
@@ -89,7 +100,19 @@ function register(ctx) {
       filters: [{ name: 'Documents', extensions: exts }, { name: 'All files', extensions: ['*'] }],
     });
     if (!res || res.canceled) return { ok: true, files: [] };
-    return { ok: true, files: stagePaths(res.filePaths || []) };
+    return { ok: true, files: stagePaths(db, res.filePaths || []) };
+  });
+
+  // Stage renderer-supplied paths (drag-drop onto the Quick File pane). The renderer only ever hands us
+  // PATHS (obtained in the preload via webUtils.getPathForFile) — it never keeps or displays them past
+  // this call. Renderer-supplied strings are LOWER trust than a dialog result, so they run the SAME
+  // Q-C10 validator (stagePaths). Same role + enabled gate as the picker.
+  ipcMain.handle('direct-intake-stage-paths', (_e, paths) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    if (!enabled(db)) return { ok: false, error: 'disabled' };
+    if (!Array.isArray(paths)) return { ok: false, error: 'bad_request' };
+    return { ok: true, files: stagePaths(db, paths.slice(0, 100)) };
   });
 
   // The doc types a Quick File may use (reading_mode='none') + the Quick File presets to offer if none exist.

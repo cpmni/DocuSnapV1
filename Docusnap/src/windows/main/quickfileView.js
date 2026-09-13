@@ -22,6 +22,17 @@
     return n;
   };
   const stem = (name) => String(name || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() || 'Document';
+  // Plain-English reason for a refused staged file (Q-C10 validator reasons → operator text).
+  const _refuseReason = (r) => ({
+    network: 'network paths aren’t supported yet',
+    unsupported_type: 'unsupported file type',
+    too_large: 'too large',
+    inside_app: 'that file is inside ScanFinder’s own folders',
+    unresolved: 'the file could not be read',
+    missing: 'the file was not found',
+    not_a_file: 'not a file',
+    invalid: 'invalid file',
+  })[r] || 'unsupported file';
   const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
   let _inited = false;
@@ -135,10 +146,11 @@
     root.appendChild(el('p', { className: 'muted', style: { margin: '0 0 16px', fontSize: '13px', color: 'var(--muted)', maxWidth: '640px' } },
       'For documents that need no scanning — Word, Excel, email, PDF. Type the details and it files straight into your folders, searchable a moment later. It never runs OCR and never teaches the scanner.'));
 
-    // Header row: pick zone (left) + details (right). NOTE: styled as a plain click-to-pick CARD, NOT a
-    // dashed drop target — drag-drop is deferred (Oracle Q-C12; preload still swallows drops), so a
-    // "drop here" cue would be a false affordance until that slice lands. #qf-dropzone id kept for it.
-    const dropZone = el('div', { id: 'qf-dropzone', 'data-help-key': 'quick-file', style: {
+    // Header row: pick zone (left) + details (right). Click-to-pick CARD that also accepts a DRAG-DROP
+    // (Oracle SIGN-OFF-W/COND 2026-09-13). The `data-intake-drop` attribute scopes the drop wiring to
+    // THIS element — the window-level preload drop guard (preventDefault, kills file:// nav) is UNTOUCHED
+    // and still fires as the last-in-chain backstop; every other window is byte-identical.
+    const dropZone = el('div', { id: 'qf-dropzone', 'data-help-key': 'quick-file', 'data-intake-drop': '', style: {
       flex: '0 0 260px', minHeight: '120px', border: '1px solid var(--border)', background: 'var(--surface)',
       borderRadius: 'var(--r)', display: 'flex', flexDirection: 'column', alignItems: 'center',
       justifyContent: 'center', gap: '8px', padding: '18px', textAlign: 'center', color: 'var(--muted)', cursor: 'pointer' } });
@@ -147,6 +159,38 @@
     dropZone.appendChild(el('div', { style: { fontSize: '13px' } }, 'Choose documents to file'));
     dropZone.appendChild(pickBtn);
     dropZone.addEventListener('click', (e) => { if (e.target === dropZone) doPick(); });
+
+    // Drag-drop. The dashed "drop here" cue shows ONLY while a real file drag is over the card (so the
+    // card never looks droppable at rest). The drop handler preventDefaults itself (consumes the drop),
+    // but does NOT stopPropagation — the window backstop still runs. Paths are resolved in the preload
+    // (webUtils) and forwarded straight to MAIN for Q-C10 validation; the renderer never keeps them.
+    const _hasFiles = (e) => { try { return Array.prototype.includes.call(e.dataTransfer.types || [], 'Files'); } catch { return false; } };
+    const _drag = (on) => {
+      dropZone.style.borderStyle = on ? 'dashed' : 'solid';
+      dropZone.style.borderColor = on ? 'var(--accent)' : 'var(--border)';
+      dropZone.style.background = on ? 'var(--accent-bg)' : 'var(--surface)';
+    };
+    dropZone.addEventListener('dragenter', (e) => { if (_hasFiles(e)) { e.preventDefault(); _drag(true); } });
+    dropZone.addEventListener('dragover', (e) => { if (_hasFiles(e)) { e.preventDefault(); try { e.dataTransfer.dropEffect = 'copy'; } catch {} } });
+    dropZone.addEventListener('dragleave', (e) => { if (e.target === dropZone) _drag(false); });
+    dropZone.addEventListener('drop', async (e) => {
+      e.preventDefault();                 // consume the drop here (NOT stopPropagation — backstop stays)
+      _drag(false);
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (!files || !files.length) return;
+      let paths = [];
+      try { paths = D.quickFileDroppedPaths(files); } catch { paths = []; }
+      if (!paths.length) return;
+      try {
+        const r = await D.quickFileStagePaths(paths);
+        if (r && r.ok) {
+          staged = staged.concat((r.files || []).filter((f) => f.token).map((f) => ({ token: f.token, name: f.name })));
+          renderFiles();
+          const refused = (r.files || []).filter((f) => f.refused);
+          if (refused.length) { msg.style.color = 'var(--warn)'; msg.textContent = `${refused.length} file(s) skipped — ${_refuseReason(refused[0].refused)}.`; }
+        } else if (msg) { msg.style.color = 'var(--warn)'; msg.textContent = 'Could not add those files.'; }
+      } catch { /* ignore */ }
+    });
 
     typeRow = el('div', { style: { margin: '0 0 12px' } });
     const inStyle = { width: '100%', padding: '8px', borderRadius: 'var(--r-sm)', boxSizing: 'border-box' };

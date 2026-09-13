@@ -2295,54 +2295,11 @@ function _allowedOpenRoots(db) {
 const _app = (() => { try { return require('electron').app || { isPackaged: false }; }
                       catch { return { isPackaged: false }; } })();
 
-function _realCanonical(p) {
-  // DEV-ONLY (2026-08-09 NIGHT, pre-release audit): same rule as the licence key pinning —
-  // a containment boundary must not be switchable off by an environment variable on a
-  // customer's machine. Unpackaged, the switch still works, which is what lets the pin below
-  // prove the guard can actually fail.
-  if (!_app.isPackaged && process.env.SF_REALPATH_CONTAINMENT === '0') return p;
-  try {
-    return fs.realpathSync.native(p);
-  } catch (e) {
-    // Anything other than "it isn't there" (EPERM/EBUSY/ELOOP/…) is a path we cannot vouch for.
-    if (!e || e.code !== 'ENOENT') return null;
-  }
-  const tail = [path.basename(p)];
-  let dir = path.dirname(p);
-  while (dir && dir !== path.dirname(dir)) {
-    try {
-      return path.join(fs.realpathSync.native(dir), ...tail.slice().reverse());
-    } catch (e2) {
-      if (!e2 || e2.code !== 'ENOENT') return null;   // ancestor exists but is unverifiable → refuse
-      tail.push(path.basename(dir));
-      dir = path.dirname(dir);
-    }
-  }
-  // No existing ancestor at all (a missing drive, an unmounted share): there is nothing to follow,
-  // so the textual form is as canonical as it gets. It cannot match a canonicalised root by
-  // accident — a root that does not exist is itself refused above.
-  return p;
-}
-
-function _withinAnyRoot(resolved, roots) {
-  const target = _realCanonical(resolved);
-  if (target === null) return false;                       // exists but unverifiable → refuse
-  // Case-insensitive on Windows is PART of this fix, not a separate loosening: realpathSync.native
-  // returns the filesystem's own casing, which routinely differs from the casing the user typed into
-  // the output-folder setting. Comparing case-sensitively would turn that difference into a false
-  // REFUSAL of the user's own files. It admits nothing new — on Windows those are the same directory.
-  const cmp = (a, b) => (process.platform === 'win32'
-    ? a.toLowerCase() === b.toLowerCase()
-    : a === b);
-  const under = (a, b) => (process.platform === 'win32'
-    ? a.toLowerCase().startsWith(b.toLowerCase() + path.sep)
-    : a.startsWith(b + path.sep));
-  return roots.some(r => {
-    const root = _realCanonical(r);
-    if (root === null) return false;
-    return cmp(target, root) || under(target, root);
-  });
-}
+// Real-path canonicalisation + root containment — LIFTED to src/lib/pathContainment.js (Oracle Q-C10,
+// 2026-09-13) so open-file (SEC-17) and the Quick File intake validator share ONE predicate. Aliased to
+// the original local names so every call site here is unchanged, and re-exported below so the SEC-17 pin
+// (test_path_containment.js) keeps asserting the SHIPPED predicate — never a copy.
+const { realCanonical: _realCanonical, withinAnyRoot: _withinAnyRoot } = require('../../lib/pathContainment');
 
 // True only when `rawPath` is safe to hand to shell.openPath / showItemInFolder.
 function _isOpenablePath(db, rawPath) {

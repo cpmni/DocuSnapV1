@@ -1,6 +1,6 @@
 'use strict';
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // Audit M4: Chromium's default action for a file dropped on the page is to NAVIGATE to
 // file://<dropped>, which would load a page that keeps this preload (privileged IPC) but
@@ -61,6 +61,11 @@ contextBridge.exposeInMainWorld('docusnap', {
   quickFileAddType:      (slug)    => ipcRenderer.invoke('direct-intake-add-type', slug),
   quickFileSubmit:       (payload) => ipcRenderer.invoke('direct-intake-submit', payload),
   quickFileUpdate:       (payload) => ipcRenderer.invoke('direct-intake-update', payload),
+  // Drag-drop: resolve each dropped File to its absolute path IN THE PRELOAD (Electron 44 removed
+  // File.path; webUtils is preload-only). The renderer hands us the drop's FileList and immediately
+  // forwards the returned paths to MAIN via quickFileStagePaths — it never keeps or displays them.
+  quickFileDroppedPaths: (files) => { try { return Array.from(files || []).map(f => webUtils.getPathForFile(f)).filter(Boolean); } catch { return []; } },
+  quickFileStagePaths:   (paths)  => ipcRenderer.invoke('direct-intake-stage-paths', paths),
   onDirectIntakeChanged: (cb)      => ipcRenderer.on('direct-intake-changed', () => cb()),
 
   // ── Licensing ────────────────────────────────────────────────────────────────

@@ -19,7 +19,9 @@
  * search-text extraction (ocr_text is title+notes for now), drag-drop, the watch-folder lane.
  */
 
+const fs = require('fs');
 const fileKinds = require('../lib/fileKinds');
+const pathContainment = require('../lib/pathContainment');
 
 const MB = 1024 * 1024;
 const DEFAULT_MAX_MB = 50;
@@ -29,6 +31,36 @@ function getSetting(db, key, dflt) {
   catch { return dflt; }
 }
 function enabled(db) { return String(getSetting(db, 'direct_intake_enabled', 'false')) === 'true'; }
+
+/**
+ * Q-C10 intake-path validator — the ONE gate for EVERY path that becomes a Quick File doc (the OS
+ * dialog, drag-drop, the --quickfile arg). Canonicalises ONCE (Oracle: no double-canonicalise / TOCTOU)
+ * and checks type / real-file / containment / size against that CANONICAL path, never the raw string.
+ * Returns {ok,ext,size,path} on accept, or {refused:<reason>, ...} so the caller can TELL the user —
+ * a typed lane's safe state is refusal WITH A REASON, never a silent drop.
+ *   reasons: invalid | network | unsupported_type | unresolved | missing | not_a_file | inside_app | too_large
+ * @param rawPath  the path as supplied (dialog result / dropped File path / launch arg)
+ * @param opts     {userDataDir, outputRoot, maxMb}
+ */
+function validateIntakePath(rawPath, opts = {}) {
+  if (!rawPath || typeof rawPath !== 'string') return { refused: 'invalid' };
+  // Network shares (UNC) refused for now — WITH a reason, never silently (a later slice may add them).
+  if (/^[\\/]{2}/.test(rawPath)) return { refused: 'network' };
+  const ext = fileKinds.normExt(rawPath);
+  // Accept-list decides; never-open is defence in depth.
+  if (!fileKinds.isIntake(ext) || fileKinds.isNeverOpen(ext)) return { refused: 'unsupported_type', ext };
+  const real = pathContainment.realCanonical(rawPath);          // canonicalise ONCE
+  if (!real) return { refused: 'unresolved' };                  // exists-but-unverifiable → refuse
+  let st;
+  try { st = fs.statSync(real); } catch { return { refused: 'missing' }; }
+  if (!st.isFile()) return { refused: 'not_a_file' };
+  // Never stage a file that lives inside the app's own data or the filing output tree.
+  const roots = [opts.userDataDir, opts.outputRoot].filter(Boolean);
+  if (pathContainment.targetWithinAnyRoot(real, roots)) return { refused: 'inside_app' };
+  const maxMb = Number(opts.maxMb) || DEFAULT_MAX_MB;
+  if (st.size > maxMb * MB) return { refused: 'too_large', maxMb };
+  return { ok: true, ext, size: st.size, path: real };
+}
 
 /**
  * Submit ONE typed document.
@@ -260,4 +292,4 @@ async function update(db, actor, docId, patch, deps = {}) {
   return { ok: true, docId, storedPath, refiled };
 }
 
-module.exports = { submit, update, enabled, DEFAULT_MAX_MB };
+module.exports = { submit, update, enabled, validateIntakePath, DEFAULT_MAX_MB };
