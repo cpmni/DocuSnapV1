@@ -95,10 +95,12 @@ function _showPage(idx) {
 // ── Zoom / pan (mirrors the Review viewer: buttons + wheel zoom, right-drag pan) ─
 let previewZoom = 1, panX = 0, panY = 0;
 const ZOOM_MIN = 1, ZOOM_MAX = 4, ZOOM_STEP = 0.25;
-// Render the preview at ~432 DPI (scale 6) so it stays crisp when zoomed — the pane rasterises the page
-// (unlike a browser's vector render), so the fix is more source pixels. Born-digital docs render sharp;
-// a scanned doc is limited by its own scan resolution. Heavier per page, but fine for a single-doc pane.
-const SEARCH_RENDER_SCALE = 6;
+// Render the preview at ~216 DPI (scale 3). The pane rasterises the page and CSS-zooms it, so more source
+// pixels = crisper zoom — but scale 6 (432 DPI) rendered EVERY page up front (~2.5s + 15 MB over IPC for a
+// 5-page doc = a slow open). 216 DPI is crisp on screen and to ~2x zoom; it only softens near max zoom, an
+// acceptable trade for a ~4x faster open (fine detail is a click away via "open externally"). If deep-zoom
+// sharpness is needed later, re-render the CURRENT page on zoom-in rather than raising this for all pages.
+const SEARCH_RENDER_SCALE = 3;
 
 function _applyTransform() {
   const wrap = document.getElementById('preview-img-wrap');
