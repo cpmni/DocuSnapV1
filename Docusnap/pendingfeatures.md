@@ -5231,3 +5231,21 @@ each its own gate:
   (`INV-45153`←`INV-45152`) can auto-file on a common-mode misread (parity with the 'digits' role today).
   A finer per-scope prefix + digit-run-length skeleton derived from the confirmed samples narrows it
   below parity. New mechanism, own length/prefix-consistency design + pins + gate. DEFERRED.
+
+## Fast preview over the network — detached client (2026-09-13, NOT built)
+Desktop preview is now lazy per-page (`15c8c2d`: only page 1 renders on open, rest on demand via
+`get-document-page`; `page_count` on the detail DTO, `5ff8f22`). The DETACHED CLIENT does NOT benefit —
+it fetches ALL pages in one `/v1/documents/{id}/pages` call (`apiClient.js:159` → renderer renders
+`pg.json.pages`), so a big scan is ~37MB over TLS/LAN before anything shows. Follow-up (the "A3 / client
+/v1" slice):
+- **Single-page `/v1` endpoint** — `GET /v1/documents/{id}/page/{index}?scale=` wrapping
+  `previewService.getDocumentPage` (mirror the desktop `get-document-page`, same server-side path
+  resolution + DTO shape: image bytes only, no paths). Beside the existing `/pages` + `/thumbnail`.
+- **Client lazy preview** — fetch page 1 first, other pages on navigate (sparse array, same pattern as
+  `search-preview.js` now); optional prefetch of the next page. Keep-alive already reused
+  (`apiClient.js:57`); host-side page cache already exists.
+- **Network payload levers:** ETag/304 + client-side cache on revisit; lower render scale over the LAN
+  (scale 2 ≈144 DPI, re-render current page higher on zoom); JPEG for scanned/photographic pages
+  (~5–10× smaller than PNG, keep PNG for born-digital/line-art) — the biggest single win for scan-heavy
+  clients. Consider a "preview quality" setting.
+- Pairs with the in-doc-find A3 (client `/v1` find endpoint) — same client-preview surface.
