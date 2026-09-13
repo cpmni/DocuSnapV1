@@ -14,6 +14,27 @@ try {
   window.addEventListener('drop', (e) => e.preventDefault(), false);
 } catch { /* window unavailable in an odd context — the main-process guard still applies */ }
 
+// Quick File drag-drop path resolution (2026-09-13). webUtils.getPathForFile needs the REAL File object;
+// a File passed from the renderer THROUGH contextBridge is a proxy and resolves to '' — so the drop must
+// be read HERE, in the preload, where e.dataTransfer holds the native Files. Scoped to an element carrying
+// [data-intake-drop] (the Quick File card) so no other window/element is affected; the guard above still
+// preventDefaults every drop (backstop untouched). Resolved absolute paths (plain strings) are handed to
+// the renderer's registered callback — the renderer never sees a File or reads a path itself.
+let _qfDropCb = null;
+try {
+  window.addEventListener('drop', (e) => {
+    try {
+      const dz = e.target && e.target.closest && e.target.closest('[data-intake-drop]');
+      if (!dz || typeof _qfDropCb !== 'function') return;
+      const files = e.dataTransfer && e.dataTransfer.files;
+      const out = [];
+      const n = (files && files.length) || 0;
+      for (let i = 0; i < n; i++) { try { const p = webUtils.getPathForFile(files[i]); if (p) out.push(p); } catch { /* skip */ } }
+      _qfDropCb(out);
+    } catch { /* never let a drop throw */ }
+  }, false);
+} catch { /* no window */ }
+
 // Diagnostic completeness (2026-08-02): forward every window's uncaught errors and unhandled
 // promise rejections to the main-process log, so "the red text in a screenshot" is in
 // processing.log by itself. Fire-and-forget send; main caps per-window volume. The preload
@@ -61,22 +82,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   quickFileAddType:      (slug)    => ipcRenderer.invoke('direct-intake-add-type', slug),
   quickFileSubmit:       (payload) => ipcRenderer.invoke('direct-intake-submit', payload),
   quickFileUpdate:       (payload) => ipcRenderer.invoke('direct-intake-update', payload),
-  // Drag-drop: resolve each dropped File to its absolute path IN THE PRELOAD (Electron 44 removed
-  // File.path; webUtils is preload-only). The renderer hands us the drop's FileList and immediately
-  // forwards the returned paths to MAIN via quickFileStagePaths — it never keeps or displays them.
-  // Resolve dropped File objects to absolute paths in the PRELOAD (E44 removed File.path; webUtils is
-  // preload-only). Iterate by INDEX — a FileList crossing contextBridge doesn't reliably support
-  // Array.from/iteration. Each getPathForFile is guarded so one bad item can't sink the batch.
-  quickFileDroppedPaths: (files) => {
-    const out = [];
-    try {
-      const n = (files && files.length) || 0;
-      for (let i = 0; i < n; i++) {
-        try { const p = webUtils.getPathForFile(files[i]); if (p) out.push(p); } catch { /* skip this one */ }
-      }
-    } catch { /* return whatever resolved */ }
-    return out;
-  },
+  // Drag-drop: the PRELOAD resolves dropped-file paths (webUtils needs the REAL File — a File sent from
+  // the renderer through contextBridge is a proxy and resolves to ''). The renderer registers a callback
+  // that receives the resolved absolute paths (plain strings) and forwards them to MAIN for validation.
+  onQuickFileDrop:       (cb)     => { _qfDropCb = (typeof cb === 'function') ? cb : null; },
   quickFileStagePaths:   (paths)  => ipcRenderer.invoke('direct-intake-stage-paths', paths),
   onDirectIntakeChanged: (cb)      => ipcRenderer.on('direct-intake-changed', () => cb()),
 

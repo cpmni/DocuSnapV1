@@ -16,8 +16,9 @@ console.log('1. preload path seam (Electron 44: File.path gone → webUtils in t
 {
   const pre = read('src/preload.js');
   check('webUtils imported from electron', /const \{[^}]*\bwebUtils\b[^}]*\} = require\('electron'\)/.test(pre));
-  check('quickFileDroppedPaths resolves files via webUtils.getPathForFile',
-        /quickFileDroppedPaths:[\s\S]{0,400}webUtils\.getPathForFile\(files\[i\]\)/.test(pre));
+  check('preload resolves paths in a [data-intake-drop]-scoped drop listener (real File, not a proxy)',
+        /closest\('\[data-intake-drop\]'\)/.test(pre) && /webUtils\.getPathForFile\(files\[i\]\)/.test(pre));
+  check('onQuickFileDrop registers the renderer callback', /onQuickFileDrop:\s*\(cb\)\s*=>/.test(pre));
   check('quickFileStagePaths invokes the validated stage IPC',
         /quickFileStagePaths:\s*\(paths\)\s*=>\s*ipcRenderer\.invoke\('direct-intake-stage-paths', paths\)/.test(pre));
 }
@@ -47,8 +48,8 @@ console.log('4. renderer drop handler is SCOPED and keeps the backstop');
   check('a drop preventDefaults (consumes) but does NOT call stopPropagation (window backstop stays)',
         /dropZone\.addEventListener\('drop'[\s\S]{0,400}e\.preventDefault\(\)/.test(v)
         && !/dropZone\.addEventListener\('drop'[\s\S]{0,600}\.stopPropagation\(/.test(v));
-  check('paths resolved via preload webUtils then forwarded to MAIN',
-        /D\.quickFileDroppedPaths\(files\)/.test(v) && /D\.quickFileStagePaths\(paths\)/.test(v));
+  check('renderer registers onQuickFileDrop and forwards resolved paths to MAIN',
+        /D\.onQuickFileDrop\(/.test(v) && /D\.quickFileStagePaths\(paths\)/.test(v));
   check('refused files surface a plain reason (never a silent drop)', /_refuseReason\(refused\[0\]\.refused\)/.test(v));
 }
 

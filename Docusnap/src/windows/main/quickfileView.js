@@ -160,10 +160,12 @@
     dropZone.appendChild(pickBtn);
     dropZone.addEventListener('click', (e) => { if (e.target === dropZone) doPick(); });
 
-    // Drag-drop. The dashed "drop here" cue shows ONLY while a real file drag is over the card (so the
-    // card never looks droppable at rest). The drop handler preventDefaults itself (consumes the drop),
-    // but does NOT stopPropagation — the window backstop still runs. Paths are resolved in the preload
-    // (webUtils) and forwarded straight to MAIN for Q-C10 validation; the renderer never keeps them.
+    // Drag-drop. The dashed "drop here" cue shows ONLY while a real file drag is over the card. Path
+    // resolution happens in the PRELOAD (webUtils.getPathForFile needs the real File — a File passed
+    // from the renderer through contextBridge is a proxy and resolves to ''); the preload hands us the
+    // resolved absolute paths via onQuickFileDrop, and we forward them to MAIN for Q-C10 validation. The
+    // renderer never touches a File or a path. The drop event itself is preventDefaulted by the window
+    // backstop (preload) AND here (cue reset) — never stopPropagation.
     const _hasFiles = (e) => { try { return Array.prototype.includes.call(e.dataTransfer.types || [], 'Files'); } catch { return false; } };
     const _drag = (on) => {
       dropZone.style.borderStyle = on ? 'dashed' : 'solid';
@@ -173,16 +175,12 @@
     dropZone.addEventListener('dragenter', (e) => { if (_hasFiles(e)) { e.preventDefault(); _drag(true); } });
     dropZone.addEventListener('dragover', (e) => { if (_hasFiles(e)) { e.preventDefault(); try { e.dataTransfer.dropEffect = 'copy'; } catch {} } });
     dropZone.addEventListener('dragleave', (e) => { if (e.target === dropZone) _drag(false); });
-    dropZone.addEventListener('drop', async (e) => {
-      e.preventDefault();                 // consume the drop here (NOT stopPropagation — backstop stays)
+    dropZone.addEventListener('drop', (e) => { e.preventDefault(); _drag(false); });   // cue reset (paths arrive via onQuickFileDrop)
+
+    // The preload resolves the dropped paths and calls this back (plain string[] — never a File).
+    if (D.onQuickFileDrop) D.onQuickFileDrop(async (paths) => {
       _drag(false);
-      const files = e.dataTransfer && e.dataTransfer.files;
-      try { console.log('[quickfile] drop: files=', files && files.length); } catch {}
-      if (!files || !files.length) { if (msg) { msg.style.color = 'var(--warn)'; msg.textContent = 'Nothing was dropped.'; } return; }
-      let paths = [];
-      try { paths = D.quickFileDroppedPaths(files); } catch { paths = []; }
-      try { console.log('[quickfile] drop: paths=', paths.length); } catch {}
-      if (!paths.length) { if (msg) { msg.style.color = 'var(--warn)'; msg.textContent = 'Couldn’t read the dropped file(s) — use “Choose files…” instead.'; } return; }
+      if (!paths || !paths.length) { if (msg) { msg.style.color = 'var(--warn)'; msg.textContent = 'Couldn’t read the dropped file(s) — use “Choose files…” instead.'; } return; }
       try {
         const r = await D.quickFileStagePaths(paths);
         if (r && r.ok) {
@@ -190,6 +188,7 @@
           renderFiles();
           const refused = (r.files || []).filter((f) => f.refused);
           if (refused.length) { msg.style.color = 'var(--warn)'; msg.textContent = `${refused.length} file(s) skipped — ${_refuseReason(refused[0].refused)}.`; }
+          else if (msg) { msg.style.color = 'var(--ok)'; msg.textContent = `Added ${(r.files || []).length} file(s) — fill in the details and File.`; }
         } else if (msg) { msg.style.color = 'var(--warn)'; msg.textContent = 'Could not add those files.'; }
       } catch { /* ignore */ }
     });
