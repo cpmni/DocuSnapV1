@@ -336,9 +336,27 @@ async function selectDoc(doc) {
     renderPreviewFields(merged);
     window.SearchActions.renderActions(merged);
 
+    // FAST FIRST PAGE (owner 2026-09-13: an 8 MB multi-page PDF was slow to open): paint page 1 as soon
+    // as it's rendered, then let the full render below preload the rest in the background. Best-effort +
+    // staleness-guarded; page 1 is re-shown identically by _showPage(0) once the full set lands, so nav
+    // + find come alive then. Single-page docs skip this (the full render is already one page).
+    const _pageCount = Number(merged.page_count) || 0;
+    if (_pageCount > 1) {
+      try {
+        const first = await window.docusnap.getDocumentPage(doc.id, 0, SEARCH_RENDER_SCALE);
+        if (s.selectedDoc !== mine) return;
+        if (first) {
+          document.getElementById('preview-img').src = first;
+          document.getElementById('preview-img-wrap').style.display = '';
+          ph.style.display = 'none';
+        }
+      } catch { /* fall through to the full render */ }
+    }
+
     // DE-PATHED (owner 2026-08-02): rows no longer carry paths; the pages handler always
     // resolved server-side from the doc row anyway (client args were decorative), so fetch
-    // by docId alone — an unresolvable file simply yields [].
+    // by docId alone — an unresolvable file simply yields []. This preloads ALL pages (the rest,
+    // behind the page-1 paint above) and formalises currentPages + page nav.
     s.currentPages = await window.docusnap.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE);
     if (s.selectedDoc !== mine) return;
     s.currentPage = 0;

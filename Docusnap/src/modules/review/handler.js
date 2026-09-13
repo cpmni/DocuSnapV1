@@ -1045,6 +1045,28 @@ function register(ctx) {
     });
   });
 
+  // ── Single page render (fast-first-page for big PDFs) ───────────────────────
+  // Renders ONE page so a large multi-page PDF shows page 1 immediately; the renderer then
+  // background-loads the rest via get-document-pages. Same server-side path resolution.
+  ipcMain.handle('get-document-page', async (_e, docId, index, scale) => {
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    let rFolder = null, rFile = null;
+    if (row) {
+      const pick = row.working_path || row.stored_path
+        || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null);
+      if (pick) { rFolder = path.dirname(pick); rFile = path.basename(pick); }
+    }
+    if (!rFolder || !rFile) return null;
+    return previewService.getDocumentPage(db, { docId, folderPath: rFolder, filename: rFile, index, scale }, {
+      fs, path, spawn, pythonExe, pythonArgs,
+      renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
+    });
+  });
+
   // ── Locate a search term in a document (preview jump/next/highlight) ─────────
   // Returns page-fraction match boxes for the renderer to overlay. Same SERVER-SIDE path
   // resolution as get-document-pages (client paths are never trusted). Born-digital PDFs only.

@@ -193,6 +193,46 @@ function getDocumentPages(db, { docId, folderPath, filename, scale, exact }, dep
 }
 
 /**
+ * Render ONE page of a PDF to a base64 data-URL at a given scale — the fast-first-page path so a big
+ * multi-page PDF shows page 1 immediately instead of waiting for every page to rasterise (owner,
+ * 2026-09-13: an 8 MB PDF took a long time to open). Reuses render/pages.py's single-page mode
+ * (--thumb --page --scale). Returns null for a non-PDF or on any failure (caller falls back to the
+ * full getDocumentPages render). Same server-side file resolution as getDocumentPages.
+ *
+ * @param {object} db
+ * @param {object} args { docId, folderPath, filename, index, scale }
+ * @param {object} deps { fs, path, spawn, pythonExe, pythonArgs, renderScript, log? }
+ * @returns {Promise<string|null>}
+ */
+function getDocumentPage(db, { docId, folderPath, filename, index, scale }, deps) {
+  const { fs, path, spawn, pythonExe, pythonArgs, renderScript } = deps;
+  const log = deps.log || console.log;
+  if (!folderPath || !filename) return Promise.resolve(null);
+  const filePath = _resolveDocFile(db, { docId, folderPath, filename }, deps);
+  if (!filePath) return Promise.resolve(null);
+  if (path.extname(filePath).toLowerCase() !== '.pdf') return Promise.resolve(null);
+
+  const py = pythonExe();
+  const args = ['--file', filePath, '--thumb', '--page', String(Math.max(0, index | 0))];
+  if (scale && scale > 0) args.push('--scale', String(scale));
+  return new Promise((resolve) => {
+    const proc = spawn(py, pythonArgs(renderScript, ...args), { windowsHide: true });
+    let out = '', err = '';
+    proc.stdout.on('data', d => { out += d.toString(); });
+    proc.stderr.on('data', d => { err += d.toString(); });
+    proc.on('error', (e) => { log(`[page] spawn error for ${filePath}: ${e.message}`); resolve(null); });
+    proc.on('close', (code) => {
+      try { const uri = JSON.parse(out); resolve(typeof uri === 'string' ? uri : null); }
+      catch (e) {
+        log(`[page] render failed for ${filePath} p${index} — exit=${code} parse_error=${e.message}`
+          + (err ? ` stderr=${err.trim().slice(0, 300)}` : ''));
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
  * Render a small page-1 thumbnail for a document — a single base64 data-URL, or
  * null when nothing renderable can be resolved (caller keeps its fallback). Used
  * by the document/file lists + the add-template picker. Reuses the SAME file

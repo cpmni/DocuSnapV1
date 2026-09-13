@@ -260,6 +260,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   reviewHeartbeat:             (id)      => ipcRenderer.invoke('review-heartbeat', id),
   getDocumentPages:            (id, fp, fn, scale) => ipcRenderer.invoke('get-document-pages', id, fp, fn, scale),
   getDocumentThumbnail:        (id, fp, fn) => ipcRenderer.invoke('get-document-thumbnail', id, fp, fn),
+  getDocumentPage:             (id, index, scale) => ipcRenderer.invoke('get-document-page', id, index, scale),
   findInDocument:              (id, query) => ipcRenderer.invoke('find-in-document', id, query),
   getSpreadsheetGrid:          (id)         => ipcRenderer.invoke('get-spreadsheet-grid', id),
   getEnhancedPreview:          (data)       => ipcRenderer.invoke('get-enhanced-preview', data),
