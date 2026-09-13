@@ -39,7 +39,7 @@ function enabled(db) { return String(getSetting(db, 'direct_intake_enabled', 'fa
  *                   logAudit, now, maxMb, canAccessDocument}
  * @returns {{ok:true, docId, storedPath} | {ok:false, error, detail?}}
  */
-function submit(db, actor, input, deps = {}) {
+async function submit(db, actor, input, deps = {}) {
   const now = deps.now || (() => new Date().toISOString());
   const role = actor && actor.role;
   if (!(role === 'admin' || role === 'edit')) return { ok: false, error: 'forbidden' };
@@ -109,13 +109,14 @@ function submit(db, actor, input, deps = {}) {
       : srcPath;
     const allValues = { supplier_name: party, title,
                         [dt.date_field_key]: docDate, [refKey]: (input.reference || '').trim() };
-    const filed = deps.commitDocument({
+    const filed = await deps.commitDocument({
       db, fs: deps.fs, path: deps.path, outputRoot: deps.outputRoot, folderPath: staged,
       originalFilename, workingPath, existingFiledPath: null, allValues,
       documentType: dt.name, dtInfo: dt, logger: deps.logger || (() => {}),
     });
-    storedPath = filed && (filed.storedPath || filed.stored_path);
-    const storedFilename = filed && (filed.storedFilename || filed.stored_filename);
+    if (!filed || filed.success === false) throw new Error((filed && filed.error) || 'commit failed');
+    storedPath = filed.filePath;             // commitDocument returns { success, filename, filePath }
+    const storedFilename = filed.filename;
     // Q-C5: NULL working_path after filing so reconcileHolding never deletes the (now-filed) copy;
     // the filed copy is canonical. Then drop the inbox copy (mirrors reviewService re-file).
     db.prepare(`UPDATE documents SET stored_filename=?, stored_path=?, working_path=NULL WHERE id=?`)

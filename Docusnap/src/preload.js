@@ -55,6 +55,13 @@ contextBridge.exposeInMainWorld('docusnap', {
   authShowLoginScreen:  () => ipcRenderer.send('auth-show-login'),
   onAuthSessionChanged: (cb) => ipcRenderer.on('auth-session-changed', (_e, user) => cb(user)),
 
+  // Quick File (non-OCR direct intake) — paths stay in MAIN (the renderer only handles tokens).
+  quickFilePick:         ()        => ipcRenderer.invoke('direct-intake-pick'),
+  quickFileDocTypes:     ()        => ipcRenderer.invoke('direct-intake-doctypes'),
+  quickFileAddType:      (slug)    => ipcRenderer.invoke('direct-intake-add-type', slug),
+  quickFileSubmit:       (payload) => ipcRenderer.invoke('direct-intake-submit', payload),
+  onDirectIntakeChanged: (cb)      => ipcRenderer.on('direct-intake-changed', () => cb()),
+
   // ── Licensing ────────────────────────────────────────────────────────────────
   // Phase 1: read-only status + trial-start only. These return STATUS objects
   // (never the raw fingerprint) and perform NO gating — enforcement is OFF.

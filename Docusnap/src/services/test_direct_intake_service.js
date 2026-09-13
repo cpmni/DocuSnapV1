@@ -28,7 +28,7 @@ const deps = () => ({
   path, fs: { unlinkSync: (p) => unlinked.push(p) },
   outputRoot: '/out', inboxDir: '/inbox',
   ensureWorkingCopy: (_fs, _p, _inbox, _src, id, name) => `/inbox/${id}${path.extname(name)}`,
-  commitDocument: ({ originalFilename }) => ({ storedFilename: `Filed.${originalFilename}`, storedPath: `/out/Acme/2026/September/Filed.${originalFilename}` }),
+  commitDocument: async ({ originalFilename }) => ({ success: true, filename: `Filed.${originalFilename}`, filePath: `/out/Acme/2026/September/Filed.${originalFilename}` }),
   normaliseDate: (s) => (s === 'notadate' ? null : s),
   logAudit: () => {},
   now: () => '2026-09-13T00:00:00Z',
@@ -36,19 +36,20 @@ const deps = () => ({
 const baseInput = (inv, over = {}) => ({ srcPath: 'C:/src/Office lease.docx', ext: '.docx', size: 2 * 1024 * 1024,
   documentTypeId: inv, party: 'Acme Ltd', date: '12-09-2026', title: 'Office lease 2026', reference: 'OL-2026', notes: 'signed copy', ...over });
 
+(async () => {
 console.log('§1 refusals (a typed doc never enters a queue — the safe state is refusal with a reason)');
 {
   const { db, inv } = freshDb(true);
-  check('readonly refused', svc.submit(db, { role: 'readonly' }, baseInput(inv), deps()).error === 'forbidden');
-  check('null actor refused', svc.submit(db, null, baseInput(inv), deps()).error === 'forbidden');
+  check('readonly refused', (await svc.submit(db, { role: 'readonly' }, baseInput(inv), deps())).error === 'forbidden');
+  check('null actor refused', (await svc.submit(db, null, baseInput(inv), deps())).error === 'forbidden');
   const { db: d2, inv: i2 } = freshDb(false);
-  check('disabled (switch off) refused', svc.submit(d2, EDIT, baseInput(i2), deps()).error === 'disabled');
-  check('never-open ext (.docm) refused', svc.submit(db, EDIT, baseInput(inv, { srcPath: 'x.docm', ext: '.docm' }), deps()).error === 'unsupported_type');
-  check('executable (.exe) refused', svc.submit(db, EDIT, baseInput(inv, { srcPath: 'x.exe', ext: '.exe' }), deps()).error === 'unsupported_type');
-  check('non-intake (.zzz) refused', svc.submit(db, EDIT, baseInput(inv, { ext: '.zzz', srcPath: 'x.zzz' }), deps()).error === 'unsupported_type');
-  check('oversize refused', svc.submit(db, EDIT, baseInput(inv, { size: 999 * 1024 * 1024 }), deps()).error === 'too_large');
-  check('invalid date refused (every-door normalise)', svc.submit(db, EDIT, baseInput(inv, { date: 'notadate' }), deps()).error === 'bad_date');
-  check('unknown doc type refused', svc.submit(db, EDIT, baseInput(9999), deps()).error === 'unknown_type');
+  check('disabled (switch off) refused', (await svc.submit(d2, EDIT, baseInput(i2), deps())).error === 'disabled');
+  check('never-open ext (.docm) refused', (await svc.submit(db, EDIT, baseInput(inv, { srcPath: 'x.docm', ext: '.docm' }), deps())).error === 'unsupported_type');
+  check('executable (.exe) refused', (await svc.submit(db, EDIT, baseInput(inv, { srcPath: 'x.exe', ext: '.exe' }), deps())).error === 'unsupported_type');
+  check('non-intake (.zzz) refused', (await svc.submit(db, EDIT, baseInput(inv, { ext: '.zzz', srcPath: 'x.zzz' }), deps())).error === 'unsupported_type');
+  check('oversize refused', (await svc.submit(db, EDIT, baseInput(inv, { size: 999 * 1024 * 1024 }), deps())).error === 'too_large');
+  check('invalid date refused (every-door normalise)', (await svc.submit(db, EDIT, baseInput(inv, { date: 'notadate' }), deps())).error === 'bad_date');
+  check('unknown doc type refused', (await svc.submit(db, EDIT, baseInput(9999), deps())).error === 'unknown_type');
   check('no refusal left a row behind', db.prepare('SELECT COUNT(*) n FROM documents').get().n === 0);
 }
 
@@ -56,7 +57,7 @@ console.log('§2 happy path — a CONFIRMED typed row, filed, searchable, never-
 {
   const { db, inv } = freshDb(true);
   unlinked.length = 0;
-  const r = svc.submit(db, EDIT, baseInput(inv), deps());
+  const r = await svc.submit(db, EDIT, baseInput(inv), deps());
   check('ok + docId + storedPath returned', r.ok === true && r.docId > 0 && /Filed\./.test(r.storedPath));
   const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(r.docId);
   check("status='confirmed'", doc.status === 'confirmed');
@@ -78,10 +79,11 @@ console.log('§2 happy path — a CONFIRMED typed row, filed, searchable, never-
 console.log('§3 no title given → falls back to the filename stem');
 {
   const { db, inv } = freshDb(true);
-  const r = svc.submit(db, EDIT, baseInput(inv, { title: '' }), deps());
+  const r = await svc.submit(db, EDIT, baseInput(inv, { title: '' }), deps());
   const t = db.prepare("SELECT display_value FROM extractions WHERE document_id=? AND field_key='title'").get(r.docId);
   check('title defaults to the cleaned filename stem', r.ok && t && t.display_value === 'Office lease');
 }
 
 console.log(`\n${fails ? 'FAIL' : 'PASS'} — ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);
+})();
