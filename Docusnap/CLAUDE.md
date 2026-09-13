@@ -21,7 +21,27 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-13 EVENING (Search/Quick File UX batch + date-precedence fix + CLIENT Quick File shipped + search-parity PLAN):
+## ⏭ LATEST — 2026-09-13 LATE (CLIENT SEARCH PARITY BUILT — S0/S0b/S1/S2/S4: ONE shared search screen for core + client):
+**READ `HANDOVER_2026-09-13_LATE.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `d9cee32`; origin CURRENT (all
+pushed).** No installer. The evening handover's resume plan ran END TO END (Oracle SIGN-OFF-W/COND `docs/oracle_log.md`
+2026-09-13; plan doc carries a binding AMENDMENTS box + per-slice status): **S0 `48fba8f`** the Search screen's JS →
+`src/windows/shared/search-ui/` (plain globals, IO only via `window.SearchTransport`; core adapter
+`src/windows/search/coreTransport.js` = pure pass-through; caps hide what a transport can't do; drift guards = committed
+generated client copy `client/renderer/shared/` + `scripts/sync-client-search.js` + hash pin, and
+`src/windows/shared/test_search_ui_no_direct_ipc.js`; a REAL-renderer harness `scripts/search-window-harness.js`) ·
+**S0b `ff9f92d`** markup + CSS shared (`searchMarkup.js` mounts DIRECT children of `#app` — no wrapper; `#app.outerHTML`
+byte-identical gate) · **S1 `d0fe6c6`** the client's search POP-OUT window (`client/renderer/search/`; theme/fonts/
+patterns synced; `client-current-user`; logout/main-close kill it; in-pane search = launcher) · **S2 `4d502fd`** four
+`/v1` preview reads, contract **1.2.0 → 1.3.0**, `client-find` never trips "Connection lost" · **S4 `d9cee32`** approvals
++ Send-or-stamp popup + Mailbox shared (owner live-test: "no workflow actions on the client") + client Quick File centred.
+**Extending:** edit ONLY the shared files → `node scripts/sync-client-search.js`; a new IO call → both adapters; a control
+the client can't back → `_cap()` + client cap false. **RUNNING:** core dev app `TEST_BUILD=1` + the client (relaunched on
+`d9cee32`) — **owner live test owed** (Search opens a window; workflow popup; Quick File centred; core unchanged). Pins:
+355+/359 (4 pre-existing reds). Follow-ups: a `/v1` MINOR for the pop-out's hidden bits (docHistory/docRoutes/admin
+cancel/stamp create/stamped viewer), first-paint pips (pre-existing, pinned), client `npm run dist` in lockstep. Memory
+`project_client_search_parity_20260913.md`.
+
+## Prior — 2026-09-13 EVENING (Search/Quick File UX batch + date-precedence fix + CLIENT Quick File shipped + search-parity PLAN):
 **READ `HANDOVER_2026-09-13_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `a35051c`; origin CURRENT
 (0 ahead — all pushed).** No installer. One uncommitted file: `docs/designs/CLIENT_SEARCH_PARITY_PLAN_2026-09-13.md`
 (commit it first). Owner-driven live-vet session, all pinned. **SHIPPED:** big docs open fast (page-1-first for

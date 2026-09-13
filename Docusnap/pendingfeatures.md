@@ -5299,3 +5299,14 @@ an unconfirmed row's confidence pip (and the enhanced tints) only appear on the 
 focus refresh, a bin round-trip). Pinned AS-IS in `scripts/search-window-harness.js` for the S0 byte-identity
 gate. Fix (tiny, after S0b): after the entitlement resolves, if `entitled` became true and the list is idle,
 re-run `doSearch()` once (or re-decorate the rows) — must stay debounced + not yank a selected doc.
+
+## 2026-09-13 — client search pop-out: the workflow bits still HIDDEN (no /v1 backing) — a later /v1 MINOR
+The shared search screen (S4) shows in the client pop-out everything /v1 can back. Capped OFF in
+`client/renderer/search/clientTransport.js` (the shared UI hides them — never a dead control): per-document decision
+HISTORY rows (`workflow.docHistory`), open-route banners + admin "Cancel route" (`workflow.docRoutes` / `adminCancel`),
+"+ New stamp" (`stamp.typeCreate`), "View stamped copy" (`workflow.openStampedViewer` — a desktop viewer window; the
+client has `workflow.stamped(routeId)` pages, so an in-pop-out viewer is feasible), plus the desktop-local trio
+(Explorer / Open File / Print), Edit in Review, Send back to Review and Restore all. Build: four small GET/POST `/v1`
+routes mirroring the desktop IPC handlers (`workflow-doc-history`, `workflow-doc-routes`, `workflow-admin-cancel`,
+`stamp-type-create`) + a MINOR contract bump + the client adapter methods + flip the caps; the harness `--workflow` run
+already exercises the shared UI on both apps.
