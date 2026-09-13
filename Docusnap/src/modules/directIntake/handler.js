@@ -32,7 +32,7 @@ function register(ctx) {
   // Born-digital PDF text via pypdfium2 - NO OCR (Q2). Best-effort, bounded, never throws.
   function _pdfText(srcPath) {
     try {
-      const script = path.join(path.dirname(ctx.backendScript), 'render', 'pdf_text.py');
+      const script = path.join(path.dirname(ctx.backendScript()), 'render', 'pdf_text.py');   // backendScript is a FN
       const res = require('child_process').spawnSync(ctx.pythonExe(), ctx.pythonArgs(script, '--file', srcPath),
         { encoding: 'utf8', windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
       return (JSON.parse(res.stdout || '{}').text) || '';
