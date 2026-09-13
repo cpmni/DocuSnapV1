@@ -35,6 +35,40 @@
   })[r] || 'unsupported file';
   const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
+  // A sprite icon (createElementNS — the CSP-safe way; the `el` helper can't make real SVG nodes).
+  const _svgIco = (id, size) => {
+    const NS = 'http://www.w3.org/2000/svg';
+    const s = document.createElementNS(NS, 'svg');
+    s.setAttribute('aria-hidden', 'true'); s.setAttribute('viewBox', '0 0 24 24');
+    s.style.width = size + 'px'; s.style.height = size + 'px'; s.style.flex = '0 0 auto';
+    const u = document.createElementNS(NS, 'use'); u.setAttribute('href', '#' + id); s.appendChild(u);
+    return s;
+  };
+
+  // Scoped styles for the pane — injected once. Consistent inputs (the theme .input looked inconsistent
+  // here), a defined details card, and a proper dashed drop zone.
+  function _injectStyles() {
+    if (document.getElementById('qf-styles')) return;
+    const st = document.createElement('style');
+    st.id = 'qf-styles';
+    st.textContent = `
+      .qf-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:18px 20px; }
+      .qf-lbl { display:block; margin-bottom:5px; font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+      .qf-in { width:100%; box-sizing:border-box; padding:9px 11px; font:inherit; font-size:13px; color:var(--text);
+               background:var(--surface); border:1px solid var(--border2); border-radius:var(--r-sm); transition:border-color .12s, box-shadow .12s; }
+      .qf-in::placeholder { color:var(--muted); }
+      .qf-in:focus { outline:none; border-color:var(--accent2); box-shadow:0 0 0 3px var(--accent-bg); }
+      .qf-drop { border:2px dashed var(--border2); background:var(--surface2); border-radius:var(--r); display:flex;
+                 flex-direction:column; align-items:center; justify-content:center; gap:9px; padding:26px 20px; text-align:center;
+                 color:var(--muted); cursor:pointer; transition:border-color .12s, background .12s; }
+      .qf-drop:hover { border-color:var(--accent); background:var(--accent-bg); }
+      .qf-drop.drag { border-color:var(--accent); background:var(--accent-bg); }
+      .qf-filerow { display:flex; gap:10px; align-items:center; padding:8px 0; border-top:1px solid var(--border); }
+      .qf-filerow:first-child { border-top:none; }
+    `;
+    document.head.appendChild(st);
+  }
+
   let _inited = false;
   let staged = [];                 // [{ token, name, titleInput }]
   let typeSelect = null, partyI, dateI, refI, notesI, filesBox, msg, fileBtn, pickBtn, typeRow, receiptBox;
@@ -57,11 +91,11 @@
 
   function renderTypeRow(installed, presets) {
     typeRow.textContent = '';
-    typeRow.appendChild(el('label', { className: 'sidebar-label', style: { display: 'block', marginBottom: '4px', fontSize: '12px' } }, 'File as'));
+    typeRow.appendChild(el('label', { className: 'qf-lbl' }, 'File as'));
     const seen = new Set(); const opts = [];
     for (const t of (installed || [])) { opts.push(el('option', { value: String(t.id) }, t.name)); seen.add(t.slug); }
     for (const p of (presets || [])) { if (!seen.has(p.slug)) opts.push(el('option', { value: 'new:' + p.slug }, p.name)); }
-    typeSelect = el('select', { className: 'input', style: { width: '100%', padding: '8px', borderRadius: 'var(--r-sm)' } }, opts);
+    typeSelect = el('select', { className: 'qf-in', style: { appearance: 'auto' } }, opts);
     typeRow.appendChild(typeSelect);
     if (!opts.length) typeRow.appendChild(el('div', { className: 'muted', style: { fontSize: '12px', color: 'var(--muted)', marginTop: '4px' } }, 'No Quick File types available.'));
   }
@@ -70,9 +104,10 @@
     filesBox.textContent = '';
     if (!staged.length) { filesBox.appendChild(el('div', { className: 'muted', style: { fontSize: '13px', color: 'var(--muted)' } }, 'No files chosen yet.')); return; }
     for (const f of staged) {
-      const row = el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', margin: '4px 0' } });
-      row.appendChild(el('span', { style: { flex: '0 0 40%', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: f.name }, f.name));
-      f.titleInput = el('input', { className: 'input', type: 'text', value: stem(f.name), placeholder: 'Title', style: { flex: '1', padding: '6px', borderRadius: 'var(--r-sm)' } });
+      const row = el('div', { className: 'qf-filerow' });
+      row.appendChild(_svgIco('i-check', 15));
+      row.appendChild(el('span', { style: { flex: '0 0 34%', fontSize: '12px', color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: f.name }, f.name));
+      f.titleInput = el('input', { className: 'qf-in', type: 'text', value: stem(f.name), placeholder: 'Title', style: { flex: '1' } });
       row.appendChild(f.titleInput);
       const rm = el('button', { className: 'btn-mini', type: 'button', title: 'Remove' }, '×');
       rm.addEventListener('click', () => { staged = staged.filter((x) => x !== f); renderFiles(); });
@@ -142,22 +177,26 @@
     const root = document.getElementById('qf-root');
     if (!root) return;
     root.textContent = '';
-    root.appendChild(el('h1', { className: 'view-title' }, 'Quick File'));
-    root.appendChild(el('p', { className: 'muted', style: { margin: '0 0 16px', fontSize: '13px', color: 'var(--muted)', maxWidth: '640px' } },
-      'For documents that need no scanning — Word, Excel, email, PDF. Type the details and it files straight into your folders, searchable a moment later. It never runs OCR and never teaches the scanner.'));
+    _injectStyles();
+    // Header — title + one-line intro, left-aligned to the content below.
+    root.appendChild(el('div', { style: { marginBottom: '18px' } }, [
+      el('h1', { className: 'view-title', style: { margin: '0 0 4px' } }, 'Quick File'),
+      el('p', { style: { margin: 0, fontSize: '13px', color: 'var(--muted)', maxWidth: '680px', lineHeight: '1.5' } },
+        'File a document that needs no scanning — Word, Excel, email or PDF. Type a few details and it goes straight into your folders, searchable a moment later. No OCR, no teaching.'),
+    ]));
 
-    // Header row: pick zone (left) + details (right). Click-to-pick CARD that also accepts a DRAG-DROP
-    // (Oracle SIGN-OFF-W/COND 2026-09-13). The `data-intake-drop` attribute scopes the drop wiring to
-    // THIS element — the window-level preload drop guard (preventDefault, kills file:// nav) is UNTOUCHED
-    // and still fires as the last-in-chain backstop; every other window is byte-identical.
-    const dropZone = el('div', { id: 'qf-dropzone', 'data-help-key': 'quick-file', 'data-intake-drop': '', style: {
-      flex: '0 0 260px', minHeight: '120px', border: '1px solid var(--border)', background: 'var(--surface)',
-      borderRadius: 'var(--r)', display: 'flex', flexDirection: 'column', alignItems: 'center',
-      justifyContent: 'center', gap: '8px', padding: '18px', textAlign: 'center', color: 'var(--muted)', cursor: 'pointer' } });
+    // Drop / pick card (left). Accepts a DRAG-DROP (Oracle SIGN-OFF-W/COND 2026-09-13): data-intake-drop
+    // scopes the preload drop resolver to THIS element; the window-level drop guard is untouched.
+    const dropZone = el('div', { id: 'qf-dropzone', className: 'qf-drop', 'data-help-key': 'quick-file',
+      'data-intake-drop': '', style: { flex: '0 0 300px', minWidth: '260px' } });
+    const dzIcon = _svgIco('i-inbox', 40); dzIcon.style.color = 'var(--accent)';
+    dropZone.appendChild(dzIcon);
+    dropZone.appendChild(el('div', { style: { fontSize: '15px', fontWeight: '600', color: 'var(--text)' } }, 'Drag documents here'));
+    dropZone.appendChild(el('div', { style: { fontSize: '12px', color: 'var(--muted)' } }, 'or'));
     pickBtn = el('button', { className: 'btn', type: 'button' }, 'Choose files…');
     pickBtn.addEventListener('click', doPick);
-    dropZone.appendChild(el('div', { style: { fontSize: '13px' } }, 'Choose documents to file'));
     dropZone.appendChild(pickBtn);
+    dropZone.appendChild(el('div', { style: { fontSize: '11px', color: 'var(--muted)', marginTop: '2px' } }, 'Word · Excel · email · PDF — no scanning'));
     dropZone.addEventListener('click', (e) => { if (e.target === dropZone) doPick(); });
 
     // Drag-drop. The dashed "drop here" cue shows ONLY while a real file drag is over the card. Path
@@ -167,11 +206,7 @@
     // renderer never touches a File or a path. The drop event itself is preventDefaulted by the window
     // backstop (preload) AND here (cue reset) — never stopPropagation.
     const _hasFiles = (e) => { try { return Array.prototype.includes.call(e.dataTransfer.types || [], 'Files'); } catch { return false; } };
-    const _drag = (on) => {
-      dropZone.style.borderStyle = on ? 'dashed' : 'solid';
-      dropZone.style.borderColor = on ? 'var(--accent)' : 'var(--border)';
-      dropZone.style.background = on ? 'var(--accent-bg)' : 'var(--surface)';
-    };
+    const _drag = (on) => dropZone.classList.toggle('drag', on);
     dropZone.addEventListener('dragenter', (e) => { if (_hasFiles(e)) { e.preventDefault(); _drag(true); } });
     dropZone.addEventListener('dragover', (e) => { if (_hasFiles(e)) { e.preventDefault(); try { e.dataTransfer.dropEffect = 'copy'; } catch {} } });
     dropZone.addEventListener('dragleave', (e) => { if (e.target === dropZone) _drag(false); });
@@ -193,20 +228,20 @@
       } catch { /* ignore */ }
     });
 
-    typeRow = el('div', { style: { margin: '0 0 12px' } });
-    const inStyle = { width: '100%', padding: '8px', borderRadius: 'var(--r-sm)', boxSizing: 'border-box' };
-    const mkField = (labelText, input) => el('div', { style: { marginBottom: '10px' } },
-      [el('label', { className: 'sidebar-label', style: { display: 'block', marginBottom: '4px', fontSize: '12px' } }, labelText), input]);
-    partyI = el('input', { className: 'input', type: 'text', placeholder: 'Company or person', style: inStyle });
-    dateI  = el('input', { className: 'input', type: 'date', value: todayIso(), style: inStyle });
-    refI   = el('input', { className: 'input', type: 'text', placeholder: 'Optional', style: inStyle });
-    notesI = el('textarea', { className: 'input', rows: 2, placeholder: 'Optional — searchable', style: inStyle });
-    const details = el('div', { style: { flex: '1', minWidth: '0' } }, [
+    typeRow = el('div', { style: { marginBottom: '14px' } });
+    const mkField = (labelText, input) => el('div', {},
+      [el('label', { className: 'qf-lbl' }, labelText), input]);
+    partyI = el('input', { className: 'qf-in', type: 'text', placeholder: 'Company or person' });
+    dateI  = el('input', { className: 'qf-in', type: 'date', value: todayIso() });
+    refI   = el('input', { className: 'qf-in', type: 'text', placeholder: 'Optional' });
+    notesI = el('textarea', { className: 'qf-in', rows: 3, placeholder: 'Optional — searchable', style: { resize: 'vertical' } });
+    const details = el('div', { className: 'qf-card', style: { flex: '1', minWidth: '320px' } }, [
       typeRow,
-      el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 14px' } },
+      el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' } },
         [mkField('Company / Person', partyI), mkField('Date', dateI), mkField('Reference', refI), mkField('Notes', notesI)]),
     ]);
-    root.appendChild(el('div', { style: { display: 'flex', gap: '18px', alignItems: 'flex-start', flexWrap: 'wrap' } }, [dropZone, details]));
+    // Drop card + details share a row and stretch to equal height.
+    root.appendChild(el('div', { style: { display: 'flex', gap: '18px', alignItems: 'stretch', flexWrap: 'wrap' } }, [dropZone, details]));
 
     // Staged files.
     filesBox = el('div', { style: { margin: '12px 0', maxHeight: '200px', overflowY: 'auto' } });
