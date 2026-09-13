@@ -306,10 +306,20 @@
       outline: 1px solid rgba(200, 150, 0, .65); border-radius: 1px; }
     #preview-hl-layer .pv-hl.active { background: rgba(255, 145, 0, .45); outline: 2px solid var(--accent, #3b7df0); }
     #match-label { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 44px; text-align: center; }
-    #page-nav .pn-group { display: flex; align-items: center; gap: 10px; }
-    #page-nav .pn-sep { width: 1px; height: 18px; background: var(--border2); }
+    #page-nav .pn-group { display: flex; align-items: center; gap: 8px; }
+    /* Section label so each cluster reads as what it is (Zoom / Page / Find), not three lookalike arrow pairs. */
+    #page-nav .pn-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--muted); user-select: none; white-space: nowrap; }
+    /* Taller, slightly inset separators so the sections are visibly distinct. */
+    #page-nav .pn-sep { width: 1px; height: 22px; background: var(--border2); margin: 0 4px; }
     #zoom-level { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 40px; text-align: center; }
     .page-nav-btn.pn-wide { width: auto; padding: 0 9px; font-size: 11px; }
+    /* The "Find" (search-term) stepper wears the accent, tying it to the highlighted match — so it never
+       reads as a second set of page arrows. */
+    #match-nav .pn-label.mn-cap { color: var(--accent); }
+    #match-nav .mn-btn { color: var(--accent); border-color: var(--accent2); }
+    #match-nav .mn-btn:hover:not(:disabled) { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); }
+    #match-label.mn-count { color: var(--accent); font-weight: 600; }
 
     /* ── Expandable details column ────────────────────────────────────────────── */
     #sidebar-resizer { width: 6px; flex-shrink: 0; cursor: col-resize; background: transparent; transition: background .12s; }
@@ -419,6 +429,7 @@
         <div id="preview-img-col">
           <div id="page-nav" style="display:none">
             <div class="pn-group" data-help-key="preview-zoom">
+              <span class="pn-label">Zoom</span>
               <button class="page-nav-btn" id="btn-zoom-out" title="Zoom out" aria-label="Zoom out">&#8722;</button>
               <span id="zoom-level" class="page-nav-label">100%</span>
               <button class="page-nav-btn" id="btn-zoom-in" title="Zoom in" aria-label="Zoom in">+</button>
@@ -426,15 +437,17 @@
             </div>
             <div class="pn-sep pn-pages"></div>
             <div class="pn-group pn-pages">
+              <span class="pn-label">Page</span>
               <button class="page-nav-btn" id="btn-page-prev" data-help-key="preview-pages" title="Previous page" aria-label="Previous page" disabled>&#8249;</button>
               <span id="page-label" class="page-nav-label">1 / 1</span>
               <button class="page-nav-btn" id="btn-page-next" data-help-key="preview-pages" title="Next page" aria-label="Next page" disabled>&#8250;</button>
             </div>
             <div class="pn-sep" id="match-sep" style="display:none"></div>
-            <div class="pn-group" id="match-nav" data-help-key="preview-find" style="display:none">
-              <button class="page-nav-btn" id="btn-match-prev" title="Previous match" aria-label="Previous match">&#8249;</button>
-              <span id="match-label" class="page-nav-label">0 / 0</span>
-              <button class="page-nav-btn" id="btn-match-next" title="Next match" aria-label="Next match">&#8250;</button>
+            <div class="pn-group mn-group" id="match-nav" data-help-key="preview-find" style="display:none">
+              <span class="pn-label mn-cap">&#128269; Find</span>
+              <button class="page-nav-btn mn-btn" id="btn-match-prev" title="Previous match" aria-label="Previous match">&#8249;</button>
+              <span id="match-label" class="page-nav-label mn-count">0 / 0</span>
+              <button class="page-nav-btn mn-btn" id="btn-match-next" title="Next match" aria-label="Next match">&#8250;</button>
             </div>
           </div>
           <div id="preview-img-area" data-help-key="preview-zoom">
