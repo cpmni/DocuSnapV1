@@ -85,6 +85,45 @@ console.log('§3 no title given → falls back to the filename stem');
   check('title defaults to the cleaned filename stem', r.ok && t && t.display_value === 'Office lease');
 }
 
+console.log('§4 update — edit details, re-file only when a filing token changes, keep body searchable');
+{
+  // A commit stub whose path varies with the title, so a filing-token change moves the file (refile+unlink).
+  const depsU = () => ({ ...deps(),
+    commitDocument: async ({ allValues }) => {
+      const slug = String(allValues.title || 'x').replace(/[^a-z0-9]+/gi, '_');
+      return { success: true, filename: `${slug}.docx`, filePath: `/out/Acme/2026/September/${slug}.docx` };
+    },
+  });
+  const { db, inv } = freshDb(true);
+  const r = await svc.submit(db, EDIT, baseInput(inv), depsU());
+  const before = db.prepare('SELECT stored_path FROM documents WHERE id=?').get(r.docId).stored_path;
+
+  // (a) notes-only edit → NO re-file, notes + search text updated.
+  const u1 = await svc.update(db, EDIT, r.docId, { notes: 'countersigned' }, depsU());
+  const d1 = db.prepare('SELECT * FROM documents WHERE id=?').get(r.docId);
+  check('notes-only update ok, not re-filed', u1.ok && u1.refiled === false && d1.intake_notes === 'countersigned' && d1.stored_path === before);
+  check('body text preserved in search after edit', /BODYTEXT lease renewal clause 7/.test(d1.ocr_text) && /countersigned/.test(d1.ocr_text));
+
+  // (b) title edit → RE-FILE, old copy unlinked, new title searchable + in extractions.
+  unlinked.length = 0;
+  const u2 = await svc.update(db, EDIT, r.docId, { title: 'Office lease RENEWED' }, depsU());
+  const d2 = db.prepare('SELECT * FROM documents WHERE id=?').get(r.docId);
+  const t2 = db.prepare("SELECT display_value FROM extractions WHERE document_id=? AND field_key='title'").get(r.docId);
+  check('title update re-files (path changed)', u2.ok && u2.refiled === true && d2.stored_path !== before && /RENEWED/.test(d2.stored_path));
+  check('old filed copy was unlinked', unlinked.includes(before));
+  check('new title in extractions + search text', t2.display_value === 'Office lease RENEWED' && /Office lease RENEWED/.test(d2.ocr_text));
+
+  // (c) refusals — invalid date changes nothing; non-quick-file / disabled / role.
+  const u3 = await svc.update(db, EDIT, r.docId, { date: 'notadate' }, depsU());
+  check('invalid date refused, doc unchanged', u3.error === 'bad_date' && db.prepare('SELECT doc_date FROM documents WHERE id=?').get(r.docId).doc_date === '12-09-2026');
+  check('readonly refused', (await svc.update(db, { role: 'readonly' }, r.docId, { notes: 'x' }, depsU())).error === 'forbidden');
+  // an OCR doc (intake NULL) is not a quick-file row
+  const ocrId = db.prepare("INSERT INTO documents (original_filename, folder_path, status, document_type_id) VALUES ('scan.pdf','C:/src','confirmed',?)").run(inv).lastInsertRowid;
+  check('a non-quick-file (OCR) doc is refused', (await svc.update(db, EDIT, ocrId, { notes: 'x' }, depsU())).error === 'not_quick_file');
+  const { db: d3 } = freshDb(false);
+  check('disabled refused', (await svc.update(d3, EDIT, 1, { notes: 'x' }, depsU())).error === 'disabled');
+}
+
 console.log(`\n${fails ? 'FAIL' : 'PASS'} — ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);
 })();

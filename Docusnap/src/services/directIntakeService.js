@@ -137,4 +137,127 @@ async function submit(db, actor, input, deps = {}) {
   return { ok: true, docId, storedPath };
 }
 
-module.exports = { submit, enabled, DEFAULT_MAX_MB };
+/**
+ * Edit a Quick File document's typed details, re-filing when a filing token (company/date/title/reference)
+ * changed. Quick File rows only (intake='direct'). Reuses the proven re-file road (commitDocument with
+ * existingFiledPath + unlink the old copy/XML — reviewService.js:516-520 pattern); the current FILED copy
+ * is the source, since working_path is NULL after the first filing (Q-C5).
+ *
+ * @param db
+ * @param actor  {role, username}
+ * @param docId
+ * @param patch  {party?, date?, title?, reference?, notes?, departmentId?}  (only provided keys change)
+ * @param deps   {fs, path, outputRoot, commitDocument, normaliseDate, logAudit, canAccessDocument?, editGuard?}
+ * @returns {{ok:true, docId, storedPath, refiled} | {ok:false, error, detail?}}
+ */
+async function update(db, actor, docId, patch, deps = {}) {
+  const role = actor && actor.role;
+  if (!(role === 'admin' || role === 'edit')) return { ok: false, error: 'forbidden' };
+  if (!enabled(db)) return { ok: false, error: 'disabled' };
+  if (docId == null) return { ok: false, error: 'bad_request' };
+
+  const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(docId);
+  if (!doc) return { ok: false, error: 'not_found' };
+  if (doc.intake !== 'direct') return { ok: false, error: 'not_quick_file' };   // only ever a typed row
+
+  // Department / access gate (inert when departments not configured) + edit-lock, when injected.
+  if (deps.canAccessDocument) { const a = deps.canAccessDocument(db, actor, docId); if (a && a.allow === false) return { ok: false, error: 'forbidden' }; }
+  if (deps.editGuard) { try { deps.editGuard(db, docId); } catch (e) { return { ok: false, error: 'locked', detail: e.message }; } }
+
+  const dt = db.prepare('SELECT * FROM document_types WHERE id = ?').get(doc.document_type_id);
+  if (!dt) return { ok: false, error: 'unknown_type' };
+  const refKey = dt.ref_field_key || 'reference_number';
+  const curTitleRow = db.prepare("SELECT display_value FROM extractions WHERE document_id=? AND field_key='title'").get(docId);
+
+  const p = patch || {};
+  const has = (k) => Object.prototype.hasOwnProperty.call(p, k);
+  const cur = {
+    party: doc.supplier_name || '',
+    title: (curTitleRow && curTitleRow.display_value) || '',
+    reference: doc.reference_number || '',
+    notes: doc.intake_notes || '',
+  };
+  const next = {
+    party: has('party') ? String(p.party || '').trim() : cur.party,
+    title: has('title') ? (String(p.title || '').trim() || cur.title) : cur.title,
+    reference: has('reference') ? String(p.reference || '').trim() : cur.reference,
+    notes: has('notes') ? (String(p.notes || '').trim() || null) : (doc.intake_notes || null),
+  };
+  // Date through the every-door normaliser (invalid dates never file).
+  let docDate = doc.doc_date;
+  if (has('date')) {
+    if (p.date) { docDate = deps.normaliseDate ? deps.normaliseDate(String(p.date)) : String(p.date); if (!docDate) return { ok: false, error: 'bad_date' }; }
+    else docDate = null;
+  }
+
+  const filingChanged = next.party !== cur.party || next.title !== cur.title
+    || next.reference !== cur.reference || (docDate || null) !== (doc.doc_date || null);
+
+  // Re-derive the searchable BODY from the (content-unchanged) current file BEFORE any re-file/unlink, so an
+  // edit keeps the doc findable by its body text (not just the new title/notes). Best-effort; '' on absence.
+  let body = '';
+  const srcForBody = (doc.working_path || doc.stored_path);
+  if (deps.extractSearchText && srcForBody) {
+    const ext = fileKinds.normExt(doc.original_filename || srcForBody);
+    try { body = String((await deps.extractSearchText(srcForBody, ext)) || ''); } catch {}
+  }
+
+  // Re-file FIRST (I/O, outside any txn) when a filing token changed — using the current filed copy as
+  // the source. Fail-toward-refusal: on any filing error, change nothing.
+  let storedPath = doc.stored_path, storedFilename = doc.stored_filename, refiled = false;
+  if (filingChanged && doc.stored_path) {
+    try {
+      const allValues = { supplier_name: next.party, title: next.title, [dt.date_field_key]: docDate, [refKey]: next.reference };
+      const filed = await deps.commitDocument({
+        db, fs: deps.fs, path: deps.path, outputRoot: deps.outputRoot,
+        folderPath: deps.path ? deps.path.dirname(doc.stored_path) : '', originalFilename: doc.original_filename,
+        workingPath: doc.stored_path, existingFiledPath: doc.stored_path, allValues,
+        documentType: dt.name, dtInfo: dt, logger: deps.logger || (() => {}),
+      });
+      if (!filed || filed.success === false) throw new Error((filed && filed.error) || 'commit failed');
+      const newPath = filed.filePath;
+      // Unlink the OLD filed copy + its XML sidecar when the path actually moved (reviewService re-file pattern).
+      if (deps.fs && newPath && newPath !== doc.stored_path) {
+        try { deps.fs.unlinkSync(doc.stored_path); } catch {}
+        if (deps.path) { const ext = deps.path.extname(doc.stored_path);
+          const xml = deps.path.join(deps.path.dirname(doc.stored_path), '.metadata', deps.path.basename(doc.stored_path, ext) + '.xml');
+          try { deps.fs.unlinkSync(xml); } catch {} }
+      }
+      storedPath = newPath; storedFilename = filed.filename; refiled = true;
+    } catch (e) { return { ok: false, error: 'file_failed', detail: e.message }; }
+  }
+
+  // Persist the new values + refreshed search text in one transaction.
+  try {
+    const tx = db.transaction(() => {
+      const searchText = ([next.title, next.notes, body].filter(Boolean).join('\n').slice(0, 200000)) || null;
+      db.prepare(`UPDATE documents SET supplier_name=@sup, doc_date=@date, reference_number=@ref,
+        intake_notes=@notes, stored_filename=@sf, stored_path=@sp, ocr_text=@ocr,
+        department_id=@dept, department_set_by=CASE WHEN @deptset THEN 'user' ELSE department_set_by END
+        WHERE id=@id`).run({
+        sup: next.party || null, date: docDate, ref: next.reference || null, notes: next.notes,
+        sf: storedFilename || null, sp: storedPath || null, ocr: searchText,
+        dept: has('departmentId') ? (p.departmentId || null) : doc.department_id,
+        deptset: has('departmentId') ? 1 : 0, id: docId,
+      });
+      const upsert = (k, v) => {
+        if (!k) return;
+        const val = (v == null ? '' : String(v));
+        const ex = db.prepare('SELECT id FROM extractions WHERE document_id=? AND field_key=?').get(docId, k);
+        if (val.trim() === '') { if (ex) db.prepare('DELETE FROM extractions WHERE id=?').run(ex.id); return; }
+        if (ex) db.prepare("UPDATE extractions SET raw_value=?, display_value=?, confidence=100, extraction_method='typed', was_corrected=0 WHERE id=?").run(val, val, ex.id);
+        else db.prepare("INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method, was_corrected) VALUES (?,?,?,?,100,'typed',0)").run(docId, k, val, val);
+      };
+      upsert('supplier_name', next.party);
+      upsert(dt.date_field_key, docDate);
+      upsert(refKey, next.reference);
+      upsert('title', next.title);
+    });
+    tx();
+  } catch (e) { return { ok: false, error: 'db_error', detail: e.message }; }
+
+  try { if (deps.logAudit) deps.logAudit(db, 'document_direct_intake_updated', { document_id: docId, refiled }); } catch {}
+  return { ok: true, docId, storedPath, refiled };
+}
+
+module.exports = { submit, update, enabled, DEFAULT_MAX_MB };

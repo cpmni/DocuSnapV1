@@ -146,6 +146,29 @@ function register(ctx) {
     return r;
   });
 
+  // Edit a filed Quick File doc's details (company/date/title/reference/notes); re-files if a filing token
+  // changed. patch = only the provided keys. DARK behind direct_intake_enabled.
+  ipcMain.handle('direct-intake-update', async (_e, payload) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    if (!enabled(db)) return { ok: false, error: 'disabled' };
+    const { docId, patch } = payload || {};
+    const accessService = require('../../services/accessService');
+    const deps = {
+      fs, path, outputRoot: learning.getSetting(db, 'output_folder', null), logger,
+      commitDocument: require('../filing/handler').commitDocument,
+      normaliseDate: require('../filing/handler').normaliseDate,
+      extractSearchText,
+      canAccessDocument: (d, user, id) => (accessService.gateEnabled() ? accessService.canAccessDocument(d, user, id) : { allow: true }),
+      logAudit: (d, action, m) => { try { logAudit(d, { action, action_category: 'document', outcome: 'success', ...(m || {}) }); } catch {} },
+    };
+    let r;
+    try { r = await svc.update(db, getCurrentUser(), docId, patch, deps); }
+    catch (e) { logger && logger.error && logger.error(`[quickfile] update: ${e.message}`); return { ok: false, error: 'failed', detail: e.message }; }
+    if (r && r.ok) { try { ctx.notifyAllWindows && ctx.notifyAllWindows('direct-intake-changed'); } catch {} }
+    return r;
+  });
+
   // Test/introspection seam - never touches the DB.
   ipcMain.handle('direct-intake-staged-count', () => { requireRole('admin', 'edit'); _sweep(); return { count: _staged.size }; });
 }

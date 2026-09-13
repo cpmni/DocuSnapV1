@@ -60,6 +60,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   quickFileDocTypes:     ()        => ipcRenderer.invoke('direct-intake-doctypes'),
   quickFileAddType:      (slug)    => ipcRenderer.invoke('direct-intake-add-type', slug),
   quickFileSubmit:       (payload) => ipcRenderer.invoke('direct-intake-submit', payload),
+  quickFileUpdate:       (payload) => ipcRenderer.invoke('direct-intake-update', payload),
   onDirectIntakeChanged: (cb)      => ipcRenderer.on('direct-intake-changed', () => cb()),
 
   // ── Licensing ────────────────────────────────────────────────────────────────
