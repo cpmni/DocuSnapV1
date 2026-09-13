@@ -314,8 +314,10 @@
     #page-nav .pn-sep { width: 1px; height: 22px; background: var(--border2); margin: 0 4px; }
     #zoom-level { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 40px; text-align: center; }
     .page-nav-btn.pn-wide { width: auto; padding: 0 9px; font-size: 11px; }
-    /* The "Find" stepper uses the same neutral buttons as the rest — the 🔍 caption + separator are the
-       distinction, no colour clash. */
+    /* The "Find" stepper uses the same neutral buttons as the rest; a monochrome SVG magnifier that
+       inherits the muted caption colour (currentColor) is the distinction — no colour clash. */
+    #page-nav .mn-cap { display: inline-flex; align-items: center; gap: 5px; }
+    #page-nav .mn-ico { flex: 0 0 auto; }
 
     /* ── Expandable details column ────────────────────────────────────────────── */
     #sidebar-resizer { width: 6px; flex-shrink: 0; cursor: col-resize; background: transparent; transition: background .12s; }
@@ -440,7 +442,7 @@
             </div>
             <div class="pn-sep" id="match-sep" style="display:none"></div>
             <div class="pn-group mn-group" id="match-nav" data-help-key="preview-find" style="display:none">
-              <span class="pn-label mn-cap">Find</span>
+              <span class="pn-label mn-cap"><svg class="mn-ico" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="10" x2="14" y2="14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Find</span>
               <button class="page-nav-btn mn-btn" id="btn-match-prev" title="Previous match" aria-label="Previous match">&#8249;</button>
               <span id="match-label" class="page-nav-label mn-count">0 / 0</span>
               <button class="page-nav-btn mn-btn" id="btn-match-next" title="Next match" aria-label="Next match">&#8250;</button>
