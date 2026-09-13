@@ -177,10 +177,12 @@
       e.preventDefault();                 // consume the drop here (NOT stopPropagation — backstop stays)
       _drag(false);
       const files = e.dataTransfer && e.dataTransfer.files;
-      if (!files || !files.length) return;
+      try { console.log('[quickfile] drop: files=', files && files.length); } catch {}
+      if (!files || !files.length) { if (msg) { msg.style.color = 'var(--warn)'; msg.textContent = 'Nothing was dropped.'; } return; }
       let paths = [];
       try { paths = D.quickFileDroppedPaths(files); } catch { paths = []; }
-      if (!paths.length) return;
+      try { console.log('[quickfile] drop: paths=', paths.length); } catch {}
+      if (!paths.length) { if (msg) { msg.style.color = 'var(--warn)'; msg.textContent = 'Couldn’t read the dropped file(s) — use “Choose files…” instead.'; } return; }
       try {
         const r = await D.quickFileStagePaths(paths);
         if (r && r.ok) {

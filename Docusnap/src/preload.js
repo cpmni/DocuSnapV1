@@ -64,7 +64,19 @@ contextBridge.exposeInMainWorld('docusnap', {
   // Drag-drop: resolve each dropped File to its absolute path IN THE PRELOAD (Electron 44 removed
   // File.path; webUtils is preload-only). The renderer hands us the drop's FileList and immediately
   // forwards the returned paths to MAIN via quickFileStagePaths — it never keeps or displays them.
-  quickFileDroppedPaths: (files) => { try { return Array.from(files || []).map(f => webUtils.getPathForFile(f)).filter(Boolean); } catch { return []; } },
+  // Resolve dropped File objects to absolute paths in the PRELOAD (E44 removed File.path; webUtils is
+  // preload-only). Iterate by INDEX — a FileList crossing contextBridge doesn't reliably support
+  // Array.from/iteration. Each getPathForFile is guarded so one bad item can't sink the batch.
+  quickFileDroppedPaths: (files) => {
+    const out = [];
+    try {
+      const n = (files && files.length) || 0;
+      for (let i = 0; i < n; i++) {
+        try { const p = webUtils.getPathForFile(files[i]); if (p) out.push(p); } catch { /* skip this one */ }
+      }
+    } catch { /* return whatever resolved */ }
+    return out;
+  },
   quickFileStagePaths:   (paths)  => ipcRenderer.invoke('direct-intake-stage-paths', paths),
   onDirectIntakeChanged: (cb)      => ipcRenderer.on('direct-intake-changed', () => cb()),
 

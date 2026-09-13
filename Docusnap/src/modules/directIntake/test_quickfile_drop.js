@@ -16,8 +16,8 @@ console.log('1. preload path seam (Electron 44: File.path gone → webUtils in t
 {
   const pre = read('src/preload.js');
   check('webUtils imported from electron', /const \{[^}]*\bwebUtils\b[^}]*\} = require\('electron'\)/.test(pre));
-  check('quickFileDroppedPaths maps files via webUtils.getPathForFile',
-        /quickFileDroppedPaths:[\s\S]{0,160}webUtils\.getPathForFile\(f\)/.test(pre));
+  check('quickFileDroppedPaths resolves files via webUtils.getPathForFile',
+        /quickFileDroppedPaths:[\s\S]{0,400}webUtils\.getPathForFile\(files\[i\]\)/.test(pre));
   check('quickFileStagePaths invokes the validated stage IPC',
         /quickFileStagePaths:\s*\(paths\)\s*=>\s*ipcRenderer\.invoke\('direct-intake-stage-paths', paths\)/.test(pre));
 }
