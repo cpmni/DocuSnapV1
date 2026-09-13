@@ -33,6 +33,7 @@
 
 const documentsDb = require('../../database/modules/documents');
 const workflowDb   = require('../../database/modules/workflow');
+const departmentVisibility = require('../../database/modules/departmentVisibility');   // DB-layer, no cycle
 
 // isPackaged probe (D-C6): default false when electron/app is unavailable (dev, electron-as-node
 // tests) — the same guard shape as _realCanonical (handler.js) and the licence-key pinning.
@@ -117,42 +118,13 @@ function doctypeGrantDecision(_db, _user, _doc, _deps) {
   return { deny: false };
 }
 
-// ── Department per-doc decision (D2). Fail-closed but INERT when nothing is configured:
-//   • doc untagged (department_id NULL = shared)     -> allow
-//   • no departments table / no rows (pre-mig-164)   -> allow (byte-identical)
-//   • admin / all_departments flag                   -> allow (sees everything)
-//   • member of the doc's department                 -> allow
-//   • else                                           -> DENY
-// Table-guarded (a fixture without the tables never throws); memoisation is per-request via `deps`
-// (membership must be live — never cache across requests). Injectable for the pins.
-// Cache ONLY the table-existence (schema — immutable per handle). The "any departments exist" check is
-// queried LIVE every call so a department created mid-session takes effect on the next request, never a
-// restart (eric A.2: membership/config must be live, never memoised per process).
-const _deptTablesCache = new WeakMap();
-function _departmentsConfigured(db) {
-  let hasTables = _deptTablesCache.get(db);
-  if (hasTables === undefined) {
-    try { hasTables = db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name IN ('departments','user_departments')").get().n === 2; }
-    catch { hasTables = false; }
-    _deptTablesCache.set(db, hasTables);
-  }
-  if (!hasTables) return false;
-  try { return db.prepare('SELECT 1 FROM departments LIMIT 1').get() != null; } catch { return false; }
-}
+// ── Department per-doc decision (D2). The data logic lives in the DB-layer departmentVisibility module
+// (shared with documents.js list readers + departmentService — ONE source, no require cycle, no layer
+// inversion). Fail-closed but INERT when nothing is configured: untagged (NULL) / no tables / admin /
+// all_departments / member → allow; else DENY. The "any departments exist" + membership checks are LIVE
+// (a department created mid-session takes effect next request, never a restart). Injectable for the pins.
 function departmentDecision(db, user, doc, deps = {}) {
-  const deptId = doc && doc.department_id;
-  if (deptId == null) return { deny: false };                 // shared
-  if (!_departmentsConfigured(db)) return { deny: false };    // nothing configured -> inert
-  const role = user && user.role;
-  if (role === 'admin') return { deny: false };               // (admin returns above too; belt)
-  const uid = user ? (user.userId != null ? user.userId : user.id) : null;
-  if (uid == null) return { deny: true };
-  try {
-    const u = db.prepare('SELECT all_departments FROM users WHERE id = ?').get(uid);
-    if (u && u.all_departments) return { deny: false };       // the "accountant" flag
-    const member = db.prepare('SELECT 1 FROM user_departments WHERE user_id = ? AND department_id = ?').get(uid, deptId);
-    return { deny: !member };
-  } catch { return { deny: false }; }                          // never throw the gate closed on a schema gap
+  return (deps.departmentVisibility || departmentVisibility).decision(db, user, doc);
 }
 
 module.exports = { canAccessDocument, gateEnabled, doctypeGrantDecision, departmentDecision };

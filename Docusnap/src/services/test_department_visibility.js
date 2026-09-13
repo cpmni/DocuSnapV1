@@ -124,5 +124,26 @@ console.log('§6 delete refused while referenced; retire still restricts');
   check('delete succeeds once nothing references it', dept.deleteDepartment(db, admin, fin).ok === true);
 }
 
+console.log('§7 documents.search honours the threaded viewer (the main list surface)');
+{
+  const { db, admin, editFin, editNone, mkDoc } = seed();
+  const documents = require('../../database/modules/documents');
+  const fin = dept.createDepartment(db, admin, 'Finance').id;
+  const hr = dept.createDepartment(db, admin, 'HR').id;
+  dept.setMembership(db, admin, editFin.id, [fin]);
+  const shared = mkDoc(null), finDoc = mkDoc(fin), hrDoc = mkDoc(hr);
+  const ids = (u) => documents.search(db, { viewer: u }).map(r => r.id).sort();
+  check('search: member sees shared+Finance, NOT HR', ids(editFin).join() === [shared, finDoc].sort().join());
+  check('search: outsider sees shared only', ids(editNone).join() === String(shared));
+  check('search: admin sees all three', ids(admin).join() === [shared, finDoc, hrDoc].sort().join());
+  // With departments PRESENT, an un-threaded caller fails CLOSED to shared-only (safe under-show — this is
+  // WHY the sweep must thread every list reader; it never LEAKS a tagged doc). Not byte-identical here.
+  check('search: departments present + NO viewer → shared-only (fail-closed, never a leak)', documents.search(db, {}).length === 1);
+  // The true inert guarantee: with NO departments configured, an un-threaded caller is byte-identical.
+  const { db: db2, mkDoc: mk2 } = seed();
+  mk2(null); mk2(null); mk2(null);
+  check('search: NO departments → un-threaded caller returns all (byte-identical)', documents.search(db2, {}).length === 3);
+}
+
 console.log(`\n${fails ? 'FAIL' : 'PASS'} — ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);

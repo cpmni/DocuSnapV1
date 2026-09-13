@@ -124,8 +124,9 @@ function register(ctx) {
     //
     // Authentication is transport-specific: the in-process session supplies the
     // role; a detached client would map a token to the same role set instead.
-    const { role } = requireLogin();
-    return searchService.searchDocuments({ db: getDb(), params, role });
+    const _u = requireLogin();
+    // D2: pass the viewer id so the department list gate can restrict results (inert when no departments).
+    return searchService.searchDocuments({ db: getDb(), params, role: _u.role, userId: (_u.id != null ? _u.id : _u.userId) });
   });
 }
 

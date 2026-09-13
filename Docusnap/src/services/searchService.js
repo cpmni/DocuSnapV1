@@ -43,13 +43,16 @@ function canSeeUncommitted(role) {
  * @param {function}[deps.existsFn] file-existence test (injectable for tests); defaults to fs.existsSync
  * @returns {{confirmed: object[], uncommitted: object[]}}
  */
-function searchDocuments({ db, params, role }, deps = {}) {
+function searchDocuments({ db, params, role, userId }, deps = {}) {
   const existsFn = deps.existsFn || require('fs').existsSync;
   const onlyExisting = (rows) => documents.filterExisting(rows, existsFn);
 
   const { company, reference, dateFrom, dateTo,
           docType, includeUncommitted, fullText, total, totalOp } = params || {};
-  const common = { company, reference, dateFrom, dateTo, docType, fullText, total, totalOp };
+  // D2: the viewer for the department list gate (inert when no departments / admin / all_departments).
+  // Threaded into every documents.search call below so a restricted doc never appears in results.
+  const viewer = role ? { role, id: userId } : null;
+  const common = { company, reference, dateFrom, dateTo, docType, fullText, total, totalOp, viewer };
 
   // Confirmed documents — what "search/view documents" means for every role.
   // PROJECTED after filterExisting (LOAD-BEARING ORDER: the existence filter needs the

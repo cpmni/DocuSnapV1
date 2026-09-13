@@ -5,6 +5,7 @@ const path = require('path');
 // type-ahead is a learning surface). search / the recovery browse lists / the counters / the writers
 // deliberately do NOT carry it: a stamped document stays filed, searchable and repairable.
 const { learningExcludedSql } = require('./machine_vias');
+const departmentVisibility = require('./departmentVisibility');   // D2 list gate (inert when no departments)
 
 // Best-effort single-row query — returns null instead of throwing (used to probe optional
 // schema like template_hidden_fields, migration 54, so an older DB / test fixture is unaffected).
@@ -705,7 +706,7 @@ function deleteDoc(db, id) {
 }
 
 function search(db, { company, reference, dateFrom, dateTo,
-                      docType, status = 'confirmed', fullText, total, totalOp, limit = 200 }) {
+                      docType, status = 'confirmed', fullText, total, totalOp, limit = 200, viewer }) {
   let sql = `
     SELECT d.*, dt.name as type_name, dt.slug as type_slug
     FROM documents d
@@ -788,6 +789,11 @@ function search(db, { company, reference, dateFrom, dateTo,
       AND ${CLEAN} GLOB '*[0-9]*' AND ${cmp})`;
     params.total = _total;
   }
+
+  // D2 department visibility (QuickFile+Departments): restrict to shared + the viewer's departments.
+  // '' (byte-identical) when no viewer is threaded, no departments exist, or the viewer is admin /
+  // all_departments. The user_id is embedded as an int literal (no param collision).
+  sql += departmentVisibility.visibleDocSql(db, viewer, 'd');
 
   sql += ` ORDER BY d.confirmed_at DESC, d.processed_at DESC LIMIT @limit`;
   params.limit = limit;

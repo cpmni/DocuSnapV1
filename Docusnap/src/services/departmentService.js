@@ -17,6 +17,7 @@
  */
 
 const accessService = require('./accessService');
+const departmentVisibility = require('../../database/modules/departmentVisibility');   // the DB-layer primitive
 
 function _slug(name) {
   return String(name || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'dept';
@@ -95,17 +96,7 @@ function userDepartmentIds(db, userId) {
 // clause restricting to NULL-tagged (shared) docs OR docs in one of the viewer's departments. The
 // user_id is an integer from the session → embedded as a literal (no param plumbing across ~12 readers).
 function visibleDocSql(db, user, alias = 'd') {
-  if (!_anyDepartments(db)) return '';
-  if (user && user.role === 'admin') return '';
-  const uid = _uid(user);
-  if (uid == null || !Number.isInteger(uid)) {
-    // Unknown/blank viewer: show only shared docs (fail-closed) rather than everything.
-    const a0 = alias ? `${alias}.` : '';
-    return ` AND ${a0}department_id IS NULL`;
-  }
-  try { const u = db.prepare('SELECT all_departments FROM users WHERE id = ?').get(uid); if (u && u.all_departments) return ''; } catch {}
-  const a = alias ? `${alias}.` : '';
-  return ` AND (${a}department_id IS NULL OR ${a}department_id IN (SELECT department_id FROM user_departments WHERE user_id = ${uid}))`;
+  return departmentVisibility.visibleDocSql(db, user, alias);   // the ONE source (DB layer)
 }
 
 // ── write side ───────────────────────────────────────────────────────────────

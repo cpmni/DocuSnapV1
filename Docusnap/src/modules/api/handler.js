@@ -487,7 +487,7 @@ function createRequestListener(ctx) {
       if (req.method === 'POST' && pathname === `${API_PREFIX}/search`) {
         const session = requireSession(req, res); if (!session) return;
         let params; try { params = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
-        const result = searchService.searchDocuments({ db: getDb(), params, role: session.role });
+        const result = searchService.searchDocuments({ db: getDb(), params, role: session.role, userId: session.userId });
         // Audit that a search happened (counts only — never the query terms, which
         // could be sensitive). Completes audit coverage for compliance review.
         audit({ user_id: session.userId, action: 'search', action_category: 'document', outcome: 'success',
