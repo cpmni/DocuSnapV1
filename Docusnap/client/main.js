@@ -478,8 +478,8 @@ ipcMain.handle('client-authed',       () => client ? client.isAuthenticated() : 
 // Mailbox / approval workflow.
 ipcMain.handle('client-wf-list',       guarded((_e, view) => client.workflow.list(view)));
 ipcMain.handle('client-wf-recipients', guarded(() => client.workflow.recipients()));
-ipcMain.handle('client-wf-assign',     guarded((_e, { documentId, toUserId, actionRequired, comment }) =>
-  client.workflow.assign(documentId, toUserId, actionRequired, comment)));
+ipcMain.handle('client-wf-assign',     guarded((_e, { documentId, toUserId, actionRequired, comment, resubmitOf }) =>
+  client.workflow.assign(documentId, toUserId, actionRequired, comment, resubmitOf)));   // resubmitOf = "Send again" lineage (was dropped here)
 ipcMain.handle('client-wf-claim',      guarded((_e, { id, version }) => client.workflow.claim(id, version)));
 ipcMain.handle('client-wf-resolve',    guarded((_e, { id, decision, comment, version }) =>
   client.workflow.resolve(id, decision, comment, version)));

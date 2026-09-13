@@ -61,8 +61,8 @@ contextBridge.exposeInMainWorld('scanfinder', {
   workflow: {
     list:       (view) => ipcRenderer.invoke('client-wf-list', view),
     recipients: () => ipcRenderer.invoke('client-wf-recipients'),
-    assign:     (documentId, toUserId, actionRequired, comment) =>
-                  ipcRenderer.invoke('client-wf-assign', { documentId, toUserId, actionRequired, comment }),
+    assign:     (documentId, toUserId, actionRequired, comment, resubmitOf) =>
+                  ipcRenderer.invoke('client-wf-assign', { documentId, toUserId, actionRequired, comment, resubmitOf }),
     claim:      (id, version) => ipcRenderer.invoke('client-wf-claim', { id, version }),
     resolve:    (id, decision, comment, version) =>
                   ipcRenderer.invoke('client-wf-resolve', { id, decision, comment, version }),

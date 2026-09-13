@@ -37,6 +37,10 @@ const CLIENT_CONTRACT = CLIENT ? require(path.join(ROOT, 'client', 'apiClient.js
 const SERVER_CONTRACT = argOf('--server-contract') || CLIENT_CONTRACT || '1.3.0';
 const atLeast = (v, want) => { const a = String(v).split('.').map(Number), b = String(want).split('.').map(Number); return a[0] > b[0] || (a[0] === b[0] && a[1] >= b[1]); };
 const LITE = CLIENT && !atLeast(SERVER_CONTRACT, '1.3.0');
+// --workflow: the workflow add-on is licensed + this user may stamp → the shared workflow / mailbox / stamp
+// modules (S4) light up: the "Send or stamp…" action, the popup (stamp chips, send-to recipients, the
+// "waiting on you" decision), the Mailbox toggle with an inbox route.
+const WF = argv.includes('--workflow');
 const HTML = argOf('--html') || (CLIENT ? path.join(ROOT, 'client', 'renderer', 'search', 'index.html')
                                         : path.join(ROOT, 'src', 'windows', 'search', 'index.html'));
 const PRELOAD = CLIENT ? path.join(ROOT, 'client', 'preload.js') : path.join(ROOT, 'src', 'preload.js');
@@ -62,6 +66,11 @@ const byId = (id) => [...ROWS.confirmed, ...ROWS.uncommitted, ...DELETED].find(r
 const calls = [];   // [channel, args]
 function stub(channel, fn) { ipcMain.handle(channel, (_e, ...a) => { calls.push([channel, a]); return fn(...a); }); }
 const DOC_TYPES = [{ slug: 'invoice', name: 'Invoice' }, { slug: 'purchase_order', name: 'Purchase Order' }];
+// Workflow world (--workflow): one inbox route addressed to me for doc 3, one recipient, one stamp type.
+const ROUTE = { id: 11, document_id: 3, state: 'pending', action_required: 'approve', from_username: 'boss', to_username: 'harness', comment: 'please check', version: 1, created_at: '2026-09-10 10:00:00', supplier_name: 'Cable Co', reference_number: 'PO-7' };
+const RECIPIENTS = [{ id: 2, username: 'boss', displayName: 'Boss', role: 'admin' }];
+const STAMP_TYPES = [{ id: 1, label: 'APPROVED', color: '#2E7D32' }];
+const ENT = { entitled: true, workflow: { entitled: WF } };
 const detailOf = (id) => { const r = byId(id); return r ? { ...r, extractions: [{ field_key: 'total_amount', display_value: '£120.00', confidence: 95, validation_note: null }] } : null; };
 const pagesOf = (id) => { const r = byId(id); if (!r || !/\.pdf$/i.test(r.original_filename)) return []; return new Array(Number(id) === 3 ? 2 : (r.page_count || 1)).fill(PNG); };
 if (CLIENT) {
@@ -73,8 +82,20 @@ if (CLIENT) {
   stub('client-get-document', (id) => { const d = detailOf(id); return d ? ok(d) : { status: 404, json: { error: 'not found' } }; });
   stub('client-get-pages', (id) => ok({ pages: pagesOf(id) }));
   stub('client-get-thumbnail', () => ok({ thumbnail: PNG }));
-  stub('client-entitlement', () => ok({ entitled: true, workflow: { entitled: false } }));
+  stub('client-entitlement', () => ok(ENT));
   stub('client-current-user', () => ({ role: 'admin', username: 'harness', displayName: 'Harness' }));
+  // S4 workflow + stamps over the /v1 bridge (envelopes). Without --workflow the add-on is unlicensed → 402.
+  const gated = (json) => (WF ? ok(json) : { status: 402, json: { error: 'not licensed' } });
+  stub('client-wf-list', (view) => gated({ routes: view === 'inbox' ? [ROUTE] : [] }));
+  stub('client-wf-recipients', () => gated({ recipients: RECIPIENTS }));
+  stub('client-wf-can-stamp', () => gated({ canStamp: true }));
+  stub('client-wf-stamp-types', () => gated({ stampTypes: STAMP_TYPES }));
+  stub('client-wf-stamp-list', () => gated({ stamps: [] }));
+  stub('client-wf-stamped-doc', () => gated({ pages: [] }));
+  stub('client-wf-assign', () => gated({ ok: true }));
+  stub('client-wf-resolve', () => gated({ ok: true }));
+  stub('client-wf-recall', () => gated({ ok: true }));
+  stub('client-wf-stamp-place', () => gated({ ok: true }));
   stub('client-search-target', () => ({ query: 'inv', docId: null }));
   stub('client-server-info', () => ({ serverVersion: SERVER_CONTRACT, clientContract: CLIENT_CONTRACT, mode: atLeast(SERVER_CONTRACT, '1.3.0') ? 'ok' : 'warn' }));
   // The S2 reads (contract 1.3.0). A LITE (older) core does not have them → 404 (the adapter flips the cap).
@@ -99,10 +120,25 @@ stub('get-document-pages', (id) => { const r = byId(id); return (r && /\.pdf$/i.
 stub('find-in-document', (id, q) => ({ kind: 'text', pages: 3, matches: String(q).toLowerCase() === 'inv' ? [{ page: 0, x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.12 }] : [] }));
 stub('get-spreadsheet-grid', (id) => (Number(id) === 2 ? { sheets: [{ name: 'Sheet1', rows: [['Item', 'Qty'], ['Bolt', '12']] }], truncated: false } : null));
 stub('get-document-thumbnail', () => PNG);
-stub('get-entitlement', () => ({ entitled: true, workflow: { entitled: false } }));
+stub('get-entitlement', () => ENT);
 stub('auth-get-current-user', () => ({ id: 1, username: 'harness', role: 'admin' }));
-stub('stamp-can', () => ({ canStamp: false }));
+stub('stamp-can', () => ({ canStamp: WF }));
 stub('stamp-list', () => []);
+// S4 workflow + stamps over the desktop bridge (only reached with --workflow; the preload sends payload objects).
+stub('workflow-inbox', () => [ROUTE]);
+stub('workflow-sent', () => []);
+stub('workflow-assigned', () => []);
+stub('workflow-completed', () => []);
+stub('workflow-recipients', () => RECIPIENTS);
+stub('workflow-doc-routes', () => []);
+stub('workflow-doc-history', () => []);
+stub('workflow-assign', () => ({ ok: true }));
+stub('workflow-resolve', () => ({ ok: true }));
+stub('workflow-recall', () => ({ ok: true }));
+stub('stamp-types', () => STAMP_TYPES);
+stub('stamp-grants', () => [{ id: 2, canStamp: true }]);
+stub('stamp-current-pages', () => ({ ok: true, pages: [] }));
+stub('stamp-place', () => ({ ok: true }));
 stub('print-available', () => true);
 stub('get-setting', (key) => (key === 'keep_processed_originals' ? 'true' : null));
 stub('get-search-target', () => 'inv');
@@ -116,6 +152,7 @@ stub('get-search-view-target', () => null);
 const DRIVE = `(async () => {
   const CLIENT = ${CLIENT};
   const LITE = ${LITE};
+  const WF = ${WF};
   const checks = [];
   const ok = (name, cond) => checks.push({ name, ok: !!cond });
   const $ = (s) => document.querySelector(s);
@@ -153,7 +190,8 @@ const DRIVE = `(async () => {
   }
   if (CLIENT) ok('actions (client, admin, confirmed): Delete only — no Explorer / Open File / Print / Send back', (() => { const b = btns(); return b.some(t => t === 'Delete') && !b.some(t => /Explorer|Open File|Print|Send back|Edit in Review/.test(t)); })());
   else ok('actions (admin, confirmed, has_file): Send back + Explorer + Open File + Print + Delete', (() => { const b = btns(); return ['Send back to Review', 'Open in Explorer', 'Open File', 'Print', 'Delete'].every(x => b.some(t => t.includes(x))); })());
-  ok('actions: no Stamp button when stamp.can says no + no workflow', !btns().some(t => /stamp|Send…/i.test(t)));
+  if (WF) ok('actions (workflow): the ONE "Send or stamp…" front door is offered', await until(() => btns().some(t => /Send or stamp/.test(t))));
+  else ok('actions: no Stamp button when stamp.can says no + no workflow', !btns().some(t => /stamp|Send…/i.test(t)));
   ok('status chip reads Confirmed', ($('.ap-chip') || {}).textContent === 'Confirmed');
 
   // 3 — page nav: next page (a hole rendered on demand; lite client: the pre-rendered page)
@@ -202,6 +240,35 @@ const DRIVE = `(async () => {
   await until(() => $('.result-item[data-id="1"].active'));
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
   ok('keys: ArrowDown moves the selection to the next row', await until(() => !!$('.result-item[data-id="2"].active')));
+
+  if (WF) {
+    // 10 — the shared workflow / stamp / mailbox modules (S4) — identical screen on core and client.
+    ok('workflow: body carries workflow-on', document.body.classList.contains('workflow-on'));
+    click($('.result-item[data-id="1"]'));
+    await until(() => btns().some(t => /Send or stamp/.test(t)));
+    click($$('#preview-actions button').find(b => /Send or stamp/.test(b.textContent)));
+    ok('popup: "Send or stamp" opens', await until(() => { const p = $('#stamp-popup'); return !!p && p.style.display !== 'none'; }));
+    ok('popup: one stamp chip from stamp.types (APPROVED)', await until(() => $$('#sp-panel-stamp .stamp-chip[data-id]').length === 1));
+    if (CLIENT) ok('popup (client): "+ New stamp" hidden (caps.stampCreate — types are created on the core PC)', !$('#sp-panel-stamp .stamp-chip.new'));
+    else ok('popup (core): "+ New stamp" offered', !!$('#sp-panel-stamp .stamp-chip.new'));
+    click($('#stamp-popup [data-mode="send"]'));
+    ok('popup: Send panel lists the recipient (Boss)', await until(() => $$('#sp-to option').length === 1 && /Boss/.test($('#sp-to').textContent)));
+    ok('popup: history reads "Nothing yet."', await until(() => /Nothing yet/.test($('#sp-hist-list').textContent)));
+    click($('#stamp-popup .sp-x'));
+    ok('popup: closes', await until(() => $('#stamp-popup').style.display === 'none'));
+    // Mailbox: the inbox route for doc 3 → open it → the popup shows "waiting on you" with Approve / Reject.
+    ok('mailbox: the Mailbox toggle is shown', vis($('#btn-mailbox')));
+    click($('#btn-mailbox'));
+    ok('mailbox: inbox view with the route row for doc 3', await until(() => document.body.classList.contains('mailbox-mode') && !!$('.result-item[data-id="3"]')));
+    ok('mailbox: the row names the document + shows the sender\\'s note', /Cable Co/.test($('.result-item[data-id="3"]').textContent) && /please check/.test($('.result-item[data-id="3"]').textContent));
+    click($('.result-item[data-id="3"]'));
+    ok('mailbox: clicking the route previews the document', await until(() => !!$('.pf-confband') && btns().some(t => /Send or stamp/.test(t))));
+    click($$('#preview-actions button').find(b => /Send or stamp/.test(b.textContent)));
+    ok('popup: "waiting on you" shows Approve + Reject for the route addressed to me', await until(() => { const w = $('#sp-waiting'); return !!w && !w.hidden && !!$('#sp-w-approve') && !!$('#sp-w-reject'); }));
+    click($('#stamp-popup .sp-x'));
+    click($('#btn-mailbox'));
+    ok('mailbox: back to the search results', await until(() => !document.body.classList.contains('mailbox-mode') && $$('.result-item').length === 3));
+  }
 
   if (CLIENT) {
     // 9 — client specifics: the capability hint shows ONLY for remediable drift (this client knows the S2 reads,

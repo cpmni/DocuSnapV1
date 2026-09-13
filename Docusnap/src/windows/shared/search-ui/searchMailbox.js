@@ -1,14 +1,16 @@
 'use strict';
-// Mailbox view for the enhanced (licensed) Search window. Toggles the results pane
-// between search results and approval-route lists (Inbox/Sent/Assigned/Completed),
-// reusing the workflow IPC. Selecting a route loads the document into the preview,
-// where search-workflow's decision bar handles approve/reject/acknowledge.
-// Inert unless the workflow add-on is licensed (SearchState.workflowEntitled).
+// Mailbox view for the enhanced (licensed) Search window. SHARED SEARCH UI — IO only through
+// window.SearchTransport.workflow.* (S4 2026-09-13: moved from the core-only search-mailbox.js so the
+// client's search pop-out has the same mailbox). Toggles the results pane between search results and
+// approval-route lists (Inbox/Sent/Assigned/Completed). Selecting a route loads the document into the
+// preview, where the Send-or-stamp popup's "Waiting on you" panel handles approve/reject/acknowledge.
+// Inert unless the workflow add-on is licensed (SearchState.workflowEntitled). Capability gate (absent =
+// true): stampedViewer — the "View stamped copy" link opens a desktop window the client cannot.
 
 let _active = false;
 let _box = 'inbox';
 
-// _mbInit, not `init`: search-workflow.js also declares a top-level `init` in this window's
+// _mbInit, not `init`: searchWorkflow.js also declares a top-level `init` in this window's
 // shared global scope — benign today only because each namespace export captures its own
 // binding at eval time, but one bare call or load-order change flips it. Unique names only
 // (pinned by test_no_global_collisions.js).
@@ -42,7 +44,7 @@ async function render() {
   const empty  = document.getElementById('results-empty');
   scroll.querySelectorAll('.section-header, .result-item, .section-capped-note').forEach(el => el.remove());   // capped-note too — a leftover "first 200 matches" line above a 4-item Inbox (Chris r4)
   let routes = [];
-  try { routes = await window.docusnap.workflow[_box](); } catch { routes = []; }
+  try { routes = await window.SearchTransport.workflow[_box](); } catch { routes = []; }
   if (!routes.length) {
     // Teaching empty states (Chris r4 card 6) — each pile explains what would appear in it.
     const EMPTY = {
@@ -127,7 +129,7 @@ function _routeItem(r) {
       r.resolution_comment ? `
     <div class="result-filename wf-reason" title="${escHtml(r.resolution_comment)}">Reason: ${escHtml(r.resolution_comment)}</div>` : ''}
     <div class="result-footer"><span class="result-date">${escHtml(sentWord)} ${escHtml(_wfDate(r.created_at))}</span>${rowActs}${
-      r.has_stamped ? `<button class="wf-stamp-link wf-stamp" type="button">View stamped copy</button>` : ''}</div>`;
+      (r.has_stamped && _cap('stampedViewer')) ? `<button class="wf-stamp-link wf-stamp" type="button">View stamped copy</button>` : ''}</div>`;
   el.addEventListener('click', () => {
     document.querySelectorAll('.result-item').forEach(n => n.classList.remove('active'));
     el.classList.add('active');
@@ -142,7 +144,7 @@ function _routeItem(r) {
   // guessable browsing) and gave untracked Save/Print. Rows no longer even carry the path.
   el.querySelector('.wf-stamp')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    window.docusnap.workflow.openStampedViewer(r.id);
+    window.SearchTransport.workflow.openStampedViewer(r.id);
   });
   el.querySelector('.wf-recall')?.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -157,7 +159,7 @@ function _routeItem(r) {
   return el;
 }
 
-// Called by search-workflow after an action resolves, so the list stays current.
+// Called by searchWorkflow after an action resolves, so the list stays current.
 function refreshIfActive() { if (_active) render(); }
 
 window.SearchMailbox = {

@@ -45,8 +45,12 @@
       singlePage: false, pageCount: false, find: false, spreadsheet: false,   // S2 (version-gated below)
       bin: true, restoreAll: false, sendBack: false,
       localFile: false, review: false, print: false,
-      stamps: false,                                                          // S4
+      stamps: true,                                                           // S4: the /v1 stamp routes
       settings: false,
+      // S4 workflow: what /v1 has (list/recipients/assign/resolve/recall + the stamp routes) is wired below;
+      // what it lacks (per-doc history + open-routes reads, admin cancel, stamp-type creation, the desktop
+      // stamped-copy viewer) is capped off — the shared UI hides those controls.
+      workflowHistory: false, docRoutes: false, adminCancel: false, stampCreate: false, stampedViewer: false,
     },
     // list + bin  (server: {confirmed, uncommitted} / {deleted} / 200 on the mutations)
     searchDocuments:      async (params) => unwrap(await api.search(params || {}), (j) => ({ confirmed: j.confirmed || [], uncommitted: j.uncommitted || [] })),
@@ -81,11 +85,38 @@
     printDocument:          async () => ({ ok: false, reason: 'disabled' }),
     printAvailable:         async () => false,
     // bootstrap state  (server: {types:[…]} / {entitled, workflow:{entitled}} ; main: {role, username, displayName} | null)
-    getAllDocTypes:       async () => unwrap(await api.review.docTypes(), (j) => j.types || []),
+    // /v1/doc-types is WRITER-gated (403 for a read-only user) — the type FILTER is optional, so a refusal
+    // means "no dropdown entries", never a failed boot (the core's IPC never refuses, so its init is unguarded).
+    getAllDocTypes:       async () => { const r = await api.review.docTypes(); if (r && r.status === 403) return []; return unwrap(r, (j) => j.types || []); },
     getEntitlement:       async () => unwrap(await api.entitlement()),
     authGetCurrentUser:   async () => (await api.currentUser()) || null,   // null = signed out → read-only
-    stamp:                { can: async () => ({ canStamp: false }) },       // S4
     getSetting:           async () => null,
+    // stamping (S4) over the /v1 workflow stamp routes (workflow-add-on gated server-side: a 402 → the shared UI's
+    // try/catch paths → no stamp button). Shapes unwrap to what the core bridge hands the shared UI.
+    stamp: {
+      can:          async () => unwrap(await api.workflow.canStamp(), (j) => ({ canStamp: !!j.canStamp })),
+      types:        async () => unwrap(await api.workflow.stampTypes(), (j) => j.stampTypes || []),
+      typeCreate:   async () => { throw new Error('New stamp types are created on the core PC.'); },   // caps.stampCreate=false — never shown
+      place:        async (p) => unwrap(await api.workflow.stampPlace(p.documentId, { stampTypeId: p.stampTypeId, box: p.box, page: p.page, note: p.note }), () => ({ ok: true })),
+      list:         async (id) => unwrap(await api.workflow.stampList(id), (j) => j.stamps || []),
+      currentPages: async (id) => unwrap(await api.workflow.stampedDoc(id), (j) => ({ ok: true, pages: j.pages || [] })),
+      grants:       async () => { throw new Error('not available'); },   // the shared UI falls back to "any recipient"
+    },
+    // workflow (S4) over /v1/workflow/* ; the four boxes unwrap {routes}, recipients {recipients}
+    workflow: {
+      inbox:             async () => unwrap(await api.workflow.list('inbox'), (j) => j.routes || []),
+      sent:              async () => unwrap(await api.workflow.list('sent'), (j) => j.routes || []),
+      assigned:          async () => unwrap(await api.workflow.list('assigned'), (j) => j.routes || []),
+      completed:         async () => unwrap(await api.workflow.list('completed'), (j) => j.routes || []),
+      recipients:        async () => unwrap(await api.workflow.recipients(), (j) => j.recipients || []),
+      assign:            async (documentId, toUserId, actionRequired, comment, resubmitOf) => unwrap(await api.workflow.assign(documentId, toUserId, actionRequired, comment, resubmitOf), () => ({ ok: true })),
+      resolve:           async (id, decision, comment, version) => unwrap(await api.workflow.resolve(id, decision, comment, version), () => ({ ok: true })),
+      recall:            async (id, version) => unwrap(await api.workflow.recall(id, version), () => ({ ok: true })),
+      adminCancel:       async () => { throw new Error('Cancelling a route is done on the core PC.'); },   // caps.adminCancel=false
+      docRoutes:         async () => { throw new Error('not available'); },                                 // caps.docRoutes=false
+      docHistory:        async () => { throw new Error('not available'); },                                 // caps.workflowHistory=false
+      openStampedViewer: () => {},                                                                            // caps.stampedViewer=false
+    },
     // no push channel for bin changes over /v1 today — the shared UI's focus-refresh belt covers it
   };
   window.SearchTransport = T;

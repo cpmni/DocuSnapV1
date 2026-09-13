@@ -76,6 +76,15 @@ the core search replicates to the client automatically** (no fork that rots).
 >   S1 posture, mount contract, height chain, cascade + script order, IPC arity, the Oracle S1 source conditions,
 >   a client twin of the collision pin) + `test_client_search_sync.js` (29). Owner live test owed (the client app was
 >   restarted on the new code).
+> - **S2 STATUS: BUILT 2026-09-13** (`4d502fd`) — the four `/v1` preview reads (contract 1.3.0), client methods +
+>   caps gated on the handshake, `client-find` not guarded (timeout → "took too long"), the /v1 OCR page cap via
+>   `PREVIEW_FIND_OCR_PAGES=12`, pin `test_v1_preview_reads.js`; popout pin runs PARITY + LITE.
+> - **S4 STATUS: BUILT 2026-09-13** (pulled forward on the owner's live-test report "no workflow actions on the
+>   client") — `searchWorkflow.js` / `searchStamp.js` / `searchMailbox.js` joined the shared module through
+>   `transport.{workflow,stamp}.*` + caps `workflowHistory docRoutes adminCancel stampCreate stampedViewer`; the
+>   workflow init + counts push moved into `searchInit.js`; client adapter over `/v1/workflow/*` (history /
+>   doc-routes / admin-cancel / stamp-create / stamped-viewer capped off); harness `--workflow` runs on both apps.
+>   The mailbox LIST endpoints the pop-out lacks (`docHistory`, `docRoutes`) are candidates for a later `/v1` MINOR.
 
 ## The mandate's answer (enforced auto-replication)
 The search UI becomes ONE canonical source both apps drive through an injected **transport**. Drift is made

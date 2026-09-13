@@ -34,7 +34,12 @@ console.log('1. source shape — every method is `(...a) => d.<same name>(...a)`
   const missing = REQUIRED.filter(n => !found.has(n));
   check(`every required pass-through method is present (${found.size} found)` + (missing.length ? ` — MISSING: ${missing.join(', ')}` : ''), missing.length === 0);
   check('each forwards to the SAME-NAMED bridge method' + (mismatched.length ? ` — ${mismatched.join(', ')}` : ''), mismatched.length === 0);
-  check('the nested stamp.can is a pass-through too', /stamp:\s+\{ can: \(\.\.\.a\) => d\.stamp\.can\(\.\.\.a\) \}/.test(src));
+  // S4: the nested stamp.* and workflow.* blocks are pass-throughs too, every member same-named.
+  const nested = [...src.matchAll(/^\s{6}([A-Za-z_]\w*):\s+\(\.\.\.a\) => d\.(stamp|workflow)\.([A-Za-z_]\w*)\(\.\.\.a\),/gm)];
+  check(`the nested stamp.* / workflow.* members are same-named pass-throughs (${nested.length})`, nested.length >= 19 && nested.every(m => m[1] === m[3]));
+  for (const n of ['can', 'types', 'typeCreate', 'place', 'list', 'currentPages', 'grants']) check(`stamp.${n} present`, nested.some(m => m[2] === 'stamp' && m[1] === n));
+  for (const n of ['inbox', 'sent', 'assigned', 'completed', 'recipients', 'assign', 'resolve', 'recall', 'adminCancel', 'docRoutes', 'docHistory', 'openStampedViewer']) check(`workflow.${n} present`, nested.some(m => m[2] === 'workflow' && m[1] === n));
+  check('onWorkflowCountsChanged subscribes through the bridge', /onWorkflowCountsChanged:\s+\(cb\) => d\.onWorkflowCountsChanged\(cb\)/.test(src));
   check('onBinChanged subscribes through the bridge', /onBinChanged:\s+\(cb\) => d\.onBinChanged\(cb\)/.test(src));
   check('no .catch / try / envelope / default-value normalisation anywhere in the adapter',
         !/\.catch\(/.test(src) && !/\btry\b/.test(src) && !/\?\?/.test(src) && !/\|\| \{/.test(src) && !/\.then\(/.test(src));

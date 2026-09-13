@@ -202,7 +202,9 @@
     .fieldlbl > span { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
     /* Quick File form — matches the core app's pane language (card + dashed pick zone + tidy inputs). */
     .fld-lbl { display:block; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-bottom:5px; }
-    #qf-body { max-width:960px; padding:6px 2px; }
+    /* Centred, width-capped column like the core's Quick File pane (.view-inner: margin-inline auto) —
+       it used to hug the left edge of the content area (owner 2026-09-13). */
+    #qf-body { width:100%; max-width:1100px; margin:0 auto; padding:6px 2px; }
     #view-quickfile input, #view-quickfile select { width:100%; box-sizing:border-box; }
     #view-quickfile select { font:inherit; background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:var(--r-sm); padding:9px 11px; }
     #view-quickfile select:focus { outline:none; border-color:var(--accent); }
@@ -787,7 +789,7 @@
 
     <!-- Quick File (non-OCR upload to the core) -->
     <div id="view-quickfile" class="hidden">
-      <div id="qf-body" style="max-width:900px;padding:4px 2px">
+      <div id="qf-body">
         <p class="muted" id="qf-intro" style="margin:0 0 16px;font-size:13px;line-height:1.5">
           File a document that needs no scanning — Word, Excel, PDF or an image. Type a few details and it's
           sent to ScanFinder and filed, searchable a moment later.</p>

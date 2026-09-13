@@ -53,8 +53,8 @@ function scanDupes(htmlPath) {
 const { all, dupes } = scanDupes(path.join(__dirname, 'index.html'));
 const locals = all.filter(f => !f.includes('/'));
 const shared = all.filter(f => f.includes('/search-ui/'));
-check(`found the window's local scripts in index.html (${locals.join(', ')})`, locals.length >= 4);
-check(`the shared search-ui module is in the scanned set (${shared.length} files)`, shared.length >= 6);
+check(`found the window's local scripts in index.html (${locals.join(', ')})`, locals.length >= 2);   // coreTransport + renderer (the rest is shared since S4)
+check(`the shared search-ui module is in the scanned set (${shared.length} files)`, shared.length >= 10);
 check('the adapter loads BEFORE the first shared search-ui script (window.SearchTransport must exist when they run)',
       all.indexOf('coreTransport.js') >= 0 && all.indexOf('coreTransport.js') < all.findIndex(f => f.includes('/search-ui/')));
 check('no top-level name is declared in more than one script in this window\'s shared scope'

@@ -213,8 +213,11 @@ const makeWc = (destroyed = false) => {
         /async function focusField/.test(dialogFocus) && /ensureWindowFocusAsync/.test(dialogFocus));
   check('shared/dialogFocus arms native confirm()/alert() idempotently',
         /window\.confirm\s*=/.test(dialogFocus) && /window\.alert\s*=/.test(dialogFocus) && /__dsDialogFocusInstrumented/.test(dialogFocus));
+  // The workflow module is SHARED with the client pop-out since S4 (2026-09-13): it routes through focusField
+  // when the host page provides it (the core), and falls back to a direct focus where it does not (the client).
   check('the workflow Reject note routes programmatic focus through focusField (not bare .focus())',
-        /focusField\(note\)/.test(win('search/search-workflow.js')));
+        /typeof focusField === 'function'\) focusField\(el\)/.test(win('shared/search-ui/searchWorkflow.js'))
+        && /_focus\(note\)/.test(win('shared/search-ui/searchWorkflow.js')));
   check('previously-unarmed dialog windows now load shared/dialogFocus.js (search/main/teach)',
         /shared\/dialogFocus\.js/.test(win('search/index.html'))
         && /shared\/dialogFocus\.js/.test(win('main/index.html'))

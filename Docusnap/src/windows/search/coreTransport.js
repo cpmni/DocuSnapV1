@@ -21,8 +21,13 @@
 //   localFile    showDocumentInExplorer / openDocumentFile (desktop-local)
 //   review       openReviewWindowAt ("Edit in Review")
 //   print        printDocument / printAvailable
-//   stamps       stamp.can + the Send/stamp popup (search-stamp.js)
+//   stamps       stamp.can + the Send/stamp popup (searchStamp.js)
 //   settings     getSetting (the purge-dialog "originals not touched" suffix)
+//   workflowHistory  workflow.docHistory (the decision-history rows)          ─┐ S4: the shared workflow /
+//   docRoutes        workflow.docRoutes (open-route banners) + adminCancel      │ mailbox / stamp modules
+//   adminCancel      workflow.adminCancel                                       │ (all true on the core;
+//   stampCreate      stamp.typeCreate ("+ New stamp")                           │ the client hides what
+//   stampedViewer    workflow.openStampedViewer (a desktop viewer window)      ─┘ /v1 cannot back)
 // Loaded BEFORE the shared scripts (index.html) so window.SearchTransport exists when they run.
 (function () {
   const d = window.docusnap;
@@ -31,6 +36,7 @@
       singlePage: true, pageCount: true, find: true, spreadsheet: true,
       bin: true, restoreAll: true, sendBack: true, localFile: true, review: true, print: true,
       stamps: true, settings: true,
+      workflowHistory: true, docRoutes: true, adminCancel: true, stampCreate: true, stampedViewer: true,
     },
     // list + bin
     searchDocuments:        (...a) => d.searchDocuments(...a),
@@ -59,9 +65,34 @@
     getAllDocTypes:         (...a) => d.getAllDocTypes(...a),
     getEntitlement:         (...a) => d.getEntitlement(...a),
     authGetCurrentUser:     (...a) => d.authGetCurrentUser(...a),
-    stamp:                  { can: (...a) => d.stamp.can(...a) },
     getSetting:             (...a) => d.getSetting(...a),
+    // stamping (S4) — pass-throughs to the desktop stamp bridge
+    stamp: {
+      can:          (...a) => d.stamp.can(...a),
+      types:        (...a) => d.stamp.types(...a),
+      typeCreate:   (...a) => d.stamp.typeCreate(...a),
+      place:        (...a) => d.stamp.place(...a),
+      list:         (...a) => d.stamp.list(...a),
+      currentPages: (...a) => d.stamp.currentPages(...a),
+      grants:       (...a) => d.stamp.grants(...a),
+    },
+    // workflow (S4) — pass-throughs to the desktop workflow bridge
+    workflow: {
+      inbox:             (...a) => d.workflow.inbox(...a),
+      sent:              (...a) => d.workflow.sent(...a),
+      assigned:          (...a) => d.workflow.assigned(...a),
+      completed:         (...a) => d.workflow.completed(...a),
+      recipients:        (...a) => d.workflow.recipients(...a),
+      assign:            (...a) => d.workflow.assign(...a),
+      resolve:           (...a) => d.workflow.resolve(...a),
+      recall:            (...a) => d.workflow.recall(...a),
+      adminCancel:       (...a) => d.workflow.adminCancel(...a),
+      docRoutes:         (...a) => d.workflow.docRoutes(...a),
+      docHistory:        (...a) => d.workflow.docHistory(...a),
+      openStampedViewer: (...a) => d.workflow.openStampedViewer(...a),
+    },
     // push events (optional on a transport; the shared UI guards on typeof)
-    onBinChanged:           (cb) => d.onBinChanged(cb),
+    onBinChanged:            (cb) => d.onBinChanged(cb),
+    onWorkflowCountsChanged: (cb) => d.onWorkflowCountsChanged(cb),
   };
 })();

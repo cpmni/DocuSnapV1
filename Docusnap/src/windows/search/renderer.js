@@ -1,11 +1,10 @@
 'use strict';
 // Search window coordinator — the CORE-specific shell around the shared search UI.
 // Script order (index.html): coreTransport (window.SearchTransport) → the shared search-ui modules
-// (searchState/Thumbs/Actions/Results/Preview/Query/Init — src/windows/shared/search-ui/, ONE canonical
-// source also driven by the detached client) → the core-only modules (search-workflow, search-mailbox,
-// search-stamp — direct IPC, hook the shared UI through the optional globals it already checks) → this
-// file. Everything app-agnostic lives in the shared module; what stays here is the native chrome (close,
-// help), the Home deep-links, and the workflow/mailbox init that only the core has.
+// (searchState/Thumbs/Actions/Results/Preview/Query/Workflow/Mailbox/Stamp/Init — src/windows/shared/
+// search-ui/, ONE canonical source also driven by the detached client's search pop-out) → this file.
+// Everything app-agnostic lives in the shared module; what stays here is the native chrome (close, help)
+// and the Home deep-links.
 
 document.getElementById('btn-close').addEventListener('click', () => window.docusnap.windowClose());
 
@@ -47,30 +46,8 @@ window.docusnap.onSearchGoto?.((v) => {
 window.SearchUI.init({
   // Quick-find deep-link: the term Home asked Search to open with (pulled once on load).
   initialQuery: () => window.docusnap.getSearchTarget(),
-  // The workflow add-on is licensed: bring up the desktop mailbox + approvals, and subscribe to the
-  // cross-user push. Cross-user freshness (Slice 1): ANY workflow change (this desktop or a /v1 client)
-  // pings every window — re-pull my open-route map + the visible mailbox, debounced
-  // (SearchMailbox.render has no concurrency guard; overlapping renders interleave DOM).
-  // The action-panel rerender is SKIPPED while the user is mid-input in it (a half-typed
-  // rejection note must never be wiped by someone else's action).
-  onWorkflowEntitled: async () => {
-    if (window.SearchWorkflow) await window.SearchWorkflow.init();
-    if (window.SearchMailbox) window.SearchMailbox.init();
-    let _wfPing = null;
-    window.docusnap.onWorkflowCountsChanged?.(() => {
-      clearTimeout(_wfPing);
-      _wfPing = setTimeout(async () => {
-        try {
-          await window.SearchWorkflow?.refresh?.();
-          const panel = document.getElementById('preview-actions');
-          const busy = panel && (panel.contains(document.activeElement)
-            || (panel.querySelector('.wf-note') && panel.querySelector('.wf-note').value.trim()));
-          if (!busy && window.SearchState.selectedDoc) window.SearchActions.renderActions(window.SearchState.selectedDoc);
-          window.SearchMailbox?.refreshIfActive?.();
-        } catch { /* best-effort */ }
-      }, 400);
-    });
-  },
+  // (The workflow/mailbox/stamp init + the cross-user counts push now live in the shared searchInit.js —
+  //  S4 2026-09-13 — driven through coreTransport.workflow/stamp/onWorkflowCountsChanged.)
   // Deep-link: Home's "Open Mailbox" asks the Search window to LAND on the mailbox view.
   // Consumed once on load (after doSearch, so the mailbox list wins the results pane).
   afterInit: async () => {

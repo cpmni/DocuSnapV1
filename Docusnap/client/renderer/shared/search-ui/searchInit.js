@@ -89,7 +89,10 @@ async function _loadDocTypes() {
 }
 
 async function _searchInit(opts) {
-  await _loadDocTypes();
+  // The type filter is optional: a transport that cannot list types (a read-only client — /v1/doc-types is
+  // writer-gated) must not stop the whole screen from booting. The core's bridge never refuses, so this is
+  // byte-identical on the core.
+  try { await _loadDocTypes(); } catch { /* the dropdown keeps "All types" */ }
   // POPULATE RESULTS FIRST — they depend only on the query, not on entitlement/stamp/print (which only
   // gate the action buttons). doSearch used to run AFTER getEntitlement + authGetCurrentUser + stamp.can
   // (→ verifyAuditChain, whose cost grows with the audit log) + printAvailable, so on a busy install the
@@ -132,7 +135,32 @@ async function _searchInit(opts) {
   if (window.SearchState.entitled) document.body.classList.add('wf-on');              // enhanced search
   if (window.SearchState.workflowEntitled) {
     document.body.classList.add('workflow-on');                                       // mailbox + approvals
-    if (opts.onWorkflowEntitled) await opts.onWorkflowEntitled();
+    // The shared workflow + mailbox modules (S4): approvals in the action panel / Send-or-stamp popup, the
+    // mailbox toggle. Cross-user freshness (Slice 1): ANY workflow change (this desktop or a /v1 client)
+    // pings every window — re-pull my open-route map + the visible mailbox, debounced (SearchMailbox.render
+    // has no concurrency guard; overlapping renders interleave DOM). The action-panel rerender is SKIPPED
+    // while the user is mid-input in it (a half-typed rejection note must never be wiped by someone else's
+    // action). A transport without the push channel (the client) just lacks the listener.
+    if (window.SearchWorkflow) await window.SearchWorkflow.init();
+    if (window.SearchMailbox) window.SearchMailbox.init();
+    const T = window.SearchTransport;
+    if (T && typeof T.onWorkflowCountsChanged === 'function') {
+      let _wfPing = null;
+      T.onWorkflowCountsChanged(() => {
+        clearTimeout(_wfPing);
+        _wfPing = setTimeout(async () => {
+          try {
+            await window.SearchWorkflow?.refresh?.();
+            const panel = document.getElementById('preview-actions');
+            const busy = panel && (panel.contains(document.activeElement)
+              || (panel.querySelector('.wf-note') && panel.querySelector('.wf-note').value.trim()));
+            if (!busy && window.SearchState.selectedDoc) window.SearchActions.renderActions(window.SearchState.selectedDoc);
+            window.SearchMailbox?.refreshIfActive?.();
+          } catch { /* best-effort */ }
+        }, 400);
+      });
+    }
+    if (opts.onWorkflowEntitled) await opts.onWorkflowEntitled();   // an optional host hook (none today)
   }
   // The permission checks above may have resolved after a doc was already selected (results populate
   // first now) — re-render its action panel so Stamp / Print / recycle appear once known.

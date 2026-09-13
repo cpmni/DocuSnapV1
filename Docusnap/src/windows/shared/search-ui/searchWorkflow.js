@@ -1,15 +1,18 @@
 'use strict';
-// Workflow actions for the enhanced (licensed) Search preview. Reuses the in-core
-// workflow IPC (window.docusnap.workflow.* → workflowService). Registers an action
-// provider with SearchActions that renders, for the selected document, either a
-// DECISION BAR (when the doc is routed to me) or a ROUTE/ASSIGN form (admin/edit).
-// Inert unless the workflow add-on is licensed (SearchState.workflowEntitled).
+// Workflow actions for the enhanced (licensed) Search preview. SHARED SEARCH UI — IO only through
+// window.SearchTransport.workflow.* (see searchState.js header; S4 2026-09-13: moved from the core-only
+// search-workflow.js so the client's search pop-out gets the same approvals). Registers an action provider
+// with SearchActions that renders, for the selected document, either a DECISION BAR (when the doc is routed
+// to me) or a ROUTE/ASSIGN form (admin/edit). Inert unless the workflow add-on is licensed
+// (SearchState.workflowEntitled). Capability gates (absent = true): workflowHistory (docHistory), docRoutes
+// (open-route banners + admin cancel), stampedViewer (the "View stamped copy" link — a desktop window).
 
 let _recipients = [];                 // active users (populated only for routers)
 let _myOpenRoutes = {};               // document_id -> open route addressed to me
 let _pendingResubmit = null;          // one-shot "Send again" prefill (consumed by the next render)
 
 const _canDecide = () => window.SearchState.role === 'admin' || window.SearchState.role === 'edit';
+const _wf = () => window.SearchTransport.workflow;
 
 async function init() {
   if (!window.SearchState.workflowEntitled) return;
@@ -20,7 +23,7 @@ async function init() {
 async function refresh() {
   try {
     const [inbox, assigned] = await Promise.all([
-      window.docusnap.workflow.inbox(), window.docusnap.workflow.assigned(),
+      _wf().inbox(), _wf().assigned(),
     ]);
     const open = {};
     for (const r of [...(inbox || []), ...(assigned || [])]) {
@@ -28,7 +31,7 @@ async function refresh() {
     }
     _myOpenRoutes = open; window.SearchState.myOpenRoutes = open;
   } catch { _myOpenRoutes = {}; }
-  try { _recipients = await window.docusnap.workflow.recipients(); } catch { _recipients = []; }
+  try { _recipients = await _wf().recipients(); } catch { _recipients = []; }
 }
 
 // Re-render the action panel for the currently selected document.
@@ -77,7 +80,7 @@ function _err(wrap, msg) {
   if (!n) { n = document.createElement('div'); n.className = 'wf-err'; wrap.appendChild(n); }
   n.textContent = msg;   // textContent, never innerHTML — the message can echo user input
 }
-// _wfBtn, NOT _btn: these are classic scripts sharing ONE global scope, and search-actions.js
+// _wfBtn, NOT _btn: these are classic scripts sharing ONE global scope, and searchActions.js
 // already owns _btn (different signature - container-appending). This file loading LAST meant
 // its 3-arg _btn silently shadowed the panel's, and every Document-Actions button (Open in
 // Explorer / Open File / Send back / Delete / Restore) appended NOTHING - the section-drop
@@ -89,6 +92,9 @@ function _wfBtn(label, primary, onClick) {
   b.textContent = label; b.addEventListener('click', onClick);
   return b;
 }
+// Programmatic focus goes through the core's focusField (shared/dialogFocus.js — the widget-focus repair)
+// when the host page provides it; a host without it (the client pop-out) focuses directly.
+function _focus(el) { if (!el) return; if (typeof focusField === 'function') focusField(el); else { try { el.focus(); } catch {} } }
 
 function _provide(doc) {
   if (!window.SearchState.workflowEntitled) return [];
@@ -113,14 +119,15 @@ function _provide(doc) {
 // Decision history block: closed routes for the doc, newest first, capped at 5 with a
 // "Show all" expander. resolution_comment renders verbatim; 'recalled' rows never guess an
 // actor (three producers share the state — OC2). Dates: resolved_at is ISO, created_at is
-// SQLite format — _histDate handles both.
+// SQLite format — _histDate handles both. A transport without a history read renders nothing.
 function _histDate(raw) {
   const m = String(raw || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
 }
 function _historyBlock(doc) {
   const wrap = document.createElement('div'); wrap.className = 'wf-history';
-  window.docusnap.workflow.docHistory(doc.id).then((rows) => {
+  if (!_cap('workflowHistory')) return wrap;
+  _wf().docHistory(doc.id).then((rows) => {
     if (!wrap.isConnected || !window.SearchState.selectedDoc || window.SearchState.selectedDoc.id !== doc.id) return;
     const all = rows || [];
     if (!all.length) return;                       // no history → render nothing (no empty header)
@@ -138,10 +145,10 @@ function _historyBlock(doc) {
         else text = `Recalled on ${d}`;
         if (r.resolution_comment) text += ` — “${r.resolution_comment}”`;
         line.textContent = text;
-        if (r.has_stamped) {
+        if (r.has_stamped && _cap('stampedViewer')) {
           const b = document.createElement('button');
           b.className = 'wf-stamp-link'; b.type = 'button'; b.textContent = 'View stamped copy';
-          b.addEventListener('click', () => window.docusnap.workflow.openStampedViewer(r.id));
+          b.addEventListener('click', () => _wf().openStampedViewer(r.id));
           line.append(' ', b);
         }
         wrap.appendChild(line);
@@ -166,9 +173,11 @@ function _historyBlock(doc) {
 // existing assign form. Renders NOTHING until the IPC resolves (never swap a form under typing
 // hands — eric). Class 'wf-routed' sits on the container FROM CREATION and population is
 // APPEND-ONLY so a `.wf-err` attached by _run survives the fill (Oracle OC1).
+// A transport without a doc-routes read goes straight to the assign form.
 function _routeOrAssign(doc) {
   const wrap = document.createElement('div'); wrap.className = 'wf-routed';
-  window.docusnap.workflow.docRoutes(doc.id).then((routes) => {
+  if (!_cap('docRoutes')) { wrap.appendChild(_assignForm(doc)); return wrap; }
+  _wf().docRoutes(doc.id).then((routes) => {
     // Staleness guards: renderActions wipes the panel on re-render (isConnected), and a fast
     // re-selection during the invoke round-trip must not paint the wrong doc's routes.
     if (!wrap.isConnected || !window.SearchState.selectedDoc || window.SearchState.selectedDoc.id !== doc.id) return;
@@ -186,13 +195,13 @@ function _routedBanner(r) {
   const banner = document.createElement('div'); banner.className = 'wf-banner';
   banner.textContent = `Sent to ${r.to_username} by ${r.from_username || 'Auto-filed'} — awaiting ${r.action_required === 'approve' ? 'their approval' : 'their acknowledgement'}`;
   row.appendChild(banner);
-  if (window.SearchState.role === 'admin') {
+  if (window.SearchState.role === 'admin' && _cap('adminCancel')) {
     const acts = document.createElement('div'); acts.className = 'wf-acts'; row.appendChild(acts);
     // Two-step inline confirm (NO native confirm() — the Search window is an unarmed
     // focus-desync site). First click arms, ~5s auto-revert; second click cancels. A stale
     // cancel lands as a truthful INVALID/CONFLICT that _run re-shows on the fresh panel.
     const btn = _wfBtn('Cancel route', false, () => {
-      if (btn.dataset.armed) { _run(window.docusnap.workflow.adminCancel(r.id, r.version)); return; }
+      if (btn.dataset.armed) { _run(_wf().adminCancel(r.id, r.version)); return; }
       btn.dataset.armed = '1'; btn.textContent = `Confirm — remove from ${r.to_username}'s inbox`;
       btn.classList.add('danger');
       setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'Cancel route'; btn.classList.remove('danger'); } }, 5000);
@@ -226,10 +235,10 @@ function _decisionBar(route) {
       // NEVER a silent no-op (Chris r4 — "the Reject button silently does nothing"): the
       // note is required for a rejection, so SAY so where the user is looking.
       _err(wrap, 'Add a short note first — the sender needs to know why it was rejected.');
-      focusField(note);   // programmatic focus → repair the widget-focus edge first (shared/dialogFocus)
+      _focus(note);   // programmatic focus → repair the widget-focus edge first (shared/dialogFocus)
       return;
     }
-    _run(window.docusnap.workflow.resolve(route.id, decision, n || null, route.version),
+    _run(_wf().resolve(route.id, decision, n || null, route.version),
          decision === 'approve'
            ? 'Approved — recorded against the document and moved to Completed.'
            : `Rejected — ${route.from_username} will see your reason in their Sent pile.`);
@@ -238,7 +247,7 @@ function _decisionBar(route) {
   if (route.action_required === 'acknowledge') {
     // Display copy only — the resolve decision string stays 'acknowledge' (DB/IPC contract).
     acts.appendChild(_wfBtn('Got it', true, () =>
-      _run(window.docusnap.workflow.resolve(route.id, 'acknowledge', null, route.version),
+      _run(_wf().resolve(route.id, 'acknowledge', null, route.version),
            'Noted — moved to Completed.')));
   } else if (_canDecide()) {
     // TWO-STEP ARM on Approve (owner-approved, Chris r5 card 3 / bob's ruling): an approval
@@ -319,17 +328,17 @@ function _assignForm(doc, preselectUsername, opts = {}) {
   const go = _wfBtn('Send', true, () => {
     const rcpt = _recipients.find(u => u.id === Number(sel.value)) || {};
     const who = rcpt.displayName || rcpt.username || 'them';
-    return _run(window.docusnap.workflow.assign(doc.id, Number(sel.value), act.value, note.value.trim() || undefined, opts.resubmitOf),
+    return _run(_wf().assign(doc.id, Number(sel.value), act.value, note.value.trim() || undefined, opts.resubmitOf),
                 `Sent to ${who} — it's in their Mailbox. You can recall it from your Sent pile while it's still pending.`);
   });
   wrap.append(sub, sel, act, note, go);
   return wrap;
 }
 
-// ── Mailbox-row actions (Slice 1) — called by search-mailbox.js ─────────────────
+// ── Mailbox-row actions (Slice 1) — called by searchMailbox.js ──────────────────
 // Recall a still-pending sent route straight from its row.
 function recallRoute(route) {
-  return _run(window.docusnap.workflow.recall(route.id, route.version),
+  return _run(_wf().recall(route.id, route.version),
               'Recalled — removed from their Mailbox.');
 }
 // "Send again" on a REJECTED sent route: load the doc into the preview; the next action

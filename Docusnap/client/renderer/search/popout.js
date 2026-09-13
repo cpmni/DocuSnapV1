@@ -25,6 +25,17 @@
   });
   api.onSearchGotoDoc?.((id) => { if (id != null) window.SearchPreview.selectDoc({ id: Number(id) }); });
 
+  // ── Toast (the shared stamp/send popup reports through SearchState.toast when the host provides one) ──
+  window.SearchState.toast = (msg) => {
+    const t = document.createElement('div');
+    t.textContent = String(msg || '');
+    Object.assign(t.style, { position: 'fixed', left: '50%', bottom: '24px', transform: 'translateX(-50%)',
+      background: 'var(--surface2)', border: '1px solid var(--border2)', color: 'var(--text)', padding: '10px 16px',
+      borderRadius: '10px', fontSize: '13px', boxShadow: '0 8px 24px rgba(0,0,0,.25)', zIndex: '9600' });
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2600);
+  };
+
   // ── Boot the shared UI ───────────────────────────────────────────────────────────
   let target = null;   // { query, docId } pulled once from main
   window.SearchUI.init({

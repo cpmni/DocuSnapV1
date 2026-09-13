@@ -31,13 +31,13 @@ const check = (name, ok) => { if (ok) { pass++; console.log(`  ok  ${name}`); } 
 // Run the harness in client mode against a stubbed core advertising `serverContract`. PARITY (the client's own
 // contract, 1.3.0+) = every S2 read available; LITE (1.2.0) = an older core: the S2 caps stay off, the
 // controls hide, the "newer core needed" hint shows. Both must hold — a customer may upgrade the client first.
-function runHarness(serverContract) {
+function runHarness(serverContract, extra = []) {
   const exe = path.join(ROOT, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
   if (!fs.existsSync(exe)) { check('node_modules/electron present', false); return null; }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-popout-fn-'));
   const report = path.join(tmp, 'report.json'), dump = path.join(tmp, 'dom.json');
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
-  const args = [path.join(ROOT, 'scripts', 'search-window-harness.js'), '--client', '--report', report, '--dump', dump];
+  const args = [path.join(ROOT, 'scripts', 'search-window-harness.js'), '--client', '--report', report, '--dump', dump, ...extra];
   if (serverContract) args.push('--server-contract', serverContract);
   const r = spawnSync(exe, args, { cwd: ROOT, env, encoding: 'utf8', timeout: 120000, windowsHide: true });
   let rec = null; try { rec = JSON.parse(fs.readFileSync(report, 'utf8')); } catch {}
@@ -92,6 +92,18 @@ console.log('A2. functional — LITE: the same pop-out against an OLDER core (1.
   }
 }
 
+console.log('A3. functional — WORKFLOW (S4): approvals, the Send-or-stamp popup and the Mailbox in the pop-out');
+{
+  const run = runHarness(null, ['--workflow']);
+  if (run) {
+    const { calls } = run;
+    const has = (ch, pred) => calls.some(([c, a]) => c === ch && (!pred || pred(a)));
+    check('client-wf-list(inbox) + client-wf-recipients + client-wf-can-stamp + client-wf-stamp-types driven over the client bridge',
+          has('client-wf-list', a => a[0] === 'inbox') && has('client-wf-recipients') && has('client-wf-can-stamp') && has('client-wf-stamp-types'));
+    check('client-wf-stamp-list consulted for the previewed docs (stamped/original toggle)', has('client-wf-stamp-list'));
+  }
+}
+
 console.log('B. source — the Oracle S1 conditions');
 {
   const html = read('client', 'renderer', 'search', 'index.html');
@@ -106,8 +118,8 @@ console.log('B. source — the Oracle S1 conditions');
   const adapter = read('client', 'renderer', 'search', 'clientTransport.js');
   check('client adapter reaches IO only through window.scanfinder (no core bridge, no Node)', !/window\.docusnap/.test(adapter) && !/\bipcRenderer\b/.test(adapter) && !/\brequire\(/.test(adapter) && /window\.scanfinder/.test(adapter));
   check('client adapter sets window.SearchTransport with caps', /window\.SearchTransport = T/.test(adapter) && /caps:\s*\{/.test(adapter));
-  check('client adapter: initial caps — S2 reads OFF until the handshake gate flips them; sendBack/restoreAll/localFile/review/print/stamps/settings false (no /v1 backing); bin true',
-        /singlePage: false, pageCount: false, find: false, spreadsheet: false/.test(adapter) && /bin: true, restoreAll: false, sendBack: false/.test(adapter) && /localFile: false, review: false, print: false/.test(adapter) && /stamps: false/.test(adapter) && /settings: false/.test(adapter));
+  check('client adapter: initial caps — S2 reads OFF until the handshake gate flips them; sendBack/restoreAll/localFile/review/print/settings false (no /v1 backing); bin + stamps true',
+        /singlePage: false, pageCount: false, find: false, spreadsheet: false/.test(adapter) && /bin: true, restoreAll: false, sendBack: false/.test(adapter) && /localFile: false, review: false, print: false/.test(adapter) && /stamps: true/.test(adapter) && /settings: false/.test(adapter));
   check('client adapter (S2): the four reads are wired cap-gated (404 → cap off) and S2_METHODS_PRESENT is true',
         /S2_METHODS_PRESENT = true/.test(adapter) && /getDocumentPage:\s+capGated\('singlePage'/.test(adapter) && /getDocumentPageCount: capGated\('pageCount'/.test(adapter) && /getSpreadsheetGrid:\s+capGated\('spreadsheet'/.test(adapter) && /api\.find\(id, q\)/.test(adapter));
   check('client adapter (S2): a find timeout/error (status 0) is the client\'s OWN outcome — returned as kind, never a lost connection',
@@ -135,7 +147,14 @@ console.log('B. source — the Oracle S1 conditions');
     for (const m of src.matchAll(/^(?:(?:async\s+)?function\s+([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=)/gm)) { const n = m[1] || m[2]; (decls[n] || (decls[n] = [])).push(f); }
   }
   const dupes = Object.entries(decls).filter(([, fs2]) => new Set(fs2).size > 1);
-  check(`pop-out: no top-level name declared in more than one script (${scripts.length} scripts scanned)` + (dupes.length ? ` — DUPES: ${dupes.map(([n, fs2]) => `${n} (${[...new Set(fs2)].join(' + ')})`).join('; ')}` : ''), scripts.length >= 11 && dupes.length === 0);
+  check(`pop-out: no top-level name declared in more than one script (${scripts.length} scripts scanned)` + (dupes.length ? ` — DUPES: ${dupes.map(([n, fs2]) => `${n} (${[...new Set(fs2)].join(' + ')})`).join('; ')}` : ''), scripts.length >= 14 && dupes.length === 0);
+  check('pop-out (S4): loads the shared workflow / mailbox / stamp modules', /search-ui\/searchWorkflow\.js/.test(html) && /search-ui\/searchMailbox\.js/.test(html) && /search-ui\/searchStamp\.js/.test(html));
+  check('client adapter (S4): stamps cap true; history / doc-routes / admin-cancel / stamp-create / stamped-viewer capped off',
+        /stamps: true/.test(adapter) && /workflowHistory: false, docRoutes: false, adminCancel: false, stampCreate: false, stampedViewer: false/.test(adapter));
+  check('client adapter (S4): the workflow boxes unwrap {routes}, recipients {recipients}, stamp list {stamps}, types {stampTypes}',
+        /api\.workflow\.list\('inbox'\), \(j\) => j\.routes/.test(adapter) && /\(j\) => j\.recipients/.test(adapter) && /\(j\) => j\.stamps/.test(adapter) && /\(j\) => j\.stampTypes/.test(adapter));
+  check('client adapter (S4): assign carries resubmitOf (the "Send again" lineage) end to end', /assign:\s+async \(documentId, toUserId, actionRequired, comment, resubmitOf\)/.test(adapter) && /resubmitOf \}\) =>\s*client\.workflow\.assign\(documentId, toUserId, actionRequired, comment, resubmitOf\)/.test(read('client', 'main.js')) && /assign:\s+\(documentId, toUserId, actionRequired, comment, resubmitOf\)/.test(read('client', 'preload.js')));
+  check('client adapter: a read-only user\'s 403 on /v1/doc-types yields an empty type list, not a failed boot', /if \(r && r\.status === 403\) return \[\];/.test(adapter));
 
   const main = read('client', 'main.js');
   check('main: a single pop-out (module ref; focus if alive, null on closed)', /let searchWin = null;/.test(main) && /if \(searchWin && !searchWin\.isDestroyed\(\)\)/.test(main) && /w\.on\('closed', \(\) => \{ if \(searchWin === w\) searchWin = null; \}\)/.test(main));

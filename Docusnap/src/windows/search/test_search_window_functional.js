@@ -59,6 +59,22 @@ check('get-deleted-queue — the bin read', has('get-deleted-queue'));
 check('get-document-thumbnail (id, null, null) — the row thumbnails through the transport twin', has('get-document-thumbnail', a => a.length === 3 && a[1] === null && a[2] === null));
 check('get-setting keep_processed_originals is read lazily at most once (purge suffix)', calls.filter(([c, a]) => c === 'get-setting' && a[0] === 'keep_processed_originals').length <= 1);
 
+console.log('S4 — the shared workflow / mailbox / stamp modules on the core (harness --workflow)');
+{
+  const rep2 = path.join(tmp, 'report-wf.json');
+  const r2 = spawnSync(exe, [path.join(ROOT, 'scripts', 'search-window-harness.js'), '--workflow', '--report', rep2], { cwd: ROOT, env, encoding: 'utf8', timeout: 120000, windowsHide: true });
+  let rec2 = null; try { rec2 = JSON.parse(fs.readFileSync(rep2, 'utf8')); } catch {}
+  check('the workflow run produced a report', !!rec2);
+  if (rec2) {
+    console.log(`harness(--workflow) exit ${r2.status}; ${rec2.checks.length} in-page checks`);
+    for (const c of rec2.checks.filter(c => /workflow|popup|mailbox|Send or stamp/.test(c.name))) check(c.name, c.ok);
+    check('every in-page check of the workflow run passed', rec2.checks.every(c => c.ok));
+    const calls2 = rec2.calls || [];
+    check('the desktop workflow bridge was driven through the core adapter (workflow-inbox / recipients / stamp-types)',
+          calls2.some(([c]) => c === 'workflow-inbox') && calls2.some(([c]) => c === 'workflow-recipients') && calls2.some(([c]) => c === 'stamp-types'));
+  }
+}
+
 console.log('S0b mount contract + the load-bearing layout (the height chain a wrapper would break)');
 let d = null; try { d = JSON.parse(fs.readFileSync(dump, 'utf8')); } catch {}
 check('the DOM dump was produced', !!d && !!d.styles);

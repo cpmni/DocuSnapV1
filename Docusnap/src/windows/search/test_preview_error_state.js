@@ -19,8 +19,8 @@ const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}
 const read = (...f) => fs.readFileSync(path.join(__dirname, ...f), 'utf8');
 
 const preview  = read('..', 'shared', 'search-ui', 'searchPreview.js');   // the shared search UI (2026-09-13)
-const mailbox  = read('search-mailbox.js');
-const workflow = read('search-workflow.js');
+const mailbox  = read('..', 'shared', 'search-ui', 'searchMailbox.js');    // shared since S4 (2026-09-13)
+const workflow = read('..', 'shared', 'search-ui', 'searchWorkflow.js');
 const previewSvc = fs.readFileSync(path.join(__dirname, '..', '..', 'services', 'previewService.js'), 'utf8');
 
 // selectDoc must wrap its fetch sequence and render an honest error, not leave the spinner.

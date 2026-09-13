@@ -15,40 +15,28 @@
 const Database = require('better-sqlite3');
 const api = require('../src/modules/api/handler');
 const pw  = require('../src/modules/auth/password');
-const { createClient, compareContract } = require('./apiClient');
+const { runMigrations } = require('../database/index');
+const { createClient, compareContract, CLIENT_CONTRACT } = require('./apiClient');
 
 const PWD = 'Client-Test-Pw-7';
 let fail = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fail++; };
 
 async function freshDb() {
+  // The REAL schema (runMigrations), not a hand-rolled one — the detail DTO reads columns added by later
+  // migrations (page_count, intake …) and a stale hand schema turned this test red silently (the
+  // "hand-rolled test schemas lack mig columns" trap, CLAUDE.md).
   const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE document_types (id INTEGER PRIMARY KEY, name TEXT, slug TEXT);
-    CREATE TABLE documents (
-      id INTEGER PRIMARY KEY, supplier_name TEXT, reference_number TEXT, doc_date TEXT,
-      document_type_id INTEGER, status TEXT, ocr_text TEXT, overall_confidence INTEGER,
-      original_filename TEXT, stored_filename TEXT, stored_path TEXT, folder_path TEXT,
-      working_path TEXT, confirmed_at TEXT, processed_at TEXT
-    );
-    CREATE TABLE extractions (
-      id INTEGER PRIMARY KEY, document_id INTEGER, field_key TEXT, raw_value TEXT,
-      display_value TEXT, confidence INTEGER, was_corrected INTEGER, corrected_to TEXT,
-      validation_note TEXT, extraction_method TEXT
-    );
-    CREATE TABLE users (
-      id INTEGER PRIMARY KEY, username TEXT, display_name TEXT, password_hash TEXT,
-      role TEXT, is_active INTEGER DEFAULT 1, must_change_password INTEGER DEFAULT 0,
-      totp_secret TEXT, totp_enabled INTEGER DEFAULT 0, created_at TEXT, updated_at TEXT
-    );
-  `);
-  db.prepare(`INSERT INTO document_types (id,name,slug) VALUES (1,'Invoice','invoice')`).run();
+  runMigrations(db);
+  db.prepare(`INSERT INTO document_types (id,name,slug,built_in) VALUES (1,'Invoice','invoice',1)`).run();
   // Paths left NULL so the stale-file filter keeps these rows (no on-disk file in
   // this hermetic test). DTO path-stripping is proven with real sentinels in
   // src/modules/api/test_v1_contract.js; here we only need the rows to survive.
-  db.prepare(`INSERT INTO documents (id,supplier_name,reference_number,doc_date,document_type_id,status,confirmed_at,processed_at)
-              VALUES (1,'Acme','INV-1','16-03-2026',1,'confirmed','2026-03-11','2026-03-11'),
-                     (2,'ReviewCo',NULL,NULL,1,'needs_review','2026-03-12','2026-03-12')`).run();
+  // Paths are EMPTY strings (the real schema makes them NOT NULL) — falsy, so the stale-file filter keeps the
+  // rows and has_file reads false (no on-disk file in this hermetic test).
+  db.prepare(`INSERT INTO documents (id,supplier_name,reference_number,doc_date,document_type_id,status,original_filename,stored_filename,stored_path,folder_path,confirmed_at,processed_at)
+              VALUES (1,'Acme','INV-1','16-03-2026',1,'confirmed','inv1.pdf','Invoice.16-03-2026.INV-1.pdf','','','2026-03-11','2026-03-11'),
+                     (2,'ReviewCo',NULL,NULL,1,'needs_review','rc.pdf','rc.pdf','','','2026-03-12','2026-03-12')`).run();
   const h = await pw.hashPassword(PWD);
   const ins = db.prepare(`INSERT INTO users (id,username,display_name,password_hash,role,is_active) VALUES (?,?,?,?,?,1)`);
   ins.run(1, 'reader', 'Reader', h, 'readonly');
@@ -71,11 +59,12 @@ async function main() {
   // ── handshake ─────────────────────────────────────────────────────────────────
   let c = createClient({ baseUrl });
   let h = await c.connect();
-  check('connect -> ok, server v1.1.0', h.ok && h.mode === 'ok' && h.serverVersion === '1.1.0');
+  // The server's contract is the constant the client is built for (lockstep) — never a hardcoded version.
+  check(`connect -> ok, server v${CLIENT_CONTRACT} (lockstep)`, h.ok && h.mode === 'ok' && h.serverVersion === api.API_CONTRACT_VERSION && CLIENT_CONTRACT === api.API_CONTRACT_VERSION);
   check('connect blocks on major mismatch',
     (await createClient({ baseUrl, expectedContract: '2.0.0' }).connect()).mode === 'block');
   check('connect warns on minor drift',
-    (await createClient({ baseUrl, expectedContract: '1.9.0' }).connect()).mode === 'warn');
+    (await createClient({ baseUrl, expectedContract: '1.99.0' }).connect()).mode === 'warn');
 
   // ── login + token ─────────────────────────────────────────────────────────────
   check('bad login -> ok:false', !(await c.login('reader', 'nope')).ok);
