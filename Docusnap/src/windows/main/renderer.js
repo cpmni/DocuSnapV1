@@ -36,13 +36,18 @@ function setBtnLabel(btn, text) {
 // The nav rail is the single source of navigation. Home/Import switch the
 // in-page view; Review/Search/Teach/Settings open the existing windows (wired
 // further down). Selecting Home refreshes the dashboard's live counts.
-const VIEWS = ['home', 'import'];
+const VIEWS = ['home', 'import', 'quickfile'];
 function showView(name) {
   if (!VIEWS.includes(name)) return;
+  // Quick File is DARK: only reachable when direct_intake_enabled revealed it (QuickFileView.enabled).
+  // Fail-closed — a stray programmatic showView('quickfile') can't reveal an empty pane.
+  if (name === 'quickfile' && !(window.QuickFileView && window.QuickFileView.enabled)) return;
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${name}`));
   document.querySelectorAll('.rail-item[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   if (name === 'home') refreshDashboard();
+  if (name === 'quickfile' && window.QuickFileView) window.QuickFileView.enter();
 }
+window.showView = showView;   // quickfileView.js (the Import cross-link) switches to the pane via this
 document.querySelectorAll('.rail-item[data-view]').forEach((btn) => {
   btn.addEventListener('click', () => showView(btn.dataset.view));
 });

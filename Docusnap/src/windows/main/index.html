@@ -759,9 +759,9 @@
       <button class="rail-item" id="btn-import" data-view="import" data-help-key="begin-import">
         <svg class="ico" aria-hidden="true"><use href="#i-folder"/></svg><span>Import</span>
       </button>
-      <!-- Quick File (non-OCR intake) — hidden unless direct_intake_enabled; wired by quickfile.js. No
-           data-view (it opens a modal, not a view), so the view-switcher never grabs it. -->
-      <button class="rail-item" id="nav-quickfile" data-help-key="quick-file" style="display:none;" title="File a document that needs no scanning (Word, Excel, email, PDF)">
+      <!-- Quick File (non-OCR intake) — an in-page PANE (view-quickfile), sibling to Import. Hidden until
+           direct_intake_enabled reveals it (quickfileView.js); data-view routes the click via the rail delegation. -->
+      <button class="rail-item" id="nav-quickfile" data-view="quickfile" data-help-key="quick-file" style="display:none;" title="File a document that needs no scanning (Word, Excel, email, PDF)">
         <svg class="ico" aria-hidden="true"><use href="#i-sparkles"/></svg><span>Quick File</span>
       </button>
       <button class="rail-item" id="btn-review" data-help-key="review">
@@ -1086,7 +1086,7 @@
             <button class="btn" id="btn-print-slips" title="Print a separator sheet to slot between documents in your scan pile — the batch splits wherever a sheet is scanned; print or photocopy as many copies as you need">Print a separator sheet</button>
             <div class="muted" style="font-size:12px; margin-top:4px; max-width:560px;">Put a printed separator sheet between documents when you scan a stack — Scan Finder splits the batch into separate documents wherever it sees one.</div>
             <span id="print-slips-msg" style="display:none; font-size:12px; color: var(--muted);"></span>
-            <!-- Quick File (non-OCR direct intake) — hidden unless direct_intake_enabled is on (checked by quickfile.js). -->
+            <!-- Quick File (non-OCR direct intake) cross-link — hidden unless direct_intake_enabled (revealed by quickfileView.js); switches to the Quick File pane. -->
             <button class="btn" id="btn-quickfile" type="button" style="display:none;" data-help-key="quick-file"
               title="File a document that doesn't need scanning (Word, Excel, email, PDF) — type the company and title, and it files straight into your folders, searchable, without OCR.">⚡ Quick File a document</button>
           </div>
@@ -1144,6 +1144,12 @@
       </div>
 
       </section>
+
+      <!-- Quick File PANE (non-OCR direct intake) — sibling to Import. Never .active unless
+           direct_intake_enabled revealed it; built lazily by quickfileView.js on first entry. -->
+      <section class="view" id="view-quickfile">
+        <div id="qf-root"></div>
+      </section>
     </main>
   </div>
 </div>
@@ -1175,7 +1181,7 @@
 <script src="../shared/modalFocus.js"></script>
 <script src="../shared/dialogFocus.js"></script>   <!-- arm native confirm()/alert() focus repair + focusField -->
 
-<script src="quickfile.js"></script>
+<script src="quickfileView.js"></script>
 <script src="renderer.js"></script>
 </body>
 </html>
