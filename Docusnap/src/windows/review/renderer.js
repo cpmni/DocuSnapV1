@@ -10111,11 +10111,21 @@ const _docViewer = document.getElementById('doc-viewer');
 // draggable="false"; this catches any bubbled dragstart from its children.)
 _docViewer.addEventListener('contextmenu', (e) => { if (pageImages.length) e.preventDefault(); });
 _docViewer.addEventListener('dragstart', (e) => e.preventDefault());
-// Scroll-wheel zoom (same step as the +/− buttons; matches the Template Manager preview).
+// Owner control model (2026-09-13): the WHEEL scrolls the document up/down — it no longer zooms
+// (zoom is the +/−/Reset buttons only; right-drag pans). Zoom stays a CSS transform so the zone-OCR /
+// teach / trace canvases keep their byte-identical coordinate mapping (see canvasPoint above). At fit
+// (zoom ≤ 1) a tall page overflows #doc-viewer, so we let the pane scroll NATIVELY. When zoomed in, the
+// transform doesn't grow the scroll box, so we scroll by translating the page (panY), clamped in range.
 _docViewer.addEventListener('wheel', (e) => {
   if (!pageImages.length) return;
+  if (previewZoom <= 1) return;              // page fits the width; let the pane scroll natively
   e.preventDefault();
-  setPreviewZoom(previewZoom + (e.deltaY < 0 ? PREVIEW_ZOOM_STEP : -PREVIEW_ZOOM_STEP));
+  previewPanY -= e.deltaY;
+  const vh = _docViewer.clientHeight - 32;   // minus the 16px padding each side
+  const contentH = docImgWrap.offsetHeight * previewZoom;
+  const minY = Math.min(0, vh - contentH);   // panY 0 = top, minY = bottom
+  previewPanY = Math.max(minY, Math.min(0, previewPanY));
+  applyPreviewTransform();
 }, { passive: false });
 _docViewer.addEventListener('mousedown', (e) => {
   if (e.button !== 2) return;

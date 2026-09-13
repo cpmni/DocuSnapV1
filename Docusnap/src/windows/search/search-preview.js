@@ -92,8 +92,14 @@ function _showPage(idx) {
   _syncPageNav();
 }
 
-// ── Zoom / pan (mirrors the Review viewer: buttons + wheel zoom, right-drag pan) ─
-let previewZoom = 1, panX = 0, panY = 0;
+// ── Zoom / scroll / pan (owner control model 2026-09-13) ───────────────────────
+//   • mouse WHEEL  = scroll the document up/down (native overflow scroll — NOT zoom)
+//   • RIGHT-drag   = pan (grab-scroll the pane; left-click untouched)
+//   • ZOOM         = the +/−/Reset buttons ONLY
+// Zoom is LAYOUT-based (we set the image WIDTH), not a CSS transform: a transform doesn't change the
+// element's layout box, so the scroll container never gains anything to scroll. Sizing the image so it
+// truly overflows the pane is what lets the wheel scroll it and the right-drag pan it.
+let previewZoom = 1;
 const ZOOM_MIN = 1, ZOOM_MAX = 4, ZOOM_STEP = 0.25;
 // Render the preview at ~216 DPI (scale 3). The pane rasterises the page and CSS-zooms it, so more source
 // pixels = crisper zoom — but scale 6 (432 DPI) rendered EVERY page up front (~2.5s + 15 MB over IPC for a
@@ -102,14 +108,38 @@ const ZOOM_MIN = 1, ZOOM_MAX = 4, ZOOM_STEP = 0.25;
 // sharpness is needed later, re-render the CURRENT page on zoom-in rather than raising this for all pages.
 const SEARCH_RENDER_SCALE = 3;
 
-function _applyTransform() {
-  const wrap = document.getElementById('preview-img-wrap');
-  if (wrap) wrap.style.transform = `translate(${panX}px, ${panY}px) scale(${previewZoom})`;
-  const lvl = document.getElementById('zoom-level');
+// Size the page image to (fit-width × zoom). At zoom 1 this equals the old max-width:100% fit; above 1 the
+// image exceeds the pane so the pane scrolls. Called on every image load and on each zoom change.
+function _applyZoom() {
+  const img  = document.getElementById('preview-img');
+  const area = document.getElementById('preview-img-area');
+  const lvl  = document.getElementById('zoom-level');
   if (lvl) lvl.textContent = Math.round(previewZoom * 100) + '%';
+  if (!img || !area || !img.naturalWidth) return;
+  const areaW = Math.max(50, area.clientWidth - 32);      // minus the 16px padding each side
+  const fitW  = Math.min(img.naturalWidth, areaW);
+  img.style.maxWidth = 'none';                            // override the CSS max-width:100% so it can grow
+  img.style.width    = Math.round(fitW * previewZoom) + 'px';
 }
-function setPreviewZoom(z) { previewZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)); _applyTransform(); }
-function resetPreviewView() { previewZoom = 1; panX = 0; panY = 0; _applyTransform(); }
+function setPreviewZoom(z) {
+  const area = document.getElementById('preview-img-area');
+  // Keep the pane's centre point stable across a zoom step (so + / − feels anchored, not jumpy).
+  let ax = 0.5, ay = 0.5;
+  if (area && area.scrollWidth > area.clientWidth)  ax = (area.scrollLeft + area.clientWidth  / 2) / area.scrollWidth;
+  if (area && area.scrollHeight > area.clientHeight) ay = (area.scrollTop  + area.clientHeight / 2) / area.scrollHeight;
+  previewZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+  _applyZoom();
+  if (area) {
+    if (area.scrollWidth  > area.clientWidth)  area.scrollLeft = ax * area.scrollWidth  - area.clientWidth  / 2;
+    if (area.scrollHeight > area.clientHeight) area.scrollTop  = ay * area.scrollHeight - area.clientHeight / 2;
+  }
+}
+function resetPreviewView() {
+  previewZoom = 1;
+  _applyZoom();
+  const area = document.getElementById('preview-img-area');
+  if (area) { area.scrollLeft = 0; area.scrollTop = 0; }
+}
 
 function initPageNav() {
   document.getElementById('btn-page-prev').addEventListener('click', () =>
@@ -121,30 +151,27 @@ function initPageNav() {
   document.getElementById('btn-zoom-out')?.addEventListener('click', () => setPreviewZoom(previewZoom - ZOOM_STEP));
   document.getElementById('btn-zoom-reset')?.addEventListener('click', resetPreviewView);
 
-  const area   = document.getElementById('preview-img-area');
+  const img  = document.getElementById('preview-img');
+  const area = document.getElementById('preview-img-area');
   const hasDoc = () => window.SearchState.currentPages.length > 0;
-  // Suppress the context menu (so right-drag can pan) + block native image dragging.
+  // Re-fit whenever a page image loads (natural size known only then) — preserves the current zoom.
+  if (img) img.addEventListener('load', _applyZoom);
+  // The wheel now scrolls natively (no handler) — we only block native image drag + the context menu so
+  // right-drag can pan without popping a menu.
   area.addEventListener('contextmenu', (e) => { if (hasDoc()) e.preventDefault(); });
   area.addEventListener('dragstart',   (e) => e.preventDefault());
-  // Scroll-wheel zoom (same step as the +/− buttons).
-  area.addEventListener('wheel', (e) => {
-    if (!hasDoc()) return;
-    e.preventDefault();
-    setPreviewZoom(previewZoom + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
-  }, { passive: false });
-  // Right-click drag pans (left-click is left untouched).
+  // Right-click drag = grab-scroll (pan). Drag the page the way your hand pushes it.
   let panStart = null;
   area.addEventListener('mousedown', (e) => {
     if (e.button !== 2 || !hasDoc()) return;
-    panStart = { x: e.clientX, y: e.clientY, panX, panY };
+    panStart = { x: e.clientX, y: e.clientY, sl: area.scrollLeft, st: area.scrollTop };
     area.style.cursor = 'grabbing';
     e.preventDefault();
   });
   window.addEventListener('mousemove', (e) => {
     if (!panStart) return;
-    panX = panStart.panX + (e.clientX - panStart.x);
-    panY = panStart.panY + (e.clientY - panStart.y);
-    _applyTransform();
+    area.scrollLeft = panStart.sl - (e.clientX - panStart.x);
+    area.scrollTop  = panStart.st - (e.clientY - panStart.y);
   });
   window.addEventListener('mouseup', () => { if (panStart) { panStart = null; area.style.cursor = ''; } });
 }
