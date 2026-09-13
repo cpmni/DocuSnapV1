@@ -54,33 +54,21 @@
     card.appendChild(el('p', { className: 'muted', style: { margin: '0 0 16px', fontSize: '13px', color: 'var(--muted)' } },
       'For documents that need no scanning — Word, Excel, email, PDF. Type the details and it files straight into your folders, searchable a moment later. It never runs OCR and never teaches the scanner.'));
 
-    // ── doc type row (Quick File 'none' types; offer to add one if none installed) ──
+    // ── doc type row — the FULL list of Quick File types: installed 'none' types PLUS the catalog
+    //    presets not yet added (value "new:<slug>"; a preset is auto-added the first time it is filed). ──
     const typeRow = el('div', { style: { margin: '0 0 14px' } });
     card.appendChild(typeRow);
     let typeSelect = null;
     function renderTypeRow(installed, presets) {
       typeRow.textContent = '';
       typeRow.appendChild(el('label', { className: 'sidebar-label', style: { display: 'block', marginBottom: '4px', fontSize: '12px' } }, 'File as'));
-      if (installed && installed.length) {
-        typeSelect = el('select', { className: 'input', style: { width: '100%', padding: '8px', borderRadius: 'var(--r-sm)' } },
-          installed.map(t => el('option', { value: String(t.id) }, t.name)));
-        typeRow.appendChild(typeSelect);
-      } else {
-        typeSelect = null;
-        typeRow.appendChild(el('div', { className: 'muted', style: { fontSize: '13px', marginBottom: '6px', color: 'var(--muted)' } },
-          'No Quick File type yet. Add one to get started:'));
-        const wrap = el('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' } });
-        for (const p of (presets || [])) {
-          const b = el('button', { className: 'btn', type: 'button' }, `＋ ${p.name}`);
-          b.addEventListener('click', async () => {
-            b.disabled = true; b.textContent = 'Adding…';
-            try { const r = await D.quickFileAddType(p.slug); if (r && r.ok) { const fresh = await D.quickFileDocTypes(); renderTypeRow(fresh.installed, fresh.presets); } else b.textContent = 'Failed — try again'; }
-            catch { b.textContent = 'Failed — try again'; b.disabled = false; }
-          });
-          wrap.appendChild(b);
-        }
-        typeRow.appendChild(wrap);
-      }
+      const seen = new Set();
+      const opts = [];
+      for (const t of (installed || [])) { opts.push(el('option', { value: String(t.id) }, t.name)); seen.add(t.slug); }
+      for (const p of (presets || [])) { if (!seen.has(p.slug)) opts.push(el('option', { value: 'new:' + p.slug }, p.name)); }
+      typeSelect = el('select', { className: 'input', style: { width: '100%', padding: '8px', borderRadius: 'var(--r-sm)' } }, opts);
+      typeRow.appendChild(typeSelect);
+      if (!opts.length) typeRow.appendChild(el('div', { className: 'muted', style: { fontSize: '12px', color: 'var(--muted)', marginTop: '4px' } }, 'No Quick File types available.'));
     }
     renderTypeRow(info.installed, info.presets);
 
@@ -136,11 +124,24 @@
     card.appendChild(el('div', { style: { display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '8px' } }, [cancelBtn, fileBtn]));
 
     fileBtn.addEventListener('click', async () => {
-      if (!typeSelect) { msg.style.color = 'var(--warn)'; msg.textContent = 'Add a Quick File type first.'; return; }
+      if (!typeSelect || !typeSelect.value) { msg.style.color = 'var(--warn)'; msg.textContent = 'Pick a type first.'; return; }
       if (!staged.length) { msg.style.color = 'var(--warn)'; msg.textContent = 'Choose at least one file.'; return; }
       if (!partyI.value.trim()) { msg.style.color = 'var(--warn)'; msg.textContent = 'Enter the company or person.'; partyI.focus(); return; }
       fileBtn.disabled = true; cancelBtn.disabled = true; pickBtn.disabled = true;
-      const documentTypeId = Number(typeSelect.value);
+      const reEnable = () => { fileBtn.disabled = false; cancelBtn.disabled = false; pickBtn.disabled = false; };
+      // Resolve the type. A "new:<slug>" option is a catalog preset not yet added — add it on first use.
+      let documentTypeId;
+      const tv = typeSelect.value;
+      if (tv.indexOf('new:') === 0) {
+        msg.style.color = 'var(--muted)'; msg.textContent = 'Setting up the type…';
+        try {
+          const ar = await D.quickFileAddType(tv.slice(4));
+          if (!ar || !ar.ok || !ar.type) { msg.style.color = 'var(--warn)'; msg.textContent = 'Could not set up that type.'; reEnable(); return; }
+          documentTypeId = ar.type.id;
+          const fresh = await D.quickFileDocTypes(); renderTypeRow(fresh.installed, fresh.presets);
+          for (const o of typeSelect.options) if (Number(o.value) === documentTypeId) typeSelect.value = o.value;
+        } catch { msg.style.color = 'var(--warn)'; msg.textContent = 'Could not set up that type.'; reEnable(); return; }
+      } else documentTypeId = Number(tv);
       const shared = { documentTypeId, party: partyI.value.trim(), date: dateI.value || '', reference: refI.value.trim(), notes: notesI.value.trim() };
       let filed = 0; const errors = [];
       for (const f of staged) {
