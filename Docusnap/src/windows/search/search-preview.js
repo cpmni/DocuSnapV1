@@ -86,13 +86,26 @@ function _syncPageNav() {
   }
 }
 
-function _showPage(idx) {
+// LAZY per-page render: currentPages is a SPARSE array of length = page count; a hole is rendered on
+// demand (getDocumentPage) the first time its page is shown, then cached for this selection. This is
+// what keeps a big multi-page scan fast to OPEN — only page 1 renders up front, not all N pages
+// (a 34-page doc was ~6.5s + 37MB over IPC when every page rendered on open).
+async function _showPage(idx) {
   const s = window.SearchState;
   if (idx < 0 || idx >= s.currentPages.length) return;
   s.currentPage = idx;
-  document.getElementById('preview-img').src = s.currentPages[idx];
-  document.getElementById('preview-img-wrap').style.display = '';   // reverts to the CSS flex
-  document.getElementById('preview-img-placeholder').style.display = 'none';
+  if (!s.currentPages[idx]) {
+    const mine = s.selectedDoc;
+    let uri = null;
+    try { uri = await window.docusnap.getDocumentPage(mine.id, idx, SEARCH_RENDER_SCALE); } catch { /* leave the hole */ }
+    if (s.selectedDoc !== mine || s.currentPage !== idx) return;   // a newer selection / page won meanwhile
+    if (uri) s.currentPages[idx] = uri;
+  }
+  if (s.currentPages[idx]) {
+    document.getElementById('preview-img').src = s.currentPages[idx];
+    document.getElementById('preview-img-wrap').style.display = '';   // reverts to the CSS flex
+    document.getElementById('preview-img-placeholder').style.display = 'none';
+  }
   _syncPageNav();
 }
 
@@ -336,33 +349,33 @@ async function selectDoc(doc) {
     renderPreviewFields(merged);
     window.SearchActions.renderActions(merged);
 
-    // FAST FIRST PAGE (owner 2026-09-13: an 8 MB multi-page PDF was slow to open): paint page 1 as soon
-    // as it's rendered, then let the full render below preload the rest in the background. Best-effort +
-    // staleness-guarded; page 1 is re-shown identically by _showPage(0) once the full set lands, so nav
-    // + find come alive then. Single-page docs skip this (the full render is already one page).
+    // LAZY PAGE LOADING (owner 2026-09-13: big multi-page scans were slow to open because EVERY page
+    // rendered up front — ~6.5s + 37MB over IPC for a 34-page doc). A multi-page PDF now renders ONLY
+    // page 1 at open; the rest render on demand in _showPage as the operator navigates (cached per
+    // selection). page_count (now carried on the detail DTO) sizes the sparse array so page nav is live
+    // immediately. Images / single-page / unknown-count docs keep the one-shot render (already cheap).
     const _pageCount = Number(merged.page_count) || 0;
-    if (_pageCount > 1) {
-      try {
-        const first = await window.docusnap.getDocumentPage(doc.id, 0, SEARCH_RENDER_SCALE);
+    const _isPdf = /\.pdf$/i.test(merged.original_filename || merged.stored_filename || '');
+    if (_pageCount > 1 && _isPdf) {
+      s.currentPages = new Array(_pageCount);          // sparse: holes filled on demand by _showPage
+      s.currentPage = 0;
+      const first = await window.docusnap.getDocumentPage(doc.id, 0, SEARCH_RENDER_SCALE);
+      if (s.selectedDoc !== mine) return;
+      if (first) s.currentPages[0] = first;
+      else {                                           // page-1 render failed — fall back to the full render
+        s.currentPages = await window.docusnap.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE);
         if (s.selectedDoc !== mine) return;
-        if (first) {
-          document.getElementById('preview-img').src = first;
-          document.getElementById('preview-img-wrap').style.display = '';
-          ph.style.display = 'none';
-        }
-      } catch { /* fall through to the full render */ }
+      }
+    } else {
+      // DE-PATHED (owner 2026-08-02): rows no longer carry paths; fetch by docId alone — an
+      // unresolvable file simply yields []. One render call (single page / image = cheap).
+      s.currentPages = await window.docusnap.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE);
+      if (s.selectedDoc !== mine) return;
+      s.currentPage = 0;
     }
 
-    // DE-PATHED (owner 2026-08-02): rows no longer carry paths; the pages handler always
-    // resolved server-side from the doc row anyway (client args were decorative), so fetch
-    // by docId alone — an unresolvable file simply yields []. This preloads ALL pages (the rest,
-    // behind the page-1 paint above) and formalises currentPages + page nav.
-    s.currentPages = await window.docusnap.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE);
-    if (s.selectedDoc !== mine) return;
-    s.currentPage = 0;
-
     if (s.currentPages.length > 0) {
-      _showPage(0);
+      await _showPage(0);
       // Seed the Find-in-document box with the active list term, so what's highlighted matches the box
       // (and the operator can edit it to search within this doc). Empty when opened without a search.
       const q = s.query || '';
