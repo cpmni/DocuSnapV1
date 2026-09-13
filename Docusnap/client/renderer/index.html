@@ -200,11 +200,18 @@
     input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(79,142,247,.18); }
     .fieldlbl { display:flex; flex-direction:column; gap:5px; }
     .fieldlbl > span { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
-    /* Quick File form */
-    .fld-lbl { display:block; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin-bottom:5px; }
+    /* Quick File form — matches the core app's pane language (card + dashed pick zone + tidy inputs). */
+    .fld-lbl { display:block; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-bottom:5px; }
+    #qf-body { max-width:960px; padding:6px 2px; }
     #view-quickfile input, #view-quickfile select { width:100%; box-sizing:border-box; }
-    #view-quickfile select { font:inherit; background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:var(--r-sm); padding:8px 10px; }
+    #view-quickfile select { font:inherit; background:var(--surface2); color:var(--text); border:1px solid var(--border2); border-radius:var(--r-sm); padding:9px 11px; }
     #view-quickfile select:focus { outline:none; border-color:var(--accent); }
+    #view-quickfile .qf-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:18px 20px; }
+    #view-quickfile .qf-pickcard { flex:0 0 300px; min-width:260px; display:flex; flex-direction:column; align-items:center; text-align:center;
+      gap:10px; border:2px dashed var(--border2); background:var(--surface2); }
+    #view-quickfile .qf-glyph { width:40px; height:40px; color:var(--muted); opacity:.8; }
+    #view-quickfile .qf-pick-title { font-size:15px; font-weight:600; color:var(--text); }
+    #view-quickfile #qf-files { width:100%; margin-top:4px; text-align:left; }
 
     /* chips / dots / meters */
     .dot { width:8px; height:8px; border-radius:50%; background:var(--muted); flex:0 0 auto; }
@@ -786,24 +793,28 @@
           sent to ScanFinder and filed, searchable a moment later.</p>
         <div id="qf-disabled" class="empty hidden">Quick File isn't enabled on the ScanFinder server. Ask an admin to turn it on.</div>
         <div id="qf-form" class="hidden">
-          <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
-            <div id="qf-drop" style="flex:0 0 260px;min-width:220px">
+          <div style="display:flex;gap:18px;align-items:stretch;flex-wrap:wrap">
+            <div id="qf-drop" class="qf-card qf-pickcard">
+              <svg class="qf-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12 3 v10"/><path d="M8 11 l4 4 l4 -4"/><path d="M4 15 v3 a2 2 0 0 0 2 2 h12 a2 2 0 0 0 2 -2 v-3"/>
+              </svg>
+              <div class="qf-pick-title">Choose documents to file</div>
               <button id="qf-pick" class="btn btn-secondary"><span data-ic="inbox"></span>Choose files…</button>
-              <div id="qf-files" style="margin-top:12px"></div>
+              <div id="qf-files"></div>
             </div>
-            <div style="flex:1;min-width:300px">
+            <div class="qf-card" style="flex:1;min-width:320px">
               <label class="fld-lbl">File as</label>
-              <select id="qf-type" class="input" style="width:100%"></select>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin-top:12px">
-                <div><label class="fld-lbl">Company / Person</label><input id="qf-party" class="input" type="text" placeholder="Company or person"></div>
-                <div><label class="fld-lbl">Date</label><input id="qf-date" class="input" type="date"></div>
-                <div><label class="fld-lbl">Reference</label><input id="qf-ref" class="input" type="text" placeholder="Optional"></div>
-                <div><label class="fld-lbl">Notes</label><input id="qf-notes" class="input" type="text" placeholder="Optional — searchable"></div>
+              <select id="qf-type"></select>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px 16px;margin-top:14px">
+                <div><label class="fld-lbl">Company / Person</label><input id="qf-party" type="text" placeholder="Company or person"></div>
+                <div><label class="fld-lbl">Date</label><input id="qf-date" type="date"></div>
+                <div><label class="fld-lbl">Reference</label><input id="qf-ref" type="text" placeholder="Optional"></div>
+                <div><label class="fld-lbl">Notes</label><input id="qf-notes" type="text" placeholder="Optional — searchable"></div>
               </div>
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:16px">
-            <button id="qf-submit" class="btn"><span data-ic="check"></span>File documents</button>
+            <button id="qf-submit" class="btn btn-primary"><span data-ic="check"></span>File documents</button>
             <span id="qf-msg" class="muted" style="font-size:13px"></span>
           </div>
         </div>
