@@ -118,17 +118,33 @@ Oracle's order, and stopped before the risky wiring. Nothing here changes the ap
 6. **`202456e` Departments enforcement core (D2 core)** — `canAccessDocument` department tag gate +
    `departmentService` (CRUD, membership, `visibleDocSql` list fragment, `setDocumentDepartment` widening
    rule). Pinned incl. a non-vacuous consistency pin. Inert/byte-identical on empty tables.
+7. **`91486ee` Q1 cont.** — 4 Quick File presets (`reading_mode='none'`) + Q-C8 never-detect
+   (process_docs excludes 'none' types from `known_type_names`) + previewService office-icon guard (Q-C6).
+8. **`a597f9d` assign-time route gate (D-C1)** — `_validateAssignTarget` refuses routing a restricted doc
+   to an outsider (human + system routes → `RECIPIENT_NO_ACCESS`); department-decision-only (no routing
+   regression). Pinned.
+9. **`4e89ba6` D2 read gate — search threaded + db-layer refactor** — extracted
+   `database/modules/departmentVisibility.js` (pure, no cycle); `documents.search` gates on a threaded
+   `viewer` (search + /v1 handlers pass it). The MAIN list surface is gated. Pinned (incl. fail-closed +
+   byte-identical). ⚠ an un-threaded list reader now fails CLOSED (shared-only) once departments exist —
+   which is exactly why the rest of the sweep must be finished before flip.
 
 ## What REMAINS (the finish path — in the plan's order)
-- **D2 wiring (load-bearing, must be COMPLETE before any flip):** thread `departmentService.visibleDocSql`
-  into EVERY list/count reader (search, review+deferred queues+counts, bin, dashboard counts, type-ahead,
-  export, `getByIds`×3, `getConfirmedDocsByIds`, `getDocumentsForFieldValue`), the assign-time route gate
-  (`workflowService._validateAssignTarget`/`assignSystem` → `RECIPIENT_NO_ACCESS`, incl. system routes), the
-  9→1 count-broadcast collapse, and the per-doc gate on `open-document-file`/`show-in-explorer`/`/v1 viewing`.
-  eric's exact site list: `docs/designs/QUICKFILE_DEPARTMENTS_ERIC_ARCH_2026-09-12.md` §A.2.
-- **Quick File rest:** the Home button + form + IPC/preload (the UI), `stage()` token map, update/replace/bulk,
-  the `previewService` office-icon branch (Q-C6), the OOXML/PDF-text search extraction (Q2), presets ('none'
-  reading_mode types) + the 'none'-never-detect guard (Q-C8).
+- **D2 wiring (load-bearing, must be COMPLETE before any flip — an un-threaded reader now fails CLOSED to
+  shared-only once departments exist, so it under-shows a member's own docs until threaded):** DONE so far
+  = the assign-time route gate (`a597f9d`) + `documents.search` (`4e89ba6`). STILL TO THREAD
+  `departmentVisibility.visibleDocSql(db, viewer, alias)` into: review+deferred queues+counts (take the
+  actor), bin (`getDeletedQueue`), dashboard counts (`getFiledCounts`/get-dashboard-extra), type-ahead
+  (`getFieldValueSuggestions`), export (`_buildDocQuery`, admin-only today), `getByIds`×3,
+  `getConfirmedDocsByIds`, `getDocumentsForFieldValue`; the per-doc `canAccessDocument` gate on
+  `_openResolvedDoc` (open-document-file/show-in-explorer, handler.js:2744) + `/v1 review/:id/viewing`; the
+  9→1 count-broadcast collapse to a per-viewer `notifyCounts`. Pattern is set (see `4e89ba6`): add an
+  optional `viewer`, append the fragment, thread the actor from the handler. eric's exact site list:
+  `docs/designs/QUICKFILE_DEPARTMENTS_ERIC_ARCH_2026-09-12.md` §A.2.
+- **Quick File rest** (presets/Q-C8/preview DONE in `91486ee`): the Home button + form + IPC/preload (the
+  UI) wiring `directIntakeService` — IPCs `direct-intake-pick|stage|submit|update|replace|list` + the preload
+  bridge + the `_intakeStaged` token map (eric B.1/B.5); update/replace/bulk + `document_versions`; the
+  OOXML/PDF-text search extraction (Q2, `src/lib/ooxmlText.js` + `python_backend/render/pdf_text.py`).
 - **Departments rest:** the taggers (insert/confirm defaults, D3), the Settings "Users & Departments" UI +
   the enable sentence (D4), the `{department}` folder token (D5).
 - **Deferred by the plan (own Oracle pass):** Q7 `/v1` upload, drag-drop (Q-C12).
