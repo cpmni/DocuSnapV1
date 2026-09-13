@@ -5249,3 +5249,27 @@ it fetches ALL pages in one `/v1/documents/{id}/pages` call (`apiClient.js:159` 
   (~5–10× smaller than PNG, keep PNG for born-digital/line-art) — the biggest single win for scan-heavy
   clients. Consider a "preview quality" setting.
 - Pairs with the in-doc-find A3 (client `/v1` find endpoint) — same client-preview surface.
+
+## "File in ScanFinder" Explorer right-click menu — Oracle SEND BACK, deferred (2026-09-13)
+Slice B of the Quick File input work. eric designed it, Oracle SENT IT BACK — two reasons:
+- **Scope-creep on a DARK feature.** Quick File is gated on the runtime `direct_intake_enabled` setting,
+  but a registry shell verb CANNOT be gated on a runtime setting — shipping it would put "File in
+  ScanFinder" on ~20 file types in every user's right-click menu while the feature is OFF; clicking it
+  just launches the app to say "this is off." Breaks the byte-identical-OFF discipline. Revisit ONLY when
+  Quick File graduates out of DARK.
+- **Wrong layer.** eric proposed app first-run HKCU; the install is `perMachine:true` elevated
+  (`installer.nsh` already runs `SetShellVarContext all`), so the correct, fully-reversible layer is
+  INSTALL-TIME HKLM `Software\Classes\SystemFileAssociations\<ext>\shell\…` in `customInstall` /
+  `customUnInstall` (where the existing WriteRegStr/DeleteRegKey live). First-run HKCU under-covers
+  (launching profile only) and orphans keys on uninstall.
+When Quick File graduates, resubmit with: registry in installer.nsh (HKLM, round-trip leaves zero orphan
+keys); a `--quickfile <path>` arg + a STRICT operand-only `parseQuickfileArgs` (ignore forwarded switches;
+resolve against Electron's provided workingDirectory, not the first instance's cwd); extend `second-instance`
+(main.js:1065 currently DISCARDS argv) to enqueue+debounce (~300ms) so N per-%1 launches coalesce into one
+staged set; stage via the shared Q-C10 validator into the shared _staged map; gate on enabled+role with a
+VISIBLE message if off/no-session (never a silent drop), view-switch only with an active admin/edit session;
+cold-start parse process.argv AFTER the licence/login gate. MSIX SKU can't write HKCU classes — declare a
+manifest `desktop:FileTypeAssociation` instead (NSIS-only path). Smoke: select ~20 files (Explorer
+MultipleInvokePromptMinimum ~16) → confirm coalescing not an N-window storm; `--quickfile "\host\share\x"`
+and `--quickfile "x.lnk"` both refused visibly. The second-instance argv change is fine on its own but must
+not ship coupled to the shell surface while the feature is DARK.
