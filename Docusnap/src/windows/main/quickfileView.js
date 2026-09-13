@@ -35,6 +35,23 @@
   })[r] || 'unsupported file';
   const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
+  // A light OUTLINE drop glyph (a tray with a down-arrow) — stroked in the muted colour, no fill, so it
+  // reads soft rather than a solid dark block. Built with createElementNS (CSP-safe).
+  const _dropGlyph = (size) => {
+    const NS = 'http://www.w3.org/2000/svg';
+    const s = document.createElementNS(NS, 'svg');
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('fill', 'none');
+    s.setAttribute('stroke', 'currentColor'); s.setAttribute('stroke-width', '1.6');
+    s.setAttribute('stroke-linecap', 'round'); s.setAttribute('stroke-linejoin', 'round');
+    s.setAttribute('aria-hidden', 'true');
+    s.style.width = size + 'px'; s.style.height = size + 'px'; s.style.color = 'var(--muted)'; s.style.opacity = '0.8';
+    const p = (d) => { const e = document.createElementNS(NS, 'path'); e.setAttribute('d', d); s.appendChild(e); };
+    p('M12 3 v10');              // arrow shaft
+    p('M8 11 l4 4 l4 -4');       // arrow head (pointing down = drop)
+    p('M4 15 v3 a2 2 0 0 0 2 2 h12 a2 2 0 0 0 2 -2 v-3');   // open tray
+    return s;
+  };
+
   // A sprite icon (createElementNS — the CSP-safe way; the `el` helper can't make real SVG nodes).
   const _svgIco = (id, size) => {
     const NS = 'http://www.w3.org/2000/svg';
@@ -189,14 +206,12 @@
     // scopes the preload drop resolver to THIS element; the window-level drop guard is untouched.
     const dropZone = el('div', { id: 'qf-dropzone', className: 'qf-drop', 'data-help-key': 'quick-file',
       'data-intake-drop': '', style: { flex: '0 0 300px', minWidth: '260px' } });
-    const dzIcon = _svgIco('i-inbox', 40); dzIcon.style.color = 'var(--accent)';
-    dropZone.appendChild(dzIcon);
+    dropZone.appendChild(_dropGlyph(40));   // light OUTLINE glyph (a filled sprite icon read too dark/solid)
     dropZone.appendChild(el('div', { style: { fontSize: '15px', fontWeight: '600', color: 'var(--text)' } }, 'Drag documents here'));
     dropZone.appendChild(el('div', { style: { fontSize: '12px', color: 'var(--muted)' } }, 'or'));
     pickBtn = el('button', { className: 'btn', type: 'button' }, 'Choose files…');
     pickBtn.addEventListener('click', doPick);
     dropZone.appendChild(pickBtn);
-    dropZone.appendChild(el('div', { style: { fontSize: '11px', color: 'var(--muted)', marginTop: '2px' } }, 'Word · Excel · email · PDF — no scanning'));
     dropZone.addEventListener('click', (e) => { if (e.target === dropZone) doPick(); });
 
     // Drag-drop. The dashed "drop here" cue shows ONLY while a real file drag is over the card. Path
