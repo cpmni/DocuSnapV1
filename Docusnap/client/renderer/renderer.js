@@ -296,6 +296,7 @@ $('login-btn').addEventListener('click', async () => {
     role = r.user.role;
     $('nav-recycle').style.display = canDecide() ? '' : 'none';   // delete/restore is Admin/Edit
     $('nav-review').style.display  = canDecide() ? '' : 'none';   // review/file is Admin/Edit
+    $('nav-quickfile').style.display = canDecide() ? '' : 'none'; // Quick File upload is Admin/Edit (server re-checks + gates on enabled)
     if (canDecide()) refreshReviewCounts();                       // seed the Review nav badge
     const ent = await api.entitlement();
     if (!(ent.json && ent.json.entitled)) {
@@ -424,12 +425,14 @@ function setView(view) {
   $('view-search').classList.toggle('hidden', view !== 'search');
   $('view-mailbox').classList.toggle('hidden', view !== 'mailbox');
   $('view-review').classList.toggle('hidden', view !== 'review');
+  $('view-quickfile').classList.toggle('hidden', view !== 'quickfile');
   $('view-settings').classList.toggle('hidden', view !== 'settings');
   $('view-recycle').classList.toggle('hidden', view !== 'recycle');
   navActive($('nav-home'), view === 'home');
   navActive($('nav-search'), view === 'search');
   navActive($('nav-mailbox'), view === 'mailbox');
   navActive($('nav-review'), view === 'review');
+  navActive($('nav-quickfile'), view === 'quickfile');
   navActive($('nav-settings'), view === 'settings');
   navActive($('nav-recycle'), view === 'recycle');
   const meta = {
@@ -437,6 +440,7 @@ function setView(view) {
     search:   ['Search', 'Find and preview filed documents'],
     mailbox:  ['Mailbox', 'Approvals routed to and from you'],
     review:   ['Review', 'Check and file documents waiting in the queue'],
+    quickfile:['Quick File', 'Send a document that needs no scanning straight to filing'],
     settings: ['Settings', 'Appearance and preferences'],
     recycle:  ['Recycle bin', 'Restore or permanently remove deleted documents'],
   }[view] || ['Search', ''];
@@ -446,12 +450,14 @@ function setView(view) {
   if (view === 'search' && !searchPrimed) { searchPrimed = true; runSearch(); }   // prime once
   if (view === 'mailbox') loadMailbox();
   if (view === 'review') loadReview();
+  if (view === 'quickfile') loadQuickFile();
   if (view === 'recycle') loadRecycleBin();
 }
 $('nav-home').addEventListener('click', () => setView('home'));
 $('nav-search').addEventListener('click', () => setView('search'));
 $('nav-mailbox').addEventListener('click', () => setView('mailbox'));
 $('nav-review').addEventListener('click', () => setView('review'));
+$('nav-quickfile').addEventListener('click', () => setView('quickfile'));
 $('nav-settings').addEventListener('click', () => setView('settings'));
 $('nav-recycle').addEventListener('click', () => setView('recycle'));
 $('rv-refresh').addEventListener('click', () => loadReview());
@@ -462,6 +468,64 @@ document.querySelectorAll('[data-rbox]').forEach((b) => b.addEventListener('clic
 }));
 $('rb-refresh').addEventListener('click', () => loadRecycleBin());
 $('theme-select')?.addEventListener('change', (e) => applyTheme(e.target.value));
+
+// ── Quick File (non-OCR upload to the core) ───────────────────────────────────
+let qfStaged = [];   // [{ token, name, titleInput }]
+function qfStem(n) { return String(n || '').replace(/\.[^.]+$/, ''); }
+function renderQfFiles() {
+  const box = $('qf-files'); if (!box) return; box.innerHTML = '';
+  if (!qfStaged.length) { const e = document.createElement('div'); e.className = 'muted'; e.style.fontSize = '12px'; e.textContent = 'No files chosen yet.'; box.appendChild(e); return; }
+  for (const f of qfStaged) {
+    const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:6px;align-items:center;margin:5px 0';
+    const nm = document.createElement('span'); nm.style.cssText = 'flex:0 0 42%;font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap'; nm.title = f.name; nm.textContent = f.name; row.appendChild(nm);
+    f.titleInput = document.createElement('input'); f.titleInput.type = 'text'; f.titleInput.value = qfStem(f.name); f.titleInput.style.cssText = 'flex:1;font-size:12px'; row.appendChild(f.titleInput);
+    const rm = document.createElement('button'); rm.className = 'btn btn-secondary btn-sm'; rm.textContent = '×'; rm.title = 'Remove';
+    rm.addEventListener('click', () => { qfStaged = qfStaged.filter((x) => x !== f); renderQfFiles(); }); row.appendChild(rm);
+    box.appendChild(row);
+  }
+}
+async function loadQuickFile() {
+  const msg = $('qf-msg'); if (msg) msg.textContent = '';
+  let r; try { r = await api.quickFile.docTypes(); } catch { r = null; }
+  const info = r && r.json;
+  const enabled = !!(info && info.enabled);
+  $('qf-disabled').classList.toggle('hidden', enabled);
+  $('qf-form').classList.toggle('hidden', !enabled);
+  if (!enabled) return;
+  const sel = $('qf-type'); sel.innerHTML = '';
+  // Only INSTALLED Quick File types — a not-yet-added preset can't be created over /v1 in v1.
+  for (const t of (info.installed || [])) { const o = document.createElement('option'); o.value = String(t.id); o.textContent = t.name; sel.appendChild(o); }
+  if (!sel.options.length) { const o = document.createElement('option'); o.textContent = 'No Quick File types — ask an admin to add one'; o.disabled = true; sel.appendChild(o); }
+  const d = $('qf-date'); if (d && !d.value) { const n = new Date(); d.value = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`; }
+  renderQfFiles();
+}
+$('qf-pick')?.addEventListener('click', async () => {
+  let r; try { r = await api.quickFile.pick(); } catch { r = null; }
+  if (!r || !r.ok) return;
+  const refused = (r.files || []).filter((f) => f.refused);
+  qfStaged = qfStaged.concat((r.files || []).filter((f) => f.token).map((f) => ({ token: f.token, name: f.name })));
+  renderQfFiles();
+  if (refused.length && $('qf-msg')) $('qf-msg').textContent = `${refused.length} file(s) skipped (unsupported type).`;
+});
+$('qf-submit')?.addEventListener('click', async () => {
+  const sel = $('qf-type'); const msg = $('qf-msg');
+  if (!sel || !sel.value) { msg.textContent = 'Pick a type first.'; return; }
+  if (!qfStaged.length) { msg.textContent = 'Choose at least one file.'; return; }
+  const party = $('qf-party').value.trim();
+  if (!party) { msg.textContent = 'Enter the company or person.'; $('qf-party').focus(); return; }
+  const shared = { documentTypeId: Number(sel.value), party, date: $('qf-date').value || '', reference: $('qf-ref').value.trim(), notes: $('qf-notes').value.trim() };
+  $('qf-submit').disabled = true; $('qf-pick').disabled = true;
+  let filed = 0; const errs = [];
+  for (const f of qfStaged.slice()) {
+    msg.textContent = `Filing ${filed + 1} of ${qfStaged.length}…`;
+    const title = (f.titleInput && f.titleInput.value.trim()) || qfStem(f.name);
+    let res; try { res = await api.quickFile.submit(f.token, { ...shared, title }); } catch { res = { ok: false, error: 'network' }; }
+    if (res && res.ok) { filed++; qfStaged = qfStaged.filter((x) => x !== f); } else errs.push(`${f.name}: ${(res && res.error) || 'failed'}`);
+  }
+  renderQfFiles();
+  msg.textContent = `Filed ${filed} document(s)${errs.length ? ` · ${errs.length} could not be filed (${errs[0]})` : ''}.`;
+  $('qf-submit').disabled = false; $('qf-pick').disabled = false;
+});
 
 // ── Review (clear the needs_review queue: edit fields, then file or defer) ──────
 function rvLeave() {

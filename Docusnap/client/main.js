@@ -287,6 +287,52 @@ ipcMain.handle('client-review-undefer',  guarded((_e, id)          => client.rev
 ipcMain.handle('client-review-viewing',  guarded((_e, id)          => client.review.viewing(id)));
 ipcMain.handle('client-review-release',  guarded((_e, id)          => client.review.release(id)));
 ipcMain.handle('client-review-ocr-region', guarded((_e, id, imageBase64) => client.review.ocrRegion(id, imageBase64)));
+
+// ── Quick File (non-OCR upload) ─────────────────────────────────────────────────────────────────────
+// Paths NEVER cross to the renderer: the picked file lives in a MAIN-side token map; the renderer sends a
+// token back to submit, and main reads the bytes + base64s them for the /v1 upload. The SAFE upload-ext
+// subset mirrors the server's fileKinds.isUploadIntake (the server re-validates — this is the picker + a
+// friendly pre-check). The server also re-checks size/ext/enabled/role, so this is convenience, not trust.
+const INTAKE_UPLOAD_EXTS = ['pdf', 'docx', 'xlsx', 'pptx', 'txt', 'md', 'csv', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'bmp', 'gif'];
+const INTAKE_TTL_MS = 15 * 60 * 1000;
+const _intakeStaged = new Map();   // token -> { path, name, size, expires }
+function _intakeSweep() { const now = Date.now(); for (const [k, v] of _intakeStaged) if (v.expires < now) _intakeStaged.delete(k); }
+function _mintIntakeToken() { return 'cqf_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10); }
+
+ipcMain.handle('client-intake-doctypes', guarded(() => client.intakeDocTypes()));
+
+ipcMain.handle('client-intake-pick', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: 'Quick File — choose documents',
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Documents', extensions: INTAKE_UPLOAD_EXTS }, { name: 'All files', extensions: ['*'] }],
+  });
+  if (!r || r.canceled) return { ok: true, files: [] };
+  _intakeSweep();
+  const files = [];
+  for (const p of (r.filePaths || [])) {
+    const name = path.basename(String(p));
+    const ext = path.extname(name).toLowerCase().replace(/^\./, '');
+    if (!INTAKE_UPLOAD_EXTS.includes(ext)) { files.push({ name, refused: 'unsupported_type' }); continue; }
+    let st; try { st = fs.statSync(p); } catch { files.push({ name, refused: 'unreadable' }); continue; }
+    if (!st.isFile()) { files.push({ name, refused: 'not_a_file' }); continue; }
+    const token = _mintIntakeToken();
+    _intakeStaged.set(token, { path: String(p), name, size: st.size, expires: Date.now() + INTAKE_TTL_MS });
+    files.push({ token, name, size: st.size });
+  }
+  return { ok: true, files };
+});
+
+// Submit ONE staged file: read bytes in MAIN, base64, POST /v1/documents/intake. token → the staged path.
+ipcMain.handle('client-intake-submit', guarded(async (_e, token, meta) => {
+  _intakeSweep();
+  const staged = token && _intakeStaged.get(token);
+  if (!staged) return { ok: false, error: 'expired' };
+  let bytes; try { bytes = fs.readFileSync(staged.path); } catch { return { ok: false, error: 'unreadable' }; }
+  const res = await client.intakeSubmit({ ...(meta || {}), filename: staged.name, contentBase64: bytes.toString('base64') });
+  if (res && res.status === 200 && res.json && res.json.ok) { _intakeStaged.delete(token); return { ok: true, docId: res.json.docId }; }
+  return { ok: false, status: res && res.status, error: (res && res.json && (res.json.error || res.json.code)) || 'failed' };
+}));
 ipcMain.handle('client-get-pages',    async (_e, id) => {
   const hit = _pageCacheGet(id);
   if (hit !== undefined) return hit;                 // instant re-click (no network → don't touch conn state)

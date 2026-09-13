@@ -70,6 +70,12 @@ contextBridge.exposeInMainWorld('scanfinder', {
     release:  (id) => ipcRenderer.invoke('client-review-release', id),
     ocrRegion:(id, imageBase64) => ipcRenderer.invoke('client-review-ocr-region', id, imageBase64),
   },
+  // Quick File (non-OCR upload). Paths stay in main — the renderer only sees tokens + names.
+  quickFile: {
+    docTypes: () => ipcRenderer.invoke('client-intake-doctypes'),
+    pick:     () => ipcRenderer.invoke('client-intake-pick'),
+    submit:   (token, meta) => ipcRenderer.invoke('client-intake-submit', token, meta),
+  },
 });
 
 // ── Keyboard-focus repair (Windows) — mirrors the core app's preload ───────────
