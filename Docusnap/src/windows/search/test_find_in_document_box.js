@@ -19,13 +19,19 @@ const check = (name, ok) => { if (ok) { pass++; console.log(`  ok  ${name}`); } 
 
 console.log('1. the input lives in the preview Find cluster (top-right nav bar)');
 {
-  const html = read('src/windows/search/index.html');
+  // The Search screen's markup + styles live in the shared search-ui module since S0b (2026-09-13):
+  // searchMarkup.js mounts the markup into #app; searchUI.css carries the former inline styles.
+  const html = read('src/windows/shared/search-ui/searchMarkup.js');
+  const css  = read('src/windows/shared/search-ui/searchUI.css');
   check('input #inp-find-doc exists', /id="inp-find-doc"/.test(html));
   const nav = html.slice(html.indexOf('id="match-nav"'), html.indexOf('id="btn-match-next"') + 160);
   check('it sits inside the #match-nav (Find) group, before the ‹ / › stepper', /id="inp-find-doc"/.test(nav));
   check('the ‹ / › steppers start disabled (no matches yet)',
         /id="btn-match-prev"[^>]*disabled/.test(nav) && /id="btn-match-next"[^>]*disabled/.test(nav));
-  check('the .mn-input has a style rule', /\.mn-input\s*\{/.test(html));
+  check('the .mn-input has a style rule', /\.mn-input\s*\{/.test(css));
+  const shell = read('src/windows/search/index.html');
+  check('the core page mounts the shared markup (searchMarkup.js loads before the other shared scripts)',
+        shell.indexOf('search-ui/searchMarkup.js') > 0 && shell.indexOf('search-ui/searchMarkup.js') < shell.indexOf('search-ui/searchState.js'));
 }
 
 console.log('2. the Find cluster is shown whenever a doc is previewed (input always usable)');

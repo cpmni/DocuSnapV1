@@ -46,7 +46,17 @@ the core search replicates to the client automatically** (no fork that rots).
 >   lost"); server caps the `/v1` OCR-fallback page count + returns `kind:'partial'`; `/page/:index?scale=` clamps
 >   scale (cap 4) + index ≥ 0; `FIND_MAX_INFLIGHT` + `q ≥ 2`; never log `q`; contract 1.2.0→1.3.0 MINOR with
 >   `CLIENT_CONTRACT` lockstep; `binRestoreAll` = cap false or a new endpoint.
-> - **S0 STATUS: BUILT 2026-09-13** (this session) — see the commit + `docs/oracle_log.md`.
+> - **S0 STATUS: BUILT 2026-09-13** (`48fba8f`) — see the commit + `docs/oracle_log.md`.
+> - **S0b STATUS: BUILT 2026-09-13** — `search-ui/searchMarkup.js` (the #search-bar/#date-range-note/#body
+>   markup as a template, auto-mounted as DIRECT children of `#app`, `window.SearchMarkup.{html,mount}`),
+>   `searchUI.css` (the former inline `<style>` minus the core `#titlebar` rules) + `searchComponents.css`
+>   (moved). The core `index.html` is a thin shell (CSP, theme link, titlebar chrome + its CSS, the two shared
+>   CSS links in cascade order, `#app` closed right after `#titlebar`, scripts). GATE PASSED: headless old-vs-new
+>   `#app.outerHTML` BYTE-IDENTICAL (12,444 chars) + computed layout of `#app/#body/#results-pane/#preview-pane/
+>   #preview-sidebar/#results-scroll/#preview-img-area` identical + direct-children `[titlebar, search-bar,
+>   date-range-note, body]` (`TESTING/_measure/search_parity_20260913/dom_s0_baseline.json` vs `dom_s0b.json`);
+>   the functional harness pin now also asserts the mount contract + the height chain + the cascade order.
+>   `scripts/check-help-coverage.js` scans `searchMarkup.js` as part of the Search window's markup (16 keys).
 
 ## The mandate's answer (enforced auto-replication)
 The search UI becomes ONE canonical source both apps drive through an injected **transport**. Drift is made

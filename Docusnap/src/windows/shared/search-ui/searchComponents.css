@@ -1,13 +1,16 @@
 /* ────────────────────────────────────────────────────────────────────────────
-   search-components.css — graphical component layer for the core Search window.
+   searchComponents.css — graphical component layer for the shared search screen
+   (formerly src/windows/search/search-components.css; moved into the shared search-ui
+   module for client search parity, S0b 2026-09-13 — the client's copy is GENERATED, edit here only).
 
    Ports the detached client's more modern, graphical component treatments
    (tinted state CHIPS, a SEGMENTED mailbox control, a prominent lead search
    input with an inline icon, pill filter buttons, softer rounded surfaces) onto
    the EXISTING core-search class hooks. This is a RE-SKIN only: it changes no
    ids, no class names the renderers emit, and no logic/IPC — every rule below
-   augments a selector search-*.js already produces. Loaded AFTER the window's
-   inline <style> so these treatments win on equal specificity.
+   augments a selector the search-ui modules already produce. Loaded AFTER
+   searchUI.css (the screen's layout styles) so these treatments win on equal
+   specificity — that cascade order is load-bearing in every host page.
 
    Both apps already share theme.css tokens, so this is component styling, not a
    palette. Where the client's affordance is richer (chips, segmented, meters)

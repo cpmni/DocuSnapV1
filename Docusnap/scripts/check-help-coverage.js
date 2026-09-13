@@ -31,6 +31,15 @@ const WINDOWS_DIR = path.join(__dirname, '..', 'src', 'windows');
 // help affordance.
 const WINDOWS = ['main', 'review', 'settings', 'search', 'teach'];
 
+// Markup that a window MOUNTS from a shared module rather than carrying in its own index.html
+// (client search parity 2026-09-13: the Search screen's markup lives in the shared search-ui module,
+// src/windows/shared/search-ui/searchMarkup.js, and is injected into #app at load). Its data-help-key
+// attributes must still resolve to the WINDOW's help texts — scan those files as part of the window's
+// HTML, otherwise this guard goes vacuous for every moved control.
+const EXTRA_MARKUP = {
+  search: [path.join(__dirname, '..', 'src', 'windows', 'shared', 'search-ui', 'searchMarkup.js')],
+};
+
 // data-help-key values present in a window's HTML.
 function htmlKeys(html) {
   const keys = new Set();
@@ -63,7 +72,8 @@ function readWindowJs(dir) {
 let failures = 0;
 for (const win of WINDOWS) {
   const dir  = path.join(WINDOWS_DIR, win);
-  const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
+  const html = [path.join(dir, 'index.html'), ...(EXTRA_MARKUP[win] || [])]
+    .map(p => fs.readFileSync(p, 'utf8')).join('\n');
   const inHtml = htmlKeys(html);
   const inJs   = jsKeys(readWindowJs(dir));
 

@@ -152,7 +152,12 @@ const DUMP_JS = `(() => {
   const styles = {};
   for (const id of ids) { const el = document.getElementById(id); if (!el) { styles[id] = null; continue; } const cs = getComputedStyle(el);
     styles[id] = { display: cs.display, flexDirection: cs.flexDirection, flex: cs.flex, height: cs.height, width: cs.width, overflow: cs.overflow }; }
-  return { app: document.getElementById('app') ? document.getElementById('app').outerHTML : null, styles, scripts: [...document.scripts].map(s => s.getAttribute('src')) };
+  const appEl = document.getElementById('app');
+  // Direct children of #app (ids) — the S0b mount contract: the shared markup must sit DIRECTLY under #app.
+  const appChildren = appEl ? [...appEl.children].map(c => c.id || ('.' + c.className)) : null;
+  return { app: appEl ? appEl.outerHTML : null, appChildren, styles,
+           scripts: [...document.scripts].map(s => s.getAttribute('src')),
+           sheets: [...document.querySelectorAll('link[rel="stylesheet"]')].map(l => l.getAttribute('href')) };
 })()`;
 
 app.whenReady().then(async () => {
