@@ -147,8 +147,34 @@ Ran per your standing rules: an ISOLATED second instance (port 9223, its own use
 NOT implemented. He vetted the CURRENT shipping software (not the dark QuickFile/Departments work).
 Full report: `docs/CHRIS_FULL_APP_REVIEW_2026-09-13.md`.
 
-_(Chris was still running at the moment this section was drafted; his verdict + cards + the warnings
-truth-table are appended to the review doc and summarised here on completion. Implement NOTHING from his
-cards without your explicit go.)_
+**VERDICT: YES — "I'd keep using it."** Filed 19 invoices exactly as promised (`Company/Year/Month/
+Type.Date.Ref.pdf` + sidecar), moved the 20 originals to a Processed folder (none deleted), and **all 8
+warnings told the truth** (truth-table in the doc). The practice run + the teach-one-→-17-ready payoff he
+called the best onboarding he's seen. Everything stayed in the sandbox.
+
+**7 NEW cards (none destructive — all CONFUSION/QUESTION/PREFERENCE), ranked; implement NONE without your go:**
+1. **Phantom "check 1 field" flag** — the amber "1 field low confidence" banner shows even when all three
+   fields read High 90/94/95% (clears only after a Reprocess). Trust-eroding. _This is the prior-round
+   phantom-flag card: **BETTER-BUT** (fields now show %+bar) but the summary still disagrees._ (top harm)
+2. **First-batch scare** — a brand-new supplier's first import shows "20 need a look" @63%; teaching ONE
+   drops it to 2, but a new user first reads "it can't read anything." Suggests a "new supplier — check the
+   first, I'll handle the rest" line.
+3. **Can't approve your own Inbox doc** — no Approve/Reject on a self-sent approval, no explanation (likely a
+   deliberate solo-office rule he couldn't test with a 2nd person).
+4. **"Stamp it myself" not visibly offered** in the Send box (only "send to a colleague") — the self-stamp
+   path was unreachable to him.
+5. **"kept back 2" then 1 auto-filed** — the File-All promise ("2 kept back") vs the strip ("1 filed
+   themselves" once the sender graduated) briefly mismatch; wants a "1 you'd kept back is now trusted" note.
+6. **"all 1 document" / "document(s)"** grammar on the delete/restore/empty-bin dialogs (cosmetic).
+7. **Awkward labels** — "Textiles's", "Recognised by", "Fields read by" (cosmetic).
+
+**Prior-round verifies:** mailbox "Type —/Unknown" **FIXED**; phantom flag **BETTER-BUT** (card 1);
+import-list-flip-after-manual-confirm **COULDN'T VERIFY** (he used the app's process-folder action, not the
+picker → never watched the live import strip).
+
+**Caveat (his humility):** automation-driven — he couldn't operate the Windows picker (so didn't watch the
+live import strip; the wizard briefly kept its suggested folder before he pointed filing at the sandbox) and
+couldn't test approve/reject or self-stamp with a second user. All 19 filed INSIDE the sandbox.
 
 The sandbox is left running (port 9223, PID 25040) so you can poke it; the next /christest rebuilds it.
+Full report: `docs/CHRIS_FULL_APP_REVIEW_2026-09-13.md`.
