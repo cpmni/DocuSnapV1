@@ -352,8 +352,11 @@ function findInDocument(db, { docId, folderPath, filename, query }, deps) {
   const py = pythonExe();
   const args = ['--file', filePath, '--query', term];
   if (deps.tesseract) args.push('--tesseract', deps.tesseract);   // enables the scanned-page OCR fallback
+  // deps.env (optional): a caller-supplied environment for pdf_find.py — the /v1 lane tightens the OCR page cap
+  // (PREVIEW_FIND_OCR_PAGES) this way. Absent → the child inherits process.env exactly as before.
+  const spawnOpts = deps.env ? { windowsHide: true, env: deps.env } : { windowsHide: true };
   return new Promise((resolve) => {
-    const proc = spawn(py, pythonArgs(findScript, ...args), { windowsHide: true });
+    const proc = spawn(py, pythonArgs(findScript, ...args), spawnOpts);
     let out = '', err = '';
     proc.stdout.on('data', d => { out += d.toString(); });
     proc.stderr.on('data', d => { err += d.toString(); });

@@ -28,42 +28,67 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
 let pass = 0, fail = 0;
 const check = (name, ok) => { if (ok) { pass++; console.log(`  ok  ${name}`); } else { fail++; console.log(`  FAIL ${name}`); } };
 
-console.log('A. functional — the real pop-out page driven over stubbed client IPC');
-{
+// Run the harness in client mode against a stubbed core advertising `serverContract`. PARITY (the client's own
+// contract, 1.3.0+) = every S2 read available; LITE (1.2.0) = an older core: the S2 caps stay off, the
+// controls hide, the "newer core needed" hint shows. Both must hold — a customer may upgrade the client first.
+function runHarness(serverContract) {
   const exe = path.join(ROOT, 'node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
-  if (!fs.existsSync(exe)) { check('node_modules/electron present', false); }
-  else {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-popout-fn-'));
-    const report = path.join(tmp, 'report.json'), dump = path.join(tmp, 'dom.json');
-    const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
-    const r = spawnSync(exe, [path.join(ROOT, 'scripts', 'search-window-harness.js'), '--client', '--report', report, '--dump', dump], { cwd: ROOT, env, encoding: 'utf8', timeout: 120000, windowsHide: true });
-    let rec = null; try { rec = JSON.parse(fs.readFileSync(report, 'utf8')); } catch {}
-    check('the harness ran and produced a report', !!rec);
-    if (rec) {
-      console.log(`  harness exit ${r.status}; ${rec.checks.length} in-page checks`);
-      for (const c of rec.checks) check(c.name, c.ok);
-      if (rec.consoleErrors && rec.consoleErrors.length) console.log('  (renderer console errors: ' + rec.consoleErrors.slice(0, 5).join(' | ') + ')');
-      const calls = rec.calls || [];
-      const has = (ch, pred) => calls.some(([c, a]) => c === ch && (!pred || pred(a)));
-      check('client-search called with the params object (fullText inv from the deep-link)', has('client-search', a => a[0] && a[0].fullText === 'inv'));
-      check('client-get-document for the clicked docs', has('client-get-document', a => a[0] === 1) && has('client-get-document', a => a[0] === 3));
-      check('client-get-pages for each previewed doc (full render — no single-page read exists yet)', has('client-get-pages', a => a[0] === 1) && has('client-get-pages', a => a[0] === 2));
-      check('no core-only channels ever called', !calls.some(([c]) => /^get-document-page$|^get-document-page-count$|^find-in-document$|^get-spreadsheet-grid$/.test(c)));
-      check('client-current-user read once for the role', calls.filter(([c]) => c === 'client-current-user').length === 1);
-      check('client-search-target pulled once (the deep-link)', calls.filter(([c]) => c === 'client-search-target').length === 1);
-      check('client-server-info read for the capability gate', has('client-server-info'));
-      check('client-get-thumbnail used for the row thumbnails', has('client-get-thumbnail'));
-      let d = null; try { d = JSON.parse(fs.readFileSync(dump, 'utf8')); } catch {}
-      check('DOM dump produced', !!d && !!d.styles);
-      if (d && d.styles) {
-        check('#app direct children = banner, note, search-bar, date-range-note, body (no wrapper)',
-              JSON.stringify(d.appChildren) === JSON.stringify(['popout-banner', 'popout-note', 'search-bar', 'date-range-note', 'body']));
-        check('#app flex column; #body flex 1; panes have real height (height chain intact)',
-              d.styles.app.display === 'flex' && d.styles.app.flexDirection === 'column' && /^1\b/.test(d.styles.body.flex) && parseInt(d.styles.body.height, 10) > 300 && parseInt(d.styles['results-pane'].height, 10) > 300);
-        check('stylesheets: theme → searchUI → searchComponents', (() => { const s = (d.sheets || []).join(' '); return s.indexOf('theme.css') >= 0 && s.indexOf('theme.css') < s.indexOf('searchUI.css') && s.indexOf('searchUI.css') < s.indexOf('searchComponents.css'); })());
-        check('scripts: themeBoot → clientTransport → searchMarkup → … → popout', (() => { const s = (d.scripts || []).map(x => x || ''); const i = (re) => s.findIndex(x => re.test(x)); return i(/themeBoot/) >= 0 && i(/themeBoot/) < i(/clientTransport/) && i(/clientTransport/) < i(/searchMarkup/) && i(/searchMarkup/) < i(/searchState/) && i(/popout\.js/) === s.length - 1; })());
-      }
-    } else { console.log((r.stdout || '').slice(-1200)); console.log((r.stderr || '').slice(-1200)); }
+  if (!fs.existsSync(exe)) { check('node_modules/electron present', false); return null; }
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-popout-fn-'));
+  const report = path.join(tmp, 'report.json'), dump = path.join(tmp, 'dom.json');
+  const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
+  const args = [path.join(ROOT, 'scripts', 'search-window-harness.js'), '--client', '--report', report, '--dump', dump];
+  if (serverContract) args.push('--server-contract', serverContract);
+  const r = spawnSync(exe, args, { cwd: ROOT, env, encoding: 'utf8', timeout: 120000, windowsHide: true });
+  let rec = null; try { rec = JSON.parse(fs.readFileSync(report, 'utf8')); } catch {}
+  check(`the harness ran and produced a report (server ${serverContract || 'parity'})`, !!rec);
+  if (!rec) { console.log((r.stdout || '').slice(-1200)); console.log((r.stderr || '').slice(-1200)); return null; }
+  console.log(`  harness exit ${r.status}; ${rec.checks.length} in-page checks`);
+  for (const c of rec.checks) check(c.name, c.ok);
+  if (rec.consoleErrors && rec.consoleErrors.length) console.log('  (renderer console errors: ' + rec.consoleErrors.slice(0, 5).join(' | ') + ')');
+  let d = null; try { d = JSON.parse(fs.readFileSync(dump, 'utf8')); } catch {}
+  return { rec, d, calls: rec.calls || [] };
+}
+
+console.log('A1. functional — PARITY: the pop-out against a core that has the S2 reads (contract 1.3.0)');
+{
+  const run = runHarness(null);
+  if (run) {
+    const { calls, d } = run;
+    const has = (ch, pred) => calls.some(([c, a]) => c === ch && (!pred || pred(a)));
+    check('client-search called with the params object (fullText inv from the deep-link)', has('client-search', a => a[0] && a[0].fullText === 'inv'));
+    check('client-get-document for the clicked docs', has('client-get-document', a => a[0] === 1) && has('client-get-document', a => a[0] === 3));
+    check('client-get-page (1, 0, 3) — the lazy page-1 read over /v1', has('client-get-page', a => a[0] === 1 && a[1] === 0 && a[2] === 3));
+    check('client-get-page (1, 1, 3) — the hole rendered on page-next', has('client-get-page', a => a[0] === 1 && a[1] === 1 && a[2] === 3));
+    check('a KNOWN page_count is never probed; the UNKNOWN one is (client-page-count for 3 only)', !has('client-page-count', a => a[0] === 1) && has('client-page-count', a => a[0] === 3));
+    check('client-find (1, "inv") — the list-term highlight over /v1', has('client-find', a => a[0] === 1 && a[1] === 'inv'));
+    check('client-spreadsheet (2) — the xlsx grid over /v1', has('client-spreadsheet', a => a[0] === 2));
+    check('client-get-pages only as the non-PDF full render (id 2)', has('client-get-pages', a => a[0] === 2) && !has('client-get-pages', a => a[0] === 1));
+    check('no core-only channels ever called', !calls.some(([c]) => /^get-document-page$|^get-document-page-count$|^find-in-document$|^get-spreadsheet-grid$/.test(c)));
+    check('client-current-user read once for the role', calls.filter(([c]) => c === 'client-current-user').length === 1);
+    check('client-search-target pulled once (the deep-link)', calls.filter(([c]) => c === 'client-search-target').length === 1);
+    check('client-server-info read for the capability gate', has('client-server-info'));
+    check('client-get-thumbnail used for the row thumbnails', has('client-get-thumbnail'));
+    check('DOM dump produced', !!d && !!d.styles);
+    if (d && d.styles) {
+      check('#app direct children = banner, note, search-bar, date-range-note, body (no wrapper)',
+            JSON.stringify(d.appChildren) === JSON.stringify(['popout-banner', 'popout-note', 'search-bar', 'date-range-note', 'body']));
+      check('#app flex column; #body flex 1; panes have real height (height chain intact)',
+            d.styles.app.display === 'flex' && d.styles.app.flexDirection === 'column' && /^1\b/.test(d.styles.body.flex) && parseInt(d.styles.body.height, 10) > 300 && parseInt(d.styles['results-pane'].height, 10) > 300);
+      check('stylesheets: theme → searchUI → searchComponents', (() => { const s = (d.sheets || []).join(' '); return s.indexOf('theme.css') >= 0 && s.indexOf('theme.css') < s.indexOf('searchUI.css') && s.indexOf('searchUI.css') < s.indexOf('searchComponents.css'); })());
+      check('scripts: themeBoot → clientTransport → searchMarkup → … → popout', (() => { const s = (d.scripts || []).map(x => x || ''); const i = (re) => s.findIndex(x => re.test(x)); return i(/themeBoot/) >= 0 && i(/themeBoot/) < i(/clientTransport/) && i(/clientTransport/) < i(/searchMarkup/) && i(/searchMarkup/) < i(/searchState/) && i(/popout\.js/) === s.length - 1; })());
+    }
+  }
+}
+
+console.log('A2. functional — LITE: the same pop-out against an OLDER core (1.2.0, no S2 reads)');
+{
+  const run = runHarness('1.2.0');
+  if (run) {
+    const { calls } = run;
+    const has = (ch, pred) => calls.some(([c, a]) => c === ch && (!pred || pred(a)));
+    check('lite: pages come from the full render for every previewed doc (client-get-pages 1, 3, 2)', has('client-get-pages', a => a[0] === 1) && has('client-get-pages', a => a[0] === 3) && has('client-get-pages', a => a[0] === 2));
+    check('lite: the S2 channels are NEVER called (caps gated off by the handshake, not by a 404 round-trip)', !calls.some(([c]) => /^client-get-page$|^client-page-count$|^client-find$|^client-spreadsheet$/.test(c)));
   }
 }
 
@@ -81,8 +106,21 @@ console.log('B. source — the Oracle S1 conditions');
   const adapter = read('client', 'renderer', 'search', 'clientTransport.js');
   check('client adapter reaches IO only through window.scanfinder (no core bridge, no Node)', !/window\.docusnap/.test(adapter) && !/\bipcRenderer\b/.test(adapter) && !/\brequire\(/.test(adapter) && /window\.scanfinder/.test(adapter));
   check('client adapter sets window.SearchTransport with caps', /window\.SearchTransport = T/.test(adapter) && /caps:\s*\{/.test(adapter));
-  check('client adapter: S1 caps false for singlePage/pageCount/find/spreadsheet/sendBack/restoreAll/localFile/review/print/stamps/settings; bin true',
+  check('client adapter: initial caps — S2 reads OFF until the handshake gate flips them; sendBack/restoreAll/localFile/review/print/stamps/settings false (no /v1 backing); bin true',
         /singlePage: false, pageCount: false, find: false, spreadsheet: false/.test(adapter) && /bin: true, restoreAll: false, sendBack: false/.test(adapter) && /localFile: false, review: false, print: false/.test(adapter) && /stamps: false/.test(adapter) && /settings: false/.test(adapter));
+  check('client adapter (S2): the four reads are wired cap-gated (404 → cap off) and S2_METHODS_PRESENT is true',
+        /S2_METHODS_PRESENT = true/.test(adapter) && /getDocumentPage:\s+capGated\('singlePage'/.test(adapter) && /getDocumentPageCount: capGated\('pageCount'/.test(adapter) && /getSpreadsheetGrid:\s+capGated\('spreadsheet'/.test(adapter) && /api\.find\(id, q\)/.test(adapter));
+  check('client adapter (S2): a find timeout/error (status 0) is the client\'s OWN outcome — returned as kind, never a lost connection',
+        /if \(r && r\.status === 0\) return \{ kind: \(r\.json && r\.json\.kind\) \|\| 'error', pages: 0, matches: \[\] \};/.test(adapter));
+  const mainJs = read('client', 'main.js');
+  check("main (S2): client-find is NOT guarded() — a timeout returns a kind:'timeout' envelope instead of tripping the connection overlay",
+        /ipcMain\.handle\('client-find', async \(_e, id, query\) => \{\s*try \{ const r = await client\.find\(id, query\); markConnection\(true\); return r; \}/.test(mainJs) && /kind: timedOut \? 'timeout' : 'error'/.test(mainJs) && !/ipcMain\.handle\('client-find',\s*guarded/.test(mainJs));
+  const apiC = read('client', 'apiClient.js');
+  check('apiClient (S2): CLIENT_CONTRACT 1.3.0 in lockstep; find carries a LONG idle timeout', /CLIENT_CONTRACT = '1\.3\.0'/.test(apiC) && /\/find\?\$\{q\}`, \{ withAuth: true, timeoutMs: 180000 \}/.test(apiC));
+  const srvH = read('src', 'modules', 'api', 'handler.js');
+  check('server: API_CONTRACT_VERSION 1.3.0 (lockstep with the client)', /API_CONTRACT_VERSION = '1\.3\.0'/.test(srvH));
+  const sharedPv = read('src', 'windows', 'shared', 'search-ui', 'searchPreview.js');
+  check("shared UI: a find 'timeout' kind reads \"took too long\" (never a silent 0 / 0)", /res\.kind === 'timeout'/.test(sharedPv) && /took too long/.test(sharedPv));
   check('client adapter: a 401 reports the expired session to main', /r\.status === 401\) \{ expired\(\);/.test(adapter) && /api\.popoutSessionExpired\(\)/.test(adapter));
   check('client adapter: a non-200 REJECTS (mirrors the core bridge) and a 404/426/402 on a cap-gated read flips the cap', /r\.status !== 200\) throw new Error/.test(adapter) && /r\.status === 404 \|\| r\.status === 426 \|\| r\.status === 402\)\) \{ T\.caps\[name\] = false;/.test(adapter));
   check('client adapter: capability gate needs BOTH client methods AND server ≥ 1.3.0', /const on = clientHasS2 && serverHasS2;/.test(adapter) && /atLeast\(sv, '1\.3\.0'\)/.test(adapter));

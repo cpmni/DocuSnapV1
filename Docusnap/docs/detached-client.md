@@ -50,6 +50,27 @@ the add-on off. (Design history: `memory/scanfinder-*` + the plan in `.claude/pl
   no contract bump. Guarded by the v1_review suite + `night_audit/v1_stress.js` (all security probes passed).
   ⚠ OPEN BUG (2026-07-01, see handover.md): the client targeting round-trips but region.py returns EMPTY
   text ("nothing readable") on a real drag — crop-frame / preview-resolution suspect, NOT yet fixed.
+- **PREVIEW READS for the search pop-out (client search parity S2, 2026-09-13; contract 1.2.0 → 1.3.0 MINOR)**:
+  `GET /v1/documents/{id}/page/{index}?scale=` → `{page: dataUrl|null}` (one rendered PDF page — the lazy
+  page-1-first preview; scale clamped 1..4, default 3; index ≥ 0), `GET …/{id}/page-count` → `{count|null}`
+  (no render), `GET …/{id}/find?q=` → `{kind, pages, matches:[{page,x0,y0,x1,y1}]}` (page-fraction boxes;
+  the FIRST OCR-bearing read on /v1 — `FIND_MAX_INFLIGHT=2` → 429, `q` 2..200 chars else 400 with NO spawn,
+  the /v1 lane passes `PREVIEW_FIND_OCR_PAGES=12` to pdf_find.py (desktop default 30), the query is never
+  logged), `GET …/{id}/spreadsheet` → `{grid:{sheets,truncated}|null}` (values only). All mirror `/pages`:
+  requireSession → access gate (403/404) → SERVER-SIDE path resolution (F-02) → `previewService` → a path-free
+  DTO; inside FEATURE_ROUTE (entitlement). The client (`apiClient.js` `getPage/getPageCount/find/getSpreadsheet`,
+  `main.js` `client-get-page/page-count/spreadsheet` guarded + `client-find` deliberately NOT guarded — a 180 s
+  idle timeout is returned as `kind:'timeout'`, never read as a lost connection) gates its caps on the server
+  advertising ≥ 1.3.0 (`clientTransport.js refreshCaps`); an older core → the controls hide + the pop-out
+  shows "Some tools need a newer ScanFinder on the core PC". Pins: `src/modules/api/test_v1_preview_reads.js`,
+  `scripts/test_client_search_popout.js` (parity + lite runs).
+- **SEARCH POP-OUT (client search parity S1, 2026-09-13)**: the client's search is the SHARED search screen
+  (`client/renderer/shared/` = generated copies of `src/windows/shared/{search-ui,theme.css,fonts,patterns}`,
+  `scripts/sync-client-search.js`, pin `test_client_search_sync.js`) in its own window
+  (`client/renderer/search/`, adapter `clientTransport.js` over `window.scanfinder`); main IPCs
+  `client-open-search/search-target/current-user/server-info/popout-session-expired`; logout + main-window
+  close destroy it; connection events broadcast to every window. Design + Oracle conditions:
+  `docs/designs/CLIENT_SEARCH_PARITY_PLAN_2026-09-13.md`.
 - Admin IPC: `client-api-{get-status,set-enabled,cert-status,cert-generate,cert-export}`.
 
 **TLS — managed certs + Certificate Wizard** (`src/services/certService.js`, node-forge,

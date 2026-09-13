@@ -27,6 +27,11 @@ contextBridge.exposeInMainWorld('scanfinder', {
   getDocument:     (id) => ipcRenderer.invoke('client-get-document', id),
   getPages:        (id) => ipcRenderer.invoke('client-get-pages', id),
   getThumbnail:    (id) => ipcRenderer.invoke('client-get-thumbnail', id),
+  // The four preview reads (contract 1.3.0 — the search pop-out's lazy page / count / find / xlsx grid).
+  getPage:         (id, index, scale) => ipcRenderer.invoke('client-get-page', id, index, scale),
+  getPageCount:    (id) => ipcRenderer.invoke('client-page-count', id),
+  find:            (id, query) => ipcRenderer.invoke('client-find', id, query),
+  getSpreadsheet:  (id) => ipcRenderer.invoke('client-spreadsheet', id),
   isAuthenticated: () => ipcRenderer.invoke('client-authed'),
   // Connection watch: main pushes lost/restored (to EVERY window); the renderer can force a re-check.
   onConnectionLost:     (cb) => ipcRenderer.on('client-connection-lost',     () => cb()),

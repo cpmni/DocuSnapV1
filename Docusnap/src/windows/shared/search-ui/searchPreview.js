@@ -246,7 +246,20 @@ async function runDocFind(term) {
   _matches  = (res && Array.isArray(res.matches)) ? res.matches : [];
   if (_matches.length) { _gotoMatch(0); if (input) input.classList.remove('no-match'); }
   else { _matchIdx = -1; const layer = document.getElementById('preview-hl-layer'); if (layer) layer.textContent = '';
-         _updateMatchNav(); if (input) input.classList.add('no-match'); }
+         _updateMatchNav(); if (input) input.classList.add('no-match'); _noteFindOutcome(res, input); }
+}
+
+// A transport may report that a find could not complete in time (a long scanned document over the network —
+// the detached client's /v1 lane): say so instead of a silent "0 / 0". The core's in-process find never returns
+// this kind, so the core path is unchanged. (Oracle 2026-09-13 seam 8.)
+function _noteFindOutcome(res, input) {
+  const lbl = document.getElementById('match-label');
+  if (res && res.kind === 'timeout') {
+    if (lbl) lbl.textContent = 'took too long';
+    if (input) input.title = 'Find took too long on this scanned document — try a shorter word, or open the document.';
+  } else if (input && input.title && /took too long/.test(input.title)) {
+    input.title = 'Find text in this document (PDF text). Enter = next match, Shift+Enter = previous, Esc = clear.';
+  }
 }
 
 function initPageNav() {
@@ -413,7 +426,7 @@ async function selectDoc(doc) {
           if (s.selectedDoc !== mine) return;    // a newer selection now owns the pane
           _findTerm = q;
           _matches = (res && Array.isArray(res.matches)) ? res.matches : [];
-          if (_matches.length) _gotoMatch(0); else { _updateMatchNav(); if (findInput) findInput.classList.add('no-match'); }
+          if (_matches.length) _gotoMatch(0); else { _updateMatchNav(); if (findInput) findInput.classList.add('no-match'); _noteFindOutcome(res, findInput); }
         } catch { _clearMatches(); }
       }
     } else {

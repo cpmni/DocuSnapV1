@@ -30,6 +30,13 @@ const DUMP = argOf('--dump');
 // --client: drive the detached CLIENT's search pop-out instead (client/renderer/search/index.html with the
 // client's preload + its IPC channel names and { status, json } envelopes). Same shared UI, different transport.
 const CLIENT = argv.includes('--client');
+// --server-contract X.Y.Z: what the stubbed core advertises (client mode). Default = this client's own contract
+// (parity: every S2 read available). An older value (e.g. 1.2.0) = LITE — the S2 caps stay off, the controls
+// hide and the "newer core needed" hint shows.
+const CLIENT_CONTRACT = CLIENT ? require(path.join(ROOT, 'client', 'apiClient.js')).CLIENT_CONTRACT : null;
+const SERVER_CONTRACT = argOf('--server-contract') || CLIENT_CONTRACT || '1.3.0';
+const atLeast = (v, want) => { const a = String(v).split('.').map(Number), b = String(want).split('.').map(Number); return a[0] > b[0] || (a[0] === b[0] && a[1] >= b[1]); };
+const LITE = CLIENT && !atLeast(SERVER_CONTRACT, '1.3.0');
 const HTML = argOf('--html') || (CLIENT ? path.join(ROOT, 'client', 'renderer', 'search', 'index.html')
                                         : path.join(ROOT, 'src', 'windows', 'search', 'index.html'));
 const PRELOAD = CLIENT ? path.join(ROOT, 'client', 'preload.js') : path.join(ROOT, 'src', 'preload.js');
@@ -69,7 +76,13 @@ if (CLIENT) {
   stub('client-entitlement', () => ok({ entitled: true, workflow: { entitled: false } }));
   stub('client-current-user', () => ({ role: 'admin', username: 'harness', displayName: 'Harness' }));
   stub('client-search-target', () => ({ query: 'inv', docId: null }));
-  stub('client-server-info', () => ({ serverVersion: '1.2.0', clientContract: '1.2.0', mode: 'ok' }));
+  stub('client-server-info', () => ({ serverVersion: SERVER_CONTRACT, clientContract: CLIENT_CONTRACT, mode: atLeast(SERVER_CONTRACT, '1.3.0') ? 'ok' : 'warn' }));
+  // The S2 reads (contract 1.3.0). A LITE (older) core does not have them → 404 (the adapter flips the cap).
+  const notFound = { status: 404, json: { error: 'not found' } };
+  stub('client-get-page', (id, idx) => (LITE ? notFound : ok({ page: (byId(id) && /\.pdf$/i.test(byId(id).original_filename)) ? PNG : null })));
+  stub('client-page-count', (id) => (LITE ? notFound : ok({ count: Number(id) === 3 ? 2 : ((byId(id) && byId(id).page_count) || null) })));
+  stub('client-find', (id, q) => (LITE ? notFound : ok({ kind: 'pdf', pages: 3, matches: String(q).toLowerCase() === 'inv' ? [{ page: 0, x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.12 }] : [] })));
+  stub('client-spreadsheet', (id) => (LITE ? notFound : ok({ grid: Number(id) === 2 ? { sheets: [{ name: 'Sheet1', rows: [['Item', 'Qty'], ['Bolt', '12']] }], truncated: false } : null })));
   stub('client-recycle-delete', () => ok({ ok: true }));
   stub('client-recycle-restore', () => ok({ ok: true }));
   stub('client-recycle-purge', () => ok({ ok: true }));
@@ -97,11 +110,12 @@ stub('get-search-view-target', () => null);
 }
 
 // ── The drive (runs INSIDE the page) ───────────────────────────────────────────
-// CLIENT = the pop-out over the S1 /v1 surface: no lazy single page / count probe / find / spreadsheet grid
-// (caps false → those controls HIDE), no desktop-local actions, no send-back, no Restore-all; pages come
-// from the full render. Everything else is the same screen.
+// CLIENT = the pop-out over /v1: no desktop-local actions, no send-back, no Restore-all. LITE = a client against an
+// OLDER core (no S2 reads): the lazy single page / count probe / find / spreadsheet grid caps are off → those
+// controls HIDE (never dead) and pages come from the full render. Otherwise the pop-out mirrors the core.
 const DRIVE = `(async () => {
   const CLIENT = ${CLIENT};
+  const LITE = ${LITE};
   const checks = [];
   const ok = (name, cond) => checks.push({ name, ok: !!cond });
   const $ = (s) => document.querySelector(s);
@@ -129,24 +143,24 @@ const DRIVE = `(async () => {
   ok('preview: page 1 painted (lazy single-page read)', await until(() => ($('#preview-img').src || '').startsWith('data:image/png') && vis($('#preview-img-wrap'))));
   ok('preview: fields table rendered (Company/Type/Reference/Date/Status + extras)', $$('.pf-row').length >= 6);
   ok('preview: no confidence band on a CONFIRMED doc', !$('.pf-confband'));
-  ok('preview: page nav shown with 1 / 3 (' + (CLIENT ? 'full render' : 'sparse array from page_count') + ')', await until(() => vis($('#page-nav')) && $('#page-label').textContent.trim() === '1 / 3'));
-  if (CLIENT) {
-    ok('preview (client): Find cluster HIDDEN (caps.find false — no /v1 find yet)', await until(() => !vis($('#match-nav')) && !vis($('#match-sep'))));
-    ok('preview (client): no highlight overlay drawn', $$('#preview-hl-layer .pv-hl').length === 0);
-    ok('actions (client, admin, confirmed): Delete only — no Explorer / Open File / Print / Send back', (() => { const b = btns(); return b.some(t => t === 'Delete') && !b.some(t => /Explorer|Open File|Print|Send back|Edit in Review/.test(t)); })());
+  ok('preview: page nav shown with 1 / 3 (' + (LITE ? 'full render' : 'sparse array from page_count') + ')', await until(() => vis($('#page-nav')) && $('#page-label').textContent.trim() === '1 / 3'));
+  if (LITE) {
+    ok('preview (lite client): Find cluster HIDDEN (caps.find false — the core has no /v1 find)', await until(() => !vis($('#match-nav')) && !vis($('#match-sep'))));
+    ok('preview (lite client): no highlight overlay drawn', $$('#preview-hl-layer .pv-hl').length === 0);
   } else {
     ok('preview: Find cluster shown (caps.find) and seeded with the list term', vis($('#match-nav')) && $('#inp-find-doc').value === 'inv');
     ok('preview: the list term is highlighted on page 1 (1 / 1)', await until(() => $$('#preview-hl-layer .pv-hl').length === 1 && $('#match-label').textContent.trim() === '1 / 1'));
-    ok('actions (admin, confirmed, has_file): Send back + Explorer + Open File + Print + Delete', (() => { const b = btns(); return ['Send back to Review', 'Open in Explorer', 'Open File', 'Print', 'Delete'].every(x => b.some(t => t.includes(x))); })());
   }
+  if (CLIENT) ok('actions (client, admin, confirmed): Delete only — no Explorer / Open File / Print / Send back', (() => { const b = btns(); return b.some(t => t === 'Delete') && !b.some(t => /Explorer|Open File|Print|Send back|Edit in Review/.test(t)); })());
+  else ok('actions (admin, confirmed, has_file): Send back + Explorer + Open File + Print + Delete', (() => { const b = btns(); return ['Send back to Review', 'Open in Explorer', 'Open File', 'Print', 'Delete'].every(x => b.some(t => t.includes(x))); })());
   ok('actions: no Stamp button when stamp.can says no + no workflow', !btns().some(t => /stamp|Send…/i.test(t)));
   ok('status chip reads Confirmed', ($('.ap-chip') || {}).textContent === 'Confirmed');
 
-  // 3 — page nav: next page (core: a hole rendered on demand; client: the pre-rendered page)
+  // 3 — page nav: next page (a hole rendered on demand; lite client: the pre-rendered page)
   click($('#btn-page-next'));
   ok('page nav: next → 2 / 3', await until(() => $('#page-label').textContent.trim() === '2 / 3'));
 
-  if (!CLIENT) {
+  if (!LITE) {
     // 4 — find box: a term with no matches → no-match state; Esc clears
     const fi = $('#inp-find-doc'); fi.value = 'zzz'; fi.dispatchEvent(new Event('input', { bubbles: true }));
     ok('find: a no-match term marks the box + 0 / 0', await until(() => fi.classList.contains('no-match') && $('#match-label').textContent.trim() === '0 / 0'));
@@ -159,11 +173,11 @@ const DRIVE = `(async () => {
   ok('unconfirmed preview: confidence band shown', await until(() => !!$('.pf-confband')));
   if (CLIENT) ok('unconfirmed preview (client): neither Edit in Review nor Send back (no desktop, no /v1 send-back)', (() => { const b = btns(); return !b.some(t => t.includes('Edit in Review')) && !b.some(t => t.includes('Send back')); })());
   else ok('unconfirmed preview: Edit in Review offered, Send back not', (() => { const b = btns(); return b.some(t => t.includes('Edit in Review')) && !b.some(t => t.includes('Send back')); })());
-  ok('unconfirmed preview: ' + (CLIENT ? '2 rendered pages → 1 / 2 nav' : 'unknown page_count → probed → 1 / 2 nav'), await until(() => vis($('#page-nav')) && $('#page-label').textContent.trim() === '1 / 2'));
+  ok('unconfirmed preview: ' + (LITE ? '2 rendered pages → 1 / 2 nav' : 'unknown page_count → probed → 1 / 2 nav'), await until(() => vis($('#page-nav')) && $('#page-label').textContent.trim() === '1 / 2'));
 
-  // 6 — an .xlsx: no page image → the grid (core) / the honest "No preview available" (client, caps.spreadsheet false)
+  // 6 — an .xlsx: no page image → the grid / the honest "No preview available" (lite client, caps.spreadsheet false)
   click($('.result-item[data-id="2"]'));
-  if (CLIENT) ok('xlsx preview (client): honest "No preview available" (no /v1 grid yet)', await until(() => /No preview available/.test($('#preview-img-placeholder').textContent)));
+  if (LITE) ok('xlsx preview (lite client): honest "No preview available" (the core has no /v1 grid)', await until(() => /No preview available/.test($('#preview-img-placeholder').textContent)));
   else {
     ok('xlsx preview: cell grid rendered', await until(() => !!$('#preview-img-placeholder .xlsx-table')));
     ok('xlsx preview: 2 data rows + column letters', $$('.xlsx-table .xlsx-rownum').length === 2 && $$('.xlsx-table .xlsx-colhdr').length === 2);
@@ -190,9 +204,10 @@ const DRIVE = `(async () => {
   ok('keys: ArrowDown moves the selection to the next row', await until(() => !!$('.result-item[data-id="2"].active')));
 
   if (CLIENT) {
-    // 9 — client specifics: the capability hint stays hidden (server + client both 1.2.0 → nothing remediable),
-    //     and the theme attributes came from themeBoot (the shared theme.css is the live stylesheet).
-    ok('client: "newer core needed" hint hidden when nothing is remediable', !$('#popout-note').classList.contains('show'));
+    // 9 — client specifics: the capability hint shows ONLY for remediable drift (this client knows the S2 reads,
+    //     the core does not = LITE); the theme attributes came from themeBoot (the shared theme.css is live).
+    if (LITE) ok('lite client: "newer core needed" hint SHOWN (remediable drift)', await until(() => $('#popout-note').classList.contains('show')));
+    else ok('client: "newer core needed" hint hidden when nothing is remediable', !$('#popout-note').classList.contains('show'));
     ok('client: theme attributes applied by themeBoot', !!document.documentElement.getAttribute('data-theme') && !!document.documentElement.getAttribute('data-mode'));
     ok('client: the shared theme.css is live (a token the search CSS needs resolves)', getComputedStyle(document.documentElement).getPropertyValue('--doc-bg').trim() !== '');
     ok('client: the connection banner starts hidden', !$('#popout-banner').classList.contains('show'));

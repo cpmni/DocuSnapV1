@@ -23,7 +23,7 @@ const { URL } = require('url');
 
 // The contract version this client build targets — keep in lockstep with the
 // server's API_CONTRACT_VERSION (src/modules/api/handler.js).
-const CLIENT_CONTRACT = '1.2.0';   // keep in lockstep with the server's API_CONTRACT_VERSION (1.2.0: + Quick File upload)
+const CLIENT_CONTRACT = '1.3.0';   // keep in lockstep with the server's API_CONTRACT_VERSION (1.3.0: + the four preview reads for the search pop-out; 1.2.0: + Quick File upload)
 
 function parseVer(v) {
   const m = String(v || '').match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -161,6 +161,23 @@ function createClient(opts = {}) {
   async function getThumbnail(id) {
     return request('GET', `/v1/documents/${encodeURIComponent(id)}/thumbnail`, { withAuth: true });
   }
+  // The four preview READS (contract 1.3.0 — client search parity S2). An older core 404s them; the pop-out's
+  // adapter then hides the matching controls. `find` may OCR a scanned document server-side (bounded there),
+  // so it carries a LONG idle timeout — and the caller must NOT treat a timeout as a lost connection.
+  async function getPage(id, index, scale) {
+    const q = new URLSearchParams({ scale: String(scale || 3) });
+    return request('GET', `/v1/documents/${encodeURIComponent(id)}/page/${Math.max(0, index | 0)}?${q}`, { withAuth: true, timeoutMs: 60000 });
+  }
+  async function getPageCount(id) {
+    return request('GET', `/v1/documents/${encodeURIComponent(id)}/page-count`, { withAuth: true });
+  }
+  async function find(id, query) {
+    const q = new URLSearchParams({ q: String(query || '') });
+    return request('GET', `/v1/documents/${encodeURIComponent(id)}/find?${q}`, { withAuth: true, timeoutMs: 180000 });
+  }
+  async function getSpreadsheet(id) {
+    return request('GET', `/v1/documents/${encodeURIComponent(id)}/spreadsheet`, { withAuth: true });
+  }
   // Quick File (non-OCR upload) — the doc-type list + the upload. Upload is a larger body (base64 file),
   // so allow a generous idle timeout. Paths never cross here — client main reads the bytes.
   async function intakeDocTypes() {
@@ -246,6 +263,7 @@ function createClient(opts = {}) {
 
   return {
     connect, login, logout, changePassword, entitlement, search, getDocument, getPages, getThumbnail, ping, fetchCa, enroll,
+    getPage, getPageCount, find, getSpreadsheet,
     intakeDocTypes, intakeSubmit,
     workflow: { list: wfList, counts: wfCounts, recipients, assign, claim, resolve, recall, stamped: wfStamped,
                 stampTypes, canStamp: stampCan, stampList, stampPlace, stampedDoc },

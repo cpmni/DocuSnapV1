@@ -456,6 +456,23 @@ ipcMain.handle('client-get-thumbnail', async (_e, id) => {
     return res;
   } catch (e) { if (isNetworkError(e)) markConnection(false); throw e; }
 });
+// The four preview READS for the search pop-out (contract 1.3.0; client search parity S2). page / page-count /
+// spreadsheet are ordinary guarded reads. `find` is deliberately NOT `guarded()`: the core may OCR a scanned
+// document to answer it (bounded server-side, but seconds to a minute), and apiClient's idle timeout rejects
+// with "connection timed out" — which isNetworkError would read as a LOST CONNECTION and throw the whole client
+// into the "Connection lost" overlay for a merely slow find (Oracle 2026-09-13 seam 8). A timeout here is
+// returned as a normal envelope the pop-out shows as "took too long"; real outages are still caught by the
+// heartbeat within seconds.
+ipcMain.handle('client-get-page',    guarded((_e, id, index, scale) => client.getPage(id, index, scale)));
+ipcMain.handle('client-page-count',  guarded((_e, id) => client.getPageCount(id)));
+ipcMain.handle('client-spreadsheet', guarded((_e, id) => client.getSpreadsheet(id)));
+ipcMain.handle('client-find', async (_e, id, query) => {
+  try { const r = await client.find(id, query); markConnection(true); return r; }
+  catch (e) {
+    const timedOut = /timed?\s*out/i.test((e && e.message) || '');
+    return { status: 0, json: { kind: timedOut ? 'timeout' : 'error', pages: 0, matches: [] } };
+  }
+});
 ipcMain.handle('client-authed',       () => client ? client.isAuthenticated() : false);
 
 // Mailbox / approval workflow.

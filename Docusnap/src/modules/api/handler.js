@@ -46,7 +46,7 @@ const path              = require('path');
 const WF_HTTP = { FORBIDDEN: 403, STAMP_FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
 const wfStatus = (code) => WF_HTTP[code] || 400;
 
-const API_CONTRACT_VERSION = '1.2.0';   // 1.2.0: + POST /v1/documents/intake (Quick File upload). NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
+const API_CONTRACT_VERSION = '1.3.0';   // 1.3.0: + the four preview READS (page / page-count / find / spreadsheet — client search parity S2, 2026-09-13; the client gates its lazy-page/find/grid caps on ≥ 1.3.0). 1.2.0: + POST /v1/documents/intake (Quick File upload). NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
                                         // handshake checks MAJOR only. Keep server + client in lockstep.
 const API_PREFIX = '/v1';
 const CLIENT_CONTRACT_HEADER = 'x-scanfinder-client-contract';
@@ -76,6 +76,19 @@ const MAX_BODY_BYTES = 1 * 1024 * 1024;
 // out unbounded Tesseract child processes on the host. Module-level (single process).
 const OCR_MAX_INFLIGHT = 3;
 let _ocrInFlight = 0;
+// Client search parity S2 (2026-09-13, Oracle seams 8-9): the four preview READS the detached client's search
+// pop-out needs for parity with the core Search window. `find` is the first OCR-bearing READ on /v1 (a scanned
+// PDF OCRs its pages through pdf_find.py's fallback) → its OWN in-flight cap + a query-length floor (reject
+// early, no spawn) + a tighter OCR page cap than the desktop (the pdf_find env hook; the desktop's 30 stays)
+// so N clients cannot fan out N × a 30-page OCR on the host. The single-page read clamps scale/index server-side
+// (a readonly user asking for scale 50 would be a memory DoS). The query is NEVER logged (mirrors /search).
+const FIND_MAX_INFLIGHT = 2;
+let _findInFlight = 0;
+const FIND_Q_MIN = 2;
+const FIND_Q_MAX = 200;
+const FIND_OCR_PAGES_V1 = 12;          // PREVIEW_FIND_OCR_PAGES for the /v1 lane (desktop default 30)
+const PAGE_SCALE_MIN = 1, PAGE_SCALE_MAX = 4, PAGE_SCALE_DEFAULT = 3;
+const PAGE_INDEX_MAX = 5000;
 
 // Quick File UPLOAD (POST /v1/documents/intake) — the first body-bearing WRITE on /v1 (Oracle
 // 2026-09-13, SIGN-OFF-W/COND). Its body may be large (a base64 file), so it does NOT reuse the 1 MB
@@ -588,6 +601,99 @@ function createRequestListener(ctx) {
         const thumbnail = await previewService.getThumbnail(
           getDb(), { docId: id, folderPath, filename }, pageDeps());
         return sendJson(res, 200, { thumbnail });
+      }
+
+      // ── Auth-required: the four preview READS (client search parity S2, contract 1.3.0) ──────────
+      // Each mirrors /pages: requireSession → per-document access gate → SERVER-SIDE path resolution (F-02:
+      // client paths are never read) → the transport-agnostic previewService fn → a path-free DTO. All fall
+      // inside FEATURE_ROUTE (entitlement-gated). Reads only: no audit row (same as /pages and /thumbnail).
+      const _resolveDocArgs = (id) => {
+        const P = ctx.path || require('path');
+        const row = getDb().prepare(
+          'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(id);
+        if (!row) return { folderPath: null, filename: null };
+        const pick = row.working_path || row.stored_path
+          || (row.folder_path && row.original_filename ? P.join(row.folder_path, row.original_filename) : null);
+        return pick ? { folderPath: P.dirname(pick), filename: P.basename(pick) } : { folderPath: null, filename: null };
+      };
+      const _gateDoc = (session, id) => {
+        if (!accessService.gateEnabled()) return true;
+        const acc = accessService.canAccessDocument(getDb(), session, id);
+        if (acc.allow) return true;
+        sendJson(res, acc.reason === 'not_found' ? 404 : 403, { error: acc.reason === 'not_found' ? 'not found' : 'forbidden' });
+        return false;
+      };
+
+      // GET /v1/documents/:id/page/:index?scale=  → { page: dataUrl|null }  (one rendered PDF page; lazy preview)
+      const pageMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/page/(\\d+)$`));
+      if (req.method === 'GET' && pageMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        const id = Number(pageMatch[1]);
+        if (!_gateDoc(session, id)) return;
+        const index = Math.min(PAGE_INDEX_MAX, Math.max(0, Number(pageMatch[2]) | 0));
+        const rawScale = Number(url.searchParams.get('scale'));
+        const scale = Number.isFinite(rawScale) && rawScale > 0
+          ? Math.min(PAGE_SCALE_MAX, Math.max(PAGE_SCALE_MIN, rawScale)) : PAGE_SCALE_DEFAULT;
+        const { folderPath, filename } = _resolveDocArgs(id);
+        const page = (folderPath && filename)
+          ? await previewService.getDocumentPage(getDb(), { docId: id, folderPath, filename, index, scale }, pageDeps())
+          : null;
+        return sendJson(res, 200, { page: page || null });
+      }
+
+      // GET /v1/documents/:id/page-count → { count: int|null }  (no render — sizes the lazy page array)
+      const countMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/page-count$`));
+      if (req.method === 'GET' && countMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        const id = Number(countMatch[1]);
+        if (!_gateDoc(session, id)) return;
+        const { folderPath, filename } = _resolveDocArgs(id);
+        const count = (folderPath && filename)
+          ? await previewService.getDocumentPageCount(getDb(), { docId: id, folderPath, filename }, pageDeps())
+          : null;
+        return sendJson(res, 200, { count: Number.isFinite(count) && count > 0 ? count : null });
+      }
+
+      // GET /v1/documents/:id/find?q= → { kind, pages, matches:[{page,x0,y0,x1,y1}] }  (page-fraction boxes)
+      const findMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/find$`));
+      if (req.method === 'GET' && findMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        const id = Number(findMatch[1]);
+        if (!_gateDoc(session, id)) return;
+        const q = String(url.searchParams.get('q') || '').trim();
+        if (q.length < FIND_Q_MIN) return sendJson(res, 400, { error: `q must be at least ${FIND_Q_MIN} characters` });   // no spawn
+        if (q.length > FIND_Q_MAX) return sendJson(res, 400, { error: `q must be at most ${FIND_Q_MAX} characters` });
+        if (_findInFlight >= FIND_MAX_INFLIGHT) return sendJson(res, 429, { error: 'too many find requests — retry' });
+        const { folderPath, filename } = _resolveDocArgs(id);
+        if (!folderPath || !filename) return sendJson(res, 200, { kind: 'none', pages: 0, matches: [] });
+        _findInFlight++;
+        try {
+          const deps = pageDeps();
+          const result = await previewService.findInDocument(getDb(), { docId: id, folderPath, filename, query: q }, {
+            ...deps,
+            findScript: ctx.findScript || (ctx.resourcePath && ctx.resourcePath('python_backend', 'render', 'pdf_find.py')),
+            tesseract: typeof ctx.tesseractPath === 'function' ? ctx.tesseractPath() : (ctx.tesseractPath || null),
+            // The /v1 lane OCRs fewer pages than the desktop (the rest report as partial) — a slow scanned
+            // find must not hold a client for minutes nor fan out on the host.
+            env: { ...process.env, PREVIEW_FIND_OCR_PAGES: String(FIND_OCR_PAGES_V1) },
+          });
+          const matches = (result && Array.isArray(result.matches)) ? result.matches
+            .filter(m => m && Number.isFinite(m.page)).map(m => ({ page: m.page, x0: m.x0, y0: m.y0, x1: m.x1, y1: m.y1 })) : [];
+          return sendJson(res, 200, { kind: (result && result.kind) || 'none', pages: (result && result.pages) || 0, matches });
+        } finally { _findInFlight--; }
+      }
+
+      // GET /v1/documents/:id/spreadsheet → { grid: {sheets:[{name,rows}], truncated} | null }  (values only)
+      const gridMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/spreadsheet$`));
+      if (req.method === 'GET' && gridMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        const id = Number(gridMatch[1]);
+        if (!_gateDoc(session, id)) return;
+        const { folderPath, filename } = _resolveDocArgs(id);
+        const grid = (folderPath && filename)
+          ? previewService.getSpreadsheetGrid(getDb(), { docId: id, folderPath, filename }, { fs: ctx.fs || require('fs'), path: ctx.path || require('path'), log })
+          : null;
+        return sendJson(res, 200, { grid: grid || null });
       }
 
       // ── Auth-required: RECYCLE BIN (soft delete / restore / purge) ────────────

@@ -18,7 +18,7 @@
 //   Open File / Edit in Review / Print), Send-back and Restore-all have no /v1 backing → hidden.
 (function () {
   const api = window.scanfinder;
-  const S2_METHODS_PRESENT = false;   // flipped to true by S2 when the single-page/page-count/find/grid methods land
+  const S2_METHODS_PRESENT = true;    // S2 (2026-09-13): the single-page / page-count / find / grid reads are wired below
 
   function expired() { try { api.popoutSessionExpired(); } catch {} }
   // Unwrap an envelope or reject like the core bridge would.
@@ -32,12 +32,11 @@
     return pick ? pick(r.json || {}) : r.json;
   }
   // For a cap-gated read: a missing/unsupported endpoint flips the cap off and yields the empty shape.
-  function capGated(name, empty, call) {
+  function capGated(name, empty, call, pick) {
     return async (...a) => {
-      let r;
-      try { r = await call(...a); } catch (e) { throw e; }
+      const r = await call(...a);
       if (r && (r.status === 404 || r.status === 426 || r.status === 402)) { T.caps[name] = false; return empty; }
-      return unwrap(r);
+      return unwrap(r, pick);
     };
   }
 
@@ -62,12 +61,19 @@
     getDocumentDetail:    async (id) => unwrap(await api.getDocument(id)),
     getDocumentPages:     async (id) => unwrap(await api.getPages(id), (j) => j.pages || []),
     getDocumentThumbnail: async (id) => unwrap(await api.getThumbnail(id), (j) => j.thumbnail || null),
-    // S2 placeholders — caps are false so the shared UI never calls these in S1; they exist so a flipped cap
-    // can never hit "not a function". S2 replaces them with the real /v1 reads (capGated).
-    getDocumentPage:      async () => null,
-    getDocumentPageCount: async () => null,
-    findInDocument:       async () => ({ kind: 'none', pages: 0, matches: [] }),
-    getSpreadsheetGrid:   async () => null,
+    // The S2 reads (contract 1.3.0): cap-gated — an older core (404) flips the cap off and the shared UI hides
+    // the control; the shapes unwrap to exactly what the core bridge hands the shared UI.
+    getDocumentPage:      capGated('singlePage', null, (id, index, scale) => api.getPage(id, index, scale), (j) => j.page || null),
+    getDocumentPageCount: capGated('pageCount', null, (id) => api.getPageCount(id), (j) => (Number.isFinite(j.count) && j.count > 0 ? j.count : null)),
+    // find: a status-0 envelope is the client's OWN timeout/error (never a lost connection) → the shared UI's
+    // "took too long" state; a real non-200 rejects like the core bridge (→ _clearMatches, as today).
+    findInDocument:       async (id, q) => {
+      const r = await api.find(id, q);
+      if (r && r.status === 0) return { kind: (r.json && r.json.kind) || 'error', pages: 0, matches: [] };
+      if (r && (r.status === 404 || r.status === 426 || r.status === 402)) { T.caps.find = false; return { kind: 'none', pages: 0, matches: [] }; }
+      return unwrap(r, (j) => ({ kind: j.kind || 'none', pages: j.pages || 0, matches: Array.isArray(j.matches) ? j.matches : [] }));
+    },
+    getSpreadsheetGrid:   capGated('spreadsheet', null, (id) => api.getSpreadsheet(id), (j) => j.grid || null),
     // desktop-local actions — no /v1 backing (caps false → hidden); defined so nothing can throw "not a function"
     showDocumentInExplorer: async () => ({ success: false, error: 'Not available from the search client.' }),
     openDocumentFile:       async () => ({ success: false, error: 'Not available from the search client.' }),
