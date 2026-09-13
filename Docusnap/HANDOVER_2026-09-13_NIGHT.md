@@ -149,9 +149,11 @@ Oracle's order, and stopped before the risky wiring. Nothing here changes the ap
   automated):** Settings → set `direct_intake_enabled` true → the ⚡ button appears on Home → click →
   "Choose files" (pick a .docx/.xlsx) → add a Quick File type if prompted → File → confirm it lands in
   `Company/Year/Month/Type.Date.Title.ext` + is searchable + never entered Review.
-- **Quick File rest:** update/replace/bulk + `document_versions`; the OOXML/PDF-text search extraction
-  (Q2, `src/lib/ooxmlText.js` + `python_backend/render/pdf_text.py`) so office/PDF body text is searchable
-  (today `ocr_text` = title + notes only).
+- **Quick File Q2 DONE:** office/PDF body text is now searchable — `src/lib/ooxmlText.js` (dependency-free
+  docx/xlsx/pptx text, STORE+DEFLATE, pinned) + `python_backend/render/pdf_text.py` (pypdfium2 text, no OCR)
+  + the handler's `extractSearchText` dispatcher (txt/md/csv/eml too), threaded into `ocr_text`.
+- **Quick File rest:** update/replace/bulk + `document_versions` (edit details → re-file; replace with a new
+  version); drag-drop (v1.1, own Oracle pass); the watch-folder lane (v1.1, needs an `intake` holding state).
 - **Departments rest:** the taggers (insert/confirm defaults, D3), the Settings "Users & Departments" UI +
   the enable sentence (D4), the `{department}` folder token (D5).
 - **Deferred by the plan (own Oracle pass):** Q7 `/v1` upload, drag-drop (Q-C12).

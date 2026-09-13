@@ -1,11 +1,11 @@
 'use strict';
-/**
- * modules/directIntake/handler.js — the Electron/IPC edge for "Quick File" (non-OCR direct intake).
- * QuickFile+Departments plan §3 + eric B.1/B.5. The transport-agnostic logic lives in
+/*
+ * modules/directIntake/handler.js - the Electron/IPC edge for "Quick File" (non-OCR direct intake).
+ * QuickFile+Departments plan section 3 + eric B.1/B.5. The transport-agnostic logic lives in
  * services/directIntakeService.js (pinned); this owns only: the OS file picker, a MAIN-side staging
- * token map (paths never reach the renderer — the de-pathing rule), and wiring the real collaborators
+ * token map (paths never reach the renderer - the de-pathing rule), and wiring the real collaborators
  * (filing.commitDocument, processing.ensureWorkingCopy, filing.normaliseDate, the output root, the inbox).
- * DARK behind `direct_intake_enabled` — every IPC refuses when the switch is off.
+ * DARK behind `direct_intake_enabled` - every IPC refuses when the switch is off.
  */
 
 const svc = require('../../services/directIntakeService');
@@ -21,10 +21,43 @@ function register(ctx) {
   const { requireRole, getCurrentUser, logAudit } = require('../auth/handler');
   const learning = require('../../../database/modules/learning');
   const docTypes = require('../../../database/modules/document_types');
+  const ooxmlText = require('../../lib/ooxmlText');
   const { dialog } = require('electron');
 
   const enabled = (db) => svc.enabled(db);
   const inboxDir = () => path.join(app.getPath('userData'), 'inbox');
+  const CAP = 200000;
+  const _clip = (s) => String(s || '').slice(0, CAP);
+
+  // Born-digital PDF text via pypdfium2 - NO OCR (Q2). Best-effort, bounded, never throws.
+  function _pdfText(srcPath) {
+    try {
+      const script = path.join(path.dirname(ctx.backendScript), 'render', 'pdf_text.py');
+      const res = require('child_process').spawnSync(ctx.pythonExe(), ctx.pythonArgs(script, '--file', srcPath),
+        { encoding: 'utf8', windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
+      return (JSON.parse(res.stdout || '{}').text) || '';
+    } catch { return ''; }
+  }
+
+  // Searchable body text for a Quick File doc - office/PDF/plain-text only, NEVER OCR. '' for images,
+  // legacy binaries (.doc/.xls/.ppt), .msg, .rtf/.odt (metadata-only in v1). Title+notes still index those.
+  function extractSearchText(srcPath, ext) {
+    const e = fileKinds.normExt(ext || srcPath);
+    try {
+      if (e === '.txt' || e === '.md' || e === '.csv') return _clip(fs.readFileSync(srcPath, 'utf8'));
+      if (e === '.docx' || e === '.xlsx' || e === '.pptx') return ooxmlText.extractOoxml(fs.readFileSync(srcPath), e);
+      if (e === '.eml') {
+        const raw = fs.readFileSync(srcPath, 'utf8');
+        const sep = raw.search(/\r?\n\r?\n/);
+        const head = sep >= 0 ? raw.slice(0, sep) : raw;
+        const bodyPart = sep >= 0 ? raw.slice(sep) : '';
+        const heads = (head.match(/^(Subject|From|To|Date):.*$/gim) || []).join('\n');
+        return _clip((heads + '\n' + bodyPart).replace(/<[^>]+>/g, ' ').replace(/[ \t]+/g, ' '));
+      }
+      if (e === '.pdf') return _pdfText(srcPath);
+    } catch { /* best-effort */ }
+    return '';
+  }
 
   // Stage validated source paths into the MAIN-side token map; the renderer only ever sees tokens.
   function stagePaths(paths) {
@@ -43,7 +76,7 @@ function register(ctx) {
     return out;
   }
 
-  // Pick files (multi-select) → stage → return tokens. paths stay in MAIN.
+  // Pick files (multi-select) -> stage -> return tokens. paths stay in MAIN.
   ipcMain.handle('direct-intake-pick', async () => {
     requireRole('admin', 'edit');
     const db = getDb();
@@ -51,7 +84,7 @@ function register(ctx) {
     const win = ctx.getMainWindow && ctx.getMainWindow();
     const exts = [...fileKinds.INTAKE_EXTS].map(e => e.replace(/^\./, ''));
     const res = await dialog.showOpenDialog(win || undefined, {
-      title: 'Quick File — choose documents',
+      title: 'Quick File - choose documents',
       properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'Documents', extensions: exts }, { name: 'All files', extensions: ['*'] }],
     });
@@ -72,7 +105,7 @@ function register(ctx) {
     return { ok: true, enabled: enabled(db), installed, presets };
   });
 
-  // Add a Quick File preset type inline (admin) — the form offers this when no 'none' type exists yet.
+  // Add a Quick File preset type inline (admin) - the form offers this when no 'none' type exists yet.
   ipcMain.handle('direct-intake-add-type', (_e, slug) => {
     requireRole('admin');
     const db = getDb();
@@ -103,6 +136,7 @@ function register(ctx) {
       commitDocument: require('../filing/handler').commitDocument,
       normaliseDate: require('../filing/handler').normaliseDate,
       ensureWorkingCopy: require('../processing/handler').ensureWorkingCopy,
+      extractSearchText,
       logAudit: (d, action, m) => { try { logAudit(d, { action, action_category: 'document', outcome: 'success', ...(m || {}) }); } catch {} },
     };
     let r;
@@ -112,7 +146,7 @@ function register(ctx) {
     return r;
   });
 
-  // Test/introspection seam — never touches the DB.
+  // Test/introspection seam - never touches the DB.
   ipcMain.handle('direct-intake-staged-count', () => { requireRole('admin', 'edit'); _sweep(); return { count: _staged.size }; });
 }
 

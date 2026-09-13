@@ -30,6 +30,7 @@ const deps = () => ({
   ensureWorkingCopy: (_fs, _p, _inbox, _src, id, name) => `/inbox/${id}${path.extname(name)}`,
   commitDocument: async ({ originalFilename }) => ({ success: true, filename: `Filed.${originalFilename}`, filePath: `/out/Acme/2026/September/Filed.${originalFilename}` }),
   normaliseDate: (s) => (s === 'notadate' ? null : s),
+  extractSearchText: async (_p, ext) => (ext === '.docx' ? 'BODYTEXT lease renewal clause 7' : ''),
   logAudit: () => {},
   now: () => '2026-09-13T00:00:00Z',
 });
@@ -65,7 +66,7 @@ console.log('§2 happy path — a CONFIRMED typed row, filed, searchable, never-
   check('overall_confidence NULL (nothing was read)', doc.overall_confidence === null);
   check('confirmed_at + confirmed_by set', doc.confirmed_at === '2026-09-13T00:00:00Z' && doc.confirmed_by_username === 'chris');
   check('supplier_name / doc_date / reference_number are the TYPED values', doc.supplier_name === 'Acme Ltd' && doc.doc_date === '12-09-2026' && doc.reference_number === 'OL-2026');
-  check('intake_notes stored; ocr_text = title+notes (searchable, no OCR)', doc.intake_notes === 'signed copy' && /Office lease 2026/.test(doc.ocr_text) && /signed copy/.test(doc.ocr_text));
+  check('intake_notes stored; ocr_text = title+notes+BODY (searchable, no OCR — Q2)', doc.intake_notes === 'signed copy' && /Office lease 2026/.test(doc.ocr_text) && /signed copy/.test(doc.ocr_text) && /BODYTEXT lease renewal clause 7/.test(doc.ocr_text));
   check('stored_filename/stored_path written; working_path NULL after filing (Q-C5)', /Filed\./.test(doc.stored_filename) && doc.working_path === null);
   const ex = db.prepare("SELECT field_key, display_value, confidence, extraction_method FROM extractions WHERE document_id = ? ORDER BY field_key").all(r.docId);
   const byKey = Object.fromEntries(ex.map(e => [e.field_key, e]));

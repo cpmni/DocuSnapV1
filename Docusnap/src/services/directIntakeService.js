@@ -81,11 +81,16 @@ async function submit(db, actor, input, deps = {}) {
   const staged = deps.path ? deps.path.dirname(srcPath) : '';
   const originalFilename = deps.path ? deps.path.basename(srcPath) : String(srcPath);
 
+  // Q2 searchable body text — office (OOXML) / born-digital PDF / plain text, NO OCR. Best-effort +
+  // async, so computed BEFORE the sync transaction. Absent dep (or a scan/binary) → title+notes only.
+  let body = '';
+  if (deps.extractSearchText) { try { body = String((await deps.extractSearchText(srcPath, ext)) || ''); } catch {} }
+
   let docId, storedPath;
   try {
     const tx = db.transaction(() => {
       const ts = now();
-      const searchText = [title, notes].filter(Boolean).join('\n') || null;
+      const searchText = ([title, notes, body].filter(Boolean).join('\n').slice(0, 200000)) || null;
       docId = insertRow.run({
         of: originalFilename, fp: staged, dt: documentTypeId, sup: party || null, date: docDate,
         ref: (input.reference || '').trim() || null, ts, by: actor.username || null,
