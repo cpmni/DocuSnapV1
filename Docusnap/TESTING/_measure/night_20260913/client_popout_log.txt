@@ -1,0 +1,17 @@
+
+DevTools listening on ws://127.0.0.1:9226/devtools/browser/ef4ffae2-4b7a-4188-bb03-5810b33b8438
+[search-popout] refused: not signed in (client built)
+[search-popout] created (state {})
+[search-popout] shown (ready-to-show)
+[search-popout] closed by main: logout
+[search-popout] closed
+[search-popout] created (state {})
+[search-popout] shown (ready-to-show)
+[search-popout] closed by main: session-expired (the pop-out saw a 401) — signing the main window out
+[search-popout] closed
+[search-popout] created (state {})
+[search-popout] shown (ready-to-show)
+[search-popout] closed by main: logout
+[search-popout] closed
+[search-popout] created (state {})
+[search-popout] shown (ready-to-show)
