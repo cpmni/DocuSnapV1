@@ -76,6 +76,9 @@ check("kw-leg outer condition lets LOWCONF relax the floor (via _kw_present)",
       "TEMPLATE_DATE_INVALID_YIELD_LOWCONF and _kw_present" in _slice)
 check("note is accurate per reason (both phrasings present, keyed on _reason)",
       "isn't a valid calendar date" in _slice and "is far in the future" in _slice)
+check("heal-path note QUOTES both the kept keyword value AND the dropped taught value (Oracle pin d)",
+      "Kept the read value" in _slice and "the taught " in _slice
+      and "data.get('value')" in _slice and "existing.get('value')" in _slice)
 check("commits keyword value via {**data} + validation_note (Review-bound) + own continue",
       '{**data,' in _slice and 'validation_note' in _slice and _slice.rstrip().endswith('continue'))
 check("predicate uses parse_date + salvage_date + days_in_future (single clock; no new date regex)",

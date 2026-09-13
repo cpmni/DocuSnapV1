@@ -5273,3 +5273,21 @@ manifest `desktop:FileTypeAssociation` instead (NSIS-only path). Smoke: select ~
 MultipleInvokePromptMinimum ~16) → confirm coalescing not an N-window storm; `--quickfile "\host\share\x"`
 and `--quickfile "x.lnk"` both refused visibly. The second-instance argv change is fine on its own but must
 not ship coupled to the shell surface while the feature is DARK.
+
+## Date-precedence lowconf yield (mig 166) — flip gate + anchor-leg twin (2026-09-13, Oracle SIGN-OFF-W/COND)
+`template_date_invalid_yield_lowconf` is DARK (armed in a TEST build). Oracle signed the fix (impossible
+taught date yields to a sub-90 label-matched keyword date, KW leg only, auto-file-neutral). Owed:
+- **FLIP GATE (before customer default) — set-equality is near-tautological here (the yield always writes
+  a note, so M=0 + wouldFile(ON)==wouldFile(OFF) are guaranteed by construction and prove nothing).** On
+  the real corpus at `RR_APP_ENV=1`: (a) M=0 + wouldFile set-equality (sanity); (b) **for every date field
+  whose HELD value changes ON-vs-OFF, classify against GT: heal (garble→correct) vs mislead
+  (garble→clean-but-wrong)** — efficacy is earned only by counted heals, mislead cases must be known+bounded,
+  not assumed zero (the rubber-stamp hazard: a clean wrong date invites a stamp where an obvious garble did
+  not); (c) zero per-field date-accuracy drop on all other date fields. Plus efficacy on the REAL exhibits
+  (the Print Tracker "October 10, 202€" doc + Larkspur) — synthetic scans can't reproduce an OCR clip-garble.
+- **ANCHOR-LEG TWIN (deferred, own exhibit + gate — do NOT bundle):** the identical structural block exists
+  on the anchor leg (engine.py ~10177): a freshly-learned Stage-2 anchor computes ~85 and is blocked by the
+  anchor leg's own 90 floor vs an impossible taught date. Oracle: rarer (needs BOTH a Stage-0.5 mapping AND
+  a learned anchor on the same date field) AND higher-risk (a low-conf anchor's confidence often reflects
+  LOCATION uncertainty — a drifted anchor may read a different date), so it needs its own real exhibit +
+  gate. The KW-leg-only scope is pinned (test_taught_date_invalid_yield.py) so a "symmetrise it" edit trips.
