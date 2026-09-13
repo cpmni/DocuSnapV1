@@ -42,6 +42,7 @@
       alignItems: 'center', justifyContent: 'center', zIndex: '9999' } }, [card]);
     overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
     document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); } });
+    document.body.appendChild(overlay);   // actually show it (the card is already a child; content fills in below)
 
     card.appendChild(el('h2', { style: { margin: '0 0 4px', fontSize: '18px' } }, '⚡ Quick File a document'));
     card.appendChild(el('p', { className: 'muted', style: { margin: '0 0 16px', fontSize: '13px', color: 'var(--muted)' } },
