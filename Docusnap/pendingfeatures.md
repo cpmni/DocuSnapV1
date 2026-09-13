@@ -5310,3 +5310,7 @@ client has `workflow.stamped(routeId)` pages, so an in-pop-out viewer is feasibl
 routes mirroring the desktop IPC handlers (`workflow-doc-history`, `workflow-doc-routes`, `workflow-admin-cancel`,
 `stamp-type-create`) + a MINOR contract bump + the client adapter methods + flip the caps; the harness `--workflow` run
 already exercises the shared UI on both apps.
+
+> **FIXED 2026-09-13 night** (the first-paint confidence-pip finding above): `SearchResults.redecorate()` re-renders the
+> LAST result set once the entitlement is known (no second search — pinned: `search-documents` runs exactly twice in the
+> harness session: initial + back-from-bin). Core + client (shared module).

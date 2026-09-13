@@ -13,8 +13,20 @@ function _isAdmin()  { return window.SearchState && window.SearchState.role === 
 let _rowOrder = [];   // ids in render order (for shift-range)
 let _anchorId = null; // last single-clicked id (shift anchor)
 let _docById  = {};   // id → doc (for preview on single click)
+let _lastResults = null;   // the last rendered result set (so a decoration-only re-render needs no new search)
+
+// Re-render the LAST result set as-is (same rows, same order, selection kept) — for a decoration that
+// depends on state resolved AFTER the first paint: the results populate before the entitlement is known,
+// so the confidence pips/tints of the enhanced search were missing until the next search (the 2026-09-13
+// first-paint finding). Never in the bin or mailbox views (their lists are not this result set).
+function redecorate() {
+  if (!_lastResults) return;
+  if (_isBin() || document.body.classList.contains('mailbox-mode')) return;
+  renderResults(_lastResults);
+}
 
 function renderResults({ confirmed = [], uncommitted = [], deleted = [] }) {
+  _lastResults = { confirmed, uncommitted, deleted };
   const scroll = document.getElementById('results-scroll');
   const empty  = document.getElementById('results-empty');
   // The capped-note MUST be in this removal selector: the clear is selective, so any class
@@ -289,4 +301,4 @@ async function _act(kind) {
   if (window.SearchQuery) window.SearchQuery.doSearch();
 }
 
-window.SearchResults = { renderResults, cycleSelection, initRail };
+window.SearchResults = { renderResults, redecorate, cycleSelection, initRail };

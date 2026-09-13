@@ -113,6 +113,7 @@ function main() {
                       'pdf_rotate.py', 'segment_docs.py', 'filing_slips.py', 'template_fingerprint.py',
                       'test_mapping.py', 'ocr/region.py', 'ocr/region_worker.py', 'ocr/landmarks.py',
                       'ocr/detect_angle.py', 'render/pages.py', 'render/preview_enhance.py',
+                      'render/pdf_find.py',   // find-in-document (2026-09-13: spawned by review/handler + the /v1 find)
                       'logo/fingerprint.py'];
   for (const rel of [...mustBeGone, ...SPAWN_ENTRIES].map(p => p.replace(/\//g, path.sep))) {
     if (fs.existsSync(path.join(OUT, rel))) {

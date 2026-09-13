@@ -169,10 +169,9 @@ const DRIVE = `(async () => {
   ok('doc-type dropdown seeded from the transport (All types + 2)', $$('#inp-type option').length === 3);
   ok('quick-find deep-link pre-filled the full-text box', $('#inp-fulltext').value === 'inv');
   ok('admin sees the Recycle bin button', await until(() => vis($('#btn-recycle'))));
-  // NOTE (pre-existing, pinned as-is for byte-identity): the FIRST paint runs before the entitlement
-  // resolves (results-first ordering), so an unconfirmed row's confidence pip only appears on the next
-  // list render — asserted after the bin round-trip below. Logged in pendingfeatures.md 2026-09-13.
-  ok('first paint: no confidence pip yet (entitlement resolves after the results-first search)', !$('.result-item[data-id="3"] .result-conf'));
+  // The FIRST paint runs before the entitlement resolves (results-first ordering); once it is known the
+  // same rows are re-decorated (SearchResults.redecorate) — the pip must appear WITHOUT a new search.
+  ok('first paint → re-decorated once the entitlement is known: the unconfirmed row shows its confidence pip', await until(() => !!$('.result-item[data-id="3"] .result-conf')));
   ok('thumbnail loader attached an image to each row', $$('.result-thumb-img').length === 3);
 
   // 2 — preview a confirmed 3-page PDF
@@ -233,7 +232,7 @@ const DRIVE = `(async () => {
   ok('bin: the deleted row names its file', /old\\.pdf/.test($('.result-item[data-id="9"] .result-detail').textContent));
   click($('#btn-recycle'));
   ok('bin: back to the search results', await until(() => $$('.result-item').length === 3 && !$$('.section-header').some(h => /RECYCLE BIN/.test(h.textContent))));
-  ok('re-render: an unconfirmed row now shows its confidence pip (entitled, enhanced search)', !!$('.result-item[data-id="3"] .result-conf'));
+  ok('re-render: the unconfirmed row still shows its confidence pip after the bin round-trip', !!$('.result-item[data-id="3"] .result-conf'));
 
   // 8 — keyboard cycling (↓ from row 1 selects row 2)
   click($('.result-item[data-id="1"]'));

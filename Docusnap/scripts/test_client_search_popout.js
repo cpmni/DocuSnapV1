@@ -69,6 +69,7 @@ console.log('A1. functional — PARITY: the pop-out against a core that has the 
     check('client-search-target pulled once (the deep-link)', calls.filter(([c]) => c === 'client-search-target').length === 1);
     check('client-server-info read for the capability gate', has('client-server-info'));
     check('client-get-thumbnail used for the row thumbnails', has('client-get-thumbnail'));
+    check('the first-paint re-decoration is NOT a second search: client-search ran exactly twice (initial + back-from-bin)', calls.filter(([c]) => c === 'client-search').length === 2);
     check('DOM dump produced', !!d && !!d.styles);
     if (d && d.styles) {
       check('#app direct children = banner, note, search-bar, date-range-note, body (no wrapper)',

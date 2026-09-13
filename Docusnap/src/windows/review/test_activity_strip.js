@@ -119,7 +119,7 @@ check('card 6: the Reprocess dialog says a clean re-read WILL file when the send
       /anything that re-reads clean will file straight away — you'll see it in the activity strip with a Put back/.test(rend)
       && /const _selfFiles = /.test(rend));
 check("card 8: Search's send-back names its door ('Sent back from Search'), Learning Repair keeps its own",
-      /const _prefix = source === 'search' \? 'Sent back from Search' : NOTE_PREFIX;/.test(rsvc)
+      /const _prefix = source === 'search' \? 'Sent back from Search'[\s\S]{0,160}: NOTE_PREFIX;/.test(rsvc)   // a Quick-check door was added between (2026-09-13 night: the pin allows further named doors)
       && /\$\{_prefix\}: \$\{s\.note\}/.test(rsvc) && /\$\{_prefix\} — please re-check this document before filing\./.test(rsvc)
       && /repairDeconfirm\(doc\.id, \{ source: 'search' \}\)/.test(sa));
 
