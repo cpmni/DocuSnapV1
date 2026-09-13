@@ -298,7 +298,14 @@
     /* Zoom sizes the <img> width (search-preview.js _applyZoom) so the pane truly overflows and the
        wheel/right-drag can scroll it; no CSS transform (a transform doesn't grow the scroll box, and
        will-change:transform promoted a cached layer the compositor upscaled BLURRY). */
-    #preview-img-wrap { display: inline-block; line-height: 0; }
+    #preview-img-wrap { display: inline-block; line-height: 0; position: relative; }
+    /* Search-term highlight overlay — boxes are positioned as % of the page image, so they track the
+       layout-based zoom automatically. Non-interactive so it never eats a right-drag pan. */
+    #preview-hl-layer { position: absolute; inset: 0; pointer-events: none; }
+    #preview-hl-layer .pv-hl { position: absolute; background: rgba(255, 214, 0, .34);
+      outline: 1px solid rgba(200, 150, 0, .65); border-radius: 1px; }
+    #preview-hl-layer .pv-hl.active { background: rgba(255, 145, 0, .45); outline: 2px solid var(--accent, #3b7df0); }
+    #match-label { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 44px; text-align: center; }
     #page-nav .pn-group { display: flex; align-items: center; gap: 10px; }
     #page-nav .pn-sep { width: 1px; height: 18px; background: var(--border2); }
     #zoom-level { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 40px; text-align: center; }
@@ -423,10 +430,16 @@
               <span id="page-label" class="page-nav-label">1 / 1</span>
               <button class="page-nav-btn" id="btn-page-next" data-help-key="preview-pages" title="Next page" aria-label="Next page" disabled>&#8250;</button>
             </div>
+            <div class="pn-sep" id="match-sep" style="display:none"></div>
+            <div class="pn-group" id="match-nav" data-help-key="preview-find" style="display:none">
+              <button class="page-nav-btn" id="btn-match-prev" title="Previous match" aria-label="Previous match">&#8249;</button>
+              <span id="match-label" class="page-nav-label">0 / 0</span>
+              <button class="page-nav-btn" id="btn-match-next" title="Next match" aria-label="Next match">&#8250;</button>
+            </div>
           </div>
           <div id="preview-img-area" data-help-key="preview-zoom">
             <span id="preview-img-placeholder">Loading…</span>
-            <div id="preview-img-wrap" style="display:none"><img id="preview-img" alt="Document preview" draggable="false"></div>
+            <div id="preview-img-wrap" style="display:none"><img id="preview-img" alt="Document preview" draggable="false"><div id="preview-hl-layer"></div></div>
           </div>
         </div>
 

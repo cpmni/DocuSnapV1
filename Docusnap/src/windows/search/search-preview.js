@@ -141,6 +141,66 @@ function resetPreviewView() {
   if (area) { area.scrollLeft = 0; area.scrollTop = 0; }
 }
 
+// ── Search-term matches (jump to first / next-prev / highlight) ─────────────────
+// The backend returns match boxes as PAGE FRACTIONS (0..1, top-left origin); we overlay them as % of
+// the page image so they track the layout zoom. Born-digital PDFs only for now (text layer, no OCR).
+let _matches = [];       // [{ page, x0, y0, x1, y1 }]
+let _matchIdx = -1;      // active match index, -1 = none
+let _pendingScroll = false;
+let _activeHlEl = null;
+
+function _clearMatches() {
+  _matches = []; _matchIdx = -1; _activeHlEl = null; _pendingScroll = false;
+  const layer = document.getElementById('preview-hl-layer'); if (layer) layer.textContent = '';
+  _updateMatchNav();
+}
+function _updateMatchNav() {
+  const on = _matches.length > 0;
+  const nav = document.getElementById('match-nav'); if (nav) nav.style.display = on ? '' : 'none';
+  const sep = document.getElementById('match-sep'); if (sep) sep.style.display = on ? '' : 'none';
+  const lbl = document.getElementById('match-label'); if (lbl) lbl.textContent = on ? `${_matchIdx + 1} / ${_matches.length}` : '0 / 0';
+}
+function _renderHighlights() {
+  const layer = document.getElementById('preview-hl-layer');
+  if (!layer) return;
+  layer.textContent = ''; _activeHlEl = null;
+  const page = window.SearchState.currentPage;
+  _matches.forEach((m, i) => {
+    if (m.page !== page) return;
+    const b = document.createElement('div');
+    b.className = 'pv-hl' + (i === _matchIdx ? ' active' : '');
+    b.style.left = (m.x0 * 100) + '%'; b.style.top = (m.y0 * 100) + '%';
+    b.style.width = ((m.x1 - m.x0) * 100) + '%'; b.style.height = ((m.y1 - m.y0) * 100) + '%';
+    layer.appendChild(b);
+    if (i === _matchIdx) _activeHlEl = b;
+  });
+}
+function _scrollActiveIntoView() {
+  if (!_activeHlEl) return;
+  try { _activeHlEl.scrollIntoView({ block: 'center', inline: 'center' }); }
+  catch { try { _activeHlEl.scrollIntoView(); } catch {} }
+}
+// Called by the img load handler: re-draw this page's highlights (size known) + honour a pending jump.
+function _onPageImageReady() {
+  _renderHighlights();
+  if (_pendingScroll) { _pendingScroll = false; _scrollActiveIntoView(); }
+}
+function _gotoMatch(i) {
+  if (!_matches.length) return;
+  _matchIdx = ((i % _matches.length) + _matches.length) % _matches.length;
+  _updateMatchNav();
+  const m = _matches[_matchIdx];
+  if (m.page !== window.SearchState.currentPage) {
+    _pendingScroll = true;          // the new page image's load handler will scroll to it
+    _showPage(m.page);
+  } else {
+    _renderHighlights();
+    const img = document.getElementById('preview-img');
+    if (img && img.complete && img.naturalWidth) _scrollActiveIntoView();
+    else _pendingScroll = true;     // still loading — defer the scroll to the load handler
+  }
+}
+
 function initPageNav() {
   document.getElementById('btn-page-prev').addEventListener('click', () =>
     _showPage(window.SearchState.currentPage - 1));
@@ -150,12 +210,15 @@ function initPageNav() {
   document.getElementById('btn-zoom-in') ?.addEventListener('click', () => setPreviewZoom(previewZoom + ZOOM_STEP));
   document.getElementById('btn-zoom-out')?.addEventListener('click', () => setPreviewZoom(previewZoom - ZOOM_STEP));
   document.getElementById('btn-zoom-reset')?.addEventListener('click', resetPreviewView);
+  document.getElementById('btn-match-prev')?.addEventListener('click', () => _gotoMatch(_matchIdx - 1));
+  document.getElementById('btn-match-next')?.addEventListener('click', () => _gotoMatch(_matchIdx + 1));
 
   const img  = document.getElementById('preview-img');
   const area = document.getElementById('preview-img-area');
   const hasDoc = () => window.SearchState.currentPages.length > 0;
-  // Re-fit whenever a page image loads (natural size known only then) — preserves the current zoom.
-  if (img) img.addEventListener('load', _applyZoom);
+  // On each page image load (natural size now known): re-fit to the current zoom, then re-draw this
+  // page's search highlights and honour any pending "jump to match" scroll.
+  if (img) img.addEventListener('load', () => { _applyZoom(); _onPageImageReady(); });
   // The wheel now scrolls natively (no handler) — we only block native image drag + the context menu so
   // right-drag can pan without popping a menu.
   area.addEventListener('contextmenu', (e) => { if (hasDoc()) e.preventDefault(); });
@@ -198,6 +261,7 @@ async function selectDoc(doc) {
   ph.style.display   = '';
   ph.innerHTML       = '<div class="spinner"></div>';
   resetPreviewView();                        // each new document opens at 100%, un-panned
+  _clearMatches();                           // drop the previous doc's search highlights
 
   // The fetch sequence is wrapped so ANY failure (a missing IPC handler after a stale-main
   // update, a DB hiccup, the doc deleted mid-click, an IPC error) shows an honest state
@@ -224,6 +288,16 @@ async function selectDoc(doc) {
 
     if (s.currentPages.length > 0) {
       _showPage(0);
+      // Jump to / highlight the active search term (born-digital PDFs; best-effort, staleness-guarded).
+      const q = s.query;
+      if (q) {
+        try {
+          const res = await window.docusnap.findInDocument(doc.id, q);
+          if (s.selectedDoc !== mine) return;    // a newer selection now owns the pane
+          _matches = (res && Array.isArray(res.matches)) ? res.matches : [];
+          if (_matches.length) _gotoMatch(0); else _updateMatchNav();
+        } catch { _clearMatches(); }
+      }
     } else {
       ph.style.display = '';
       ph.innerHTML = 'No preview available';

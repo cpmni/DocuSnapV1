@@ -251,4 +251,49 @@ function getThumbnail(db, { docId, folderPath, filename }, deps) {
   });
 }
 
-module.exports = { getDocumentDetail, getDocumentPages, getThumbnail, resolveDocFile: _resolveDocFile };
+/**
+ * Locate a search term in a document and return where it sits, as page-fraction boxes
+ * (0..1, top-left origin) the renderer can overlay at any zoom/scale. Born-digital PDFs
+ * only for now (text layer, no OCR); a non-PDF or a scanned PDF with no text layer yields
+ * an empty match list. Same server-side file resolution as getDocumentPages.
+ *
+ * @param {object} db   open better-sqlite3 handle
+ * @param {object} args { docId, folderPath, filename, query }
+ * @param {object} deps { fs, path, spawn, pythonExe, pythonArgs, findScript, log? }
+ * @returns {Promise<{kind:string, pages:number, matches:Array<{page,x0,y0,x1,y1}>}>}
+ */
+function findInDocument(db, { docId, folderPath, filename, query }, deps) {
+  const { fs, path, spawn, pythonExe, pythonArgs, findScript } = deps;
+  const log = deps.log || console.log;
+  const EMPTY = { kind: 'none', pages: 0, matches: [] };
+
+  const term = String(query || '').trim();
+  if (!term || !folderPath || !filename) return Promise.resolve(EMPTY);
+  const filePath = _resolveDocFile(db, { docId, folderPath, filename }, deps);
+  if (!filePath) return Promise.resolve(EMPTY);
+
+  // Only born-digital PDFs carry a searchable text layer with geometry. Images / office / scanned
+  // PDFs (no text layer) return nothing to highlight — the doc is still found by the list search.
+  if (path.extname(filePath).toLowerCase() !== '.pdf') return Promise.resolve(EMPTY);
+
+  const py = pythonExe();
+  return new Promise((resolve) => {
+    const proc = spawn(py, pythonArgs(findScript, '--file', filePath, '--query', term), { windowsHide: true });
+    let out = '', err = '';
+    proc.stdout.on('data', d => { out += d.toString(); });
+    proc.stderr.on('data', d => { err += d.toString(); });
+    proc.on('error', (e) => { log(`[find] spawn error for ${filePath}: ${e.message}`); resolve(EMPTY); });
+    proc.on('close', (code) => {
+      try {
+        const parsed = JSON.parse(out);
+        resolve(parsed && Array.isArray(parsed.matches) ? parsed : EMPTY);
+      } catch (e) {
+        log(`[find] failed for ${filePath} — exit=${code} stdout_len=${out.length} parse_error=${e.message}`
+          + (err ? ` stderr=${err.trim().slice(0, 300)}` : ''));
+        resolve(EMPTY);
+      }
+    });
+  });
+}
+
+module.exports = { getDocumentDetail, getDocumentPages, getThumbnail, findInDocument, resolveDocFile: _resolveDocFile };

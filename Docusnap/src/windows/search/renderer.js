@@ -24,7 +24,8 @@ window.initHelpMode?.('help-mode-toggle', {
   'preview-pane':'A preview of the selected document and its filed details.',
   'preview-actions':'Open the file, show it in your file explorer, or open it back in Review to change something.',
   'preview-pages':'Move between the pages of the previewed document.',
-  'preview-zoom': 'Zoom with the − / + buttons or the mouse wheel; right-click and drag to pan around the page. Reset returns to 100%.',
+  'preview-zoom': 'Scroll the page with the mouse wheel; right-click and drag to pan. Zoom with the − / + buttons; Reset returns to 100%.',
+  'preview-find': 'When you searched for a word, these jump the preview to each place it appears (highlighted). Use ‹ / › to step through the matches.',
   'help-mode':   'Help mode: click any control to see what it does. Press Esc to leave.',
 });
 

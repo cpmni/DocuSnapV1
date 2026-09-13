@@ -27,6 +27,8 @@ function _updateDateRangeNote() {
 
 async function doSearch() {
   _updateDateRangeNote();
+  // Remember the active full-text term so the preview can jump to / highlight it when a doc is opened.
+  if (window.SearchState) window.SearchState.query = document.getElementById('inp-fulltext').value.trim();
   const bin = !!(window.SearchState && window.SearchState.binMode);
   try {
     if (bin) {

@@ -1045,6 +1045,28 @@ function register(ctx) {
     });
   });
 
+  // ── Locate a search term in a document (preview jump/next/highlight) ─────────
+  // Returns page-fraction match boxes for the renderer to overlay. Same SERVER-SIDE path
+  // resolution as get-document-pages (client paths are never trusted). Born-digital PDFs only.
+  ipcMain.handle('find-in-document', async (_e, docId, query) => {
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    let rFolder = null, rFile = null;
+    if (row) {
+      const pick = row.working_path || row.stored_path
+        || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null);
+      if (pick) { rFolder = path.dirname(pick); rFile = path.basename(pick); }
+    }
+    if (!rFolder || !rFile) return { kind: 'none', pages: 0, matches: [] };
+    return previewService.findInDocument(db, { docId, folderPath: rFolder, filename: rFile, query }, {
+      fs, path, spawn, pythonExe, pythonArgs,
+      findScript: ctx.resourcePath('python_backend', 'render', 'pdf_find.py'),
+    });
+  });
+
   // ── Small page-1 thumbnail for the document lists + add-template picker ──────
   ipcMain.handle('get-document-thumbnail', async (_e, docId, folderPath, filename) => {
     const sess = requireLogin();
