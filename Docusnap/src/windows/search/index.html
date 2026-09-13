@@ -165,6 +165,24 @@
     }
     #preview-img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; display: block; }
     #preview-img-placeholder { color: var(--muted); font-size: 12px; margin: auto; }
+    /* Spreadsheet (.xlsx) grid preview — the placeholder stretches to fill so the grid can scroll. */
+    #preview-img-placeholder.xlsx-ph { margin: 0; align-self: stretch; width: 100%; height: 100%; }
+    .xlsx-preview { display: flex; flex-direction: column; width: 100%; height: 100%; text-align: left; }
+    .xlsx-tabs { display: flex; gap: 4px; flex-wrap: wrap; padding: 0 0 8px; flex-shrink: 0; }
+    .xlsx-tab { font-size: 11px; padding: 3px 10px; border: 1px solid var(--border2); border-radius: 6px;
+      background: var(--surface2); color: var(--muted); cursor: pointer; }
+    .xlsx-tab.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+    .xlsx-body { flex: 1; min-height: 0; display: flex; }
+    .xlsx-scroll { flex: 1; overflow: auto; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); }
+    .xlsx-table { border-collapse: collapse; font-family: var(--mono); font-size: 11px; }
+    .xlsx-table td { border: 1px solid var(--border); padding: 2px 7px; white-space: nowrap;
+      max-width: 280px; overflow: hidden; text-overflow: ellipsis; color: var(--text); vertical-align: top; }
+    .xlsx-table .xlsx-colhdr, .xlsx-table .xlsx-rownum, .xlsx-table .xlsx-corner {
+      background: var(--surface2); color: var(--muted); font-weight: 600; text-align: center; position: sticky; }
+    .xlsx-table .xlsx-colhdr { top: 0; z-index: 1; }
+    .xlsx-table .xlsx-rownum, .xlsx-table .xlsx-corner { left: 0; }
+    .xlsx-table .xlsx-corner { top: 0; z-index: 2; }
+    .xlsx-note { font-size: 10px; color: var(--muted); padding: 6px 2px 0; flex-shrink: 0; }
 
     /* Page navigation bar */
     #page-nav {
@@ -312,6 +330,12 @@
       color: var(--muted); user-select: none; white-space: nowrap; }
     /* Taller, slightly inset separators so the sections are visibly distinct. */
     #page-nav .pn-sep { width: 1px; height: 22px; background: var(--border2); margin: 0 4px; }
+    /* Find-in-document input (top-right of the preview, in the Find cluster). Searches ONLY the open doc. */
+    #page-nav .mn-input { width: 132px; height: 24px; padding: 0 8px; font-size: 11px; color: var(--text);
+      background: var(--surface2); border: 1px solid var(--border2); border-radius: 4px; }
+    #page-nav .mn-input::placeholder { color: var(--muted); }
+    #page-nav .mn-input:focus { outline: none; border-color: var(--accent); }
+    #page-nav .mn-input.no-match { border-color: var(--err); color: var(--err); }
     #zoom-level { font-family: var(--mono); font-size: 11px; color: var(--muted); min-width: 40px; text-align: center; }
     .page-nav-btn.pn-wide { width: auto; padding: 0 9px; font-size: 11px; }
     /* The "Find" stepper uses the same neutral buttons as the rest; a monochrome SVG magnifier that
@@ -443,9 +467,10 @@
             <div class="pn-sep" id="match-sep" style="display:none"></div>
             <div class="pn-group mn-group" id="match-nav" data-help-key="preview-find" style="display:none">
               <span class="pn-label mn-cap"><svg class="mn-ico" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="10" x2="14" y2="14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Find</span>
-              <button class="page-nav-btn mn-btn" id="btn-match-prev" title="Previous match" aria-label="Previous match">&#8249;</button>
+              <input type="text" id="inp-find-doc" class="mn-input" placeholder="in this document…" title="Find text in this document (PDF text). Enter = next match, Shift+Enter = previous, Esc = clear." autocomplete="off" spellcheck="false">
+              <button class="page-nav-btn mn-btn" id="btn-match-prev" title="Previous match" aria-label="Previous match" disabled>&#8249;</button>
               <span id="match-label" class="page-nav-label mn-count">0 / 0</span>
-              <button class="page-nav-btn mn-btn" id="btn-match-next" title="Next match" aria-label="Next match">&#8250;</button>
+              <button class="page-nav-btn mn-btn" id="btn-match-next" title="Next match" aria-label="Next match" disabled>&#8250;</button>
             </div>
           </div>
           <div id="preview-img-area" data-help-key="preview-zoom">

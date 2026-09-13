@@ -91,4 +91,7 @@ function extractOoxml(buf, ext) {
   } catch { return ''; }
 }
 
-module.exports = { extractOoxml, stripTags, TEXT_CAP, PART_CAP };
+// Additive exports of the ZIP primitives so the sibling grid reader (ooxmlGrid.js) reuses ONE
+// central-directory reader instead of a second copy. Non-breaking (test_ooxml_text.js pins
+// extractOoxml/stripTags only). `_decode` is the shared XML-entity decoder.
+module.exports = { extractOoxml, stripTags, TEXT_CAP, PART_CAP, openZip: _open, readZipEntry: _readEntry, decodeXml: _decode };

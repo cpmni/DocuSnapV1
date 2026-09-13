@@ -1067,6 +1067,26 @@ function register(ctx) {
     });
   });
 
+  // ── Spreadsheet (.xlsx) grid for the preview pane ───────────────────────────
+  // A dependency-free cell grid so a Quick File .xlsx shows its data instead of just an icon
+  // (2026-09-13 route 1). Same server-side path resolution as get-document-pages. Returns null
+  // for anything that isn't a readable .xlsx (the renderer then keeps its "no preview" fallback).
+  ipcMain.handle('get-spreadsheet-grid', async (_e, docId) => {
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    let rFolder = null, rFile = null;
+    if (row) {
+      const pick = row.working_path || row.stored_path
+        || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null);
+      if (pick) { rFolder = path.dirname(pick); rFile = path.basename(pick); }
+    }
+    if (!rFolder || !rFile) return null;
+    return previewService.getSpreadsheetGrid(db, { docId, folderPath: rFolder, filename: rFile }, { fs, path });
+  });
+
   // ── Small page-1 thumbnail for the document lists + add-template picker ──────
   ipcMain.handle('get-document-thumbnail', async (_e, docId, folderPath, filename) => {
     const sess = requireLogin();
@@ -1199,6 +1219,27 @@ function register(ctx) {
     notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
     notifyBinChanged();
     return true;
+  });
+
+  // Discard the "couldn't be read" documents (status='error'). A soft-delete: the rows move to
+  // the recycle bin (recoverable) and the original files are untouched — softDelete keeps files.
+  // An OCR failure that keeps failing (e.g. a 300s timeout) has no other exit, so without this the
+  // launchpad "couldn't be read" banner + the Home attention-card count could never be cleared
+  // (the × only hides the banner for the session). Only ever acts on rows that ARE stuck, so a
+  // stale/forged id can't soft-delete a live document. `ids` optional (defaults to all stuck).
+  ipcMain.handle('discard-stuck-docs', (_e, ids) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const stuckIds = documents.getStuckQueue(db).map(d => d.id);
+    const set = (Array.isArray(ids) && ids.length) ? stuckIds.filter(id => ids.includes(id)) : stuckIds;
+    for (const id of set) {
+      documents.softDelete(db, id);
+      logAudit(db, { action: 'document_deleted', action_category: 'document', target_type: 'document',
+        target_id: id, document_id: id, outcome: 'success', metadata: { soft: true, reason: 'stuck_discarded' } });
+    }
+    notifyMainWindow('stuck-count-changed', documents.getStuckCount(db));
+    notifyBinChanged();
+    return { discarded: set.length };
   });
 
   // Recycle bin: list, restore, and permanently remove deleted documents.

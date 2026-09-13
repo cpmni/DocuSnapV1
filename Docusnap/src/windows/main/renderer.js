@@ -1520,6 +1520,7 @@ const stuckMsg       = document.getElementById('stuck-msg');
 const btnStuckRetry  = document.getElementById('btn-stuck-retry');
 const stuckList      = document.getElementById('stuck-list');
 const btnStuckDetails = document.getElementById('btn-stuck-details');
+const btnStuckDiscard = document.getElementById('btn-stuck-discard');
 const btnStuckDismiss = document.getElementById('btn-stuck-dismiss');
 
 // Per-session acknowledge: the count the user last dismissed at. The chip re-surfaces only when
@@ -1538,8 +1539,9 @@ function renderStuckChip(n) {
   stuckMsg.textContent = `${n} document${n === 1 ? "" : "s"} couldn't be read — held for retry (not filed, not lost).`;
   stuckChip.style.display = '';
   if (stuckList) { stuckList.hidden = true; stuckList.innerHTML = ''; }   // collapse stale details on re-render
-  // "Try again" runs reprocess (Admin/Edit only) — hide the action for read-only.
-  if (btnStuckRetry) btnStuckRetry.style.display = _userCanReview ? '' : 'none';
+  // "Try again" (reprocess) + "Remove" (discard) both mutate — Admin/Edit only; hidden for read-only.
+  if (btnStuckRetry)   btnStuckRetry.style.display   = _userCanReview ? '' : 'none';
+  if (btnStuckDiscard) btnStuckDiscard.style.display = _userCanReview ? '' : 'none';
 }
 async function refreshStuckCount() {
   try { renderStuckChip(await window.docusnap.getStuckCount()); } catch {}
@@ -1574,6 +1576,27 @@ btnStuckDetails?.addEventListener('click', async () => {
 btnStuckDismiss?.addEventListener('click', () => {
   _stuckDismissedAt = _stuckCount;
   if (stuckChip) stuckChip.style.display = 'none';
+});
+
+// Remove — discard the failed docs for GOOD. Unlike × (session hide), this soft-deletes them
+// (into the recycle bin, originals untouched) so the count truly clears on this + every launch.
+// The exit for a doc that keeps failing OCR (e.g. a repeated 300s timeout) and can't be retried away.
+btnStuckDiscard?.addEventListener('click', async () => {
+  const n = _stuckCount;
+  if (!n) { refreshStuckCount(); return; }
+  const ok = confirm(`Remove ${n} document${n === 1 ? '' : 's'} that couldn't be read?\n\n`
+    + 'They move to the recycle bin — your original files are not touched, and you can restore them '
+    + 'from the bin in Search.');
+  if (!ok) return;
+  btnStuckDiscard.disabled = true;
+  try {
+    const r = await window.docusnap.discardStuckDocs();
+    appendLog(`Removed ${r?.discarded ?? 0} document(s) that couldn't be read (moved to the recycle bin).`, 'ok');
+  } catch (e) {
+    appendLog(`Couldn't remove: ${e.message}`, 'err');
+  }
+  btnStuckDiscard.disabled = false;
+  await refreshStuckCount();
 });
 
 btnStuckRetry?.addEventListener('click', async () => {

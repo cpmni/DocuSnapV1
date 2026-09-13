@@ -73,6 +73,10 @@ function _syncPageNav() {
   const nav = document.getElementById('page-nav');
   if (!s.currentPages.length) { nav.style.display = 'none'; return; }
   nav.style.display = '';                                    // reverts to the CSS flex row
+  // Find-in-document is available whenever a page is shown (born-digital PDF text). The stepper counts
+  // stay 0/0 with the ‹ › disabled until a term matches — the input itself is always ready to type in.
+  const mnav = document.getElementById('match-nav'); if (mnav) mnav.style.display = '';
+  const msep = document.getElementById('match-sep'); if (msep) msep.style.display = '';
   const multi = s.currentPages.length > 1;
   document.querySelectorAll('#page-nav .pn-pages').forEach(el => { el.style.display = multi ? '' : 'none'; });
   if (multi) {
@@ -155,10 +159,12 @@ function _clearMatches() {
   _updateMatchNav();
 }
 function _updateMatchNav() {
+  // The Find CLUSTER's visibility now tracks "a doc is shown" (see _syncPageNav) so the input stays
+  // usable before any match. Here we only reflect the match COUNT + enable/disable the ‹ › steppers.
   const on = _matches.length > 0;
-  const nav = document.getElementById('match-nav'); if (nav) nav.style.display = on ? '' : 'none';
-  const sep = document.getElementById('match-sep'); if (sep) sep.style.display = on ? '' : 'none';
   const lbl = document.getElementById('match-label'); if (lbl) lbl.textContent = on ? `${_matchIdx + 1} / ${_matches.length}` : '0 / 0';
+  const prev = document.getElementById('btn-match-prev'); if (prev) prev.disabled = !on;
+  const next = document.getElementById('btn-match-next'); if (next) next.disabled = !on;
 }
 function _renderHighlights() {
   const layer = document.getElementById('preview-hl-layer');
@@ -201,6 +207,30 @@ function _gotoMatch(i) {
   }
 }
 
+// ── Find in THIS document (top-right input; searches only the open doc) ─────────
+// Reuses the same per-doc backend + overlay as the list-term highlight (findInDocument →
+// page-fraction match boxes). Born-digital PDF text only, same as the list-term path; a scanned
+// page / office file yields 0 matches (the doc is still found by the list search). A2 (scanned
+// OCR word-boxes) + A3 (client /v1) remain the follow-ups noted in the 09-13 DAY handover.
+let _findTerm  = '';       // the term the current _matches belong to (so Enter can step vs re-search)
+let _findTimer = null;
+async function runDocFind(term) {
+  const s = window.SearchState;
+  const doc = s.selectedDoc;
+  const input = document.getElementById('inp-find-doc');
+  term = String(term || '').trim();
+  if (!doc || !term) { _findTerm = ''; _clearMatches(); if (input) input.classList.remove('no-match'); return; }
+  let res;
+  try { res = await window.docusnap.findInDocument(doc.id, term); }
+  catch { _findTerm = term; _clearMatches(); return; }
+  if (s.selectedDoc !== doc) return;          // a newer selection now owns the preview pane
+  _findTerm = term;
+  _matches  = (res && Array.isArray(res.matches)) ? res.matches : [];
+  if (_matches.length) { _gotoMatch(0); if (input) input.classList.remove('no-match'); }
+  else { _matchIdx = -1; const layer = document.getElementById('preview-hl-layer'); if (layer) layer.textContent = '';
+         _updateMatchNav(); if (input) input.classList.add('no-match'); }
+}
+
 function initPageNav() {
   document.getElementById('btn-page-prev').addEventListener('click', () =>
     _showPage(window.SearchState.currentPage - 1));
@@ -212,6 +242,32 @@ function initPageNav() {
   document.getElementById('btn-zoom-reset')?.addEventListener('click', resetPreviewView);
   document.getElementById('btn-match-prev')?.addEventListener('click', () => _gotoMatch(_matchIdx - 1));
   document.getElementById('btn-match-next')?.addEventListener('click', () => _gotoMatch(_matchIdx + 1));
+
+  // Find-in-document input: debounced live search; Enter steps to the next match (Shift+Enter previous)
+  // once a term is matched, Esc clears. stopPropagation on the nav keys so the list's ↑/↓ doc-cycling
+  // and other global shortcuts don't fire while the operator is typing in the box.
+  const findInput = document.getElementById('inp-find-doc');
+  if (findInput) {
+    findInput.addEventListener('input', () => {
+      clearTimeout(_findTimer);
+      const v = findInput.value;
+      _findTimer = setTimeout(() => runDocFind(v), 220);
+    });
+    findInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault(); e.stopPropagation();
+        clearTimeout(_findTimer);
+        const v = findInput.value.trim();
+        if (_matches.length && v === _findTerm) _gotoMatch(_matchIdx + (e.shiftKey ? -1 : 1));
+        else runDocFind(v);
+      } else if (e.key === 'Escape') {
+        e.stopPropagation();
+        findInput.value = ''; runDocFind('');
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.stopPropagation();   // let the caret move / don't cycle documents while typing
+      }
+    });
+  }
 
   const img  = document.getElementById('preview-img');
   const area = document.getElementById('preview-img-area');
@@ -260,6 +316,7 @@ async function selectDoc(doc) {
   wrap.style.display = 'none';
   ph.style.display   = '';
   ph.innerHTML       = '<div class="spinner"></div>';
+  ph.classList.remove('xlsx-ph');            // drop any prior spreadsheet-grid layout override
   resetPreviewView();                        // each new document opens at 100%, un-panned
   _clearMatches();                           // drop the previous doc's search highlights
 
@@ -288,19 +345,31 @@ async function selectDoc(doc) {
 
     if (s.currentPages.length > 0) {
       _showPage(0);
+      // Seed the Find-in-document box with the active list term, so what's highlighted matches the box
+      // (and the operator can edit it to search within this doc). Empty when opened without a search.
+      const q = s.query || '';
+      const findInput = document.getElementById('inp-find-doc');
+      if (findInput) { findInput.value = q; findInput.classList.remove('no-match'); }
       // Jump to / highlight the active search term (born-digital PDFs; best-effort, staleness-guarded).
-      const q = s.query;
       if (q) {
         try {
           const res = await window.docusnap.findInDocument(doc.id, q);
           if (s.selectedDoc !== mine) return;    // a newer selection now owns the pane
+          _findTerm = q;
           _matches = (res && Array.isArray(res.matches)) ? res.matches : [];
-          if (_matches.length) _gotoMatch(0); else _updateMatchNav();
+          if (_matches.length) _gotoMatch(0); else { _updateMatchNav(); if (findInput) findInput.classList.add('no-match'); }
         } catch { _clearMatches(); }
       }
     } else {
-      ph.style.display = '';
-      ph.innerHTML = 'No preview available';
+      // No image pages. An .xlsx has no rendered page but we CAN show its cells (route 1, dependency-
+      // free grid). Anything else keeps the honest "no preview" note.
+      const shown = await _tryRenderSpreadsheet(merged, ph);
+      if (s.selectedDoc !== mine) return;
+      if (!shown) {
+        ph.style.display = '';
+        ph.classList.remove('xlsx-ph');
+        ph.innerHTML = 'No preview available';
+      }
       document.getElementById('page-nav').style.display = 'none';
     }
     // Stamped/original toggle (Workflow+Stamping redesign): shows when the doc carries ≥1 stamp and
@@ -333,6 +402,58 @@ function _showPreviewLoadError(ph, doc, err) {
   document.getElementById('page-nav').style.display = 'none';
   const retry = ph.querySelector('.pe-retry');
   if (retry) retry.addEventListener('click', () => selectDoc(doc));
+}
+
+// ── Spreadsheet (.xlsx) grid preview ────────────────────────────────────────────
+// A dependency-free cell grid for a Quick File .xlsx (route 1, 2026-09-13): the backend parses the
+// workbook into capped rows; here we draw it as a scrollable table with column letters + row numbers,
+// and a tab per sheet. Values only (no number-format/style fidelity) — enough to read the data.
+function _colLetter(i) { let s = ''; i++; while (i > 0) { const r = (i - 1) % 26; s = String.fromCharCode(65 + r) + s; i = Math.floor((i - 1) / 26); } return s; }
+
+function _sheetTableHtml(sheet) {
+  const rows = sheet.rows || [];
+  const width = rows.reduce((w, r) => Math.max(w, r.length), 0);
+  let h = '<table class="xlsx-table"><tbody>';
+  h += '<tr><td class="xlsx-corner"></td>';
+  for (let c = 0; c < width; c++) h += `<td class="xlsx-colhdr">${_colLetter(c)}</td>`;
+  h += '</tr>';
+  for (let ri = 0; ri < rows.length; ri++) {
+    h += `<tr><td class="xlsx-rownum">${ri + 1}</td>`;
+    for (let c = 0; c < width; c++) h += `<td>${escHtml(rows[ri][c] || '')}</td>`;
+    h += '</tr>';
+  }
+  h += '</tbody></table>';
+  return h;
+}
+
+async function _tryRenderSpreadsheet(doc, ph) {
+  const fn = doc.original_filename || doc.stored_filename || '';
+  if (!/\.xlsx$/i.test(fn)) return false;           // grid preview is xlsx-only
+  let grid = null;
+  try { grid = await window.docusnap.getSpreadsheetGrid(doc.id); } catch { return false; }
+  if (window.SearchState.selectedDoc !== doc) return true;   // a newer selection owns the pane
+  if (!grid || !Array.isArray(grid.sheets) || !grid.sheets.length) return false;
+  const multi = grid.sheets.length > 1;
+  const tabs = multi
+    ? `<div class="xlsx-tabs">${grid.sheets.map((s, i) =>
+        `<button type="button" class="xlsx-tab${i === 0 ? ' active' : ''}" data-sheet="${i}">${escHtml(s.name)}</button>`).join('')}</div>`
+    : '';
+  const panels = grid.sheets.map((s, i) =>
+    `<div class="xlsx-scroll" data-sheet="${i}"${i === 0 ? '' : ' hidden'}>${_sheetTableHtml(s)}</div>`).join('');
+  const note = grid.truncated
+    ? '<div class="xlsx-note">Large spreadsheet — showing the first rows and columns. Open the file to see everything.</div>'
+    : '';
+  ph.style.display = '';
+  ph.classList.add('xlsx-ph');
+  ph.innerHTML = `<div class="xlsx-preview">${tabs}<div class="xlsx-body">${panels}</div>${note}</div>`;
+  if (multi) {
+    ph.querySelectorAll('.xlsx-tab').forEach((btn) => btn.addEventListener('click', () => {
+      const idx = btn.dataset.sheet;
+      ph.querySelectorAll('.xlsx-tab').forEach((b) => b.classList.toggle('active', b === btn));
+      ph.querySelectorAll('.xlsx-scroll').forEach((p) => { p.hidden = p.dataset.sheet !== idx; });
+    }));
+  }
+  return true;
 }
 
 window.SearchPreview = { selectDoc, renderPreviewFields, initPageNav };

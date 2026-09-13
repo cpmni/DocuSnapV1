@@ -296,4 +296,29 @@ function findInDocument(db, { docId, folderPath, filename, query }, deps) {
   });
 }
 
-module.exports = { getDocumentDetail, getDocumentPages, getThumbnail, findInDocument, resolveDocFile: _resolveDocFile };
+/**
+ * Parse an .xlsx document into a capped cell GRID for a lightweight, dependency-free preview
+ * (route 1 of the 2026-09-13 spreadsheet-preview decision — no external converter). Returns
+ * { sheets:[{name, rows:string[][]}], truncated } or null when the file isn't a readable .xlsx
+ * (legacy .xls / .ods are a different container → null; caller keeps its "no preview" fallback).
+ * Same SERVER-SIDE file resolution as getDocumentPages. Values only — no number-format/style fidelity.
+ *
+ * @param {object} db
+ * @param {object} args { docId, folderPath, filename }
+ * @param {object} deps { fs, path, log? }
+ * @returns {{sheets:Array, truncated:boolean}|null}
+ */
+function getSpreadsheetGrid(db, { docId, folderPath, filename }, deps) {
+  const { fs, path } = deps;
+  const log = deps.log || console.log;
+  if (!folderPath || !filename) return null;
+  const filePath = _resolveDocFile(db, { docId, folderPath, filename }, deps);
+  if (!filePath) return null;
+  if (path.extname(filePath).toLowerCase() !== '.xlsx') return null;   // OOXML spreadsheet only
+  let buf;
+  try { buf = fs.readFileSync(filePath); } catch (e) { log(`[grid] read failed for ${filePath}: ${e.message}`); return null; }
+  try { return require('../lib/ooxmlGrid').extractGrid(buf); }
+  catch (e) { log(`[grid] parse failed for ${filePath}: ${e.message}`); return null; }
+}
+
+module.exports = { getDocumentDetail, getDocumentPages, getThumbnail, findInDocument, getSpreadsheetGrid, resolveDocFile: _resolveDocFile };
