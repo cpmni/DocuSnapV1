@@ -562,4 +562,13 @@ async function _tryRenderSpreadsheet(doc, ph) {
   return true;
 }
 
-window.SearchPreview = { selectDoc, renderPreviewFields, initPageNav };
+// Open a document by id from OUTSIDE the list (a Home "recently filed" hand-over, a goto-doc push): leave the
+// bin / mailbox views first (card 2), then select it as a bare {id} — selectDoc fetches the rest.
+function openDocById(id) {
+  if (window.SearchQuery && window.SearchQuery.exitSpecialViews && window.SearchQuery.exitSpecialViews()) {
+    window.SearchQuery.doSearch();   // the bin / mailbox rows were in the pane — refill it with the real results
+  }
+  return selectDoc({ id: Number(id) });
+}
+
+window.SearchPreview = { selectDoc, renderPreviewFields, initPageNav, openDocById };

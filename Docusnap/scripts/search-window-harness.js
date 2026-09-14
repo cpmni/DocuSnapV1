@@ -88,7 +88,8 @@ if (CLIENT) {
   const gated = (json) => (WF ? ok(json) : { status: 402, json: { error: 'not licensed' } });
   stub('client-wf-list', (view) => gated({ routes: view === 'inbox' ? [ROUTE] : [] }));
   stub('client-wf-recipients', () => gated({ recipients: RECIPIENTS }));
-  stub('client-wf-can-stamp', () => gated({ canStamp: true }));
+  let _cCanCalls = 0;
+  stub('client-wf-can-stamp', () => gated({ canStamp: ++_cCanCalls > 1 }));   // granted after the window opened (card 4)
   stub('client-wf-stamp-types', () => gated({ stampTypes: STAMP_TYPES }));
   stub('client-wf-stamp-list', () => gated({ stamps: [] }));
   stub('client-wf-stamped-doc', () => gated({ pages: [] }));
@@ -106,13 +107,19 @@ if (CLIENT) {
   stub('client-spreadsheet', (id) => (LITE ? notFound : ok({ grid: Number(id) === 2 ? { sheets: [{ name: 'Sheet1', rows: [['Item', 'Qty'], ['Bolt', '12']] }], truncated: false } : null })));
   stub('client-recycle-delete', () => ok({ ok: true }));
   stub('client-recycle-restore', () => ok({ ok: true }));
-  stub('client-recycle-purge', () => ok({ ok: true }));
+  stub('client-recycle-purge', (id) => { const i = DELETED.findIndex(d => d.id === Number(id)); if (i >= 0) DELETED.splice(i, 1); return ok({ ok: true }); });
   stub('client-recycle-purge-all', () => ok({ ok: true }));
   stub('client-retry-connection', () => ({ ok: true }));
 } else {
 stub('get-all-doc-types', () => DOC_TYPES);
 stub('search-documents', () => ({ confirmed: ROWS.confirmed, uncommitted: ROWS.uncommitted }));
 stub('get-deleted-queue', () => DELETED);
+// Bin mutations (the drive purges the selected deleted doc from the rail — card 2).
+stub('delete-document', () => true);
+stub('restore-document', () => true);
+stub('purge-document', (id) => { const i = DELETED.findIndex(d => d.id === Number(id)); if (i >= 0) DELETED.splice(i, 1); return true; });
+stub('purge-all-deleted', () => { const n = DELETED.length; DELETED.length = 0; return { purged: n }; });
+stub('restore-all-deleted', () => ({ restored: 0 }));
 stub('get-document-detail', (id) => { const r = byId(id); return r ? { ...r, extractions: [{ field_key: 'total_amount', display_value: '£120.00', confidence: 95, validation_note: null }] } : null; });
 stub('get-document-page', (id, idx, scale) => { const r = byId(id); return (r && /\.pdf$/i.test(r.original_filename)) ? PNG : null; });
 stub('get-document-page-count', (id) => (Number(id) === 3 ? 2 : (byId(id) && byId(id).page_count) || null));
@@ -122,7 +129,9 @@ stub('get-spreadsheet-grid', (id) => (Number(id) === 2 ? { sheets: [{ name: 'She
 stub('get-document-thumbnail', () => PNG);
 stub('get-entitlement', () => ENT);
 stub('auth-get-current-user', () => ({ id: 1, username: 'harness', role: 'admin' }));
-stub('stamp-can', () => ({ canStamp: WF }));
+// The stamp permission is GRANTED after the window opened (card 4): the init read says no, the popup's re-read yes.
+let _canCalls = 0;
+stub('stamp-can', () => ({ canStamp: WF && ++_canCalls > 1 }));
 stub('stamp-list', () => []);
 // S4 workflow + stamps over the desktop bridge (only reached with --workflow; the preload sends payload objects).
 stub('workflow-inbox', () => [ROUTE]);
@@ -189,7 +198,7 @@ const DRIVE = `(async () => {
   }
   if (CLIENT) ok('actions (client, admin, confirmed): Delete only — no Explorer / Open File / Print / Send back', (() => { const b = btns(); return b.some(t => t === 'Delete') && !b.some(t => /Explorer|Open File|Print|Send back|Edit in Review/.test(t)); })());
   else ok('actions (admin, confirmed, has_file): Send back + Explorer + Open File + Print + Delete', (() => { const b = btns(); return ['Send back to Review', 'Open in Explorer', 'Open File', 'Print', 'Delete'].every(x => b.some(t => t.includes(x))); })());
-  if (WF) ok('actions (workflow): the ONE "Send or stamp…" front door is offered', await until(() => btns().some(t => /Send or stamp/.test(t))));
+  if (WF) ok('actions (workflow): the ONE front door is offered — "✉ Send…" while the stamp permission is not yet known', await until(() => btns().some(t => /Send…/.test(t))));
   else ok('actions: no Stamp button when stamp.can says no + no workflow', !btns().some(t => /stamp|Send…/i.test(t)));
   ok('status chip reads Confirmed', ($('.ap-chip') || {}).textContent === 'Confirmed');
 
@@ -230,6 +239,17 @@ const DRIVE = `(async () => {
   click($('.result-item[data-id="9"]'));
   ok('bin: a deleted doc offers Restore + Delete permanently', await until(() => { const b = btns(); return b.some(t => t === 'Restore') && b.some(t => t.includes('Delete permanently')); }));
   ok('bin: the deleted row names its file', /old\\.pdf/.test($('.result-item[data-id="9"] .result-detail').textContent));
+  // card 2 (a): purging the SELECTED document from the rail clears the preview (no stale Restore button) —
+  // native confirm() would block the drive: answer it in-page.
+  window.confirm = () => true;
+  ok('bin: the deleted doc is selected + previewed', await until(() => !!$('.result-item[data-id="9"].active') && vis($('#preview-doc'))));
+  click($('#rail-delete'));   // = "Delete permanently" in the bin
+  ok('bin: after the purge the preview is CLEARED (no ghost Restore)', await until(() => vis($('#preview-empty')) && !vis($('#preview-doc')) && !window.SearchState.selectedDoc));
+  // card 2 (b): a search term arriving from outside (Home / Quick-find) while in the BIN leaves the bin first.
+  window.SearchQuery.setQuery('inv');
+  ok('deep-link: setQuery() exits the bin view and searches the real results', await until(() => !window.SearchState.binMode && $$('.result-item').length === 3 && !$$('.section-header').some(h => /RECYCLE BIN/.test(h.textContent)) && /Recycle bin/.test($('#btn-recycle').textContent)));
+  click($('#btn-recycle'));
+  await until(() => $$('.section-header').some(h => /RECYCLE BIN/.test(h.textContent)) || /recycle bin is empty/i.test($('#results-empty').textContent));
   click($('#btn-recycle'));
   ok('bin: back to the search results', await until(() => $$('.result-item').length === 3 && !$$('.section-header').some(h => /RECYCLE BIN/.test(h.textContent))));
   ok('re-render: the unconfirmed row still shows its confidence pip after the bin round-trip', !!$('.result-item[data-id="3"] .result-conf'));
@@ -244,10 +264,13 @@ const DRIVE = `(async () => {
     // 10 — the shared workflow / stamp / mailbox modules (S4) — identical screen on core and client.
     ok('workflow: body carries workflow-on', document.body.classList.contains('workflow-on'));
     click($('.result-item[data-id="1"]'));
-    await until(() => btns().some(t => /Send or stamp/.test(t)));
-    click($$('#preview-actions button').find(b => /Send or stamp/.test(b.textContent)));
-    ok('popup: "Send or stamp" opens', await until(() => { const p = $('#stamp-popup'); return !!p && p.style.display !== 'none'; }));
-    ok('popup: one stamp chip from stamp.types (APPROVED)', await until(() => $$('#sp-panel-stamp .stamp-chip[data-id]').length === 1));
+    await until(() => btns().some(t => /Send…|Send or stamp/.test(t)));
+    click($$('#preview-actions button').find(b => /Send…|Send or stamp/.test(b.textContent)));
+    ok('popup: opens', await until(() => { const p = $('#stamp-popup'); return !!p && p.style.display !== 'none'; }));
+    // card 4: the permission granted AFTER the window opened is re-read when the popup opens → the Stamp tab
+    // appears and the action button relabels to the two-way front door.
+    ok('popup: re-asks stamp.can on open → the Stamp panel renders (one APPROVED chip)', await until(() => $$('#sp-panel-stamp .stamp-chip[data-id]').length === 1));
+    ok('popup: the action button relabelled to "Send or stamp…" without reopening the window', await until(() => btns().some(t => /Send or stamp/.test(t))));
     if (CLIENT) ok('popup (client): "+ New stamp" hidden (caps.stampCreate — types are created on the core PC)', !$('#sp-panel-stamp .stamp-chip.new'));
     else ok('popup (core): "+ New stamp" offered', !!$('#sp-panel-stamp .stamp-chip.new'));
     click($('#stamp-popup [data-mode="send"]'));
@@ -265,8 +288,21 @@ const DRIVE = `(async () => {
     click($$('#preview-actions button').find(b => /Send or stamp/.test(b.textContent)));
     ok('popup: "waiting on you" shows Approve + Reject for the route addressed to me', await until(() => { const w = $('#sp-waiting'); return !!w && !w.hidden && !!$('#sp-w-approve') && !!$('#sp-w-reject'); }));
     click($('#stamp-popup .sp-x'));
-    click($('#btn-mailbox'));
-    ok('mailbox: back to the search results', await until(() => !document.body.classList.contains('mailbox-mode') && $$('.result-item').length === 3));
+    // card 6: a READ-ONLY colleague with a route addressed to them still gets the front door ("Waiting on you…")
+    // and a popup that is the waiting panel only (no stamp / send panels).
+    { const s = window.SearchState; const saved = { role: s.role, canStamp: s.canStamp, can: window.SearchTransport.stamp.can };
+      s.role = 'readonly'; s.canStamp = false;
+      window.SearchTransport.stamp.can = async () => ({ canStamp: false });   // a read-only user really cannot stamp
+      window.SearchActions.renderActions(s.selectedDoc);
+      ok('read-only + a route addressed to me: the "Waiting on you…" front door is offered', btns().some(t => /Waiting on you/.test(t)) && !btns().some(t => /Send or stamp|Send…|Stamp…/.test(t)));
+      click($$('#preview-actions button').find(b => /Waiting on you/.test(b.textContent)));
+      ok('read-only popup: title "Waiting on you", the Got it / Approve controls shown, stamp + send panels hidden',
+         await until(() => $('#sp-title').textContent === 'Waiting on you' && !$('#sp-waiting').hidden && ($('#sp-w-approve') || $('#sp-w-ack')) && $('#sp-panel-stamp').hidden && $('#sp-panel-send').hidden));
+      click($('#stamp-popup .sp-x'));
+      s.role = saved.role; s.canStamp = saved.canStamp; window.SearchTransport.stamp.can = saved.can; window.SearchActions.renderActions(s.selectedDoc); }
+    // card 2 (b): a hand-over from outside leaves the MAILBOX view too (openDocById / setQuery).
+    window.SearchPreview.openDocById(1);
+    ok('deep-link: openDocById() exits the mailbox view + previews the doc', await until(() => !document.body.classList.contains('mailbox-mode') && window.SearchState.selectedDoc && window.SearchState.selectedDoc.id === 1 && $$('.result-item').length === 3));
   }
 
   if (CLIENT) {

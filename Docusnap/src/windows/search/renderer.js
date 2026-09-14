@@ -32,11 +32,9 @@ window.initHelpMode?.('help-mode-toggle', {
   'help-mode':   'Help mode: click any control to see what it does. Press Esc to leave.',
 });
 
-// If Search is ALREADY open when Quick-find fires, fill the full-text box + re-run live.
-window.docusnap.onSearchSetQuery?.((q) => {
-  const el = document.getElementById('inp-fulltext');
-  if (el) { el.value = q || ''; window.SearchQuery.doSearch(); }
-});
+// If Search is ALREADY open when Quick-find fires, fill the full-text box + re-run live (leaving the bin /
+// mailbox views first — the shared entry point does that).
+window.docusnap.onSearchSetQuery?.((q) => { window.SearchQuery.setQuery(q); });
 
 // If Search is ALREADY open when a "go to view" deep-link fires (Home Open Mailbox).
 window.docusnap.onSearchGoto?.((v) => {

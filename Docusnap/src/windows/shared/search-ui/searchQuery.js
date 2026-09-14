@@ -168,4 +168,24 @@ function toggleBin() {
   doSearch();
 }
 
-window.SearchQuery = { doSearch, initInputs, toggleBin };
+// Leave any special view (the recycle bin, the mailbox) so a search or a deep-link lands on plain results.
+// Chris 2026-09-14 card 2: a Home hand-over that arrived while the window sat in the bin searched the
+// DELETED queue — "The recycle bin is empty" beside "Pelican 0 / 0". No search or hand-over may inherit
+// a special view.
+function exitSpecialViews() {
+  let changed = false;
+  if (window.SearchState && window.SearchState.binMode) { _setBin(false); changed = true; }
+  if (window.SearchMailbox && typeof window.SearchMailbox.close === 'function' && document.body.classList.contains('mailbox-mode')) { window.SearchMailbox.close(); changed = true; }
+  return changed;   // true = the results pane must be re-filled by the caller (a search)
+}
+
+// The ONE entry point for an externally-supplied search term (the core's Quick-find deep-link, the client's
+// Home search box / live push): exits the bin + mailbox views, fills the box, runs the search.
+function setQuery(q) {
+  exitSpecialViews();
+  const el = document.getElementById('inp-fulltext');
+  if (el) el.value = q || '';
+  return doSearch();
+}
+
+window.SearchQuery = { doSearch, initInputs, toggleBin, setQuery, exitSpecialViews };

@@ -19,11 +19,9 @@
   });
 
   // ── Live deep-links while this window is already open ─────────────────────────────
-  api.onSearchSetQuery?.((q) => {
-    const el = $('inp-fulltext');
-    if (el) { el.value = q || ''; window.SearchQuery.doSearch(); }
-  });
-  api.onSearchGotoDoc?.((id) => { if (id != null) window.SearchPreview.selectDoc({ id: Number(id) }); });
+  // Both go through the shared entry points, which leave the bin / mailbox views first (card 2).
+  api.onSearchSetQuery?.((q) => { window.SearchQuery.setQuery(q); });
+  api.onSearchGotoDoc?.((id) => { if (id != null) window.SearchPreview.openDocById(id); });
 
   // ── Toast (the shared stamp/send popup reports through SearchState.toast when the host provides one) ──
   window.SearchState.toast = (msg) => {
@@ -50,7 +48,7 @@
         const note = $('popout-note');
         if (note) note.classList.toggle('show', !!info.serverBehind);
       } catch { /* caps stay conservative */ }
-      if (target && target.docId != null) window.SearchPreview.selectDoc({ id: Number(target.docId) });
+      if (target && target.docId != null) window.SearchPreview.openDocById(target.docId);
     },
   });
 })();

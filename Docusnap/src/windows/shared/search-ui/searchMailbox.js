@@ -173,4 +173,12 @@ window.SearchMailbox = {
     if (!window.SearchState.workflowEntitled) return;
     if (!_active) toggle();
   },
+  // Leave the mailbox view without re-running the search (the caller does that) — set-false, never a toggle.
+  close() {
+    if (!_active) return;
+    _active = false;
+    document.body.classList.remove('mailbox-mode');
+    const tabs = document.getElementById('mailbox-tabs'); if (tabs) tabs.style.display = 'none';
+    const btn = document.getElementById('btn-mailbox'); if (btn) btn.textContent = 'Mailbox';
+  },
 };

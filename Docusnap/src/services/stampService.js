@@ -159,9 +159,13 @@ function createStampService(deps = {}) {
 
   // History for a document — path-stripped (Oracle condition 8: never expose artifact_path).
   function stampsForDocument(db, documentId) {
+    // placedByName: the stamper's DISPLAY name (Chris 2026-09-14 card 7 — the history printed the raw username);
+    // resolved live from the users table, falling back to the username snapshot when the account is gone.
+    const nameOf = (uid) => { try { const u = uid != null && db.prepare('SELECT display_name FROM users WHERE id = ?').get(uid); return (u && u.display_name) || null; } catch { return null; } };
     return stampsDb.listStampEventsForDoc(db, documentId).map(e => ({
       id: e.id, label: e.type_label_snapshot, color: e.type_color_snapshot,
-      placedBy: e.placed_by_username_snapshot, placedAt: e.placed_at, note: e.note,
+      placedBy: e.placed_by_username_snapshot, placedByName: nameOf(e.placed_by_user_id) || e.placed_by_username_snapshot,
+      placedAt: e.placed_at, note: e.note,
       routeId: e.route_id, hasArtifact: !!(e.artifact_path && fs.existsSync(e.artifact_path)),
     }));
   }

@@ -15,7 +15,17 @@
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const toast = (msg) => { try { window.SearchState && window.SearchState.toast ? window.SearchState.toast(msg) : console.log(msg); } catch { /* noop */ } };
-  const _fmtDT = (iso) => String(iso || '').slice(0, 16).replace('T', ' ');   // ISO → "YYYY-MM-DD HH:MM"
+  // A timestamp as the user reads it: LOCAL time, DD-MM-YYYY HH:MM (Chris 2026-09-14 card 7 — the history printed
+  // the UTC hour of the ISO string, one hour off the stamp on the page, in Y-M-D). SQLite "YYYY-MM-DD HH:MM:SS"
+  // (no zone) is UTC too → parsed as such; anything unparseable prints as it came.
+  const _fmtDT = (iso) => {
+    const s = String(iso || '').trim(); if (!s) return '';
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(Z|[+-]\d{2}:?\d{2})?$/);
+    const d = m && !m[7] ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0))) : new Date(s);
+    if (isNaN(d.getTime())) return s.slice(0, 16).replace('T', ' ');
+    const p = (n) => String(n).padStart(2, '0');
+    return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
 
   // ── one-time CSS (CSP allows inline styles) ─────────────────────────────────
   function _css() {
@@ -118,13 +128,23 @@
     _doc = doc;
     const el = _ensure();
     el.querySelector('#sp-sub').textContent = `${doc.supplier_name || 'Document'} — ${doc.reference_number || doc.type_name || ''}`;
+    // Re-ask the stamp permission NOW (Chris 2026-09-14 card 4: "Can stamp" granted in Settings did not reach a
+    // window that was already open — canStamp was read once at init). A change re-labels the action button too.
+    if (_cap('stamps')) {
+      const before = !!S().canStamp;
+      try { S().canStamp = !!(await T().stamp.can()).canStamp; } catch { /* keep the init value */ }
+      if (!!S().canStamp !== before && window.SearchActions && S().selectedDoc) { try { window.SearchActions.renderActions(S().selectedDoc); } catch {} }
+    }
     const canStamp = !!S().canStamp;
     const canSend = !!S().workflowEntitled && (S().role === 'admin' || S().role === 'edit');
     el.querySelector('[data-mode="stamp"]').style.display = canStamp ? '' : 'none';
     el.querySelector('[data-mode="send"]').style.display = canSend ? '' : 'none';
     el.querySelector('#sp-seg').style.display = (canStamp && canSend) ? '' : 'none';
-    el.querySelector('#sp-title').textContent = canStamp && canSend ? 'Send or stamp' : (canStamp ? 'Stamp this document' : 'Send this document');
+    // Neither stamp nor send (a read-only user opened it for a route addressed to them): the popup is the
+    // "waiting on you" panel + history only (card 6).
+    el.querySelector('#sp-title').textContent = canStamp && canSend ? 'Send or stamp' : canStamp ? 'Stamp this document' : canSend ? 'Send this document' : 'Waiting on you';
     _mode(canStamp ? 'stamp' : 'send');
+    if (!canStamp && !canSend) { el.querySelector('#sp-panel-stamp').hidden = true; el.querySelector('#sp-panel-send').hidden = true; }
     el.style.display = '';
     _renderWaiting(); _renderStamp(); _renderSend(); _renderHistory();
   }
@@ -404,7 +424,7 @@
     try {
       // stamp.list is oldest-first = placement order, so the index is the stamp's number on the doc.
       (await T().stamp.list(_doc.id)).forEach((st, i) =>
-        rows.push({ seq: i + 1, at: st.placedAt, who: st.placedBy, label: st.label, color: st.color, note: st.note }));
+        rows.push({ seq: i + 1, at: st.placedAt, who: st.placedByName || st.placedBy, label: st.label, color: st.color, note: st.note }));
     } catch { /* */ }
     if (S().workflowEntitled && _cap('workflowHistory')) {
       try { (await T().workflow.docHistory(_doc.id) || []).forEach(h => rows.push({ at: h.resolved_at || h.created_at, who: h.actor_username || h.from_username, label: (h.state || '').toUpperCase(), color: 'var(--muted)', note: h.resolution_comment || h.comment })); } catch { /* */ }

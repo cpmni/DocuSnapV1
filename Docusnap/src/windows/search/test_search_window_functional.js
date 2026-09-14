@@ -58,7 +58,9 @@ check('get-spreadsheet-grid (2) — the xlsx grid', has('get-spreadsheet-grid', 
 check('get-deleted-queue — the bin read', has('get-deleted-queue'));
 check('get-document-thumbnail (id, null, null) — the row thumbnails through the transport twin', has('get-document-thumbnail', a => a.length === 3 && a[1] === null && a[2] === null));
 check('get-setting keep_processed_originals is read lazily at most once (purge suffix)', calls.filter(([c, a]) => c === 'get-setting' && a[0] === 'keep_processed_originals').length <= 1);
-check('the first-paint re-decoration is NOT a second search: search-documents ran exactly twice (initial + back-from-bin)', calls.filter(([c]) => c === 'search-documents').length === 2);
+// The drive's searches: the initial one · setQuery() after the bin purge (card 2b) · back-from-bin at the end = 3.
+// The first-paint re-decoration must NOT add one (a re-render of the last result set, never a fetch).
+check('the first-paint re-decoration is NOT a second search: search-documents ran exactly 3 times (initial + setQuery + back-from-bin)', calls.filter(([c]) => c === 'search-documents').length === 3);
 
 console.log('S4 — the shared workflow / mailbox / stamp modules on the core (harness --workflow)');
 {

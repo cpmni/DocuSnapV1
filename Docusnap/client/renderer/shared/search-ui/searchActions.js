@@ -117,9 +117,14 @@ function renderActions(doc) {
   //       The popup module is optional (a transport without it simply has no button — never a dead click).
   const canStampNow = !!(window.SearchState && window.SearchState.canStamp);
   const canSendNow  = !!(window.SearchState && window.SearchState.workflowEntitled) && canEdit;
-  if ((canStampNow || canSendNow) && window.SearchStamp && doc.status !== 'deleted' && doc.status !== 'error') {
+  // A route addressed to ME on this document (SearchWorkflow.refresh keeps the map): the popup's "waiting on
+  // you" panel is the ONLY way to Approve / Reject / "Got it" here — so the front door must exist even for a
+  // user who can neither stamp nor send (a READ-ONLY colleague sent a for-information item; Chris 2026-09-14
+  // card 6: "awaiting your decision with nothing to decide").
+  const waitingOnMe = !!(window.SearchState && window.SearchState.workflowEntitled && window.SearchState.myOpenRoutes && window.SearchState.myOpenRoutes[doc.id]);
+  if ((canStampNow || canSendNow || waitingOnMe) && window.SearchStamp && doc.status !== 'deleted' && doc.status !== 'error') {
     const wfSection = _section('Approvals & stamps');
-    const label = (canStampNow && canSendNow) ? '🏷 Send or stamp…' : (canStampNow ? '🏷 Stamp…' : '✉ Send…');
+    const label = (canStampNow && canSendNow) ? '🏷 Send or stamp…' : canStampNow ? '🏷 Stamp…' : canSendNow ? '✉ Send…' : '✉ Waiting on you…';
     _btn(wfSection, label, () => { try { window.SearchStamp && window.SearchStamp.open(doc); } catch (e) { console.error('open stamp popup:', e); } }, true);
     panel.appendChild(wfSection);
   }

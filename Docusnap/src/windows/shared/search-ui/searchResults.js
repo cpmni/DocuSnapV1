@@ -297,6 +297,15 @@ async function _act(kind) {
              : window.SearchTransport.purgeDocument;
   try { for (const id of ids) await call(id); } catch (e) { console.error(`${kind} failed:`, e); }
   _sel().clear();
+  // The acted-on document must never linger in the preview with now-stale actions (Chris 2026-09-14 card 2:
+  // a PURGED document kept a live Restore button on the client, which has no bin-changed push to clear it —
+  // the core's push only masked the same gap). Same idiom as the action panel's _afterChange.
+  const cur = window.SearchState.selectedDoc;
+  if (cur && ids.includes(cur.id)) {
+    window.SearchState.selectedDoc = null;
+    const pe = document.getElementById('preview-empty'); if (pe) pe.style.display = '';
+    const pd = document.getElementById('preview-doc');  if (pd) pd.style.display = 'none';
+  }
   if (window.SearchQuery) window.SearchQuery.doSearch();
 }
 
