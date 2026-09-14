@@ -189,3 +189,25 @@ Sandbox conditions: fresh migrated DB (0 users → first-admin), Demo Docs copie
 ### Not testable in this sandbox: the search-client's OWN Teach button (no client app connected — the owner is wiring one next) and the full approval hand-off (only one user).
 
 ### Humility: one simulated office manager, not a user test; clumsy box-drawing was Chris's automation limit (the read-back caught it every time); only sample docs used. All findings are for the owner to vet — nothing implemented without the owner's go.
+
+---
+
+## Round — 2026-09-14 EVENING #2 (teach-over-client S3 on the ACTUAL search CLIENT; client CDP 9224 → sandbox core 9223, API 127.0.0.1:8765)
+
+Setup: the sandbox core's /v1 API enabled on loopback + teach_over_client_enabled on; a detached search-client app connected to it (🟢 Connected · API v1.7.0); admin `chris` / `Chris-Test-9`; 12 Northgate invoices in the core's review queue.
+
+### RESULT: **the client teach works END-TO-END, live.** Chris signed in on the client, clicked the sidebar **Teach**, taught a Northgate invoice from the MAIN PC's queue (create/pick type → draw + read-back each field → the fixed-value "Save without a spot" Document Issuer, the exact case that broke → Save). Done screen "✓ Your document is filed"; verified on the core — INV-87127 now **Confirmed** in Search, review queue **12→11**. The fixed-issuer path saved with no error/dialog. Verdict: a remote admin could teach from the client without help; would keep using.
+
+### Findings (all minor; queued for owner vet)
+1. **Review count doesn't update after "filed" until a manual Refresh — QUESTION (top friction).** Wizard said "filed" but the client sidebar still read "Review 12"; only Review→Refresh showed 11. Fix: refresh the client's review count when the teach window reports "filed".
+2. **Sidebar "Teach" label is vague — CONFUSION/PREFERENCE.** Reads like a tutorial. Proposed: "Teach a document" (+ a one-line hint).
+3. **Done screen says "filed" but not WHICH computer — QUESTION.** On a separate PC, say "filed on the main computer".
+4. **Doc-picker thumbnails are blank page icons — PREFERENCE.** Can't tell a clean scan from a crooked one (which it asks you to judge). Show page pictures like Search does.
+5. **Reference label read-back looked garbled ("Invoice No. IN") — QUESTION (value INV-87127 was correct).** Tidy the label read-back / don't sweep the value's first letters into the label.
+6. **"Save without a spot" wording is cryptic — PREFERENCE.** Proposed: "Keep it as typed (don't tie it to the page)".
+
+### Warnings truth-check (Save step): "Your document is filed" — TRUE (found in Search as Confirmed; queue dropped by one). No false alarms.
+
+### What worked: the read-back that SHOWS ITS WORK (typed "Northgate Textiles" → it drew a green box where it found it; each field read back with green value + blue label boxes before anything saved).
+
+### Humility: one simulated admin, once, on test data, driven by a script; only judged the screens walked through; didn't test a bad scan / network drop mid-save / two people teaching at once.
