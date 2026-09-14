@@ -3785,3 +3785,83 @@ shaken out (full in-container import proven; data → real %APPDATA%; `MSIX_SETU
 (gates the signed name-clean path — IV/individual leak the legal name), DB-at-rest decision, backend
 DocumentRoot=public + admin 2FA. Memory `project_predeployment_audit_20260907.md` + `project_source_protection_20260907.md`.
 
+
+## Archived from CLAUDE.md at the 2026-09-14 EVENING wrap (the 2026-09-14 MORNING LATEST block, verbatim)
+
+## ⏭ LATEST — 2026-09-14 MORNING (Chris cards 1-8 BUILT on the shared search screen + client; the parity arc S0-S4 shipped 2026-09-13):
+**READ `HANDOVER_2026-09-13_LATE.md` FIRST (its ADDENDUM 2 = the morning's card work).** Branch `feat/teach-side-overnight`;
+**HEAD = `18bd9a2` (the DATE FORMS slice) + the docs commit; origin CURRENT (all pushed).** **TEST INSTALLERS (13:57, on
+`18bd9a2` = contract 1.6.0 + the date fix; supersede every earlier pair today — THE PAIR TO SHIP THE TEST CUSTOMER):** core
+`dist\ScanFinder Setup 2.0.0-r20260914-1254-18bd9a2-TEST.exe` (`npm run build:test` — all 51 DARK keys arm, incl. Quick File +
+Departments + mig 166 + mig 167; packaged smoke-boot identity testBuild:true + smoke-windows 14/14; the asar carries the wide
+`parseDate`, `_realDMY`, `_widenDatePatterns`, mig 167 + config `date_wide`) + client `client\dist\ScanFinder Search Client
+Setup 1.0.2-r20260914-1256-18bd9a2.exe`. (Previous pair `…-1159-99959c2-TEST.exe` / `…-1202-99959c2.exe` = superseded.)
+**NOTHING RUNNING at wrap** — every repo Electron
+(owner dev core + client + the night sandbox) was closed for the build and NOT relaunched (the owner installs the test
+core over the dev DB); relaunch recipe in the handover. The evening handover's resume plan ran END TO END (Oracle SIGN-OFF-W/COND `docs/oracle_log.md`
+2026-09-13; plan doc carries a binding AMENDMENTS box + per-slice status): **S0 `48fba8f`** the Search screen's JS →
+`src/windows/shared/search-ui/` (plain globals, IO only via `window.SearchTransport`; core adapter
+`src/windows/search/coreTransport.js` = pure pass-through; caps hide what a transport can't do; drift guards = committed
+generated client copy `client/renderer/shared/` + `scripts/sync-client-search.js` + hash pin, and
+`src/windows/shared/test_search_ui_no_direct_ipc.js`; a REAL-renderer harness `scripts/search-window-harness.js`) ·
+**S0b `ff9f92d`** markup + CSS shared (`searchMarkup.js` mounts DIRECT children of `#app` — no wrapper; `#app.outerHTML`
+byte-identical gate) · **S1 `d0fe6c6`** the client's search POP-OUT window (`client/renderer/search/`; theme/fonts/
+patterns synced; `client-current-user`; logout/main-close kill it; in-pane search = launcher) · **S2 `4d502fd`** four
+`/v1` preview reads, contract **1.2.0 → 1.3.0**, `client-find` never trips "Connection lost" · **S4 `d9cee32`** approvals
++ Send-or-stamp popup + Mailbox shared (owner live-test: "no workflow actions on the client") + client Quick File centred.
+**Extending:** edit ONLY the shared files → `node scripts/sync-client-search.js`; a new IO call → both adapters; a control
+the client can't back → `_cap()` + client cap false. **RUNNING:** core dev app `TEST_BUILD=1` + the client (relaunched on
+`d9cee32`) — **owner live test owed** (Search opens a window; workflow popup; Quick File centred; core unchanged).
+**NIGHT RUN (handover ADDENDUM + `NIGHT_RUN.md`):** pins **360/360 GREEN** (pdf_find.py into the compile gate's
+SPAWN_ENTRIES; count pins 49→50; activity-strip pin) · first-paint pips FIXED (`SearchResults.redecorate`) · the owner's
+"search window doesn't open" PROVEN OK on real core code (sandbox dev core + real client over CDP, 20/20; the look-alike =
+a stale session after a core restart → now says so, `5195bfa`) · Chris on both apps → `docs/CHRIS_FULL_APP_REVIEW_2026-09-14.md`
+(YES, 8 cards). **MORNING 2026-09-14 (owner: "Continue with Chris's fixes in the recommended order") — ALL 8 BUILT + PUSHED:**
+`0129053` card 1 (the `/v1` purge now removes the FILED copy + xml through the desktop's helper `review/handler.
+purgeDocumentFiles`; pin `test_v1_purge_files`) · `ff49223` cards 2/4/6/7 in the SHARED screen (a purge clears the preview;
+`SearchQuery.setQuery` / `SearchPreview.openDocById` = the deep-link entry points that leave the bin/mailbox first; the stamp
+popup re-reads `stamp.can()` on open; a read-only "Waiting on you…" door; local-time history + display name) · `0f58ecb`
+cards 3/5/8 client (Quick File lists the catalog presets as `new:<slug>` — `/v1` intake resolves it, admin only; "Awaiting
+others" counts open routes; window "ScanFinder Client" + `app.setName`). Pins 360/361 (the 1 red `test_ref_class_fix` =
+flaky under load, green alone) · `--smoke-windows` 14/14 · owner's core + client RESTARTED on this code. Outcomes table in
+the Chris doc. **LATER MORNING — item 3 BUILT (handover ADDENDUM 3): `/v1` contract 1.3.0 → 1.4.0** — the pop-out's last
+workflow bits: `GET /v1/workflow/documents/:id/{routes,history}`, `POST /v1/workflow/routes/:id/cancel`, `POST
+/v1/workflow/stamp-types` (each a one-to-one mirror of its desktop IPC: role gate + accessService + projection); client
+caps version AND role gated (`clientTransport.js refreshCaps`, `docRead` = a 404 is a hidden doc, cap kept); "View stamped
+copy" = an in-window overlay. FINDING: `searchWorkflow._provide` (inline History / routed banner / admin cancel) has been
+UNREACHABLE on BOTH apps since `9c50b93` (2026-08-28 popup redesign) → re-homed in the popup's Send panel (`searchStamp.js`);
+dead provider marked, tidy-up queued. Oracle SIGN-OFF-W/COND 2026-09-14, conditions built (OC2 actor rule for `recalled`;
+404 never strips a cap; an EDIT-role harness run; the gate). Pins 361/361, pop-out 365 over 5 harness runs (`--role edit`,
+`--server-contract 1.3.0`), `test_v1_workflow` end-to-end. Sandbox GONE. **MIDDAY — CONTENTS panel + viewer SPEED
+(handover ADDENDUM 4; contract 1.4.0 → 1.5.0):** the PDF's bookmarks in the Search sidebar (both apps; `render/pages.py
+--outline`, `previewService.getDocumentOutline`, `get-document-outline` IPC, `GET /v1/documents/:id/outline`, cap
+`outline`); MEASURED the viewer (`TESTING/_measure/viewer_speed_20260914/`: a Python spawn = 0.26-0.29 s fixed; PNG of a
+SCAN page at scale 3 = 0.84 s + 5 MB) → scan pages now JPEG via `--format auto` (`?fmt=auto`; vector pages stay PNG;
+Review/teach untouched): 1.3 s → 0.48 s, 5.6 MB → 1.2 MB; thumbnails capped at 2 in flight, LIFO, gone rows forgotten
+(pin `src/windows/shared/test_search_thumbs_queue.js`). Oracle SIGN-OFF-W/COND (conditions built: unavailable outline
+entries never dead; the queue rules; Python pin under BOTH interpreters). **AFTERNOON — `--page-info` + READ-AHEAD BUILT
+(handover ADDENDUM 5; contract 1.5.0 → 1.6.0):** ONE process for the first paint (page 1 + count + bookmarks —
+`pages.py --page-info`, `previewService.getDocumentPageInfo`, `get-document-page-info`, `GET /v1/documents/:id/page-info`,
+cap `pageInfo`) + the next 3 pages in one background batch (`searchPreview._prefetchAhead`, one batch per selection with an
+identity-guarded latch, a page reached mid-batch awaits it, the stamped⇄original swap guard, the file's count wins, the
+batch waits for the find on a searched doc). Oracle SIGN-OFF-W/COND C1-C5 built; harness `--race` run on both apps; exact
+call-count pins. The persistent render worker stays a LATER slice (`pendingfeatures.md`). **Then (ADDENDUM 6):** the importer
+refuses `.sf_separated_originals` / `.metadata` (`isAppManagedFolder`, pin) — the 34-blank-pages question CLOSED; the pop-out's
+remembered position is sanitised against the connected displays (`client/windowBounds.js` — an OFF-SCREEN restore was a
+second real "doesn't open" cause). **LATE AFTERNOON — DATE FORMS BUILT (ADDENDUM 7; mig 167 `date_forms_wide`,
+`TEST_SWITCH_KEYS` 51):** the test customer's "23rd Aug 2026" was refused at the desktop CONFIRM door (`filing/handler.js
+parseDate`) + the shared `validation_patterns.date`, never by the engine. ONE month-name rule everywhere (reggie → Oracle
+SIGN-OFF-W/COND, C1-C4 built): day (optional ordinal) · month name on its first three letters (trailing dot, "Sept") · 2- or
+4-digit year (pivot 69) · at most ONE of `, . / \ -` between the parts, letters⇄digits may be glued, digits→digits NEVER
+("Aug 2026" is not a date) · a leading day name dropped · a REAL calendar date only (JS `Date` rollover closed: "31/04/2026"
+refused). UNSWITCHED at the human doors (confirm door; Review `_matchStrictDate` via `_realDMY`; the badge AND the
+Quick-check grid through ONE helper `_widenDatePatterns`; Teach `_parsesAsDate`); DARK on the engine side (`validator.
+parse_date` `_wide_month_form`, `anchor._crop_is_credible`, `keyword._validate` + G4 merge config `date_wide` under env
+`DATE_FORMS_WIDE`; OFF byte-identical). Shared vectors `python_backend/tests/date_forms_vectors.json` read by the Python pin
+(both interpreters), `test_normalise_date_predicate` (57) and `test_validation_pattern_surfaces` (170 — the pure renderer
+functions are lifted from the source and RUN). Pins **363/363**. **The customer needs the new build.** ⚑ Engine-half flip
+gate (Oracle C5) in `pendingfeatures.md`. Still owed: mig 166 flip gate · the dead-provider tidy-up · the Oracle's
+non-blocking notes.
+Follow-ups: the /v1 purge fix, a `/v1` MINOR for the pop-out's hidden bits, client `npm run dist` in lockstep. Memory
+`project_client_search_parity_20260913.md`.
+
