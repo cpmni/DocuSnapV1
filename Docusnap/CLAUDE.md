@@ -54,8 +54,17 @@ popup re-reads `stamp.can()` on open; a read-only "Waiting on you…" door; loca
 cards 3/5/8 client (Quick File lists the catalog presets as `new:<slug>` — `/v1` intake resolves it, admin only; "Awaiting
 others" counts open routes; window "ScanFinder Client" + `app.setName`). Pins 360/361 (the 1 red `test_ref_class_fix` =
 flaky under load, green alone) · `--smoke-windows` 14/14 · owner's core + client RESTARTED on this code. Outcomes table in
-the Chris doc. Sandbox still running (core CDP 9223 · client 9226). Still owed: the `/v1` MINOR for the pop-out's hidden
-workflow bits · mig 166 flip gate · client `npm run dist` in lockstep (1.3.0) · the 34-blank-pages owner question.
+the Chris doc. **LATER MORNING — item 3 BUILT (handover ADDENDUM 3): `/v1` contract 1.3.0 → 1.4.0** — the pop-out's last
+workflow bits: `GET /v1/workflow/documents/:id/{routes,history}`, `POST /v1/workflow/routes/:id/cancel`, `POST
+/v1/workflow/stamp-types` (each a one-to-one mirror of its desktop IPC: role gate + accessService + projection); client
+caps version AND role gated (`clientTransport.js refreshCaps`, `docRead` = a 404 is a hidden doc, cap kept); "View stamped
+copy" = an in-window overlay. FINDING: `searchWorkflow._provide` (inline History / routed banner / admin cancel) has been
+UNREACHABLE on BOTH apps since `9c50b93` (2026-08-28 popup redesign) → re-homed in the popup's Send panel (`searchStamp.js`);
+dead provider marked, tidy-up queued. Oracle SIGN-OFF-W/COND 2026-09-14, conditions built (OC2 actor rule for `recalled`;
+404 never strips a cap; an EDIT-role harness run; the gate). Pins 361/361, pop-out 365 over 5 harness runs (`--role edit`,
+`--server-contract 1.3.0`), `test_v1_workflow` end-to-end. Sandbox GONE. Still owed: mig 166 flip gate · the dead-provider
+tidy-up · the Oracle's non-blocking notes · the owner's "content tables" meaning (PDF reader, `pendingfeatures.md`) · the
+34-blank-pages owner question.
 Follow-ups: the /v1 purge fix, a `/v1` MINOR for the pop-out's hidden bits, client `npm run dist` in lockstep. Memory
 `project_client_search_parity_20260913.md`.
 

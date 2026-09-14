@@ -71,6 +71,26 @@ the add-on off. (Design history: `memory/scanfinder-*` + the plan in `.claude/pl
   File intake `POST /v1/documents/intake` accepts `documentTypeId: "new:<slug>"` = a catalog PRESET set up on first
   use via `doctypes.addPresetTypes` (ADMIN only → 403 otherwise; idempotent — an already-present preset resolves to
   its id; unknown slug → 400 `unknown_type`), the same create-on-first-use the core's Quick File pane does.
+- **WORKFLOW BITS for the search pop-out (contract 1.3.0 → 1.4.0 MINOR, 2026-09-14)** — the four reads/writes the
+  pop-out lacked, each mirroring its desktop IPC twin in `src/modules/workflow/handler.js` (same role gate, same
+  accessService gate on the by-id seam — SEC-03, same projected shape, same service call); all under `/v1/workflow/*`
+  so the WORKFLOW_ROUTE entitlement + sub-seat gate applies: `GET …/workflow/documents/{id}/routes` → `{routes}` (OPEN
+  routes, admin/edit else 403, inaccessible doc 404; projected id/to_username/from_username/action_required/state/
+  created_at/version — no sender comment, no stamped_path), `GET …/workflow/documents/{id}/history` → `{history}`
+  (CLOSED routes newest first, `has_stamped` 0/1, `resolution_comment` by design, never a path), `POST …/workflow/
+  routes/{id}/cancel` `{version, reason?}` → `{route}` (ADMIN only — refused at the route AND inside
+  `workflowService.adminCancelRoute`; CAS on `version` → 409 CONFLICT; closed → 400 INVALID; audited tombstone
+  "Cancelled by <display name> (administrator): <reason>"), `POST …/workflow/stamp-types` `{label, color, category?}`
+  → `{ok, id, key}` (ADMIN only; the catalog module's validation surfaces as 400 + code EMPTY/TOO_LONG/RESERVED/
+  BAD_COLOR/DUPLICATE). The stamped-copy pages (`GET …/routes/{id}/stamped`, party-or-admin) were already there;
+  the client shows them in an in-window overlay (`clientTransport.js stampedOverlay`) instead of the core's viewer
+  window. Client caps (`clientTransport.js refreshCaps`): `docRoutes`/`workflowHistory` need BOTH sides ≥ 1.4.0 AND
+  role admin/edit; `adminCancel`/`stampCreate` need ≥ 1.4.0 AND admin (a hidden control beats a refused one); an
+  older core never sees a 1.4.0 request. In the SHARED popup (`searchStamp.js`) the Send panel shows the open routes
+  not addressed to me with the admin two-step [Cancel route]; history rows name the actor + link the stamped copy.
+  Pins: `src/modules/api/test_v1_workflow.js` (end-to-end over the real client transport), `scripts/
+  test_client_search_popout.js` (+ an A4 run against a 1.3.0 core: the 1.4.0 channels are never called),
+  `src/windows/search/test_search_window_functional.js`.
 - **SEARCH POP-OUT (client search parity S1, 2026-09-13)**: the client's search is the SHARED search screen
   (`client/renderer/shared/` = generated copies of `src/windows/shared/{search-ui,theme.css,fonts,patterns}`,
   `scripts/sync-client-search.js`, pin `test_client_search_sync.js`) in its own window

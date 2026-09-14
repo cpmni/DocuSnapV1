@@ -65,6 +65,9 @@
       .sp-hist-row .h-badge{font-weight:700;margin-right:6px}
       .sp-hist-empty{font-size:12px;color:var(--muted)}
       .sp-err{color:var(--err);font-size:12px;margin-top:6px}
+      .sp-routed{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;color:var(--text);padding:8px 10px;margin-bottom:8px;border:1px solid var(--border);border-radius:var(--r-sm,9px);background:var(--surface2)}
+      .sp-routed .btn.danger{border-color:var(--err);color:var(--err)}
+      .sp-link{background:none;border:0;padding:0;margin-left:6px;color:var(--accent);font:inherit;font-size:12px;cursor:pointer;text-decoration:underline}
       /* new-stamp inline */
       .sp-new{border:1px dashed var(--border2);border-radius:9px;padding:10px;margin:8px 0}
       .sp-swatches{display:flex;gap:8px;margin:6px 0}
@@ -390,7 +393,22 @@
     let stampers = [];
     try { stampers = (await T().stamp.grants()).filter(u => u.canStamp).map(u => u.id); } catch { stampers = recips.map(r => r.id); }
     const opts = (list) => list.map(r => `<option value="${r.id}">${esc(r.displayName || r.username)} (${esc(r.role)})</option>`).join('');
+    // OPEN routes on this document that are NOT addressed to me (those are the "waiting on you" panel): one line
+    // each — "Sent to <name> by <name> — awaiting …" — with the admin's two-step [Cancel route] (E1's escape hatch
+    // for routes recall can't reach; docs/designs/WORKFLOW_ADMIN_CANCEL_2026-07-19.md). These lived in an inline
+    // action-panel provider that the 2026-08-28 popup redesign stopped rendering; the popup is the front door now.
+    // A transport without the per-document read (caps.docRoutes false) shows no banner — never a dead control.
+    let openRoutes = [];
+    if (_cap('docRoutes')) { try { openRoutes = (await T().workflow.docRoutes(_doc.id) || []).filter(r => r.state === 'pending' || r.state === 'claimed'); } catch { openRoutes = []; } }
+    const me = window.SearchState && window.SearchState.myOpenRoutes && window.SearchState.myOpenRoutes[_doc.id];
+    openRoutes = openRoutes.filter(r => !(me && me.id === r.id));
+    const canCancel = S().role === 'admin' && _cap('adminCancel');
+    const banners = openRoutes.map(r => `<div class="sp-routed" data-route="${Number(r.id)}" data-version="${Number(r.version)}">
+        <span>Sent to <b>${esc(r.to_username)}</b> by ${esc(r.from_username || 'Auto-filed')} — awaiting ${r.action_required === 'approve' ? 'their approval' : 'their acknowledgement'}</span>
+        ${canCancel ? `<button class="btn sp-cancel-route" type="button" data-to="${esc(r.to_username)}">Cancel route</button>` : ''}
+      </div>`).join('');
     host.innerHTML = `
+      ${banners}
       <div class="sp-lead">Send this document to a colleague.</div>
       <div class="sp-row"><label>Why</label>
         <select class="sp-select" id="sp-why"><option value="approve">They need to approve it</option><option value="acknowledge">Just so they've seen it</option></select></div>
@@ -405,6 +423,27 @@
       to.innerHTML = opts(list) || `<option value="">${forApproval ? 'No one can approve yet — grant stamping in Settings' : 'No recipients'}</option>`;
     };
     why.addEventListener('change', fill); fill();
+    // Two-step inline confirm for the admin cancel (NO native confirm() — the Search window is an unarmed
+    // focus-desync site): first click arms + relabels, ~5s auto-revert; second click cancels with the CAS
+    // version. Success re-reads this panel (the banner goes) + the open-route map + a visible mailbox; a stale
+    // cancel is a truthful CONFLICT/INVALID shown here.
+    host.querySelectorAll('.sp-cancel-route').forEach(btn => btn.addEventListener('click', async () => {
+      const row = btn.closest('.sp-routed');
+      if (!btn.dataset.armed) {
+        btn.dataset.armed = '1'; btn.textContent = `Confirm — remove from ${btn.dataset.to}'s inbox`; btn.classList.add('danger');
+        setTimeout(() => { if (btn.isConnected && btn.dataset.armed) { delete btn.dataset.armed; btn.textContent = 'Cancel route'; btn.classList.remove('danger'); } }, 5000);
+        return;
+      }
+      err.hidden = true; btn.disabled = true;
+      try {
+        await T().workflow.adminCancel(Number(row.dataset.route), Number(row.dataset.version));
+        toast('Route cancelled.');
+        if (window.SearchWorkflow && window.SearchWorkflow.refresh) { try { await window.SearchWorkflow.refresh(); } catch {} }
+        if (window.SearchMailbox && window.SearchMailbox.refreshIfActive) window.SearchMailbox.refreshIfActive();
+        if (window.SearchActions && S().selectedDoc) { try { window.SearchActions.renderActions(S().selectedDoc); } catch {} }
+        _renderSend(); _renderHistory();
+      } catch (e) { btn.disabled = false; err.hidden = false; err.textContent = (e && e.message) || 'Could not cancel the route.'; }
+    }));
     host.querySelector('#sp-send-go').addEventListener('click', async () => {
       err.hidden = true;
       const toId = Number(to.value); if (!toId) { err.hidden = false; err.textContent = 'Pick a recipient.'; return; }
@@ -428,12 +467,26 @@
         rows.push({ seq: i + 1, at: st.placedAt, who: st.placedByName || st.placedBy, label: st.label, color: st.color, note: st.note }));
     } catch { /* */ }
     if (S().workflowEntitled && _cap('workflowHistory')) {
-      try { (await T().workflow.docHistory(_doc.id) || []).forEach(h => rows.push({ at: h.resolved_at || h.created_at, who: h.actor_username || h.from_username, label: (h.state || '').toUpperCase(), color: 'var(--muted)', note: h.resolution_comment || h.comment })); } catch { /* */ }
+      // The ACTOR of a decision is the recipient (approved / rejected / acknowledged BY the person it was sent
+      // to). 'recalled' is shared by THREE producers (sender recall, delete-close, admin cancel — workflowService
+      // OC2): only a sender recall leaves resolution_comment NULL, so name the sender ONLY then; a closed-with-
+      // comment row shows the state + the comment and NO actor (never blame the sender for an admin's cancel —
+      // NULL-ness is the sanctioned discriminator, never the comment text). A stamped decision copy is reachable
+      // by ROUTE id through the transport's viewer (a desktop window on the core, an overlay on the client).
+      try {
+        (await T().workflow.docHistory(_doc.id) || []).forEach(h => rows.push({
+          at: h.resolved_at || h.created_at,
+          who: h.actor_username || (h.state === 'recalled' ? (h.resolution_comment == null ? h.from_username : '') : h.to_username) || '',
+          label: (h.state || '').toUpperCase(), color: 'var(--muted)', note: h.resolution_comment || h.comment,
+          routeId: (h.has_stamped && _cap('stampedViewer')) ? h.id : null,
+        }));
+      } catch { /* */ }
     }
     rows.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));   // newest first
     host.innerHTML = rows.length
-      ? rows.map(r => `<div class="sp-hist-row">${r.seq ? `<span class="h-seq">${r.seq}</span>` : ''}<span class="h-badge" style="color:${esc(r.color)}">${esc(r.label)}</span>${esc(r.who || '')} · ${esc(_fmtDT(r.at))}${r.note ? ' — “' + esc(r.note) + '”' : ''}</div>`).join('')
+      ? rows.map(r => `<div class="sp-hist-row">${r.seq ? `<span class="h-seq">${r.seq}</span>` : ''}<span class="h-badge" style="color:${esc(r.color)}">${esc(r.label)}</span>${r.who ? esc(r.who) + ' · ' : ''}${esc(_fmtDT(r.at))}${r.note ? ' — “' + esc(r.note) + '”' : ''}${r.routeId ? ` <button class="sp-link sp-view-stamped" type="button" data-route="${Number(r.routeId)}">View stamped copy</button>` : ''}</div>`).join('')
       : `<div class="sp-hist-empty">Nothing yet.</div>`;
+    host.querySelectorAll('.sp-view-stamped').forEach(b => b.addEventListener('click', () => { try { T().workflow.openStampedViewer(Number(b.dataset.route)); } catch (e) { console.error('stamped viewer:', e); } }));
   }
 
   window.SearchStamp = { open, close, onDocShown };

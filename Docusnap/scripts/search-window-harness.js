@@ -41,6 +41,9 @@ const LITE = CLIENT && !atLeast(SERVER_CONTRACT, '1.3.0');
 // modules (S4) light up: the "Send or stamp…" action, the popup (stamp chips, send-to recipients, the
 // "waiting on you" decision), the Mailbox toggle with an inbox route.
 const WF = argv.includes('--workflow');
+// --role admin|edit: the signed-in role the stubs report (default admin). An EDIT run pins "hidden beats refused":
+// no [Cancel route], no "+ New stamp", no Empty bin / permanent delete — and the admin-only channels never called.
+const ROLE = argOf('--role') || 'admin';
 const HTML = argOf('--html') || (CLIENT ? path.join(ROOT, 'client', 'renderer', 'search', 'index.html')
                                         : path.join(ROOT, 'src', 'windows', 'search', 'index.html'));
 const PRELOAD = CLIENT ? path.join(ROOT, 'client', 'preload.js') : path.join(ROOT, 'src', 'preload.js');
@@ -70,6 +73,19 @@ const DOC_TYPES = [{ slug: 'invoice', name: 'Invoice' }, { slug: 'purchase_order
 const ROUTE = { id: 11, document_id: 3, state: 'pending', action_required: 'approve', from_username: 'boss', to_username: 'harness', comment: 'please check', version: 1, created_at: '2026-09-10 10:00:00', supplier_name: 'Cable Co', reference_number: 'PO-7' };
 const RECIPIENTS = [{ id: 2, username: 'boss', displayName: 'Boss', role: 'admin' }];
 const STAMP_TYPES = [{ id: 1, label: 'APPROVED', color: '#2E7D32' }];
+// Contract 1.4.0 world: doc 1 carries one CLOSED (approved, stamped) route → the History block + the popup's
+// history; doc 2 carries one OPEN route to boss → the routed banner + the admin two-step [Cancel route], which
+// the cancel stubs really close (stateful — the re-render must then show the assign form).
+// Three 'recalled' producers share one state (OC2): a SENDER recall leaves resolution_comment NULL (→ the sender is
+// the actor); an admin cancel / delete-close writes a comment (→ NO actor — never blame the sender).
+const HISTORY = { 1: [
+  { id: 12, state: 'approved', action_required: 'approve', to_username: 'boss', from_username: 'harness', resolution_comment: 'looks fine', resolved_at: '2026-09-11T10:00:00.000Z', created_at: '2026-09-10 10:00:00', has_stamped: 1 },
+  { id: 14, state: 'recalled', action_required: 'approve', to_username: 'boss', from_username: 'harness', resolution_comment: 'Cancelled by Admin (administrator): moved on', resolved_at: '2026-09-12T08:00:00.000Z', created_at: '2026-09-11 09:00:00', has_stamped: 0 },
+  { id: 15, state: 'recalled', action_required: 'acknowledge', to_username: 'boss', from_username: 'harness', resolution_comment: null, resolved_at: '2026-09-09T08:00:00.000Z', created_at: '2026-09-09 07:00:00', has_stamped: 0 },
+] };
+const OPEN_ROUTES = { 2: [{ id: 13, to_username: 'boss', from_username: 'harness', action_required: 'approve', state: 'pending', created_at: '2026-09-12 09:00:00', version: 1 }] };
+const cancelRoute = (id) => { for (const k of Object.keys(OPEN_ROUTES)) { const i = OPEN_ROUTES[k].findIndex(r => r.id === Number(id)); if (i >= 0) { const [r] = OPEN_ROUTES[k].splice(i, 1); return { ...r, state: 'recalled', version: r.version + 1 }; } } return null; };
+const OLD14 = !atLeast(SERVER_CONTRACT, '1.4.0');   // client mode: a core without the 1.4.0 routes answers 404
 const ENT = { entitled: true, workflow: { entitled: WF } };
 const detailOf = (id) => { const r = byId(id); return r ? { ...r, extractions: [{ field_key: 'total_amount', display_value: '£120.00', confidence: 95, validation_note: null }] } : null; };
 const pagesOf = (id) => { const r = byId(id); if (!r || !/\.pdf$/i.test(r.original_filename)) return []; return new Array(Number(id) === 3 ? 2 : (r.page_count || 1)).fill(PNG); };
@@ -83,7 +99,7 @@ if (CLIENT) {
   stub('client-get-pages', (id) => ok({ pages: pagesOf(id) }));
   stub('client-get-thumbnail', () => ok({ thumbnail: PNG }));
   stub('client-entitlement', () => ok(ENT));
-  stub('client-current-user', () => ({ role: 'admin', username: 'harness', displayName: 'Harness' }));
+  stub('client-current-user', () => ({ role: ROLE, username: 'harness', displayName: 'Harness' }));
   // S4 workflow + stamps over the /v1 bridge (envelopes). Without --workflow the add-on is unlicensed → 402.
   const gated = (json) => (WF ? ok(json) : { status: 402, json: { error: 'not licensed' } });
   stub('client-wf-list', (view) => gated({ routes: view === 'inbox' ? [ROUTE] : [] }));
@@ -105,6 +121,14 @@ if (CLIENT) {
   stub('client-page-count', (id) => (LITE ? notFound : ok({ count: Number(id) === 3 ? 2 : ((byId(id) && byId(id).page_count) || null) })));
   stub('client-find', (id, q) => (LITE ? notFound : ok({ kind: 'pdf', pages: 3, matches: String(q).toLowerCase() === 'inv' ? [{ page: 0, x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.12 }] : [] })));
   stub('client-spreadsheet', (id) => (LITE ? notFound : ok({ grid: Number(id) === 2 ? { sheets: [{ name: 'Sheet1', rows: [['Item', 'Qty'], ['Bolt', '12']] }], truncated: false } : null })));
+  // Contract 1.4.0 (per-doc routes / history, admin cancel, new stamp type; the stamped-copy pages are older).
+  // Doc 3 answers 404 on BOTH per-doc reads = "hidden from you" (the core's accessService hides existence): the cap
+  // must survive it (Oracle 2026-09-14 condition 2) — doc 2's banner is read AFTER doc 3 in the drive.
+  stub('client-wf-doc-routes',        (id) => (OLD14 || Number(id) === 3 ? notFound : gated({ routes: OPEN_ROUTES[Number(id)] || [] })));
+  stub('client-wf-doc-history',       (id) => (OLD14 || Number(id) === 3 ? notFound : gated({ history: HISTORY[Number(id)] || [] })));
+  stub('client-wf-admin-cancel',      ({ id } = {}) => { if (OLD14) return notFound; const r = cancelRoute(id); return r ? gated({ route: r }) : { status: 404, json: { error: 'Route not found.', code: 'NOT_FOUND' } }; });
+  stub('client-wf-stamp-type-create', (body) => (OLD14 ? notFound : gated({ ok: true, id: 99, key: String((body && body.label) || 'x').toLowerCase() })));
+  stub('client-wf-stamped',           () => gated({ pages: [PNG] }));
   stub('client-recycle-delete', () => ok({ ok: true }));
   stub('client-recycle-restore', () => ok({ ok: true }));
   stub('client-recycle-purge', (id) => { const i = DELETED.findIndex(d => d.id === Number(id)); if (i >= 0) DELETED.splice(i, 1); return ok({ ok: true }); });
@@ -128,7 +152,7 @@ stub('find-in-document', (id, q) => ({ kind: 'text', pages: 3, matches: String(q
 stub('get-spreadsheet-grid', (id) => (Number(id) === 2 ? { sheets: [{ name: 'Sheet1', rows: [['Item', 'Qty'], ['Bolt', '12']] }], truncated: false } : null));
 stub('get-document-thumbnail', () => PNG);
 stub('get-entitlement', () => ENT);
-stub('auth-get-current-user', () => ({ id: 1, username: 'harness', role: 'admin' }));
+stub('auth-get-current-user', () => ({ id: 1, username: 'harness', role: ROLE }));
 // The stamp permission is GRANTED after the window opened (card 4): the init read says no, the popup's re-read yes.
 let _canCalls = 0;
 stub('stamp-can', () => ({ canStamp: WF && ++_canCalls > 1 }));
@@ -139,8 +163,10 @@ stub('workflow-sent', () => []);
 stub('workflow-assigned', () => []);
 stub('workflow-completed', () => []);
 stub('workflow-recipients', () => RECIPIENTS);
-stub('workflow-doc-routes', () => []);
-stub('workflow-doc-history', () => []);
+stub('workflow-doc-routes', ({ documentId } = {}) => OPEN_ROUTES[Number(documentId)] || []);
+stub('workflow-doc-history', ({ documentId } = {}) => HISTORY[Number(documentId)] || []);
+stub('workflow-admin-cancel', ({ id } = {}) => { const r = cancelRoute(id); if (!r) throw new Error('Route not found.'); return { ok: true, route: r }; });
+stub('stamp-type-create', ({ label } = {}) => ({ ok: true, id: 99, key: String(label || 'x').toLowerCase() }));
 stub('workflow-assign', () => ({ ok: true }));
 stub('workflow-resolve', () => ({ ok: true }));
 stub('workflow-recall', () => ({ ok: true }));
@@ -162,6 +188,11 @@ const DRIVE = `(async () => {
   const CLIENT = ${CLIENT};
   const LITE = ${LITE};
   const WF = ${WF};
+  // WF14 = the contract-1.4.0 workflow bits are BACKED here (the core always; the client only against a ≥ 1.4.0 core).
+  const WF14 = WF && ${!CLIENT || !OLD14};
+  const ROLE = '${ROLE}'; const ADMIN = ROLE === 'admin';
+  // OLDER = this client knows more than the stubbed core (any remediable drift → the "newer core needed" hint).
+  const OLDER = ${CLIENT && !atLeast(SERVER_CONTRACT, CLIENT_CONTRACT || '0.0.0')};
   const checks = [];
   const ok = (name, cond) => checks.push({ name, ok: !!cond });
   const $ = (s) => document.querySelector(s);
@@ -170,7 +201,8 @@ const DRIVE = `(async () => {
   const until = async (fn, ms = 5000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (fn()) return true; } catch {} await sleep(40); } return false; };
   const vis = (el) => !!el && el.style.display !== 'none';
   const btns = () => $$('#preview-actions button').map(b => b.textContent.trim());
-  const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+  // A missing click target is a RECORDED failure, never a throw — a throw would discard every check before it.
+  const click = (el, what) => { if (!el) { checks.push({ name: 'click target missing' + (what ? ': ' + what : ''), ok: false }); return; } el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })); };
 
   // 1 — the list populated from the stub search (pre-filled with the deep-link term)
   ok('results: 3 rows rendered (2 confirmed + 1 unconfirmed)', await until(() => $$('.result-item').length === 3));
@@ -233,18 +265,21 @@ const DRIVE = `(async () => {
   // 7 — the recycle bin
   click($('#btn-recycle'));
   ok('bin: RECYCLE BIN section with the deleted row', await until(() => $$('.section-header').some(h => /RECYCLE BIN/.test(h.textContent)) && !!$('.result-item[data-id="9"]')));
-  if (CLIENT) ok('bin (client): Empty bin shown to an admin, Restore all HIDDEN (no /v1 restore-all)', vis($('#btn-empty-bin')) && !vis($('#btn-restore-all')));
-  else ok('bin: Restore all + Empty bin shown to an admin', vis($('#btn-restore-all')) && vis($('#btn-empty-bin')));
+  // Empty bin = ADMIN only (purge); Restore all = admin/edit on the core, never on the client (no /v1 restore-all).
+  if (CLIENT) ok('bin (client, ' + ROLE + '): Empty bin ' + (ADMIN ? 'shown' : 'HIDDEN') + ', Restore all HIDDEN (no /v1 restore-all)', vis($('#btn-empty-bin')) === ADMIN && !vis($('#btn-restore-all')));
+  else ok('bin (' + ROLE + '): Restore all shown, Empty bin ' + (ADMIN ? 'shown' : 'HIDDEN'), vis($('#btn-restore-all')) && vis($('#btn-empty-bin')) === ADMIN);
   ok('bin: the toggle relabelled', /Back to search/.test($('#btn-recycle').textContent));
   click($('.result-item[data-id="9"]'));
-  ok('bin: a deleted doc offers Restore + Delete permanently', await until(() => { const b = btns(); return b.some(t => t === 'Restore') && b.some(t => t.includes('Delete permanently')); }));
+  ok('bin: a deleted doc offers Restore' + (ADMIN ? ' + Delete permanently' : ' only (edit: no permanent delete — hidden, not refused)'), await until(() => { const b = btns(); return b.some(t => t === 'Restore') && b.some(t => t.includes('Delete permanently')) === ADMIN; }));
   ok('bin: the deleted row names its file', /old\\.pdf/.test($('.result-item[data-id="9"] .result-detail').textContent));
   // card 2 (a): purging the SELECTED document from the rail clears the preview (no stale Restore button) —
-  // native confirm() would block the drive: answer it in-page.
+  // native confirm() would block the drive: answer it in-page. ADMIN only (the rail's permanent delete hides otherwise).
   window.confirm = () => true;
   ok('bin: the deleted doc is selected + previewed', await until(() => !!$('.result-item[data-id="9"].active') && vis($('#preview-doc'))));
-  click($('#rail-delete'));   // = "Delete permanently" in the bin
-  ok('bin: after the purge the preview is CLEARED (no ghost Restore)', await until(() => vis($('#preview-empty')) && !vis($('#preview-doc')) && !window.SearchState.selectedDoc));
+  if (ADMIN) {
+    click($('#rail-delete'), 'rail Delete permanently');   // = "Delete permanently" in the bin
+    ok('bin: after the purge the preview is CLEARED (no ghost Restore)', await until(() => vis($('#preview-empty')) && !vis($('#preview-doc')) && !window.SearchState.selectedDoc));
+  } else ok('bin (edit): the rail offers no permanent delete', !vis($('#rail-delete')));
   // card 2 (b): a search term arriving from outside (Home / Quick-find) while in the BIN leaves the bin first.
   window.SearchQuery.setQuery('inv');
   ok('deep-link: setQuery() exits the bin view and searches the real results', await until(() => !window.SearchState.binMode && $$('.result-item').length === 3 && !$$('.section-header').some(h => /RECYCLE BIN/.test(h.textContent)) && /Recycle bin/.test($('#btn-recycle').textContent)));
@@ -271,13 +306,52 @@ const DRIVE = `(async () => {
     // appears and the action button relabels to the two-way front door.
     ok('popup: re-asks stamp.can on open → the Stamp panel renders (one APPROVED chip)', await until(() => $$('#sp-panel-stamp .stamp-chip[data-id]').length === 1));
     ok('popup: the action button relabelled to "Send or stamp…" without reopening the window', await until(() => btns().some(t => /Send or stamp/.test(t))));
-    if (CLIENT) ok('popup (client): "+ New stamp" hidden (caps.stampCreate — types are created on the core PC)', !$('#sp-panel-stamp .stamp-chip.new'));
-    else ok('popup (core): "+ New stamp" offered', !!$('#sp-panel-stamp .stamp-chip.new'));
+    if (WF14 && (ADMIN || !CLIENT)) ok('popup: "+ New stamp" offered (caps.stampCreate — 1.4.0 on the client; the core adapter caps it true for every role)', !!$('#sp-panel-stamp .stamp-chip.new'));
+    else ok('popup (' + (CLIENT && !ADMIN ? 'client, edit role' : 'client vs an older core') + '): "+ New stamp" hidden (caps.stampCreate off — hidden beats refused)', !$('#sp-panel-stamp .stamp-chip.new'));
     click($('#stamp-popup [data-mode="send"]'));
     ok('popup: Send panel lists the recipient (Boss)', await until(() => $$('#sp-to option').length === 1 && /Boss/.test($('#sp-to').textContent)));
-    ok('popup: history reads "Nothing yet."', await until(() => /Nothing yet/.test($('#sp-hist-list').textContent)));
+    // Contract 1.4.0 in the popup (the ONE front door since the 2026-08-28 redesign): the decision HISTORY names
+    // the approver + links the stamped copy; the Send panel shows the routed BANNER with the admin two-step
+    // cancel. On the core always; in the client pop-out only against a ≥ 1.4.0 core (older: the caps are off →
+    // "Nothing yet." and no banner — never a dead control).
+    if (WF14) {
+      ok('popup history (1.4.0): the APPROVED decision names the approver (boss), quotes the note, offers "View stamped copy"', await until(() => /APPROVED/.test($('#sp-hist-list').textContent) && /boss/.test($('#sp-hist-list').textContent) && /looks fine/.test($('#sp-hist-list').textContent) && !!$('#sp-hist-list .sp-view-stamped')));
+      // OC2 (Oracle 2026-09-14 condition 1): three producers share 'recalled' — an admin cancel (comment present)
+      // names NO actor; a sender recall (comment NULL) names the sender.
+      { const rec = $$('#sp-hist-list .sp-hist-row').filter(r => /RECALLED/.test(r.textContent));
+        const cancelled = rec.find(r => /Cancelled by Admin/.test(r.textContent)), plain = rec.find(r => !/Cancelled by/.test(r.textContent));
+        ok('popup history: an admin-cancelled route (RECALLED + comment) shows the comment and NO actor — the sender is never blamed', !!cancelled && !/harness/.test(cancelled.textContent));
+        ok('popup history: a sender recall (RECALLED, no comment) names the sender', !!plain && /harness/.test(plain.textContent)); }
+      if (CLIENT) {
+        click($('#sp-hist-list .sp-view-stamped'), 'View stamped copy');
+        ok('stamped copy (client): "View stamped copy" opens the in-window overlay with the page image', await until(() => !!$('#stamped-overlay .stamped-pages img')));
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        ok('stamped copy (client): Escape closes the overlay', await until(() => !$('#stamped-overlay')));
+      }
+    } else ok('popup (client vs an older core): history reads "Nothing yet." (no history read to back it)', await until(() => /Nothing yet/.test($('#sp-hist-list').textContent)));
     click($('#stamp-popup .sp-x'));
     ok('popup: closes', await until(() => $('#stamp-popup').style.display === 'none'));
+    click($('.result-item[data-id="2"]'));
+    // Wait for doc 2's OWN preview (the previous doc's action buttons stay in the panel until the detail lands —
+    // clicking "Send or stamp" too early opens the popup for the previous doc).
+    ok('doc 2 previewed (Bolt Supplies)', await until(() => window.SearchState.selectedDoc && window.SearchState.selectedDoc.id === 2 && /Bolt Supplies/.test(($('#preview-doc') || {}).textContent || '')));
+    await until(() => btns().some(t => /Send or stamp/.test(t)));
+    click($$('#preview-actions button').find(b => /Send or stamp/.test(b.textContent)), 'Send or stamp (doc 2)');
+    ok('popup (doc 2): opens for doc 2', await until(() => $('#stamp-popup').style.display !== 'none' && /Bolt Supplies/.test($('#sp-sub').textContent) && $('#sp-send-go')));
+    click($('#stamp-popup [data-mode="send"]'), 'Send to someone tab');
+    if (WF14 && (ADMIN || !CLIENT)) {
+      ok('routed banner (1.4.0): the Send panel shows "Sent to boss by harness — awaiting their approval" + [Cancel route]', await until(() => /Sent to boss by harness/.test(($('#sp-panel-send .sp-routed') || {}).textContent || '') && !!$('#sp-panel-send .sp-cancel-route')));
+      const cb = $('#sp-panel-send .sp-cancel-route'); click(cb, 'Cancel route');
+      ok('cancel route: the first click ARMS the two-step (no native confirm)', !!cb && /Confirm — remove from boss/.test(cb.textContent));
+      click(cb, 'Cancel route (armed)');
+      ok('cancel route: the second click cancels — the banner goes, the send form stays', await until(() => !$('#sp-panel-send .sp-routed') && !!$('#sp-send-go')));
+    } else if (WF14) {
+      ok('routed banner (client, edit role): "Sent to boss …" shown WITHOUT [Cancel route] (caps.adminCancel off — hidden beats refused)', await until(() => /Sent to boss by harness/.test(($('#sp-panel-send .sp-routed') || {}).textContent || '')) && !$('#sp-panel-send .sp-cancel-route'));
+    } else if (CLIENT) {
+      ok('client vs an older core: no routed banner — just the send form (caps.docRoutes off, no 404 round-trip)', await until(() => !!$('#sp-send-go')) && !$('#sp-panel-send .sp-routed'));
+    }
+    click($('#stamp-popup .sp-x'));
+    await until(() => $('#stamp-popup').style.display === 'none');
     // Mailbox: the inbox route for doc 3 → open it → the popup shows "waiting on you" with Approve / Reject.
     ok('mailbox: the Mailbox toggle is shown', vis($('#btn-mailbox')));
     click($('#btn-mailbox'));
@@ -303,12 +377,22 @@ const DRIVE = `(async () => {
     // card 2 (b): a hand-over from outside leaves the MAILBOX view too (openDocById / setQuery).
     window.SearchPreview.openDocById(1);
     ok('deep-link: openDocById() exits the mailbox view + previews the doc', await until(() => !document.body.classList.contains('mailbox-mode') && window.SearchState.selectedDoc && window.SearchState.selectedDoc.id === 1 && $$('.result-item').length === 3));
+    if (CLIENT && WF14) {
+      // Oracle 2026-09-14 condition 2: doc 3 (hidden → 404 on BOTH per-doc reads) was read in the mailbox step above.
+      // The caps must have survived it, and a LATER per-doc read must still happen: reopen doc 1's popup.
+      ok('a hidden document\\'s 404 (doc 3) did not strip the per-doc caps for the session', window.SearchTransport.caps.docRoutes === true && window.SearchTransport.caps.workflowHistory === true);
+      await until(() => btns().some(t => /Send or stamp/.test(t)));
+      click($$('#preview-actions button').find(b => /Send or stamp/.test(b.textContent)), 'Send or stamp (doc 1, after the 404)');
+      ok('after the 404: doc 1\\'s history is READ AGAIN and still lists the APPROVED decision', await until(() => $('#stamp-popup').style.display !== 'none' && /APPROVED/.test($('#sp-hist-list').textContent)));
+      click($('#stamp-popup .sp-x'));
+      await until(() => $('#stamp-popup').style.display === 'none');
+    }
   }
 
   if (CLIENT) {
     // 9 — client specifics: the capability hint shows ONLY for remediable drift (this client knows the S2 reads,
     //     the core does not = LITE); the theme attributes came from themeBoot (the shared theme.css is live).
-    if (LITE) ok('lite client: "newer core needed" hint SHOWN (remediable drift)', await until(() => $('#popout-note').classList.contains('show')));
+    if (OLDER) ok('client vs an older core: "newer core needed" hint SHOWN (remediable drift)', await until(() => $('#popout-note').classList.contains('show')));
     else ok('client: "newer core needed" hint hidden when nothing is remediable', !$('#popout-note').classList.contains('show'));
     ok('client: theme attributes applied by themeBoot', !!document.documentElement.getAttribute('data-theme') && !!document.documentElement.getAttribute('data-mode'));
     ok('client: the shared theme.css is live (a token the search CSS needs resolves)', getComputedStyle(document.documentElement).getPropertyValue('--doc-bg').trim() !== '');

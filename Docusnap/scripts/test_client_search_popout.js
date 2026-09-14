@@ -102,6 +102,36 @@ console.log('A3. functional — WORKFLOW (S4): approvals, the Send-or-stamp popu
     check('client-wf-list(inbox) + client-wf-recipients + client-wf-can-stamp + client-wf-stamp-types driven over the client bridge',
           has('client-wf-list', a => a[0] === 'inbox') && has('client-wf-recipients') && has('client-wf-can-stamp') && has('client-wf-stamp-types'));
     check('client-wf-stamp-list consulted for the previewed docs (stamped/original toggle)', has('client-wf-stamp-list'));
+    check('1.4.0: the popup history read doc 1 (client-wf-doc-history 1) and the routed banner read doc 2 (client-wf-doc-routes 2)', has('client-wf-doc-history', a => a[0] === 1) && has('client-wf-doc-routes', a => a[0] === 2));
+    { const idx = (pred) => calls.findIndex(pred), lastIdx = (pred) => { for (let i = calls.length - 1; i >= 0; i--) if (pred(calls[i])) return i; return -1; };
+      check('1.4.0 (Oracle C2): the hidden doc 3 answered 404 on both per-doc reads and a LATER per-doc read (doc 1 history) still ran — the cap survived (the in-page check asserts it stayed true)',
+            has('client-wf-doc-routes', a => a[0] === 3) && has('client-wf-doc-history', a => a[0] === 3)
+            && lastIdx(([c, a]) => c === 'client-wf-doc-history' && a[0] === 1) > idx(([c, a]) => c === 'client-wf-doc-history' && a[0] === 3)); }
+    check('1.4.0: the two-step cancel called client-wf-admin-cancel with the route id + CAS version', has('client-wf-admin-cancel', a => a[0] && a[0].id === 13 && a[0].version === 1));
+    check('1.4.0: "View stamped copy" fetched the stamped pages by ROUTE id (client-wf-stamped 12)', has('client-wf-stamped', a => a[0] === 12));
+  }
+}
+
+console.log('A5. functional — WORKFLOW as an EDIT user on a 1.4.0 core: hidden beats refused (no cancel, no new stamp, no purge; the admin channels never called) — Oracle C3');
+{
+  const run = runHarness(null, ['--workflow', '--role', 'edit']);
+  if (run) {
+    const { calls } = run;
+    const has = (ch, pred) => calls.some(([c, a]) => c === ch && (!pred || pred(a)));
+    check('edit: client-wf-admin-cancel and client-wf-stamp-type-create are NEVER called', !has('client-wf-admin-cancel') && !has('client-wf-stamp-type-create'));
+    check('edit: the per-doc reads still run (routes for doc 2, history for doc 1) — read caps are admin/edit', has('client-wf-doc-routes', a => a[0] === 2) && has('client-wf-doc-history', a => a[0] === 1));
+    check('edit: no purge / empty-bin channel called (admin-only controls hidden, not refused)', !has('client-recycle-purge') && !has('client-recycle-purge-all'));
+  }
+}
+
+console.log('A4. functional — WORKFLOW against a 1.3.0 core: the 1.4.0 bits hide (caps off by the handshake, no 404 round-trips)');
+{
+  const run = runHarness('1.3.0', ['--workflow']);
+  if (run) {
+    const { calls } = run;
+    check('1.3.0 core: the 1.4.0 channels are NEVER called (doc-routes / doc-history / admin-cancel / stamp-type-create)',
+          !calls.some(([c]) => /^client-wf-doc-routes$|^client-wf-doc-history$|^client-wf-admin-cancel$|^client-wf-stamp-type-create$/.test(c)));
+    check('1.3.0 core: the S2 reads still run (the two gates are independent)', calls.some(([c]) => c === 'client-get-page'));
   }
 }
 
@@ -129,9 +159,19 @@ console.log('B. source — the Oracle S1 conditions');
   check("main (S2): client-find is NOT guarded() — a timeout returns a kind:'timeout' envelope instead of tripping the connection overlay",
         /ipcMain\.handle\('client-find', async \(_e, id, query\) => \{\s*try \{ const r = await client\.find\(id, query\); markConnection\(true\); return r; \}/.test(mainJs) && /kind: timedOut \? 'timeout' : 'error'/.test(mainJs) && !/ipcMain\.handle\('client-find',\s*guarded/.test(mainJs));
   const apiC = read('client', 'apiClient.js');
-  check('apiClient (S2): CLIENT_CONTRACT 1.3.0 in lockstep; find carries a LONG idle timeout', /CLIENT_CONTRACT = '1\.3\.0'/.test(apiC) && /\/find\?\$\{q\}`, \{ withAuth: true, timeoutMs: 180000 \}/.test(apiC));
+  check('apiClient: CLIENT_CONTRACT 1.4.0 in lockstep; find carries a LONG idle timeout', /CLIENT_CONTRACT = '1\.4\.0'/.test(apiC) && /\/find\?\$\{q\}`, \{ withAuth: true, timeoutMs: 180000 \}/.test(apiC));
+  check('apiClient (1.4.0): the four workflow routes — documents/:id/routes + /history, routes/:id/cancel, POST stamp-types',
+        /\/v1\/workflow\/documents\/\$\{documentId\}\/routes`/.test(apiC) && /\/v1\/workflow\/documents\/\$\{documentId\}\/history`/.test(apiC)
+        && /\/v1\/workflow\/routes\/\$\{id\}\/cancel`, \{ withAuth: true, body: \{ version, reason \} \}/.test(apiC) && /request\('POST', '\/v1\/workflow\/stamp-types'/.test(apiC)
+        && /docRoutes: wfDocRoutes, docHistory: wfDocHistory, adminCancel: wfAdminCancel, stampTypeCreate/.test(apiC));
   const srvH = read('src', 'modules', 'api', 'handler.js');
-  check('server: API_CONTRACT_VERSION 1.3.0 (lockstep with the client)', /API_CONTRACT_VERSION = '1\.3\.0'/.test(srvH));
+  check('server: API_CONTRACT_VERSION 1.4.0 (lockstep with the client)', /API_CONTRACT_VERSION = '1\.4\.0'/.test(srvH));
+  check('server (1.4.0): the four routes mirror their desktop twins — writer-gated reads through _canAccess, admin-only cancel + stamp-type create',
+        /workflow\/documents\/\(\\\\d\+\)\/routes\$/.test(srvH) && /workflow\/documents\/\(\\\\d\+\)\/history\$/.test(srvH)
+        && /workflow\/routes\/\(\\\\d\+\)\/cancel\$/.test(srvH) && /req\.method === 'POST' && pathname === `\$\{API_PREFIX\}\/workflow\/stamp-types`/.test(srvH)
+        && (srvH.match(/if \(!isWriter\(session\)\) return sendJson\(res, 403, \{ error: 'forbidden' \}\);\s*\n\s*const db = getDb\(\), docId = Number\(wfDoc(Routes|History)\[1\]\);\s*\n\s*if \(!_canAccess\(db, session, docId\)\) return sendJson\(res, 404/g) || []).length === 2
+        && /if \(session\.role !== 'admin'\) return sendJson\(res, 403, \{ error: 'forbidden' \}\);\s*\n\s*let body;[\s\S]{0,400}workflow\.adminCancelRoute\(/.test(srvH)
+        && /if \(session\.role !== 'admin'\) return sendJson\(res, 403, \{ error: 'forbidden' \}\);\s*\n\s*let body;[\s\S]{0,300}stampsDb\.createStampType\(/.test(srvH));
   const sharedPv = read('src', 'windows', 'shared', 'search-ui', 'searchPreview.js');
   check("shared UI: a find 'timeout' kind reads \"took too long\" (never a silent 0 / 0)", /res\.kind === 'timeout'/.test(sharedPv) && /took too long/.test(sharedPv));
   check('client adapter: a 401 reports the expired session to main', /r\.status === 401\) \{ expired\(\);/.test(adapter) && /api\.popoutSessionExpired\(\)/.test(adapter));
@@ -150,8 +190,22 @@ console.log('B. source — the Oracle S1 conditions');
   const dupes = Object.entries(decls).filter(([, fs2]) => new Set(fs2).size > 1);
   check(`pop-out: no top-level name declared in more than one script (${scripts.length} scripts scanned)` + (dupes.length ? ` — DUPES: ${dupes.map(([n, fs2]) => `${n} (${[...new Set(fs2)].join(' + ')})`).join('; ')}` : ''), scripts.length >= 14 && dupes.length === 0);
   check('pop-out (S4): loads the shared workflow / mailbox / stamp modules', /search-ui\/searchWorkflow\.js/.test(html) && /search-ui\/searchMailbox\.js/.test(html) && /search-ui\/searchStamp\.js/.test(html));
-  check('client adapter (S4): stamps cap true; history / doc-routes / admin-cancel / stamp-create / stamped-viewer capped off',
-        /stamps: true/.test(adapter) && /workflowHistory: false, docRoutes: false, adminCancel: false, stampCreate: false, stampedViewer: false/.test(adapter));
+  check('client adapter (S4 + 1.4.0): stamps cap true; history / doc-routes / admin-cancel / stamp-create start OFF (the handshake flips them), the stamped viewer is always on',
+        /stamps: true/.test(adapter) && /workflowHistory: false, docRoutes: false, adminCancel: false, stampCreate: false, stampedViewer: true/.test(adapter));
+  check('client adapter (1.4.0): the four caps need BOTH sides ≥ 1.4.0 AND the role (reads admin/edit, cancel + new stamp admin) — role from SearchState, never a second IPC',
+        /const serverHas14 = atLeast\(sv, '1\.4\.0'\);/.test(adapter) && /const clientHas14 = atLeast\(cc, '1\.4\.0'\);/.test(adapter)
+        && /const role = \(window\.SearchState && window\.SearchState\.role\) \|\| null;/.test(adapter)
+        && /T\.caps\.docRoutes = on14 && writer; T\.caps\.workflowHistory = on14 && writer;/.test(adapter) && /T\.caps\.adminCancel = on14 && admin; T\.caps\.stampCreate = on14 && admin;/.test(adapter)
+        && /serverBehind = \(clientHasS2 && !serverHasS2\) \|\| \(clientHas14 && !serverHas14\)/.test(adapter));
+  check('client adapter (1.4.0): doc-routes / history are docRead reads (a 404 = a hidden doc → empty shape, cap KEPT; only 426/402 flip — Oracle C2), cancel unwraps {route}, new stamp unwraps {id,key}',
+        /docRoutes:\s+docRead\('docRoutes', \[\], \(id\) => api\.workflow\.docRoutes\(id\), \(j\) => j\.routes \|\| \[\]\)/.test(adapter)
+        && /docHistory:\s+docRead\('workflowHistory', \[\], \(id\) => api\.workflow\.docHistory\(id\), \(j\) => j\.history \|\| \[\]\)/.test(adapter)
+        && /function docRead\(name, empty, call, pick\) \{\s*\n\s*return async \(\.\.\.a\) => \{\s*\n\s*const r = await call\(\.\.\.a\);\s*\n\s*if \(r && r\.status === 404\) return empty;\s*\n\s*if \(r && \(r\.status === 426 \|\| r\.status === 402\)\) \{ T\.caps\[name\] = false; return empty; \}/.test(adapter)
+        && /adminCancel:\s+async \(id, version, reason\) => unwrap\(await api\.workflow\.adminCancel\(id, version, reason\)/.test(adapter)
+        && /typeCreate:\s+async \(p\) => unwrap\(await api\.workflow\.stampTypeCreate\(\{ label: p && p\.label, color: p && p\.color \}\)/.test(adapter));
+  check('client adapter (1.4.0): "View stamped copy" = an in-window overlay over the stamped-pages read (never a path, never a shell open)',
+        /async function stampedOverlay\(routeId\)/.test(adapter) && /api\.workflow\.stamped\(routeId\)/.test(adapter) && /openStampedViewer: \(routeId\) => \{ stampedOverlay\(routeId\); \}/.test(adapter)
+        && !/shell\.|openExternal|openPath/.test(adapter) && /#stamped-overlay \.stamped-pages img/.test(html));
   check('client adapter (S4): the workflow boxes unwrap {routes}, recipients {recipients}, stamp list {stamps}, types {stampTypes}',
         /api\.workflow\.list\('inbox'\), \(j\) => j\.routes/.test(adapter) && /\(j\) => j\.recipients/.test(adapter) && /\(j\) => j\.stamps/.test(adapter) && /\(j\) => j\.stampTypes/.test(adapter));
   check('client adapter (S4): assign carries resubmitOf (the "Send again" lineage) end to end', /assign:\s+async \(documentId, toUserId, actionRequired, comment, resubmitOf\)/.test(adapter) && /resubmitOf \}\) =>\s*client\.workflow\.assign\(documentId, toUserId, actionRequired, comment, resubmitOf\)/.test(read('client', 'main.js')) && /assign:\s+\(documentId, toUserId, actionRequired, comment, resubmitOf\)/.test(read('client', 'preload.js')));
@@ -173,6 +227,10 @@ console.log('B. source — the Oracle S1 conditions');
   const pre = read('client', 'preload.js');
   for (const m of ['openSearch', 'searchTarget', 'currentUser', 'serverInfo', 'onSearchSetQuery', 'onSearchGotoDoc', 'popoutSessionExpired', 'onSessionExpired'])
     check(`preload exposes ${m}`, new RegExp('^\\s+' + m + ':', 'm').test(pre));
+  for (const m of ['docRoutes', 'docHistory', 'adminCancel', 'stampTypeCreate'])
+    check(`preload (1.4.0) exposes workflow.${m}`, new RegExp('^\\s+' + m + ':\\s+\\(.*\\) => ipcRenderer\\.invoke\\(\'client-wf-', 'm').test(pre));
+  check('main (1.4.0): the four workflow IPCs are guarded pass-throughs', ['client-wf-doc-routes', 'client-wf-doc-history', 'client-wf-admin-cancel', 'client-wf-stamp-type-create']
+        .every(ch => new RegExp("ipcMain\\.handle\\('" + ch + "',\\s+guarded\\(").test(main)));
 
   const rend = read('client', 'renderer', 'renderer.js');
   check('renderer: the Search nav opens the pop-out (not the in-pane view)', /\$\('nav-search'\)\.addEventListener\('click', \(\) => openSearchWindow\(\)\)/.test(rend) && !/\$\('nav-search'\)\.addEventListener\('click', \(\) => setView\('search'\)\)/.test(rend));

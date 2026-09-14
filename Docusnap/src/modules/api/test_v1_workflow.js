@@ -38,7 +38,7 @@ async function freshDb() {
     CREATE TABLE document_routes (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER, from_user_id INTEGER,
       from_username TEXT, to_user_id INTEGER, to_username TEXT, action_required TEXT, state TEXT DEFAULT 'pending',
       comment TEXT, resolution_comment TEXT, claimed_by_id INTEGER, claimed_by_username TEXT, claimed_at TEXT,
-      resolved_at TEXT, matched_rule_summary TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')));
+      resolved_at TEXT, matched_rule_summary TEXT, stamped_path TEXT, version INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')));
     CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT, target_type TEXT,
       target_id TEXT, details TEXT, action_category TEXT, outcome TEXT, document_id INTEGER, customer_id TEXT,
       session_id TEXT, source TEXT, metadata_json TEXT, actor_username TEXT, actor_role TEXT,
@@ -187,6 +187,61 @@ async function main() {
   // ── filing state never rewritten by workflow ─────────────────────────────────
   r = await adminC.getDocument(1);
   check('document filing status still "confirmed" after approve/reject', r.json.status === 'confirmed');
+
+  // ── Contract 1.4.0 (2026-09-14): the pop-out's last workflow bits, each mirroring its desktop IPC twin ────
+  const pathy = (o) => Object.keys(o || {}).some(k => /path/i.test(k));
+  // (a) OPEN routes for one document — admin/edit; readonly 403; projected (no comment, no stamped_path).
+  r = await editorC.workflow.docRoutes(1);
+  check('doc-routes (editor) -> 200 with NO open route on doc 1 (all closed above)', r.status === 200 && Array.isArray(r.json.routes) && r.json.routes.length === 0);
+  r = await adminC.workflow.assign(1, editorId, 'approve', 'sender private note');
+  const openR = r.json.route;
+  r = await editorC.workflow.docRoutes(1);
+  check('doc-routes -> the new open route, projected: id/to/from/action/state/created_at/version, NO comment, NO path',
+        r.status === 200 && r.json.routes.length === 1 && r.json.routes[0].id === openR.id
+        && ['id', 'to_username', 'from_username', 'action_required', 'state', 'created_at', 'version'].every(k => k in r.json.routes[0])
+        && !('comment' in r.json.routes[0]) && !pathy(r.json.routes[0]));
+  r = await readerC.workflow.docRoutes(1);
+  check('doc-routes (readonly) -> 403', r.status === 403);
+  // (b) DECISION HISTORY — closed routes, newest first, has_stamped flag, never a path; the sender comment is absent.
+  r = await editorC.workflow.docHistory(1);
+  check('doc-history (editor) -> 200 with the approved / rejected / acknowledged / recalled rows',
+        r.status === 200 && Array.isArray(r.json.history) && ['approved', 'rejected', 'acknowledged', 'recalled'].every(s => r.json.history.some(h => h.state === s)));
+  check('doc-history rows: has_stamped 0/1, resolution_comment ships, no comment, no path',
+        r.json.history.every(h => [0, 1].includes(h.has_stamped) && !('comment' in h) && !pathy(h)) && r.json.history.some(h => h.resolution_comment === 'totals wrong'));
+  r = await readerC.workflow.docHistory(1);
+  check('doc-history (readonly) -> 403', r.status === 403);
+  r = await editorC.workflow.docHistory(999999);
+  check('doc-history on an unknown document -> 404 (existence hidden)', r.status === 404);
+  // (c) ADMIN CANCEL — admin only; CAS on the version; the service's audited tombstone.
+  r = await editorC.workflow.adminCancel(openR.id, openR.version, 'nope');
+  check('admin-cancel (editor) -> 403', r.status === 403);
+  r = await adminC.workflow.adminCancel(openR.id, openR.version + 5, 'stale');
+  check('admin-cancel with a stale version -> 409 CONFLICT', r.status === 409 && r.json.code === 'CONFLICT');
+  r = await adminC.workflow.adminCancel(openR.id, openR.version, 'recipient left');
+  check('admin-cancel -> 200 route recalled (projected route)', r.status === 200 && r.json.route && r.json.route.state === 'recalled' && !pathy(r.json.route));
+  const cancelled = db.prepare('SELECT state, resolution_comment FROM document_routes WHERE id=?').get(openR.id);
+  check('the cancel wrote the honest tombstone with the display name + reason',
+        cancelled.state === 'recalled' && /^Cancelled by Admin \(administrator\): recipient left$/.test(cancelled.resolution_comment || ''));
+  check('the cancel was audited (workflow_route_cancelled)', !!db.prepare("SELECT 1 FROM audit_log WHERE action='workflow_route_cancelled' LIMIT 1").get());
+  r = await adminC.workflow.adminCancel(openR.id, openR.version + 1);
+  check('cancelling an already-closed route -> 400 INVALID', r.status === 400 && r.json.code === 'INVALID');
+  r = await editorC.workflow.docRoutes(1);
+  check('doc-routes after the cancel -> no open route again', r.status === 200 && r.json.routes.length === 0);
+  // (d) NEW STAMP TYPE — admin only; the catalog module's validation surfaces as 400 + code.
+  r = await editorC.workflow.stampTypeCreate({ label: 'CHECKED', color: '#1565C0' });
+  check('stamp-type create (editor) -> 403', r.status === 403);
+  r = await adminC.workflow.stampTypeCreate({ label: 'CHECKED', color: 'blue' });
+  check('stamp-type create with a bad colour -> 400 BAD_COLOR', r.status === 400 && r.json.code === 'BAD_COLOR');
+  r = await adminC.workflow.stampTypeCreate({ label: 'void', color: '#1565C0' });
+  check('stamp-type create of a reserved decision word (VOID) -> 400 RESERVED', r.status === 400 && r.json.code === 'RESERVED');
+  r = await adminC.workflow.stampTypeCreate({ label: 'paid', color: '#1565C0' });
+  check('stamp-type create of an existing catalog word (PAID) -> 400 DUPLICATE', r.status === 400 && r.json.code === 'DUPLICATE');
+  r = await adminC.workflow.stampTypeCreate({ label: 'Checked', color: '#1565C0' });
+  check('stamp-type create (admin) -> 200 with id + key', r.status === 200 && r.json.ok === true && Number.isInteger(r.json.id) && typeof r.json.key === 'string');
+  r = await editorC.workflow.stampTypes();
+  check('the new type is in the catalog for everyone (upper-cased word, the colour)', r.json.stampTypes.some(t => t.label === 'CHECKED' && t.color === '#1565C0'));
+  r = await adminC.workflow.stampTypeCreate({ label: 'checked', color: '#2E7D32' });
+  check('a duplicate word -> 400 DUPLICATE', r.status === 400 && r.json.code === 'DUPLICATE');
 
   // ── FYI slice / Oracle C1: the /v1 delete door respects the approval lock ─────
   // This door was UNGUARDED — a remote edit-role user could delete an approval-locked doc

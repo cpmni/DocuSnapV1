@@ -46,7 +46,7 @@ const path              = require('path');
 const WF_HTTP = { FORBIDDEN: 403, STAMP_FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
 const wfStatus = (code) => WF_HTTP[code] || 400;
 
-const API_CONTRACT_VERSION = '1.3.0';   // 1.3.0: + the four preview READS (page / page-count / find / spreadsheet — client search parity S2, 2026-09-13; the client gates its lazy-page/find/grid caps on ≥ 1.3.0). 1.2.0: + POST /v1/documents/intake (Quick File upload). NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
+const API_CONTRACT_VERSION = '1.4.0';   // 1.4.0: + per-document open-routes / decision-history reads, admin route cancel, new stamp type (the search pop-out's last hidden workflow bits, 2026-09-14; the client gates those caps on ≥ 1.4.0). 1.3.0: + the four preview READS (page / page-count / find / spreadsheet — client search parity S2, 2026-09-13; the client gates its lazy-page/find/grid caps on ≥ 1.3.0). 1.2.0: + POST /v1/documents/intake (Quick File upload). NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
                                         // handshake checks MAJOR only. Keep server + client in lockstep.
 const API_PREFIX = '/v1';
 const CLIENT_CONTRACT_HEADER = 'x-scanfinder-client-contract';
@@ -1042,6 +1042,59 @@ function createRequestListener(ctx) {
           docId, folderPath: P.dirname(cur.path), filename: P.basename(cur.path), exact: true, scale: 6,
         }, pageDeps());
         return sendJson(res, 200, { pages, count: cur.count });
+      }
+
+      // ── Contract 1.4.0 (2026-09-14): the four workflow bits the search POP-OUT lacked (client search parity
+      //    follow-up — pendingfeatures "workflow bits still HIDDEN"). Each MIRRORS its desktop IPC twin in
+      //    src/modules/workflow/handler.js one-to-one: the same role gate, the same accessService gate on a NEW by-id
+      //    read seam (SEC-03), the same PROJECTED shape (no stamped_path, no sender comment — Oracle OC4), the same
+      //    service call. All under /v1/workflow/* → the WORKFLOW_ROUTE entitlement gate + sub-seat applied above. ──
+      const dbwfRoutes = () => require('../../../database/modules/workflow');
+      // OPEN routes for one document (the "Sent to <name> — awaiting …" banner). admin/edit read.
+      const wfDocRoutes = pathname.match(new RegExp(`^${API_PREFIX}/workflow/documents/(\\d+)/routes$`));
+      if (req.method === 'GET' && wfDocRoutes) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const db = getDb(), docId = Number(wfDocRoutes[1]);
+        if (!_canAccess(db, session, docId)) return sendJson(res, 404, { error: 'not found' });   // hide existence
+        const routes = dbwfRoutes().listOpenRoutesForDocument(db, docId)
+          .map(r => ({ id: r.id, to_username: r.to_username, from_username: r.from_username,
+                       action_required: r.action_required, state: r.state, created_at: r.created_at, version: r.version }));
+        return sendJson(res, 200, { routes });
+      }
+      // DECISION HISTORY (closed routes) for one document — projected in the SQL: has_stamped + the route id feed
+      // the stamped-copy read, never a path; resolution_comment ships BY DESIGN (it is the decision record).
+      const wfDocHistory = pathname.match(new RegExp(`^${API_PREFIX}/workflow/documents/(\\d+)/history$`));
+      if (req.method === 'GET' && wfDocHistory) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const db = getDb(), docId = Number(wfDocHistory[1]);
+        if (!_canAccess(db, session, docId)) return sendJson(res, 404, { error: 'not found' });
+        return sendJson(res, 200, { history: dbwfRoutes().listClosedRoutesForDocument(db, docId) });
+      }
+      // ADMIN CANCEL (E1's escape hatch for routes recall can't reach) — admin at the route AND inside the service;
+      // CAS on the version (a stale cancel is a truthful 409). The reason is a short free text, never required.
+      const wfCancel = pathname.match(new RegExp(`^${API_PREFIX}/workflow/routes/(\\d+)/cancel$`));
+      if (req.method === 'POST' && wfCancel) {
+        const session = requireSession(req, res); if (!session) return;
+        if (session.role !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const reason = typeof body.reason === 'string' ? body.reason.slice(0, 500) : undefined;
+        const r = workflow.adminCancelRoute(getDb(), { ...actorOf(session), displayName: viewerOf(session).displayName },
+                                            Number(wfCancel[1]), { reason, expectedVersion: body.version });
+        return r.ok ? sendJson(res, 200, { route: dto.projectRoute(r.route) })
+                    : sendJson(res, wfStatus(r.code), { error: r.error, code: r.code });
+      }
+      // NEW STAMP TYPE ("+ New stamp" in the popup) — admin only like the desktop 'stamp-type-create'; the catalog
+      // module validates the word (≤16 chars, not a built-in, not a duplicate) and the colour (#rrggbb).
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/workflow/stamp-types`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (session.role !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const r = stampsDb.createStampType(getDb(), { label: body.label, color: body.color,
+          category: typeof body.category === 'string' ? body.category.slice(0, 64) : null, createdBy: session.userId });
+        return r.ok ? sendJson(res, 200, { ok: true, id: Number(r.id), key: r.key })
+                    : sendJson(res, 400, { error: r.error, code: r.code });
       }
 
       // ── Auth-required: REVIEW QUEUE + confirm / defer / undefer (Admin/Edit) ───

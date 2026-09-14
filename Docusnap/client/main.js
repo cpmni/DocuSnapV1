@@ -514,6 +514,12 @@ ipcMain.handle('client-wf-can-stamp',   guarded(() => client.workflow.canStamp()
 ipcMain.handle('client-wf-stamp-list',  guarded((_e, id) => client.workflow.stampList(id)));
 ipcMain.handle('client-wf-stamp-place', guarded((_e, { id, body }) => client.workflow.stampPlace(id, body)));
 ipcMain.handle('client-wf-stamped-doc', guarded((_e, id) => client.workflow.stampedDoc(id)));
+// Contract 1.4.0 (2026-09-14): per-document open routes / decision history, admin cancel, new stamp type — thin
+// pass-throughs; every gate (role, document access, entitlement, CAS version) is the core's.
+ipcMain.handle('client-wf-doc-routes',        guarded((_e, id) => client.workflow.docRoutes(id)));
+ipcMain.handle('client-wf-doc-history',       guarded((_e, id) => client.workflow.docHistory(id)));
+ipcMain.handle('client-wf-admin-cancel',      guarded((_e, { id, version, reason } = {}) => client.workflow.adminCancel(id, version, reason)));
+ipcMain.handle('client-wf-stamp-type-create', guarded((_e, body) => client.workflow.stampTypeCreate(body)));
 
 // About box: version details + open the bundled third-party notice.
 ipcMain.handle('client-about', () => {

@@ -85,6 +85,14 @@ the core search replicates to the client automatically** (no fork that rots).
 >   workflow init + counts push moved into `searchInit.js`; client adapter over `/v1/workflow/*` (history /
 >   doc-routes / admin-cancel / stamp-create / stamped-viewer capped off); harness `--workflow` runs on both apps.
 >   The mailbox LIST endpoints the pop-out lacks (`docHistory`, `docRoutes`) are candidates for a later `/v1` MINOR.
+> - **S5 STATUS: BUILT 2026-09-14** (the `/v1` MINOR, contract 1.3.0 → **1.4.0**; owner "go ahead with item 3") —
+>   `GET /v1/workflow/documents/:id/{routes,history}`, `POST /v1/workflow/routes/:id/cancel`, `POST /v1/workflow/
+>   stamp-types`, each a one-to-one mirror of its desktop IPC (role gate, accessService, projection, service call);
+>   client caps flip on version AND role; "View stamped copy" = an in-window overlay over the existing stamped-pages
+>   read. FINDING: the inline provider surfaces (`searchWorkflow._provide`) had been unreachable on BOTH apps since the
+>   2026-08-28 popup redesign, so the routed banner + admin cancel now live in the popup's Send panel and history rows
+>   link the stamped copy. Contract + gates in `docs/detached-client.md`; pins in `test_v1_workflow`, the pop-out pin
+>   (+ an A4 run vs a 1.3.0 core) and the core functional pin.
 
 ## The mandate's answer (enforced auto-replication)
 The search UI becomes ONE canonical source both apps drive through an injected **transport**. Drift is made

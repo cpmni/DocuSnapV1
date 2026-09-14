@@ -8,6 +8,12 @@
 // (SearchState.workflowEntitled). Capability gates (absent = true): workflowHistory (docHistory), docRoutes
 // (open-route banners + admin cancel), stampedViewer (the "View stamped copy" link — a desktop window).
 
+// ⚠ DEAD PATH, kept for reference (found 2026-09-14): the inline action-panel provider `_provide` (History block,
+// routed banner + admin cancel, decision bar, assign form) is registered but NEVER RENDERED — the 2026-08-28
+// "Send or stamp" popup redesign (9c50b93) removed the provider loop from SearchActions.renderActions. Those
+// surfaces live in searchStamp.js now: the popup's History (+ "View stamped copy"), the Send panel's routed banner
+// + two-step [Cancel route], the "waiting on you" panel. Live here: refresh()/myOpenRoutes, recallRoute, _run.
+// Removal of the dead providers = a tidy-up slice (pendingfeatures.md 2026-09-14), not done inside a feature commit.
 let _recipients = [];                 // active users (populated only for routers)
 let _myOpenRoutes = {};               // document_id -> open route addressed to me
 let _pendingResubmit = null;          // one-shot "Send again" prefill (consumed by the next render)

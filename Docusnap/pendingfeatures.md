@@ -5311,6 +5311,41 @@ routes mirroring the desktop IPC handlers (`workflow-doc-history`, `workflow-doc
 `stamp-type-create`) + a MINOR contract bump + the client adapter methods + flip the caps; the harness `--workflow` run
 already exercises the shared UI on both apps.
 
+> **BUILT 2026-09-14 (contract 1.4.0; owner "go ahead with item 3").** The four `/v1` routes + client plumbing + caps
+> (version AND role gated) + an in-window stamped-copy overlay on the client; `docs/detached-client.md` has the
+> contract. FINDING on the way: the inline action-panel provider (`searchWorkflow._provide` — History block, routed
+> banner + admin cancel, decision bar) had been UNREACHABLE on the CORE too since the 2026-08-28 popup redesign
+> (`9c50b93` removed the provider loop from `SearchActions.renderActions`), so the routed banner + [Cancel route] were
+> dead everywhere. Re-homed in the popup's Send panel (both apps); history rows now name the actor (the recipient for
+> approved/rejected/acknowledged, the sender for recalled — the old row blamed the sender for everything) and link the
+> stamped copy. Still hidden on the client by design: the desktop-local trio (Explorer / Open File / Print), Edit in
+> Review, Send back to Review, Restore all.
+
+> Oracle 2026-09-14 SIGN-OFF-W/COND on the 1.4.0 slice (`docs/oracle_log.md`); conditions 1-4 built in the same
+> commit. Non-blocking notes he logged, owed later: (a) the popup shows the routed banner AND the assign form — E1's
+> inline block showed banners INSTEAD, so an edit user can stack a second open route on a doc (lost at `9c50b93`;
+> `adminCancelRoute` tolerates multiples); decide whether the Send form should hide while a route is open; (b) the
+> client's `unwrap` maps every 403 to "You don't have access to this document." — wrong wording for a role-refused
+> cancel / new stamp after a mid-session demotion (cosmetic); (c) the S2 preview reads still flip their cap on a
+> 404 (`capGated`) — pre-existing; the per-document 1.4.0 reads use `docRead` (404 = hidden doc, cap kept).
+
+## 2026-09-14 — tidy-up: remove the DEAD inline workflow provider in the shared search screen
+`src/windows/shared/search-ui/searchWorkflow.js` still carries `_provide`, `_historyBlock`, `_routeOrAssign`,
+`_routedBanner`, `_decisionBar`, `_assignForm` and `SearchActions.registerActionProvider` — registered, never
+rendered since `9c50b93` (2026-08-28). The popup owns those surfaces now (see above). Delete them + the provider hook,
+keep `refresh()` / `myOpenRoutes` / `recallRoute` / `_run`; re-run the harness `--workflow` runs on both apps + the
+no-direct-IPC and collision pins. Its own commit, not inside a feature slice (a header comment marks it meanwhile).
+
+## 2026-09-14 — owner question: a FULL PDF reader in-app (text selection, find, outline / "content tables")
+Owner asked whether our licence model allows a full reader. Answer given: **PDF.js (Apache-2.0)** fits — selectable
+text, find, zoom/rotate, thumbnails, print and the document's own outline/bookmarks sidebar; runs in the renderer, no
+native code. Trade-offs before building: (1) it needs the PDF BYTES in the window — fine on the core; on the CLIENT
+that reverses the Oracle-signed "page images only, never bytes-as-PDF" posture of `/v1` → a policy decision first;
+(2) if "content tables" = the outline/bookmarks, **pypdfium2 (already shipped) reads the outline** → a clickable
+contents panel beside the existing image viewer on BOTH apps with no new dependency; (3) if it = data TABLES inside a
+page, that is table extraction — pdfplumber (MIT) for digital PDFs; scans need layout over our Tesseract word boxes.
+Awaiting the owner's meaning before scoping.
+
 > **FIXED 2026-09-13 night** (the first-paint confidence-pip finding above): `SearchResults.redecorate()` re-renders the
 > LAST result set once the entitlement is known (no second search — pinned: `search-documents` runs exactly 3 times in the
 > harness session: initial + `setQuery` after the bin purge + back-from-bin; the re-decoration never adds one). Core +

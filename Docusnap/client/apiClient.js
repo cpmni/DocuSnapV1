@@ -23,7 +23,7 @@ const { URL } = require('url');
 
 // The contract version this client build targets — keep in lockstep with the
 // server's API_CONTRACT_VERSION (src/modules/api/handler.js).
-const CLIENT_CONTRACT = '1.3.0';   // keep in lockstep with the server's API_CONTRACT_VERSION (1.3.0: + the four preview reads for the search pop-out; 1.2.0: + Quick File upload)
+const CLIENT_CONTRACT = '1.4.0';   // keep in lockstep with the server's API_CONTRACT_VERSION (1.4.0: + per-doc routes/history, admin cancel, new stamp type; 1.3.0: + the four preview reads for the search pop-out; 1.2.0: + Quick File upload)
 
 function parseVer(v) {
   const m = String(v || '').match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -207,6 +207,13 @@ function createClient(opts = {}) {
     request('POST', `/v1/workflow/routes/${id}/resolve`, { withAuth: true, body: { decision, comment, version } });
   const recall  = (id, version) => request('POST', `/v1/workflow/routes/${id}/recall`, { withAuth: true, body: { version } });
   const wfStamped = (id) => request('GET', `/v1/workflow/routes/${id}/stamped`, { withAuth: true });   // stamped-copy pages
+  // Contract 1.4.0 (2026-09-14): the search pop-out's per-document reads (open routes → the "Sent to <name>" banner;
+  // closed routes → the decision history), the admin escape hatch, and "+ New stamp". Server-gated like their
+  // desktop twins (admin/edit reads, admin writes); an older core answers 404 → the pop-out hides the control.
+  const wfDocRoutes   = (documentId) => request('GET', `/v1/workflow/documents/${documentId}/routes`, { withAuth: true });
+  const wfDocHistory  = (documentId) => request('GET', `/v1/workflow/documents/${documentId}/history`, { withAuth: true });
+  const wfAdminCancel = (id, version, reason) => request('POST', `/v1/workflow/routes/${id}/cancel`, { withAuth: true, body: { version, reason } });
+  const stampTypeCreate = (body) => request('POST', '/v1/workflow/stamp-types', { withAuth: true, body: body || {} });
   // Stamping (Workflow+Stamping redesign 2026-08-28) — all under /v1/workflow/* (entitlement-gated server-side).
   const stampTypes = () => request('GET', '/v1/workflow/stamp-types', { withAuth: true });
   const stampCan   = () => request('GET', '/v1/workflow/can-stamp', { withAuth: true });
@@ -266,7 +273,8 @@ function createClient(opts = {}) {
     getPage, getPageCount, find, getSpreadsheet,
     intakeDocTypes, intakeSubmit,
     workflow: { list: wfList, counts: wfCounts, recipients, assign, claim, resolve, recall, stamped: wfStamped,
-                stampTypes, canStamp: stampCan, stampList, stampPlace, stampedDoc },
+                stampTypes, canStamp: stampCan, stampList, stampPlace, stampedDoc,
+                docRoutes: wfDocRoutes, docHistory: wfDocHistory, adminCancel: wfAdminCancel, stampTypeCreate },
     recycle: { list: binList, delete: binDelete, restore: binRestore, purge: binPurge, purgeAll: binPurgeAll },
     review: { queue: revQueue, deferred: revDeferred, counts: revCounts, docTypes,
               confirm: revConfirm, defer: revDefer, undefer: revUndefer, viewing: revViewing, release: revRelease,

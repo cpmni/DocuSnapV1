@@ -74,6 +74,11 @@ contextBridge.exposeInMainWorld('scanfinder', {
     stampList:  (id) => ipcRenderer.invoke('client-wf-stamp-list', id),
     stampPlace: (id, body) => ipcRenderer.invoke('client-wf-stamp-place', { id, body }),
     stampedDoc: (id) => ipcRenderer.invoke('client-wf-stamped-doc', id),
+    // Contract 1.4.0 (2026-09-14): the pop-out's open-routes / decision-history reads, admin cancel, "+ New stamp".
+    docRoutes:       (id) => ipcRenderer.invoke('client-wf-doc-routes', id),
+    docHistory:      (id) => ipcRenderer.invoke('client-wf-doc-history', id),
+    adminCancel:     (id, version, reason) => ipcRenderer.invoke('client-wf-admin-cancel', { id, version, reason }),
+    stampTypeCreate: (body) => ipcRenderer.invoke('client-wf-stamp-type-create', body),
   },
   review: {
     queue:    () => ipcRenderer.invoke('client-review-queue'),

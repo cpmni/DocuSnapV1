@@ -75,6 +75,10 @@ console.log('S4 — the shared workflow / mailbox / stamp modules on the core (h
     const calls2 = rec2.calls || [];
     check('the desktop workflow bridge was driven through the core adapter (workflow-inbox / recipients / stamp-types)',
           calls2.some(([c]) => c === 'workflow-inbox') && calls2.some(([c]) => c === 'workflow-recipients') && calls2.some(([c]) => c === 'stamp-types'));
+    const has2 = (ch, pred) => calls2.some(([c, a]) => c === ch && (!pred || pred(a)));
+    check('the History block read doc 1 ({documentId:1}) and the routed banner read doc 2 ({documentId:2}) — preload payload shapes preserved',
+          has2('workflow-doc-history', a => a[0] && a[0].documentId === 1) && has2('workflow-doc-routes', a => a[0] && a[0].documentId === 2));
+    check('the two-step cancel called workflow-admin-cancel with {id:13, version:1}', has2('workflow-admin-cancel', a => a[0] && a[0].id === 13 && a[0].version === 1));
   }
 }
 

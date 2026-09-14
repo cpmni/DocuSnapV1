@@ -196,3 +196,48 @@ answer on the "doesn't open" moment (§3 above) · the 34-blank-pages question (
   armed by the dev runs) without a single-instance/DB collision. Relaunch dev = `TEST_BUILD=1 npm start` + `client\
   node_modules\electron\dist\electron.exe .` (recipe in memory `project_dev_restart_singleinstance_trap`). The sandbox
   is GONE (was on old code; re-seed with `scripts/seed-chris-sandbox.js` if needed).
+
+---
+
+## ADDENDUM 3 — 2026-09-14 (later morning): item 3 BUILT — `/v1` contract 1.4.0, the pop-out's last workflow bits
+
+**Owner: "go ahead with item 3."** Oracle SIGN-OFF-W/COND (`docs/oracle_log.md` 2026-09-14), conditions built in the
+same commit. Contract + gates in `docs/detached-client.md`; plan `docs/designs/CLIENT_SEARCH_PARITY_PLAN_2026-09-13.md`
+S5 status.
+
+**What changed, in plain terms**
+- The client's search window now has everything the core's has for approvals: who approved / rejected / saw a
+  document and when (with a "View stamped copy" link that opens the stamped page in the window), a "Sent to X —
+  awaiting their approval" note on a document that is out with someone, an admin's two-click "Cancel route" on it,
+  and "+ New stamp" for admins. An older core simply hides them (the client asks the core's version first; it never
+  sends a request the core can't answer).
+- FINDING on the way: the "Sent to X" note and the admin cancel had been DEAD on the core too since the 28 Aug popup
+  redesign (the code that drew them inline was never called again). They now live in the popup's Send panel, so both
+  apps got them back. The dead inline code is marked and queued for removal (`pendingfeatures.md`).
+- Two things the Oracle caught before commit: (1) a cancelled route was about to be blamed on the sender in the
+  history ("RECALLED alice — Cancelled by Admin") — fixed: the sender is named only for their own recall; (2) one
+  document hidden from a user (deleted under them, or department-restricted) would have silently switched those
+  controls off for the rest of the session on the client — fixed: a hidden document just shows nothing for itself.
+
+**Server** `src/modules/api/handler.js` (all under `/v1/workflow/*`): `GET …/documents/:id/routes` + `…/history`
+(admin/edit, accessService, projected — no sender comment, no path), `POST …/routes/:id/cancel` (admin at the route
+AND in the service, CAS version → 409, closed → 400 INVALID, audited tombstone), `POST …/stamp-types` (admin; the
+catalog module validates). `API_CONTRACT_VERSION` **1.4.0**. **Client:** `apiClient.js` (CLIENT_CONTRACT 1.4.0 + 4
+methods), `main.js` (4 guarded IPCs), `preload.js`, `clientTransport.js` (caps version AND role gated — reads
+admin/edit, cancel + new stamp admin; `docRead` for the per-doc reads; `stampedOverlay` in-window viewer),
+`search/index.html` overlay CSS. **Shared popup** `searchStamp.js`: routed banners + two-step cancel in the Send
+panel; history rows name the actor (OC2-correct) + link the stamped copy; `searchWorkflow.js` header marks the dead
+provider.
+
+**Verification:** `npm run test:pins` **361/361**; `test_v1_workflow` end-to-end over the REAL client transport (role
+denials, path-free projection, CAS 409, INVALID, tombstone + audit row, stamp-type validation codes);
+`test_client_search_popout` **365** across five harness runs (A1 parity · A2 lite 1.2.0 · A3 workflow · A5 workflow as
+EDIT · A4 workflow vs a 1.3.0 core — the 1.4.0 channels never called); core functional **82**; sync 32. Harness gained
+`--role`, a stateful workflow world (a closed stamped route + two `recalled` producers on doc 1, an open route on doc
+2, a hidden doc 3 that answers 404) and a null-safe `click` (a missing target is a recorded failure, never a lost
+report).
+
+**Installers REBUILT on this commit** (see the final lines of this addendum for the file names) so the owner's test
+carries item 3. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
+stacking; 403 wording; the S2 reads' 404 flip) · the owner's answer on "content tables" (PDF reader question,
+`pendingfeatures.md`) · everything in the earlier lists.
