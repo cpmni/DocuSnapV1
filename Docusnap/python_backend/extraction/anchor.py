@@ -2781,6 +2781,9 @@ def _should_replace(incumbent, candidate, val_type, validation_patterns, inc_ocr
 # rejected. 0.8 keeps a clean ref (with its own -/./ separators) at 1.0 while
 # excluding the MAC class. Shared by Stage 2 (anchor) and Stage 0.5 (template_mapper).
 _CREDIBLE_COVERAGE_MIN = 0.8
+# DATE_FORMS_WIDE (2026-09-14): the date credibility gate also takes the `date_wide` config patterns (any single
+# separator / ordinal / glued month-name forms) when the switch is on. Twin of validator.DATE_FORMS_WIDE.
+_DATE_FORMS_WIDE = os.environ.get('DATE_FORMS_WIDE', '0') != '0'
 
 # Field validation types whose pattern is PRECISE enough that a full match is
 # type-AUTHORITATIVE — the regex IS the format, so a learned digit-position SHAPE must
@@ -2862,6 +2865,13 @@ def _crop_is_credible(value: str, val_type: str | None,
         return False
 
     pats = (validation_patterns or {}).get(val_type) if val_type else None
+    # DATE_FORMS_WIDE (2026-09-14): the wider month-name shapes (any single separator, ordinal, glued) join the
+    # date credibility patterns ONLY when the switch is on — a crop "23-Aug-26" then reads as credible instead of
+    # falling to the salvage tier. Config key `date_wide`; OFF = byte-identical.
+    if val_type == "date" and _DATE_FORMS_WIDE:
+        _extra = (validation_patterns or {}).get("date_wide") or []
+        if _extra:
+            pats = list(pats or []) + list(_extra)
     if pats:
         # Date / currency keep substring matching + their upstream salvage path (a
         # "£1,234.00" or junk-wrapped date is rescued later, never rejected here).

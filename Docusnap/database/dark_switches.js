@@ -256,6 +256,14 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // (seeded custom date fields structurally read 85). impossible arm only; kw leg only; auto-file-neutral
   // (always held+noted). ⚑ FLIP GATE: realdoc M=0 + set-equal wouldFile + zero date-accuracy drop + Oracle.
   'template_date_invalid_yield_lowconf',
+  // date_forms_wide (mig 167, 2026-09-14; reggie design → Oracle): the MONTH-NAME date family accepts any single
+  // separator (, . / \ - or none — OCR-glued), an ordinal on the day, a trailing dot on the month, "Sept", and a
+  // 2-digit year, in the engine (validator.parse_date) and in the crop credibility gate (config `date_wide`).
+  // Numeric dates NOT widened (the month name is the guard against "3.5.2" / "1,234.56"). The desktop CONFIRM
+  // door (filing/handler.js normaliseDate) + the teach/review readers take the same forms UNSWITCHED (a human's
+  // typed/taught value — no auto-file decision there). Byte-identical OFF. ⚑ FLIP GATE: realdoc M=0 +
+  // wouldFile set-equality + the VAL_CENSUS_DIR crop/keyword census OFF vs ON (every new acceptance a real date).
+  'date_forms_wide',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

@@ -113,5 +113,92 @@ console.log('\nTHE MIRROR MUST NOT GO STALE — the renderer still implements th
         /valKey === 'date'/.test(r) && /_parseDrawnDate\(v, _regionDateOrder \|\| 'dmy'\)/.test(r));
 }
 
+// ── 2026-09-14: the WIDE month-name date family (config `date_wide`; reggie design → Oracle) ──────────────────
+// One rule on every surface: a day (optional ordinal), a month NAME (optional trailing dot, keyed on its first
+// three letters), a 2- or 4-digit year, with optional whitespace and AT MOST ONE of , . / \ - between the tokens
+// (none = OCR-glued). Numeric dates are NOT widened. The Python twin reads the same vectors.
+{
+  const V = require(path.join(__dirname, '..', '..', '..', 'python_backend', 'tests', 'date_forms_vectors.json'));
+  const wide = (VP.date_wide || []).map(p => new RegExp(p, 'i'));
+  check('config carries two `date_wide` patterns that compile under the renderer\'s flags', wide.length === 2);
+  const hits = (s) => wide.some(re => re.test(s));
+  for (const v of V.accept) check(`date_wide matches the accept vector ${JSON.stringify(v.in)} (substring, as the crop gate / badge use it)`, hits(v.in));
+  for (const s of ['REF23AUG2026', '1,234.56', '12-34-5678', '23 Ma 2026', 'Aug 2026', 'Aug2026', '23,,Aug 26']) check(`date_wide refuses ${JSON.stringify(s)} (the alnum lookbehind fence / the single-separator rule / digits→digits never glued)`, !hits(s));
+  check('date_wide tolerates a longer line around the date (substring — the badge, not the door)', hits('Sent: 23-Aug-26 14:30'));
+  // The three JS readers carry the SAME month-name regex fragment as the canonical door, so the badge/wizard/drawn
+  // reader can never disagree with what confirm files.
+  const FRAG = '(?:st|nd|rd|th)?\\s*[,./\\\\-]?\\s*([A-Za-z]{3,9})\\.?\\s*[,./\\\\-]?\\s*(\\d{2}|\\d{4})$/i';
+  for (const [label, rel] of [['filing/handler.js parseDate (the confirm door)', ['..', '..', '..', 'src', 'modules', 'filing', 'handler.js']],
+                              ['review/renderer.js _matchStrictDate (drawn dates)', ['renderer.js']],
+                              ['teach/renderer.js _parsesAsDate (the wizard\'s date check)', ['..', 'teach', 'renderer.js']]]) {
+    const src = fs.readFileSync(path.join(__dirname, ...rel), 'utf8');
+    check(`${label} carries the wide month-name day-first regex`, src.includes(FRAG));
+    check(`${label} strips a leading day name`, /Mon\(\?:day\)\?\|Tue\(\?:sday\)\?/.test(src));
+    check(`${label} pivots a 2-digit year at 69 (strptime %y twin)`, /y >= 69 \? 1900 : 2000/.test(src));
+  }
+  // Oracle C3 (2026-09-14): the MONTH-FIRST fragment is pinned LITERALLY too — its day→year separator is the one
+  // place the rule must NOT allow "nothing" (digits→digits: "Aug 2026" would otherwise split into 20 + 26).
+  const FRAG_MDY = '(?:(?:st|nd|rd|th)\\s*[,./\\\\-]?\\s*|\\s*[,./\\\\-]\\s*|\\s+)(\\d{2}|\\d{4})$/i';
+  for (const [label, rel] of [['filing/handler.js parseDate', ['..', '..', '..', 'src', 'modules', 'filing', 'handler.js']],
+                              ['review/renderer.js _matchStrictDate', ['renderer.js']],
+                              ['teach/renderer.js _parsesAsDate', ['..', 'teach', 'renderer.js']]]) {
+    const src = fs.readFileSync(path.join(__dirname, ...rel), 'utf8');
+    check(`${label} carries the month-first fragment with the NON-EMPTY day→year separator (verbatim)`, src.includes(FRAG_MDY));
+  }
+  const rr = fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8').replace(/\r\n/g, '\n');
+  // Oracle C2: ONE helper widens the date list for BOTH renderer readers of the shared config — the on-blur badge
+  // (compiled RegExps) and the Quick-check grid's _baValPats (raw strings) — so the two can never drift.
+  check('review renderer defines the shared `_widenDatePatterns` helper exactly once',
+        (rr.match(/\nfunction _widenDatePatterns\(pats\) \{/g) || []).length === 1);
+  check('...ensureValidationPatterns (the badge / on-blur check) routes through it',
+        /_widenDatePatterns\(validationPatterns\);/.test(rr));
+  check('...and the Quick-check grid\'s _baValPats routes through the SAME helper',
+        /_baValPats = _widenDatePatterns\(await window\.docusnap\.getValidationPatterns\(\)\);/.test(rr));
+  check('no other reader concatenates date_wide by hand', (rr.match(/\.concat\(pats\.date_wide\)|\.concat\([A-Za-z_.]*date_wide\)/g) || []).length === 1);
+  // The renderer functions are browser-scoped, but these particular ones are pure — lift them out of the source and
+  // RUN them (the same "mirror that cannot go stale" idea as the coverage rule above, one step stronger).
+  const vm = require('vm');
+  const grab = (src, re, what) => { const m = src.match(re); if (!m) throw new Error(`could not lift ${what}`); return m[0]; };
+  const lifted = [
+    grab(rr, /\nconst _DRAWN_MONTHS = \{[^\n]*\};\n/, '_DRAWN_MONTHS'),
+    grab(rr, /\nfunction _fmtDMY\([^)]*\) \{[^\n]*\}\n/, '_fmtDMY'),
+    grab(rr, /\nfunction _realDMY\([^)]*\) \{[\s\S]*?\n\}\n/, '_realDMY'),
+    grab(rr, /\nfunction _matchStrictDate\([^)]*\) \{[\s\S]*?\n\}\n/, '_matchStrictDate'),
+    grab(rr, /\nfunction _widenDatePatterns\([^)]*\) \{[\s\S]*?\n\}\n/, '_widenDatePatterns'),
+  ].join('\n');
+  const R = vm.runInNewContext(lifted + '\n;({ _matchStrictDate, _widenDatePatterns })', {});
+  const DAYNAME = /^(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)\s*,?\s*/i;   // _parseDrawnDate's Attempt-1 strip
+  // Oracle C1: a drawn date the Review reader accepts must be a REAL calendar date (the door's `real` + strptime refuse a
+  // rolled-over "31 Apr"); JS Date alone would have said 1 May.
+  for (const s of ['31 Apr 2026', '31/04/2026', '2026-02-30', '29 Feb 2026', 'Feb 30, 2026', '30.02.2026', '00 Aug 2026', '0/08/2026'])
+    check(`_matchStrictDate refuses the impossible ${JSON.stringify(s)} (calendar round-trip)`, R._matchStrictDate(s, 'dmy') === null);
+  check('_matchStrictDate keeps a real leap day (29 Feb 2024)', R._matchStrictDate('29 Feb 2024', 'dmy') === '29-02-2024');
+  check('_matchStrictDate keeps 31/03/2026', R._matchStrictDate('31/03/2026', 'dmy') === '31-03-2026');
+  for (const v of V.accept) check(`_matchStrictDate reads ${JSON.stringify(v.in)} → ${v.out} (the door's answer)`, R._matchStrictDate(v.in.replace(DAYNAME, ''), 'dmy') === v.out);
+  for (const s of V.refuse_js.filter(x => !/^Date: |14:30$/.test(x)))   // Attempt 2's search / Attempt 1's label trim handle those two, not the strict gate
+    check(`_matchStrictDate refuses ${JSON.stringify(s)} (whole-string, as the door does)`, R._matchStrictDate(s, 'dmy') === null);
+  check('_matchStrictDate has no return that bypasses the round-trip', !/_fmtDMY\(/.test(grab(rr, /\nfunction _matchStrictDate\([^)]*\) \{[\s\S]*?\n\}\n/, '')));
+  // Oracle C2, run for real: the Quick-check grid's date rule (_baDateOk = any raw `date` pattern matches, 'i') over the
+  // widened RAW config accepts every vector the door files.
+  const baPats = R._widenDatePatterns(JSON.parse(JSON.stringify(VP)));
+  const baDateOk = (v) => (baPats.date || []).some(p => { try { return new RegExp(p, 'i').test(v); } catch { return false; } });
+  check('the widened raw config carries the date_wide patterns inside `date`', baPats.date.length === (VP.date || []).length + VP.date_wide.length);
+  check('...and does not touch the other keys', JSON.stringify(baPats.iban) === JSON.stringify(VP.iban) && JSON.stringify(baPats.date_wide) === JSON.stringify(VP.date_wide));
+  for (const v of V.accept) check(`Quick-check grid date rule accepts ${JSON.stringify(v.in)}`, baDateOk(v.in));
+  check('Quick-check grid still warns on a non-date', !baDateOk('INV-2939') && !baDateOk('whenever'));
+  check('_widenDatePatterns is a no-op on a config with no date_wide', JSON.stringify(R._widenDatePatterns({ date: ['x'] })) === JSON.stringify({ date: ['x'] }));
+  check('_widenDatePatterns survives a null (the grid\'s catch path)', R._widenDatePatterns(null) === null);
+  // The Teach wizard's date check is likewise pure — lift it and run it against the same vectors.
+  const tr = fs.readFileSync(path.join(__dirname, '..', 'teach', 'renderer.js'), 'utf8').replace(/\r\n/g, '\n');
+  const T = vm.runInNewContext(grab(tr, /\nfunction _parsesAsDate\([^)]*\)\{[\s\S]*?\n\}\n/, '_parsesAsDate') + '\n;({ _parsesAsDate })', {});
+  for (const v of V.accept) check(`teach _parsesAsDate accepts ${JSON.stringify(v.in)}`, T._parsesAsDate(v.in) === true);
+  for (const s of ['31 Apr 2026', '31/04/2026', '2026-02-30', '29 Feb 2026', 'Aug 2026', 'Aug2026', '23 Ma 2026', '3.5.2', '1,234.56', 'INV-2939', '23 Aug 202'])
+    check(`teach _parsesAsDate refuses ${JSON.stringify(s)}`, T._parsesAsDate(s) === false);
+  check('teach _parsesAsDate still takes either numeric order (the wizard is region-blind)', T._parsesAsDate('08/23/2026') === true && T._parsesAsDate('23/08/2026') === true);
+  const py = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'python_backend', 'extraction', 'validator.py'), 'utf8');
+  check('the Python twin uses the same separator rule (\\s*[,./\\\\-]?\\s*) behind its DATE_FORMS_WIDE switch', py.includes("_WIDE_SEP = r'\\s*[,./\\\\-]?\\s*'") && py.includes("if DATE_FORMS_WIDE:"));
+  check('the Python twin keeps the digits→digits separator NON-EMPTY (twin of FRAG_MDY)', py.includes("_WIDE_SEP_D2D = r'(?:\\s*[,./\\\\-]\\s*|\\s+)'"));
+}
+
 console.log(fails ? `\n${fails} CHECK(S) FAILED\n` : '\nall validation-surface pins passed\n');
 process.exit(fails ? 1 : 0);

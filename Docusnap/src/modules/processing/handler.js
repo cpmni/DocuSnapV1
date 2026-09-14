@@ -420,6 +420,9 @@ function _reconcileEnv(db) {
     // label-matched keyword date below the 90 floor (seeded custom date fields structurally read 85); an
     // impossible taught date has nothing valid to protect. DARK; kw leg only; auto-file-neutral.
     if (learning.getSetting(db, 'template_date_invalid_yield_lowconf', 'false') === 'true') env.TEMPLATE_DATE_INVALID_YIELD_LOWCONF = '1';
+    // Wide month-name date forms (mig 167, 2026-09-14): any single separator / ordinal / "Sept" / 2-digit year /
+    // OCR-glued in validator.parse_date + the crop credibility gate (config `date_wide`). DARK; numeric untouched.
+    if (learning.getSetting(db, 'date_forms_wide', 'false') === 'true') env.DATE_FORMS_WIDE = '1';
     // Far-future taught date yields (Oracle 2026-08-06): a taught date OCR-misread into an absurdly
     // future year ('2026'->'2096') no longer wins over a valid non-future keyword date; kept flagged.
     if (learning.getSetting(db, 'template_date_future_yield', 'false') === 'true') env.TEMPLATE_DATE_FUTURE_YIELD = '1';

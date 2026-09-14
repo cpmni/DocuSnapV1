@@ -50,5 +50,16 @@ eq('accept "3 September 2025"',          normaliseDate('3 September 2025'), '03-
 eq('accept OCR-split "1 5/12/2025"',   normaliseDate('1 5/12/2025'),     '15-12-2025');
 eq('accept OCR-spaced "15 / 12 / 2025"', normaliseDate('15 / 12 / 2025'), '15-12-2025');
 
+// (c) 2026-09-14 — the MONTH-NAME family with any single separator / ordinal / trailing month dot / "Sept" /
+// 2- or 4-digit year / OCR-glued (a test customer's "23rd Aug 2026" was refused HERE at confirm). The vectors are
+// SHARED with the Python twin (python_backend/tests/date_forms_vectors.json) so every surface files the same date.
+// Numeric dates are NOT widened — the refuse list keeps "3.5.2", "1,234.56", "12-34-5678" and the 2-digit numeric
+// year out of this door.
+{
+  const V = require('../../../python_backend/tests/date_forms_vectors.json');
+  for (const v of V.accept) eq(`accept (wide) ${JSON.stringify(v.in)}`, normaliseDate(v.in), v.out);
+  for (const s of V.refuse_js) eq(`refuse (wide guard) ${JSON.stringify(s)}`, normaliseDate(s), null);
+}
+
 console.log(`\nnormaliseDate predicate: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

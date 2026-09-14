@@ -78,10 +78,20 @@ batch waits for the find on a searched doc). Oracle SIGN-OFF-W/COND C1-C5 built;
 call-count pins. The persistent render worker stays a LATER slice (`pendingfeatures.md`). **Then (ADDENDUM 6):** the importer
 refuses `.sf_separated_originals` / `.metadata` (`isAppManagedFolder`, pin) — the 34-blank-pages question CLOSED; the pop-out's
 remembered position is sanitised against the connected displays (`client/windowBounds.js` — an OFF-SCREEN restore was a
-second real "doesn't open" cause); **date-format audit** for the test customer's "23rd Aug 2026": Python `parse_date` handles
-ordinals + day names, the JS canonical normaliser (`filing/handler.js parseDate`) and `validation_patterns.date` do NOT — the
-alignment fix is the next slice (reggie + Oracle first). Still owed: mig 166 flip gate · the dead-provider tidy-up · the
-Oracle's non-blocking notes.
+second real "doesn't open" cause). **LATE AFTERNOON — DATE FORMS BUILT (ADDENDUM 7; mig 167 `date_forms_wide`,
+`TEST_SWITCH_KEYS` 51):** the test customer's "23rd Aug 2026" was refused at the desktop CONFIRM door (`filing/handler.js
+parseDate`) + the shared `validation_patterns.date`, never by the engine. ONE month-name rule everywhere (reggie → Oracle
+SIGN-OFF-W/COND, C1-C4 built): day (optional ordinal) · month name on its first three letters (trailing dot, "Sept") · 2- or
+4-digit year (pivot 69) · at most ONE of `, . / \ -` between the parts, letters⇄digits may be glued, digits→digits NEVER
+("Aug 2026" is not a date) · a leading day name dropped · a REAL calendar date only (JS `Date` rollover closed: "31/04/2026"
+refused). UNSWITCHED at the human doors (confirm door; Review `_matchStrictDate` via `_realDMY`; the badge AND the
+Quick-check grid through ONE helper `_widenDatePatterns`; Teach `_parsesAsDate`); DARK on the engine side (`validator.
+parse_date` `_wide_month_form`, `anchor._crop_is_credible`, `keyword._validate` + G4 merge config `date_wide` under env
+`DATE_FORMS_WIDE`; OFF byte-identical). Shared vectors `python_backend/tests/date_forms_vectors.json` read by the Python pin
+(both interpreters), `test_normalise_date_predicate` (57) and `test_validation_pattern_surfaces` (170 — the pure renderer
+functions are lifted from the source and RUN). Pins **363/363**. **The customer needs the new build.** ⚑ Engine-half flip
+gate (Oracle C5) in `pendingfeatures.md`. Still owed: mig 166 flip gate · the dead-provider tidy-up · the Oracle's
+non-blocking notes.
 Follow-ups: the /v1 purge fix, a `/v1` MINOR for the pop-out's hidden bits, client `npm run dist` in lockstep. Memory
 `project_client_search_parity_20260913.md`.
 

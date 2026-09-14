@@ -97,8 +97,21 @@ async function ensureValidationPatterns() {
         .map(p => { try { return new RegExp(p, flags); } catch { return null; } })
         .filter(Boolean);
     }
+    _widenDatePatterns(validationPatterns);
   } catch { /* degrade gracefully — no patterns means no blur validation */ }
   return validationPatterns;
+}
+
+// The wider month-name date shapes (config `date_wide`, 2026-09-14) join the `date` list UNCONDITIONALLY on every
+// renderer reader of the shared config — the on-blur badge (ensureValidationPatterns, compiled RegExps) AND the
+// Quick-check grid (_baValPats, raw strings): the desktop CONFIRM door (filing/handler.js normaliseDate) accepts them
+// regardless of the engine's date_forms_wide switch, and neither reader may warn about a value the door then files.
+// ONE helper for both (Oracle C2, 2026-09-14) so the two can never drift; works on strings or RegExps alike.
+function _widenDatePatterns(pats) {
+  if (pats && Array.isArray(pats.date_wide) && pats.date_wide.length) {
+    pats.date = (pats.date || []).concat(pats.date_wide);
+  }
+  return pats;
 }
 
 // Returns a short error message when `value` fails the field's regex/type (or its
@@ -1241,7 +1254,7 @@ async function _baOpen(evId) {
     return;
   }
   if (!res.rows || !res.rows.length) { showToast('Nothing left to check in that batch.', 'info'); return; }
-  if (!_baValPats) { try { _baValPats = await window.docusnap.getValidationPatterns(); } catch { _baValPats = {}; } }
+  if (!_baValPats) { try { _baValPats = _widenDatePatterns(await window.docusnap.getValidationPatterns()); } catch { _baValPats = {}; } }
   _baEvId = evId; _baEdits = {}; _baPrevDoc = null; _baFType = ''; _baFSup = ''; _baColW = {};
   try { _baView = localStorage.getItem('ba_view') === 'cards' ? 'cards' : 'table'; } catch { _baView = 'table'; }   // table is the default view
   try { _asClosePanel(); } catch {}
@@ -3737,6 +3750,14 @@ function _stripCurrencySymbol(s) {
 }
 const _DRAWN_MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
 function _fmtDMY(d, mo, y) { const p = n => String(n).padStart(2, '0'); return `${p(d)}-${p(mo)}-${y}`; }
+// A REAL calendar date or nothing (Oracle C1, 2026-09-14): JS `new Date` silently rolls "31 Apr" to 1 May, and the
+// desktop CONFIRM door (filing/handler.js parseDate `real`) + the Python twin (strptime) both refuse such a value —
+// a drawn date this reader accepts must be one the door will file, so the same round-trip gates every _matchStrictDate
+// return. `mo` is 1-based here (the door's helper takes JS's 0-based month).
+function _realDMY(d, mo, y) {
+  const dt = new Date(y, mo - 1, d);
+  return (dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d) ? _fmtDMY(d, mo, y) : null;
+}
 // OCR date pre-clean — TWIN of validator._date_preclean (python_backend/extraction/validator.py);
 // keep the three aligned (this + filing/handler.js). Rejoin an OCR-split number ("1 5" -> "15",
 // "2 0 2 6" -> "2026") without touching a digit/letter boundary ("15 Jun" stays), then collapse
@@ -3779,15 +3800,19 @@ function _matchStrictDate(t, order) {
     else if (b > 12)          { mon = a; day = b; }   // second > 12 → must be the day
     else if (order === 'mdy') { mon = a; day = b; }   // US
     else                      { day = a; mon = b; }   // dmy (default) / ymd fallback
-    if (mon >= 1 && mon <= 12 && day >= 1 && day <= 31) return _fmtDMY(day, mon, y);
+    if (mon >= 1 && mon <= 12 && day >= 1 && day <= 31) return _realDMY(day, mon, y);
     return null;
   }
   m = t.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);       // ISO yyyy-mm-dd (unambiguous)
-  if (m) { const mo = +m[2], day = +m[3]; if (mo >= 1 && mo <= 12 && day >= 1 && day <= 31) return _fmtDMY(day, mo, +m[1]); }
-  m = t.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})$/);        // MMM DD YYYY (unambiguous)
-  if (m) { const mo = _DRAWN_MONTHS[m[1].slice(0, 3).toLowerCase()]; if (mo) return _fmtDMY(+m[2], mo, +m[3]); }
-  m = t.match(/^(\d{1,2})\s+([A-Za-z]{3,9}),?\s+(\d{4})$/);        // DD MMM YYYY (unambiguous)
-  if (m) { const mo = _DRAWN_MONTHS[m[2].slice(0, 3).toLowerCase()]; if (mo) return _fmtDMY(+m[1], mo, +m[3]); }
+  if (m) { const mo = +m[2], day = +m[3]; if (mo >= 1 && mo <= 12 && day >= 1 && day <= 31) return _realDMY(day, mo, +m[1]); }
+  // Month-name forms (2026-09-14, twin of filing/handler.js parseDate + validator._wide_month_form): any single
+  // separator between the tokens (, . / \ - or none), an ordinal on the day, a trailing dot on the month, a 2- or
+  // 4-digit year (2-digit pivots at 69 like strptime %y). The month keys on its first three letters.
+  const _y = (yy) => { let y = +yy; if (yy.length === 2) y += (y >= 69 ? 1900 : 2000); return y; };
+  m = t.match(/^([A-Za-z]{3,9})\.?\s*[,./\\-]?\s*(\d{1,2})(?:(?:st|nd|rd|th)\s*[,./\\-]?\s*|\s*[,./\\-]\s*|\s+)(\d{2}|\d{4})$/i);   // MMM DD YYYY (digits→digits never glued)
+  if (m) { const mo = _DRAWN_MONTHS[m[1].slice(0, 3).toLowerCase()]; if (mo) return _realDMY(+m[2], mo, _y(m[3])); }
+  m = t.match(/^(\d{1,2})(?:st|nd|rd|th)?\s*[,./\\-]?\s*([A-Za-z]{3,9})\.?\s*[,./\\-]?\s*(\d{2}|\d{4})$/i);   // DD MMM YYYY (unambiguous)
+  if (m) { const mo = _DRAWN_MONTHS[m[2].slice(0, 3).toLowerCase()]; if (mo) return _realDMY(+m[1], mo, _y(m[3])); }
   return null;
 }
 
@@ -3799,7 +3824,8 @@ function _parseDrawnDate(raw, order) {
   const trimmed = base
     .replace(/^[A-Za-z][A-Za-z ]*?:\s*/, '')   // drop a leading "Date:" / "Invoice Date:" label (colon required)
     .replace(/^[^0-9A-Za-z]+/, '')             // leading "(", "#", …
-    .replace(/[^0-9A-Za-z]+$/, '');            // trailing ".", ")", …
+    .replace(/[^0-9A-Za-z]+$/, '')             // trailing ".", ")", …
+    .replace(/^(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)\s*,?\s*/i, '');   // "Sunday, 23rd Aug 2026" (2026-09-14)
   let out = _matchStrictDate(trimmed, order);
   if (out) return out;
   // Attempt 2 — SEARCH (Lever X): a drawn box that captured a longer line ("Sent: 12 June 2026 21:29",

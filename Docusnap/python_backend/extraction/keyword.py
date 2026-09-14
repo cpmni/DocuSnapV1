@@ -1265,6 +1265,13 @@ def extract_fields(ocr_text: str, field_keys: list[str],
     """
     field_patterns = patterns.get("field_patterns", {})
     validation     = patterns.get("validation_patterns", {})
+    # DATE_FORMS_WIDE (2026-09-14): the wider month-name shapes (config `date_wide`) qualify a keyword date read
+    # too when the switch is on — the same merge anchor._crop_is_credible applies (a keyword-anchored "23-Aug-26"
+    # must not fall through while the crop gate accepts it). Also widens the G4 "a date is not a reference"
+    # guard below, which reads validation['date']. OFF = byte-identical.
+    if _DATE_FORMS_WIDE and validation.get("date") and validation.get("date_wide"):
+        validation = dict(validation)
+        validation["date"] = list(validation["date"]) + list(validation["date_wide"])
     results        = {}
     lines          = ocr_text.split("\n")
 
@@ -2514,6 +2521,11 @@ def val_census(site, val_type, value, accepted):
                                   "value": value, "accepted": bool(accepted)}) + "\n")
     except Exception:
         pass          # a measurement must never break an extraction
+
+
+# DATE_FORMS_WIDE (2026-09-14): twin of validator.DATE_FORMS_WIDE / anchor._DATE_FORMS_WIDE (read at import from
+# the env the app sets from the `date_forms_wide` setting).
+_DATE_FORMS_WIDE = os.environ.get('DATE_FORMS_WIDE', '0') != '0'
 
 
 def _validate(value: str, patterns: list[str]) -> bool:

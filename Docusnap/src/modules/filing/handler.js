@@ -343,13 +343,6 @@ function sanitiseFolderName(name) {
   return cleaned;
 }
 
-const DATE_FORMATS = [
-  /^(\d{2})\/(\d{2})\/(\d{4})$/,   // DD/MM/YYYY
-  /^(\d{4})-(\d{2})-(\d{2})$/,    // YYYY-MM-DD
-  /^(\d{2})-(\d{2})-(\d{4})$/,    // DD-MM-YYYY
-  /^(\d{2})\.(\d{2})\.(\d{4})$/,  // DD.MM.YYYY
-];
-
 const MONTHS = {
   jan:0, feb:1, mar:2, apr:3, may:4, jun:5,
   jul:6, aug:7, sep:8, oct:9, nov:10, dec:11,
@@ -372,26 +365,33 @@ function _datePreclean(raw) {
 function parseDate(raw) {
   if (!raw) return null;
   const s = _datePreclean(raw);
+  // A real calendar date or nothing: JS `new Date(y, m, d)` silently ROLLS OVER an impossible date ("31/04/2026" →
+  // 1 May, "12-34-5678" → a year 5680) — the Python twin (strptime) refuses those, and so must this door
+  // (2026-09-14, reggie finding). Refused → the invalid-date guard sends the value back to the operator.
+  const real = (y, mo, dd) => { const d = new Date(y, mo, dd); return (d.getFullYear() === y && d.getMonth() === mo && d.getDate() === dd) ? d : null; };
   // DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
   let m = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
-  if (m) return new Date(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
+  if (m) return real(parseInt(m[3]), parseInt(m[2])-1, parseInt(m[1]));
   // YYYY-MM-DD
   m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
-  // MMM DD YYYY or DD MMM YYYY (text month — abbreviated OR full name: "Jul"/"July").
-  // Month is matched 3..9 letters and keyed on its first three (slice(0,3)) so the ONE
-  // central parser accepts every month form validator.py (%B/%b) and the review renderer
-  // (_matchStrictDate, {3,9}) already accept — a full-month date printed on a doc ("July
-  // 28, 2026") must FILE, not land in Unknown Year/Month. Numeric paths above unchanged.
-  m = s.match(/^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})$/);
-  if (m) {
-    const mo = MONTHS[m[1].slice(0, 3).toLowerCase()];
-    if (mo !== undefined) return new Date(parseInt(m[3]), mo, parseInt(m[2]));
-  }
-  m = s.match(/^(\d{1,2})\s+([A-Za-z]{3,9}),?\s+(\d{4})$/);
-  if (m) {
-    const mo = MONTHS[m[2].slice(0, 3).toLowerCase()];
-    if (mo !== undefined) return new Date(parseInt(m[3]), mo, parseInt(m[1]));
+  if (m) return real(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
+  // MONTH-NAME forms (text month — abbreviated OR full: "Jul"/"July"/"Sept"), 2026-09-14 reggie design (twin of
+  // validator._wide_month_form): a leading day name is dropped; between the three tokens (day / month / year) sit
+  // optional whitespace and AT MOST ONE of , . / \ - (none at all for an OCR-glued "23Aug2026"); the day may carry
+  // an ordinal ("23rd"); the month may carry a trailing dot ("Aug.") and keys on its first three letters; the year
+  // is 2 or 4 digits (a 3-digit clip stays refused; 2-digit pivots at 69 like strptime %y). A test customer's
+  // "23rd Aug 2026" was refused here at confirm. NUMERIC dates are NOT widened (the month name is the guard that
+  // keeps "3.5.2" / "1,234.56" / "12-34-5678" out). The calendar round-trip refuses "31 Apr" (JS Date rolls over).
+  const t = s.replace(/^(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)\s*,?\s*/i, '');
+  let day = null, mon = null, year = null;
+  if ((m = t.match(/^(\d{1,2})(?:st|nd|rd|th)?\s*[,./\\-]?\s*([A-Za-z]{3,9})\.?\s*[,./\\-]?\s*(\d{2}|\d{4})$/i))) { day = +m[1]; mon = m[2]; year = m[3]; }
+  // Month-first: day → year is digits → digits, so that separator may NOT be empty ("Aug 2026" is not "Aug 20 26").
+  else if ((m = t.match(/^([A-Za-z]{3,9})\.?\s*[,./\\-]?\s*(\d{1,2})(?:(?:st|nd|rd|th)\s*[,./\\-]?\s*|\s*[,./\\-]\s*|\s+)(\d{2}|\d{4})$/i))) { mon = m[1]; day = +m[2]; year = m[3]; }
+  if (mon !== null) {
+    const mo = MONTHS[mon.slice(0, 3).toLowerCase()];
+    if (mo === undefined) return null;
+    let y = +year; if (year.length === 2) y += (y >= 69 ? 1900 : 2000);
+    return real(y, mo, day);
   }
   return null;
 }

@@ -3421,6 +3421,19 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 166 (template_date_invalid_yield_lowconf): ${e.message}`); }
   }
 
+  // ── migration 167: date_forms_wide seeded OFF (2026-09-14; reggie design → Oracle). A test customer's taught
+  //    "23rd Aug 2026" was refused as a date. The MONTH-NAME family now accepts any single separator / an ordinal /
+  //    a trailing month dot / "Sept" / a 2-digit year / OCR-glued "23Aug2026" in validator.parse_date + the crop
+  //    credibility gate (config `date_wide`) when ON; numeric dates untouched. DARK (TEST_SWITCH_KEYS);
+  //    byte-identical OFF. The desktop confirm door + teach/review readers take the forms unswitched.
+  if (!applied.has(167)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('date_forms_wide', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (167)').run();
+      console.log(`JS migration 167 applied: date_forms_wide (month-name dates with any single separator / ordinal / 2-digit year) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 167 (date_forms_wide): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

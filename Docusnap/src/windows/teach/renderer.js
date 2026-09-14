@@ -1443,22 +1443,26 @@ function _freezeDiscouraged(f){
 // Conservative "reads as a printed date": common numeric + written-month forms only, with real
 // calendar bounds (either day/month order accepted — this is a plausibility test, not a parse).
 function _parsesAsDate(s){
-  const v = String(s || '').trim();
+  const v = String(s || '').trim().replace(/^(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)\s*,?\s*/i, '');
   if (!v || v.length > 24) return false;
   let d = null, m = null, y = null, mon = null, x;
   if ((x = v.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/)))      { d = +x[1]; m = +x[2]; y = +x[3]; }
   else if ((x = v.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/)))       { y = +x[1]; m = +x[2]; d = +x[3]; }
-  else if ((x = v.match(/^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?,?\s+(\d{2}|\d{4})$/))) { d = +x[1]; mon = x[2]; y = +x[3]; }
-  else if ((x = v.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{2}|\d{4})$/))) { mon = x[1]; d = +x[2]; y = +x[3]; }
+  // Month-name forms (2026-09-14, twin of filing/handler.js parseDate + validator._wide_month_form): any single
+  // separator between the three tokens (, . / \ - or none), an ordinal on the day, a trailing dot on the month.
+  else if ((x = v.match(/^(\d{1,2})(?:st|nd|rd|th)?\s*[,./\\-]?\s*([A-Za-z]{3,9})\.?\s*[,./\\-]?\s*(\d{2}|\d{4})$/i))) { d = +x[1]; mon = x[2]; y = +x[3]; }
+  else if ((x = v.match(/^([A-Za-z]{3,9})\.?\s*[,./\\-]?\s*(\d{1,2})(?:(?:st|nd|rd|th)\s*[,./\\-]?\s*|\s*[,./\\-]\s*|\s+)(\d{2}|\d{4})$/i))) { mon = x[1]; d = +x[2]; y = +x[3]; }   // digits→digits never glued
   else return false;
   if (mon){
     m = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec']
         .indexOf(mon.slice(0, 3).toLowerCase()) + 1;
     if (!m) return false;
   }
-  if (y < 100) y += (y >= 70 ? 1900 : 2000);
-  const plaus = (dd, mm) => dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12;
-  return (plaus(d, m) || plaus(m, d)) && y >= 1990 && y <= 2099;
+  if (y < 100) y += (y >= 69 ? 1900 : 2000);   // the strptime %y pivot (twin)
+  // A REAL calendar date in either order (the wizard does not know the region order) — the round-trip refuses a
+  // rolled-over "31 Apr" the way the confirm door's `real` and the Python strptime do (Oracle C1 twin, 2026-09-14).
+  const real = (dd, mm) => { const dt = new Date(y, mm - 1, dd); return dt.getFullYear() === y && dt.getMonth() === mm - 1 && dt.getDate() === dd; };
+  return (real(d, m) || (!mon && real(m, d))) && y >= 1990 && y <= 2099;
 }
 function _dateCoherenceWarn(f, value){
   // PLAIN TEXT — the caller escapes for HTML; the toast consumer uses it verbatim.

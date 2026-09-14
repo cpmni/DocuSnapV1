@@ -23,6 +23,41 @@ _DAY_NAME_RE = re.compile(
 # Strip ordinal suffixes: "1st" → "1", "22nd" → "22", "3rd" → "3"
 _ORDINAL_RE = re.compile(r'\b(\d{1,2})(st|nd|rd|th)\b', re.IGNORECASE)
 
+# ── DATE_FORMS_WIDE (2026-09-14; reggie design → Oracle): the MONTH-NAME family accepts ANY single separator ──
+# A test customer's "23rd Aug 2026" was refused at the desktop door; the wider ask ("23, aug 26", "23-aug-26",
+# "23\Aug\26", "Aug. 23rd 2026", "23Aug2026" glued by OCR, "23 Sept 2026") is closed by ONE rule shared with the JS
+# twins (filing/handler.js parseDate, teach _parsesAsDate, review _matchStrictDate): between the three tokens
+# (day / month NAME / year) sit optional whitespace and AT MOST ONE of , . / \ - ; the month keys on its first
+# three letters; the year is 2 or 4 digits (a 3-digit clip stays refused); the day may carry an ordinal. Numeric
+# dates are NOT widened (a free 3-token rule would take "3.5.2" and "1,234.56" — the month NAME is the guard).
+# DARK: env DATE_FORMS_WIDE=1 (setting `date_forms_wide`, mig 167, in TEST_SWITCH_KEYS); OFF = byte-identical.
+# ⚑ FLIP GATE: realdoc M=0 + the VAL_CENSUS_DIR crop/keyword census OFF vs ON (every new acceptance a real date).
+DATE_FORMS_WIDE = os.environ.get('DATE_FORMS_WIDE', '0') != '0'
+_WIDE_SEP = r'\s*[,./\\-]?\s*'            # letters ⇄ digits: may be empty (OCR-glued "23Aug2026")
+_WIDE_SEP_D2D = r'(?:\s*[,./\\-]\s*|\s+)'   # digits → digits: NEVER empty ("Aug 2026" must not split into 20 + 26)
+_WIDE_DMY_RE = re.compile(r'^(\d{1,2})(?:st|nd|rd|th)?' + _WIDE_SEP + r'([A-Za-z]{3,9})\.?' + _WIDE_SEP + r'(\d{2}|\d{4})$', re.IGNORECASE)
+_WIDE_MDY_RE = re.compile(r'^([A-Za-z]{3,9})\.?' + _WIDE_SEP + r'(\d{1,2})(?:(?:st|nd|rd|th)' + _WIDE_SEP + r'|' + _WIDE_SEP_D2D + r')(\d{2}|\d{4})$', re.IGNORECASE)
+_MONTH_KEYS = {'jan': 'Jan', 'feb': 'Feb', 'mar': 'Mar', 'apr': 'Apr', 'may': 'May', 'jun': 'Jun',
+               'jul': 'Jul', 'aug': 'Aug', 'sep': 'Sep', 'oct': 'Oct', 'nov': 'Nov', 'dec': 'Dec'}
+
+
+def _wide_month_form(s: str) -> str | None:
+    """Rebuild a month-name date written with any single separator as the canonical 'D Mon YYYY' /
+    'Mon D YYYY' the strptime lists already accept — the ONLY thing the wide rule changes. None when
+    the string is not a 3-token month-name date (the caller then continues exactly as before)."""
+    m = _WIDE_DMY_RE.match(s)
+    if m:
+        day, mon, year = m.group(1), m.group(2), m.group(3)
+    else:
+        m = _WIDE_MDY_RE.match(s)
+        if not m:
+            return None
+        mon, day, year = m.group(1), m.group(2), m.group(3)
+    key = _MONTH_KEYS.get(mon[:3].lower())
+    if not key:
+        return None
+    return f"{int(day)} {key} {year}"
+
 # Fully-numeric ordering-SENSITIVE formats — the ONLY axis a region setting changes.
 # DD-first (UK/EU/most of the world) vs MM-first (US). "03/04/2026" is 3 Apr under _DMY,
 # 4 Mar under _MDY; a day-value > 12 makes only one order parse regardless.
@@ -110,6 +145,10 @@ def parse_date(raw: str | None, date_order: str | None = None) -> datetime | Non
     s = _ORDINAL_RE.sub(r'\1', s)
     # Collapse runs of whitespace that ordinal removal may have created
     s = re.sub(r'\s{2,}', ' ', s).strip()
+    if DATE_FORMS_WIDE:
+        wide = _wide_month_form(s)     # "23,aug 26" / "23-aug-26" / "Aug. 23 2026" / "23Aug2026" → "23 Aug 26"
+        if wide:
+            s = wide
     for fmt in _formats_for_order(date_order or _DATE_ORDER):
         try:
             d = datetime.strptime(s, fmt)

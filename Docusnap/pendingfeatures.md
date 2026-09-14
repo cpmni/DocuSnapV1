@@ -5329,6 +5329,23 @@ already exercises the shared UI on both apps.
 > cancel / new stamp after a mid-session demotion (cosmetic); (c) the S2 preview reads still flip their cap on a
 > 404 (`capGated`) — pre-existing; the per-document 1.4.0 reads use `docRead` (404 = hidden doc, cap kept).
 
+## 2026-09-14 — date formats: the test customer's "23rd Aug 2026" refused as a date → BUILT (mig 167 `date_forms_wide`)
+Audit: the Python engine already parsed it; the desktop CONFIRM door (`filing/handler.js normaliseDate`) and the shared
+`validation_patterns.date` (crop credibility gate, keyword qualification, Review badge) did not. reggie → Oracle:
+widen ONLY the month-name family — day (optional ordinal) · month name (first three letters; trailing dot; "Sept") ·
+2- or 4-digit year · at most ONE of `, . / \ -` between tokens, letters⇄digits may be glued but digits→digits never —
+in `validator.parse_date` + the credibility/qualification gates (DARK switch, TEST_SWITCH_KEYS 51) and UNSWITCHED
+at the confirm door + the Review/Teach readers (a human's value). The JS door also stops JS `Date` rollover
+("31/04/2026" → refused, not 1 May). Shared vectors `python_backend/tests/date_forms_vectors.json`. **The customer
+needs the new build** (his core is a week old). Oracle SIGN-OFF-W/COND (`docs/oracle_log.md` 2026-09-14): C1 the
+Review drawn reader round-trips the calendar (`_realDMY`; "31 Apr 2026" refused like the door) · C2 the Quick-check
+grid gets the `date_wide` merge through the SAME helper as the badge (`_widenDatePatterns`) · C3 both regex fragments
+literal-pinned in the three JS readers · C4 dead `DATE_FORMATS` deleted — all BUILT. ⚑ **FLIP GATE (engine half, C5):**
+realdoc 605 M=0 + `wouldFile` set-equality OFF vs ON + the `VAL_CENSUS_DIR` crop/keyword acceptance census OFF vs ON
+with EVERY new acceptance hand-verified against the rendered page; run with mig 166 in its shipping state (OFF) so the
+two date arcs are measured apart; then the flip is the owner's call. Owner-decisions parked: numeric 2-digit years at
+the JS door ("15/12/25", pinned refused); "Augu" still keys to Aug (pre-existing first-three-letters rule).
+
 ## 2026-09-14 — tidy-up: remove the DEAD inline workflow provider in the shared search screen
 `src/windows/shared/search-ui/searchWorkflow.js` still carries `_provide`, `_historyBlock`, `_routeOrAssign`,
 `_routedBanner`, `_decisionBar`, `_assignForm` and `SearchActions.registerActionProvider` — registered, never

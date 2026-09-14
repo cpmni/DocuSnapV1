@@ -54,6 +54,7 @@ live re-judge already done 2026-09-10.
 - **ref_confusable_flag** — flag an O-vs-0 style confusable in a reference so it can't silently misfile. **✅ census PASSED 2026-09-12 (M=0, fires on 6 confusable refs, 2 file→hold) — flip-ready, awaiting owner go.**
 
 **Dates:**
+- **date_forms_wide** (2026-09-14, mig 167) — read a written-out date however it is punctuated: "23rd Aug 2026", "23, aug 26", "23-aug-26", "23.Aug.2026", "Aug. 23 2026", "23 Sept 2026", an OCR-glued "23Aug2026", with or without a leading day name. Only dates with a month NAME (numeric dates untouched). The desktop confirm door and the Review/Teach readers take these forms already, switch or not; this switch is the reading engine's half (credibility gate + keyword qualification + parse). Test (Oracle C5): the 605-doc M=0 + would-file set-equality OFF vs ON, plus the crop/keyword acceptance census OFF vs ON where every NEW acceptance is checked by eye against the page (a wider pattern must only ever admit a real date); run with the mig-166 date fix in its shipping (off) state so the two date fixes are measured apart. Then your go.
 - **template_date_left_clip_grow** — recover a date whose leading digit was clipped.
 - **template_pad_date_containment_flag** — flag a taught date box that's clipping a digit.
 - **template_clip_commit_left_slack** — don't false-flag a correctly-read date with a clipped edge.

@@ -356,3 +356,45 @@ Install the core first, then the client; nothing is running at wrap.
 Install the core first, then the client; nothing is running at wrap. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
 stacking; 403 wording; the S2 reads' 404 flip) · the owner's answer on "content tables" (PDF reader question,
 `pendingfeatures.md`) · everything in the earlier lists.
+
+## ADDENDUM 7 — 2026-09-14 (late afternoon): the DATE FORMATS fix BUILT (mig 167 `date_forms_wide`) — the test customer's "23rd Aug 2026"
+
+**Owner: "go ahead and align the date formats … should we strip all special characters … 23, aug 26 · 23-aug-26 …
+could also be 23rd 24th 1st … check whether what I am saying is valid."** Checked, and it is valid with ONE tightening:
+we do not strip characters, we ACCEPT any single one of `, . / \ -` (or none) between the three parts of a WRITTEN-OUT
+date, because "strip everything" would turn "Aug 2026" into "Aug 20 26" and "1,234.56" into a date. Numeric dates are
+not widened at all (the month NAME is the guard). reggie designed it; the Oracle vetted it (`docs/oracle_log.md`
+2026-09-14, SIGN OFF WITH CONDITIONS — C1-C4 built, C5 = the flip gate).
+
+**The rule (every surface, identical):** day (optional `st/nd/rd/th`) · month name keyed on its first three letters
+(optional trailing dot; "Sept" works) · 2- or 4-digit year (a 3-digit clip stays refused; 2-digit pivots at 69 like
+Python's `%y`) · between the parts optional spaces and AT MOST ONE of `, . / \ -`; letters⇄digits may be glued (an
+OCR "23Aug2026") but digits→digits NEVER ("Aug 2026" must not read as 20 Aug 26); a leading day name ("Sunday,") is
+dropped. And a REAL calendar date only — "31 Apr 2026" / "31/04/2026" / "2026-02-30" are refused everywhere (JS `Date`
+used to roll them forward silently; the Python engine never did).
+
+**Where it lives:**
+- **Unswitched (a human's value):** the desktop CONFIRM door `filing/handler.js parseDate` (confirm, filename, `/v1`
+  confirm, Quick File, `_autoFileDoc`); the Review drawn/typed reader `_matchStrictDate` + `_parseDrawnDate`; the Review
+  badge / on-blur check AND the Quick-check grid through ONE helper `_widenDatePatterns` (Oracle C2); the Teach wizard's
+  `_parsesAsDate`.
+- **DARK on the engine side (mig 167 `date_forms_wide`, `TEST_SWITCH_KEYS` 50 → 51, env `DATE_FORMS_WIDE` from
+  `processing/handler.js`):** `validator.parse_date` (`_wide_month_form` rebuilds the match as "D Mon YYYY" for the
+  existing strptime lists), `anchor._crop_is_credible` + `keyword.py` (`_validate` qualification + the G4 guard) merge the
+  new config `validation_patterns.date_wide`. OFF = byte-identical (pinned). A TEST build arms it with everything else.
+- **Pins:** ONE shared vector file `python_backend/tests/date_forms_vectors.json` (accept → canonical DD-MM-YYYY; refuse
+  lists per side) read by `python_backend/tests/test_date_forms_wide.py` (OFF + ON; green under `py -3.12` and
+  `vendor\python`), `src/modules/filing/test_normalise_date_predicate.js` (57) and
+  `src/windows/review/test_validation_pattern_surfaces.js` (170 — the pure renderer functions `_matchStrictDate`,
+  `_widenDatePatterns`, `_parsesAsDate` are LIFTED from the source and RUN against the vectors; both regex fragments
+  literal-pinned in the three JS readers; the Python separator constants pinned). Count pins 51. `npm run test:pins`
+  **363/363 green.**
+
+**⚑ FLIP GATE for the engine half (Oracle C5, owner's call after it passes):** realdoc 605 M=0 + `wouldFile`
+set-equality OFF vs ON; the `VAL_CENSUS_DIR` crop/keyword acceptance census OFF vs ON with EVERY new acceptance
+hand-verified against the rendered page; run with mig 166 in its shipping state (OFF) so the two date arcs are measured
+apart. Until then a customer install keeps the wider forms at the human doors only — which is exactly the customer's
+case (he typed / taught the date and was refused).
+
+**The customer needs the new build** — his core is a week old; the fix is at the confirm door, which only a new
+installer carries. Installers rebuilt on this commit: see the next block / `CLAUDE.md` LATEST for the file names.

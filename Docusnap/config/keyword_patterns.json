@@ -699,6 +699,10 @@
       "\\d{1,2}\\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{2,4}",
       "(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\s+\\d{1,2},?\\s+\\d{2,4}"
     ],
+    "date_wide": [
+      "(?<![A-Za-z0-9])\\d{1,2}(?:st|nd|rd|th)?\\s*[,./\\\\-]?\\s*(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?\\s*[,./\\\\-]?\\s*\\d{2,4}(?!\\d)",
+      "(?<![A-Za-z0-9])(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\\.?\\s*[,./\\\\-]?\\s*\\d{1,2}(?:(?:st|nd|rd|th)\\s*[,./\\\\-]?\\s*|\\s*[,./\\\\-]\\s*|\\s+)\\d{2,4}(?!\\d)"
+    ],
     "currency": [
       "[£$€¥]\\s*[\\d,]+\\.?\\d*",
       "[\\d,]+\\.\\d{2}\\s*(?:GBP|USD|EUR|JPY)?",

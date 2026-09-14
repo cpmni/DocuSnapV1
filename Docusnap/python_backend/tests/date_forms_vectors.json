@@ -1,0 +1,32 @@
+{
+  "_about": "Shared date-form vectors (2026-09-14, reggie design -> Oracle). `accept` = the MONTH-NAME family with any single separator / ordinal / trailing month dot / 'Sept' / 2- or 4-digit year / OCR-glued; `out` = the canonical DD-MM-YYYY every surface must produce; `python_off` = whether validator.parse_date ALREADY accepted it with date_forms_wide OFF (the OFF path is byte-identical). `refuse_js` = the desktop CONFIRM door (filing/handler.js normaliseDate) must return null; `refuse_py` = validator.parse_date must return None with the switch ON (numeric 2-digit-year forms such as '3.5.2' are pre-existing Python acceptances and are NOT listed there). Read by python_backend/tests/test_date_forms_wide.py, src/modules/filing/test_normalise_date_predicate.js and src/windows/review/test_validation_pattern_surfaces.js.",
+  "accept": [
+    { "in": "23rd Aug 2026",            "out": "23-08-2026", "python_off": true  },
+    { "in": "23, aug 26",               "out": "23-08-2026", "python_off": false },
+    { "in": "23-aug-26",                "out": "23-08-2026", "python_off": true  },
+    { "in": "23/Aug/2026",              "out": "23-08-2026", "python_off": true  },
+    { "in": "23.Aug.2026",              "out": "23-08-2026", "python_off": false },
+    { "in": "23\\Aug\\26",              "out": "23-08-2026", "python_off": false },
+    { "in": "Sunday, 23rd August 2026", "out": "23-08-2026", "python_off": true  },
+    { "in": "Aug 23, 26",               "out": "23-08-2026", "python_off": true  },
+    { "in": "AUG. 23 2026",             "out": "23-08-2026", "python_off": false },
+    { "in": "23 Sept 2026",             "out": "23-09-2026", "python_off": false },
+    { "in": "23Aug2026",                "out": "23-08-2026", "python_off": false },
+    { "in": "23AUG26",                  "out": "23-08-2026", "python_off": false },
+    { "in": "1st May 2024",             "out": "01-05-2024", "python_off": true  },
+    { "in": "Aug 3 2024",               "out": "03-08-2024", "python_off": true  },
+    { "in": "15 August 2024",           "out": "15-08-2024", "python_off": true  },
+    { "in": "24th Aug 2026",            "out": "24-08-2026", "python_off": true  },
+    { "in": "2nd Sept 26",              "out": "02-09-2026", "python_off": false },
+    { "in": "Aug23rd2026",              "out": "23-08-2026", "python_off": false },
+    { "in": "Aug 23 2026",              "out": "23-08-2026", "python_off": true  }
+  ],
+  "refuse_js": [
+    "3.5.2", "1,234.56", "12-34-5678", "15/12/202", "23 Aug 202", "23,,Aug 26", "23 - - Aug 26", "23 Ma 2026",
+    "Aug 2026", "Aug2026", "Aug 232026", "23 Aug", "23 Aug 2026 14:30", "31 Apr 2026", "31/04/2026", "2026-02-30", "Date: 23 Aug 2026", "whenever", "INV-2939", "23 Augu 2026 x"
+  ],
+  "refuse_py": [
+    "1,234.56", "12-34-5678", "15/12/202", "23 Aug 202", "23,,Aug 26", "23 - - Aug 26", "23 Ma 2026",
+    "Aug 2026", "Aug2026", "Aug 232026", "23 Aug", "23 Aug 2026 14:30", "31 Apr 2026", "Date: 23 Aug 2026", "whenever", "INV-2939"
+  ]
+}
