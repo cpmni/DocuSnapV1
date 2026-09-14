@@ -23,7 +23,12 @@ touches that area — read the pointed-to doc BEFORE working in it:
 
 ## ⏭ LATEST — 2026-09-14 MORNING (Chris cards 1-8 BUILT on the shared search screen + client; the parity arc S0-S4 shipped 2026-09-13):
 **READ `HANDOVER_2026-09-13_LATE.md` FIRST (its ADDENDUM 2 = the morning's card work).** Branch `feat/teach-side-overnight`;
-**HEAD = `0f58ecb` + the docs commit; origin CURRENT (all pushed).** No installer. The evening handover's resume plan ran END TO END (Oracle SIGN-OFF-W/COND `docs/oracle_log.md`
+**HEAD = `39ae9ab` + the installers docs commit; origin CURRENT (all pushed).** **TEST INSTALLERS (09:03):** core
+`dist\ScanFinder Setup 2.0.0-r20260914-0803-39ae9ab-TEST.exe` (`npm run build:test` — all 50 DARK keys arm, incl. Quick File
++ Departments + mig 166; packaged smoke-boot identity testBuild:true + smoke-windows 14/14) + client `client\dist\ScanFinder
+Search Client Setup 1.0.2-r20260914-0805-39ae9ab.exe` (contract 1.3.0). **NOTHING RUNNING at wrap** — every repo Electron
+(owner dev core + client + the night sandbox) was closed for the build and NOT relaunched (the owner installs the test
+core over the dev DB); relaunch recipe in the handover. The evening handover's resume plan ran END TO END (Oracle SIGN-OFF-W/COND `docs/oracle_log.md`
 2026-09-13; plan doc carries a binding AMENDMENTS box + per-slice status): **S0 `48fba8f`** the Search screen's JS →
 `src/windows/shared/search-ui/` (plain globals, IO only via `window.SearchTransport`; core adapter
 `src/windows/search/coreTransport.js` = pure pass-through; caps hide what a transport can't do; drift guards = committed

@@ -176,7 +176,23 @@ with the old core).
 rail); the read-only popup check stubs `stamp.can` false; the "searches ran exactly twice" pins are "exactly 3" now
 (initial + `setQuery` + back-from-bin — the first-paint re-decoration is still not a fetch).
 
-**Still owed (unchanged):** the `/v1` MINOR for the pop-out's hidden workflow bits · the mig 166 flip gate · the client
-`npm run dist` in lockstep (1.3.0) · the owner's answer on the "doesn't open" moment (§3 above) · the 34-blank-pages
-question (`pendingfeatures.md`). The sandbox (core CDP 9223 / client 9226) is still up on the OLD code; kill filters in
-"Running at wrap".
+**Still owed (unchanged):** the `/v1` MINOR for the pop-out's hidden workflow bits · the mig 166 flip gate · the owner's
+answer on the "doesn't open" moment (§3 above) · the 34-blank-pages question (`pendingfeatures.md`).
+
+### TEST INSTALLERS built 09:03-09:06 (owner: "build the core and the client with all new features enabled, for testing")
+- **Core:** `dist\ScanFinder Setup 2.0.0-r20260914-0803-39ae9ab-TEST.exe` (352.5 MB) — `npm run build:test`
+  (`build-release.js nsis --test`: plain JS, `TEST_BUILD=1`, `extraMetadata.testBuild=true` → all **50** DARK keys in
+  `database/dark_switches.js TEST_SWITCH_KEYS` arm at runtime, incl. `direct_intake_enabled` (Quick File),
+  `departments_enabled` and mig 166's `template_date_invalid_yield_lowconf`). Gates: check-release-migrations OK
+  (50 keys guarded), vendor-python, licences, bytecode compile, no-shipped-py-source. Packaged binary: `--smoke-boot`
+  identity `{"testBuild":true,"buildRev":"20260914-0803-39ae9ab-TEST"}`, `--smoke-windows` 14/14. ⚠ Lesson: the
+  release verifier (`verify-release-artifact.js`) was run on it and REFUSED on source-protection (a test build ships
+  plain JS by design — `build:test` deliberately skips the verifier) and renamed the installer `*.REFUSED.exe`; renamed
+  back, content untouched. Vet test builds with the packaged `--smoke-boot` / `--smoke-windows` only.
+- **Client:** `client\dist\ScanFinder Search Client Setup 1.0.2-r20260914-0805-39ae9ab.exe` (106 MB) — `npm run dist`
+  (predist re-synced the shared search screen); contract 1.3.0 in lockstep with the core.
+- To build, EVERY Electron from the repo was closed (owner's dev core + client AND the night sandbox — 19 procs);
+  **nothing was relaunched** so the owner can install the test core over the dev DB (`%APPDATA%\ScanFinder`, already
+  armed by the dev runs) without a single-instance/DB collision. Relaunch dev = `TEST_BUILD=1 npm start` + `client\
+  node_modules\electron\dist\electron.exe .` (recipe in memory `project_dev_restart_singleinstance_trap`). The sandbox
+  is GONE (was on old code; re-seed with `scripts/seed-chris-sandbox.js` if needed).
