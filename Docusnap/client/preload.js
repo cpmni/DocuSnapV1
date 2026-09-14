@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('scanfinder', {
   pickCert:        () => ipcRenderer.invoke('client-pick-cert'),
   importProfile:   () => ipcRenderer.invoke('client-import-profile'),
   fetchCa:         (opts) => ipcRenderer.invoke('client-fetch-ca', opts),
+  // Verified connect (Oracle C1/C2): main fetches + hashes + compares + pins; the CA PEM never reaches here.
+  connectVerified: (opts) => ipcRenderer.invoke('client-connect-verified', opts),   // {host,port,tls,expectedFingerprint?,code?}
+  connectAccept:   (opts) => ipcRenderer.invoke('client-connect-accept', opts),     // {host,port} — pins the stashed CA after the user accepts
+  onCertAlert:     (cb) => ipcRenderer.on('client-cert-alert', (_e, p) => cb(p)),   // {kind:'changed'|'addr-mismatch', ...} (C3)
   connect:         () => ipcRenderer.invoke('client-connect'),
   login:           (username, password, totp) => ipcRenderer.invoke('client-login', { username, password, totp }),
   logout:          () => ipcRenderer.invoke('client-logout'),

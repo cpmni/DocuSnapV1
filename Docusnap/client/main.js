@@ -21,6 +21,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const cv = require('./lib/certVerify');        // pure trust-decision helpers (verified-connect + cert-change)
+const isCertError = cv.isCertError;            // a TLS-verify failure (a trust event, not unreachability)
 const { createClient } = require('./apiClient');
 const { sanitizeBounds } = require('./windowBounds');
 
@@ -341,6 +343,61 @@ ipcMain.handle('client-fetch-ca', async (_e, { host, port, code } = {}) => {
   try { return await tmp.fetchCa(code); } catch (e) { return { ok: false, error: e.message }; }
 });
 
+// ── Verified connect (Oracle C1/C2, 2026-09-14): the fetch → compute-fingerprint → compare → pin ALL happen in
+//    MAIN; the CA PEM NEVER round-trips through the renderer. Two shapes:
+//    · with an expectedFingerprint (from a QR/profile): main auto-compares + pins silently on a match, refuses
+//      on a mismatch (no bad cert is ever pinned — C2);
+//    · without one (typed address): main STASHES the fetched CA + returns only the FINGERPRINT for the renderer's
+//      accept dialog, and pins the stashed bytes only when the renderer calls client-connect-accept.
+let _pendingCa = null;   // { key, caPem, fingerprint, host, port, tls, ts } — held in MAIN between preview + accept
+async function _fetchAndHash({ host, port, code }) {
+  const h = String(host || '').trim(); const p = Number(port) || 8765;
+  const tmp = createClient({ baseUrl: `https://${h}:${p}`, allowSelfSigned: ALLOW_SELF_SIGNED });
+  let fetched; try { fetched = await tmp.fetchCa(code); } catch (e) { return { ok: false, error: e.message }; }
+  if (!fetched || !fetched.ok || !fetched.caPem) return { ok: false, error: (fetched && fetched.error) || 'Could not fetch the certificate.', status: fetched && fetched.status };
+  // C2: compute the fingerprint of the EXACT bytes we will pin, in MAIN — NEVER the server-reported value; an
+  // unparseable certificate is a failure (never "fail closed by luck").
+  const fp = cv.computeFingerprint(fetched.caPem);
+  if (!fp) return { ok: false, error: 'The server sent an unreadable certificate.' };
+  return { ok: true, caPem: fetched.caPem, fingerprint: fp };
+}
+async function _pinAndConnect({ host, port, tls, caPem, fingerprint, verified }) {
+  const cfg = { host, port, tls: tls !== false, caPem };
+  buildClient(cfg);
+  let hs; try { hs = await client.connect(); }
+  catch (e) {
+    if (isCertError(e)) return { ok: false, mode: e.code === 'ERR_TLS_CERT_ALTNAME_INVALID' ? 'addr-mismatch' : 'cert', reason: e.message, certCode: e.code || null, host, port };
+    return { ok: false, mode: 'block', reason: e.message };
+  }
+  lastHandshake = hs;
+  if (hs.ok) { serverConfig = cfg; saveServerConfig(cfg); }
+  return { ...hs, fingerprint, verified: !!verified };
+}
+ipcMain.handle('client-connect-verified', async (_e, { host, port, tls, expectedFingerprint, code } = {}) => {
+  const h = String(host || '').trim(); if (!h) return { ok: false, mode: 'block', reason: 'Enter a server address.' };
+  const p = Number(port) || 8765;
+  const fetched = await _fetchAndHash({ host: h, port: p, code });
+  if (!fetched.ok) return { ok: false, mode: 'block', reason: fetched.error };
+  if (expectedFingerprint) {
+    // C2: compare the LOCALLY-computed fingerprint of the exact fetched bytes to the QR/profile's expected value.
+    if (cv.normFp(fetched.fingerprint) !== cv.normFp(expectedFingerprint)) {
+      return { ok: false, mode: 'mismatch', reason: 'The certificate does NOT match the code/QR from the server — do not continue; someone may be impersonating it.', fingerprint: fetched.fingerprint };
+    }
+    return await _pinAndConnect({ host: h, port: p, tls, caPem: fetched.caPem, fingerprint: fetched.fingerprint, verified: true });
+  }
+  // No expected fingerprint → stash the fetched CA in MAIN, return only the fingerprint for the accept dialog.
+  _pendingCa = { key: `${h}:${p}`, caPem: fetched.caPem, fingerprint: fetched.fingerprint, host: h, port: p, tls: tls !== false, ts: Date.now() };
+  return { ok: true, mode: 'confirm', fingerprint: fetched.fingerprint, host: h, port: p };
+});
+ipcMain.handle('client-connect-accept', async (_e, { host, port } = {}) => {
+  const key = `${String(host || '').trim()}:${Number(port) || 8765}`;
+  if (!_pendingCa || _pendingCa.key !== key || (Date.now() - _pendingCa.ts) > 120000) {
+    _pendingCa = null; return { ok: false, mode: 'block', reason: 'The connection attempt expired — start again.' };
+  }
+  const pend = _pendingCa; _pendingCa = null;
+  return await _pinAndConnect({ host: pend.host, port: pend.port, tls: pend.tls, caPem: pend.caPem, fingerprint: pend.fingerprint, verified: false });
+});
+
 // ── Page cache ────────────────────────────────────────────────────────────────
 // Rendering a document's pages is the slow path (the host renders PDF→PNG on
 // demand + base64-transfers them, ~1s). Cache successful page payloads by docId
@@ -385,12 +442,43 @@ function isNetworkError(e) {
   if (code && ['ECONNREFUSED','ECONNRESET','ETIMEDOUT','ENOTFOUND','EHOSTUNREACH','EHOSTDOWN','ENETUNREACH','EPIPE','ECONNABORTED','EAI_AGAIN'].includes(code)) return true;
   return /socket hang up|network|ECONN|timed?\s*out|getaddrinfo/i.test((e && e.message) || '');
 }
-// Wrap an authed IPC handler so a NETWORK failure flips the connection state (a
-// real network success clears it). Re-throws so the renderer's own handling runs.
+// On a cert-verify failure against the SAVED server, re-fetch the current CA and CLASSIFY (Oracle C3):
+//   · same CA fingerprint as the pin → a SAN/address-coverage gap (ALTNAME), NOT an identity change → an
+//     "address not covered" state, no re-pin offered;
+//   · different CA fingerprint → a genuine identity change → stash the fresh CA + emit the refuse-is-default
+//     re-accept alert (the ONLY re-pin path is an explicit human confirm → client-connect-accept).
+let _certAlertPending = false;
+async function handleCertError() {
+  if (_certAlertPending || !serverConfig || !serverConfig.caPem) return;
+  _certAlertPending = true;
+  try {
+    const fresh = await _fetchAndHash({ host: serverConfig.host, port: serverConfig.port });
+    if (!fresh.ok) return;   // couldn't re-fetch — leave it to the network watch, never guess a change
+    const cls = cv.classifyCertChange(serverConfig.caPem, fresh.caPem);
+    if (cls.kind === 'unreadable') return;
+    let payload;
+    if (cls.kind === 'addr-mismatch') {
+      payload = { kind: 'addr-mismatch', host: serverConfig.host, port: serverConfig.port };
+    } else {
+      // A genuine identity change → stash the fresh CA so the ONLY re-pin path is an explicit human accept.
+      _pendingCa = { key: `${serverConfig.host}:${serverConfig.port}`, caPem: fresh.caPem, fingerprint: fresh.fingerprint,
+                     host: serverConfig.host, port: serverConfig.port, tls: serverConfig.tls, ts: Date.now() };
+      payload = { kind: 'changed', host: serverConfig.host, port: serverConfig.port, oldFingerprint: cls.oldFingerprint, newFingerprint: cls.newFingerprint };
+    }
+    for (const w of BrowserWindow.getAllWindows()) { if (!w.isDestroyed()) try { w.webContents.send('client-cert-alert', payload); } catch {} }
+  } finally { _certAlertPending = false; }
+}
+// Wrap an authed IPC handler so a NETWORK failure flips the connection state (a real network success clears it).
+// A CERT-verify failure is classified FIRST (C3) — it fires the trust alert, never the connection-lost overlay.
+// Re-throws so the renderer's own handling runs.
 function guarded(fn) {
   return async (...args) => {
     try { const r = await fn(...args); markConnection(true); return r; }
-    catch (e) { if (isNetworkError(e)) markConnection(false); throw e; }
+    catch (e) {
+      if (isCertError(e)) { handleCertError().catch(() => {}); throw e; }
+      if (isNetworkError(e)) markConnection(false);
+      throw e;
+    }
   };
 }
 async function pingServer() {
