@@ -113,6 +113,10 @@ contextBridge.exposeInMainWorld('scanfinder', {
     addDocTypePresets: (slugs) => ipcRenderer.invoke('client-teach-doctype-presets', slugs),
     // S3: the ONE transactional commit (create template + mappings + file the exemplar).
     commit:            (payload) => ipcRenderer.invoke('client-teach-commit', payload),
+    // S4 (upload-to-teach): pick a PDF/image on THIS PC (path stays in main), then upload it to the core to
+    // OCR-import WITHOUT filing. stagePick → { ok, token, name }; stageSubmit(token) → { ok, docId, filename }.
+    stagePick:         () => ipcRenderer.invoke('client-teach-stage-pick'),
+    stageSubmit:       (token) => ipcRenderer.invoke('client-teach-stage-submit', token),
   },
   // Teach pop-out window (mirrors openSearch): open/focus the window; the pop-out pulls its target doc once,
   // learns the signed-in role (currentUser) and the server's abilities (serverInfo), and reports a 401.

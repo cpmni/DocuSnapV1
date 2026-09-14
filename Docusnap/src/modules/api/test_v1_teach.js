@@ -11,9 +11,15 @@
  *   POST /v1/doc-types                        (create a type + fields + structural roles; reuses createTypeWithFields)
  *   GET  /v1/doc-types/catalog                (the preset catalog + already_present flags)
  *   POST /v1/doc-types/presets                (add ticked catalog presets)
+ * Plus the teach-over-client S4 upload-to-teach route (2026-09-14, Oracle SIGN-OFF-W/COND C8-C14; ADMIN-only):
+ *   POST /v1/teach/stage                      (upload a PDF/image → OCR-import WITHOUT filing → return {docId})
  * Verifies: auth (401) + role (readonly 403), the happy-path shapes, a full-page-sized body is ACCEPTED
  * (over the 1MB default JSON cap → the dedicated TEACH_IMG cap), missing imageBase64 → 400, the page-words
- * in-flight cap (429) AND that the slot FREES after the batch, and teach/config reflects a setting.
+ * in-flight cap (429) AND that the slot FREES after the batch, and teach/config reflects a setting; and for
+ * /teach/stage the full auth matrix (edit→403, unentitled 402, switch-off 409), 415 for a non-OCR upload,
+ * 413 on Content-Length + TOO_MANY_PAGES from the pre-probe BEFORE OCR, the happy path (ONE needs_review row,
+ * id == returned docId, autoFile:false pinned incl. a graduated scope), the in-flight cap (429 + slot frees),
+ * and temp-folder mint + cleanup.
  *
  *   ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron src/modules/api/test_v1_teach.js
  */
@@ -33,7 +39,12 @@ licensing.licenseDenied = () => null;
 
 let entitled = true;
 let spawnDelayMs = 5;
-const writes = [], unlinks = [], filed = [];
+const writes = [], unlinks = [], filed = [], rms = [];
+// S4 (upload-to-teach) test state, read by the injected stage collaborators (ctx.stageImport / stageProbePages).
+let stagePagesResult = 2;     // what the page-count PRE-PROBE returns (route caps at 40)
+let stageImportDelayMs = 5;   // fake import latency — bumped to overlap two requests for the in-flight-cap test
+let stageAutoFileSeen = 'UNSET';   // captures the opts.autoFile the ROUTE passed the importer (C8)
+let stageImportCalls = 0;     // # times the importer actually ran (0 across a pre-probe reject = no OCR)
 
 // Fake region.py: routes stdout by the flag in argv, emits close after spawnDelayMs so concurrent
 // requests overlap for the in-flight-cap test.
@@ -55,12 +66,13 @@ function seedDb() {
   return db;
 }
 
-function request(port, method, path, { token, body, rawBody } = {}) {
+function request(port, method, path, { token, body, rawBody, headers } = {}) {
   return new Promise((resolve) => {
     const data = rawBody != null ? rawBody : (body != null ? JSON.stringify(body) : null);
     const r = http.request({ host: '127.0.0.1', port, path, method, headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}),
+      ...(headers || {}),   // a spoofed Content-Length rides here (the size-cap pre-check test)
     } }, (res) => { let buf = ''; res.on('data', c => (buf += c)); res.on('end', () => { let json = null; try { json = JSON.parse(buf); } catch {} resolve({ status: res.statusCode, json }); }); });
     r.on('error', () => resolve({ status: 0, json: null }));
     if (data) r.write(data);
@@ -79,9 +91,22 @@ async function main() {
       ? ({ entitled: true, feature: 'detached_client', search: { entitled: true, seats: 99 }, workflow: { entitled: true, seats: 99 } })
       : ({ entitled: false, feature: 'detached_client', search: { entitled: false }, workflow: { entitled: false } }),
     app: { getPath: () => '/tmp' },
-    fs: { writeFileSync: (p) => { writes.push(p); }, unlinkSync: (p) => { unlinks.push(p); }, existsSync: () => true, mkdirSync: () => {} },
+    fs: { writeFileSync: (p) => { writes.push(p); }, unlinkSync: (p) => { unlinks.push(p); }, existsSync: () => true, mkdirSync: () => {}, rmSync: (p) => { rms.push(p); } },
     path: require('path'),
     templatesDir: () => require('os').tmpdir(),
+    // S4 (upload-to-teach) injected collaborators — the route's shared-import + page-count-probe seams. The
+    // fake importer HONOURS opts.autoFile (false → needs_review, i.e. even a graduated scope; true → confirmed)
+    // and records what the route passed, so the pin proves the route drives the import with autoFile:false.
+    stageImport: async (folder, opts) => {
+      stageImportCalls++;
+      stageAutoFileSeen = opts && opts.autoFile;
+      await new Promise(r => setTimeout(r, stageImportDelayMs));
+      const status = (opts && opts.autoFile === false) ? 'needs_review' : 'confirmed';
+      const id = db.prepare("INSERT INTO documents (document_type_id, original_filename, stored_filename, status, folder_path) VALUES (?,?,?,?,?)")
+        .run(null, 'staged.pdf', 'staged.pdf', status, String(folder)).lastInsertRowid;
+      return { ok: true, docId: id };
+    },
+    stageProbePages: (_filePath, _ext) => Promise.resolve(stagePagesResult),
     // A stub reviewService for the teach-commit filing step (teachCommit calls reviewSvc.confirm): mark the
     // doc confirmed + return a filename, so the /v1 route's filing is exercised without real PDF I/O.
     reviewService: {
@@ -269,6 +294,76 @@ async function main() {
   const tsOff = await commit({ token: adminT, body: commitBody({ teachCommitId: 'tc-ts2', document_id: mkDoc(), acknowledgeTypeSplit: false }) });
   check('with type_split_confirm_gate OFF the type-split ack is not enforced', tsOff.status === 200);
   tsMod.checkTypeSplit = _ts; learning.setSetting(db, 'type_split_confirm_gate', 'true');
+
+  // ── S4: UPLOAD-TO-TEACH (POST /v1/teach/stage) ───────────────────────────────────────────────────────
+  console.log('S4 upload-to-teach');
+  const PDF = Buffer.from('%PDF-1.4 fake teaching exemplar').toString('base64');
+  const stage = (opts) => request(port, 'POST', '/v1/teach/stage', opts);
+  const stageBody = (over) => Object.assign({ filename: 'scan.pdf', contentBase64: PDF }, over || {});
+  // The switch is ON from S3 (teach_over_client_enabled='true'); entitled=true.
+
+  // auth matrix
+  check('POST /teach/stage: no token → 401', (await stage({ body: stageBody() })).status === 401);
+  check('POST /teach/stage: readonly → 403', (await stage({ token: readT, body: stageBody() })).status === 403);
+  check('POST /teach/stage: EDIT (writer, non-admin) → 403 (stage is admin-only, C13)', (await stage({ token: editT, body: stageBody() })).status === 403);
+
+  // unentitled → 402 (the central FEATURE_ROUTE gate)
+  entitled = false;
+  check('POST /teach/stage: unentitled → 402', (await stage({ token: adminT, body: stageBody() })).status === 402);
+  entitled = true;
+
+  // switch OFF → 409 FEATURE_DISABLED
+  learning.setSetting(db, 'teach_over_client_enabled', 'false');
+  const stgOff = await stage({ token: adminT, body: stageBody() });
+  check('POST /teach/stage: switch OFF → 409 FEATURE_DISABLED', stgOff.status === 409 && stgOff.json.code === 'FEATURE_DISABLED');
+  learning.setSetting(db, 'teach_over_client_enabled', 'true');
+
+  // SAFE-subset ext: a .docx passes the upload subset but is NOT OCR-able → 415; .exe → 415
+  check('POST /teach/stage: .docx → 415 (only a PDF/image is teachable)', (await stage({ token: adminT, body: stageBody({ filename: 'x.docx' }) })).status === 415);
+  check('POST /teach/stage: .exe → 415', (await stage({ token: adminT, body: stageBody({ filename: 'x.exe' }) })).status === 415);
+  check('POST /teach/stage: missing filename/contentBase64 → 400', (await stage({ token: adminT, body: { filename: 'a.pdf' } })).status === 400);
+
+  // size cap (shrink the admin-settable teach_stage_max_mb to 1 MB so the test payload stays small — mirrors
+  // the intake lane). A ~2 MB decoded upload → 413 on the decoded-bytes check; a truthful oversize
+  // Content-Length → 413 on the pre-buffer check.
+  learning.setSetting(db, 'teach_stage_max_mb', '1');
+  const bigStageB64 = 'A'.repeat(2 * 1024 * 1024 * 4 / 3 | 0);   // ~2 MB decoded, over the 1 MB cap
+  check('POST /teach/stage: oversize decoded → 413', (await stage({ token: adminT, body: stageBody({ contentBase64: bigStageB64 }) })).status === 413);
+  const overStage = JSON.stringify(stageBody({ contentBase64: bigStageB64 }));
+  check('POST /teach/stage: oversize Content-Length → 413 (pre-buffer reject)', (await stage({ token: adminT, rawBody: overStage })).status === 413);
+  learning.setSetting(db, 'teach_stage_max_mb', '50');
+
+  // C11: too-many-pages rejected by the render/pages.py --count PRE-PROBE, BEFORE any OCR import
+  stageImportCalls = 0; stagePagesResult = 999;
+  const tooMany = await stage({ token: adminT, body: stageBody() });
+  check('POST /teach/stage: too-many-pages → 413 TOO_MANY_PAGES', tooMany.status === 413 && tooMany.json.code === 'TOO_MANY_PAGES');
+  check('  → the OCR import did NOT run (pre-probe rejected before the spawn, C11)', stageImportCalls === 0);
+  stagePagesResult = 2;
+
+  // happy path — ONE needs_review row, id == the returned docId (C9), autoFile:false pinned (C8)
+  stageImportCalls = 0; stageAutoFileSeen = 'UNSET'; writes.length = 0; rms.length = 0;
+  const beforeDocs = db.prepare("SELECT COUNT(*) n FROM documents").get().n;
+  const good = await stage({ token: adminT, body: stageBody({ filename: '../../evil.pdf' }) });
+  check('POST /teach/stage: happy path → 200 {ok, docId, filename}',
+        good.status === 200 && good.json.ok === true && good.json.docId > 0 && typeof good.json.filename === 'string');
+  check('  → filename sanitised to a basename (client path traversal ignored)', good.json.filename === 'evil.pdf');
+  const newRow = good.json.docId != null ? db.prepare("SELECT * FROM documents WHERE id = ?").get(good.json.docId) : null;
+  check('  → ONE new row, id == returned docId (C9: the id is captured from the import, not a filename pick)',
+        !!newRow && db.prepare("SELECT COUNT(*) n FROM documents").get().n === beforeDocs + 1);
+  check('  → the imported row is needs_review, NOT filed (C8)', !!newRow && newRow.status === 'needs_review');
+  check('  → the route drove the import with autoFile:FALSE (C8 — even a graduated supplier+type lands in review)', stageAutoFileSeen === false);
+  check('  → a graduated scope cannot force a file: the route NEVER passes autoFile:true', stageAutoFileSeen !== true);
+  check('  → temp FOLDER minted server-side (a file written under a teach-stage dir)', writes.some(p => /ds_v1teachstage_/.test(String(p))));
+  check('  → temp FOLDER cleaned up afterwards (rmSync on the minted dir, C10)', rms.some(p => /ds_v1teachstage_/.test(String(p))));
+
+  // in-flight cap (TEACH_STAGE_MAX_INFLIGHT=1) + the slot frees
+  stageImportDelayMs = 120;
+  const pair = await Promise.all([0, 1].map(() => stage({ token: adminT, body: stageBody() })));
+  check('POST /teach/stage: 2 concurrent → exactly one 429 (in-flight cap = 1, C10)', pair.filter(r => r.status === 429).length === 1);
+  check('  → at most one of the two succeeded', pair.filter(r => r.status === 200).length <= 1);
+  stageImportDelayMs = 5;
+  const afterCap = await stage({ token: adminT, body: stageBody() });
+  check('POST /teach/stage: the slot FREES after the batch (a later request succeeds)', afterCap.status === 200);
 
   server.close();
   console.log(`\n${fail === 0 ? 'ALL PASS' : fail + ' FAILED'}`);

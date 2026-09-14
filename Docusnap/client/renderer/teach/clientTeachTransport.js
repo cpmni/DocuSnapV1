@@ -11,16 +11,23 @@
 // (the wizard passes only the image to the OCR calls — the /v1 routes are doc-scoped).
 //
 // caps (absent = true; see _cap() in the shared teach.js):
-//   import  = false — no local-file import; teach the core's review queue (the wizard hides the "Import a PDF"
-//             control + the empty state points at the main PC, Oracle C7).
+//   import  = TRUE (S4) — bring a LOCAL file to teach: stagePdfForTeach picks a PDF/image on THIS PC and
+//             processFolder uploads it to the core (POST /v1/teach/stage) to OCR-import WITHOUT filing, so it
+//             lands in the review queue to teach. The staged-thumbnail is OMITTED (the real page arrives from
+//             /v1/documents/:id/page once the import completes).
 //   review  = false — the client has no core Review window (the follow-up "Check in Review" is hidden).
 //   settings= true  — the wizard's feature flags come from GET /v1/teach/config.
-// S1 = the wizard runs from the queue up to the summary; SAVING (promote/mapping/confirm) is S3 and doc-type
-// CREATE/EDIT is S2 — those methods throw a clear "coming soon" so a stray call is honest, never a silent break.
+// S1 = the wizard runs from the queue up to the summary; SAVING (promote/mapping/confirm) is S3; doc-type
+// CREATE is S2; upload-to-teach is S4. The dead desktop-only edit methods throw a clear "coming soon" so a
+// stray call is honest, never a silent break.
 (function () {
   const api = window.scanfinder;
   const docId = () => (window.TeachState && window.TeachState.docId) || 0;   // the currently-taught doc (set by teach.js)
   const soon = (m) => async () => { throw new Error(m || 'That isn’t available from the search client yet.'); };
+  // S4: stagePdfForTeach picks the file (quick) and stashes its token; the shared wizard then calls
+  // processFolder(folder) which uploads the stashed bytes (the ~30s core OCR read). The shared flow passes
+  // only the folder string between the two calls, so the token rides here.
+  let _pendingStage = null;   // { token, filename } set by stagePdfForTeach, consumed by processFolder
 
   function expired() { try { api.popoutSessionExpired(); } catch {} }
   function unwrap(r, pick) {
@@ -43,7 +50,7 @@
     // batchCommit=true (S3) → doCommit builds the WHOLE teaching into one payload and fires ONE transactional
     // POST /v1/teach/commit (commitTeach below) instead of the desktop's 6 separate calls, so a dropped socket
     // can never leave a half-born template. The core leaves batchCommit ABSENT → its 6-call path is unchanged.
-    caps: { import: false, review: false, settings: true, editType: false, batchCommit: true },
+    caps: { import: true, review: false, settings: true, editType: false, batchCommit: true },
 
     // ── real S1 reads over /v1 ────────────────────────────────────────────────────────────────────────
     getReviewQueue:   async () => unwrap(await api.review.queue(), (j) => j.queue || []),
@@ -88,9 +95,27 @@
     updateField:            soon('Editing document types from the search client is coming soon.'),
     deleteField:            soon('Editing document types from the search client is coming soon.'),
     updateDocumentType:     soon('Editing document types from the search client is coming soon.'),
-    // import (S4): local-file upload-to-teach — not over /v1 yet.
-    stagePdfForTeach:       soon('Importing a file to teach from the search client is coming soon.'),
-    processFolder:          soon('Importing a file to teach from the search client is coming soon.'),
+    // ── S4 (upload-to-teach) over /v1 — bring a LOCAL file to teach ───────────────────────────────────────
+    // stagePdfForTeach: pick a PDF/image on THIS PC (quick — no bytes read yet), stash the token, and return
+    // the shared wizard's {folder, filename} shape (folder is a synthetic marker; the real bytes ride the
+    // token). null = cancelled. The wizard then shows a provisional "Reading…" card and calls processFolder.
+    stagePdfForTeach: async () => {
+      const r = await api.teach.stagePick();
+      if (!r || !r.ok || !r.token) return null;                       // cancelled
+      _pendingStage = { token: r.token, filename: r.name || 'document' };
+      return { folder: '__client_teach_stage__', filename: _pendingStage.filename };
+    },
+    // processFolder: upload the stashed file to POST /v1/teach/stage — the core OCR-imports it WITHOUT filing
+    // (autoFile OFF server-side) and returns { docId, filename }. The shared wizard ignores the return and
+    // re-picks the new needs_review row from the queue by filename (parity with the desktop). A 4xx/5xx throws
+    // so the wizard shows "Import failed: …".
+    processFolder: async (_folder, _opts) => {
+      const p = _pendingStage; _pendingStage = null;
+      if (!p || !p.token) throw new Error('Nothing was staged to import.');
+      const res = await api.teach.stageSubmit(p.token);
+      if (!res || !res.ok) throw new Error((res && res.error) || 'Reading the document failed.');
+      return { success: true, docId: res.docId, filename: res.filename };
+    },
 
     // ── S3 (the transactional commit) over /v1 ──────────────────────────────────────────────────────────
     // The client takes the caps.batchCommit path: doCommit builds one payload → commitTeach → POST

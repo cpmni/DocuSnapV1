@@ -631,6 +631,47 @@ ipcMain.handle('client-intake-submit', guarded(async (_e, token, meta) => {
   if (res && res.status === 200 && res.json && res.json.ok) { _intakeStaged.delete(token); return { ok: true, docId: res.json.docId }; }
   return { ok: false, status: res && res.status, error: (res && res.json && (res.json.error || res.json.code)) || 'failed' };
 }));
+
+// ── Teach-over-client S4 (upload-to-teach) ─────────────────────────────────────────────────────────────
+// Pick ONE PDF/image on THIS PC, stage it in a MAIN-side token map (the path NEVER crosses to the renderer),
+// then read bytes + base64 → POST /v1/teach/stage which runs the core's OCR import WITHOUT filing and returns
+// { docId, filename } — the review-queue doc to teach. Mirrors the Quick File plumbing; only OCR-able formats
+// (PDF + image) are teachable (no docx/txt/csv). The server re-checks ext/size/pages/role/switch, so this is
+// the picker + a friendly pre-check, not trust.
+const TEACH_STAGE_UPLOAD_EXTS = ['pdf', 'png', 'jpg', 'jpeg', 'tif', 'tiff', 'bmp'];
+const _teachStaged = new Map();   // token -> { path, name, size, expires }
+function _teachStageSweep() { const now = Date.now(); for (const [k, v] of _teachStaged) if (v.expires < now) _teachStaged.delete(k); }
+
+ipcMain.handle('client-teach-stage-pick', async () => {
+  const parent = (teachWin && !teachWin.isDestroyed()) ? teachWin : win;
+  const r = await dialog.showOpenDialog(parent, {
+    title: 'Teach a document — choose a scan',
+    properties: ['openFile'],
+    filters: [{ name: 'Documents', extensions: TEACH_STAGE_UPLOAD_EXTS }, { name: 'All files', extensions: ['*'] }],
+  });
+  if (!r || r.canceled || !(r.filePaths || []).length) return { ok: false };   // cancelled
+  const p = r.filePaths[0];
+  const name = path.basename(String(p));
+  const ext = path.extname(name).toLowerCase().replace(/^\./, '');
+  if (!TEACH_STAGE_UPLOAD_EXTS.includes(ext)) return { ok: false, error: 'unsupported_type' };
+  let st; try { st = fs.statSync(p); } catch { return { ok: false, error: 'unreadable' }; }
+  if (!st.isFile()) return { ok: false, error: 'not_a_file' };
+  _teachStageSweep();
+  const token = 'cts_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+  _teachStaged.set(token, { path: String(p), name, size: st.size, expires: Date.now() + INTAKE_TTL_MS });
+  return { ok: true, token, name, size: st.size };
+});
+
+// Submit ONE staged file: read bytes in MAIN, base64, POST /v1/teach/stage (the ~30s core OCR import).
+ipcMain.handle('client-teach-stage-submit', guarded(async (_e, token) => {
+  _teachStageSweep();
+  const staged = token && _teachStaged.get(token);
+  if (!staged) return { ok: false, error: 'expired' };
+  let bytes; try { bytes = fs.readFileSync(staged.path); } catch { return { ok: false, error: 'unreadable' }; }
+  const res = await client.teach.stage({ filename: staged.name, contentBase64: bytes.toString('base64') });
+  if (res && res.status === 200 && res.json && res.json.ok) { _teachStaged.delete(token); return { ok: true, docId: res.json.docId, filename: res.json.filename }; }
+  return { ok: false, status: res && res.status, error: (res && res.json && (res.json.error || res.json.code)) || 'failed' };
+}));
 ipcMain.handle('client-get-pages',    async (_e, id) => {
   const hit = _pageCacheGet(id);
   if (hit !== undefined) return hit;                 // instant re-click (no network → don't touch conn state)

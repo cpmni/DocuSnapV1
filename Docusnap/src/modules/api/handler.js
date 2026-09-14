@@ -46,7 +46,7 @@ const path              = require('path');
 const WF_HTTP = { FORBIDDEN: 403, STAMP_FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
 const wfStatus = (code) => WF_HTTP[code] || 400;
 
-const API_CONTRACT_VERSION = '1.7.0';   // 1.7.0: + the teach-over-client READS (POST /documents/:id/{ocr-region-boxes,ocr-page-words,page-deskew} + GET /teach/config — teach-over-client S1, 2026-09-14; the client gates its teach cap on ≥ 1.7.0). 1.6.0: + GET /documents/:id/page-info (ONE render process for the pop-out's first paint + its read-ahead batch; the client gates its pageInfo cap on ≥ 1.6.0). 1.5.0: + GET /documents/:id/outline (the PDF's bookmarks → the Contents panel) and the page read's optional fmt=auto|jpeg (2026-09-14; the client gates its Contents cap on ≥ 1.5.0). 1.4.0: + per-document open-routes / decision-history reads, admin route cancel, new stamp type (the search pop-out's last hidden workflow bits, 2026-09-14; the client gates those caps on ≥ 1.4.0). 1.3.0: + the four preview READS (page / page-count / find / spreadsheet — client search parity S2, 2026-09-13; the client gates its lazy-page/find/grid caps on ≥ 1.3.0). 1.2.0: + POST /v1/documents/intake (Quick File upload). NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
+const API_CONTRACT_VERSION = '1.7.0';   // 1.7.0: + the teach-over-client READS (POST /documents/:id/{ocr-region-boxes,ocr-page-words,page-deskew} + GET /teach/config — teach-over-client S1, 2026-09-14; the client gates its teach cap on ≥ 1.7.0) + the WRITES POST /doc-types(/presets) + POST /teach/commit (S2/S3) + POST /teach/stage (S4 upload-to-teach, admin — adding these endpoints under the same MAJOR needs no bump). 1.6.0: + GET /documents/:id/page-info (ONE render process for the pop-out's first paint + its read-ahead batch; the client gates its pageInfo cap on ≥ 1.6.0). 1.5.0: + GET /documents/:id/outline (the PDF's bookmarks → the Contents panel) and the page read's optional fmt=auto|jpeg (2026-09-14; the client gates its Contents cap on ≥ 1.5.0). 1.4.0: + per-document open-routes / decision-history reads, admin route cancel, new stamp type (the search pop-out's last hidden workflow bits, 2026-09-14; the client gates those caps on ≥ 1.4.0). 1.3.0: + the four preview READS (page / page-count / find / spreadsheet — client search parity S2, 2026-09-13; the client gates its lazy-page/find/grid caps on ≥ 1.3.0). 1.2.0: + POST /v1/documents/intake (Quick File upload). NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
                                         // handshake checks MAJOR only. Keep server + client in lockstep.
 const API_PREFIX = '/v1';
 const CLIENT_CONTRACT_HEADER = 'x-scanfinder-client-contract';
@@ -107,6 +107,16 @@ const INTAKE_MAX_MB_CEIL = 100;         // hard ceiling on the admin-settable di
 // a remote trigger must not fan out CPU-heavy work on the host (Oracle C-S3-3).
 const TEACH_COMMIT_MAX_INFLIGHT = 1;
 let _teachCommitInFlight = 0;
+// Teach-over-client S4 (upload-to-teach, 2026-09-14, Oracle SIGN-OFF-W/COND C8-C14): POST /v1/teach/stage
+// uploads a document, runs the FULL core OCR import WITHOUT filing, and returns the review-queue docId to
+// teach. It is the OCR-FLOOD surface, so it gets its OWN in-flight cap of 1 (C10 — released in a finally,
+// separate from any worker watchdog), a stage-specific size cap, and a HARD page-count ceiling enforced by
+// a cheap render/pages.py --count PRE-PROBE BEFORE the OCR spawn (C11). ADMIN-only (C13).
+const TEACH_STAGE_MAX_INFLIGHT = 1;
+let _teachStageInFlight = 0;
+const TEACH_STAGE_MAX_MB_DEFAULT = 50;  // stage upload size cap (a multi-page scan); admin-settable teach_stage_max_mb
+const TEACH_STAGE_MAX_MB_CEIL = 100;    // hard ceiling on the admin-settable value for THIS lane
+const TEACH_STAGE_MAX_PAGES = 40;       // HARD page ceiling — a 500-page scan would tie up the one OCR slot
 
 // Read a size-capped body (bytes) for the upload lane. Rejects past `maxBytes` mid-stream + destroys the
 // socket. Returns the raw Buffer; the caller JSON-parses (the base64 rides inside the JSON envelope).
@@ -972,6 +982,96 @@ function createRequestListener(ctx) {
           return sendJson(res, 200, { ok: true, templateId: r.templateId, filename: r.filename, isDuplicate: !!r.isDuplicate, landmarksWarn: !!r.landmarksWarn });
         } catch (e) { log('[api] teach-commit: ' + (e && e.message)); return sendJson(res, 500, { error: 'teach failed' }); }
         finally { _teachCommitInFlight--; }
+      }
+
+      // ── Teach-over-client S4: UPLOAD-TO-TEACH (POST /v1/teach/stage) ───────────────────────────────────
+      //    Upload a PDF/image, run the FULL core OCR import WITHOUT filing, return the review-queue docId to
+      //    teach (then S1-S3 teach it exactly as a queue doc). base64-in-JSON body {filename, contentBase64}.
+      //    Guards (order): session → ADMIN-only (C13; the OCR-flood surface + edit-only stage is a dead-end
+      //    half-capability) → license re-check (F-01) → the teach_over_client_enabled switch (409) → its OWN
+      //    in-flight cap of 1 (C10) → Content-Length pre-check → capped read → decode → SAFE-subset ext
+      //    (PDF+image only, isUploadIntake ∩ isOcr) → temp FOLDER minted server-side → page-count HARD cap via
+      //    a render/pages.py --count PRE-PROBE BEFORE any OCR (C11) → the SHARED batch import with autoFile
+      //    OFF (C8; even a graduated supplier+type lands needs_review) → docId captured from the import (C9) →
+      //    temp cleaned + in-flight released on EVERY path → audit (C13). Contract 1.7.0 (adding an endpoint
+      //    needs no bump). Entitlement (402) is handled centrally by the FEATURE_ROUTE gate above.
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/teach/stage`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (session.role !== 'admin') return sendJson(res, 403, { error: 'only an admin can teach a document from the search client' });
+        const db = getDb();
+        if (require('../licensing/handler').licenseDenied(db)) return sendJson(res, 403, { error: 'A valid license is required to teach documents.', code: 'LICENSE' });
+        if (String(learning.getSetting(db, 'teach_over_client_enabled', 'false')) !== 'true') {
+          return sendJson(res, 409, { code: 'FEATURE_DISABLED', error: "Teaching from the search client isn't enabled on this server." });
+        }
+        if (_teachStageInFlight >= TEACH_STAGE_MAX_INFLIGHT) return sendJson(res, 429, { error: 'a document is already being read for teaching — retry' });
+        const fileKinds = require('../../lib/fileKinds');
+        const maxMb = Math.min(TEACH_STAGE_MAX_MB_CEIL, Number(learning.getSetting(db, 'teach_stage_max_mb', TEACH_STAGE_MAX_MB_DEFAULT)) || TEACH_STAGE_MAX_MB_DEFAULT);
+        const maxJsonBytes = Math.ceil(maxMb * 1024 * 1024 * 4 / 3) + 4096;
+        const clen = Number(req.headers['content-length'] || 0);
+        if (clen && clen > maxJsonBytes) return sendJson(res, 413, { code: 'TOO_LARGE', error: `file exceeds ${maxMb} MB` });
+
+        _teachStageInFlight++;
+        let done = false; let tmpDir = null;
+        const fsx = ctx.fs || require('fs'); const P = ctx.path || path; const osMod = require('os');
+        const finish = (status, payload) => {
+          if (done) return; done = true; _teachStageInFlight--;   // in-flight released here (C10)
+          // Clean the whole minted temp FOLDER AFTER the import (working copy is already in userData/inbox).
+          if (tmpDir) { try { fsx.rmSync(tmpDir, { recursive: true, force: true }); } catch {} }
+          sendJson(res, status, payload);
+        };
+        // A client abort/socket error must release the slot + temp (no leak) — C10.
+        req.on('aborted', () => finish(400, { error: 'aborted' }));
+        req.on('error', () => finish(400, { error: 'request error' }));
+        try {
+          let buf; try { buf = await readCappedBody(req, maxJsonBytes); }
+          catch { return finish(413, { code: 'TOO_LARGE', error: `file exceeds ${maxMb} MB` }); }
+          let body; try { body = JSON.parse(buf.toString('utf8') || '{}'); }
+          catch { return finish(400, { error: 'invalid JSON body' }); }
+          const b64 = (body && typeof body.contentBase64 === 'string') ? body.contentBase64 : '';
+          const rawName = (body && typeof body.filename === 'string') ? body.filename : '';
+          if (!b64 || !rawName) return finish(400, { error: 'filename and contentBase64 are required' });
+          // SAFE-subset ext: the network upload subset AND an OCR-able format (PDF + image only) — a .docx/.txt
+          // passes isUploadIntake but the OCR pipeline can't read it, so it is not teachable. Sanitize to basename.
+          const baseName = P.basename(String(rawName));
+          const ext = fileKinds.normExt(baseName);
+          if (!(fileKinds.isUploadIntake(ext) && fileKinds.isOcr(ext))) return finish(415, { code: 'UNSUPPORTED_TYPE', error: 'only a PDF or image can be taught' });
+          let bytes; try { bytes = Buffer.from(b64, 'base64'); } catch { return finish(400, { error: 'bad file data' }); }
+          if (!bytes.length) return finish(400, { error: 'empty file' });
+          if (bytes.length > maxMb * 1024 * 1024) return finish(413, { code: 'TOO_LARGE', error: `file exceeds ${maxMb} MB` });
+          // Mint a PRIVATE temp FOLDER holding exactly one file (the batch import reads a folder). The file
+          // name inside becomes the doc's original_filename; the client-supplied path is reduced to a basename.
+          tmpDir = P.join(osMod.tmpdir(), `ds_v1teachstage_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+          const tmpFile = P.join(tmpDir, baseName);
+          try { fsx.mkdirSync(tmpDir, { recursive: true }); fsx.writeFileSync(tmpFile, bytes); }
+          catch { return finish(500, { error: 'could not stage the upload' }); }
+
+          // C11: HARD page-count cap via a cheap render/pages.py --count PRE-PROBE, BEFORE any OCR spawn. A
+          // null probe (non-PDF, or pdfium couldn't open it → the import fails fast anyway) is allowed through.
+          const probePages = ctx.stageProbePages || ((filePath, fileExt) => new Promise((resolve) => {
+            if (fileExt !== '.pdf') return resolve(1);   // probe PDFs only; images/tiff count as one for the cap
+            const d = pageDeps();
+            let proc; try { proc = d.spawn(d.pythonExe(), d.pythonArgs(d.renderScript, '--file', filePath, '--count'), { windowsHide: true }); }
+            catch { return resolve(null); }
+            let out = ''; proc.stdout.on('data', c => { out += c.toString(); });
+            proc.on('error', () => resolve(null));
+            proc.on('close', () => { try { const n = JSON.parse(out).pages; resolve(Number.isFinite(n) && n > 0 ? n : null); } catch { resolve(null); } });
+          }));
+          let pages = null; try { pages = await probePages(tmpFile, ext); } catch { pages = null; }
+          if (Number.isFinite(pages) && pages > TEACH_STAGE_MAX_PAGES) {
+            return finish(413, { code: 'TOO_MANY_PAGES', error: `that document has ${pages} pages — the limit for teaching is ${TEACH_STAGE_MAX_PAGES}` });
+          }
+
+          // C8: the SHARED batch import path with autoFile OFF (even a graduated supplier+type lands
+          // needs_review). C9: the return carries the docId captured from _handleFileMessage msg.db_id.
+          const stageImport = ctx.stageImport || ((folder, opts) => require('../processing/handler').stageImportSingle(folder, opts));
+          let r; try { r = await stageImport(tmpDir, { autoFile: false }); }
+          catch (e) { log('[api] teach-stage import: ' + (e && e.message)); return finish(500, { error: 'reading the document failed' }); }
+          if (!r || !r.ok || r.docId == null) return finish(500, { ok: false, error: (r && r.error) || 'reading the document failed' });
+          try { audit({ user_id: session.userId, action: 'teach_stage', action_category: 'learning', outcome: 'success',
+                        document_id: Number(r.docId) || null,
+                        metadata: { via: 'client', ip: clientIp(req), filename: baseName, pages: Number.isFinite(pages) ? pages : null } }); } catch {}
+          return finish(200, { ok: true, docId: r.docId, filename: baseName });
+        } catch (e) { log('[api] teach-stage: ' + (e && e.message)); return finish(500, { error: 'reading the document failed' }); }
       }
 
       if (req.method === 'GET' && pathname === `${API_PREFIX}/documents/deleted`) {

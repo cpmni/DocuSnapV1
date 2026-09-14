@@ -297,6 +297,10 @@ function createClient(opts = {}) {
   // then file the exemplar). Admin + entitlement + license + the server switch, all server-side. Longer idle —
   // it spawns Python (landmarks/fingerprint) after the tx.
   const teachCommit        = (payload) => request('POST', '/v1/teach/commit', { withAuth: true, body: payload || {}, timeoutMs: 120000 });
+  // Teach-over-client S4 (upload-to-teach): POST a PDF/image (base64-in-JSON) → the core runs the FULL OCR
+  // import WITHOUT filing and returns { docId, filename }. The read is ~30s+ for a scan (no sub-% progress
+  // over /v1), so a long idle timeout. Admin + entitlement + license + the server switch, all server-side.
+  const teachStage         = (body) => request('POST', '/v1/teach/stage', { withAuth: true, body: body || {}, timeoutMs: 180000 });
 
   return {
     connect, login, logout, changePassword, entitlement, search, getDocument, getPages, getThumbnail, ping, fetchCa, enroll,
@@ -312,7 +316,7 @@ function createClient(opts = {}) {
     teach: { ocrRegion: revOcrRegion, ocrRegionBoxes: teachRegionBoxes, ocrPageWords: teachPageWords,
              pageDeskew: teachPageDeskew, config: teachConfig,
              createDocType: teachCreateDocType, docTypeCatalog: teachDocTypeCatalog, addDocTypePresets: teachAddPresets,
-             commit: teachCommit },
+             commit: teachCommit, stage: teachStage },
     isAuthenticated: () => !!token,
     _setToken: (t) => { token = t; }, // test/diagnostic aid only
   };

@@ -1320,6 +1320,7 @@ let _autoAcceptInflightProbe = () => false;
 let _quietLaneImpl = null;                 // Slice 3: the quiet re-read lane (bound in register())
 let _readyProbeImpl = null;                // P2 'ready' trigger (bound in register())
 let _separateFilesImpl = null;             // watch separation parity (bound in register(); 2026-09-01)
+let _stageImportImpl = null;               // teach-over-client S4: single-file upload-to-teach import (bound in register(); 2026-09-14)
 let _scheduleReadyRereadImpl = null;
 let _scheduleTypeSplitRereadImpl = null;   // A6
 const _typeSplitRippleOn = (db) => process.env.TYPE_AMBIGUITY_RIPPLE === '1'
@@ -2964,6 +2965,72 @@ function register(ctx) {
     }
   }
   _separateFilesImpl = separateFiles;
+
+  // ── Teach-over-client S4 (upload-to-teach) — a SINGLE-file import driven WITHOUT the process-folder
+  //    IPC handler ────────────────────────────────────────────────────────────────────────────────────
+  // Oracle C8: process-folder is an IPC handler (event.sender-bound, with the output/Processed/filed-folder
+  // guards a real folder import needs) — NOT reusable verbatim. This is the reusable batch path: the /v1
+  // stage route mints a PRIVATE temp folder holding exactly one uploaded file (so the source-folder guards
+  // are moot), drives ONE Python worker over it through the SAME buildWorkerCommand + _handleFileMessage the
+  // batch uses (so a doc reads identically), and threads autoFileRun=FALSE into _handleFileMessage so even a
+  // GRADUATED supplier+type lands needs_review, never filed. Progress goes to a NO-OP sink (no renderer
+  // mirror). Returns { ok, docId } — docId captured from _handleFileMessage msg.db_id (Oracle C9), never a
+  // filename pick. The caller (the /v1 route) owns the license re-check, the switch, the page-count cap and
+  // the temp-folder cleanup (C10: it wipes the temp AFTER we resolve).
+  async function stageImportSingle(folder, _opts = {}) {
+    const db = getDb();
+    const learn = require('../../../database/modules/learning');
+    let trainingArgs, tempFiles;
+    try { ({ args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger)); }
+    catch (e) { logger?.err?.(`[teach-stage] setup failed: ${e && e.message}`); return { ok: false, error: e && e.message }; }
+    const procMode = _validMode(learn.getSetting(db, 'processing_mode', 'smart'));
+    let capturedId = null;
+    const pendingFileIo = [];
+    try {
+      await new Promise((resolve) => {
+        let settled = false;
+        const settle = (code) => { if (settled) return; settled = true; resolve(code); };
+        const { scriptArgs, env } = buildWorkerCommand(db, {
+          pyFolder: folder, tesseract: tesseractPath(), filesFile: null, mode: procMode,
+          threadCap: 0, wantTrace: false, sliceDir: null, trainingArgs, arrival: 'manual',
+        });
+        let proc;
+        try { proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true, env }); }
+        catch (e) { logger?.err?.(`[teach-stage] spawn threw: ${e && e.message}`); return settle(-1); }
+        proc.on('error', (e) => { logger?.err?.(`[teach-stage] spawn error: ${(e && e.code) || (e && e.message)}`); settle(-1); });
+        let buf = '';
+        proc.stdout.on('data', (data) => {
+          buf += data.toString();
+          const lines = buf.split('\n'); buf = lines.pop();
+          for (const line of lines) {
+            const trimmed = line.trim(); if (!trimmed) continue;
+            let msg; try { msg = JSON.parse(trimmed); } catch { continue; }
+            if (msg.type === 'file_done') {
+              // Persist SYNCHRONOUSLY (better-sqlite3 is sync) so msg.db_id is set before we capture it.
+              try {
+                const io = _handleFileMessage(db, msg, folder, notifyMainWindow, logger, /*autoFileRun*/ false);
+                if (io && typeof io.then === 'function') pendingFileIo.push(io);
+              } catch (e) { logger?.err?.(`[teach-stage] handleFileMessage: ${msg.original_filename || '?'} — ${e && e.message}`); }
+              if (msg.db_id != null && capturedId == null) capturedId = msg.db_id;   // C9
+            } else if (msg.type === 'file_begin') {
+              try { _handleFileMessage(db, msg, folder, notifyMainWindow, logger); } catch {}
+            }
+            // trace / log / start / file_pages need no sink here (no dev inspector, no progress bar).
+          }
+        });
+        proc.stderr.on('data', (d) => { const t = d.toString().trim(); if (t) logger?.warn?.(`[teach-stage] py stderr: ${t}`); });
+        proc.on('close', (code) => settle(code));
+      });
+      // The async twin of _handleFileMessage (working copy / rotate / drain) reads the source from `folder`;
+      // await it BEFORE the caller wipes the temp folder (C10: clean temp AFTER the import).
+      if (pendingFileIo.length) { try { await Promise.allSettled(pendingFileIo); } catch {} }
+    } finally {
+      try { cleanupFiles(tempFiles); } catch {}
+    }
+    if (capturedId == null) return { ok: false, error: 'no document was imported' };
+    return { ok: true, docId: capturedId };
+  }
+  _stageImportImpl = stageImportSingle;
 
   // ── Process folder ──────────────────────────────────────────────────────────
   ipcMain.handle('process-folder', async (event, folderPath, opts) => {
@@ -6964,6 +7031,9 @@ module.exports = {
   beginWatchActivity: (total) => _beginActivity('watch', total),
   // Watch separation parity (2026-09-01): run the import separation pre-pass over an explicit stable set.
   separateFiles: (db, folder, fileList, log) => (_separateFilesImpl ? _separateFilesImpl(db, folder, fileList, log) : Promise.resolve({ separated: 0, rewrites: [], consumed: [] })),
+  // Teach-over-client S4 (2026-09-14): the reusable single-file import the /v1 stage route drives with
+  // autoFile OFF (Oracle C8). Bound in register(); rejects if the module isn't registered yet.
+  stageImportSingle: (folder, opts) => (_stageImportImpl ? _stageImportImpl(folder, opts) : Promise.reject(new Error('processing handler not registered'))),
   endWatchActivity:   ()      => _endActivity('watch'),
   // Shared with the watch-folder handler so it can batch + shard its queue exactly like a
   // manual import (one Python process per shard of MANY files, not one process per file).
