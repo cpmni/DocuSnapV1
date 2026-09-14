@@ -28,7 +28,7 @@ const path = require('path');
 let fails = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
 
-const raw = fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8');
+const raw = fs.readFileSync(path.join(__dirname, '..', 'shared', 'teach-ui', 'teach.js'), 'utf8');
 // Strip line comments before asserting on structure: the comments in autoLabel deliberately
 // DESCRIBE the old left-first shape, so a naive source scan would find the very pattern it is
 // checking has gone (the trap test_teach_multipage.js fell into on its first run).

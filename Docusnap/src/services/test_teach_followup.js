@@ -99,7 +99,7 @@ check('G: autoAccept TRUE only with BOTH switches on', computeTeachFollowup(db, 
 learning.setSetting(db, 'scope_sweep_enabled', 'false');
 check('G: …the sweep off alone turns it back off', computeTeachFollowup(db, fTaught).autoAccept === false);
 // ── H — the renderer contract: count + Review link no longer hidden behind canPromise ──────────
-const rend = require('fs').readFileSync(require('path').join(__dirname, '..', 'windows', 'teach', 'renderer.js'), 'utf8');
+const rend = require('fs').readFileSync(require('path').join(__dirname, '..', 'windows', 'shared', 'teach-ui', 'teach.js'), 'utf8');
 check('H: the card shows the number + "Check them in Review" whenever siblings are queued', /if \(f\.siblingCount > 0 && f\.needed > 0\)\{[\s\S]{0,900}(fu-review|reviewBtn)/.test(rend));
 check('H: the over-promise is gone — queued docs "become ready to file in one click" unless auto-accept is on', /become ready to file in one click/.test(rend) && /f\.autoAccept\s*\?/.test(rend));
 

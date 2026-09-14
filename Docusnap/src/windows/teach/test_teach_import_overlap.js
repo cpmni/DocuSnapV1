@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 let fails = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
-const r = fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8').replace(/\r\n/g, '\n');
+const r = fs.readFileSync(path.join(__dirname, '..', 'shared', 'teach-ui', 'teach.js'), 'utf8').replace(/\r\n/g, '\n');
 const h = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8').replace(/\r\n/g, '\n');
 
 // (1) the gate admits an in-flight read → Continue works while the read runs.

@@ -21,7 +21,7 @@
  *   window.DocTypeEditor.create(host, opts) -> controller
  *     opts = {
  *       mode: 'create' | 'edit',
- *       api:  window.docusnap,            // IPC bridge (injected; no global coupling)
+ *       api:  <transport|bridge>,         // REQUIRED — injected (core: the preload bridge; client: /v1 transport)
  *       initial: typeObject | null,       // edit: the type row {id,name,fields,...}
  *       showName: bool,                   // default: true in create, false in edit
  *       onValidityChange: (ready)=>{},    // create: drive the host's Create button
@@ -234,7 +234,11 @@
 
   function create(host, opts) {
     opts = opts || {};
-    const api  = opts.api || window.docusnap;
+    // Injection is MANDATORY (teach-over-client, 2026-09-14): the old bridge fallback breaks on the detached
+    // client, where the preload bridge does not exist, and it would trip the shared-tree no-direct-IPC guard.
+    // Every caller (Settings, Review, Teach) passes `api` explicitly — verified 2026-09-14.
+    const api  = opts.api;
+    if (!api) throw new Error('DocTypeEditor.create: opts.api is required (inject the transport/bridge)');
     const mode = opts.mode === 'edit' ? 'edit' : 'create';
     const showName = opts.showName != null ? opts.showName : (mode === 'create');
 

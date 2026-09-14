@@ -5,7 +5,7 @@
 // "DOCUMENT OLUTIONS" from a 69% letterhead prefill while the corrected "DOCUMENT SOLUTIONS" went into
 // the template's identity — the name Review shows as "Recognised by" must be the corrected value.
 const fs = require('fs'), path = require('path');
-const src = fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8');
+const src = fs.readFileSync(path.join(__dirname, '..', 'shared', 'teach-ui', 'teach.js'), 'utf8');
 let fails = 0;
 const check = (l, ok) => { console.log(`  ${ok ? 'OK ' : 'BAD'} ${l}`); if (!ok) fails++; };
 check('promote-to-template supplier = the wizard value first, the doc row last',

@@ -28,7 +28,7 @@ let fails = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
 
 const teachHtml = read('src/windows/teach/index.html');
-const teachJs   = read('src/windows/teach/renderer.js');
+const teachJs   = read('src/windows/shared/teach-ui/teach.js');
 const setHtml   = read('src/windows/settings/index.html');
 const setJs     = read('src/windows/settings/renderer.js');
 const catalogJs = read('src/windows/shared/doctype-catalog.js');

@@ -22,7 +22,7 @@ const path = require('path');
 let fails = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
 
-const raw = fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8');
+const raw = fs.readFileSync(path.join(__dirname, '..', 'shared', 'teach-ui', 'teach.js'), 'utf8');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 // Strip line comments before asserting on structure. The comments here deliberately DESCRIBE the
 // old shape ("used to resolve ... pages[0]"), so a naive source scan finds the very pattern it is

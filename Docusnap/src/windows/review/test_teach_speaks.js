@@ -169,7 +169,7 @@ check('and it is a level guard, NOT a toast queue (Oracle: a queue shows the war
       !/toastQueue|_toastQueue|queue\.push\(.*toast/i.test(rend));
 
 console.log('\n5. the wizard asks BEFORE the irreversible step');
-const teach = read('src/windows/teach/renderer.js');
+const teach = read('src/windows/shared/teach-ui/teach.js');
 // Strip line comments before asserting an ABSENCE: the defect is deliberately DESCRIBED in the
 // comments that replaced it, and a pin a comment can break is a pin someone "fixes" by deleting
 // the explanation.

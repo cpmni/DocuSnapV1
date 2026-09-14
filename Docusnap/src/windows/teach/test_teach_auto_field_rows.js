@@ -26,7 +26,7 @@ const rd = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8').replace(/\r\n/g, '
 let fails = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
 
-const js = rd('src/windows/teach/renderer.js');
+const js = rd('src/windows/shared/teach-ui/teach.js');
 const html = rd('src/windows/teach/index.html');
 const rh = rd('src/modules/review/handler.js');
 const pre = rd('src/preload.js');

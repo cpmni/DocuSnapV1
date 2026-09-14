@@ -71,7 +71,7 @@ check('within a tier an EDIT hit outranks a SUB-RUN hit', r.near === true && r.k
 console.log('\nconsumers (source contract):');
 const CR = String.fromCharCode(13), LF = String.fromCharCode(10);
 const read = (...p) => fs.readFileSync(path.join(__dirname, '..', '..', ...p), 'utf8').split(CR + LF).join(LF);
-const svc = read('src', 'services', 'reviewService.js'), teach = read('src', 'windows', 'teach', 'renderer.js'), rev = read('src', 'windows', 'review', 'renderer.js'), rh = read('src', 'modules', 'review', 'handler.js');
+const svc = read('src', 'services', 'reviewService.js'), teach = read('src', 'windows', 'shared', 'teach-ui', 'teach.js'), rev = read('src', 'windows', 'review', 'renderer.js'), rh = read('src', 'modules', 'review', 'handler.js');
 check('reviewService passes the doc\'s template id to the finder', /findNearMatchIdentity\(db, issuerVal, \{ templateId: docRow\.template_id \|\| null \}\)/.test(svc));
 check('the IPC accepts { value, templateId } and a bare string', /if \(value && typeof value === 'object'\) return learning\.findNearMatchIdentity\(getDb\(\), value\.value, \{ templateId: value\.templateId \|\| null \}\);/.test(rh));
 check('the wizard asks with its document\'s template id and offers the FULL name first on a sub-run', /checkIdentityNearMatch\(\{ value: v, templateId: \(state\.doc && state\.doc\.template_id\) \|\| null \}\)/.test(teach)

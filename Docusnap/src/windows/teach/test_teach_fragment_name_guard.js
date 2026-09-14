@@ -21,7 +21,7 @@
  */
 const fs = require('fs'), path = require('path');
 const CR = String.fromCharCode(13), LF = String.fromCharCode(10);
-const src = fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8').split(CR + LF).join(LF);
+const src = fs.readFileSync(path.join(__dirname, '..', 'shared', 'teach-ui', 'teach.js'), 'utf8').split(CR + LF).join(LF);
 let fails = 0;
 const check = (l, ok) => { console.log(`  ${ok ? 'OK ' : 'BAD'} ${l}`); if (!ok) fails++; };
 

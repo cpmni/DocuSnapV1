@@ -130,7 +130,7 @@ console.log('\nTHE MIRROR MUST NOT GO STALE — the renderer still implements th
   const FRAG = '(?:st|nd|rd|th)?\\s*[,./\\\\-]?\\s*([A-Za-z]{3,9})\\.?\\s*[,./\\\\-]?\\s*(\\d{2}|\\d{4})$/i';
   for (const [label, rel] of [['filing/handler.js parseDate (the confirm door)', ['..', '..', '..', 'src', 'modules', 'filing', 'handler.js']],
                               ['review/renderer.js _matchStrictDate (drawn dates)', ['renderer.js']],
-                              ['teach/renderer.js _parsesAsDate (the wizard\'s date check)', ['..', 'teach', 'renderer.js']]]) {
+                              ['teach-ui/teach.js _parsesAsDate (the wizard\'s date check)', ['..', 'shared', 'teach-ui', 'teach.js']]]) {
     const src = fs.readFileSync(path.join(__dirname, ...rel), 'utf8');
     check(`${label} carries the wide month-name day-first regex`, src.includes(FRAG));
     check(`${label} strips a leading day name`, /Mon\(\?:day\)\?\|Tue\(\?:sday\)\?/.test(src));
@@ -141,7 +141,7 @@ console.log('\nTHE MIRROR MUST NOT GO STALE — the renderer still implements th
   const FRAG_MDY = '(?:(?:st|nd|rd|th)\\s*[,./\\\\-]?\\s*|\\s*[,./\\\\-]\\s*|\\s+)(\\d{2}|\\d{4})$/i';
   for (const [label, rel] of [['filing/handler.js parseDate', ['..', '..', '..', 'src', 'modules', 'filing', 'handler.js']],
                               ['review/renderer.js _matchStrictDate', ['renderer.js']],
-                              ['teach/renderer.js _parsesAsDate', ['..', 'teach', 'renderer.js']]]) {
+                              ['teach-ui/teach.js _parsesAsDate', ['..', 'shared', 'teach-ui', 'teach.js']]]) {
     const src = fs.readFileSync(path.join(__dirname, ...rel), 'utf8');
     check(`${label} carries the month-first fragment with the NON-EMPTY day→year separator (verbatim)`, src.includes(FRAG_MDY));
   }
@@ -189,7 +189,7 @@ console.log('\nTHE MIRROR MUST NOT GO STALE — the renderer still implements th
   check('_widenDatePatterns is a no-op on a config with no date_wide', JSON.stringify(R._widenDatePatterns({ date: ['x'] })) === JSON.stringify({ date: ['x'] }));
   check('_widenDatePatterns survives a null (the grid\'s catch path)', R._widenDatePatterns(null) === null);
   // The Teach wizard's date check is likewise pure — lift it and run it against the same vectors.
-  const tr = fs.readFileSync(path.join(__dirname, '..', 'teach', 'renderer.js'), 'utf8').replace(/\r\n/g, '\n');
+  const tr = fs.readFileSync(path.join(__dirname, '..', 'shared', 'teach-ui', 'teach.js'), 'utf8').replace(/\r\n/g, '\n');
   const T = vm.runInNewContext(grab(tr, /\nfunction _parsesAsDate\([^)]*\)\{[\s\S]*?\n\}\n/, '_parsesAsDate') + '\n;({ _parsesAsDate })', {});
   for (const v of V.accept) check(`teach _parsesAsDate accepts ${JSON.stringify(v.in)}`, T._parsesAsDate(v.in) === true);
   for (const s of ['31 Apr 2026', '31/04/2026', '2026-02-30', '29 Feb 2026', 'Aug 2026', 'Aug2026', '23 Ma 2026', '3.5.2', '1,234.56', 'INV-2939', '23 Aug 202'])

@@ -147,7 +147,7 @@ const find = (v, words) => locateValueInWords(v, { words, natW: NAT_W, natH: NAT
   const fs = require('fs'), path = require('path');
   const read = (p) => fs.readFileSync(path.join(__dirname, '..', '..', '..', p), 'utf8');
   const html = read('src/windows/teach/index.html');
-  const rend = read('src/windows/teach/renderer.js');
+  const rend = read('src/windows/shared/teach-ui/teach.js');
   const pre  = read('src/preload.js');
   const hdl  = read('src/modules/processing/handler.js');
   const py   = read('python_backend/ocr/region.py');

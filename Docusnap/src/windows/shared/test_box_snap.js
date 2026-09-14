@@ -188,7 +188,7 @@ function harness(pageWords) {
     const fs = require('fs'), path = require('path');
     const here = __dirname;
     const read = (p) => fs.readFileSync(path.join(here, '..', p), 'utf8');
-    const teachJs = read('teach/renderer.js');
+    const teachJs = read('shared/teach-ui/teach.js');
     const setJs   = read('settings/renderer.js');
     const teachHtml = read('teach/index.html');
     const setHtml   = read('settings/index.html');

@@ -15,7 +15,7 @@ let fails = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
 const strip = (s) => s.replace(/\r\n/g, '\n').split('\n').map(l => l.replace(/(^|[^:])\/\/.*$/, '$1')).join('\n');
 const rv = strip(fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8'));
-const tw = strip(fs.readFileSync(path.join(__dirname, '..', 'teach', 'renderer.js'), 'utf8'));
+const tw = strip(fs.readFileSync(path.join(__dirname, '..', 'shared', 'teach-ui', 'teach.js'), 'utf8'));
 
 console.log('1 the reprocess confirm never falls to the native box while Quick Reprocess is on');
 const batch = rv.slice(rv.indexOf('async function runReprocessBatch('), rv.indexOf('async function runReprocessBatch(') + 4000);

@@ -39,7 +39,7 @@ const reviewHtml   = nc(read('review', 'index.html'));
 const settingsHtml = nc(read('settings', 'index.html'));
 const reviewJs     = nc(read('review', 'renderer.js'));
 const settingsJs   = nc(read('settings', 'renderer.js'));
-const teachJs      = nc(read('teach', 'renderer.js'));
+const teachJs      = nc(read('shared', 'teach-ui', 'teach.js'));
 
 check('review: the wiz-ocr-type select is gone from the markup', !reviewHtml.includes('wiz-ocr-type'));
 check('review: no renderer code addresses it', !reviewJs.includes('wiz-ocr-type'));

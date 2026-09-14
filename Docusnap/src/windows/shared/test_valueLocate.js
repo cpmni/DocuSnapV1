@@ -41,7 +41,7 @@ check('a bare page amount still matches a bare typed amount (pre-existing, uncha
       nHits('4,142.35', [['4,142.35', 150]]) === 1);
 
 // ── (b) freeze-guard scope — eval _freezeDiscouraged + _isDateField out of teach/renderer.js ──
-const tsrc = fs.readFileSync(path.join(__dirname, '..', 'teach', 'renderer.js'), 'utf8');
+const tsrc = fs.readFileSync(path.join(__dirname, 'teach-ui', 'teach.js'), 'utf8');
 const s = tsrc.indexOf('function _isDateField');
 const e = tsrc.indexOf('// Conservative "reads as a printed date"');
 const _freezeDiscouraged = new Function('state',

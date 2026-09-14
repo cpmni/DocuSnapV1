@@ -17,7 +17,7 @@ const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}
 const strip = (s) => s.replace(/\r\n/g, '\n').split('\n').map(l => l.replace(/(^|[^:])\/\/.*$/, '$1')).join('\n');
 const ph = strip(fs.readFileSync(path.join(__dirname, '..', '..', 'modules', 'processing', 'handler.js'), 'utf8'));
 const pre = strip(fs.readFileSync(path.join(__dirname, '..', '..', 'preload.js'), 'utf8'));
-const tw = strip(fs.readFileSync(path.join(__dirname, 'renderer.js'), 'utf8'));
+const tw = strip(fs.readFileSync(path.join(__dirname, '..', 'shared', 'teach-ui', 'teach.js'), 'utf8'));
 
 console.log('1 the IPC is fenced to the staging dir');
 const ipc = ph.slice(ph.indexOf("ipcMain.handle('get-staged-teach-thumbnail'"), ph.indexOf("ipcMain.handle('get-staged-teach-thumbnail'") + 1400);

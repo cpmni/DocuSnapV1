@@ -8,7 +8,13 @@
  *   promoteToTemplate (creates template + pins sample → auto-landmarks)
  *   → saveTemplateMapping per field → confirmReview (files + learns).
  */
-const D = window.docusnap;
+// SHARED TEACH UI (teach-over-client parity, 2026-09-14): this wizard is ONE canonical screen driven by BOTH
+// the core Teach window and (S1+) the detached client's teach pop-out. It reaches IO ONLY through
+// `window.TeachTransport` (data) and `window.TeachHost` (window/navigation chrome) — adapters loaded BEFORE
+// this file (core: coreTeachTransport.js + coreTeachHost.js). NEVER name the preload bridge, IPC, or a Node
+// module here — src/windows/shared/teach-ui/test_teach_ui_no_direct_ipc.js fails the build on it (comments too).
+const D = window.TeachTransport;   // data/IO transport (pass-through on the core; over /v1 on the client)
+const HOST = window.TeachHost;     // window + navigation chrome (minimise/close/help/target/open-review)
 const $ = (id) => document.getElementById(id);
 
 const TYPE_MAP = { Text: 'text', Date: 'date', Currency: 'currency', Number: 'number' };
@@ -51,11 +57,11 @@ const state = {
 };
 
 // ── Titlebar ─────────────────────────────────────────────────────────────────
-$('win-min').onclick   = () => D.windowMinimise();
+$('win-min').onclick   = () => HOST.windowMinimise();
 $('win-close').onclick = () => confirmCancel();
 
 // ── Help: user guide + contextual help mode ───────────────────────────────────
-$('btn-help-guide')?.addEventListener('click', () => D.openHelpWindow('teach'));
+$('btn-help-guide')?.addEventListener('click', () => HOST.openHelpWindow('teach'));
 window.initHelpMode?.('help-mode-toggle', {
   'next':      'Move to the next step. On the final step this is what saves the document type, the field map and files the document.',
   'add-catalog':'Add a ready-made document type from the catalog — it arrives with sensible details already set up.',
@@ -73,7 +79,7 @@ window.initHelpMode?.('help-mode-toggle', {
 });
 $('btn-cancel').onclick = () => confirmCancel();
 function confirmCancel(){
-  if (confirm('Stop teaching? Nothing is saved yet.')) D.windowClose();
+  if (confirm('Stop teaching? Nothing is saved yet.')) HOST.windowClose();
 }
 
 // `ms` added 2026-08-11: the default 1600ms is right for a confirmation and far too short for
@@ -218,7 +224,7 @@ $('btn-import-teach')?.addEventListener('click', async () => {
   // rebuilds the grid when the read completes (the real card replaces it); an error removes it.
   const _prov = _showProvisionalCard(staged);
   // Progress subscription (eric): remove-before-add so a 2nd import in the same session can't
-  // double-register; window-scoped ipcRenderer, so removeAllListeners clears only this window's.
+  // double-register; the transport's progress subscription is window-scoped, so removing it clears only this window's.
   D.removeProgress && D.removeProgress();
   D.onProgress && D.onProgress(teachProgress);
   // Owner 2026-09-09: the ~30s OCR read no longer BLOCKS Continue. Hold it as state.readPromise so the user
@@ -666,7 +672,7 @@ async function toggleTeachDeskew(forceOn){
   try {
     if (goOn) {
       if (!state.deskewImg) {                              // fetch the straightened render ONCE
-        let res = null; try { res = await window.docusnap.getPageDeskew?.(state.pageDataUrl.split(',')[1], DESKEW_HARD_FLOOR); } catch {}
+        let res = null; try { res = await D.getPageDeskew?.(state.pageDataUrl.split(',')[1], DESKEW_HARD_FLOOR); } catch {}
         if (res && res.image && res.angle) {
           await new Promise(r => { const im = new Image(); im.onload = () => { state.deskewImg = im; state.deskewImgAngle = res.angle; r(); }; im.onerror = () => r(); im.src = 'data:image/png;base64,' + res.image; });
         }
@@ -2213,7 +2219,7 @@ async function doCommit(){
 
 // ── Step 5: done ─────────────────────────────────────────────────────────────
 // (footer Next = "Done" → close)
-function finishDone(){ D.windowClose(); }
+function finishDone(){ HOST.windowClose(); }
 
 // POST-TEACH FOLLOW-UP CARD (gary+barry → Oracle SIGN-OFF-W/COND 2026-08-21). After a teach, tell the
 // operator the TRUTH about how close this sender is to filing itself, and — when confirming a few
@@ -2244,7 +2250,7 @@ async function renderTeachFollowup(){
     ? `the rest of their ${type} in the queue will file themselves`
     : `the rest of their ${type} become ready to file in one click — and future ones file themselves`;
   const reviewBtn = `<div style="margin-top:10px"><button class="btn primary" id="fu-review">Check them in Review</button></div>`;
-  const wireBtn = () => { const btn=$('fu-review'); if(btn) btn.onclick=()=>{ try{ f.firstSibling ? D.openReviewWindowAt(f.firstSibling) : D.openReviewWindow(); }catch{} D.windowClose(); }; };
+  const wireBtn = () => { const btn=$('fu-review'); if(btn) btn.onclick=()=>{ try{ f.firstSibling ? HOST.openReviewWindowAt(f.firstSibling) : HOST.openReviewWindow(); }catch{} HOST.windowClose(); }; };
   if (f.canPromise){
     el.style.cssText = box;
     el.innerHTML =
@@ -2296,8 +2302,8 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;',
 $('btn-next').addEventListener('click',()=>{ if(state.step===5) finishDone(); });
 
 (async function init(){
-  try{ state.targetDocId = await D.getTeachTarget(); }catch{}
-  D.onTeachLoadDoc && D.onTeachLoadDoc(id=>{ state.targetDocId=id; });
+  try{ state.targetDocId = await HOST.getTeachTarget(); }catch{}
+  HOST.onTeachLoadDoc && HOST.onTeachLoadDoc(id=>{ state.targetDocId=id; });
   if (state.targetDocId){
     try{
       state.docs = await D.getReviewQueue() || [];

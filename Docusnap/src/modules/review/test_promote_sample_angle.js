@@ -37,7 +37,7 @@ check('C3: a REUSED template with a ≥0.3° mismatch WARNs (never overwrites)',
 check('the async detect stays the fallback AFTER the sync write', promo.indexOf('UPDATE templates SET sample_deskew_angle') < promo.indexOf('ctx.generateSampleAngle(result.templateId)'));
 
 console.log('3 the wizard side');
-const tw = read('src/windows/teach/renderer.js');
+const tw = read('src/windows/shared/teach-ui/teach.js');
 check('promote payload carries sample_deskew_angle + angle_measured from page 0', /sample_deskew_angle:_sa\.angle, angle_measured:_sa\.measured,/.test(tw) && /function _sampleAngleForCommit\(\)/.test(tw));
 check('the measured flag comes from the IPC result, not from having an image', /if \(res && res\.measured\) \{ state\.deskewMeasured = true; state\.deskewMeasuredAngle = Number\(res\.angle\) \|\| 0; \}/.test(tw));
 check('the per-page cache banks measured + angle (multi-page teach)', /_pc\.deskewMeasured = state\.deskewMeasured; _pc\.deskewMeasuredAngle = state\.deskewMeasuredAngle;/.test(tw) && /deskewMeasured: !!state\.deskewMeasured, deskewMeasuredAngle: state\.deskewMeasuredAngle \|\| 0/.test(tw));
