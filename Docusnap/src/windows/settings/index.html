@@ -2845,6 +2845,24 @@
             certificate, the firewall, and fixes for connection problems.</span>
         </div>
 
+        <!-- Connect a client — the address, a short one-time verification code + QR, and the stable-address tip. -->
+        <div id="connect-client-card" class="card" style="margin-top:14px; display:none;">
+          <div class="card-head"><div class="section-title">Connect a client</div></div>
+          <p class="section-desc">On the search-client PC, enter this PC's address and port, then check the certificate matches. Use the one-time code (or scan the QR) so it verifies automatically.</p>
+          <div class="threshold-sub" id="cc-address" style="font-family:var(--mono); font-size:13px;"></div>
+          <div class="row-flex" style="gap:10px; margin-top:12px; align-items:center;">
+            <button class="btn" id="cc-pair-gen">Show a one-time code</button>
+            <button class="btn ghost" id="cc-pair-clear" style="display:none;">Clear code</button>
+            <span class="threshold-sub" id="cc-pair-status" style="flex:1;"></span>
+          </div>
+          <div id="cc-pair-code" style="font-family:var(--mono); font-size:22px; letter-spacing:3px; margin-top:8px; display:none;"></div>
+          <div id="cc-qr-wrap" style="margin-top:12px; display:none;">
+            <img id="cc-qr" alt="Connection QR code" style="width:200px; height:200px; image-rendering:pixelated; background:#fff; padding:6px; border-radius:8px; border:1px solid var(--border);">
+            <p class="section-desc" style="margin-top:6px; margin-bottom:0;">Photograph or scan this on the client to fill the address and check the certificate automatically. It contains no password.</p>
+          </div>
+          <p class="section-desc" id="cc-tip" style="margin-top:14px;">💡 <b>Tip:</b> for a reliable connection, give this PC a fixed address &mdash; a router &ldquo;DHCP reservation&rdquo; is easiest &mdash; or have clients connect by this PC&rsquo;s name. A changing address makes clients lose the server. Client PCs need no fixed address of their own.</p>
+        </div>
+
         <details id="cert-details" style="margin-top:12px;">
         <summary class="disclose">Managed TLS certificate</summary>
         <div id="client-api-cert" style="margin-top:8px; padding:12px 14px; border:1px solid var(--border); border-radius:9px; background:var(--surface2);">

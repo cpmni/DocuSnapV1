@@ -285,6 +285,45 @@ async function initClientApiSection() {
   };
   try { renderCert(await api.clientApiCertStatus()); } catch { /* ignore */ }
 
+  // ── "Connect a client" card — shown when access is RUNNING on a LAN host with a cert. Address + a one-time
+  //    code + QR (verification aids) + the stable-address tip. The card fetches its own status so it can be
+  //    called after the toggle flips. ─────────────────────────────────────────────────────────────────────
+  let _ccCountdown = null;
+  const _ccStop = () => { if (_ccCountdown) { clearInterval(_ccCountdown); _ccCountdown = null; } };
+  async function loadConnectQr() {
+    const img = document.getElementById('cc-qr'), wrap = document.getElementById('cc-qr-wrap');
+    try { const q = await api.clientApiConnectQr(); if (q && q.ok && img && wrap) { img.src = q.dataUrl; wrap.style.display = ''; } else if (wrap) wrap.style.display = 'none'; }
+    catch { if (wrap) wrap.style.display = 'none'; }
+  }
+  async function refreshPairing() {
+    const st = await api.clientApiPairingStatus().catch(() => null);
+    const codeEl = document.getElementById('cc-pair-code'), sEl = document.getElementById('cc-pair-status'), clearBtn = document.getElementById('cc-pair-clear');
+    _ccStop();
+    if (st && st.active) {
+      if (codeEl) { codeEl.textContent = st.code; codeEl.style.display = ''; }
+      if (clearBtn) clearBtn.style.display = '';
+      if (sEl) { const tick = () => { const left = Math.max(0, Math.round((st.expires - Date.now()) / 1000));
+        sEl.textContent = left > 0 ? `Expires in ${Math.floor(left / 60)}m ${String(left % 60).padStart(2, '0')}s — enter it on the client.` : 'Expired — show a new one.';
+        if (left <= 0) { _ccStop(); refreshPairing(); } }; tick(); _ccCountdown = setInterval(tick, 1000); }
+    } else {
+      if (codeEl) codeEl.style.display = 'none';
+      if (clearBtn) clearBtn.style.display = 'none';
+      if (sEl) sEl.textContent = 'No code set — connecting still works, but a code lets the client verify it reached the right PC.';
+    }
+  }
+  async function renderConnectCard() {
+    const ccCard = document.getElementById('connect-client-card');
+    if (!ccCard) return;
+    let st, cs; try { st = await api.clientApiGetStatus(); cs = await api.clientApiCertStatus(); } catch { return; }
+    if (!(st && st.running) || !(cs && !cs.loopback && cs.hasCert)) { ccCard.style.display = 'none'; _ccStop(); return; }
+    ccCard.style.display = '';
+    const addr = document.getElementById('cc-address');
+    if (addr) addr.textContent = `Address  ${cs.host}    Port  ${st.port}    ${st.tls ? 'secure (https)' : 'plain (http)'}`;
+    await refreshPairing();
+    await loadConnectQr();
+  }
+  try { await renderConnectCard(); } catch { /* ignore */ }
+
   // Workflow add-on entitlement — READ-ONLY. It is driven by the licence (the verified
   // token / backend per-feature counts), never a local setting. The old toggle wrote
   // `detached_client_licensed`, which nothing authoritative consumes, so it could mislead
@@ -342,14 +381,29 @@ async function initClientApiSection() {
   } catch { /* ignore */ }
 
   tgl.addEventListener('change', async () => {
+    // Oracle C5: enabling requires an address + port — a UI guard ONLY (the server keeps its env/loopback paths).
+    if (tgl.checked) {
+      const h = (host.value || '').trim(), p = (port.value || '').trim();
+      if (!h || !p) {
+        tgl.checked = false;
+        statusEl.textContent = 'Enter an address (127.0.0.1 for this PC only, or the LAN address) and a port first.';
+        try { (h ? port : host).focus(); } catch {}
+        return;
+      }
+    }
     try {
       render(await api.clientApiSetEnabled(tgl.checked));
       // The listener binds asynchronously, so re-poll shortly to flip "starting…" → "Running".
-      setTimeout(async () => { try { render(await api.clientApiGetStatus()); } catch { /* ignore */ } }, 800);
+      setTimeout(async () => { try { render(await api.clientApiGetStatus()); renderCert(await api.clientApiCertStatus()); await renderConnectCard(); } catch { /* ignore */ } }, 900);
     } catch (e) { statusEl.textContent = 'Error: ' + (e && e.message); tgl.checked = !tgl.checked; }
   });
   const saver = (el, k) => el.addEventListener('change', () => { try { api.setSetting(k, el.value.trim()); } catch {} });
   saver(host, 'client_api_host'); saver(port, 'client_api_port');
+  // "Connect a client" card — the one-time code buttons.
+  const ccGen = document.getElementById('cc-pair-gen');
+  if (ccGen) ccGen.addEventListener('click', async () => { try { await api.clientApiPairingGenerate({ minutes: 10 }); await refreshPairing(); await loadConnectQr(); } catch { /* ignore */ } });
+  const ccClear = document.getElementById('cc-pair-clear');
+  if (ccClear) ccClear.addEventListener('click', async () => { try { await api.clientApiPairingClear(); await refreshPairing(); await loadConnectQr(); } catch { /* ignore */ } });
   saver(cert, 'client_api_tls_cert'); saver(key, 'client_api_tls_key');
 
   const certGenBtn = document.getElementById('client-api-cert-generate');

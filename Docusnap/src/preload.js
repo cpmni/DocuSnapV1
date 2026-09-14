@@ -122,6 +122,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   clientApiCertStatus:   ()  => ipcRenderer.invoke('client-api-cert-status'),
   clientApiCertGenerate: ()  => ipcRenderer.invoke('client-api-cert-generate'),
   clientApiCertExport:   ()  => ipcRenderer.invoke('client-api-cert-export'),
+  clientApiPairingGenerate: (o) => ipcRenderer.invoke('client-api-pairing-generate', o || {}),
+  clientApiPairingClear:    ()  => ipcRenderer.invoke('client-api-pairing-clear'),
+  clientApiPairingStatus:   ()  => ipcRenderer.invoke('client-api-pairing-status'),
+  clientApiConnectQr:       ()  => ipcRenderer.invoke('client-api-connect-qr'),
   // Workflow add-on entitlement (drives the in-core enhanced Search).
   getEntitlement:      ()    => ipcRenderer.invoke('get-entitlement'),
   // Concurrent client-seat pool (admin): licensed seats + active leases, and release.

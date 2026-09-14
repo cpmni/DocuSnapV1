@@ -54,7 +54,11 @@ profile, pin-the-CA. The work is to make the DEFAULT path fewer/plainer steps an
      "New code" button + a countdown),
    - a **QR code** encoding `{host, port, fingerprint, code}` (rendered from those fields — a small OSS QR
      generator; see Open questions),
-   - the existing **Export profile** button (the file is the no-camera, no-typing off-network anchor).
+   - the existing **Export profile** button (the file is the no-camera, no-typing off-network anchor),
+   - a **stable-address tip**: "For a reliable connection, give this PC a fixed address — a router DHCP
+     reservation is easiest — or have clients connect by this PC's name. A changing IP makes clients lose the
+     server." (The CLIENT never needs a static IP — it connects outward and its seat is keyed to a stored client
+     id, not its IP; only the SERVER wants a stable address, because clients dial it and pin its cert's SANs.)
 3. (Optional) **Advertise presence via mDNS** so clients can scan — a service record `_scanfinder._tcp` carrying
    host/port (NOT the fingerprint — discovery only; the fingerprint is still verified off-network). Off unless the
    server is LAN-enabled; a Settings toggle "Let clients find this PC on the network".

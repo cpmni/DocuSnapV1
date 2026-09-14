@@ -45,7 +45,7 @@ DISTRIBUTION & VERIFICATION NOTES
   the full text and are incorporated by reference (see section 3).
 
 Applies to product version: ScanFinder 2.0.0 (core) / 1.0.2 (search client).
-Last reviewed: 2026-09-08.
+Last reviewed: 2026-09-14.
 
 --------------------------------------------------------------------------------
 1. COMPONENT INVENTORY
@@ -60,7 +60,7 @@ License identifiers are taken from each package's own metadata. The full
 text of each license family is in section 3.
 
 Bundled runtimes & binaries (shipped, but not enumerated as npm/PyPI packages)
-  Electron 44                     MIT  (embeds Chromium [BSD-3-Clause] and
+  Electron 31                     MIT  (embeds Chromium [BSD-3-Clause] and
                                   FFmpeg [LGPL-2.1, dynamically linked]; the
                                   Electron runtime ships its own complete
                                   LICENSE + LICENSES.chromium.html, included
@@ -71,16 +71,26 @@ Bundled runtimes & binaries (shipped, but not enumerated as npm/PyPI packages)
     tesseract, + tessdata)        trained-data; (c) the Tesseract contributors)
   SQLite (in better-sqlite3)      Public Domain (https://sqlite.org/copyright.html)
 
-Node.js components — production dependency tree (20)
+Node.js components — production dependency tree (39)
   @epic-web/invariant             1.0.0         MIT
   @pdf-lib/standard-fonts         1.0.0         MIT
   @pdf-lib/upng                   1.0.1         MIT
   @phc/format                     1.0.0         MIT
+  ansi-regex                      5.0.1         MIT
+  ansi-styles                     4.3.0         MIT
   argon2                          0.45.1        MIT
   better-sqlite3                  13.0.3        MIT
   bytenode                        1.6.0         MIT
+  cliui                           8.0.1         ISC
+  color-convert                   2.0.1         MIT
+  color-name                      1.1.4         MIT
   cross-env                       10.1.0        MIT
   cross-spawn                     7.0.6         MIT
+  dijkstrajs                      1.0.3         MIT
+  emoji-regex                     8.0.0         MIT
+  escalade                        3.2.0         MIT
+  get-caller-file                 2.0.5         ISC
+  is-fullwidth-code-point         3.0.0         MIT
   isexe                           2.0.0         ISC
   node-addon-api                  8.9.2         MIT
   node-forge                      1.4.0         (BSD-3-Clause OR GPL-2.0)
@@ -88,10 +98,19 @@ Node.js components — production dependency tree (20)
   pako                            1.0.11        (MIT AND Zlib)
   path-key                        3.1.1         MIT
   pdf-lib                         1.17.1        MIT
+  pngjs                           5.0.0         MIT
+  qrcode                          1.5.4         MIT
+  require-directory               2.1.1         MIT
   shebang-command                 2.0.0         MIT
   shebang-regex                   3.0.0         MIT
+  string-width                    4.2.3         MIT
+  strip-ansi                      6.0.1         MIT
   tslib                           1.14.1        0BSD
   which                           2.0.2         ISC
+  wrap-ansi                       7.0.0         MIT
+  y18n                            5.0.8         ISC
+  yargs                           17.7.2        MIT
+  yargs-parser                    21.1.1        ISC
 
 Python components — bundled interpreter, vendor/python (24)
   certifi                         2026.6.17     MPL-2.0

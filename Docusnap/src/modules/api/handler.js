@@ -1678,6 +1678,16 @@ function buildConnectionProfile(ctx) {
 // Optional pairing-code gate for the CA-bootstrap/enroll endpoints. When a code is
 // configured (client_api_pairing_code), callers must present a matching ?code= and
 // the code must not be expired; otherwise the gate is open (a CA cert is public).
+// Generate a short pairing code — Oracle C4: >=8 UNAMBIGUOUS alphanumerics (no 0/O/1/I/L) so it's readable off
+// a screen yet large enough (32^8 ~ 1.1e12) that brute-forcing /v1/ca in the code's short lifetime is impractical.
+function _genPairingCode(len = 8) {
+  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';   // 30 chars, no 0/O/1/I/L
+  const crypto = require('crypto');
+  let out = '';
+  for (let i = 0; i < len; i++) out += alphabet[crypto.randomInt(alphabet.length)];
+  return out;
+}
+
 function pairingOk(url, learning, db) {
   let code = null, exp = null;
   try { code = learning.getSetting(db, 'client_api_pairing_code'); } catch { /* ignore */ }
@@ -1715,6 +1725,53 @@ function register(ctx) {
     const cfg = resolveApiConfig(ctx);
     if (cfg.host !== '127.0.0.1' && cfg.host !== 'localhost') ensureManagedCert(ctx);
     return startApiServer(ctx);
+  });
+  // Pairing code — the "Connect a client" verification aid (Oracle C4). Setting a code makes /v1/ca + /v1/enroll
+  // require a matching ?code= (pairingOk); it is NOT the access control (that stays credentials + entitlement +
+  // seat) and is NEVER mandatory-by-default. Admin-only; the code is shown to the admin so they can read/QR it.
+  ipcMain.handle('client-api-pairing-generate', (_e, opts) => {
+    requireRole('admin');
+    const mins = Math.min(60, Math.max(1, Number(opts && opts.minutes) || 10));
+    const code = _genPairingCode();
+    const expires = Date.now() + mins * 60000;
+    learning.setSetting(getDb(), 'client_api_pairing_code', code);
+    learning.setSetting(getDb(), 'client_api_pairing_expires', String(expires));
+    return { ok: true, code, expires };
+  });
+  ipcMain.handle('client-api-pairing-clear', () => {
+    requireRole('admin');
+    learning.setSetting(getDb(), 'client_api_pairing_code', '');
+    learning.setSetting(getDb(), 'client_api_pairing_expires', '');
+    return { ok: true };
+  });
+  ipcMain.handle('client-api-pairing-status', () => {
+    requireRole('admin');
+    const db = getDb();
+    const code = learning.getSetting(db, 'client_api_pairing_code') || '';
+    const exp = Number(learning.getSetting(db, 'client_api_pairing_expires') || 0);
+    const active = !!code && (!exp || Date.now() < exp);
+    return { active, code: active ? code : '', expires: active ? exp : 0 };
+  });
+  // The "Connect a client" QR — generated in MAIN (Oracle/eric): a small JSON of {host,port,tls,fingerprint,code}
+  // ONLY, NEVER the CA PEM (the profile FILE carries the PEM; the QR carries the verifier). Fingerprint-only keeps
+  // the QR sparse enough to photograph off a screen.
+  ipcMain.handle('client-api-connect-qr', async () => {
+    requireRole('admin');
+    const st = apiStatus(ctx);
+    const cs = managedCertStatus(ctx);
+    const db = getDb();
+    const code = learning.getSetting(db, 'client_api_pairing_code') || '';
+    const exp = Number(learning.getSetting(db, 'client_api_pairing_expires') || 0);
+    const active = !!code && (!exp || Date.now() < exp);
+    const payload = JSON.stringify({
+      v: 1, host: st.host, port: st.port, tls: !!st.tls,
+      fp: (cs && cs.caFingerprint) || null, code: active ? code : undefined,
+    });
+    try {
+      const QR = require('qrcode');
+      const dataUrl = await QR.toDataURL(payload, { margin: 1, width: 240, errorCorrectionLevel: 'M' });
+      return { ok: true, dataUrl };
+    } catch (e) { return { ok: false, error: (e && e.message) || 'QR unavailable' }; }
   });
   ipcMain.handle('client-api-cert-status', () => { requireRole('admin'); return managedCertStatus(ctx); });
   ipcMain.handle('client-api-cert-generate', () => {
@@ -1782,5 +1839,6 @@ module.exports = {
   register, createServer, createRequestListener,
   startApiServer, stopApiServer, apiStatus,
   ensureManagedCert, managedCertStatus, buildConnectionProfile,
+  _genPairingCode,   // exported for test_pairing_code.js (Oracle C4)
   API_CONTRACT_VERSION, API_PREFIX,
 };
