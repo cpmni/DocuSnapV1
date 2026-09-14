@@ -615,13 +615,13 @@
         <label class="tls-wrap"><input id="srv-tls" type="checkbox" style="width:auto" /> Use HTTPS</label>
       </div>
       <div id="srv-cert-row" class="fieldlbl hidden">
-        <span>Server CA certificate</span>
+        <span>Certificate file (optional)</span>
         <div style="display:flex; gap:8px; align-items:center;">
-          <button id="srv-cert-btn" type="button" class="btn btn-secondary btn-sm">Choose .crt…</button>
+          <button id="srv-cert-btn" type="button" class="btn btn-secondary btn-sm">Choose a file…</button>
           <span id="srv-cert-name" style="font-size:12px; color:var(--muted)">none selected</span>
         </div>
         <small style="display:block; margin-top:5px; font-size:11px; color:var(--muted); line-height:1.45;">
-          The CA that signed the server (e.g. <code>ca.crt</code>) — <strong>not</strong> the server's own <code>server.crt</code>. Only needed for a self-signed / internal certificate; full verification stays on.
+          Most people can skip this — just press Connect and check the ID code. Only choose a file if the person who set up the main PC gave you one. <span style="opacity:.8">(Advanced: it's the CA certificate that signed the server, e.g. <code>ca.crt</code>; full verification stays on.)</span>
         </small>
       </div>
       <div id="connect-err" class="err"></div>

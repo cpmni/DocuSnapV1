@@ -254,6 +254,17 @@ function certModal({ title, lines, acceptLabel, danger }) {
     try { box.querySelector('#cm-cancel').focus(); } catch {}   // refuse is the default
   });
 }
+// Chris round-A cards: turn raw socket / pairing errors into plain guidance with a next step.
+function friendlyConnectError(raw) {
+  const s = String(raw || '');
+  if (/pairing code expired|code has expired|\bexpired\b/i.test(s))
+    return 'That one-time code has expired. On the main PC, open Settings → Search client → “Connect a client” and show a new code (or scan the new QR), then try again.';
+  if (/pairing code required|PAIRING|code required/i.test(s))
+    return 'This server needs a one-time code. On the main PC: Settings → Search client → “Connect a client” → “Show a one-time code”, then enter it here.';
+  if (/ETIMEDOUT|ENOTFOUND|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|EAI_AGAIN|getaddrinfo|cannot reach|timed?\s*out|\bnetwork\b/i.test(s))
+    return 'Couldn’t reach that PC. Check the address and port, and that the main PC is switched on with search-client access turned on.';
+  return s || 'Could not connect to that server.';
+}
 async function _finishConnect(c) {
   applyConn(c);
   if (c && c.ok) { showOnly('login'); return true; }
@@ -262,7 +273,7 @@ async function _finishConnect(c) {
     ? 'The server’s certificate doesn’t list this address. Use the exact address shown on the main PC (Settings → Search client), or re-issue the certificate there.'
     : (m === 'mismatch')
       ? (c.reason || 'The certificate did not match — not connected.')
-      : ((c && c.reason) || 'Could not connect to that server.');
+      : friendlyConnectError(c && c.reason);
   return false;
 }
 $('connect-btn').addEventListener('click', (e) => withBusy(e.currentTarget, async () => {
@@ -673,7 +684,17 @@ $('qf-submit')?.addEventListener('click', async () => {
     if (res && res.ok) { filed++; qfStaged = qfStaged.filter((x) => x !== f); } else errs.push(`${f.name}: ${(res && res.error) || 'failed'}`);
   }
   renderQfFiles();
-  msg.textContent = `Filed ${filed} document(s)${errs.length ? ` · ${errs.length} could not be filed (${errs[0]})` : ''}.`;
+  const plural = filed === 1 ? '' : 's';
+  if (filed > 0 && !errs.length) {
+    // Chris round-A card 1 (misfile risk): the chosen file cleared but COMPANY / REFERENCE / NOTES
+    // stayed armed, so the next unrelated document could be filed under the previous one's details
+    // unnoticed. On a clean file, clear the identity fields too. (On a partial failure the staged
+    // files remain, so keep the fields to retry with the same details.)
+    ['qf-party', 'qf-ref', 'qf-notes'].forEach((id) => { const el = $(id); if (el) el.value = ''; });
+    msg.textContent = `Filed ${filed} document${plural} under ${party}. The boxes are cleared for the next one.`;
+  } else {
+    msg.textContent = `Filed ${filed} document${plural}${errs.length ? ` · ${errs.length} could not be filed (${errs[0]})` : ''}.`;
+  }
   $('qf-submit').disabled = false; $('qf-pick').disabled = false;
 });
 

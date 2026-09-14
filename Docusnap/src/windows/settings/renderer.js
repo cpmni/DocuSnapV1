@@ -233,8 +233,13 @@ async function initClientApiSection() {
   const render = (s) => {
     if (!s) { statusEl.textContent = 'Unavailable (admin only)'; setChip('client-api-chip', '', ''); return; }
     tgl.checked = !!s.enabled;
+    // Chris round-A card (both runs): 0.0.0.0 is a bind wildcard, not an address a client can type.
+    // When bound to all interfaces, don't present it as "the address" — point at the Connect card below.
+    const wildcard = s.host === '0.0.0.0' || s.host === '::';
     statusEl.textContent = s.running
-      ? `Running · ${s.tls ? 'https' : 'http'}://${s.host}:${s.port}`
+      ? (wildcard
+          ? `Running · ${s.tls ? 'https' : 'http'}, port ${s.port} — see “Connect a client” below for the address to use`
+          : `Running · ${s.tls ? 'https' : 'http'}://${s.host}:${s.port}`)
       : (s.enabled ? 'Enabled (starting…)' : 'Off');
     setChip('client-api-chip', s.running ? 'On' : (s.enabled ? 'Starting…' : 'Off'), s.running ? 'ok' : '');
   };
@@ -281,7 +286,9 @@ async function initClientApiSection() {
     certStatusEl.textContent = cs.valid
       ? `Active · covers ${cs.sans.join(', ')} · expires ${exp}`
       : `Needs re-issue · ${cs.expired ? 'near/after expiry' : 'missing ' + (cs.missingSans || []).join(', ')} · expires ${exp}`;
-    if (certFpEl) certFpEl.textContent = cs.caFingerprint ? ('CA fingerprint  ' + cs.caFingerprint) : '';
+    // Chris round-A card: the client's certificate check asks the user to match an "ID code"; name it
+    // the same here (it is the CA fingerprint) so a non-technical person can recognise it, not translate.
+    if (certFpEl) certFpEl.textContent = cs.caFingerprint ? ('ID code  ' + cs.caFingerprint) : '';
   };
   try { renderCert(await api.clientApiCertStatus()); } catch { /* ignore */ }
 
@@ -318,7 +325,14 @@ async function initClientApiSection() {
     if (!(st && st.running) || !(cs && !cs.loopback && cs.hasCert)) { ccCard.style.display = 'none'; _ccStop(); return; }
     ccCard.style.display = '';
     const addr = document.getElementById('cc-address');
-    if (addr) addr.textContent = `Address  ${cs.host}    Port  ${st.port}    ${st.tls ? 'secure (https)' : 'plain (http)'}`;
+    if (addr) {
+      // Chris round-A card (both runs, #1 connect blocker): cs.host is the RAW bind host (0.0.0.0 on a
+      // LAN bind), which a client cannot dial. Show the real reachable address(es) — the cert's IPv4
+      // SANs — and list several if the PC has more than one. Fall back to cs.host only if none.
+      const ipv4 = (cs.sans || []).filter((x) => /^\d{1,3}(\.\d{1,3}){3}$/.test(x));
+      const shown = ipv4.length ? ipv4.join('   or   ') : cs.host;
+      addr.textContent = `Address  ${shown}    Port  ${st.port}    ${st.tls ? 'secure (https)' : 'plain (http)'}`;
+    }
     await refreshPairing();
     await loadConnectQr();
   }
