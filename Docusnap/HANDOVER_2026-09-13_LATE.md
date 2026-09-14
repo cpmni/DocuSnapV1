@@ -281,6 +281,11 @@ test_pages_outline_format.py` (run under BOTH `py -3.12` = pypdfium2 5.9.0 and `
 the vendored API is what ships) and `src/windows/shared/test_search_thumbs_queue.js`; `test_v1_preview_reads`
 (fmt forwarding, outline gates + re-validation), `test_fast_first_page`, `test_core_transport`; core functional 90,
 pop-out 392 across five runs (the Contents click renders the target page; hidden vs a 1.2.0 / 1.3.0 core).
-**Installers REBUILT on this commit** — file names at the end of this addendum. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
+**Installers REBUILT on this commit (`9cbe928`, 11:05-11:09) — these SUPERSEDE every earlier pair today:**
+- core **`dist\ScanFinder Setup 2.0.0-r20260914-1005-9cbe928-TEST.exe`** (352.5 MB; packaged `--smoke-boot` identity
+  `{"testBuild":true,"buildRev":"20260914-1005-9cbe928-TEST"}`, `--smoke-windows` 14/14; the packaged `pages.pyc`
+  answers `--outline` and `--format auto` under the vendored Python);
+- client **`client\dist\ScanFinder Search Client Setup 1.0.2-r20260914-1008-9cbe928.exe`** (106.1 MB; contract 1.5.0).
+Install the core first, then the client; nothing is running at wrap. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
 stacking; 403 wording; the S2 reads' 404 flip) · the owner's answer on "content tables" (PDF reader question,
 `pendingfeatures.md`) · everything in the earlier lists.

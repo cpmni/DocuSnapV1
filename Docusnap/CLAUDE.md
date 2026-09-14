@@ -23,10 +23,10 @@ touches that area — read the pointed-to doc BEFORE working in it:
 
 ## ⏭ LATEST — 2026-09-14 MORNING (Chris cards 1-8 BUILT on the shared search screen + client; the parity arc S0-S4 shipped 2026-09-13):
 **READ `HANDOVER_2026-09-13_LATE.md` FIRST (its ADDENDUM 2 = the morning's card work).** Branch `feat/teach-side-overnight`;
-**HEAD = `2dbe494` + the docs commit; origin CURRENT (all pushed).** **TEST INSTALLERS (10:30, on `2dbe494` = contract
-1.4.0; supersede the 09:03 pair):** core `dist\ScanFinder Setup 2.0.0-r20260914-0930-2dbe494-TEST.exe` (`npm run build:test`
-— all 50 DARK keys arm, incl. Quick File + Departments + mig 166; packaged smoke-boot identity testBuild:true +
-smoke-windows 14/14) + client `client\dist\ScanFinder Search Client Setup 1.0.2-r20260914-0932-2dbe494.exe`. **NOTHING RUNNING at wrap** — every repo Electron
+**HEAD = `9cbe928` + the docs commit; origin CURRENT (all pushed).** **TEST INSTALLERS (11:05, on `9cbe928` = contract
+1.5.0; supersede every earlier pair today):** core `dist\ScanFinder Setup 2.0.0-r20260914-1005-9cbe928-TEST.exe` (`npm run
+build:test` — all 50 DARK keys arm, incl. Quick File + Departments + mig 166; packaged smoke-boot identity testBuild:true +
+smoke-windows 14/14) + client `client\dist\ScanFinder Search Client Setup 1.0.2-r20260914-1008-9cbe928.exe`. **NOTHING RUNNING at wrap** — every repo Electron
 (owner dev core + client + the night sandbox) was closed for the build and NOT relaunched (the owner installs the test
 core over the dev DB); relaunch recipe in the handover. The evening handover's resume plan ran END TO END (Oracle SIGN-OFF-W/COND `docs/oracle_log.md`
 2026-09-13; plan doc carries a binding AMENDMENTS box + per-slice status): **S0 `48fba8f`** the Search screen's JS →
