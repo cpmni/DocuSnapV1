@@ -6,16 +6,22 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
-## 🔄 2026-09-14 → 15 NIGHT (RUNNING) — Chris tests TEACH-over-client + QUICK FILE + CLIENT CONNECT, fix pass, re-test (owner: "kick off the night run")
-Pre-work DONE + PUSHED: the **simpler-connection** feature — S1 server "Connect a client" card (one-time code + QR
-generated in main + stable-address tip; enable gated on host/port); S2 client verified-connect (main-resident
-fetch/hash/compare/pin, the CA never enters the renderer; styled accept modal; cert-change re-accept — SAN-gap vs
-identity-change branched); S3 client QR scan (jsQR, paste-or-file). Oracle SIGN-OFF-W/COND C1-C5 met; T1-T4 pinned
-(`client/lib/test_cert_verify.js`, `test_pairing_code.js`, `test_v1_ca.js`). **Full pin gate 370/370 GREEN.**
-Sandbox: core bound `0.0.0.0`+TLS (`https://10.85.2.125:8765`), teach + Quick File on; client fresh Connect screen;
-**self-smoke PASSED** (client typed the LAN IP → accept-cert modal showed the fingerprint → reached login).
-Chris ROUND A running (both apps, CDP 9223/9224, admin `chris`/`Chris-Test-9`) → `docs/CHRIS_FULL_APP_REVIEW_2026-09-14.md`.
-NEXT: one fix pass (safe/auto; approval-class → this file + skip; dangerous → stop) → Chris ROUND B (exact same test) → morning summary.
+## ✅ DONE 2026-09-15 NIGHT — Chris A+B on connect/teach/QuickFile + safe fix pass + 2 security fixes + S4 upload-to-teach (owner: "please do all if possible. Goodnight") — `HANDOVER_2026-09-15_NIGHT.md`
+Autonomous run. **5 commits, ALL LOCAL/UNPUSHED; full pin gate 371/371 GREEN.** (1) **Chris ROUND A ×2** (this
+session's + the prior session's Chris, which completed tonight) — both **YES**, both verified teach + Quick File
+file on the main PC's disk; **both flagged `0.0.0.0`-as-the-address as the #1 connect blocker.** (2) **Safe fix pass
+`edc1c03`**: Quick File misfile clear (round-A card 1), connect address `0.0.0.0`→real LAN IPv4 SANs
+(`managedCertStatus.host` was the raw bind host), "ID code" naming to match the client's cert-check, friendly
+connect errors + softer CA jargon. (3) **Security, both DARK (byte-identical OFF), pinned**: `11e1cc3` backup
+fabricated-fingerprint (Chris card 7; gary; switch `backup_import_seat_only`; pin 10/10) + `58224b3` /v1
+temp-password A1 (eric; switch `v1_force_password_change`; test_v1_auth pins). (4) **S4 upload-to-teach `354c23d`
+DARK** (`POST /v1/teach/stage`, Oracle C8-C14; pins 81/81). (5) **`3680486` jsQR license entry**. **Chris ROUND B**
+(reload-verify the fix pass): all 4 fixes LANDED, no new breakage (connect address→real LAN IPs, "ID code" both
+sides, plainer connect errors live-tested; Quick File clear source-verified — a live submit couldn't be driven). Deferred (queued below): teach read-back reset + page-jump,
+doc-picker /v1 thumbs, Quick File undo/live-count, cert "Needs re-issue" action, dead-provider tidy, D2 sweep.
+**Repeat only if:** never as-is. The morning owner queue (push · flip the 2 security switches + teach_over_client ·
+rebuild the TEST pair · a LIVE S4 end-to-end test · the DARK flip gates 166/167/159/156/143) is the handover's
+NEEDS YOUR APPROVAL.
 
 ## ✅ DONE 2026-09-13 LATE NIGHT — CLIENT SEARCH POP-OUT PROVEN ON REAL CORE CODE + ALL PINS GREEN + CHRIS ON THE NEW SURFACES (`docs/designs/NIGHT_RUN_2026-09-13_LATE.md`; `HANDOVER_2026-09-13_LATE.md` ADDENDUM)
 Owner: "a night run of your choosing". (1) **Red-pin hygiene → `npm run test:pins` 360/360 GREEN** (first all-green run):
@@ -118,6 +124,23 @@ scratch/sandbox, implementing a Chris card); **anything dangerous goes to the ag
 and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
+- **2026-09-15 · [S4, owner-machine] LIVE end-to-end test of teach-over-client upload-to-teach** — built DARK
+  `354c23d`, pins 81/81, but not driven live (S4 is a client main-process change → needs a client restart; Chris
+  could only reload renderers). After flipping `teach_over_client_enabled='true'`: from the client, Import a
+  document to teach (`btn-import-teach` → `/v1/teach/stage`), confirm it lands `needs_review` on the core (NOT
+  filed even for a graduated scope), teach it, confirm it files. Watch the in-flight cap (a 2nd concurrent stage →
+  429) + temp cleanup + the 40-page pre-probe cap.
+- **2026-09-15 · [Chris cards, owner-vet] the deferred round-A UX findings** (not built): teach read-back not
+  cleared on field advance (shows the previous field's value + a false "doesn't read like a date" — BOTH Chris
+  runs; delicate in the 2318-line shared `teach-ui/teach.js`, needs sync + a drift-pin look); teach page-jump when
+  the instruction panel resizes the doc pane; doc-picker thumbnails blank over /v1; Quick File undo + a live
+  Review/filed count refresh after a client action; cert "Needs re-issue" → a one-press "Update the certificate"
+  action; the 32-block ID-code compare (nudge the QR route, keep the check).
+- **2026-09-15 · [tidy, pin-entangled] dead inline-workflow-provider removal** — `searchWorkflow.js` `_provide` +
+  `_historyBlock`/`_routedBanner`/`_decisionBar`/`_assignForm` are DEAD since `9c50b93` (SearchActions dropped the
+  provider render loop; those surfaces live in `searchStamp.js`). Cosmetic; NOT a snip — `test_focus_repair.js`
+  PINS the string `_focus(note)` which lives inside the dead `_decisionBar`, and it's shared→client-synced. Do it
+  deliberately, updating that pin + running `sync-client-search.js`.
 - **2026-09-09 · [owner, security] Backup restore accepted a FABRICATED device fingerprint** on an un-licensed machine (Chris card 7) — verify `backupService` anti-trial-stacking device-binding gate. AND harden the `christest` skill brief (hand Chris the explicit sandbox DB path; mark `%APPDATA%\ScanFinder` = the owner's LIVE app, OFF LIMITS — tonight Chris read it read-only by misidentification, no writes).
 - **2026-09-09 · [owner] client/cert-tool E44 upgrade INCOMPLETE** — npm install updated the graph (0 vulns) + code smoke clean under core E44, but the electron BINARY download is allow-scripts-gated (no `node_modules/electron/dist`). Approve the postinstall + reinstall + launch-smoke from each dir + commit both package-locks.
 - **2026-09-09 · [build, one-line] `test_settings_wiring` allowlisted the orphaned stamp-placement ids** — the dead stamp code (`renderer.js` initStampPlacement + the 3 fns) + leftover CSS should be DELETED from settings (removed panel, 2026-08-28 redesign; unreachable/guarded). Then drop the allowlist entries.

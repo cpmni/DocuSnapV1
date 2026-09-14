@@ -211,3 +211,265 @@ Setup: the sandbox core's /v1 API enabled on loopback + teach_over_client_enable
 ### What worked: the read-back that SHOWS ITS WORK (typed "Northgate Textiles" → it drew a green box where it found it; each field read back with green value + blue label boxes before anything saved).
 
 ### Humility: one simulated admin, once, on test data, driven by a script; only judged the screens walked through; didn't test a bad scan / network drop mid-save / two people teaching at once.
+
+---
+
+## ROUND A — 2026-09-15 night run (connect + teach-over-client + Quick File)
+
+*Chris The Customer, non-technical small-office admin. Drove the running sandbox only (core CDP 9223, client CDP 9224). All three features exercised end-to-end: I connected the client (recovered it from an expired code), taught a Northgate invoice from the client and watched it file on the main PC, and Quick-Filed a document. Screenshots saved in the reviewer's scratchpad.*
+
+### TL;DR (3 lines)
+- **Verdict: YES — I'd keep using it.** All three features actually WORK over the network: I taught an invoice from the client and it filed on the main PC (main PC's review queue dropped 10 → 9, "11 filed today"); I Quick-Filed a document and found it in the filed list moments later. The teach read-back and the certificate-check wording are genuinely good.
+- The sharp edge is **Quick File keeping the last document's Company / Reference / Notes after you file** — a real chance to file the NEXT document under the wrong details without noticing.
+- The connection is solid once made, but the setup screen shows an address (`0.0.0.0`) you can't actually type into another PC, and the certificate pop-up appeared **twice**; clicking the second copy knocked the connection out.
+
+### Verdict: **YES, I would keep using it after two weeks** — because the everyday jobs (teach an invoice, drop a no-scan document into filing, search) all completed and the safety read-backs earned my trust. The friction below is fixable polish, not broken plumbing.
+
+---
+
+### Card 1 — Quick File remembers the LAST document's details after you file (misfile risk) — CONFUSION / could-misfile
+- **Citation (verbatim):** After clicking **"File documents"**, the confirmation **"Filed 1 document(s)."** appears, the file area resets to **"No files chosen yet."**, but the fields still read **COMPANY / PERSON "Copperfield Electrical"**, **REFERENCE "PO-DEMO-QF-A"**, **NOTES "Chris round A quick file test"**.
+- **User-moment:** I filed one document and went to file a second, different one.
+- **Observed confusion:** The document I chose was cleared, so I'd assume the form was cleared. I'd pick a new file (say a gas bill) and hit **File documents** — and it would go in under "Copperfield Electrical / PO-DEMO-QF-A" because those boxes silently kept the old values. I would not notice, because a half-full form looks like a form I filled.
+- **Harm + severity:** trust-eroded / could-misfile — **high**. The whole point of Quick File is speed, which is exactly when nobody re-reads pre-filled boxes.
+- **Class:** CONFUSION.
+- **Proposed alternative:** On success, clear the whole pane (file + all fields), OR keep the fields but visually mark them as "carried over from last time — check before filing". Keep the confirmation; just don't leave stale identity data armed.
+- **What I may be missing:** If the common real-world use is "file ten pages of the SAME contract in a row", keeping the fields is a feature — in which case make that intent visible rather than silent.
+
+### Card 2 — The certificate-check pop-up appears twice, and dismissing the copy dropped the connection — CONFUSION / blocked
+- **Citation (verbatim):** "Get certificate from server…" produced the dialog **"Check the server's certificate … It matches — connect"** — and the screen text contained that dialog's heading **twice**. After I clicked **"It matches — connect"** and reached Home (**"Connected"**), the same dialog was still sitting on top of the Home screen; dismissing it left the footer showing **"Offline"**, then **"Connecting…"** which did not recover on its own.
+- **User-moment:** Reconnecting the client after its saved code had expired.
+- **Observed confusion:** I confirmed the security code once and got in — then the identical pop-up was still there. I'd think "did it not work? do I press it again?" Pressing the second one knocked me back offline.
+- **Harm + severity:** trust-eroded / blocked — **high** (connection is the door to everything else).
+- **Class:** CONFUSION.
+- **Proposed alternative:** Only ever show ONE certificate-check dialog, and once accepted don't let a duplicate remain able to re-fire a connect. Keep the (excellent) wording exactly as-is.
+- **What I may be missing:** I drove this fast with a script and clicked the duplicate deliberately to probe it; a human might click it once and never see the second. But the duplicate dialog is clearly being created twice, so a real user could hit it.
+
+### Card 3 — The address shown on the main PC is `0.0.0.0`, which won't work if typed on another PC — CONFUSION / blocked (for the real LAN case)
+- **Citation (verbatim):** Settings → Search client shows **"Running · https://0.0.0.0:8765"** and **"Address 0.0.0.0 Port 8765 secure (https)"**, while the built-in guide says **"enter this PC's network (LAN) address — e.g. 192.168.1.50"** and the certificate line reads **"Needs re-issue · missing 192.168.0.237 · expires 17/12/2028"**. The client's own connect box was pre-filled with a *third* number, **192.168.56.1**.
+- **User-moment:** Following the on-screen "enter this PC's address" instruction to set up a client.
+- **Observed confusion:** I'd read `0.0.0.0` as "the address", type it (or trust the QR) on the other PC, and it would never connect — `0.0.0.0` isn't a place another computer can reach. Four different numbers appear across the screens; I can't tell which one to trust.
+- **Harm + severity:** blocked / slowed — **high** for the multi-PC case (the client eventually reached the server only via `127.0.0.1` on the same machine).
+- **Class:** CONFUSION.
+- **Proposed alternative:** When bound to all interfaces, show the actual reachable LAN address (e.g. "Reachable at 192.168.0.237:8765"), not `0.0.0.0`; make the QR / profile carry that same reachable address.
+- **What I may be missing:** This is a co-located sandbox, so the "real" LAN address is ambiguous here — on a normal install the app may already substitute the true IP, in which case this is only a sandbox artefact. Flagging so the owner can confirm which.
+
+### Card 4 — Teaching: the document jumps size / zoom after every box you draw — PREFERENCE / slowed
+- **Citation (verbatim):** Header cycles **"Field 1 of 3 …" → "Field 2 of 3 …" → "Check what I read for …"**; as it does, the page redraws at a different size (measured: the document image went from 791px wide at 150% to 527px wide at 100% between the draw and confirm states).
+- **User-moment:** Drawing boxes around the issuer, then the date, then the number.
+- **Observed confusion:** Each time I finished a box, the whole invoice shrank/grew and shifted. I lost my place and had to re-find the next value. It also makes precise drawing feel unstable — the page moves under you.
+- **Harm + severity:** slowed / trust-eroded — **medium**. Teaching is already the scariest screen for a normal user; a jumping page adds to that.
+- **Class:** PREFERENCE.
+- **Proposed alternative:** Keep the document pane a fixed size and zoom throughout the teach; grow/shrink only the instruction panel, not the page.
+- **What I may be missing:** The resize is tied to the instruction panel changing height between "draw" and "confirm"; a human drawing in one smooth motion may notice it less than my step-by-step script did.
+
+### Card 5 — When connecting goes wrong, the message is raw computer-speak — CONFUSION / QUESTION
+- **Citation (verbatim):** A failed connect showed **"cannot reach server: getaddrinfo ENOTFOUND 10.85.2.125c"**; a stale saved code showed **"pairing code expired"** with no next step offered.
+- **User-moment:** Trying to reconnect the client.
+- **Observed confusion:** "getaddrinfo ENOTFOUND" means nothing to me — I can't tell if I typed the address wrong, the main PC is off, or the firewall is blocking it. "pairing code expired" tells me what's wrong but not what to DO (I didn't know I had to go back to the main PC and make a new code).
+- **Harm + severity:** slowed / trust-eroded — **medium** (only bites on the unhappy path, but that's when a scared user most needs help).
+- **Class:** CONFUSION (error path) / QUESTION.
+- **Proposed alternative:** "Couldn't reach that PC. Check the address and that the main PC is switched on with search-client access turned on." For the code: "That one-time code has expired — on the main PC, Settings → Search client, click 'Show a one-time code' for a fresh one."
+- **What I may be missing:** The `…125c` had a stray character from my scripted typing, so the exact string isn't a real user's — but the raw `getaddrinfo ENOTFOUND` style is the product's.
+
+### Card 6 — Certificate status "Needs re-issue" reads like something is broken — QUESTION / trust-eroded
+- **Citation (verbatim):** **"Managed TLS certificate — Needs re-issue · missing 192.168.0.237 · expires 17/12/2028"**, followed by **"CA fingerprint 58:1E:6C:F8:1E:F5:ED:D3:…"** and the reassurance **"Created automatically for the address above — nothing to manage."**
+- **User-moment:** Skimming the Search-client settings before inviting a colleague on.
+- **Observed confusion:** "Needs re-issue" and "missing 192.168.0.237" sound like a fault I must fix, yet the next line says "nothing to manage". Mixed signals — do I act or not? "TLS certificate", "CA fingerprint" are words I'd never say.
+- **Harm + severity:** trust-eroded — **low/medium** (it's a safety surface, so I only report the confusion, I don't ask to remove it).
+- **Class:** QUESTION.
+- **Proposed alternative:** If the app can re-issue itself, say so with an action: "Security certificate — the current one doesn't cover this PC's address yet. [Update it]". Call the fingerprint an "ID code" here too (the client already does).
+- **What I may be missing:** "Needs re-issue" may be genuinely important state the owner wants surfaced; I'm flagging the wording, not asking to hide the status.
+
+### Card 7 — Quick File's "done" is a whisper, with no "where did it go?" and no undo — cosmetic / trust
+- **Citation (verbatim):** **"Filed 1 document(s)."** (small grey text beside the button). The client's Review badge also stayed on **"Review 10"** after I taught+filed a document, and only corrected to **"Review 9"** (matching the main PC) after I reconnected.
+- **User-moment:** Confirming my document actually filed and finding where.
+- **Observed confusion:** "1 document(s)" reads robotic. It doesn't tell me WHERE it filed (which company/year/month), give me a link to open it, or an undo — so I'm trusting on faith. And a count that doesn't update makes me doubt whether anything happened.
+- **Harm + severity:** cosmetic / trust-eroded — **low** (it did file and was searchable — I found "Copperfield … PO-DEMO-QF-A · 14-09-2026" in the filed list).
+- **Class:** PREFERENCE.
+- **Proposed alternative:** "Filed 1 document — Copperfield Electrical, filed under 2026 › September. [Open] [Undo]". Fix the "(s)". Refresh the Review/filed counts live after a client action.
+- **What I may be missing:** Counts may refresh on a timer I didn't wait out; the stale badge could be a slow poll rather than a permanent bug.
+
+### Also noticed (below the 7-card line)
+- **Doc-picker thumbnails are blank generic icons** when teaching from the client, yet the screen says **"Pick one clear, typical scan. The cleaner the example, the better…"** — I can't judge "clean" without seeing the pages.
+- During teaching, a couple of box read-backs briefly showed wrong text (e.g. a date box read **"et Ms"**) — **but this was almost certainly my fast scripted dragging while the page was resizing (Card 4), not the product**: the safety check caught it every time (**"⚠ That doesn't read like a date… redraw it — or type it below"**) and the final Review + the filed record were all correct (Invoice / Northgate Textiles / 03/03/2026 / INV-17226).
+
+### Warnings truth-check
+- Teach: **"✓ Done — and Scan Finder just learned something / Your document is filed"** — **TRUE**. Main PC's queue dropped by one and the invoice appeared in the filed list.
+- Quick File: **"Filed 1 document(s)."** — **TRUE**. The document appeared in the client's "Recently filed" list and was searchable.
+- Certificate dialog: **"Confirm this ID code matches the one shown on the main PC…"** — the code shown (58:1E:6C:…) **matched** the main PC's Settings exactly. No false alarms.
+
+### Top friction point
+Quick File keeping the previous document's Company / Reference / Notes after filing (Card 1) — the one place a fast, trusting user could genuinely misfile without knowing.
+
+### One thing that genuinely worked
+The **certificate-check step and the teach read-back**. The security pop-up says, in plain words, *"Confirm this ID code matches the one shown on the main PC (Settings → Search client). If it doesn't match, someone may be impersonating your server,"* points me exactly where to look, and its **Cancel** button is the prominent one — so it doesn't push me to click "yes" blindly. And teaching over the network genuinely shows its work: I told it the company name and it drew a green box exactly where it found it, and read every field back to me before saving anything. That built real trust. The built-in **"Set up the Search Client — step by step"** guide is also excellent, plain-English, hand-holding writing.
+
+### Humility
+One simulated admin, once, on a co-located sandbox, driven by a script that clicks and drags faster than a person. I judged only the screens I walked; I did not test a genuinely bad scan, a mid-save network drop, two people teaching at once, or the Quick File native file-picker (it uses a Windows dialog my tooling can't open, so I exercised an already-staged file). Two of my findings (the stray character in the connect error, the transient teach misreads) are partly my automation's fault and I've said so.
+
+---
+
+## ROUND A — night run 2026-09-15 (Chris)
+
+**TL;DR (3 lines).** All three new things actually work in front of me: I connected the search client to the main PC, signed in, taught a Northgate invoice from the client and watched it file on the main PC, and I can see quick-filed documents that landed. The pain is all in *connecting*: one dead-end message stopped me cold, and the "is this really your server?" check uses words the two screens do not share. I would keep using it — but a first-timer connecting on their own would need a hand.
+
+**Verdict: YES — I would keep using it.** Connect, Teach-over-the-client, and Quick File each did what they promise. Every finding below is friction on the way in, not a broken feature.
+
+*Setup: one simulated office manager driving the live sandbox — search client (window 9224) to main PC (window 9223), signed in as `chris`/`Chris-Test-9`. Screenshots under the reviewer's scratchpad `client_01..12_*.png`.*
+
+**What worked end-to-end (verified, not assumed):**
+- **CONNECT** — from a signed-out state I re-entered the server address, was shown the "is this your server?" check, accepted, and signed straight in (`client_09..12`).
+- **TEACH** — I taught the Northgate invoice INV-17226 on the client (pointed out the company, typed the date and number when the box misread, saved). On the main PC that exact document is now filed as done — company "Northgate Textiles", reference INV-17226, date 03-03-2026 (`client_03..08`).
+- **QUICK FILE** — I could not finish a *fresh* one because "Choose files…" opens the normal Windows file box, which my test harness cannot operate (that is a harness limit, not a fault). But three quick-filed "Copperfield Electrical / PO-DEMO-QF-A" documents from earlier are on the main PC, filed and findable — so the feature lands documents (`client_02`).
+
+### Card 1 — feature: CONNECT — "pairing code expired" with no way forward *(most painful — blocked me)*
+- **Citation (verbatim):** Connect screen, red line under the form: **"pairing code expired"** (shown after I typed my server address and clicked **"Connect"**).
+- **User-moment:** I had signed out, pressed "Change server", typed my server's address and clicked Connect to get back in.
+- **Observed confusion:** I got told a *pairing code* had expired — a code I never saw, never typed, and the screen never asked me for. Nothing tells me what it is, where a new one comes from, or that I should ring whoever set this up. I would be completely stuck. (I only got past it by clearing it on the main PC — which a normal user cannot reach from the client.)
+- **Harm + severity:** blocked.
+- **Class:** CONFUSION.
+- **Proposed alternative:** when the code has run out, say what to do next in the same breath, e.g. *"This connection code has expired. On the main PC, open Settings then Search client then 'Connect a client' and scan the new code (or read it out)."* Keep the check itself.
+- **What I may be missing:** this may mostly bite the "reconnect / change server" path; a brand-new user handed a fresh code or QR by their admin might sail past it first time.
+
+### Card 2 — feature: CONNECT — the two screens call the safety code different names
+- **Citation (verbatim):** Client check box: **"Confirm this ID code matches the one shown on the main PC (Settings then Search client)."** The main PC, on that very screen, shows: **"CA fingerprint 58:1E:6C:F8:…"** under a heading **"Managed TLS certificate"**.
+- **User-moment:** the client told me to compare an "ID code" against the main PC, so I went to look for it.
+- **Observed confusion:** on the main PC there is no "ID code" — there is a "CA fingerprint" under "Managed TLS certificate". I cannot be sure they are the same thing, so I would either give up checking or just click "It matches" without really matching anything — which defeats the whole point of the check.
+- **Harm + severity:** trust-eroded (the safety step quietly gets skipped).
+- **Class:** CONFUSION.
+- **Proposed alternative:** use ONE name in both places — call it "ID code" (or "connection ID") on the main PC too, right next to the digits, so a person can recognise it rather than have to translate.
+- **What I may be missing:** an IT-minded admin knows "CA fingerprint"; but the client wording is plainly written for a non-technical person, so the main PC should meet it halfway.
+
+### Card 3 — feature: CONNECT — the certificate note is a wall of jargon
+- **Citation (verbatim):** Connect screen, under "SERVER CA CERTIFICATE": **"The CA that signed the server (e.g. ca.crt) — not the server's own server.crt. Only needed for a self-signed / internal certificate; full verification stays on."**
+- **User-moment:** deciding whether I needed to press "Choose .crt…" before connecting.
+- **Observed confusion:** I do not know what a CA, a ca.crt, a server.crt, or a self-signed certificate is. I cannot tell whether this step is for me or not, so I would freeze — or click "Choose .crt…" and go hunting for a file I do not have.
+- **Harm + severity:** slowed / trust-eroded.
+- **Class:** CONFUSION.
+- **Proposed alternative:** *"Most people can skip this. Only choose a file if the person who set up the main PC gave you one."* Tuck the technical detail behind a "?".
+- **What I may be missing:** many people will connect by scanning the QR or importing a profile and never read this line at all.
+
+### Card 4 — feature: TEACH — the read-back shows the *previous* field's answer under the *next* field's heading
+- **Citation (verbatim):** right after I pointed out the company, the panel read: heading **"Check what I read for Invoice Date"**, body **"Value: Textiles · Label: Northga (left of the value)"**, then **"That doesn't read like a date."**
+- **User-moment:** I had just drawn a box round the company name; the wizard moved itself on to "Invoice Date".
+- **Observed confusion:** the Invoice Date panel was showing my *company* text ("Textiles") with a "does not read like a date" warning — before I had pointed out any date. For a second I thought it had grabbed the wrong thing for the date, when really it just had not cleared the last answer off the screen.
+- **Harm + severity:** slowed / trust-eroded (momentary).
+- **Class:** CONFUSION.
+- **Proposed alternative:** the instant the wizard moves to the next field, clear the last field's boxes and read-back so the new field starts clean on "Draw a box…".
+- **What I may be missing:** my box happened to span two words; a tidy single-value box might not trigger the leftover.
+
+### Card 5 — feature: CONNECT — checking 32 blocks of letters and numbers by eye
+- **Citation (verbatim):** the code I was asked to confirm: **"58:1E:6C:F8:1E:F5:ED:D3:EB:98:1A:14:E8:EE:35:30:D2:14:AC:29:30:D3:A7:DA:A9:7A:88:4C:DD:06:56:E9"**.
+- **User-moment:** the check asked me to confirm this matched the main PC before connecting.
+- **Observed confusion:** that is 32 blocks to compare across two screens. Honestly, I would glance, give up, and press "It matches — connect" without truly checking — which means the safety step is not doing its job for someone like me.
+- **Harm + severity:** trust-eroded. *(I am not asking to remove or weaken the check — flagging it as a question.)*
+- **Class:** QUESTION.
+- **Proposed alternative (keeps the safety):** nudge people to the "Scan a QR code…" route, which does the matching for you; or visually highlight just the first and last few blocks to compare. Do NOT drop the check.
+- **What I may be missing:** the QR route already handles this automatically — this hand-comparison may only be the rare fallback.
+
+### Card 6 — feature: QUICKFILE — clear screen, but "where did it go / can I undo?" is not on it
+- **Citation (verbatim):** Quick File screen: **"File a document that needs no scanning — Word, Excel, PDF or an image. Type a few details and it's sent to ScanFinder and filed, searchable a moment later."** Button: **"File documents"**.
+- **User-moment:** about to send a document (company "Copperfield Electrical", reference "PO-DEMO-QF-A") with the "File documents" button.
+- **Observed confusion:** before I commit, the screen does not tell me *where* it will end up or how to pull it back if I picked the wrong company — the thing I fear most is a document going somewhere I cannot find. (I could not reach the after-you-file screen through my test harness, so I cannot confirm whether that reassurance appears next.)
+- **Harm + severity:** trust-eroded (mild).
+- **Class:** QUESTION.
+- **Proposed alternative:** on this screen or the one straight after filing, one plain line: *"Filed under Copperfield Electrical, 2026, September. Find it in Search, or move it from there."*
+- **What I may be missing:** the confirmation I could not reach may already say exactly this; and the feature clearly works (earlier quick-filed documents are filed and findable on the main PC).
+
+### Card 7 — feature: TEACH — the summary and "done" screens float in a big empty page *(cosmetic)*
+- **Citation (verbatim):** review step titled **"Here's what Scan Finder found"** with four short rows, and the finish screen **"Done — and Scan Finder just learned something"** — both a small block near the top with a large empty patterned area below.
+- **User-moment:** confirming what it captured, then finishing.
+- **Observed confusion:** the important bit is a small table adrift in a lot of empty space; my eye hunts for it, and the empty page makes me wonder if something failed to load.
+- **Harm + severity:** cosmetic.
+- **Class:** PREFERENCE.
+- **Proposed alternative:** centre the summary card or show the document beside it, so the screen feels finished.
+- **What I may be missing:** on a smaller screen the empty space would be less obvious.
+
+### Top friction: the **"pairing code expired"** dead-end on the connect screen — a message about a code I never saw, with no way forward.
+### One thing that genuinely worked: **the teach read-back that shows its work.** When my box misread the date, it said so plainly, let me type "03/03/2026", then drew a green box where it *found* that on the page and asked "is this the right spot?". I always knew what it had, and I could fix it without starting over — that is a competent junior showing me their work.
+### Would I keep using this after two weeks? **Yes** — because once I am connected it behaves, and teaching from my own desk actually filed the document on the main PC. But connecting the first time (or reconnecting) needs a friendlier hand, or I would be phoning whoever set it up.
+
+### Humility: one simulated office manager, once, on a test setup, driven by a script. My clumsy box-drawing was my own limit — the read-back caught it every time. I could not operate the Windows file box (Quick File) or force a mid-connect failure, so I judged those from the screens I could reach plus the documents already filed. Everything here is for the owner to vet — nothing changed in the app.
+
+---
+
+## ROUND B — 2026-09-15 (re-verify the round-A fixes)
+
+Focused re-check of the four fixes made after round A. Same sandbox (core CDP 9223, client CDP 9224),
+each window reloaded from disk (`Page.reload ignoreCache`) so the fixed renderer files loaded. I only
+re-verified the four items; I did not re-run the full vet. Not tested (per brief): upload-to-teach (S4,
+needs a client restart — pin-verified) and the two DARK security fixes (nothing visible — pin-verified).
+
+**TL;DR (3 lines):** All four fixes LANDED and every one reads better to a non-technical user. The
+round-A blocker — the main PC showing `0.0.0.0` as the address to type — is gone; the connect card now
+lists the real LAN addresses, the fingerprint is now "ID code" on both sides, Quick File clears the
+identity boxes after filing (and says so), and connect failures now speak plain English. No new breakage
+from the reloads; a good client connect still works.
+
+### Fix 1 — the connect ADDRESS (round-A Card 3 blocker) — LANDED & better
+- **Citation (verbatim), core Settings → Search client:** status line now reads **"Running · https, port
+  8765 — see "Connect a client" below for the address to use"** (no more `https://0.0.0.0:8765`), and the
+  Connect-a-client card reads **"Address 192.168.56.1 or 192.168.0.237  Port 8765  secure (https)"**.
+- **Verdict:** `0.0.0.0` is no longer presented as a URL or as "the address to use". The real reachable
+  LAN addresses are shown in the place a person is told to read them. A non-technical user now has
+  something they can actually type on the other PC. Good.
+- **Residual (minor, NOT a regression, out of scope of the 4 fixes):** at the top of the same screen the
+  server **"listen on"** input still shows a bare **`0.0.0.0`** with no visible on-screen label (its
+  placeholder is "0.0.0.0 (LAN) or 127.0.0.1"). That is the legitimate bind config, not the address to
+  type — but a bare `0.0.0.0` in a box could still make someone hesitate for a moment. A one-word label
+  ("Listen on") would remove the last doubt. QUESTION-class, low harm.
+- **Also noted (pre-existing, = round-A Card 6):** the certificate line still reads "Needs re-issue ·
+  missing 192.168.0.237 · expires 17/12/2028", i.e. the certificate does not yet cover one of the two
+  addresses the card tells you to use. Unchanged tech-note; separate from these four fixes.
+
+### Fix 2 — the safety code is now called "ID code" on the main PC — LANDED & better
+- **Citation (verbatim), core Settings → Search client:** the disclosure is titled **"Security
+  certificate & ID code"** and the value is labelled **"ID code 58:1E:6C:F8:…"** — matching the client's
+  check box, which says **"Confirm this ID code matches the one shown on the main PC (Settings → Search
+  client)."**
+- **Verdict:** the round-A translation gap is closed. The client says "ID code", the main PC now says
+  "ID code" right next to the same digits (58:1E:6C:F8:… on both). A person can now recognise and match
+  them instead of guessing that "CA fingerprint" and "ID code" are the same thing. Good.
+
+### Fix 3 — Quick File clears the identity boxes after filing (round-A Card 1 misfile risk) — LANDED (verified at source; live picker not automatable)
+- **Citation (verbatim), client Quick File submit handler** (`client/renderer/renderer.js` 687–696): on a
+  clean file it clears the fields — `['qf-party','qf-ref','qf-notes'].forEach(id => { const el = $(id);
+  if (el) el.value=''; })` — and shows **"Filed {N} document{plural} under {party}. The boxes are cleared
+  for the next one."**; the awkward `document(s)` is gone (`const plural = filed === 1 ? '' : 's'`).
+- **Verdict:** this directly fixes the round-A misfile risk — after filing, COMPANY / REFERENCE / NOTES no
+  longer stay armed with the previous document's details, and the confirmation both NAMES where it went
+  ("under {party}") and states the boxes were cleared. The "1 document" (not "1 document(s)") reads
+  naturally. On a *partial* failure the staged files and fields are deliberately kept so the user can
+  retry with the same details — correct.
+- **Couldn't test live:** the Windows file picker can't be scripted and the staged-file list is private to
+  the renderer module, so I could not inject a fake file to drive a real submit. Verdict is from the code
+  path (as the brief allows). Worth one manual confirm by the owner: file a real document and watch the
+  three boxes empty.
+
+### Fix 4 — plainer connect copy + plain failure messages — LANDED & better
+- **Citation (verbatim), client connect screen:** the certificate field now reads **"Most people can skip
+  this — just press Connect and check the ID code. Only choose a file if the person who set up the main PC
+  gave you one. (Advanced: it's the CA certificate that signed the server, e.g. ca.crt; full verification
+  stays on.)"** — the jargon is pushed into an "(Advanced: …)" aside.
+- **Live test — bad address:** I typed a non-existent host and pressed Connect; the screen showed
+  **"Couldn't reach that PC. Check the address and port, and that the main PC is switched on with
+  search-client access turned on."** — no raw `ETIMEDOUT` / `getaddrinfo` reached me.
+- **Expired one-time code (verified at source, `client/renderer/renderer.js` 260–261):** an expired code
+  now maps to **"That one-time code has expired. On the main PC, open Settings → Search client → "Connect
+  a client" and show a new code (or scan the new QR), then try again."** — it tells the user exactly where
+  to get a fresh code. The network-error mapping (264–265) turns every raw socket code into the plain
+  "Couldn't reach that PC…" sentence I saw live.
+- **Verdict:** the connect screen now guides rather than blames, and the round-A "pairing code expired"
+  dead-end (its top friction point) now ends with a clear next step. Good.
+
+### New breakage from the reloads: NONE observed.
+Reloading each window loaded the fixed files cleanly. My bad-address test dropped the client to the
+connect screen (expected); re-entering the good address reconnected it ("Reconnected", back at sign-in),
+so a normal connect still works and the sandbox is left usable.
+
+### Round-B bottom line
+- **Fix 1 — connect address:** landed & better (one tiny residual: label the bare `0.0.0.0` bind box).
+- **Fix 2 — "ID code" naming:** landed & better (matches on both PCs).
+- **Fix 3 — Quick File clears + plural:** landed (source-verified; owner: one live confirm).
+- **Fix 4 — plainer connect copy + plain errors:** landed & better (verified live and at source).
