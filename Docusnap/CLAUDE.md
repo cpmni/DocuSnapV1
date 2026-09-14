@@ -23,10 +23,13 @@ touches that area — read the pointed-to doc BEFORE working in it:
 
 ## ⏭ LATEST — 2026-09-14 MORNING (Chris cards 1-8 BUILT on the shared search screen + client; the parity arc S0-S4 shipped 2026-09-13):
 **READ `HANDOVER_2026-09-13_LATE.md` FIRST (its ADDENDUM 2 = the morning's card work).** Branch `feat/teach-side-overnight`;
-**HEAD = `99959c2` + the docs commit; origin CURRENT (all pushed).** **TEST INSTALLERS (12:59, on `99959c2` = contract
-1.6.0; supersede every earlier pair today):** core `dist\ScanFinder Setup 2.0.0-r20260914-1159-99959c2-TEST.exe` (`npm run
-build:test` — all 50 DARK keys arm, incl. Quick File + Departments + mig 166; packaged smoke-boot identity testBuild:true +
-smoke-windows 14/14) + client `client\dist\ScanFinder Search Client Setup 1.0.2-r20260914-1202-99959c2.exe`. **NOTHING RUNNING at wrap** — every repo Electron
+**HEAD = `18bd9a2` (the DATE FORMS slice) + the docs commit; origin CURRENT (all pushed).** **TEST INSTALLERS (13:57, on
+`18bd9a2` = contract 1.6.0 + the date fix; supersede every earlier pair today — THE PAIR TO SHIP THE TEST CUSTOMER):** core
+`dist\ScanFinder Setup 2.0.0-r20260914-1254-18bd9a2-TEST.exe` (`npm run build:test` — all 51 DARK keys arm, incl. Quick File +
+Departments + mig 166 + mig 167; packaged smoke-boot identity testBuild:true + smoke-windows 14/14; the asar carries the wide
+`parseDate`, `_realDMY`, `_widenDatePatterns`, mig 167 + config `date_wide`) + client `client\dist\ScanFinder Search Client
+Setup 1.0.2-r20260914-1256-18bd9a2.exe`. (Previous pair `…-1159-99959c2-TEST.exe` / `…-1202-99959c2.exe` = superseded.)
+**NOTHING RUNNING at wrap** — every repo Electron
 (owner dev core + client + the night sandbox) was closed for the build and NOT relaunched (the owner installs the test
 core over the dev DB); relaunch recipe in the handover. The evening handover's resume plan ran END TO END (Oracle SIGN-OFF-W/COND `docs/oracle_log.md`
 2026-09-13; plan doc carries a binding AMENDMENTS box + per-slice status): **S0 `48fba8f`** the Search screen's JS →

@@ -397,4 +397,11 @@ apart. Until then a customer install keeps the wider forms at the human doors on
 case (he typed / taught the date and was refused).
 
 **The customer needs the new build** — his core is a week old; the fix is at the confirm door, which only a new
-installer carries. Installers rebuilt on this commit: see the next block / `CLAUDE.md` LATEST for the file names.
+installer carries. **Installers REBUILT on `18bd9a2` (13:54-13:57) — these SUPERSEDE the 12:59 pair and are the pair to
+ship him:**
+- core **`dist\ScanFinder Setup 2.0.0-r20260914-1254-18bd9a2-TEST.exe`** (352.5 MB; packaged `--smoke-boot` identity
+  `{"testBuild":true,"buildRev":"20260914-1254-18bd9a2-TEST"}`, `--smoke-windows` 14/14; verified the asar carries the
+  wide `parseDate`, `_realDMY`, `_widenDatePatterns`, mig 167 and the config `date_wide` patterns; all 51 DARK keys arm
+  at first run — a TEST build, not hardened);
+- client **`client\dist\ScanFinder Search Client Setup 1.0.2-r20260914-1256-18bd9a2.exe`** (106.1 MB; contract 1.6.0).
+Install the core first, then the client; nothing is running at wrap (no repo Electron was relaunched).
