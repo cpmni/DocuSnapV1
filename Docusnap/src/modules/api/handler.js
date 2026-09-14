@@ -60,15 +60,14 @@ function clientContractCompatible(headerVal) {
   const m = String(headerVal).match(/^(\d+)\./);
   return !!m && m[1] === API_CONTRACT_VERSION.split('.')[0];
 }
-// Permanent purge: remove the filed file + the app-managed working copy. The path is
-// resolved SERVER-SIDE from the document row only (never trusts a client-supplied path).
-function _purgeDocFiles(db, id) {
-  const fs = require('fs');
-  const doc = documents.getById(db, id);
-  if (!doc) return;
-  for (const p of [documents.resolveFilePath(doc), doc.working_path]) {
-    if (p && fs.existsSync(p)) { try { fs.unlinkSync(p); } catch {} }
-  }
+// Permanent purge: remove EVERY app-owned file of the document — the app-managed working copy, the FILED
+// copy in the output tree and its `.metadata` xml sidecar — through the SAME helper the desktop purge uses
+// (review/handler.js purgeDocumentFiles). Chris 2026-09-14 card 1: this lane used to delete
+// `[resolveFilePath(doc), working_path]` = the working copy only, so a client "Delete permanently" left the
+// filed PDF + xml on disk while its warning said "and its file". Paths are resolved SERVER-SIDE from the
+// document row only (never a client-supplied path).
+function _purgeDocFiles(db, id, deps) {
+  return require('../review/handler').purgeDocumentFiles(db, id, deps);
 }
 const TOTP_ISSUER = 'ScanFinder';
 const MAX_BODY_BYTES = 1 * 1024 * 1024;
@@ -895,7 +894,7 @@ function createRequestListener(ctx) {
         const session = requireSession(req, res); if (!session) return;
         if (session.role !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
         const id = Number(purgeMatch[1]);
-        _purgeDocFiles(getDb(), id);
+        _purgeDocFiles(getDb(), id, { fs: ctx.fs || require('fs'), path: ctx.path || path });
         documents.deleteDoc(getDb(), id);
         try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {}
         audit({ user_id: session.userId, action: 'document_purged', action_category: 'document',
@@ -907,7 +906,7 @@ function createRequestListener(ctx) {
         const session = requireSession(req, res); if (!session) return;
         if (session.role !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
         const ids = documents.getDeletedQueue(getDb()).map(d => d.id);
-        for (const id of ids) { _purgeDocFiles(getDb(), id); documents.deleteDoc(getDb(), id); }
+        for (const id of ids) { _purgeDocFiles(getDb(), id, { fs: ctx.fs || require('fs'), path: ctx.path || path }); documents.deleteDoc(getDb(), id); }
         try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {}   // once for the whole empty-bin
         audit({ user_id: session.userId, action: 'recycle_bin_emptied', action_category: 'document',
                 outcome: 'success', metadata: { count: ids.length, via: 'client' } });

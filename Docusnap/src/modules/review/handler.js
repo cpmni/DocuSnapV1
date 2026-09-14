@@ -26,6 +26,35 @@ const { learningExcludedSql } = require('../../../database/modules/machine_vias'
 // its timer) before document B can be confirmed in the normal flow.
 let _pendingSourceMove = null;   // { srcPath, originalFilename, timer }
 
+// ── Purge: remove EVERY app-owned file of a document (module-level, shared by the desktop purge and the
+//    /v1 purge so the two doors can never drift — Chris 2026-09-14 card 1). Deletes the app-managed inbox
+//    copy, the filed copy in the output tree, and the filed copy's `.metadata/<basename>.xml` sidecar.
+//    Never the customer's source scan. Best-effort, existsSync-guarded. Does NOT touch the DB row.
+function purgeDocumentFiles(db, docId, deps) {
+  const fs = (deps && deps.fs) || require('fs');
+  const path = (deps && deps.path) || require('path');
+  const documents = require('../../../database/modules/documents');
+  const doc = documents.getById(db, docId);
+  if (!doc) return [];
+  const targets = new Set();
+  if (doc.working_path) targets.add(doc.working_path);   // the app-managed inbox copy
+  if (doc.stored_path)  targets.add(doc.stored_path);    // the filed copy in the output tree
+  // The filed copy's XML sidecar lives in a `.metadata/` subfolder beside it (filing/handler.js
+  // writes `<basename>.xml` there). Purge deleted the PDF but LEFT the sidecar orphaned (Chris
+  // 2026-08-25 Card 7) — remove it too. App-owned (the filed output tree only, never the customer's
+  // source scan) and best-effort (existsSync-guarded below). The inbox working copy has no sidecar.
+  if (doc.stored_path) {
+    const ext = path.extname(doc.stored_path);
+    targets.add(path.join(path.dirname(doc.stored_path), '.metadata',
+      path.basename(doc.stored_path, ext) + '.xml'));
+  }
+  const removed = [];
+  for (const p of targets) {
+    if (p && fs.existsSync(p)) { try { fs.unlinkSync(p); removed.push(p); } catch (e) { console.warn('purge unlink:', p, e.message); } }
+  }
+  return removed;
+}
+
 function _runPendingSourceMove(ctx, trigger) {
   const pending = _pendingSourceMove;
   if (!pending) return;
@@ -1338,24 +1367,10 @@ function register(ctx) {
   // source. Deleting the filed copy is the documented intent of purge (this function's own header,
   // and the admin-only dialog that says "including their PDF files"), so the promise becomes true
   // rather than the copy becoming weaker.
+  // ONE purge for both doors: the desktop IPC below and the /v1 purge (Chris 2026-09-14 card 1 — the /v1 lane
+  // still deleted only the WORKING copy and left the filed PDF + xml on disk while its warning said "and its file").
   function _purgeOne(db, docId) {
-    const doc = documents.getById(db, docId);
-    if (!doc) return;
-    const targets = new Set();
-    if (doc.working_path) targets.add(doc.working_path);   // the app-managed inbox copy
-    if (doc.stored_path)  targets.add(doc.stored_path);    // the filed copy in the output tree
-    // The filed copy's XML sidecar lives in a `.metadata/` subfolder beside it (filing/handler.js
-    // writes `<basename>.xml` there). Purge deleted the PDF but LEFT the sidecar orphaned (Chris
-    // 2026-08-25 Card 7) — remove it too. App-owned (the filed output tree only, never the customer's
-    // source scan) and best-effort (existsSync-guarded below). The inbox working copy has no sidecar.
-    if (doc.stored_path) {
-      const ext = path.extname(doc.stored_path);
-      targets.add(path.join(path.dirname(doc.stored_path), '.metadata',
-        path.basename(doc.stored_path, ext) + '.xml'));
-    }
-    for (const p of targets) {
-      if (p && fs.existsSync(p)) { try { fs.unlinkSync(p); } catch (e) { console.warn('purge unlink:', p, e.message); } }
-    }
+    purgeDocumentFiles(db, docId, { fs, path });
     documents.deleteDoc(db, docId);
   }
   ipcMain.handle('purge-document', (_e, docId) => {
@@ -1722,7 +1737,7 @@ function register(ctx) {
 // through it so there is never a second confirm/filing implementation. Null until register runs.
 let _sharedReviewServiceInstance = null;
 // _wizardSampleAngle: TEACH-COMMIT SAMPLE ANGLE (2026-09-07), the pure payload validator (test_promote_sample_angle.js)
-module.exports = { _wizardSampleAngle, _writeTemplateFileForSync, register, _buildTemplateFields, _upsertTemplate,   // _buildTemplateFields + _upsertTemplate exported for tests (test_build_template_fields.js, test_upsert_type_link.js)
+module.exports = { _wizardSampleAngle, _writeTemplateFileForSync, register, _buildTemplateFields, _upsertTemplate, purgeDocumentFiles,   // _buildTemplateFields + _upsertTemplate exported for tests (test_build_template_fields.js, test_upsert_type_link.js)
                    getReviewService: () => _sharedReviewServiceInstance };
 
 // ── Template create / update ──────────────────────────────────────────────────
