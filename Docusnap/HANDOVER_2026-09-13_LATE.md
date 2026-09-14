@@ -237,7 +237,11 @@ EDIT · A4 workflow vs a 1.3.0 core — the 1.4.0 channels never called); core f
 2, a hidden doc 3 that answers 404) and a null-safe `click` (a missing target is a recorded failure, never a lost
 report).
 
-**Installers REBUILT on this commit** (see the final lines of this addendum for the file names) so the owner's test
-carries item 3. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
+**Installers REBUILT on this commit (`2dbe494`, 10:30-10:32)** so the owner's test carries item 3 — these SUPERSEDE
+the 09:03 pair (which lack contract 1.4.0; core 1.3.0 + client 1.4.0 would just hide the new bits):
+- core **`dist\ScanFinder Setup 2.0.0-r20260914-0930-2dbe494-TEST.exe`** (352.5 MB; packaged `--smoke-boot` identity
+  `{"testBuild":true,"buildRev":"20260914-0930-2dbe494-TEST"}`, `--smoke-windows` 14/14);
+- client **`client\dist\ScanFinder Search Client Setup 1.0.2-r20260914-0932-2dbe494.exe`** (106.1 MB; contract 1.4.0).
+Install the core first, then the client; nothing is running at wrap (no dev core / client / sandbox). Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
 stacking; 403 wording; the S2 reads' 404 flip) · the owner's answer on "content tables" (PDF reader question,
 `pendingfeatures.md`) · everything in the earlier lists.
