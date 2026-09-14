@@ -2452,6 +2452,11 @@ function register(ctx) {
     });
   } catch (e) { _reviewEvents = null; logger?.warn?.('review-events ledger unavailable: ' + (e && e.message)); }
   _templatesDirFn = typeof ctx.templatesDir === 'function' ? ctx.templatesDir : null;
+  // Share the pipeline OCR env (render DPI + reconcile switches incl. light-text recovery) with the /v1
+  // handler so a client teach `ocr-page-words` read matches how the pipeline reads the same scan
+  // (teach-over-client S1; same rationale as the desktop ocr-page-words handler). Read at request time,
+  // so register order does not matter. Fail-soft to {} — a missing env is a slightly different read, never a crash.
+  ctx.pipelineOcrEnv = (db) => { try { return { ..._ocrDpiEnv(db), ..._reconcileEnv(db) }; } catch { return {}; } };
 
   // Warm OCR worker POOL (draw-tool UX plan Slice 2) — configured once; the ocr-region(-boxes)
   // handlers route through it when ENABLED (default OFF: env OCR_WARM_WORKER=1 or setting

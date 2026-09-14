@@ -184,7 +184,7 @@ console.log('B. source — the Oracle S1 conditions');
   check("main (S2): client-find is NOT guarded() — a timeout returns a kind:'timeout' envelope instead of tripping the connection overlay",
         /ipcMain\.handle\('client-find', async \(_e, id, query\) => \{\s*try \{ const r = await client\.find\(id, query\); markConnection\(true\); return r; \}/.test(mainJs) && /kind: timedOut \? 'timeout' : 'error'/.test(mainJs) && !/ipcMain\.handle\('client-find',\s*guarded/.test(mainJs));
   const apiC = read('client', 'apiClient.js');
-  check('apiClient: CLIENT_CONTRACT 1.6.0 in lockstep; find carries a LONG idle timeout', /CLIENT_CONTRACT = '1\.6\.0'/.test(apiC) && /\/find\?\$\{q\}`, \{ withAuth: true, timeoutMs: 180000 \}/.test(apiC));
+  check('apiClient: CLIENT_CONTRACT 1.7.0 in lockstep; find carries a LONG idle timeout', /CLIENT_CONTRACT = '1\.7\.0'/.test(apiC) && /\/find\?\$\{q\}`, \{ withAuth: true, timeoutMs: 180000 \}/.test(apiC));
   check('apiClient (1.6.0): getPageInfo reads /documents/:id/page-info with page / also / scale / fmt and a longer idle timeout',
         /\/v1\/documents\/\$\{encodeURIComponent\(id\)\}\/page-info\?\$\{q\}`, \{ withAuth: true, timeoutMs: 90000 \}/.test(apiC) && /if \(extra\.length\) q\.set\('also', extra\.join\(','\)\);/.test(apiC) && /getOutline, getPageInfo,/.test(apiC));
   check('apiClient (1.5.0): getPage forwards fmt=auto|jpeg only; getOutline reads /documents/:id/outline',
@@ -194,7 +194,7 @@ console.log('B. source — the Oracle S1 conditions');
         && /\/v1\/workflow\/routes\/\$\{id\}\/cancel`, \{ withAuth: true, body: \{ version, reason \} \}/.test(apiC) && /request\('POST', '\/v1\/workflow\/stamp-types'/.test(apiC)
         && /docRoutes: wfDocRoutes, docHistory: wfDocHistory, adminCancel: wfAdminCancel, stampTypeCreate/.test(apiC));
   const srvH = read('src', 'modules', 'api', 'handler.js');
-  check('server: API_CONTRACT_VERSION 1.6.0 (lockstep with the client)', /API_CONTRACT_VERSION = '1\.6\.0'/.test(srvH));
+  check('server: API_CONTRACT_VERSION 1.7.0 (lockstep with the client)', /API_CONTRACT_VERSION = '1\.7\.0'/.test(srvH));
   check('server (1.6.0): the page-info route sits behind the same gates as /page and caps `also` at PAGE_INFO_ALSO_MAX_V1 (bounded work per request)',
         /documents\/\(\\\\d\+\)\/page-info\$/.test(srvH) && /infoMatch\) \{\s*\n\s*const session = requireSession\(req, res\); if \(!session\) return;\s*\n\s*const id = Number\(infoMatch\[1\]\);\s*\n\s*if \(!_gateDoc\(session, id\)\) return;/.test(srvH)
         && /const PAGE_INFO_ALSO_MAX_V1 = 4;/.test(srvH) && /\.slice\(0, PAGE_INFO_ALSO_MAX_V1\)/.test(srvH));

@@ -46,7 +46,7 @@ const path              = require('path');
 const WF_HTTP = { FORBIDDEN: 403, STAMP_FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
 const wfStatus = (code) => WF_HTTP[code] || 400;
 
-const API_CONTRACT_VERSION = '1.6.0';   // 1.6.0: + GET /documents/:id/page-info (ONE render process for the pop-out's first paint + its read-ahead batch; the client gates its pageInfo cap on ≥ 1.6.0). 1.5.0: + GET /documents/:id/outline (the PDF's bookmarks → the Contents panel) and the page read's optional fmt=auto|jpeg (2026-09-14; the client gates its Contents cap on ≥ 1.5.0). 1.4.0: + per-document open-routes / decision-history reads, admin route cancel, new stamp type (the search pop-out's last hidden workflow bits, 2026-09-14; the client gates those caps on ≥ 1.4.0). 1.3.0: + the four preview READS (page / page-count / find / spreadsheet — client search parity S2, 2026-09-13; the client gates its lazy-page/find/grid caps on ≥ 1.3.0). 1.2.0: + POST /v1/documents/intake (Quick File upload). NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
+const API_CONTRACT_VERSION = '1.7.0';   // 1.7.0: + the teach-over-client READS (POST /documents/:id/{ocr-region-boxes,ocr-page-words,page-deskew} + GET /teach/config — teach-over-client S1, 2026-09-14; the client gates its teach cap on ≥ 1.7.0). 1.6.0: + GET /documents/:id/page-info (ONE render process for the pop-out's first paint + its read-ahead batch; the client gates its pageInfo cap on ≥ 1.6.0). 1.5.0: + GET /documents/:id/outline (the PDF's bookmarks → the Contents panel) and the page read's optional fmt=auto|jpeg (2026-09-14; the client gates its Contents cap on ≥ 1.5.0). 1.4.0: + per-document open-routes / decision-history reads, admin route cancel, new stamp type (the search pop-out's last hidden workflow bits, 2026-09-14; the client gates those caps on ≥ 1.4.0). 1.3.0: + the four preview READS (page / page-count / find / spreadsheet — client search parity S2, 2026-09-13; the client gates its lazy-page/find/grid caps on ≥ 1.3.0). 1.2.0: + POST /v1/documents/intake (Quick File upload). NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
                                         // handshake checks MAJOR only. Keep server + client in lockstep.
 const API_PREFIX = '/v1';
 const CLIENT_CONTRACT_HEADER = 'x-scanfinder-client-contract';
@@ -75,6 +75,12 @@ const MAX_BODY_BYTES = 1 * 1024 * 1024;
 // out unbounded Tesseract child processes on the host. Module-level (single process).
 const OCR_MAX_INFLIGHT = 3;
 let _ocrInFlight = 0;
+// Teach-over-client S1 (2026-09-14, gary): `ocr-page-words` runs the pipeline's FULL-PAGE recipe (heavier than
+// a cropped region — the same fan-out concern as /find), so it gets its OWN in-flight cap rather than sharing
+// the region cap. `ocr-region-boxes` and `page-deskew` are single-crop/single-page spawns → they share
+// _ocrInFlight with ocr-region.
+const PAGEWORDS_MAX_INFLIGHT = 2;
+let _pageWordsInFlight = 0;
 // Client search parity S2 (2026-09-13, Oracle seams 8-9): the four preview READS the detached client's search
 // pop-out needs for parity with the core Search window. `find` is the first OCR-bearing READ on /v1 (a scanned
 // PDF OCRs its pages through pdf_find.py's fallback) → its OWN in-flight cap + a query-length floor (reject
@@ -152,13 +158,17 @@ function sendJson(res, status, payload) {
   res.end(body);
 }
 
-function readJsonBody(req) {
+// Teach-over-client S1: the teach image reads (page-deskew / ocr-page-words / ocr-region-boxes) carry a
+// rendered PAGE or a large crop as base64 JSON — bigger than the 1 MB default. A dedicated higher cap (still
+// bounded: base64 of a scale-3/4 A4 render tops out a few MB) keeps the general JSON reader tight.
+const TEACH_IMG_MAX_BYTES = 12 * 1024 * 1024;
+function readJsonBody(req, maxBytes = MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > MAX_BODY_BYTES) { reject(new Error('body too large')); req.destroy(); return; }
+      if (size > maxBytes) { reject(new Error('body too large')); req.destroy(); return; }
       chunks.push(c);
     });
     req.on('end', () => {
@@ -785,6 +795,128 @@ function createRequestListener(ctx) {
         try { audit({ user_id: session.userId, action: 'ocr_region', action_category: 'document',
                       outcome: 'success', document_id: Number(ocrRegionMatch[1]), metadata: { via: 'client' } }); } catch {}
         return;
+      }
+
+      // ── Teach-over-client S1 (2026-09-14, contract 1.7.0): three OCR/geometry READS the client teach
+      // wizard needs. Each takes a client-cropped/rendered PNG in the body (NO doc file resolved server-side —
+      // the client already fetched the page via /v1/page, which IS access-gated; the docId is for the audit),
+      // mirrors the ocr-region spawn, is isWriter-gated + in-flight capped + audited, and mints+cleans its own
+      // temp. See docs/designs/TEACH_OVER_CLIENT_2026-09-14.md. ──────────────────────────────────────────────
+
+      // POST /v1/documents/:id/ocr-region-boxes → {text, box:[l,t,w,h], words, lines}  (⊕/teach auto-label)
+      const ocrBoxesMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/ocr-region-boxes$`));
+      if (req.method === 'POST' && ocrBoxesMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        if (_ocrInFlight >= OCR_MAX_INFLIGHT) return sendJson(res, 429, { error: 'too many OCR requests — retry' });
+        let body; try { body = await readJsonBody(req, TEACH_IMG_MAX_BYTES); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const b64 = (body && typeof body.imageBase64 === 'string') ? body.imageBase64 : '';
+        if (!b64) return sendJson(res, 400, { error: 'imageBase64 (a cropped PNG) is required' });
+        const osMod = require('os'); const fsx = ctx.fs || require('fs'); const P = ctx.path || path;
+        const tmp = P.join(osMod.tmpdir(), `ds_v1boxes_${Date.now()}_${Math.random().toString(36).slice(2)}.png`);
+        try { fsx.writeFileSync(tmp, Buffer.from(b64, 'base64')); } catch { return sendJson(res, 400, { error: 'bad image data' }); }
+        const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
+        _ocrInFlight++;
+        let done = false;
+        const finish = (status, payload) => { if (done) return; done = true; _ocrInFlight--; try { fsx.unlinkSync(tmp); } catch {} sendJson(res, status, payload); };
+        try {
+          const proc = (ctx.spawn || require('child_process').spawn)(ctx.pythonExe(),
+            ctx.pythonArgs(script, '--image-file', tmp, '--tesseract', ctx.tesseractPath(), '--boxes'), { windowsHide: true });
+          let out = '', err = '';
+          proc.stdout.on('data', d => { out += d.toString(); });
+          proc.stderr.on('data', d => { err += d.toString(); });
+          proc.on('close', () => { if (err) { try { log('v1 ocr-region-boxes stderr: ' + err.trim()); } catch {} }
+            try { finish(200, JSON.parse(out.trim())); } catch { finish(200, { text: out.trim(), box: null, words: [], lines: [] }); } });
+          proc.on('error', (e) => { try { log('v1 ocr-region-boxes spawn error: ' + e.message); } catch {} finish(500, { error: 'ocr failed' }); });
+        } catch (e) { finish(500, { error: 'ocr failed' }); }
+        try { audit({ user_id: session.userId, action: 'ocr_region', action_category: 'document',
+                      outcome: 'success', document_id: Number(ocrBoxesMatch[1]), metadata: { via: 'client', mode: 'boxes' } }); } catch {}
+        return;
+      }
+
+      // POST /v1/documents/:id/ocr-page-words → {w, h, words:[{t,b:[l,t,w,h],c}]}  (typed-value locate)
+      const pageWordsMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/ocr-page-words$`));
+      if (req.method === 'POST' && pageWordsMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        if (_pageWordsInFlight >= PAGEWORDS_MAX_INFLIGHT) return sendJson(res, 429, { error: 'too many OCR requests — retry' });
+        let body; try { body = await readJsonBody(req, TEACH_IMG_MAX_BYTES); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const b64 = (body && typeof body.imageBase64 === 'string') ? body.imageBase64 : '';
+        if (!b64) return sendJson(res, 400, { error: 'imageBase64 (a full-page PNG) is required' });
+        const osMod = require('os'); const fsx = ctx.fs || require('fs'); const P = ctx.path || path;
+        const tmp = P.join(osMod.tmpdir(), `ds_v1pw_${Date.now()}_${Math.random().toString(36).slice(2)}.png`);
+        try { fsx.writeFileSync(tmp, Buffer.from(b64, 'base64')); } catch { return sendJson(res, 400, { error: 'bad image data' }); }
+        const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
+        // Pipeline recipe env (render DPI + reconcile incl. light-text) so the read matches the pipeline (gary).
+        let pwEnv = {}; try { pwEnv = (typeof ctx.pipelineOcrEnv === 'function') ? ctx.pipelineOcrEnv(getDb()) : {}; } catch { pwEnv = {}; }
+        _pageWordsInFlight++;
+        let done = false;
+        const finish = (status, payload) => { if (done) return; done = true; _pageWordsInFlight--; try { fsx.unlinkSync(tmp); } catch {} sendJson(res, status, payload); };
+        try {
+          const proc = (ctx.spawn || require('child_process').spawn)(ctx.pythonExe(),
+            ctx.pythonArgs(script, '--image-file', tmp, '--tesseract', ctx.tesseractPath(), '--page-words'),
+            { windowsHide: true, env: { ...process.env, ...pwEnv } });
+          let out = '', err = '';
+          proc.stdout.on('data', d => { out += d.toString(); });
+          proc.stderr.on('data', d => { err += d.toString(); });
+          proc.on('close', () => { if (err) { try { log('v1 ocr-page-words stderr: ' + err.trim()); } catch {} }
+            try { finish(200, JSON.parse(out.trim())); } catch { finish(200, { w: 0, h: 0, words: [] }); } });
+          proc.on('error', (e) => { try { log('v1 ocr-page-words spawn error: ' + e.message); } catch {} finish(200, { w: 0, h: 0, words: [] }); });
+        } catch (e) { finish(200, { w: 0, h: 0, words: [] }); }
+        try { audit({ user_id: session.userId, action: 'ocr_page_words', action_category: 'document',
+                      outcome: 'success', document_id: Number(pageWordsMatch[1]), metadata: { via: 'client' } }); } catch {}
+        return;
+      }
+
+      // POST /v1/documents/:id/page-deskew → {angle, image(base64 PNG, SAME dims — region.py expand=False), measured}
+      // Oracle C3: reuses region.py --deskew (expand=False + the same detect params as the desktop get-page-deskew),
+      // so the straightened FRAME the client draws on is identical → normalized box coords map the same.
+      const deskewMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/page-deskew$`));
+      if (req.method === 'POST' && deskewMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        if (_ocrInFlight >= OCR_MAX_INFLIGHT) return sendJson(res, 429, { error: 'too many OCR requests — retry' });
+        let body; try { body = await readJsonBody(req, TEACH_IMG_MAX_BYTES); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const b64 = (body && typeof body.imageBase64 === 'string') ? body.imageBase64 : '';
+        if (!b64) return sendJson(res, 400, { error: 'imageBase64 (a full-page PNG) is required' });
+        const minAngle = Math.max(0.2, Math.min(5.0, Number(body.minAngle) || 0.2));
+        const osMod = require('os'); const fsx = ctx.fs || require('fs'); const P = ctx.path || path;
+        const tmp = P.join(osMod.tmpdir(), `ds_v1deskew_${Date.now()}_${Math.random().toString(36).slice(2)}.png`);
+        try { fsx.writeFileSync(tmp, Buffer.from(b64, 'base64')); } catch { return sendJson(res, 400, { error: 'bad image data' }); }
+        const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
+        _ocrInFlight++;
+        let done = false;
+        const finish = (status, payload) => { if (done) return; done = true; _ocrInFlight--; try { fsx.unlinkSync(tmp); } catch {} sendJson(res, status, payload); };
+        try {
+          const proc = (ctx.spawn || require('child_process').spawn)(ctx.pythonExe(),
+            ctx.pythonArgs(script, '--image-file', tmp, '--tesseract', ctx.tesseractPath(), '--deskew', '--min-angle', String(minAngle)), { windowsHide: true });
+          let out = '', err = '';
+          proc.stdout.on('data', d => { out += d.toString(); });
+          proc.stderr.on('data', d => { err += d.toString(); });
+          // `measured`: a PARSED result means the detector RAN (a level page = {angle:0,image:null,measured:true});
+          // a parse/spawn failure is measured:false, so a 0 from a failure is never taken as "level".
+          proc.on('close', () => { if (err) { try { log('v1 page-deskew stderr: ' + err.trim()); } catch {} }
+            try { finish(200, { measured: true, ...JSON.parse(out.trim()) }); } catch { finish(200, { angle: 0, image: null, measured: false }); } });
+          proc.on('error', (e) => { try { log('v1 page-deskew spawn error: ' + e.message); } catch {} finish(200, { angle: 0, image: null, measured: false }); });
+        } catch (e) { finish(200, { angle: 0, image: null, measured: false }); }
+        try { audit({ user_id: session.userId, action: 'page_deskew', action_category: 'document',
+                      outcome: 'success', document_id: Number(deskewMatch[1]), metadata: { via: 'client' } }); } catch {}
+        return;
+      }
+
+      // GET /v1/teach/config → the teach wizard's feature flags (the client teach reads these via getSetting).
+      // A small FIXED allowlist, never a general settings read; isWriter (teach is admin/edit). Contract 1.7.0.
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/teach/config`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
+        const db = getDb();
+        const g = (k, d) => { try { const v = learning.getSetting(db, k, d); return v == null ? d : String(v); } catch { return d; } };
+        return sendJson(res, 200, {
+          teach_typed_value_locate: g('teach_typed_value_locate', 'true'),
+          teach_box_word_snap:      g('teach_box_word_snap', 'true'),
+          list_field_scan:          g('list_field_scan', 'false'),
+          barcode_field:            g('barcode_field', 'false'),
+        });
       }
 
       if (req.method === 'GET' && pathname === `${API_PREFIX}/documents/deleted`) {
