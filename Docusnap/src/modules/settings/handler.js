@@ -664,11 +664,26 @@ function register(ctx) {
   // may restore it ONLY if it holds an ACTIVE PAID seat — so a paying customer can
   // migrate to a new PC, but a fresh trial can't import another machine's learned data
   // to dodge the trial. Legacy backups (no device_fp) and dev boxes are not blocked.
+  // SECURITY (Chris card 7 — security review 2026-09-15): the embedded device_fp is UNTRUSTED.
+  // An attacker who can read a backup (holds file + password) can also edit its device_fp, and
+  // this machine's fp is a deterministic hash of locally-readable public data — so a same-machine
+  // allow keyed on `backupFp === curFp` is forgeable on any un-licensed machine. When the DARK
+  // switch `backup_import_seat_only` is ON, that untrusted branch is skipped and ONLY a verified
+  // paid SEAT authorises a restore (the anchor a non-origin machine cannot mint). Default OFF =
+  // byte-identical to the historical behaviour; the owner flips it to enforce. The seat decision
+  // itself is the pure predicate src/lib/deviceImportGate.js (which never receives device_fp, so
+  // same-machine equality can't be reintroduced through it).
+  function _backupImportSeatOnly() {
+    try { return learning.getSetting(getDb(), 'backup_import_seat_only') === '1'; } catch { return false; }
+  }
   function _deviceImportAllowed(meta) {
     const curFp = _currentDeviceFp();
     if (!curFp) return { allowed: true };             // no licensing config (dev) — don't block
+    const seatOnly = _backupImportSeatOnly();
     const backupFp = meta && meta.device_fp;
-    if (backupFp && backupFp === curFp) return { allowed: true }; // same machine
+    // Same-machine allow via the embedded fp — UNTRUSTED (card 7). Gated OFF by default (legacy
+    // behaviour); when seatOnly is ON it is skipped and the seat check below is the only anchor.
+    if (!seatOnly && backupFp && backupFp === curFp) return { allowed: true };
     // SECURITY (Sammy M-1): a MISSING/empty device_fp used to auto-allow ("pre-binding backup"),
     // but a crafted archive can simply OMIT the field to defeat the whole gate. Treat absent-fp the
     // same as a cross-machine import — require a signature-verified active PAID seat below. A real
@@ -682,7 +697,7 @@ function register(ctx) {
       // fp-bound, verify-before-claims). `decision==='allow'` requires a valid signature for THIS
       // machine's fingerprint; the claims' kind must be 'seat' (a verified TRIAL must not unlock import).
       const ev = require('../licensing/handler').evaluateCachedAccess(getDb());
-      if (ev && ev.decision === 'allow' && ev.claims && ev.claims.kind === 'seat') return { allowed: true };
+      if (require('../../lib/deviceImportGate').deviceImportAllowed(ev).allowed) return { allowed: true };
     } catch { /* fall through to deny */ }
     return { allowed: false, error: 'This backup was made on a different computer. Restoring it here needs an activated licence on this computer — a free trial can only restore a backup created on the same machine.' };
   }
