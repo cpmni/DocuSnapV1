@@ -232,16 +232,65 @@ async function boot() {
 }
 
 // ── Connect screen ─────────────────────────────────────────────────────────────
+// A styled trust modal (replaces window.confirm — it can't show an old-vs-new diff and reads as a browser
+// artifact on the one screen that must feel deliberate). Refuse is the default-focused button. Returns a promise.
+function certModal({ title, lines, acceptLabel, danger }) {
+  return new Promise((resolve) => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9999;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--card-a,#fff);color:var(--text,#1b1f2a);max-width:540px;width:90%;border-radius:12px;padding:22px 24px;box-shadow:0 14px 46px rgba(0,0,0,.45);';
+    box.innerHTML = `<div style="font-size:17px;font-weight:700;margin-bottom:12px;">${esc(title)}</div>`
+      + (lines || []).map(l => `<div style="margin:7px 0;line-height:1.4;${l.mono ? 'font-family:var(--mono,monospace);font-size:12px;word-break:break-all;background:var(--card-b,#f3f5f9);padding:6px 8px;border-radius:6px;' : ''}${l.warn ? 'color:var(--err,#d64545);font-weight:600;' : ''}">${esc(l.text)}</div>`).join('')
+      + `<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">`
+      + `<button id="cm-cancel" class="btn" style="min-width:130px;">${danger ? "Don’t trust — cancel" : 'Cancel'}</button>`
+      + `<button id="cm-ok" class="btn ${danger ? 'ghost' : 'primary'}" style="min-width:130px;">${esc(acceptLabel)}</button>`
+      + `</div>`;
+    ov.appendChild(box); document.body.appendChild(ov);
+    const done = (v) => { try { ov.remove(); } catch {} resolve(v); };
+    box.querySelector('#cm-cancel').onclick = () => done(false);
+    box.querySelector('#cm-ok').onclick = () => done(true);
+    ov.addEventListener('click', (e) => { if (e.target === ov) done(false); });
+    try { box.querySelector('#cm-cancel').focus(); } catch {}   // refuse is the default
+  });
+}
+async function _finishConnect(c) {
+  applyConn(c);
+  if (c && c.ok) { showOnly('login'); return true; }
+  const m = c && c.mode;
+  $('connect-err').textContent = (m === 'addr-mismatch')
+    ? 'The server’s certificate doesn’t list this address. Use the exact address shown on the main PC (Settings → Search client), or re-issue the certificate there.'
+    : (m === 'mismatch')
+      ? (c.reason || 'The certificate did not match — not connected.')
+      : ((c && c.reason) || 'Could not connect to that server.');
+  return false;
+}
 $('connect-btn').addEventListener('click', (e) => withBusy(e.currentTarget, async () => {
   $('connect-err').textContent = '';
   const host = $('srv-host').value.trim();
   if (!host) { $('connect-err').textContent = 'Enter a server address.'; return; }
-  const cfg = { host, port: $('srv-port').value.trim() || 8765, tls: $('srv-tls').checked, caPem: _caPem };
-  const h = await api.setServer(cfg);
-  applyConn(h);
-  if (h.ok) showOnly('login'); else $('connect-err').textContent = h.reason || 'Could not connect to that server.';
+  const port = $('srv-port').value.trim() || 8765;
+  const tls = $('srv-tls').checked;
+  // Explicit "Choose a certificate file" path OR a plain-HTTP loopback address → the direct set-server path
+  // (a deliberate operator choice / no cert). Everything else goes through the verified connect (main fetches +
+  // hashes + pins; the CA never enters this renderer).
+  if (_caPem || !tls) { return void _finishConnect(await api.setServer({ host, port, tls, caPem: _caPem || null })); }
+  const r = await api.connectVerified({ host, port, tls: true });
+  if (r && r.mode === 'confirm') {
+    const ok = await certModal({
+      title: 'Check the server’s certificate',
+      lines: [
+        { text: 'Confirm this ID code matches the one shown on the main PC (Settings → Search client). If it doesn’t match, someone may be impersonating your server.' },
+        { text: r.fingerprint, mono: true },
+      ],
+      acceptLabel: 'It matches — connect',
+    });
+    if (!ok) { $('connect-err').textContent = 'Cancelled — not connected.'; return; }
+    return void _finishConnect(await api.connectAccept({ host, port }));
+  }
+  return void _finishConnect(r);
 }));
-$('srv-tls').addEventListener('change', _syncCertRow);
+$('srv-tls').addEventListener('change', () => { _caPem = null; _syncCertRow(); });
 $('srv-cert-btn').addEventListener('click', async () => {
   const r = await api.pickCert();
   if (r && r.ok) { _caPem = r.pem; $('srv-cert-name').textContent = r.name; }
@@ -250,30 +299,31 @@ $('import-profile-btn').addEventListener('click', async () => {
   $('connect-err').textContent = '';
   const r = await api.importProfile();
   if (!r || !r.ok) { if (r && r.error) $('connect-err').textContent = r.error; return; }
-  $('srv-host').value = r.host;
-  $('srv-port').value = r.port;
-  $('srv-tls').checked = !!r.tls;
-  _syncCertRow();
-  _caPem = r.caPem;
-  $('srv-cert-name').textContent = r.name + (r.caFingerprint ? ' · ' + r.caFingerprint.slice(0, 17) + '…' : '');
-  $('connect-btn').click();   // validate via the handshake + proceed to sign-in
+  $('srv-host').value = r.host; $('srv-port').value = r.port; $('srv-tls').checked = !!r.tls; _syncCertRow();
+  _caPem = null;   // the profile's CA is pinned in MAIN (a trusted off-network file), not renderer-fed
+  $('srv-cert-name').textContent = 'from profile · ' + (r.fingerprint ? r.fingerprint.slice(0, 17) + '…' : '');
+  await _finishConnect(await api.connectAccept({ host: r.host, port: r.port }));
 });
-$('fetch-ca-btn').addEventListener('click', async () => {
-  $('connect-err').textContent = '';
-  const host = $('srv-host').value.trim();
-  if (!host) { $('connect-err').textContent = 'Enter the server address first.'; return; }
-  const r = await api.fetchCa({ host, port: $('srv-port').value.trim() || 8765 });
-  if (!r || !r.ok) { $('connect-err').textContent = (r && r.error) || 'Could not fetch the certificate.'; return; }
-  const confirmed = window.confirm(
-    'Server certificate fingerprint (SHA-256):\n\n' + r.fingerprint +
-    '\n\nConfirm this EXACTLY matches the fingerprint shown in the core app ' +
-    '(Settings → Search client access) before trusting it.\n\n' +
-    'A mismatch can mean the connection is being intercepted.');
-  if (!confirmed) return;
-  $('srv-tls').checked = true; _syncCertRow();
-  _caPem = r.caPem;
-  $('srv-cert-name').textContent = 'fetched · ' + r.fingerprint.slice(0, 17) + '…';
-  $('connect-btn').click();
+// The old "fetch certificate" button now runs the same verified connect as Connect (fetch + check + pin).
+$('fetch-ca-btn').addEventListener('click', () => $('connect-btn').click());
+// The server's certificate CHANGED (Oracle C3) — the refuse-is-default re-accept, or an address-coverage note.
+if (api.onCertAlert) api.onCertAlert(async (p) => {
+  if (!p) return;
+  if (p.kind === 'addr-mismatch') {
+    toast('The server’s certificate doesn’t list the address you’re using — reconnect using the address shown on the main PC, or re-issue the certificate there.', 'err');
+    return;
+  }
+  const ok = await certModal({
+    title: 'The server’s security certificate has CHANGED',
+    lines: [
+      { text: 'This is normal ONLY if an administrator has just re-installed or re-issued Scan Finder on the main PC. If you were not expecting this, someone may be impersonating your server — do not continue.', warn: true },
+      { text: 'Old ID: ' + (p.oldFingerprint || '—'), mono: true },
+      { text: 'New ID: ' + (p.newFingerprint || '—'), mono: true },
+    ],
+    acceptLabel: 'I was expecting this — trust it',
+    danger: true,
+  });
+  if (ok) { const c = await api.connectAccept({ host: p.host, port: p.port }); if (c && c.ok) toast('Trusted the new certificate.', 'ok'); }
 });
 for (const id of ['srv-host', 'srv-port']) {
   $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('connect-btn').click(); });

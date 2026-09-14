@@ -327,10 +327,13 @@ ipcMain.handle('client-import-profile', async () => {
   try {
     const p = JSON.parse(fs.readFileSync(r.filePaths[0], 'utf8'));
     if (!p || !p.host || !p.caPem) return { ok: false, error: 'Not a valid ScanFinder connection profile.' };
-    return {
-      ok: true, host: String(p.host).trim(), port: Number(p.port) || 8765, tls: p.tls !== false,
-      caPem: String(p.caPem), caFingerprint: p.caFingerprintSha256 || null, name: path.basename(r.filePaths[0]),
-    };
+    const host = String(p.host).trim(), port = Number(p.port) || 8765, tls = p.tls !== false;
+    // Oracle C1: the profile's CA (a trusted OFF-network file) is pinned in MAIN — stash it + return only the
+    // fingerprint. The renderer fills the form + calls client-connect-accept, which pins these exact bytes.
+    const fingerprint = cv.computeFingerprint(String(p.caPem));
+    if (!fingerprint) return { ok: false, error: 'The profile contains an unreadable certificate.' };
+    _pendingCa = { key: `${host}:${port}`, caPem: String(p.caPem), fingerprint, host, port, tls, ts: Date.now() };
+    return { ok: true, host, port, tls, fingerprint, name: path.basename(r.filePaths[0]) };
   } catch (e) { return { ok: false, error: e.message }; }
 });
 
