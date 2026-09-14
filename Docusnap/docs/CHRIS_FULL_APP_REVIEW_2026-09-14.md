@@ -164,3 +164,28 @@ screen regenerated). The owner's core (`TEST_BUILD=1`) + client were restarted o
 | 7 | **DONE (shared screen).** `_fmtDT` prints local `DD-MM-YYYY HH:MM`; `stampService.stampsForDocument` adds `placedByName` (display name, username fallback) and the history shows it. | `ff49223` |
 | 8 | **DONE.** Main window "ScanFinder Client"; `app.setName('ScanFinder Search Client')` with the userData path pinned first (dialog titles), the pop-out keeps "ScanFinder — Search". | `0f58ecb` |
 | — | The 34 blank pages from `.sf_separated_originals` — still an owner question, logged in `pendingfeatures.md`. | — |
+
+---
+
+## Round — 2026-09-14 EVENING (teach-over-client S3 focus; sandbox core, port 9223, PID 19212)
+
+Sandbox conditions: fresh migrated DB (0 users → first-admin), Demo Docs copied in, Output in-sandbox, CDP 9223. Focus (owner): the new "Teach from the search client" — the Settings toggle + the shared Teach wizard (the client side had no client app connected, so it was judged via the core wizard, which runs the same shared code). Full standard battery also run.
+
+### Verdict: **YES — would keep using after two weeks.** Teach works end-to-end and tells the truth; the safety net (warnings + recycle bin + originals kept) is excellent; every warning was truthful.
+
+### FOCUS findings
+1. **Teaching toggle can be ON while the connections door it needs is shut — QUESTION.** In Settings → Search client, ticking "Allow teaching from the search client (admin only)" says "On — an admin on the search client can teach…", but the "Allow search-client connections" switch above (client_api_enabled) can still be Off. Nothing on the teach card says the top switch must also be on. Proposed: when connections are off, add "Search-client connections are off above — turn those on first for this to take effect."
+2. **"template" is a word customers don't use — PREFERENCE.** The toggle copy says "a new document type or template"; everywhere else the app says "layout" (tour, teach finish screen). Match it: "…type or layout".
+3. **Teach summary shows the fixed value but not the destination folder — QUESTION.** For a fixed issuer that differs from the printed letterhead (fixed "Fenton Plumbing & Heating" on a Northgate page), the summary never shows which company folder it files to before you press "Save teaching & file". Proposed: add "Will file to: <Company> › <Year> › <Month>" on the summary. (Recoverable + the done screen states it after, so a nicety.)
+
+**Positive on the focus:** the toggle copy answers all three questions — WHAT / WHO (+ "(admin only)") / and the key catch "the document being taught must already be in this PC's review queue". The fixed-value path copy is honest end-to-end. The fixed Document Issuer took effect exactly as taught and filed under the fixed name.
+
+### Standard-battery findings
+4. **After teaching, 12 of 18 invoices flagged "check the company name" when the name was correct — QUESTION (Chris's top friction).** DOCUMENT ISSUER · Check · 69% on a value ("Northgate Textiles") correct on every one. Warning-fatigue risk. Proposed (keeps the hold): soften the tone to "Looks right — quick confirm" when the shown value matches the just-learned sender. (Pre-existing issuer-flag behaviour, not S3.)
+5. **"learned · needs a layout" queue-header phrase is opaque — CONFUSION (minor).** Proposed plain words: "I know this sender — teach one layout to speed these up."
+
+### Warnings truth-table: every one TRUE (Confirm&File, File All Ready "file 6 of 18", single delete→recycle bin→restore, Delete All Review, Split "only one page", Save teaching & file). Not one lied.
+
+### Not testable in this sandbox: the search-client's OWN Teach button (no client app connected — the owner is wiring one next) and the full approval hand-off (only one user).
+
+### Humility: one simulated office manager, not a user test; clumsy box-drawing was Chris's automation limit (the read-back caught it every time); only sample docs used. All findings are for the owner to vet — nothing implemented without the owner's go.
