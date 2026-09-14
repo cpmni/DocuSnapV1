@@ -133,7 +133,7 @@ function createWindow() {
   win.on('focus', grabFocus);
   win.on('show', grabFocus);
   // The main window is the sign-in surface: when it goes, the search pop-out goes with it (Oracle seam 7).
-  win.on('closed', () => { win = null; closeSearchWindow('main-window-closed'); });
+  win.on('closed', () => { win = null; closeSearchWindow('main-window-closed'); closeTeachWindow('main-window-closed'); });
 }
 
 // ── Search pop-out window ──────────────────────────────────────────────────────
@@ -231,10 +231,53 @@ ipcMain.handle('client-server-info', () => ({
 }));
 // The pop-out saw a 401: the session is gone. Close it and let the main window sign out.
 ipcMain.on('client-popout-session-expired', (e) => {
-  if (!searchWin || e.sender !== searchWin.webContents) return;   // sender-scoped
-  closeSearchWindow('session-expired (the pop-out saw a 401) — signing the main window out');
+  const fromSearch = searchWin && !searchWin.isDestroyed() && e.sender === searchWin.webContents;
+  const fromTeach  = teachWin  && !teachWin.isDestroyed()  && e.sender === teachWin.webContents;
+  if (!fromSearch && !fromTeach) return;   // sender-scoped — either pop-out
+  closeSearchWindow('session-expired (a pop-out saw a 401) — signing the main window out');
+  closeTeachWindow('session-expired (a pop-out saw a 401)');
   try { if (win && !win.isDestroyed()) win.webContents.send('client-session-expired'); } catch {}
 });
+
+// ── Teach pop-out (teach-over-client S1) — mirrors the search pop-out: a second top-level window, the
+// session token stays in main, CLOSED on logout and when the main window closes (no write-surface window
+// outliving the session). Opens maximised; deep-links to a doc via client-teach-goto-doc. ────────────────
+let teachWin = null;
+let pendingTeach = null;
+function closeTeachWindow(reason = 'main') {
+  try { if (teachWin && !teachWin.isDestroyed()) { console.error('[teach-popout] closed by main: ' + reason); teachWin.destroy(); } } catch {}
+  teachWin = null;
+}
+function openTeachWindow(opts) {
+  const o = opts && typeof opts === 'object' ? opts : {};
+  if (teachWin && !teachWin.isDestroyed()) {
+    try { if (o.docId != null) teachWin.webContents.send('client-teach-goto-doc', Number(o.docId)); if (teachWin.isMinimized()) teachWin.restore(); teachWin.show(); teachWin.focus(); } catch {}
+    return;
+  }
+  pendingTeach = { docId: o.docId != null ? Number(o.docId) : null };
+  const w = new BrowserWindow({
+    width: 1400, height: 900, minWidth: 960, minHeight: 600, show: false, backgroundColor: '#0c0e14',
+    title: 'ScanFinder — Teach a document', icon: path.join(__dirname, 'assets', 'icon.ico'),
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  teachWin = w;
+  if (w.removeMenu) w.removeMenu();
+  const dbg = (m) => { try { console.error('[teach-popout] ' + m); } catch {} };
+  w.webContents.on('did-fail-load', (_e, code, desc) => dbg(`did-fail-load ${code} ${desc}`));
+  w.webContents.on('render-process-gone', (_e, d) => dbg(`render-process-gone ${d && d.reason}`));
+  w.loadFile(path.join(__dirname, 'renderer', 'teach', 'index.html')).catch((e) => dbg(`loadFile failed: ${e && e.message}`));   // inside the navGuard root
+  let shown = false;
+  const reveal = (why) => { if (shown || w.isDestroyed()) return; shown = true; try { w.maximize(); w.show(); w.focus(); dbg('shown (' + why + ')'); } catch (e) { dbg('show failed: ' + (e && e.message)); } };
+  w.once('ready-to-show', () => reveal('ready-to-show'));
+  setTimeout(() => reveal('fallback-timer'), 2500);
+  w.on('closed', () => { dbg('closed'); if (teachWin === w) teachWin = null; });
+}
+ipcMain.handle('client-open-teach', (_e, opts) => {
+  if (!client || !client.isAuthenticated()) { try { console.error('[teach-popout] refused: not signed in'); } catch {} return { ok: false, error: 'not signed in' }; }
+  try { openTeachWindow(opts); } catch (e) { try { console.error('[teach-popout] open failed: ' + (e && e.stack || e)); } catch {} return { ok: false, error: (e && e.message) || 'open failed' }; }
+  return { ok: true };
+});
+ipcMain.handle('client-teach-target', () => { const t = pendingTeach; pendingTeach = null; return t; });
 
 // Renderer-driven keyboard-focus repair (Windows): the preload requests this when a
 // click enters a text field while the render widget lacks OS keyboard focus (the
@@ -397,6 +440,7 @@ ipcMain.handle('client-logout',       () => {
   stopHeartbeat(); pageCache.clear();
   currentUser = null;
   closeSearchWindow('logout');   // the pop-out must not outlive the session (Oracle seam 7)
+  closeTeachWindow('logout');    // …and neither may the teach write-surface pop-out
   return client ? client.logout() : { ok: true };
 });
 ipcMain.handle('client-change-password', async (_e, { currentPassword, newPassword } = {}) => {
@@ -422,6 +466,12 @@ ipcMain.handle('client-review-undefer',  guarded((_e, id)          => client.rev
 ipcMain.handle('client-review-viewing',  guarded((_e, id)          => client.review.viewing(id)));
 ipcMain.handle('client-review-release',  guarded((_e, id)          => client.review.release(id)));
 ipcMain.handle('client-review-ocr-region', guarded((_e, id, imageBase64) => client.review.ocrRegion(id, imageBase64)));
+// Teach-over-client S1: the teach pop-out's OCR/geometry reads over /v1 (guarded — a lost connection is a
+// clean envelope, not an unhandled reject). The text read reuses client-review-ocr-region.
+ipcMain.handle('client-teach-region-boxes', guarded((_e, id, imageBase64)           => client.teach.ocrRegionBoxes(id, imageBase64)));
+ipcMain.handle('client-teach-page-words',   guarded((_e, id, imageBase64)           => client.teach.ocrPageWords(id, imageBase64)));
+ipcMain.handle('client-teach-page-deskew',  guarded((_e, id, imageBase64, minAngle) => client.teach.pageDeskew(id, imageBase64, minAngle)));
+ipcMain.handle('client-teach-config',       guarded(()                              => client.teach.config()));
 
 // ── Quick File (non-OCR upload) ─────────────────────────────────────────────────────────────────────
 // Paths NEVER cross to the renderer: the picked file lives in a MAIN-side token map; the renderer sends a

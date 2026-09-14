@@ -25,8 +25,12 @@ const argv = process.argv.slice(2);
 const argOf = (f) => { const i = argv.indexOf(f); return i >= 0 ? argv[i + 1] : null; };
 const DUMP = argOf('--dump');
 const REPORT = argOf('--report');
-const HTML = path.join(ROOT, 'src', 'windows', 'teach', 'index.html');
-const PRELOAD = path.join(ROOT, 'src', 'preload.js');
+// --client: drive the detached CLIENT teach pop-out (client/renderer/teach/index.html with the client's
+// preload + its client-* IPC channels + { status, json } envelopes). Same shared wizard, /v1 transport.
+const CLIENT = argv.includes('--client');
+const HTML = CLIENT ? path.join(ROOT, 'client', 'renderer', 'teach', 'index.html')
+                    : path.join(ROOT, 'src', 'windows', 'teach', 'index.html');
+const PRELOAD = CLIENT ? path.join(ROOT, 'client', 'preload.js') : path.join(ROOT, 'src', 'preload.js');
 
 // Throwaway userData BEFORE ready (never the live one; own single-instance key).
 const tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'sf-teach-harness-'));
@@ -46,31 +50,49 @@ const DOC_TYPE = {
 
 const calls = [];
 function stub(channel, fn) { ipcMain.handle(channel, (_e, ...a) => { calls.push(channel); return fn(...a); }); }
+const env = (json) => ({ status: 200, json });   // the client bridge's { status, json } envelope
 
-stub('get-teach-target', () => null);
-stub('get-review-queue', () => [REVIEW_ROW]);
-stub('get-deferred-queue', () => []);
-stub('get-all-doc-types', () => [DOC_TYPE]);
-stub('get-all-doc-types-all', () => [DOC_TYPE]);
-stub('get-document-pages', () => [PNG_URL]);
-stub('get-document-thumbnail', () => null);
-stub('get-staged-teach-thumbnail', () => null);
-stub('get-setting', () => '');                                   // feature flags off
-stub('get-validation-patterns', () => ({}));
-stub('get-field-patterns', () => ({}));
-stub('get-label-overrides', () => []);
-stub('get-doctype-catalog', () => []);
-stub('get-page-deskew', () => ({ image: PNG, angle: 0, measured: true }));
-stub('ocr-region', () => 'ACME LTD');
-stub('ocr-region-boxes', () => ({ words: [] }));
-stub('ocr-page-words', () => ({ w: 1, h: 1, words: [] }));
-stub('get-template-detail', () => ({ landmarks: [] }));
-stub('get-teach-followup', () => ({ ok: false }));
-// commit-side channels (not driven by the boot smoke, but stubbed so a stray call cannot reject noisily)
-for (const c of ['promote-to-template', 'save-template-mapping', 'set-template-field-fixed',
-                 'set-template-hidden-field', 'teach-list-caption', 'confirm-review',
-                 'check-issuer-read', 'check-identity-near-match', 'check-type-split']) {
-  stub(c, () => ({ success: true }));
+if (!CLIENT) {
+  // CORE: the in-process IPC channels (raw payloads, as the core preload hands the wizard).
+  stub('get-teach-target', () => null);
+  stub('get-review-queue', () => [REVIEW_ROW]);
+  stub('get-deferred-queue', () => []);
+  stub('get-all-doc-types', () => [DOC_TYPE]);
+  stub('get-all-doc-types-all', () => [DOC_TYPE]);
+  stub('get-document-pages', () => [PNG_URL]);
+  stub('get-document-thumbnail', () => null);
+  stub('get-staged-teach-thumbnail', () => null);
+  stub('get-setting', () => '');                                   // feature flags off
+  stub('get-validation-patterns', () => ({}));
+  stub('get-field-patterns', () => ({}));
+  stub('get-label-overrides', () => []);
+  stub('get-doctype-catalog', () => []);
+  stub('get-page-deskew', () => ({ image: PNG, angle: 0, measured: true }));
+  stub('ocr-region', () => 'ACME LTD');
+  stub('ocr-region-boxes', () => ({ words: [] }));
+  stub('ocr-page-words', () => ({ w: 1, h: 1, words: [] }));
+  stub('get-template-detail', () => ({ landmarks: [] }));
+  stub('get-teach-followup', () => ({ ok: false }));
+  for (const c of ['promote-to-template', 'save-template-mapping', 'set-template-field-fixed',
+                   'set-template-hidden-field', 'teach-list-caption', 'confirm-review',
+                   'check-issuer-read', 'check-identity-near-match', 'check-type-split']) {
+    stub(c, () => ({ success: true }));
+  }
+} else {
+  // CLIENT: the client-* channels the client preload invokes, each an { status, json } envelope (as apiClient
+  // returns) — clientTeachTransport unwraps them. Proves the client teach pop-out boots + reads over /v1.
+  stub('client-teach-target', () => ({ docId: null }));
+  stub('client-review-queue', () => env({ queue: [REVIEW_ROW] }));
+  stub('client-doc-types', () => env({ types: [DOC_TYPE] }));
+  stub('client-get-pages', () => env({ pages: [PNG_URL] }));
+  stub('client-get-thumbnail', () => env({ thumbnail: null }));
+  stub('client-teach-config', () => env({ teach_typed_value_locate: 'true', teach_box_word_snap: 'true', list_field_scan: 'false', barcode_field: 'false' }));
+  stub('client-teach-region-boxes', () => env({ text: 'ACME LTD', box: [10, 20, 80, 18], words: [{ t: 'ACME', b: [10, 20, 40, 18] }], lines: ['ACME LTD'] }));
+  stub('client-teach-page-words', () => env({ w: 1000, h: 1400, words: [{ t: 'ACME', b: [10, 20, 40, 18], c: 91 }] }));
+  stub('client-teach-page-deskew', () => env({ angle: 0, image: null, measured: true }));
+  stub('client-review-ocr-region', () => env({ text: 'ACME LTD' }));
+  stub('client-current-user', () => ({ role: 'admin', username: 'admin' }));
+  stub('client-server-info', () => ({ serverVersion: '1.7.0', clientContract: '1.7.0', mode: 'ok' }));
 }
 
 const DRIVE = `(async () => {

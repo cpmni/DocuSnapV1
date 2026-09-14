@@ -17,6 +17,14 @@ const D = window.TeachTransport;   // data/IO transport (pass-through on the cor
 const HOST = window.TeachHost;     // window + navigation chrome (minimise/close/help/target/open-review)
 const $ = (id) => document.getElementById(id);
 
+// Capability probe (teach-over-client S1): a transport that cannot back a control sets caps.X=false and the
+// wizard HIDES it — never a dead button, never a throw. ABSENT = true, so the CORE adapter (every cap absent/
+// true) takes the unchanged path; the client sets `import`/`review` false. Caps consulted:
+//   import  — bring a LOCAL file to teach (stagePdfForTeach/processFolder). Client A: false → teach the /v1
+//             review queue only; the empty state points at the main PC (Oracle C7).
+//   review  — open the core's Review window (the follow-up card's "Check them in Review").
+const _cap = (name) => { const c = D && D.caps; return !c || c[name] !== false; };
+
 const TYPE_MAP = { Text: 'text', Date: 'date', Currency: 'currency', Number: 'number' };
 
 const state = {
@@ -55,6 +63,13 @@ const state = {
   results: {},         // key -> {value, target:{x,y,w,h}, anchor:{x,y,w,h}|null, anchor_text|null, status:'done'|'skip'}
   targetDocId: null,
 };
+
+// The currently-taught document id, exposed as a window global (mirrors window.SearchState in search-ui) so an
+// injected transport can read it WITHOUT the wizard threading a docId through every OCR call. The shared OCR
+// calls take only the image (D.ocrRegion(b64) etc.); on the CORE the pass-through ignores this (the in-process
+// ocr-region needs no id), on the CLIENT the /v1 adapter reads it to build the /documents/:id/… URL. A getter
+// so it always reflects the live selection. (teach-over-client S1.)
+window.TeachState = { get docId() { return (state.doc && state.doc.id) || null; } };
 
 // ── Titlebar ─────────────────────────────────────────────────────────────────
 $('win-min').onclick   = () => HOST.windowMinimise();
@@ -2249,7 +2264,9 @@ async function renderTeachFollowup(){
   const rest = f.autoAccept
     ? `the rest of their ${type} in the queue will file themselves`
     : `the rest of their ${type} become ready to file in one click — and future ones file themselves`;
-  const reviewBtn = `<div style="margin-top:10px"><button class="btn primary" id="fu-review">Check them in Review</button></div>`;
+  // The "Check them in Review" route needs the core's Review window; hidden where the transport can't open it
+  // (the detached client — caps.review=false). The follow-up text still shows; only the button is dropped.
+  const reviewBtn = _cap('review') ? `<div style="margin-top:10px"><button class="btn primary" id="fu-review">Check them in Review</button></div>` : '';
   const wireBtn = () => { const btn=$('fu-review'); if(btn) btn.onclick=()=>{ try{ f.firstSibling ? HOST.openReviewWindowAt(f.firstSibling) : HOST.openReviewWindow(); }catch{} HOST.windowClose(); }; };
   if (f.canPromise){
     el.style.cssText = box;
@@ -2301,7 +2318,20 @@ if (_againBtn) _againBtn.onclick = () => {
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 $('btn-next').addEventListener('click',()=>{ if(state.step===5) finishDone(); });
 
+// Apply the transport's caps to the DOM once at boot. On the CORE every cap is true → this is a no-op and the
+// window is byte-identical to before. On the client (caps.import=false) there is no local-file import, so the
+// "Import a PDF to teach…" control is hidden and the empty-queue state points the operator at the main PC (C7).
+function _applyTeachCaps(){
+  if (!_cap('import')){
+    const btn = $('btn-import-teach'); if (btn && btn.parentElement) btn.parentElement.style.display = 'none';
+    const prog = $('teach-import-progress'); if (prog) prog.style.display = 'none';
+    const empty = $('doc-picker-empty');
+    if (empty) empty.textContent = 'No documents are waiting to teach — scan or import one on the main Scan Finder PC first, then it appears here.';
+  }
+}
+
 (async function init(){
+  _applyTeachCaps();
   try{ state.targetDocId = await HOST.getTeachTarget(); }catch{}
   HOST.onTeachLoadDoc && HOST.onTeachLoadDoc(id=>{ state.targetDocId=id; });
   if (state.targetDocId){

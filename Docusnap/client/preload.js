@@ -94,6 +94,20 @@ contextBridge.exposeInMainWorld('scanfinder', {
     release:  (id) => ipcRenderer.invoke('client-review-release', id),
     ocrRegion:(id, imageBase64) => ipcRenderer.invoke('client-review-ocr-region', id, imageBase64),
   },
+  // Teach-over-client S1 (contract 1.7.0): the teach pop-out's OCR/geometry reads + the wizard's feature flags.
+  // All raw { status, json } envelopes (clientTeachTransport unwraps them like the search adapter).
+  teach: {
+    ocrRegion:      (id, imageBase64)   => ipcRenderer.invoke('client-review-ocr-region', id, imageBase64),   // text (reuses the review route)
+    ocrRegionBoxes: (id, imageBase64)   => ipcRenderer.invoke('client-teach-region-boxes', id, imageBase64),
+    ocrPageWords:   (id, imageBase64)   => ipcRenderer.invoke('client-teach-page-words', id, imageBase64),
+    pageDeskew:     (id, imageBase64, minAngle) => ipcRenderer.invoke('client-teach-page-deskew', id, imageBase64, minAngle),
+    config:         () => ipcRenderer.invoke('client-teach-config'),
+  },
+  // Teach pop-out window (mirrors openSearch): open/focus the window; the pop-out pulls its target doc once,
+  // learns the signed-in role (currentUser) and the server's abilities (serverInfo), and reports a 401.
+  openTeach:            (opts) => ipcRenderer.invoke('client-open-teach', opts || {}),
+  teachTarget:          () => ipcRenderer.invoke('client-teach-target'),
+  onTeachLoadDoc:       (cb) => ipcRenderer.on('client-teach-goto-doc', (_e, id) => cb(id)),
   // Quick File (non-OCR upload). Paths stay in main — the renderer only sees tokens + names.
   quickFile: {
     docTypes: () => ipcRenderer.invoke('client-intake-doctypes'),

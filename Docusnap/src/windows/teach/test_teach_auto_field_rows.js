@@ -116,7 +116,10 @@ console.log('6. the rail still SHOWS pulled (barcode) fields, muted, with the re
   check('renderFieldRail appends one .fieldrow.auto row per state.listFields entry (unclickable)',
         /for \(const f of \(state\.listFields \|\| \[\]\)\) \{[\s\S]{0,120}row\.className='fieldrow auto';/.test(body)
         && !/for \(const f of \(state\.listFields[\s\S]{0,900}row\.onclick/.test(body));
-  check('index.html styles the auto row', /\.fieldrow\.auto\{cursor:default\}/.test(html) && /\.dot\.auto\{/.test(html));
+  // The teach styles moved out of index.html to the shared teach.css (teach-over-client S1, so the client links
+  // the same styles); the auto-row rules live there now.
+  const teachCss = rd('src/windows/shared/teach-ui/teach.css');
+  check('teach.css styles the auto row', /\.fieldrow\.auto\{cursor:default\}/.test(teachCss) && /\.dot\.auto\{/.test(teachCss));
 }
 
 console.log('7. the Review ⊕ road teaches a List field the same way (owner: "the review ⊕ button should also teach a list caption … show them all")');

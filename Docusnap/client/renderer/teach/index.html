@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="warm" data-mode="light"><!-- default at parse time → no flash before themeBoot runs -->
+<head>
+<meta charset="UTF-8">
+<!-- GENERATED for the detached client from src/windows/teach/index.html (teach-over-client S1). The DOM is the
+     core teach wizard verbatim; only the head (client CSP + themeBoot) and the script tags (client transport +
+     the synced shared copies) differ. Regenerate with scripts/gen-client-teach-index.js if the core DOM changes. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; form-action 'none'; base-uri 'none'; object-src 'none'">
+<title>Teach a new document — Scan Finder</title>
+<link rel="stylesheet" href="../shared/theme.css" />
+<link rel="stylesheet" href="../shared/teach-ui/teach.css" />
+</head>
+<body>
+  <div class="titlebar">
+    <span class="ttl">Teach a new document</span>
+    <div class="winbtns">
+      <button class="help-guide-btn" id="btn-help-guide" data-help-key="user-guide" title="Open the user guide (Teach a document)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></button>
+      <button id="help-mode-toggle" data-help-key="help-mode" title="Help mode — click, then click any control to learn what it does">?</button>
+      <button id="win-min" title="Minimise">—</button>
+      <button class="close" id="win-close" title="Close">✕</button>
+    </div>
+  </div>
+
+  <div class="stage">
+    <!-- Step 0: Welcome -->
+    <section class="step active" data-step="0">
+      <h1>Let's teach Scan Finder a new document</h1>
+      <p class="lead">You'll show Scan Finder one example — say an invoice from a supplier you use often.
+        For each detail you just draw a box around its <b style="color:var(--ok)">value</b> — Scan Finder
+        finds the printed <b style="color:var(--accent)">label</b> beside it for you and shows you what it
+        found. It looks for that label first, then reads the value beside it — so it still finds the value
+        even when the next scan is shifted, scaled or a little crooked.
+        Draw every detail you can find on the page, wherever it is printed — the footer counts. If something genuinely
+        isn't on the page at all, you can type it instead.
+        It takes a few minutes the first time, and you can change anything later.</p>
+      <div class="pill-strip"><b>1</b> Pick the document &nbsp;→&nbsp; <b>2</b> Draw values &amp; labels &nbsp;→&nbsp; <b>3</b> Done</div>
+      <p class="muted">The boxes you draw are the exact ones Settings → Templates shows later.
+        Nothing is saved until the very end — you can go back at any point.</p>
+    </section>
+
+    <!-- Step 1: Choose the scanned document -->
+    <section class="step" data-step="1">
+      <h2>Choose the document to learn from</h2>
+      <p class="lead">Pick one clear, typical scan. The cleaner the example, the better Scan Finder learns.</p>
+      <div style="margin-bottom:12px; display:flex; align-items:center; gap:10px;">
+        <button id="btn-import-teach" style="padding:8px 14px; border:1px solid var(--accent); background:var(--accent-bg); color:var(--accent2); border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;">📄 Import a PDF to teach…</button>
+        <span id="import-teach-status" class="muted" style="font-size:12px;"></span>
+      </div>
+      <!-- Read progress: an indeterminate animated bar (a single doc's OCR has no sub-%). Shown only
+           while the import runs (renderer toggles .active). -->
+      <div id="teach-import-progress" style="height:4px; border-radius:3px; background:var(--surface3); overflow:hidden; margin:-4px 0 12px; display:none;">
+        <div id="teach-import-progress-fill" style="height:100%; width:35%; border-radius:3px; background:var(--accent);"></div>
+      </div>
+      <style>
+        #teach-import-progress.active{display:block}
+        #teach-import-progress.active #teach-import-progress-fill{animation:teach-import-slide 1.1s ease-in-out infinite}
+        @keyframes teach-import-slide{0%{margin-left:-35%}100%{margin-left:100%}}
+      </style>
+      <!-- Filter for big queues (Chris r2 2026-08-11: 161 documents, no search box) -->
+      <input id="doc-picker-search" type="search" placeholder="Filter by file name, sender or type…"
+             style="display:none;width:100%;max-width:420px;margin:0 0 12px;padding:8px 12px;
+                    border:1px solid var(--border2);border-radius:8px;background:var(--surface);
+                    color:var(--text);font-size:13px" autocomplete="off">
+      <div id="doc-picker" class="grid"></div>
+      <p id="doc-picker-empty" class="muted hidden">No documents are waiting to be taught — use
+        “Import a PDF to teach…” above to load one, or scan/import some pages first.</p>
+      <p id="doc-picker-nomatch" class="muted hidden">No documents match the filter.</p>
+    </section>
+
+    <!-- Step 2: Choose / create doc type -->
+    <section class="step" data-step="2">
+      <h2>What kind of document is this?</h2>
+      <p class="lead">This helps Scan Finder file it in the right place.</p>
+      <!-- THE TYPE EDITOR LIVES AT THE TOP (owner, 2026-08-11), same pattern as step 3's
+           manual-entry hatch: it used to mount BELOW the grid, and on lower-res displays the
+           user clicked "It's something new" and never realised anything had appeared — the
+           editor was below the fold. COLLAPSED to one quiet line by default (a second owner
+           screenshot showed the always-open editor burying the existing-type cards); it expands
+           IN PLACE, at the top, on the hatch or the "It's something new" card. "Edit this
+           type…" reuses the same top slot, so a mid-teach edit is equally visible. -->
+      <div id="new-type-panel" class="panel">
+        <button type="button" class="btn link" id="nt-panel-head" style="padding:0; font-size:13px;"
+                title="Create a brand-new document type — or pick one of your existing types below">It&rsquo;s something new? Create a type here…</button>
+        <div id="nt-editor-host" class="hidden"></div>
+      </div>
+      <div id="type-grid" class="grid"></div>
+      <!-- Parity with Settings > Document Types (owner, 2026-08-10): the type EDITOR was
+           already shared, but the catalog was not, so building a type mid-teach meant adding
+           every field by hand at the moment you least want to. -->
+      <div class="type-actions">
+        <button type="button" class="type-action" id="btn-teach-catalog" data-help-key="add-catalog">
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/><path d="M12 11v5M9.5 13.5h5"/></svg></span>
+          <span class="tx">
+            <span class="t">+ Add from catalog…</span>
+            <span class="d">Add a ready-made type — invoice, delivery note, credit note — instead of building one field by field. It is added for all your documents, not just this one.</span>
+          </span>
+        </button>
+        <button type="button" class="type-action" id="btn-teach-edit-type" disabled>
+          <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></span>
+          <span class="tx">
+            <span class="t">Edit this type…</span>
+            <span class="d" id="teach-edit-type-desc">Pick a type above first — then you can change its fields and the printed labels Scan Finder looks for.</span>
+          </span>
+        </button>
+      </div>
+
+    </section>
+
+    <!-- Step 3: Point out the details -->
+    <section class="step" data-step="3">
+      <div class="banner">
+        <!-- "Or type it instead" renders in the question zone below during the DRAW state
+             (2026-08-11, owner + Chris-lens — the corner link was invisible; typing is now an
+             equal input since typed-value locate, so the frame "can't select it?" was false). -->
+        <div class="big" id="rg-prompt">Step 1 — draw a box around the value</div>
+        <div class="sub" id="rg-sub">Drag a rectangle over the value itself. After I read it, you can also mark its label.</div>
+        <!-- The ONE question zone (2026-08-11 flow rework, Chris-lens spec): readouts, buttons
+             and — when a state needs it — THE typing row all render here and only here. The
+             old #rg-readback third panel is gone; its explainer cards became #rg-sub sentences. -->
+        <div class="rg-top" id="rg-confirm-top"></div>
+      </div>
+      <div class="regionwrap">
+        <div>
+          <div class="canvaswrap" title="Right-drag to pan · +/− to zoom">
+            <canvas id="pageCanvas" data-help-key="teach-canvas" draggable="false"></canvas>
+            <div class="zoombar">
+              <button id="tz-out" data-help-key="teach-zoom" title="Zoom out">−</button>
+              <span class="lvl" id="tz-level">100%</span>
+              <button id="tz-in" data-help-key="teach-zoom" title="Zoom in">+</button>
+              <button id="tz-reset" data-help-key="teach-zoom" title="Reset view">⟲</button>
+              <button id="tz-deskew" data-help-key="teach-straighten" title="Straighten the page (on by default — teaching needs a level scan)"><svg class="straighten-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21h18"/><path d="M5 17l9-4"/><path d="M4 11a8 8 0 0 1 15.5-1"/><path d="M19.5 10l.8-4M19.5 10l-3.6-1.6"/></svg>Straighten</button>
+            </div>
+            <div id="rg-loading" class="hidden"><span class="rg-spin"></span><span id="rg-loading-msg">Reading document…</span></div>
+          </div>
+          <!-- Page strip — hidden entirely for a single-page document, so the common case is
+               unchanged. A dot is filled for every page that already carries a taught field. -->
+          <div id="rg-pagenav" class="pagenav hidden" data-help-key="teach-pagenav"></div>
+        </div>
+        <div class="rail">
+          <h3 id="rg-progress">Details</h3>
+          <div id="rg-fieldlist" data-help-key="rg-fieldlist"></div>
+          <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
+            <!-- The rail's duplicate "Redraw" button is GONE (2026-08-11 flow rework): the confirm
+                 states own redraw, and two voices offering it in two places was part of the
+                 bolted-on feel. Clicking a DONE field row re-opens its confirm state instead. -->
+            <!-- DISCOVERABILITY (owner, 2026-08-08, found while teaching): this was a `btn link`
+                 labelled "Skip for now" — the quietest element on the panel, and the label read as
+                 "do it later" rather than "this document doesn't have one". The owner missed it and
+                 was about to point the serials box at a PO number just to advance, which would have
+                 taught a wrong value onto every document of that supplier. A control nobody finds is
+                 a control that doesn't exist, and this one's absence pushes people toward the single
+                 most damaging thing they can do in this wizard. Same weight as a button now, and
+                 labelled for the situation rather than the mechanism. -->
+            <button class="btn ghost" id="rg-skip" data-help-key="rg-skip">This isn't on this document</button>
+          </div>
+          <div class="muted" style="font-size:12px;margin-top:8px;line-height:1.5">
+            Use that rather than pointing at something else — a box round the wrong value teaches
+            the wrong value to every document from this sender.
+          </div>
+          <div class="muted" style="font-size:12px;margin-top:12px;line-height:1.6">
+            <span style="color:#3ecf8e;font-weight:700">▮</span> value (what I read)<br>
+            <span style="color:#4f8ef7;font-weight:700">▮</span> label (what I look for)<br>
+            <span style="color:var(--muted);font-weight:700">●</span> grey dot = saved as typed (no spot on the page)
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Step 4: Review & commit -->
+    <section class="step" data-step="4">
+      <h2>Here's what Scan Finder found</h2>
+      <p class="lead">If anything looks wrong, go back and redraw it.</p>
+      <div class="summary" id="commit-summary"></div>
+      <div id="commit-err" class="err"></div>
+    </section>
+
+    <!-- Step 5: Done + learning -->
+    <section class="step" data-step="5">
+      <h2 style="color:var(--ok)">✓ Done — and Scan Finder just learned something</h2>
+      <p class="lead">Your document is filed, and Scan Finder now knows where to look on this kind of document.</p>
+      <p class="lead">Teaching saved. It works straight away, and it gets more accurate as you
+        confirm a few more of the same kind — the next few may still come through the review queue so you can
+        check them. That's normal, and each one makes it more sure.</p>
+      <p class="lead">If the odd field still slips later, you don't need to teach the whole document again —
+        just use <b>Teach this field</b> (the <b>⊕</b>) in Review and draw a box round its value.</p>
+      <div class="flow3">
+        <div class="b"><div class="t">Now</div><div class="d">I'll guide you</div></div>
+        <div class="arr">→</div>
+        <div class="b"><div class="t">Next few</div><div class="d">quick confirms</div></div>
+        <div class="arr">→</div>
+        <div class="b"><div class="t">Soon</div><div class="d">mostly hands-off</div></div>
+      </div>
+      <div id="done-warn" class="warn"></div>
+      <!-- POST-TEACH FOLLOW-UP CARD (2026-08-21): shows how close this sender is to filing itself and,
+           when confirming a few queued siblings would get it there, a one-click route to Review. Filled
+           by renderTeachFollowup(); empty (hidden) until then. Advisory + navigation only. -->
+      <div id="teach-followup" class="followup-card" style="display:none"></div>
+      <!-- TEACH ANOTHER (owner 2026-08-08). Someone setting up a new supplier set teaches several
+           documents in a row; closing the wizard and reopening it from the menu between each one is
+           pure friction. This RELOADS the window rather than hand-resetting state: every drawn box,
+           page cache, deskew render and per-field result is dropped by construction, so nothing from
+           the finished teach can leak into the next one. -->
+      <div class="again-row">
+        <button class="btn primary" id="btn-teach-another" data-help-key="teach-another">
+          ＋ Teach another document
+        </button>
+        <span class="again-hint">Starts again at the document list. This one is already filed.</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="footer">
+    <button class="btn ghost" id="btn-back" data-help-key="back">← Back</button>
+    <div class="dots" id="dots"></div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <button class="btn link" id="btn-cancel" data-help-key="cancel">Cancel</button>
+      <button class="btn primary" id="btn-next" data-help-key="next">Continue →</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script src="../themeBoot.js"></script>
+<script src="clientTeachTransport.js"></script>
+<script src="clientTeachHost.js"></script>
+<script src="../shared/helpmode.js"></script>
+<script src="../shared/thumbs.js"></script>
+<script src="../shared/dialogFocus.js"></script>
+<script src="../shared/doctype-editor.js"></script>
+<script src="../shared/doctype-catalog.js"></script>
+<script src="../shared/anchorLabel.js"></script>
+<script src="../shared/listCaption.js"></script>
+<script src="../shared/boxSnap.js"></script>
+<script src="../shared/valueLocate.js"></script>
+<script src="../shared/teach-ui/teach.js"></script>
+</body>
+</html>

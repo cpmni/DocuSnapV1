@@ -282,6 +282,14 @@ function createClient(opts = {}) {
   // Correction-only targeting: send a small cropped PNG of a value region, get text back.
   const revOcrRegion = (id, imageBase64) => request('POST', `/v1/documents/${id}/ocr-region`, { withAuth: true, body: { imageBase64 } });
 
+  // ── Teach-over-client S1 (contract 1.7.0): the wizard's OCR/geometry reads + its feature flags ─────
+  // Each posts a client-cropped/rendered PNG; the full-page ones spawn OCR/deskew on the core → longer idle
+  // timeouts. The text read reuses review.ocrRegion (same /v1/documents/:id/ocr-region route).
+  const teachRegionBoxes = (id, imageBase64) => request('POST', `/v1/documents/${id}/ocr-region-boxes`, { withAuth: true, body: { imageBase64 }, timeoutMs: 90000 });
+  const teachPageWords   = (id, imageBase64) => request('POST', `/v1/documents/${id}/ocr-page-words`,   { withAuth: true, body: { imageBase64 }, timeoutMs: 120000 });
+  const teachPageDeskew  = (id, imageBase64, minAngle) => request('POST', `/v1/documents/${id}/page-deskew`, { withAuth: true, body: { imageBase64, minAngle }, timeoutMs: 120000 });
+  const teachConfig      = () => request('GET', '/v1/teach/config', { withAuth: true });
+
   return {
     connect, login, logout, changePassword, entitlement, search, getDocument, getPages, getThumbnail, ping, fetchCa, enroll,
     getPage, getPageCount, find, getSpreadsheet, getOutline, getPageInfo,
@@ -293,6 +301,8 @@ function createClient(opts = {}) {
     review: { queue: revQueue, deferred: revDeferred, counts: revCounts, docTypes,
               confirm: revConfirm, defer: revDefer, undefer: revUndefer, viewing: revViewing, release: revRelease,
               ocrRegion: revOcrRegion },
+    teach: { ocrRegion: revOcrRegion, ocrRegionBoxes: teachRegionBoxes, ocrPageWords: teachPageWords,
+             pageDeskew: teachPageDeskew, config: teachConfig },
     isAuthenticated: () => !!token,
     _setToken: (t) => { token = t; }, // test/diagnostic aid only
   };
