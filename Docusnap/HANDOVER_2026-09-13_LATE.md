@@ -319,6 +319,11 @@ selection never frees the latch; the re-arm is sequential) and the pop-out pin a
 fallback path) + A7 (the race); exact call-count pins (two page-info calls for doc 1: the first paint, one batch; no
 per-page read, no count probe, no outline read); `test_v1_preview_reads` covers the route (sanitised `also`, clamps,
 image filtering, non-PDF without a spawn, 404/401); the Python pin under both interpreters.
-**Installers REBUILT on this commit** — file names at the end of this addendum. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
+**Installers REBUILT on this commit (`6f735bb`, 11:39-11:44) — these SUPERSEDE every earlier pair today:**
+- core **`dist\ScanFinder Setup 2.0.0-r20260914-1039-6f735bb-TEST.exe`** (352.5 MB; packaged `--smoke-boot` identity
+  `{"testBuild":true,"buildRev":"20260914-1039-6f735bb-TEST"}`, `--smoke-windows` 14/14; the packaged `pages.pyc`
+  answers `--page-info` under the vendored Python);
+- client **`client\dist\ScanFinder Search Client Setup 1.0.2-r20260914-1043-6f735bb.exe`** (106.1 MB; contract 1.6.0).
+Install the core first, then the client; nothing is running at wrap. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
 stacking; 403 wording; the S2 reads' 404 flip) · the owner's answer on "content tables" (PDF reader question,
 `pendingfeatures.md`) · everything in the earlier lists.
