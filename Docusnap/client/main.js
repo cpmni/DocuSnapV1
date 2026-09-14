@@ -337,6 +337,22 @@ ipcMain.handle('client-import-profile', async () => {
   } catch (e) { return { ok: false, error: e.message }; }
 });
 
+// Pick a QR image file (the "Connect a client" QR photographed/saved) → return a data-URI the renderer decodes
+// with jsQR (S3). No network; the decoded fingerprint is verified in MAIN via client-connect-verified.
+ipcMain.handle('client-pick-qr-image', async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: 'Choose a photo or image of the connection QR code',
+    properties: ['openFile'],
+    filters: [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp'] }],
+  });
+  if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false };
+  try {
+    const buf = fs.readFileSync(r.filePaths[0]);
+    let ext = path.extname(r.filePaths[0]).slice(1).toLowerCase(); if (ext === 'jpg') ext = 'jpeg';
+    return { ok: true, dataUrl: `data:image/${ext};base64,${buf.toString('base64')}` };
+  } catch (e) { return { ok: false, error: e.message }; }
+});
+
 // One-shot CA bootstrap from the server (TOFU). The renderer confirms the returned
 // fingerprint out-of-band before pinning it.
 ipcMain.handle('client-fetch-ca', async (_e, { host, port, code } = {}) => {

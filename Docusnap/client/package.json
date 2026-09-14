@@ -24,7 +24,12 @@
     },
     "win": {
       "target": [
-        { "target": "nsis", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "assets/icon.ico"
     },
@@ -64,5 +69,8 @@
   "devDependencies": {
     "electron": "44.0.0",
     "electron-builder": "26.15.3"
+  },
+  "dependencies": {
+    "jsqr": "^1.4.0"
   }
 }

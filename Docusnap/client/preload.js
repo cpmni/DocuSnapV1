@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('scanfinder', {
   connectVerified: (opts) => ipcRenderer.invoke('client-connect-verified', opts),   // {host,port,tls,expectedFingerprint?,code?}
   connectAccept:   (opts) => ipcRenderer.invoke('client-connect-accept', opts),     // {host,port} — pins the stashed CA after the user accepts
   onCertAlert:     (cb) => ipcRenderer.on('client-cert-alert', (_e, p) => cb(p)),   // {kind:'changed'|'addr-mismatch', ...} (C3)
+  pickQrImage:     () => ipcRenderer.invoke('client-pick-qr-image'),                // S3: choose a QR image to decode
   connect:         () => ipcRenderer.invoke('client-connect'),
   login:           (username, password, totp) => ipcRenderer.invoke('client-login', { username, password, totp }),
   logout:          () => ipcRenderer.invoke('client-logout'),

@@ -306,6 +306,63 @@ $('import-profile-btn').addEventListener('click', async () => {
 });
 // The old "fetch certificate" button now runs the same verified connect as Connect (fetch + check + pin).
 $('fetch-ca-btn').addEventListener('click', () => $('connect-btn').click());
+// ── S3: scan a QR (the "Connect a client" code from the main PC) → auto-fill + auto-verify against its
+//    fingerprint (the off-network anchor). jsQR decodes the pixels in the renderer; the fingerprint check + pin
+//    happen in MAIN (connectVerified). ──────────────────────────────────────────────────────────────────────
+function decodeQrDataUrl(dataUrl) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+        const cx = c.getContext('2d'); cx.drawImage(img, 0, 0);
+        const d = cx.getImageData(0, 0, c.width, c.height);
+        const r = (typeof window.jsQR === 'function') ? window.jsQR(d.data, c.width, c.height) : null;
+        resolve(r && r.data ? r.data : null);
+      } catch { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+async function useQrPayload(text) {
+  let p; try { p = JSON.parse(text); } catch { p = null; }
+  if (!p || !p.host) { $('connect-err').textContent = 'That QR isn’t a Scan Finder connection code.'; return; }
+  const port = p.port || 8765, tls = p.tls !== false;
+  $('srv-host').value = p.host; $('srv-port').value = port; $('srv-tls').checked = tls; _syncCertRow(); _caPem = null;
+  const r = await api.connectVerified({ host: p.host, port, tls, expectedFingerprint: p.fp || null, code: p.code || undefined });
+  if (r && r.mode === 'confirm') {   // the QR carried no fingerprint → fall back to the manual accept
+    const ok = await certModal({ title: 'Check the server’s certificate',
+      lines: [{ text: 'Confirm this ID matches the one on the main PC.' }, { text: r.fingerprint, mono: true }], acceptLabel: 'It matches — connect' });
+    if (!ok) { $('connect-err').textContent = 'Cancelled — not connected.'; return; }
+    return void _finishConnect(await api.connectAccept({ host: p.host, port }));
+  }
+  await _finishConnect(r);
+}
+$('scan-qr-btn').addEventListener('click', async () => {
+  $('connect-err').textContent = '';
+  const r = await api.pickQrImage();
+  if (!r || !r.ok) { if (r && r.error) $('connect-err').textContent = r.error; return; }
+  const text = await decodeQrDataUrl(r.dataUrl);
+  if (!text) { $('connect-err').textContent = 'Couldn’t read a QR code in that image — try a clearer photo, or type the address.'; return; }
+  await useQrPayload(text);
+});
+// Paste a QR image (Ctrl+V) while on the connect screen.
+document.addEventListener('paste', async (e) => {
+  const cn = $('connect'); if (!cn || cn.classList.contains('hidden')) return;   // only on the connect screen
+  if (!e.clipboardData || !e.clipboardData.items) return;
+  for (const item of e.clipboardData.items) {
+    if (item.type && item.type.indexOf('image/') === 0) {
+      const file = item.getAsFile(); if (!file) continue;
+      const dataUrl = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => res(null); fr.readAsDataURL(file); });
+      if (!dataUrl) return;
+      const text = await decodeQrDataUrl(dataUrl);
+      if (text) { $('connect-err').textContent = ''; await useQrPayload(text); }
+      else $('connect-err').textContent = 'Couldn’t read a QR code in that image.';
+      return;
+    }
+  }
+});
 // The server's certificate CHANGED (Oracle C3) — the refuse-is-default re-accept, or an address-coverage note.
 if (api.onCertAlert) api.onCertAlert(async (p) => {
   if (!p) return;
