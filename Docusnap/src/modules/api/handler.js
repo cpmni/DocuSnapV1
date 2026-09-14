@@ -287,10 +287,24 @@ function createRequestListener(ctx) {
     log,
   });
 
+  // A1 (2026-09-15): force a temp-password change over /v1. DARK — default OFF, so a restricted
+  // session is NEVER refused (byte-identical to the historical behaviour). Flip the setting
+  // `v1_force_password_change` = '1' to enforce (eric/gary recommend defaulting it ON in shipped
+  // builds via a future migration/build-arm). The switch doubles as the kill switch.
+  const v1ForcePasswordChange = () => {
+    try { return learning.getSetting(getDb(), 'v1_force_password_change') === '1'; } catch { return false; }
+  };
   // Resolve + require a session; on failure writes 401 and returns null.
-  const requireSession = (req, res) => {
+  // opts.allowRestricted lets a must-change-password session through (change-password/logout only).
+  const requireSession = (req, res, opts = {}) => {
     const session = sessions.verify(bearerToken(req));
     if (!session) { sendJson(res, 401, { error: 'unauthorized' }); return null; }
+    // A restricted session (signed in with a never-changed temp password) may reach ONLY the
+    // change-password door. Every data route resolves through this helper, so the gate is central.
+    if (session.mustChange && !opts.allowRestricted && v1ForcePasswordChange()) {
+      sendJson(res, 403, { error: 'You must change your temporary password before continuing.', code: 'PASSWORD_CHANGE_REQUIRED' });
+      return null;
+    }
     // Heartbeat the seat lease (last-seen + current IP) on each authenticated request.
     if (session.clientKey && ctx.seatPool) ctx.seatPool.touch(session.clientKey, { ip: clientIp(req) });
     return session;
@@ -399,11 +413,13 @@ function createRequestListener(ctx) {
           return sendJson(res, 409, { error: 'All client seats are in use — an administrator must release one to free a license.',
                   code: 'SEAT_LIMIT', inUse: seat.inUse, cap: seat.cap });
         }
-        const { token, expiresAt } = sessions.issue({ userId: r.user.id, username: r.user.username, role: r.user.role, clientKey: seat ? seat.clientKey : null });
+        const { token, expiresAt } = sessions.issue({ userId: r.user.id, username: r.user.username, role: r.user.role, clientKey: seat ? seat.clientKey : null, mustChange: r.mustChangePassword });
         audit({ user_id: r.user.id, action: 'login_success', action_category: 'auth', outcome: 'success',
                 actor_username: r.user.username, actor_role: r.user.role, metadata: { ip, hostname: host } });
         return sendJson(res, 200, {
           token, expiresAt,
+          // A1: advertise the forced change only when it is actually being enforced (OFF = field absent = byte-identical).
+          ...(r.mustChangePassword && v1ForcePasswordChange() ? { mustChangePassword: true } : {}),
           user: { username: r.user.username, displayName: r.user.displayName, role: r.user.role },
         });
       }
@@ -438,13 +454,14 @@ function createRequestListener(ctx) {
         }
         const prof = buildConnectionProfile(ctx);
         if (!prof.ok) return sendJson(res, 409, { error: 'no managed certificate', code: 'NO_MANAGED_CA' });
-        const { token, expiresAt } = sessions.issue({ userId: r.user.id, username: r.user.username, role: r.user.role, clientKey: seat ? seat.clientKey : null });
+        const { token, expiresAt } = sessions.issue({ userId: r.user.id, username: r.user.username, role: r.user.role, clientKey: seat ? seat.clientKey : null, mustChange: r.mustChangePassword });
         audit({ user_id: r.user.id, action: 'enroll_success', action_category: 'auth', outcome: 'success',
                 actor_username: r.user.username, actor_role: r.user.role, metadata: { ip, hostname: host } });
         return sendJson(res, 200, {
           caPem: prof.profile.caPem, caFingerprintSha256: prof.profile.caFingerprintSha256,
           host: prof.profile.host, port: prof.profile.port,
           token, expiresAt,
+          ...(r.mustChangePassword && v1ForcePasswordChange() ? { mustChangePassword: true } : {}),
           user: { username: r.user.username, displayName: r.user.displayName, role: r.user.role },
         });
       }
@@ -465,7 +482,8 @@ function createRequestListener(ctx) {
       //    in with an admin-issued TEMP password can set their own). Verifies the
       //    current password; same 8–128 policy as the desktop self-service change. ──
       if (req.method === 'POST' && pathname === `${API_PREFIX}/auth/change-password`) {
-        const session = requireSession(req, res); if (!session) return;
+        // allowRestricted: a must-change-password session MUST be able to reach this door to clear the flag.
+        const session = requireSession(req, res, { allowRestricted: true }); if (!session) return;
         let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
         const pwMod = require('../auth/password');
         const user  = dbAuth.getUserById(getDb(), session.userId);

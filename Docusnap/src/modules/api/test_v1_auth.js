@@ -55,6 +55,9 @@ async function freshDb() {
   ins.run(1, 'reader', 'Reader', h, 'readonly');
   ins.run(2, 'boss',   'Boss',   h, 'admin');
   ins.run(3, 'mfauser','MfaUser',h, 'edit');
+  // A1 (2026-09-15): an admin-provisioned account whose temp password was never changed.
+  db.prepare(`INSERT INTO users (id,username,display_name,password_hash,role,is_active,must_change_password)
+              VALUES (4,'tempuser','TempUser',?, 'edit',1,1)`).run(h);
   return db;
 }
 
@@ -77,7 +80,10 @@ function httpReq(port, method, urlPath, body, token) {
 async function main() {
   let fail = 0;
   const db = await freshDb();
-  const server = api.createServer({ getDb: () => db, learning: { getDigitsOnlyFields: () => [] }, checkEntitlement: () => ({ entitled: true, feature: 'detached_client' }) });
+  // A1: a settings-backed learning stub so the test can toggle the v1_force_password_change gate.
+  const settings = {};
+  const learningStub = { getDigitsOnlyFields: () => [], getSetting: (_db, k) => settings[k] };
+  const server = api.createServer({ getDb: () => db, learning: learningStub, checkEntitlement: () => ({ entitled: true, feature: 'detached_client' }) });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
   const login = (username, password, totpCode) =>
@@ -129,6 +135,48 @@ async function main() {
   // login with a valid code succeeds
   r = await login('mfauser', PWD, totp.generate(secret));
   fail += !check('enrolled user: login with valid code -> 200', r.status === 200 && !!r.json.token);
+
+  // ── A1: forced temp-password change over /v1 (DARK, gated by v1_force_password_change) ──
+  // Switch OFF (default) = byte-identical hole: a never-changed temp password yields a full session.
+  delete settings.v1_force_password_change;
+  r = await login('tempuser', PWD);
+  const tempTokenOff = r.json && r.json.token;
+  fail += !check('A1 OFF: temp-password login -> 200 (byte-identical; gate off)', r.status === 200 && !!tempTokenOff);
+  fail += !check('A1 OFF: no mustChangePassword field advertised', !(r.json && r.json.mustChangePassword));
+  r = await httpReq(port, 'POST', '/v1/search', {}, tempTokenOff);
+  fail += !check('A1 OFF: temp token reaches a data route (hole still open until flipped)', r.status === 200);
+
+  // Switch ON = the hole is closed: restricted session, refused on every route but change-password.
+  settings.v1_force_password_change = '1';
+  r = await login('tempuser', PWD);
+  const tempTokenOn = r.json && r.json.token;
+  fail += !check('A1 ON: temp-password login -> 200 with mustChangePassword:true',
+    r.status === 200 && !!tempTokenOn && r.json.mustChangePassword === true);
+  r = await httpReq(port, 'POST', '/v1/search', {}, tempTokenOn);
+  fail += !check('A1 ON: temp token REFUSED on a data route -> 403 PASSWORD_CHANGE_REQUIRED',
+    r.status === 403 && r.json && r.json.code === 'PASSWORD_CHANGE_REQUIRED');
+  // logout must stay reachable while restricted (else a temp user is bricked).
+  r = await httpReq(port, 'POST', '/v1/auth/logout', {}, tempTokenOn);
+  fail += !check('A1 ON: logout reachable while restricted -> 200', r.status === 200);
+  // the change-password door must be reachable while restricted, and clears the flag.
+  r = await login('tempuser', PWD);
+  const tempToken2 = r.json.token;
+  r = await httpReq(port, 'POST', '/v1/auth/change-password', { currentPassword: PWD, newPassword: 'Brand-New-Pass-1' }, tempToken2);
+  const freshToken = r.json && r.json.token;
+  fail += !check('A1 ON: change-password reachable while restricted -> 200 + fresh token',
+    r.status === 200 && !!freshToken);
+  r = await httpReq(port, 'POST', '/v1/search', {}, freshToken);
+  fail += !check('A1 ON: fresh token (flag cleared) reaches the data route -> 200', r.status === 200);
+  // no regression: a normal account is unaffected while the gate is ON.
+  r = await login('boss', PWD);
+  r = await httpReq(port, 'POST', '/v1/search', {}, r.json.token);
+  fail += !check('A1 ON: a normal account is unaffected (data route -> 200)', r.status === 200);
+
+  // enroll parity — source-contract pin (enroll uses the same authenticator + issue path; a live
+  // enroll test would need pairing + a managed CA). Assert BOTH login and enroll issue with mustChange.
+  const handlerSrc = require('fs').readFileSync(require('path').join(__dirname, 'handler.js'), 'utf8');
+  const issueMustChange = (handlerSrc.match(/sessions\.issue\(\{[^}]*mustChange:\s*r\.mustChangePassword/g) || []).length;
+  fail += !check('A1: both /v1/login and /v1/enroll issue sessions with mustChange (>=2 sites)', issueMustChange >= 2);
 
   await new Promise(r2 => server.close(r2));
   db.close();

@@ -40,11 +40,15 @@ function createSessionStore(opts = {}) {
 
   /** Issue a new session for an authenticated user. Returns { token, expiresAt }.
    *  `clientKey` (optional) ties the session to its seat-pool lease for heartbeats. */
-  function issue({ userId, username, role, clientKey = null }) {
+  function issue({ userId, username, role, clientKey = null, mustChange = false }) {
     const t = now();
     const token = genToken();
     const rec = {
       token, userId, username, role, clientKey,
+      // A1 (2026-09-15): a session minted for a never-changed temp password is RESTRICTED —
+      // requireSession refuses every route except change-password/logout (when the
+      // v1_force_password_change gate is on). Default false → unrestricted (byte-identical).
+      mustChange: !!mustChange,
       issuedAt: t, lastSeen: t,
       absoluteExpiry: t + absoluteMs,
     };
@@ -64,7 +68,7 @@ function createSessionStore(opts = {}) {
     const t = now();
     if (_expired(rec, t)) { sessions.delete(token); return null; }
     rec.lastSeen = t;
-    return { userId: rec.userId, username: rec.username, role: rec.role, clientKey: rec.clientKey };
+    return { userId: rec.userId, username: rec.username, role: rec.role, clientKey: rec.clientKey, mustChange: !!rec.mustChange };
   }
 
   /** Revoke a single token (logout). */

@@ -92,6 +92,11 @@ function createAuthenticator(deps = {}) {
     clearRate(username);
     return {
       ok: true,
+      // SECURITY (A1, 2026-09-15): carry the forced-change flag through so the /v1 login/enroll
+      // paths can enforce it (the desktop path already does via auth-login → mustChangePassword).
+      // Previously this projection DROPPED must_change_password, so a /v1 login with a never-changed
+      // temp password yielded a full-privilege session.
+      mustChangePassword: !!user.must_change_password,
       user: { id: user.id, username: user.username, displayName: user.display_name, role: user.role },
     };
   }
