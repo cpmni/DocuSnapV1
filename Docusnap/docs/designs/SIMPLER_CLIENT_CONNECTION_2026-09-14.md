@@ -104,6 +104,45 @@ security against the first-hello MITM and would give false confidence.
 7. **Loopback/same-machine** stays plain HTTP, no cert, no discovery — confirm the new UX doesn't force a cert
    path on the local case.
 
+## eric's vet (2026-09-14) — networking/Electron/UX pass, applied
+Verdict: **sound + correctly scoped as a UX layer.** Corrections + decisions:
+- **NOT "reuse" — two small NEW builds:** (a) the **pairing-code WRITER does not exist** (`pairingOk` only READS
+  `client_api_pairing_code`/`_expires`; no admin IPC/UI sets one) → S1 adds `client-api-pairing-generate`/`-clear`
+  + countdown; (b) **a changed cert isn't detected as such today** (`reuseCa:true` keeps the pin valid across
+  ordinary re-issues; a real CA change surfaces as a generic block, and `isNetworkError` doesn't match TLS-verify
+  codes) → S2 adds `isCertError()` + a distinct `client-cert-changed` state + re-accept modal.
+- **mDNS (S4): DEFER (recommend drop).** `bonjour-service` (MIT) is the lib IF ever built, but on Win11 it means a
+  Defender **firewall prompt on BOTH PCs** (unsigned installer → scary/blockable), 5353 conflicts with Bonjour/
+  iTunes/printer responders, a presence leak, and an **invisible fail-closed** ("found nothing") — to save typing
+  one IP that import-profile/QR already eliminate. Disproportionate; import-profile is the one-click verified path.
+- **QR: generate in MAIN** with `qrcode` (MIT) → `toDataURL` → `<img>` in the renderer (Settings CSP `img-src 'self'
+  data:` allows it; keeps the lib out of the locked-down renderer). Payload = `{host,port,fingerprint,code}` ONLY,
+  **never the CA PEM** (PEM → dense QR that photographs badly; the profile FILE carries the PEM). Client READS a QR
+  with `jsQR` (Apache-2.0) via paste-image → `<canvas>` → `getImageData`. **Webcam NOT worth it** (client CSP has no
+  `media-src`; Electron camera-permission + Windows consent = high lift, low value). Pragmatic set: **paste-QR-image
+  + import-profile-file + type-short-code.**
+- **Move the auto-verify COMPARE into MAIN (mis-layer fix):** a new `client-connect-verified({host,port,
+  expectedFingerprint,code})` — main `fetchCa` → compute fingerprint in MAIN → compare to `expectedFingerprint` in
+  MAIN → pin the caPem MAIN fetched (never one handed up from the renderer) → `connect()`. Removes the renderer's
+  ability to supply BOTH cert and "expected" fingerprint on the verified path. Keep the explicit "Choose .crt…"
+  path renderer-fed (a deliberate operator choice). **Replace `window.confirm` with a styled modal** (first-accept
+  AND cert-change — `confirm()` can't show an old-vs-new diff). Keep `fetchCa`/`enroll` in main.
+- **Cert-change re-accept lives in MAIN**, refuse-is-the-default button; **seam:** its meaning RELIES on the CA
+  staying stable across ordinary re-issues (`reuseCa:true`) — keep CA regeneration rare/deliberate or the alarm
+  becomes fatigue. On a cert error against a saved server, main re-`fetchCa`s the NEW fingerprint, shows old-vs-new,
+  re-pins ONLY on explicit confirm.
+- **Loopback confirmed cert-free** ("Use HTTPS" defaults off; `ensureManagedCert` no-ops for 127.0.0.1; env path
+  bypasses the UI). Watch: the enable gate must treat `127.0.0.1` as a valid cert-free host (today an empty host
+  silently defaults to loopback); never make QR/discovery/pairing a PREREQUISITE for connect (would break the env
+  path + the sandbox + the same-machine add-on).
+- **Effort:** S1 ~1 day · S2 ~1–1.5 days · S3 ~0.5–1 day · S4 ~1–2 days (disproportionate). Valuable core = S1–S3
+  (~2.5–3.5 days). Licences to re-check via `scripts/check-licenses.js` when added: `qrcode`/`bonjour-service`/
+  `multicast-dns`/`dns-packet` MIT, `jsQR` Apache-2.0. `qrcode` = core dep, `jsQR` = client dep.
+- **Deferred to the Oracle (security seam):** `pairingOk` **defaults OPEN when no code is set** (`handler.js:1684`)
+  — so today, with no code configured, `/v1/ca` + `/v1/enroll` are ungated (login creds still required) — is
+  "pairing available but not mandatory" acceptable, or must a first-ever enrol require the code once? Plus the
+  auto-verify "no bad cert pinned before the compare" guarantee (Q4) and the discovery presence-leak (Q6).
+
 ## Slices (once vetted)
 - S1 — server: gate the enable switch on host/port; the unified "Connect a client" card (address + fingerprint +
   short code + QR + export profile).
