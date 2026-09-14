@@ -89,6 +89,7 @@ function _syncPageNav() {
     document.getElementById('btn-page-prev').disabled = s.currentPage === 0;
     document.getElementById('btn-page-next').disabled = s.currentPage === s.currentPages.length - 1;
   }
+  _syncOutlineState();   // the Contents entries: availability vs the pages known so far + the shown page highlighted
 }
 
 // LAZY per-page render: currentPages is a SPARSE array of length = page count; a hole is rendered on
@@ -102,7 +103,7 @@ async function _showPage(idx) {
   if (!s.currentPages[idx]) {
     const mine = s.selectedDoc;
     let uri = null;
-    try { uri = await window.SearchTransport.getDocumentPage(mine.id, idx, SEARCH_RENDER_SCALE); } catch { /* leave the hole */ }
+    try { uri = await window.SearchTransport.getDocumentPage(mine.id, idx, SEARCH_RENDER_SCALE, SEARCH_RENDER_FORMAT); } catch { /* leave the hole */ }
     if (s.selectedDoc !== mine || s.currentPage !== idx) return;   // a newer selection / page won meanwhile
     if (uri) s.currentPages[idx] = uri;
   }
@@ -129,6 +130,86 @@ const ZOOM_MIN = 1, ZOOM_MAX = 4, ZOOM_STEP = 0.25;
 // acceptable trade for a ~4x faster open (fine detail is a click away via "open externally"). If deep-zoom
 // sharpness is needed later, re-render the CURRENT page on zoom-in rather than raising this for all pages.
 const SEARCH_RENDER_SCALE = 3;
+// Image format for the viewer's page renders (2026-09-14, viewer speed): 'auto' = the core answers a scan page as
+// JPEG (measured: 0.03 s to encode + 0.8 MB, against 0.84 s + 5 MB as PNG at this scale) and a vector/text page
+// as lossless PNG. A transport/core that ignores it simply keeps sending PNG.
+const SEARCH_RENDER_FORMAT = 'auto';
+
+// ── Contents (the PDF's bookmarks / outline) ──────────────────────────────────
+// Fetched once per document per window session (a spawn on the core), AFTER page 1 is painted so it never
+// delays the first paint; rendered as an indented list in the sidebar; click = jump to that page. A document
+// without bookmarks (most scans and invoices) shows no panel at all. A transport without the read
+// (caps.outline false — an older core) never asks.
+const _outlineCache = new Map();   // docId -> Promise<entries>
+let _outlineNoteTimer = null;
+function _clearOutline() {
+  const p = document.getElementById('preview-outline'); if (p) p.style.display = 'none';
+  const l = document.getElementById('preview-outline-list'); if (l) l.innerHTML = '';
+  const n = document.getElementById('preview-outline-note'); if (n) { n.hidden = true; n.textContent = ''; }
+  clearTimeout(_outlineNoteTimer);
+}
+async function _loadOutline(doc) {
+  _clearOutline();
+  const T = window.SearchTransport;
+  if (!_cap('outline') || !T || typeof T.getDocumentOutline !== 'function') return;
+  if (!/\.pdf$/i.test(doc.original_filename || doc.stored_filename || '')) return;
+  let p = _outlineCache.get(doc.id);
+  if (!p) { p = Promise.resolve().then(() => T.getDocumentOutline(doc.id)).catch(() => []); _outlineCache.set(doc.id, p); }
+  const entries = await p;
+  if (window.SearchState.selectedDoc !== doc) return;   // a newer selection owns the sidebar
+  _renderOutline(Array.isArray(entries) ? entries : []);
+}
+function _renderOutline(entries) {
+  const panel = document.getElementById('preview-outline'), list = document.getElementById('preview-outline-list');
+  if (!panel || !list) return;
+  list.innerHTML = '';
+  const rows = entries.filter(e => e && typeof e.title === 'string' && e.title);
+  if (!rows.length) { panel.style.display = 'none'; return; }
+  for (const e of rows) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'pv-outline-item';
+    const level = Math.min(6, Math.max(0, Number(e.level) || 0));
+    b.style.paddingLeft = `${8 + level * 12}px`;
+    b.textContent = e.title;
+    const page = Number.isInteger(e.page) && e.page >= 0 ? e.page : null;
+    b.dataset.page = page == null ? '' : String(page);
+    if (page == null) { b.disabled = true; b.title = 'This entry has no page'; }
+    else b.addEventListener('click', () => { _outlineGo(page); });
+    list.appendChild(b);
+  }
+  panel.style.display = '';
+  _syncOutlineState();
+}
+// The page count can still be UNKNOWN when the outline lands (the count probe runs in parallel for a doc whose
+// page_count was never recorded — Quick File, pre-mig-37, a separated original): an entry beyond the pages known
+// so far is marked UNAVAILABLE (greyed + a tooltip that says so), re-checked whenever the page set changes
+// (_syncPageNav runs after the probe and after every page show), and a click on it explains itself inline —
+// never a dead, silent button (Oracle 2026-09-14 condition 1). The shown page's entry is highlighted.
+function _syncOutlineState() {
+  const n = window.SearchState.currentPages.length, cur = String(window.SearchState.currentPage);
+  document.querySelectorAll('#preview-outline-list .pv-outline-item').forEach(b => {
+    const page = b.dataset.page === '' ? null : Number(b.dataset.page);
+    const unavail = page != null && page >= n;
+    b.classList.toggle('unavail', unavail);
+    b.setAttribute('aria-disabled', unavail ? 'true' : 'false');
+    if (page != null) b.title = unavail ? `Page ${page + 1} isn't available — this document shows ${n} page${n === 1 ? '' : 's'}` : `Go to page ${page + 1}`;
+    b.classList.toggle('active', b.dataset.page === cur);
+  });
+}
+function _outlineGo(page) {
+  const n = window.SearchState.currentPages.length;
+  if (page >= n) {
+    const note = document.getElementById('preview-outline-note');
+    if (note) {
+      note.textContent = `Page ${page + 1} isn't available — this document shows ${n} page${n === 1 ? '' : 's'}.`;
+      note.hidden = false;
+      clearTimeout(_outlineNoteTimer);
+      _outlineNoteTimer = setTimeout(() => { note.hidden = true; }, 3500);
+    }
+    return;
+  }
+  _showPage(page);
+}
 
 // Size the page image to (fit-width × zoom). At zoom 1 this equals the old max-width:100% fit; above 1 the
 // image exceeds the pane so the pane scrolls. Called on every image load and on each zoom change.
@@ -350,6 +431,7 @@ async function selectDoc(doc) {
   ph.classList.remove('xlsx-ph');            // drop any prior spreadsheet-grid layout override
   resetPreviewView();                        // each new document opens at 100%, un-panned
   _clearMatches();                           // drop the previous doc's search highlights
+  _clearOutline();                           // and its Contents panel
 
   // The fetch sequence is wrapped so ANY failure (a missing IPC handler after a stale-main
   // update, a DB hiccup, the doc deleted mid-click, an IPC error) shows an honest state
@@ -378,7 +460,7 @@ async function selectDoc(doc) {
     const _pageCount = Number(merged.page_count) || 0;
     const _isPdf = /\.pdf$/i.test(merged.original_filename || merged.stored_filename || '');
     if (_isPdf && _cap('singlePage')) {
-      const first = await window.SearchTransport.getDocumentPage(doc.id, 0, SEARCH_RENDER_SCALE);
+      const first = await window.SearchTransport.getDocumentPage(doc.id, 0, SEARCH_RENDER_SCALE, SEARCH_RENDER_FORMAT);
       if (s.selectedDoc !== mine) return;
       if (first) {
         s.currentPages = _pageCount > 1 ? new Array(_pageCount) : [first];   // sparse when count known
@@ -414,6 +496,7 @@ async function selectDoc(doc) {
 
     if (s.currentPages.length > 0) {
       await _showPage(0);
+      _loadOutline(mine);   // the Contents panel, after the first paint (never before it); staleness-guarded inside
       // Seed the Find-in-document box with the active list term, so what's highlighted matches the box
       // (and the operator can edit it to search within this doc). Empty when opened without a search.
       const q = s.query || '';

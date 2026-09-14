@@ -27,7 +27,7 @@ console.log('1. source shape — every method is `(...a) => d.<same name>(...a)`
   // The full set the shared UI relies on — named, so a dropped one is reported by name (a bare count
   // would let a removal hide behind an addition).
   const REQUIRED = ['searchDocuments', 'getDeletedQueue', 'restoreAllDeleted', 'purgeAllDeleted', 'deleteDocument', 'restoreDocument',
-    'purgeDocument', 'repairDeconfirm', 'getDocumentDetail', 'getDocumentPages', 'getDocumentPage', 'getDocumentPageCount',
+    'purgeDocument', 'repairDeconfirm', 'getDocumentDetail', 'getDocumentPages', 'getDocumentPage', 'getDocumentPageCount', 'getDocumentOutline',
     'findInDocument', 'getSpreadsheetGrid', 'getDocumentThumbnail', 'showDocumentInExplorer', 'openDocumentFile',
     'openReviewWindowAt', 'printDocument', 'printAvailable', 'getAllDocTypes', 'getEntitlement', 'authGetCurrentUser', 'getSetting'];
   const found = new Set(methods.map(m => m[1]));

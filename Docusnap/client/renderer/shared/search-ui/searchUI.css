@@ -200,6 +200,18 @@ body.mailbox-mode #search-bar > span { display: none !important; }
 /* Sidebar */
 #preview-sidebar { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); overflow: hidden; }
 #preview-fields-scroll { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+/* Contents panel (2026-09-14) — the PDF's own bookmarks / outline; click = jump to that page. Hidden when a
+   document has none; capped height so a long outline never buries the fields; nesting = indent. */
+#preview-outline { flex-shrink: 0; max-height: 34%; display: flex; flex-direction: column; border-bottom: 1px solid var(--border); background: var(--surface); }
+.pv-outline-head { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 10px 14px 4px; flex-shrink: 0; }
+#preview-outline-list { overflow-y: auto; padding: 0 6px 8px; display: flex; flex-direction: column; gap: 1px; }
+.pv-outline-item { text-align: left; background: none; border: 0; border-radius: var(--r-sm, 9px); color: var(--text); font: inherit; font-size: 12px; line-height: 1.3;
+  padding: 4px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+.pv-outline-item:hover { background: var(--surface2); }
+.pv-outline-item.active { background: var(--accent-bg); color: var(--accent); }
+.pv-outline-item:disabled { color: var(--muted); cursor: default; }
+.pv-outline-item.unavail { color: var(--muted); opacity: .7; }          /* beyond the pages known so far — a click explains itself */
+.pv-outline-note { font-size: 11px; color: var(--warn); padding: 2px 14px 8px; flex-shrink: 0; }
 
 .pf-row { display: flex; flex-direction: column; gap: 3px; }
 .pf-label { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }

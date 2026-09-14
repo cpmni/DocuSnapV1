@@ -91,6 +91,18 @@ the add-on off. (Design history: `memory/scanfinder-*` + the plan in `.claude/pl
   Pins: `src/modules/api/test_v1_workflow.js` (end-to-end over the real client transport), `scripts/
   test_client_search_popout.js` (+ an A4 run against a 1.3.0 core: the 1.4.0 channels are never called),
   `src/windows/search/test_search_window_functional.js`.
+- **CONTENTS PANEL + viewer speed (contract 1.4.0 → 1.5.0 MINOR, 2026-09-14)**: `GET …/documents/{id}/outline` →
+  `{outline: [{title, page, level}]}` — the PDF's own bookmarks (render/pages.py `--outline` via pypdfium2
+  `get_toc()`; page 0-based, level 0 = top; `[]` for a non-PDF / no bookmarks; re-validated server-side: title ≤ 200,
+  page int ≥ 0 or null, level 0..8, ≤ 500 entries); same gates as `/page` (requireSession → access gate → server-side
+  resolution → path-free DTO). The page read takes an optional `fmt=auto|jpeg` (anything else = PNG, unchanged):
+  `auto` answers a SCAN page (an image object covering ≥ 50% of the page) as JPEG q90 and a vector page as
+  lossless PNG — measured on the dev box: a scan page at the Search scale went from 1.3 s / 5.6 MB (PNG) to
+  0.48 s / 1.2 MB. Client caps (`clientTransport.js refreshCaps`): `outline` needs both sides ≥ 1.5.0 (any role;
+  a `docRead` — a 404 is a hidden doc, the cap is kept); the shared viewer asks for `fmt=auto` and an older core
+  simply keeps sending PNG. Pins: `src/modules/api/test_v1_preview_reads.js`, `python_backend/tests/
+  test_pages_outline_format.py` (run under BOTH `py -3.12` and `vendor\python\python.exe`), the pop-out + core
+  functional pins (the Contents click renders the target page; hidden vs an older core).
 - **SEARCH POP-OUT (client search parity S1, 2026-09-13)**: the client's search is the SHARED search screen
   (`client/renderer/shared/` = generated copies of `src/windows/shared/{search-ui,theme.css,fonts,patterns}`,
   `scripts/sync-client-search.js`, pin `test_client_search_sync.js`) in its own window

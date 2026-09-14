@@ -81,6 +81,7 @@
   const T = {
     caps: {
       singlePage: false, pageCount: false, find: false, spreadsheet: false,   // S2 (version-gated below)
+      outline: false,                                                        // 1.5.0 Contents panel (version-gated below)
       bin: true, restoreAll: false, sendBack: false,
       localFile: false, review: false, print: false,
       stamps: true,                                                           // S4: the /v1 stamp routes
@@ -108,8 +109,10 @@
     getDocumentThumbnail: async (id) => unwrap(await api.getThumbnail(id), (j) => j.thumbnail || null),
     // The S2 reads (contract 1.3.0): cap-gated — an older core (404) flips the cap off and the shared UI hides
     // the control; the shapes unwrap to exactly what the core bridge hands the shared UI.
-    getDocumentPage:      capGated('singlePage', null, (id, index, scale) => api.getPage(id, index, scale), (j) => j.page || null),
+    getDocumentPage:      capGated('singlePage', null, (id, index, scale, fmt) => api.getPage(id, index, scale, fmt), (j) => j.page || null),
     getDocumentPageCount: capGated('pageCount', null, (id) => api.getPageCount(id), (j) => (Number.isFinite(j.count) && j.count > 0 ? j.count : null)),
+    // 1.5.0: the PDF's bookmarks for the Contents panel — a per-document read (404 = hidden doc → [], cap kept).
+    getDocumentOutline:   docRead('outline', [], (id) => api.getOutline(id), (j) => (Array.isArray(j.outline) ? j.outline : [])),
     // find: a status-0 envelope is the client's OWN timeout/error (never a lost connection) → the shared UI's
     // "took too long" state; a real non-200 rejects like the core bridge (→ _clearMatches, as today).
     findInDocument:       async (id, q) => {
@@ -187,7 +190,10 @@
     const on14 = clientHas14 && serverHas14, writer = role === 'admin' || role === 'edit', admin = role === 'admin';
     T.caps.docRoutes = on14 && writer; T.caps.workflowHistory = on14 && writer;
     T.caps.adminCancel = on14 && admin; T.caps.stampCreate = on14 && admin;
-    const serverBehind = (clientHasS2 && !serverHasS2) || (clientHas14 && !serverHas14);
+    // 1.5.0: the Contents panel (the PDF's bookmarks) — any role may read it.
+    const serverHas15 = atLeast(sv, '1.5.0'), clientHas15 = atLeast(cc, '1.5.0');
+    T.caps.outline = serverHas15 && clientHas15;
+    const serverBehind = (clientHasS2 && !serverHasS2) || (clientHas14 && !serverHas14) || (clientHas15 && !serverHas15);
     T.capabilityInfo = { serverVersion: sv || null, clientContract: cc || null, serverBehind, ready: true };
     return T.capabilityInfo;
   };

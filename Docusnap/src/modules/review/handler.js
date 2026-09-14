@@ -1077,7 +1077,7 @@ function register(ctx) {
   // ── Single page render (fast-first-page for big PDFs) ───────────────────────
   // Renders ONE page so a large multi-page PDF shows page 1 immediately; the renderer then
   // background-loads the rest via get-document-pages. Same server-side path resolution.
-  ipcMain.handle('get-document-page', async (_e, docId, index, scale) => {
+  ipcMain.handle('get-document-page', async (_e, docId, index, scale, format) => {
     const sess = requireLogin();
     const db = getDb();
     _assertDocAccess(db, sess, docId);
@@ -1090,7 +1090,9 @@ function register(ctx) {
       if (pick) { rFolder = path.dirname(pick); rFile = path.basename(pick); }
     }
     if (!rFolder || !rFile) return null;
-    return previewService.getDocumentPage(db, { docId, folderPath: rFolder, filename: rFile, index, scale }, {
+    // format: 'auto' (JPEG for a scan page, PNG for a vector page) | 'jpeg' | anything else = PNG (unchanged).
+    const fmt = (format === 'auto' || format === 'jpeg') ? format : undefined;
+    return previewService.getDocumentPage(db, { docId, folderPath: rFolder, filename: rFile, index, scale, format: fmt }, {
       fs, path, spawn, pythonExe, pythonArgs,
       renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
     });
@@ -1112,6 +1114,27 @@ function register(ctx) {
     }
     if (!rFolder || !rFile) return null;
     return previewService.getDocumentPageCount(db, { docId, folderPath: rFolder, filename: rFile }, {
+      fs, path, spawn, pythonExe, pythonArgs,
+      renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
+    });
+  });
+
+  // ── The PDF's OUTLINE (bookmarks / table of contents) for the Search viewer's Contents panel ──
+  //    [{title, page, level}], page = 0-based; [] when none. Same server-side resolution; no render.
+  ipcMain.handle('get-document-outline', async (_e, docId) => {
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    let rFolder = null, rFile = null;
+    if (row) {
+      const pick = row.working_path || row.stored_path
+        || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null);
+      if (pick) { rFolder = path.dirname(pick); rFile = path.basename(pick); }
+    }
+    if (!rFolder || !rFile) return [];
+    return previewService.getDocumentOutline(db, { docId, folderPath: rFolder, filename: rFile }, {
       fs, path, spawn, pythonExe, pythonArgs,
       renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
     });

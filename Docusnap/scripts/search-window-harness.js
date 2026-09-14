@@ -86,6 +86,14 @@ const HISTORY = { 1: [
 const OPEN_ROUTES = { 2: [{ id: 13, to_username: 'boss', from_username: 'harness', action_required: 'approve', state: 'pending', created_at: '2026-09-12 09:00:00', version: 1 }] };
 const cancelRoute = (id) => { for (const k of Object.keys(OPEN_ROUTES)) { const i = OPEN_ROUTES[k].findIndex(r => r.id === Number(id)); if (i >= 0) { const [r] = OPEN_ROUTES[k].splice(i, 1); return { ...r, state: 'recalled', version: r.version + 1 }; } } return null; };
 const OLD14 = !atLeast(SERVER_CONTRACT, '1.4.0');   // client mode: a core without the 1.4.0 routes answers 404
+const OLD15 = !atLeast(SERVER_CONTRACT, '1.5.0');   // … and without the 1.5.0 outline read
+// Contents panel (1.5.0): doc 1 (3 pages) carries bookmarks — two top-level, one nested, one without a page.
+// Doc 3 has NO recorded page_count (the probe says 2) and a bookmark pointing beyond it → the entry must read as
+// UNAVAILABLE (never a dead button) and a click must explain itself (Oracle 2026-09-14 condition 1).
+const OUTLINE = {
+  1: [{ title: 'Cover', page: 0, level: 0 }, { title: 'Details', page: 1, level: 0 }, { title: 'Terms', page: 2, level: 1 }, { title: 'Unlinked', page: null, level: 0 }],
+  3: [{ title: 'Front', page: 0, level: 0 }, { title: 'Back', page: 1, level: 0 }, { title: 'Missing', page: 5, level: 0 }],
+};
 const ENT = { entitled: true, workflow: { entitled: WF } };
 const detailOf = (id) => { const r = byId(id); return r ? { ...r, extractions: [{ field_key: 'total_amount', display_value: '£120.00', confidence: 95, validation_note: null }] } : null; };
 const pagesOf = (id) => { const r = byId(id); if (!r || !/\.pdf$/i.test(r.original_filename)) return []; return new Array(Number(id) === 3 ? 2 : (r.page_count || 1)).fill(PNG); };
@@ -121,6 +129,7 @@ if (CLIENT) {
   stub('client-page-count', (id) => (LITE ? notFound : ok({ count: Number(id) === 3 ? 2 : ((byId(id) && byId(id).page_count) || null) })));
   stub('client-find', (id, q) => (LITE ? notFound : ok({ kind: 'pdf', pages: 3, matches: String(q).toLowerCase() === 'inv' ? [{ page: 0, x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.12 }] : [] })));
   stub('client-spreadsheet', (id) => (LITE ? notFound : ok({ grid: Number(id) === 2 ? { sheets: [{ name: 'Sheet1', rows: [['Item', 'Qty'], ['Bolt', '12']] }], truncated: false } : null })));
+  stub('client-outline', (id) => (OLD15 ? notFound : ok({ outline: OUTLINE[Number(id)] || [] })));   // 1.5.0 Contents panel
   // Contract 1.4.0 (per-doc routes / history, admin cancel, new stamp type; the stamped-copy pages are older).
   // Doc 3 answers 404 on BOTH per-doc reads = "hidden from you" (the core's accessService hides existence): the cap
   // must survive it (Oracle 2026-09-14 condition 2) — doc 2's banner is read AFTER doc 3 in the drive.
@@ -147,6 +156,7 @@ stub('restore-all-deleted', () => ({ restored: 0 }));
 stub('get-document-detail', (id) => { const r = byId(id); return r ? { ...r, extractions: [{ field_key: 'total_amount', display_value: '£120.00', confidence: 95, validation_note: null }] } : null; });
 stub('get-document-page', (id, idx, scale) => { const r = byId(id); return (r && /\.pdf$/i.test(r.original_filename)) ? PNG : null; });
 stub('get-document-page-count', (id) => (Number(id) === 3 ? 2 : (byId(id) && byId(id).page_count) || null));
+stub('get-document-outline', (id) => OUTLINE[Number(id)] || []);
 stub('get-document-pages', (id) => { const r = byId(id); return (r && /\.pdf$/i.test(r.original_filename)) ? [PNG] : []; });
 stub('find-in-document', (id, q) => ({ kind: 'text', pages: 3, matches: String(q).toLowerCase() === 'inv' ? [{ page: 0, x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.12 }] : [] }));
 stub('get-spreadsheet-grid', (id) => (Number(id) === 2 ? { sheets: [{ name: 'Sheet1', rows: [['Item', 'Qty'], ['Bolt', '12']] }], truncated: false } : null));
@@ -191,6 +201,7 @@ const DRIVE = `(async () => {
   // WF14 = the contract-1.4.0 workflow bits are BACKED here (the core always; the client only against a ≥ 1.4.0 core).
   const WF14 = WF && ${!CLIENT || !OLD14};
   const ROLE = '${ROLE}'; const ADMIN = ROLE === 'admin';
+  const CONTENTS = ${!CLIENT || !OLD15};   // the 1.5.0 Contents panel is backed (core always; client vs a ≥ 1.5.0 core)
   // OLDER = this client knows more than the stubbed core (any remediable drift → the "newer core needed" hint).
   const OLDER = ${CLIENT && !atLeast(SERVER_CONTRACT, CLIENT_CONTRACT || '0.0.0')};
   const checks = [];
@@ -237,6 +248,18 @@ const DRIVE = `(async () => {
   // 3 — page nav: next page (a hole rendered on demand; lite client: the pre-rendered page)
   click($('#btn-page-next'));
   ok('page nav: next → 2 / 3', await until(() => $('#page-label').textContent.trim() === '2 / 3'));
+  // 3b — the Contents panel (1.5.0): the PDF's bookmarks, nested by indent, an entry without a page disabled;
+  //      click = jump to that page + the entry for the shown page is highlighted. Hidden against an older core.
+  if (CONTENTS) {
+    ok('contents: the panel lists the 4 bookmarks (3 linked, 1 unlinked/disabled), the nested one indented', await until(() => vis($('#preview-outline')) && $$('#preview-outline-list .pv-outline-item').length === 4)
+       && $$('#preview-outline-list .pv-outline-item').filter(b => b.disabled).length === 1
+       && parseInt($$('#preview-outline-list .pv-outline-item')[2].style.paddingLeft, 10) > parseInt($$('#preview-outline-list .pv-outline-item')[1].style.paddingLeft, 10));
+    ok('contents: the entry for the shown page (Details, page 2) is highlighted', $$('#preview-outline-list .pv-outline-item').find(b => b.textContent === 'Details').classList.contains('active'));
+    click($$('#preview-outline-list .pv-outline-item').find(b => b.textContent === 'Terms'), 'Contents: Terms');
+    ok('contents: clicking "Terms" jumps to page 3 / 3 and marks it active', await until(() => $('#page-label').textContent.trim() === '3 / 3' && $$('#preview-outline-list .pv-outline-item').find(b => b.textContent === 'Terms').classList.contains('active')));
+    click($('#btn-page-prev'));
+    await until(() => $('#page-label').textContent.trim() === '2 / 3');
+  } else ok('contents (client vs an older core): the Contents panel stays hidden (caps.outline off — no 404 round-trip)', !vis($('#preview-outline')));
 
   if (!LITE) {
     // 4 — find box: a term with no matches → no-match state; Esc clears
@@ -251,6 +274,19 @@ const DRIVE = `(async () => {
   ok('unconfirmed preview: confidence band shown', await until(() => !!$('.pf-confband')));
   if (CLIENT) ok('unconfirmed preview (client): neither Edit in Review nor Send back (no desktop, no /v1 send-back)', (() => { const b = btns(); return !b.some(t => t.includes('Edit in Review')) && !b.some(t => t.includes('Send back')); })());
   else ok('unconfirmed preview: Edit in Review offered, Send back not', (() => { const b = btns(); return b.some(t => t.includes('Edit in Review')) && !b.some(t => t.includes('Send back')); })());
+  if (CONTENTS) {
+    // 5b — Contents on a COUNT-UNKNOWN doc (Oracle C1): once the probe lands (2 pages), "Back" is live and "Missing"
+    //      (page 6) is marked unavailable, not dead; a click on it explains itself inline.
+    const items = () => $$('#preview-outline-list .pv-outline-item');
+    ok('contents (count-unknown doc 3): after the count probe, "Back" (page 2) is available and "Missing" (page 6) is marked unavailable',
+       await until(() => items().length === 3 && $('#page-label').textContent.trim() === '1 / 2' && !items().find(b => b.textContent === 'Back').classList.contains('unavail') && items().find(b => b.textContent === 'Missing').classList.contains('unavail') && /isn't available/.test(items().find(b => b.textContent === 'Missing').title)));
+    click(items().find(b => b.textContent === 'Missing'), 'Contents: Missing');
+    ok('contents: clicking an unavailable entry explains itself inline ("Page 6 isn\\'t available …"), never silent', await until(() => { const n = $('#preview-outline-note'); return !!n && !n.hidden && /Page 6 isn't available/.test(n.textContent); }));
+    click(items().find(b => b.textContent === 'Back'), 'Contents: Back');
+    ok('contents: "Back" jumps to page 2 / 2 and is highlighted', await until(() => $('#page-label').textContent.trim() === '2 / 2' && items().find(b => b.textContent === 'Back').classList.contains('active')));
+    click($('#btn-page-prev'));                                  // leave doc 3 on page 1 for the checks that follow
+    await until(() => $('#page-label').textContent.trim() === '1 / 2');
+  }
   ok('unconfirmed preview: ' + (LITE ? '2 rendered pages → 1 / 2 nav' : 'unknown page_count → probed → 1 / 2 nav'), await until(() => vis($('#page-nav')) && $('#page-label').textContent.trim() === '1 / 2'));
 
   // 6 — an .xlsx: no page image → the grid / the honest "No preview available" (lite client, caps.spreadsheet false)

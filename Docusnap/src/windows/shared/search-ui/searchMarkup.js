@@ -129,6 +129,7 @@
 
         <div id="sidebar-resizer" title="Drag to resize the details column"></div>
         <div id="preview-sidebar">
+          <div id="preview-outline" style="display:none"><div class="pv-outline-head">Contents</div><div id="preview-outline-list"></div><div id="preview-outline-note" class="pv-outline-note" hidden></div></div>
           <div id="preview-fields-scroll"></div>
           <div id="preview-actions" data-help-key="preview-actions"></div>
         </div>

@@ -33,7 +33,35 @@ def _win_long_path(path):
         return '\\\\?\\UNC\\' + path.lstrip('\\')
     return '\\\\?\\' + path
 
-def _render_page(page, scale):
+def _is_raster_page(page, min_cover=0.5):
+    """True when the embedded IMAGE objects together cover >= min_cover of the page area — a scan / photo
+    page (one full-page image, or a strip/band-encoded fax-style scan of several images). Such a page has no
+    crisp vector text to lose, and its PNG at the Search scale (216 DPI) was the single slowest step of the
+    viewer (measured 2026-09-14: 0.84 s to encode + 5 MB per page, vs 0.03 s + 0.8 MB as JPEG).
+    Fail-closed: any API difference → False → PNG (the lossless path)."""
+    try:
+        import pypdfium2.raw as pdfium_c
+        pw, ph = page.get_size()
+        area = float(pw) * float(ph)
+        if area <= 0:
+            return False
+        total = 0.0
+        for obj in page.get_objects(filter=(pdfium_c.FPDF_PAGEOBJ_IMAGE,), max_depth=2):
+            # pypdfium2 ≥ 4.x names the bbox getter get_bounds(); older builds get_pos(). Both → (l, b, r, t) in points.
+            getter = getattr(obj, 'get_bounds', None) or getattr(obj, 'get_pos', None)
+            if getter is None:
+                continue
+            l, b, r, t = getter()
+            total += min(1.0, max(0.0, (r - l)) * max(0.0, (t - b)) / area)
+            if total >= min_cover:
+                return True
+    except Exception:
+        return False
+    return False
+
+def _render_page(page, scale, fmt='png', quality=90):
+    """fmt: 'png' (default, lossless — unchanged behaviour), 'jpeg', or 'auto' (JPEG for a raster/scan
+    page, PNG for a vector/text page — see _is_raster_page). The Search viewer asks for 'auto'."""
     try:
         _w, _h = page.get_size()                       # points; clamp so a bomb page can't render huge
         if _w > 0 and _h > 0:
@@ -43,11 +71,48 @@ def _render_page(page, scale):
     bitmap = page.render(scale=scale)
     img    = bitmap.to_pil()
     buf    = BytesIO()
-    # No optimize=True: it's the slowest PNG step (extra zlib pass) for only a
-    # marginal size win — not worth it for an on-demand preview render over a LAN.
-    img.save(buf, format='PNG')
+    use_jpeg = (fmt == 'jpeg') or (fmt == 'auto' and _is_raster_page(page))
+    if use_jpeg:
+        q = max(50, min(95, int(quality or 90)))
+        img.convert('RGB').save(buf, format='JPEG', quality=q, optimize=False)
+        mime = 'image/jpeg'
+    else:
+        # No optimize=True: it's the slowest PNG step (extra zlib pass) for only a
+        # marginal size win — not worth it for an on-demand preview render over a LAN.
+        img.save(buf, format='PNG')
+        mime = 'image/png'
     b64 = base64.b64encode(buf.getvalue()).decode()
-    return f'data:image/png;base64,{b64}'
+    return f'data:{mime};base64,{b64}'
+
+def _outline(doc, limit=500):
+    """The PDF's bookmarks / outline (table of contents) as a flat, ordered list of
+    {title, page, level} — page is a 0-based index (None when the bookmark has no page
+    destination), level 0 = top. Empty list when the document has none. Capped so a
+    hostile file can't emit megabytes; titles trimmed. Fail-closed → []."""
+    out = []
+    try:
+        for item in doc.get_toc():
+            if len(out) >= limit:
+                break
+            try:
+                title = item.get_title()
+            except Exception:
+                title = None
+            page = None
+            try:
+                dest = item.get_dest()
+                if dest is not None:
+                    page = dest.get_index()
+            except Exception:
+                page = None
+            level = int(getattr(item, 'level', 0) or 0)
+            title = str(title or '').strip()[:200]
+            if not title and page is None:
+                continue
+            out.append({"title": title or f"Page {int(page) + 1}", "page": (int(page) if page is not None else None), "level": max(0, level)})
+    except Exception:
+        return []
+    return out
 
 def main():
     parser = argparse.ArgumentParser()
@@ -65,6 +130,13 @@ def main():
     # size its lazy page array (and show page nav) instantly for a doc whose page_count wasn't recorded
     # (e.g. a Quick File doc), instead of rendering every page just to learn how many there are.
     parser.add_argument('--count', action='store_true', help='print {"pages":N} and exit — no render')
+    # OUTLINE MODE: print the PDF's bookmarks (table of contents) as {"outline":[{title,page,level},…]} — no render.
+    # Backs the Search viewer's Contents panel (click → jump to the page).
+    parser.add_argument('--outline', action='store_true', help='print {"outline":[…]} and exit — no render')
+    # Image format for --thumb single-page renders: png (default, unchanged), jpeg, or auto (JPEG for a
+    # raster/scan page, PNG for a vector page). The full-page array render stays PNG.
+    parser.add_argument('--format', choices=['png', 'jpeg', 'auto'], default='png')
+    parser.add_argument('--quality', type=int, default=90, help='JPEG quality for --format jpeg/auto (50..95)')
     args = parser.parse_args()
 
     doc = pdfium.PdfDocument(_win_long_path(args.file))
@@ -73,10 +145,14 @@ def main():
         print(json.dumps({"pages": len(doc)}), flush=True)
         return
 
+    if args.outline:
+        print(json.dumps({"outline": _outline(doc)}), flush=True)
+        return
+
     if args.thumb:
         scale = args.scale if args.scale is not None else 0.3
         idx   = max(0, min(args.page, len(doc) - 1))
-        print(json.dumps(_render_page(doc[idx], scale)), flush=True)
+        print(json.dumps(_render_page(doc[idx], scale, fmt=args.format, quality=args.quality)), flush=True)
         return
 
     scale  = args.scale if args.scale is not None else 1.5   # 108 DPI — enough for preview, smaller payload

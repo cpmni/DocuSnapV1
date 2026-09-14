@@ -42,7 +42,8 @@ function fakeSpawn(exe, args, opts) {
   let out;
   if (/pdf_find\.py$/.test(script)) out = JSON.stringify({ kind: 'pdf', pages: 40, matches: [{ page: 0, x0: 0.1, y0: 0.2, x1: 0.3, y1: 0.22, secret_path: 'C:/x' }] });
   else if (args.includes('--count')) out = JSON.stringify({ pages: 7 });
-  else if (args.includes('--thumb')) out = JSON.stringify(`data:image/png;base64,PAGE${arg('--page')}S${arg('--scale')}`);
+  else if (args.includes('--outline')) out = JSON.stringify({ outline: [{ title: 'Cover', page: 0, level: 0 }, { title: 'Terms', page: 2, level: 1 }, { title: 'x'.repeat(400), page: -1, level: 99 }, { title: '', page: 5, level: 0 }] });
+  else if (args.includes('--thumb')) out = JSON.stringify(`data:image/${arg('--format') === 'auto' || arg('--format') === 'jpeg' ? 'jpeg' : 'png'};base64,PAGE${arg('--page')}S${arg('--scale')}`);
   else out = JSON.stringify([]);
   const finish = () => { proc.stdout.emit('data', Buffer.from(out)); proc.emit('close', 0); };
   if (holdSpawn) holdSpawn.push(finish); else setImmediate(finish);
@@ -112,9 +113,9 @@ async function main() {
   void login;
 
   console.log('contract');
-  check('API_CONTRACT_VERSION is 1.4.0', api.API_CONTRACT_VERSION === '1.4.0');
+  check('API_CONTRACT_VERSION is 1.5.0', api.API_CONTRACT_VERSION === '1.5.0');
   const health = await request(port, 'GET', '/v1/health');
-  check('health advertises 1.4.0', health.json && health.json.contractVersion === '1.4.0');
+  check('health advertises 1.5.0', health.json && health.json.contractVersion === '1.5.0');
 
   console.log('auth / entitlement on every read');
   for (const p of ['/v1/documents/1/page/0', '/v1/documents/1/page-count', '/v1/documents/1/find?q=inv', '/v1/documents/2/spreadsheet']) {
@@ -143,6 +144,27 @@ async function main() {
   const before = spawns.length;
   r = await request(port, 'GET', '/v1/documents/3/page/0', { token: readT });
   check('a non-PDF → { page: null } without rendering', r.status === 200 && r.json.page === null && spawns.length === before);
+  // 1.5.0: fmt=auto|jpeg forwarded as --format; anything else / absent = PNG (no --format at all).
+  r = await request(port, 'GET', '/v1/documents/1/page/0?fmt=auto', { token: readT });
+  sp = spawns[spawns.length - 1];
+  check('fmt=auto → --format auto forwarded (the core answers JPEG for a scan page)', sp && sp.args[sp.args.indexOf('--format') + 1] === 'auto' && /^data:image\/jpeg;/.test(r.json.page));
+  r = await request(port, 'GET', '/v1/documents/1/page/0?fmt=bmp', { token: readT });
+  sp = spawns[spawns.length - 1];
+  check('an unknown fmt → no --format (PNG, unchanged)', sp && !sp.args.includes('--format') && /^data:image\/png;/.test(r.json.page));
+
+  console.log('outline (1.5.0) — the PDF\'s bookmarks for the Contents panel');
+  r = await request(port, 'GET', '/v1/documents/1/outline', { token: readT });
+  sp = spawns[spawns.length - 1];
+  check('PDF → 200 { outline } from the --outline probe (readonly may read; no render)', r.status === 200 && Array.isArray(r.json.outline) && sp.args.includes('--outline') && !sp.args.includes('--thumb'));
+  check('entries re-validated server-side: title capped at 200, a negative page → null, level capped, an empty title dropped',
+        r.json.outline.length === 3 && r.json.outline[0].title === 'Cover' && r.json.outline[0].page === 0 && r.json.outline[1].level === 1
+        && r.json.outline[2].title.length === 200 && r.json.outline[2].page === null && r.json.outline[2].level === 8);
+  check('the DTO carries ONLY outline (no paths)', Object.keys(r.json).join() === 'outline' && !/C:\//.test(r.raw));
+  const before2 = spawns.length;
+  r = await request(port, 'GET', '/v1/documents/3/outline', { token: readT });
+  check('a non-PDF → { outline: [] } without spawning', r.status === 200 && Array.isArray(r.json.outline) && r.json.outline.length === 0 && spawns.length === before2);
+  check('a missing document → 404 (hides existence)', (await request(port, 'GET', '/v1/documents/999/outline', { token: adminT })).status === 404);
+  check('unauthenticated → 401', (await request(port, 'GET', '/v1/documents/1/outline', {})).status === 401);
 
   console.log('page-count');
   r = await request(port, 'GET', '/v1/documents/1/page-count', { token: readT });

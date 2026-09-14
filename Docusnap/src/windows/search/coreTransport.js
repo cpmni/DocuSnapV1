@@ -34,6 +34,7 @@
   window.SearchTransport = {
     caps: {
       singlePage: true, pageCount: true, find: true, spreadsheet: true,
+      outline: true,   // getDocumentOutline — the PDF's bookmarks (the Contents panel, 2026-09-14)
       bin: true, restoreAll: true, sendBack: true, localFile: true, review: true, print: true,
       stamps: true, settings: true,
       workflowHistory: true, docRoutes: true, adminCancel: true, stampCreate: true, stampedViewer: true,
@@ -52,6 +53,7 @@
     getDocumentPages:       (...a) => d.getDocumentPages(...a),
     getDocumentPage:        (...a) => d.getDocumentPage(...a),
     getDocumentPageCount:   (...a) => d.getDocumentPageCount(...a),
+    getDocumentOutline:     (...a) => d.getDocumentOutline(...a),
     findInDocument:         (...a) => d.findInDocument(...a),
     getSpreadsheetGrid:     (...a) => d.getSpreadsheetGrid(...a),
     getDocumentThumbnail:   (...a) => d.getDocumentThumbnail(...a),

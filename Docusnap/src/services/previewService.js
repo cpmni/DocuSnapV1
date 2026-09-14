@@ -204,7 +204,7 @@ function getDocumentPages(db, { docId, folderPath, filename, scale, exact }, dep
  * @param {object} deps { fs, path, spawn, pythonExe, pythonArgs, renderScript, log? }
  * @returns {Promise<string|null>}
  */
-function getDocumentPage(db, { docId, folderPath, filename, index, scale }, deps) {
+function getDocumentPage(db, { docId, folderPath, filename, index, scale, format }, deps) {
   const { fs, path, spawn, pythonExe, pythonArgs, renderScript } = deps;
   const log = deps.log || console.log;
   if (!folderPath || !filename) return Promise.resolve(null);
@@ -215,6 +215,9 @@ function getDocumentPage(db, { docId, folderPath, filename, index, scale }, deps
   const py = pythonExe();
   const args = ['--file', filePath, '--thumb', '--page', String(Math.max(0, index | 0))];
   if (scale && scale > 0) args.push('--scale', String(scale));
+  // Image format (2026-09-14, Search viewer speed): 'auto' = JPEG for a raster/scan page, PNG for a vector page
+  // (pages.py decides from the page's image objects); 'jpeg' forces it. Unset/anything else = PNG, unchanged.
+  if (format === 'auto' || format === 'jpeg') args.push('--format', format);
   return new Promise((resolve) => {
     const proc = spawn(py, pythonArgs(renderScript, ...args), { windowsHide: true });
     let out = '', err = '';
@@ -259,6 +262,45 @@ function getDocumentPageCount(db, { docId, folderPath, filename }, deps) {
         log(`[count] failed for ${filePath} — exit=${code} parse_error=${e.message}`
           + (err ? ` stderr=${err.trim().slice(0, 200)}` : ''));
         resolve(null);
+      }
+    });
+  });
+}
+
+/**
+ * The PDF's OUTLINE (bookmarks / table of contents) — [{ title, page, level }] in reader order; `page` is a
+ * 0-based index (null when a bookmark has no page destination), `level` 0 = top. [] for a non-PDF, an
+ * unresolvable file, a document without bookmarks, or any failure (never throws). render/pages.py
+ * --outline: opens the PDF, no render. Backs the Search viewer's Contents panel (click → jump to the page).
+ * Entries are re-validated here (type, length, cap) — defence in depth over the Python cap.
+ * @returns {Promise<Array<{title:string,page:number|null,level:number}>>}
+ */
+function getDocumentOutline(db, { docId, folderPath, filename }, deps) {
+  const { path, spawn, pythonExe, pythonArgs, renderScript } = deps;
+  const log = deps.log || console.log;
+  if (!folderPath || !filename) return Promise.resolve([]);
+  const filePath = _resolveDocFile(db, { docId, folderPath, filename }, deps);
+  if (!filePath) return Promise.resolve([]);
+  if (path.extname(filePath).toLowerCase() !== '.pdf') return Promise.resolve([]);
+  const py = pythonExe();
+  return new Promise((resolve) => {
+    const proc = spawn(py, pythonArgs(renderScript, '--file', filePath, '--outline'), { windowsHide: true });
+    let out = '', err = '';
+    proc.stdout.on('data', d => { out += d.toString(); });
+    proc.stderr.on('data', d => { err += d.toString(); });
+    proc.on('error', (e) => { log(`[outline] spawn error for ${filePath}: ${e.message}`); resolve([]); });
+    proc.on('close', (code) => {
+      try {
+        const raw = JSON.parse(out);
+        const list = Array.isArray(raw && raw.outline) ? raw.outline : [];
+        resolve(list.slice(0, 500).map(e => ({
+          title: String((e && e.title) || '').slice(0, 200),
+          page: (e && Number.isInteger(e.page) && e.page >= 0) ? e.page : null,
+          level: (e && Number.isInteger(e.level) && e.level > 0) ? Math.min(e.level, 8) : 0,
+        })).filter(e => e.title));
+      } catch (e) {
+        log(`[outline] failed for ${filePath} — exit=${code} parse_error=${e.message}` + (err ? ` stderr=${err.trim().slice(0, 200)}` : ''));
+        resolve([]);
       }
     });
   });
@@ -399,4 +441,4 @@ function getSpreadsheetGrid(db, { docId, folderPath, filename }, deps) {
   catch (e) { log(`[grid] parse failed for ${filePath}: ${e.message}`); return null; }
 }
 
-module.exports = { getDocumentDetail, getDocumentPages, getDocumentPage, getDocumentPageCount, getThumbnail, findInDocument, getSpreadsheetGrid, resolveDocFile: _resolveDocFile };
+module.exports = { getDocumentDetail, getDocumentPages, getDocumentPage, getDocumentPageCount, getDocumentOutline, getThumbnail, findInDocument, getSpreadsheetGrid, resolveDocFile: _resolveDocFile };

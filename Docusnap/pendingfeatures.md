@@ -5344,7 +5344,40 @@ that reverses the Oracle-signed "page images only, never bytes-as-PDF" posture o
 (2) if "content tables" = the outline/bookmarks, **pypdfium2 (already shipped) reads the outline** → a clickable
 contents panel beside the existing image viewer on BOTH apps with no new dependency; (3) if it = data TABLES inside a
 page, that is table extraction — pdfplumber (MIT) for digital PDFs; scans need layout over our Tesseract word boxes.
-Awaiting the owner's meaning before scoping.
+
+> **Owner answered: the bookmarks/outline. BUILT 2026-09-14** — the Contents panel in the Search viewer (both apps;
+> contract 1.5.0; `docs/detached-client.md`). No full reader (PDF.js) built; still available if text selection /
+> print-from-viewer are ever wanted on the core (client = policy decision first).
+
+## 2026-09-14 — Search viewer SPEED: measured, the two cheap wins built, the big one designed
+**Measured (dev box, `py -3.12`, corpus PDFs — `TESTING/_measure/viewer_speed_20260914/report.json`):** every
+page / thumbnail / count call is a Python process: 0.07 s bare, **0.26 s with `import pypdfium2`, 0.29 s with PIL** —
+the fixed cost. Rendering page 1 at the Search scale (3 = 216 DPI) is only 0.09-0.15 s; **PNG-encoding a scan page
+at that scale was 0.84 s + 4-5 MB (5.5-7 MB base64 over IPC / the wire)**; JPEG q85-90 encodes it in 0.03 s at
+0.8-1.2 MB. Thumbnails: 0.35 s each = almost all spawn, and every visible row fired at once.
+**BUILT (this slice):** (1) the viewer asks for `fmt=auto` — a scan page comes back as JPEG (q90), a vector/text page
+stays lossless PNG (pages.py decides from the page's image objects): scan page 1.3 s → 0.48 s, 5.6 MB → 1.2 MB; the
+Review / teach / OCR-crop renders are untouched (PNG). (2) at most TWO thumbnail reads in flight (queued) so a
+results burst no longer starves the page the user just clicked for.
+**Oracle 2026-09-14 ruling on the next step (SIGN-OFF-W/COND on this slice, `docs/oracle_log.md`): build the
+COALESCED SINGLE SPAWN FIRST — one `render/pages.py --page-info` call answering `{page, pages, outline}` for the
+first paint (page 1 + the count + the bookmarks in ONE process; today that is up to three spawns, and the outline
+spawn is wasted on the 99% of PDFs with no bookmarks); existing outputs stay byte-identical. Only after that, and
+only for the small reads (page / thumb / count / outline — never the array render or `pdf_find`), consider the
+worker below with its lifecycle rules (per-request timeout + kill + restart, spawn-per-call fallback, per-file
+quarantine after two deaths, recycle after N requests, a `will-quit` kill). Pre-existing, noted: no previewService
+spawn has a timeout, and the `/v1` page / count / outline reads lack find's in-flight cap.**
+**DESIGNED, NOT BUILT — a later slice (Oracle first): a PERSISTENT render worker.** One long-lived Python process
+(`render/pages.py --serve`: JSON lines on stdin/stdout — count / page / thumb / outline / full-array, one PDF open
+at a time, the same server-side path rules) owned by `previewService` (`renderWorker.js`: lazy start, restart on
+crash, spawn-per-call FALLBACK so nothing can regress, idle exit after N minutes, packaged path via
+`pythonArgs`/`compile-python-bytecode` SPAWN_ENTRIES unchanged because the entry is pages.py). Removes the 0.26-0.29 s
+per call → a page flip ≈ 0.15 s, a 10-row thumbnail burst ≈ 0.5 s instead of ~3.5 s of CPU; also serialises render
+CPU so page renders never fight thumbnails. Risks to design for: a hung worker (per-request timeout → kill +
+fallback), memory growth (recycle after N requests), two windows sharing one worker (queue), the `/v1` lane
+(same worker via previewService). Second-order wins after that: a disk thumbnail cache under userData keyed by
+file mtime (repeat visits instant), deferring `find-in-document` ~300 ms after first paint on scanned docs (its
+OCR competes with the next page render), and re-rendering only the CURRENT page at scale 6 on zoom-in.
 
 > **FIXED 2026-09-13 night** (the first-paint confidence-pip finding above): `SearchResults.redecorate()` re-renders the
 > LAST result set once the entitlement is known (no second search — pinned: `search-documents` runs exactly 3 times in the

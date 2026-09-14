@@ -242,6 +242,45 @@ the 09:03 pair (which lack contract 1.4.0; core 1.3.0 + client 1.4.0 would just 
 - core **`dist\ScanFinder Setup 2.0.0-r20260914-0930-2dbe494-TEST.exe`** (352.5 MB; packaged `--smoke-boot` identity
   `{"testBuild":true,"buildRev":"20260914-0930-2dbe494-TEST"}`, `--smoke-windows` 14/14);
 - client **`client\dist\ScanFinder Search Client Setup 1.0.2-r20260914-0932-2dbe494.exe`** (106.1 MB; contract 1.4.0).
-Install the core first, then the client; nothing is running at wrap (no dev core / client / sandbox). Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
+Install the core first, then the client; nothing is running at wrap (no dev core / client / sandbox).
+
+---
+
+## ADDENDUM 4 — 2026-09-14 (midday): the CONTENTS panel + Search viewer SPEED (contract 1.5.0)
+
+**Owner:** "I meant the bookmarks/outline … click a link to jump to that page — add the contents panel. Please explore
+how we can speed the viewer in search up." Oracle SIGN-OFF-W/COND (`docs/oracle_log.md`), conditions built.
+
+**What changed, in plain terms**
+- **Contents panel** (both apps): a PDF that carries bookmarks shows them in the details column above the fields,
+  nested; click one → that page. A document with none shows nothing extra. It loads after the first page paints,
+  so it never slows the open. An entry pointing past the pages we know about (a document whose page count was never
+  recorded and is still being counted) is greyed with a tooltip and explains itself if clicked — never a dead button.
+- **Speed — measured first** (`TESTING/_measure/viewer_speed_20260914/report.json`): every page / thumbnail / count
+  is a separate Python process — **0.26-0.29 s just to start**. Drawing page 1 is 0.09-0.15 s. **Turning a SCAN page
+  into a PNG at the viewer's resolution was 0.84 s and 4-5 MB per page** (5.5-7 MB over the wire); the same page as
+  a JPEG is 0.03 s and ~1 MB. Thumbnails: 0.35 s each, all fired at once.
+- **Built:** (1) scan pages now travel as JPEG (text/vector pages stay lossless PNG; the core decides per page from
+  the PDF's image objects): a scan page **1.3 s → 0.48 s, 5.6 MB → 1.2 MB**; Review / teach / OCR crops untouched.
+  (2) At most two thumbnails render at a time, newest visible row first, rows that scrolled away are skipped and
+  re-asked when they come back.
+- **Next speed step (Oracle-ruled, not built):** ONE Python call for the first paint (`--page-info` = page 1 + the
+  page count + the bookmarks together — today up to three processes); only after that a persistent render worker,
+  and only for the small reads, with the lifecycle rules in the Oracle log. Both in `pendingfeatures.md`.
+
+**Server / client:** `render/pages.py --format png|jpeg|auto` (+ `--quality`) for the single-page render, `--outline`
+(pypdfium2 `get_toc()`); `previewService.getDocumentPage(format)` + `getDocumentOutline` (re-validated entries);
+desktop `get-document-outline` IPC + the page IPC's 4th arg; `/v1` page read `?fmt=auto|jpeg` + `GET
+/v1/documents/:id/outline` (same gates as `/page`); **contract 1.4.0 → 1.5.0** (`CLIENT_CONTRACT` lockstep; the
+client's Contents cap needs both sides ≥ 1.5.0; an older core just keeps sending PNG). Shared viewer:
+`SEARCH_RENDER_FORMAT='auto'`, `#preview-outline` panel (`searchMarkup.js`/`searchUI.css`/`searchPreview.js`),
+`searchThumbs.js` queue (LIFO, cap 2, forget gone rows).
+
+**Verification:** `npm run test:pins` green (full number in the commit); new pins `python_backend/tests/
+test_pages_outline_format.py` (run under BOTH `py -3.12` = pypdfium2 5.9.0 and `vendor\python\python.exe` = 5.10.1 —
+the vendored API is what ships) and `src/windows/shared/test_search_thumbs_queue.js`; `test_v1_preview_reads`
+(fmt forwarding, outline gates + re-validation), `test_fast_first_page`, `test_core_transport`; core functional 90,
+pop-out 392 across five runs (the Contents click renders the target page; hidden vs a 1.2.0 / 1.3.0 core).
+**Installers REBUILT on this commit** — file names at the end of this addendum. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
 stacking; 403 wording; the S2 reads' 404 flip) · the owner's answer on "content tables" (PDF reader question,
 `pendingfeatures.md`) · everything in the earlier lists.

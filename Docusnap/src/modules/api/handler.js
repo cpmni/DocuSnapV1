@@ -46,7 +46,7 @@ const path              = require('path');
 const WF_HTTP = { FORBIDDEN: 403, STAMP_FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
 const wfStatus = (code) => WF_HTTP[code] || 400;
 
-const API_CONTRACT_VERSION = '1.4.0';   // 1.4.0: + per-document open-routes / decision-history reads, admin route cancel, new stamp type (the search pop-out's last hidden workflow bits, 2026-09-14; the client gates those caps on ≥ 1.4.0). 1.3.0: + the four preview READS (page / page-count / find / spreadsheet — client search parity S2, 2026-09-13; the client gates its lazy-page/find/grid caps on ≥ 1.3.0). 1.2.0: + POST /v1/documents/intake (Quick File upload). NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
+const API_CONTRACT_VERSION = '1.5.0';   // 1.5.0: + GET /documents/:id/outline (the PDF's bookmarks → the Contents panel) and the page read's optional fmt=auto|jpeg (2026-09-14; the client gates its Contents cap on ≥ 1.5.0). 1.4.0: + per-document open-routes / decision-history reads, admin route cancel, new stamp type (the search pop-out's last hidden workflow bits, 2026-09-14; the client gates those caps on ≥ 1.4.0). 1.3.0: + the four preview READS (page / page-count / find / spreadsheet — client search parity S2, 2026-09-13; the client gates its lazy-page/find/grid caps on ≥ 1.3.0). 1.2.0: + POST /v1/documents/intake (Quick File upload). NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
                                         // handshake checks MAJOR only. Keep server + client in lockstep.
 const API_PREFIX = '/v1';
 const CLIENT_CONTRACT_HEADER = 'x-scanfinder-client-contract';
@@ -633,11 +633,29 @@ function createRequestListener(ctx) {
         const rawScale = Number(url.searchParams.get('scale'));
         const scale = Number.isFinite(rawScale) && rawScale > 0
           ? Math.min(PAGE_SCALE_MAX, Math.max(PAGE_SCALE_MIN, rawScale)) : PAGE_SCALE_DEFAULT;
+        // fmt=auto|jpeg (1.5.0): JPEG for a scan page (6× smaller, ~25× faster to encode), PNG for a vector page;
+        // anything else = PNG (unchanged). An older client never sends it; an older core ignores it.
+        const fmtRaw = String(url.searchParams.get('fmt') || '').toLowerCase();
+        const format = (fmtRaw === 'auto' || fmtRaw === 'jpeg') ? fmtRaw : undefined;
         const { folderPath, filename } = _resolveDocArgs(id);
         const page = (folderPath && filename)
-          ? await previewService.getDocumentPage(getDb(), { docId: id, folderPath, filename, index, scale }, pageDeps())
+          ? await previewService.getDocumentPage(getDb(), { docId: id, folderPath, filename, index, scale, format }, pageDeps())
           : null;
         return sendJson(res, 200, { page: page || null });
+      }
+
+      // GET /v1/documents/:id/outline → { outline: [{title, page, level}] }  (the PDF's bookmarks — the Contents
+      // panel; no render; [] when none / non-PDF). Contract 1.5.0 (2026-09-14). Same gates as /page.
+      const outlineMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/outline$`));
+      if (req.method === 'GET' && outlineMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        const id = Number(outlineMatch[1]);
+        if (!_gateDoc(session, id)) return;
+        const { folderPath, filename } = _resolveDocArgs(id);
+        const outline = (folderPath && filename)
+          ? await previewService.getDocumentOutline(getDb(), { docId: id, folderPath, filename }, pageDeps())
+          : [];
+        return sendJson(res, 200, { outline: Array.isArray(outline) ? outline : [] });
       }
 
       // GET /v1/documents/:id/page-count → { count: int|null }  (no render — sizes the lazy page array)

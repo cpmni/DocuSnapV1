@@ -48,8 +48,11 @@ console.log('IPC arity at the adapter seam');
 const calls = rec.calls || [];
 const has = (ch, pred) => calls.some(([c, a]) => c === ch && (!pred || pred(a)));
 check('search-documents called with the params object (fullText inv)', has('search-documents', a => a[0] && a[0].fullText === 'inv'));
-check('get-document-page (id 1, index 0, scale 3) — the lazy page-1 read', has('get-document-page', a => a[0] === 1 && a[1] === 0 && a[2] === 3));
+check('get-document-page (id 1, index 0, scale 3, "auto") — the lazy page-1 read asking for JPEG-for-scans', has('get-document-page', a => a[0] === 1 && a[1] === 0 && a[2] === 3 && a[3] === 'auto'));
 check('get-document-page (id 1, index 1, scale 3) — the hole rendered on page-next', has('get-document-page', a => a[0] === 1 && a[1] === 1 && a[2] === 3));
+check('get-document-outline (1) — the Contents panel read, AFTER the page-1 read (never before the first paint)', has('get-document-outline', a => a[0] === 1)
+      && calls.findIndex(([c, a]) => c === 'get-document-outline' && a[0] === 1) > calls.findIndex(([c, a]) => c === 'get-document-page' && a[0] === 1 && a[1] === 0));
+check('get-document-page (id 1, index 2) — the Contents click ("Terms") rendered page 3', has('get-document-page', a => a[0] === 1 && a[1] === 2 && a[2] === 3));
 check('a KNOWN page_count is never probed (no get-document-page-count for id 1)', !has('get-document-page-count', a => a[0] === 1));
 check('an UNKNOWN page_count IS probed (get-document-page-count for id 3)', has('get-document-page-count', a => a[0] === 3));
 check('get-document-pages (id 2, null, null, 3) — the non-PDF full-render arity preserved', has('get-document-pages', a => a[0] === 2 && a[1] === null && a[2] === null && a[3] === 3));

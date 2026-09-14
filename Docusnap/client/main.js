@@ -486,7 +486,8 @@ ipcMain.handle('client-get-thumbnail', async (_e, id) => {
 // into the "Connection lost" overlay for a merely slow find (Oracle 2026-09-13 seam 8). A timeout here is
 // returned as a normal envelope the pop-out shows as "took too long"; real outages are still caught by the
 // heartbeat within seconds.
-ipcMain.handle('client-get-page',    guarded((_e, id, index, scale) => client.getPage(id, index, scale)));
+ipcMain.handle('client-get-page',    guarded((_e, id, index, scale, fmt) => client.getPage(id, index, scale, fmt)));
+ipcMain.handle('client-outline',     guarded((_e, id) => client.getOutline(id)));   // 1.5.0: the PDF's bookmarks (Contents panel)
 ipcMain.handle('client-page-count',  guarded((_e, id) => client.getPageCount(id)));
 ipcMain.handle('client-spreadsheet', guarded((_e, id) => client.getSpreadsheet(id)));
 ipcMain.handle('client-find', async (_e, id, query) => {

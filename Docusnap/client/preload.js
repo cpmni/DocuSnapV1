@@ -28,8 +28,9 @@ contextBridge.exposeInMainWorld('scanfinder', {
   getPages:        (id) => ipcRenderer.invoke('client-get-pages', id),
   getThumbnail:    (id) => ipcRenderer.invoke('client-get-thumbnail', id),
   // The four preview reads (contract 1.3.0 — the search pop-out's lazy page / count / find / xlsx grid).
-  getPage:         (id, index, scale) => ipcRenderer.invoke('client-get-page', id, index, scale),
+  getPage:         (id, index, scale, fmt) => ipcRenderer.invoke('client-get-page', id, index, scale, fmt),
   getPageCount:    (id) => ipcRenderer.invoke('client-page-count', id),
+  getOutline:      (id) => ipcRenderer.invoke('client-outline', id),   // 1.5.0: the PDF's bookmarks (Contents panel)
   find:            (id, query) => ipcRenderer.invoke('client-find', id, query),
   getSpreadsheet:  (id) => ipcRenderer.invoke('client-spreadsheet', id),
   isAuthenticated: () => ipcRenderer.invoke('client-authed'),

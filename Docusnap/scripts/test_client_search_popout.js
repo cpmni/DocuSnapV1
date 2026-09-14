@@ -58,7 +58,10 @@ console.log('A1. functional — PARITY: the pop-out against a core that has the 
     const has = (ch, pred) => calls.some(([c, a]) => c === ch && (!pred || pred(a)));
     check('client-search called with the params object (fullText inv from the deep-link)', has('client-search', a => a[0] && a[0].fullText === 'inv'));
     check('client-get-document for the clicked docs', has('client-get-document', a => a[0] === 1) && has('client-get-document', a => a[0] === 3));
-    check('client-get-page (1, 0, 3) — the lazy page-1 read over /v1', has('client-get-page', a => a[0] === 1 && a[1] === 0 && a[2] === 3));
+    check('client-get-page (1, 0, 3, "auto") — the lazy page-1 read over /v1, asking for JPEG-for-scans', has('client-get-page', a => a[0] === 1 && a[1] === 0 && a[2] === 3 && a[3] === 'auto'));
+    check('client-outline (1) — the Contents panel read, AFTER the page-1 read', has('client-outline', a => a[0] === 1)
+          && calls.findIndex(([c, a]) => c === 'client-outline' && a[0] === 1) > calls.findIndex(([c, a]) => c === 'client-get-page' && a[0] === 1 && a[1] === 0));
+    check('client-get-page (1, 2, 3, "auto") — the Contents click ("Terms") rendered page 3', has('client-get-page', a => a[0] === 1 && a[1] === 2 && a[2] === 3 && a[3] === 'auto'));
     check('client-get-page (1, 1, 3) — the hole rendered on page-next', has('client-get-page', a => a[0] === 1 && a[1] === 1 && a[2] === 3));
     check('a KNOWN page_count is never probed; the UNKNOWN one is (client-page-count for 3 only)', !has('client-page-count', a => a[0] === 1) && has('client-page-count', a => a[0] === 3));
     check('client-find (1, "inv") — the list-term highlight over /v1', has('client-find', a => a[0] === 1 && a[1] === 'inv'));
@@ -90,6 +93,7 @@ console.log('A2. functional — LITE: the same pop-out against an OLDER core (1.
     const has = (ch, pred) => calls.some(([c, a]) => c === ch && (!pred || pred(a)));
     check('lite: pages come from the full render for every previewed doc (client-get-pages 1, 3, 2)', has('client-get-pages', a => a[0] === 1) && has('client-get-pages', a => a[0] === 3) && has('client-get-pages', a => a[0] === 2));
     check('lite: the S2 channels are NEVER called (caps gated off by the handshake, not by a 404 round-trip)', !calls.some(([c]) => /^client-get-page$|^client-page-count$|^client-find$|^client-spreadsheet$/.test(c)));
+    check('lite: the 1.5.0 outline channel is never called either', !has('client-outline'));
   }
 }
 
@@ -132,6 +136,7 @@ console.log('A4. functional — WORKFLOW against a 1.3.0 core: the 1.4.0 bits hi
     check('1.3.0 core: the 1.4.0 channels are NEVER called (doc-routes / doc-history / admin-cancel / stamp-type-create)',
           !calls.some(([c]) => /^client-wf-doc-routes$|^client-wf-doc-history$|^client-wf-admin-cancel$|^client-wf-stamp-type-create$/.test(c)));
     check('1.3.0 core: the S2 reads still run (the two gates are independent)', calls.some(([c]) => c === 'client-get-page'));
+    check('1.3.0 core: the 1.5.0 outline channel is never called (Contents panel hidden by the handshake)', !calls.some(([c]) => c === 'client-outline'));
   }
 }
 
@@ -159,13 +164,18 @@ console.log('B. source — the Oracle S1 conditions');
   check("main (S2): client-find is NOT guarded() — a timeout returns a kind:'timeout' envelope instead of tripping the connection overlay",
         /ipcMain\.handle\('client-find', async \(_e, id, query\) => \{\s*try \{ const r = await client\.find\(id, query\); markConnection\(true\); return r; \}/.test(mainJs) && /kind: timedOut \? 'timeout' : 'error'/.test(mainJs) && !/ipcMain\.handle\('client-find',\s*guarded/.test(mainJs));
   const apiC = read('client', 'apiClient.js');
-  check('apiClient: CLIENT_CONTRACT 1.4.0 in lockstep; find carries a LONG idle timeout', /CLIENT_CONTRACT = '1\.4\.0'/.test(apiC) && /\/find\?\$\{q\}`, \{ withAuth: true, timeoutMs: 180000 \}/.test(apiC));
+  check('apiClient: CLIENT_CONTRACT 1.5.0 in lockstep; find carries a LONG idle timeout', /CLIENT_CONTRACT = '1\.5\.0'/.test(apiC) && /\/find\?\$\{q\}`, \{ withAuth: true, timeoutMs: 180000 \}/.test(apiC));
+  check('apiClient (1.5.0): getPage forwards fmt=auto|jpeg only; getOutline reads /documents/:id/outline',
+        /if \(fmt === 'auto' \|\| fmt === 'jpeg'\) q\.set\('fmt', fmt\);/.test(apiC) && /\/v1\/documents\/\$\{encodeURIComponent\(id\)\}\/outline`/.test(apiC) && /getSpreadsheet, getOutline,/.test(apiC));
   check('apiClient (1.4.0): the four workflow routes — documents/:id/routes + /history, routes/:id/cancel, POST stamp-types',
         /\/v1\/workflow\/documents\/\$\{documentId\}\/routes`/.test(apiC) && /\/v1\/workflow\/documents\/\$\{documentId\}\/history`/.test(apiC)
         && /\/v1\/workflow\/routes\/\$\{id\}\/cancel`, \{ withAuth: true, body: \{ version, reason \} \}/.test(apiC) && /request\('POST', '\/v1\/workflow\/stamp-types'/.test(apiC)
         && /docRoutes: wfDocRoutes, docHistory: wfDocHistory, adminCancel: wfAdminCancel, stampTypeCreate/.test(apiC));
   const srvH = read('src', 'modules', 'api', 'handler.js');
-  check('server: API_CONTRACT_VERSION 1.4.0 (lockstep with the client)', /API_CONTRACT_VERSION = '1\.4\.0'/.test(srvH));
+  check('server: API_CONTRACT_VERSION 1.5.0 (lockstep with the client)', /API_CONTRACT_VERSION = '1\.5\.0'/.test(srvH));
+  check('server (1.5.0): the outline route sits behind the same gates as /page (requireSession → _gateDoc → server-side resolution) and the page read takes fmt=auto|jpeg only',
+        /documents\/\(\\\\d\+\)\/outline\$/.test(srvH) && /outlineMatch\) \{\s*\n\s*const session = requireSession\(req, res\); if \(!session\) return;\s*\n\s*const id = Number\(outlineMatch\[1\]\);\s*\n\s*if \(!_gateDoc\(session, id\)\) return;/.test(srvH)
+        && /const format = \(fmtRaw === 'auto' \|\| fmtRaw === 'jpeg'\) \? fmtRaw : undefined;/.test(srvH));
   check('server (1.4.0): the four routes mirror their desktop twins — writer-gated reads through _canAccess, admin-only cancel + stamp-type create',
         /workflow\/documents\/\(\\\\d\+\)\/routes\$/.test(srvH) && /workflow\/documents\/\(\\\\d\+\)\/history\$/.test(srvH)
         && /workflow\/routes\/\(\\\\d\+\)\/cancel\$/.test(srvH) && /req\.method === 'POST' && pathname === `\$\{API_PREFIX\}\/workflow\/stamp-types`/.test(srvH)
@@ -196,7 +206,10 @@ console.log('B. source — the Oracle S1 conditions');
         /const serverHas14 = atLeast\(sv, '1\.4\.0'\);/.test(adapter) && /const clientHas14 = atLeast\(cc, '1\.4\.0'\);/.test(adapter)
         && /const role = \(window\.SearchState && window\.SearchState\.role\) \|\| null;/.test(adapter)
         && /T\.caps\.docRoutes = on14 && writer; T\.caps\.workflowHistory = on14 && writer;/.test(adapter) && /T\.caps\.adminCancel = on14 && admin; T\.caps\.stampCreate = on14 && admin;/.test(adapter)
-        && /serverBehind = \(clientHasS2 && !serverHasS2\) \|\| \(clientHas14 && !serverHas14\)/.test(adapter));
+        && /serverBehind = \(clientHasS2 && !serverHasS2\) \|\| \(clientHas14 && !serverHas14\) \|\| \(clientHas15 && !serverHas15\)/.test(adapter));
+  check('client adapter (1.5.0): the Contents cap needs both sides ≥ 1.5.0; the outline is a docRead (404 = hidden doc, cap kept); the page read forwards fmt',
+        /T\.caps\.outline = serverHas15 && clientHas15;/.test(adapter) && /getDocumentOutline:\s+docRead\('outline', \[\], \(id\) => api\.getOutline\(id\)/.test(adapter)
+        && /getDocumentPage:\s+capGated\('singlePage', null, \(id, index, scale, fmt\) => api\.getPage\(id, index, scale, fmt\)/.test(adapter) && /outline: false,/.test(adapter));
   check('client adapter (1.4.0): doc-routes / history are docRead reads (a 404 = a hidden doc → empty shape, cap KEPT; only 426/402 flip — Oracle C2), cancel unwraps {route}, new stamp unwraps {id,key}',
         /docRoutes:\s+docRead\('docRoutes', \[\], \(id\) => api\.workflow\.docRoutes\(id\), \(j\) => j\.routes \|\| \[\]\)/.test(adapter)
         && /docHistory:\s+docRead\('workflowHistory', \[\], \(id\) => api\.workflow\.docHistory\(id\), \(j\) => j\.history \|\| \[\]\)/.test(adapter)
