@@ -506,9 +506,17 @@ async function loadQuickFile() {
   $('qf-form').classList.toggle('hidden', !enabled);
   if (!enabled) return;
   const sel = $('qf-type'); sel.innerHTML = '';
-  // Only INSTALLED Quick File types — a not-yet-added preset can't be created over /v1 in v1.
+  // The same list the core's pane shows: the INSTALLED Quick File types, then the catalog PRESETS an admin can
+  // set up on first use ("new:<slug>" — the core resolves it when the first file is submitted). Chris 2026-09-14
+  // card 3: the client listed installed only, so a fresh install read "No Quick File types" with a blank box.
   for (const t of (info.installed || [])) { const o = document.createElement('option'); o.value = String(t.id); o.textContent = t.name; sel.appendChild(o); }
-  if (!sel.options.length) { const o = document.createElement('option'); o.textContent = 'No Quick File types — ask an admin to add one'; o.disabled = true; sel.appendChild(o); }
+  const canAddTypes = role === 'admin';
+  for (const p of (info.presets || [])) { if (p.already_present || !canAddTypes) continue; const o = document.createElement('option'); o.value = 'new:' + p.slug; o.textContent = p.name; sel.appendChild(o); }
+  const hint = $('qf-type-hint');
+  if (!sel.options.length) {
+    const o = document.createElement('option'); o.value = ''; o.textContent = '—'; o.disabled = true; o.selected = true; sel.appendChild(o);
+    if (hint) { hint.textContent = canAddTypes ? 'No Quick File types yet — add one from the catalog in the core app (Settings → Document Types).' : 'No Quick File types yet — ask an admin to add one on the core PC.'; hint.classList.remove('hidden'); }
+  } else if (hint) hint.classList.add('hidden');
   const d = $('qf-date'); if (d && !d.value) { const n = new Date(); d.value = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`; }
   renderQfFiles();
 }
@@ -526,7 +534,9 @@ $('qf-submit')?.addEventListener('click', async () => {
   if (!qfStaged.length) { msg.textContent = 'Choose at least one file.'; return; }
   const party = $('qf-party').value.trim();
   if (!party) { msg.textContent = 'Enter the company or person.'; $('qf-party').focus(); return; }
-  const shared = { documentTypeId: Number(sel.value), party, date: $('qf-date').value || '', reference: $('qf-ref').value.trim(), notes: $('qf-notes').value.trim() };
+  // A "new:<slug>" choice = a catalog preset the core sets up on first use (admin); the id is used otherwise.
+  const documentTypeId = /^new:/.test(sel.value) ? sel.value : Number(sel.value);
+  const shared = { documentTypeId, party, date: $('qf-date').value || '', reference: $('qf-ref').value.trim(), notes: $('qf-notes').value.trim() };
   $('qf-submit').disabled = true; $('qf-pick').disabled = true;
   let filed = 0; const errs = [];
   for (const f of qfStaged.slice()) {
@@ -988,7 +998,7 @@ async function loadHome() {
   if (workflowEntitled) {
     const c = (wf && wf.counts) || {};
     grid.appendChild(homeCard('Waiting on you', c.inbox, 'awaiting your decision'));
-    if (canDecide()) grid.appendChild(homeCard('Awaiting others', c.sent, 'you sent, not yet actioned'));
+    if (canDecide()) grid.appendChild(homeCard('Awaiting others', c.sentOpen != null ? c.sentOpen : c.sent, 'you sent, not yet actioned'));
   }
   grid.appendChild(recentCard(recent));
 }
@@ -1591,6 +1601,9 @@ async function refreshBadges() {
       const r = await api.workflow.list(box);
       const routes = (r.json && r.json.routes) || [];
       const n = routes.length; counts[box] = n;
+      // The Home card "you sent, not yet actioned" must count OPEN routes only — Sent lists approved/rejected
+      // ones too (Chris 2026-09-14 card 5: "AWAITING OTHERS 4" over 2 pending + 2 approved).
+      if (box === 'sent') counts.sentOpen = routes.filter(rt => rt.state === 'pending' || rt.state === 'claimed').length;
       paintWfCount(box, n);
       // Routes I can act on (addressed to me, still open) → drive the preview decision bar.
       if (box === 'inbox' || box === 'assigned') {

@@ -804,6 +804,18 @@ function createRequestListener(ctx) {
           const rawName = (body && typeof body.filename === 'string') ? body.filename : '';
           if (!b64 || !rawName) return finish(400, { error: 'filename and contentBase64 are required' });
           if (!body.documentTypeId) return finish(400, { error: 'documentTypeId is required' });
+          // A "new:<slug>" type = a catalog PRESET set up on first use — the same create-on-first-use the core's
+          // Quick File pane does (Chris 2026-09-14 card 3: the client could only pick INSTALLED types, so a fresh
+          // install offered nothing). ADMIN only (the desktop's direct-intake-add-type is admin-gated too);
+          // idempotent — an already-present preset resolves to its existing id.
+          if (typeof body.documentTypeId === 'string' && /^new:/.test(body.documentTypeId)) {
+            if (session.role !== 'admin') return finish(403, { error: 'only an admin can add a document type' });
+            const slug = String(body.documentTypeId.slice(4) || '').trim();
+            const added = (doctypes.addPresetTypes(db, [slug]) || []).find(r => r.status === 'added' || r.status === 'already_present');
+            const t = added && db.prepare('SELECT id FROM document_types WHERE slug = ?').get(added.slug);
+            if (!t) return finish(400, { error: 'unknown_type' });
+            body.documentTypeId = t.id;
+          }
           // SAFE-subset ext (drop macro/OLE formats for the upload lane). Sanitize name to a basename.
           const baseName = P.basename(String(rawName));
           const ext = fileKinds.normExt(baseName);

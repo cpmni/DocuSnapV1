@@ -31,6 +31,10 @@ const { createClient } = require('./apiClient');
 // customer traffic → MITM of the session token + document images. The one-shot TOFU CA bootstrap
 // (apiClient `insecure`) is a SEPARATE, intended path and is unaffected.
 const ALLOW_SELF_SIGNED = !app.isPackaged && process.env.SCANFINDER_CLIENT_ALLOW_SELF_SIGNED === '1';
+// The app NAME titles every native alert()/confirm() box. Packaged builds carry productName ("ScanFinder Search
+// Client"); a dev run showed the package name "scanfinder-client" (Chris 2026-09-14 card 8). Set the display
+// name WITHOUT moving userData (app.getPath('userData') derives from the name — pin the current path first).
+{ const ud = app.getPath('userData'); app.setName('ScanFinder Search Client'); app.setPath('userData', ud); }
 let win = null;
 let serverConfig = null;   // { host, port, tls } | null
 let client = null;         // rebuilt whenever the server changes
@@ -101,7 +105,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1180, height: 800, minWidth: 940, minHeight: 600,
     backgroundColor: '#0c0e14',
-    title: 'ScanFinder — Search',
+    title: 'ScanFinder Client',   // the search POP-OUT is "ScanFinder — Search"; two windows must not share one name (card 8)
     icon: path.join(__dirname, 'assets', 'icon.ico'),   // app/window/taskbar icon (mirrors the core app)
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
