@@ -227,7 +227,7 @@ async function main() {
   check('unknown doc type → 400', (await commit({ token: adminT, body: commitBody({ document_id: docA, document_type_slug: 'no-such-type' }) })).status === 400);
   check('unknown field in a mapping → 400', (await commit({ token: adminT, body: commitBody({ document_id: docA, mappings: [{ field_key: 'not_a_field', page_number: 0, anchor_x_norm: 0.1, anchor_y_norm: 0.1, anchor_w_norm: 0.1, anchor_h_norm: 0.05, target_x_norm: 0.2, target_y_norm: 0.1, target_w_norm: 0.1, target_h_norm: 0.05 }] }) })).status === 400);
   check('off-page target box → 400', (await commit({ token: adminT, body: commitBody({ document_id: docA, mappings: [{ field_key: 'widget_reference', page_number: 0, anchor_x_norm: 0.1, anchor_y_norm: 0.1, anchor_w_norm: 0.1, anchor_h_norm: 0.05, target_x_norm: 0.9, target_y_norm: 0.1, target_w_norm: 0.5, target_h_norm: 0.05 }] }) })).status === 400);
-  check('a structural role as a fixed value → 400', (await commit({ token: adminT, body: commitBody({ document_id: docA, fixed: [{ field_key: 'supplier_name', value: 'x' }] }) })).status === 400);
+  check('an unknown field as a fixed value → 400', (await commit({ token: adminT, body: commitBody({ document_id: docA, fixed: [{ field_key: 'not_a_field', value: 'x' }] }) })).status === 400);
   const confirmedDoc = mkDoc(); db.prepare("UPDATE documents SET status='confirmed' WHERE id=?").run(confirmedDoc);
   check('a non-teachable (already-filed) document → 4xx', [400, 409].includes((await commit({ token: adminT, body: commitBody({ teachCommitId: 'tc-x', document_id: confirmedDoc }) })).status));
 
@@ -240,6 +240,12 @@ async function main() {
   check('the mapping was written for widget_reference', !!db.prepare("SELECT 1 FROM template_field_mappings WHERE template_id=? AND field_key='widget_reference'").get(tid));
   check('the teach_commits ledger is done + carries the templateId', (() => { const r = db.prepare("SELECT status, template_id FROM teach_commits WHERE commit_id='tc-fixed-1'").get(); return r && r.status === 'done' && r.template_id === tid; })());
   check('the exemplar was filed (reviewService.confirm ran)', filed.includes(docA));
+
+  // the Document Issuer MAY be fixed (buyer-issued letterhead — the Print Tracker case; parity with the desktop)
+  const fxDoc = mkDoc();
+  const fx = await commit({ token: adminT, body: commitBody({ teachCommitId: 'tc-fixissuer', document_id: fxDoc, fixed: [{ field_key: 'supplier_name', value: 'Print Tracker' }] }) });
+  check('fixing the Document Issuer (a structural role) is ALLOWED → 200', fx.status === 200 && fx.json.ok === true);
+  check("the fixed issuer landed in template_fields", !!db.prepare("SELECT 1 FROM template_fields WHERE template_id=? AND field_key='supplier_name' AND fixed_value='Print Tracker'").get(fx.json.templateId));
 
   // idempotency — replay the SAME teachCommitId returns the SAME template, no second template
   const ok2 = await commit({ token: adminT, body: commitBody({ document_id: docA }) });

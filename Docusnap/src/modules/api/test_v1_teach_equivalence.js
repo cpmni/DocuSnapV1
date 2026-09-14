@@ -67,7 +67,9 @@ const TEACH = {
     { field_key: 'supplier_name', page_number: 0, anchor_text: null, anchor_x_norm: 0.1, anchor_y_norm: 0.05, anchor_w_norm: 0.3, anchor_h_norm: 0.06, target_x_norm: 0.1, target_y_norm: 0.05, target_w_norm: 0.3, target_h_norm: 0.06, search_expansion: 0.04 },
     { field_key: 'ref', page_number: 0, anchor_text: 'Ref', anchor_x_norm: 0.6, anchor_y_norm: 0.2, anchor_w_norm: 0.08, anchor_h_norm: 0.04, target_x_norm: 0.7, target_y_norm: 0.2, target_w_norm: 0.15, target_h_norm: 0.04, search_expansion: 0.04 },
   ],
-  fixed: [{ field_key: 'terms', value: 'Net 30' }],
+  // includes the Document Issuer as a FIXED value (buyer-issued letterhead — the case that broke in the
+  // owner's live client test; proves the desktop and /v1 both allow it and write identical rows).
+  fixed: [{ field_key: 'terms', value: 'Net 30' }, { field_key: 'supplier_name', value: 'Fixed Issuer Ltd' }],
   hidden: ['notes'],
   listCaptions: [{ field_key: 'lines', label: 'Line Item' }],
 };

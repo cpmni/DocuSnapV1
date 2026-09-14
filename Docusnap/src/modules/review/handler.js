@@ -2156,7 +2156,9 @@ async function teachCommit(ctx, db, payload, actor, reviewSvc) {
   const listCaptions = Array.isArray(p.listCaptions) ? p.listCaptions : [];
   for (const f of fixed) {
     if (!f || !fieldKeys.has(f.field_key)) return { ok: false, code: 'BAD_REQUEST', error: 'a fixed value names an unknown field' };
-    if (doctypes.isStructuralKey(dtInfo, f.field_key)) return { ok: false, code: 'BAD_REQUEST', error: 'a structural role cannot be given a fixed value' };
+    // A structural role (incl. the Document Issuer) MAY be fixed — the desktop wizard offers it for a
+    // buyer-issued letterhead (a fixed issuer), and templates.setFieldFixedValue is the sanctioned door for
+    // correcting a frozen identity. NO structural refusal here (that would be stricter than the desktop).
   }
   for (const k of hidden) {
     if (!fieldKeys.has(k)) return { ok: false, code: 'BAD_REQUEST', error: 'a hidden field is unknown' };
