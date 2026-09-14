@@ -2799,7 +2799,7 @@ function register(ctx) {
   // first-page batch; a normal multi-page invoice (or any error/timeout) yields ONE
   // segment and nothing changes. Splits in place (reusing pdf_splitter.py) and moves the
   // original into a recoverable subfolder the NON-recursive folder scan ignores.
-  const SEPARATED_DIR = '.sf_separated_originals';
+  const SEPARATED_DIR = '.sf_separated_originals';   // keep in step with isAppManagedFolder (module scope, exported)
   const runPyJson = (script, args, env) => new Promise((resolve) => {
     let out = '';
     let proc;
@@ -2978,6 +2978,13 @@ function register(ctx) {
       }
       if (processed && foldersOverlap(folderPath, processed)) {
         return { success: false, error: 'This is your “Processed” folder. Importing it would re-process already-filed documents. Please choose a different folder.' };
+      }
+      // Refuse the app's OWN working folders (owner 2026-09-14 — "no" to importing them): `.sf_separated_originals`
+      // holds the ORIGINAL stacks the separator already split and filed (importing one re-queues a whole batch as
+      // one document — Chris's 34 blank pages), `.metadata` holds the filing sidecars. Name-based on purpose: these
+      // folders can sit under any source tree, so no setting knows them.
+      if (isAppManagedFolder(folderPath)) {
+        return { success: false, error: 'This folder is one ScanFinder manages itself (separated originals or filing metadata) — its documents are already on record. Please choose the folder you scanned into instead.' };
       }
       // Q1 seam (Oracle C1.6, 2026-08-22): under keep_processed_originals the DEFAULT
       // `<source>/Processed` folder becomes a permanent archive of FILED originals, and there is
@@ -6883,9 +6890,18 @@ function killAll() {
   _currentBatchProcs = [];
 }
 
+// A folder ScanFinder manages itself: the separated-originals archive (`.sf_separated_originals`, written by the
+// import separator) or a `.metadata` filing-sidecar folder — the folder itself or anything below one. Never an
+// import source: process-folder refuses it with a plain message (owner 2026-09-14, after a 34-page stack of blank
+// pages came from importing one). Name-based on purpose — these folders can sit under any source tree.
+function isAppManagedFolder(folderPath) {
+  return /(^|[\\/])\.(sf_separated_originals|metadata)([\\/]|$)/i.test(String(folderPath || ''));
+}
+
 module.exports = {
   _rememberPickedDir, _pickerDefaultPath, _resetPickedDir: () => { _lastPickedDir = null; },
   register,
+  isAppManagedFolder,   // process-folder refuses the app's own working folders (test_import_app_managed_folder.js)
   // 2026-08-31 batch-import crash fix — pure cap-math + resilience hooks (test_import_concurrency_cap.js).
   maxConcurrency, defaultConcurrency, ramConcurrencyCap, _effectiveWorkers, _reprocessThreadCap,
   singleDocParallelEnv,   // OCR_PARALLEL_IMPORT (2026-09-07): the pure call-site predicate (test_import_parallel_env.js)

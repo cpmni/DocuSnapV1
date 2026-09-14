@@ -5397,3 +5397,9 @@ meaningful at all (if not, the import picker could refuse/skip app-managed folde
 separated original that is itself a separator-only stack, or a render path that misses those files? Reproduce with the
 sandbox seed (`scripts/seed-chris-sandbox.js`) before deciding. Chris's other 8 cards from the same round are DONE
 (`docs/CHRIS_FULL_APP_REVIEW_2026-09-14.md` outcomes table).
+
+> **RESOLVED 2026-09-14 — owner: "no to the folder."** The importer now REFUSES the app's own working folders
+> (`.sf_separated_originals`, `.metadata`, the folder itself or anything below one) with a plain message
+> (`processing/handler.js isAppManagedFolder` + the process-folder guard; pin `test_import_app_managed_folder.js`).
+> Why blank: that folder holds the ORIGINAL multi-document stacks the separator already split and filed, so a
+> re-import queues the whole stack as one document — not worth chasing further.

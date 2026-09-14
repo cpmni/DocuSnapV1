@@ -263,6 +263,30 @@ console.log('B. source — the Oracle S1 conditions');
   check('main: the pop-out 401 report is sender-scoped and signs the main window out', /ipcMain\.on\('client-popout-session-expired', \(e\) => \{\s*if \(!searchWin \|\| e\.sender !== searchWin\.webContents\) return;/.test(main) && /win\.webContents\.send\('client-session-expired'\)/.test(main));
   check('main: client-open-search refuses when not signed in (logged); bounds persisted', /if \(!client \|\| !client\.isAuthenticated\(\)\) \{[\s\S]{0,300}return \{ ok: false, error: 'not signed in' \};/.test(main) && /search-window-state\.json/.test(main) && /w\.on\('close', \(\) => saveSearchState\(w\)\)/.test(main));
   check('main: show:false + ready-to-show (no blank flash)', /show: false, backgroundColor/.test(main) && /w\.once\('ready-to-show'/.test(main));
+  // A remembered position on a screen that is gone would create the pop-out OFF-SCREEN ("doesn't open" — owner 2026-09-14,
+  // the stale-session story was unconfirmed). The saved bounds go through windowBounds.sanitizeBounds against the live displays.
+  check('main: the remembered pop-out position is sanitised against the connected displays before the window is created',
+        /const \{ sanitizeBounds \} = require\('\.\/windowBounds'\);/.test(main) && /displays = screen\.getAllDisplays\(\);/.test(main)
+        && /const b = sanitizeBounds\(st, displays\);/.test(main) && /width: b\.width, height: b\.height, minWidth: 900, minHeight: 560,\s*\n\s*x: b\.x, y: b\.y,/.test(main));
+  {
+    const { sanitizeBounds, MIN_VISIBLE } = require(path.join(ROOT, 'client', 'windowBounds.js'));
+    const one = [{ workArea: { x: 0, y: 0, width: 1920, height: 1040 } }];
+    const two = [{ workArea: { x: 0, y: 0, width: 1920, height: 1040 } }, { workArea: { x: 1920, y: 0, width: 2560, height: 1400 } }];
+    const a = sanitizeBounds({ x: 100, y: 80, width: 1280, height: 820 }, one);
+    check('windowBounds: a position on a connected screen is kept', a.x === 100 && a.y === 80 && a.width === 1280 && a.height === 820);
+    const b2 = sanitizeBounds({ x: 2200, y: 120, width: 1280, height: 820 }, two);
+    check('windowBounds: a position on the SECOND screen is kept while that screen exists', b2.x === 2200 && b2.y === 120);
+    const c = sanitizeBounds({ x: 2200, y: 120, width: 1280, height: 820 }, one);
+    check('windowBounds: the same position with the second screen GONE drops x/y (Electron centres it) and keeps the size', c.x === undefined && c.y === undefined && c.width === 1280 && c.height === 820);
+    const d = sanitizeBounds({ x: -1200, y: -700, width: 1280, height: 820 }, one);
+    check(`windowBounds: a window dragged almost entirely off the desktop (< ${MIN_VISIBLE}px visible) is re-centred`, d.x === undefined && d.y === undefined);
+    const e = sanitizeBounds({ x: 1850, y: 980, width: 1280, height: 820 }, one);
+    check('windowBounds: a sliver on-screen (< MIN_VISIBLE) counts as off-screen', e.x === undefined);
+    const f = sanitizeBounds({ x: 10, y: 10, width: 5000, height: 4000 }, one);
+    check('windowBounds: a size larger than any screen is clamped to the largest work area', f.width === 1920 && f.height === 1040 && f.x === 10);
+    const g = sanitizeBounds(null, one), h = sanitizeBounds({ x: 50, y: 50, width: 1280, height: 820 }, []);
+    check('windowBounds: no saved state → defaults, no position; no displays known → position dropped, size kept', g.width === 1280 && g.x === undefined && h.x === undefined && h.width === 1280);
+  }
 
   const pre = read('client', 'preload.js');
   for (const m of ['openSearch', 'searchTarget', 'currentUser', 'serverInfo', 'onSearchSetQuery', 'onSearchGotoDoc', 'popoutSessionExpired', 'onSessionExpired'])

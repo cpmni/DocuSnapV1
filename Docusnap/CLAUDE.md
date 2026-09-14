@@ -75,8 +75,13 @@ entries never dead; the queue rules; Python pin under BOTH interpreters). **AFTE
 cap `pageInfo`) + the next 3 pages in one background batch (`searchPreview._prefetchAhead`, one batch per selection with an
 identity-guarded latch, a page reached mid-batch awaits it, the stamped⇄original swap guard, the file's count wins, the
 batch waits for the find on a searched doc). Oracle SIGN-OFF-W/COND C1-C5 built; harness `--race` run on both apps; exact
-call-count pins. The persistent render worker stays a LATER slice (`pendingfeatures.md`). Still owed: mig 166 flip gate ·
-the dead-provider tidy-up · the Oracle's non-blocking notes · the 34-blank-pages owner question.
+call-count pins. The persistent render worker stays a LATER slice (`pendingfeatures.md`). **Then (ADDENDUM 6):** the importer
+refuses `.sf_separated_originals` / `.metadata` (`isAppManagedFolder`, pin) — the 34-blank-pages question CLOSED; the pop-out's
+remembered position is sanitised against the connected displays (`client/windowBounds.js` — an OFF-SCREEN restore was a
+second real "doesn't open" cause); **date-format audit** for the test customer's "23rd Aug 2026": Python `parse_date` handles
+ordinals + day names, the JS canonical normaliser (`filing/handler.js parseDate`) and `validation_patterns.date` do NOT — the
+alignment fix is the next slice (reggie + Oracle first). Still owed: mig 166 flip gate · the dead-provider tidy-up · the
+Oracle's non-blocking notes.
 Follow-ups: the /v1 purge fix, a `/v1` MINOR for the pop-out's hidden bits, client `npm run dist` in lockstep. Memory
 `project_client_search_parity_20260913.md`.
 

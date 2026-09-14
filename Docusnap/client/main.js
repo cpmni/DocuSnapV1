@@ -16,12 +16,13 @@
  *   SCANFINDER_CLIENT_API_URL  optional env override of the saved server (dev/launcher).
  */
 
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, screen } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { createClient } = require('./apiClient');
+const { sanitizeBounds } = require('./windowBounds');
 
 // TLS-verification escape hatch — dev ONLY. SECURITY (2026-09-01 pre-release audit, eric C-4): this must
 // be IGNORED in a packaged customer build, the same discipline the core app applies to its own security
@@ -166,9 +167,14 @@ function openSearchWindow(opts) {
   }
   pendingSearch = { query: o.query != null ? String(o.query) : null, docId: o.docId != null ? Number(o.docId) : null };
   const st = loadSearchState() || {};
+  // A remembered position is honoured ONLY if it is still on a connected screen — a position saved on a monitor that
+  // is gone (undocked laptop, second screen off) would create the window OFF-SCREEN: it runs, nobody sees it, and it
+  // reads as "the search window doesn't open" (owner 2026-09-13/14). Otherwise Electron centres it.
+  let displays = []; try { displays = screen.getAllDisplays(); } catch { displays = []; }
+  const b = sanitizeBounds(st, displays);
   const w = new BrowserWindow({
-    width: st.width || 1280, height: st.height || 820, minWidth: 900, minHeight: 560,
-    x: Number.isFinite(st.x) ? st.x : undefined, y: Number.isFinite(st.y) ? st.y : undefined,
+    width: b.width, height: b.height, minWidth: 900, minHeight: 560,
+    x: b.x, y: b.y,
     show: false, backgroundColor: '#0c0e14',
     title: 'ScanFinder — Search',
     icon: path.join(__dirname, 'assets', 'icon.ico'),
@@ -182,7 +188,7 @@ function openSearchWindow(opts) {
   searchWin = w;
   if (w.removeMenu) w.removeMenu();
   const dbg = (m) => { try { console.error('[search-popout] ' + m); } catch {} };   // stderr — a launcher's log captures it
-  dbg(`created (state ${JSON.stringify(st)})`);
+  dbg(`created (state ${JSON.stringify(st)} → bounds ${JSON.stringify(b)}${(Number.isFinite(st.x) && b.x == null) ? ' — saved position OFF-SCREEN, dropped' : ''})`);
   w.webContents.on('did-fail-load', (_e, code, desc) => dbg(`did-fail-load ${code} ${desc}`));
   w.webContents.on('render-process-gone', (_e, d) => dbg(`render-process-gone ${d && d.reason}`));
   w.webContents.on('preload-error', (_e, p, err) => dbg(`preload-error ${err && err.message}`));

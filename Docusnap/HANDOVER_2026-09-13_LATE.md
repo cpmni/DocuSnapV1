@@ -324,6 +324,29 @@ image filtering, non-PDF without a spawn, 404/401); the Python pin under both in
   `{"testBuild":true,"buildRev":"20260914-1039-6f735bb-TEST"}`, `--smoke-windows` 14/14; the packaged `pages.pyc`
   answers `--page-info` under the vendored Python);
 - client **`client\dist\ScanFinder Search Client Setup 1.0.2-r20260914-1043-6f735bb.exe`** (106.1 MB; contract 1.6.0).
-Install the core first, then the client; nothing is running at wrap. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
+Install the core first, then the client; nothing is running at wrap.
+
+---
+
+## ADDENDUM 6 — 2026-09-14 (afternoon): the owner's two answers → two small fixes; the date-format audit
+
+**Owner: "no to the folder — I believe it didn't drop back to login yesterday, can't exactly remember."**
+- **Importer refuses the app's own folders.** `process-folder` now refuses `.sf_separated_originals` / `.metadata` (the
+  folder or anything below it) with a plain message — `processing/handler.js isAppManagedFolder` (module scope,
+  exported) + pin `src/modules/processing/test_import_app_managed_folder.js`. The 34-blank-pages question is closed.
+- **The pop-out "doesn't open" — a second, real cause found and closed.** The stale-session story was unconfirmed, so
+  I looked again: the pop-out restored its last position from `search-window-state.json` WITHOUT checking that the
+  position is still on a connected screen. A position saved on a monitor that is now gone (undocked laptop, second
+  screen off) — or a window dragged almost entirely off the desktop — makes Electron create the window OFF-SCREEN: it
+  runs, nobody sees it. Fix: `client/windowBounds.js sanitizeBounds` (pure; a saved position is kept only when ≥120 px
+  each way lies inside some display's work area, else dropped so Electron centres the window; the size is clamped to
+  the largest work area) wired into `openSearchWindow` with a stderr line when a position is dropped. Pinned in the
+  pop-out pin (unit cases + the wiring). Minimised → restore was already handled.
+- **Date formats (test customer: "23rd Aug 2026" not recognised while teaching)** — audit in the session reply; the
+  gap is on the JS side (`filing/handler.js parseDate` — the canonical normaliser at confirm / filename / /v1 / Quick
+  File — strips NO ordinal and takes no 2-digit year or `-`/`/` month-name shapes) and in
+  `config/keyword_patterns.json validation_patterns.date` (the credibility gate + the Review badge — no ordinal, no
+  `D-Mon-YYYY`); Python `validator.parse_date` already handles both. Fix = align JS + config with Python (reggie +
+  Oracle first — the patterns are shared JS/Python). NOT built yet. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
 stacking; 403 wording; the S2 reads' 404 flip) · the owner's answer on "content tables" (PDF reader question,
 `pendingfeatures.md`) · everything in the earlier lists.
