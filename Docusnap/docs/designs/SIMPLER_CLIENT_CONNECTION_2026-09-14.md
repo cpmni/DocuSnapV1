@@ -143,6 +143,53 @@ Verdict: **sound + correctly scoped as a UX layer.** Corrections + decisions:
   "pairing available but not mandatory" acceptable, or must a first-ever enrol require the code once? Plus the
   auto-verify "no bad cert pinned before the compare" guarantee (Q4) and the discovery presence-leak (Q6).
 
+## Oracle vet (2026-09-14) — SIGN OFF WITH CONDITIONS (`docs/oracle_log.md`)
+Design sound + correctly scoped as a UX layer; the settled principle + the three rejections are correct; the
+threat model is honest; eric's compare-in-MAIN is the right fix and is **STRONGER than today** (today's
+import-profile pins whatever caPem the file holds with NO machine compare, and TOFU uses a raw `window.confirm`).
+Fork rulings: pairing "not mandatory" = **ACCEPTABLE** (it is today's shipped posture, not a new regression —
+keep the lever real); mDNS/S4 = **CONCUR DEFER** (opt-in only if ever built).
+**The seam eric couldn't see — a SAN gap masquerading as a CA change:** the pinned agent verifies BOTH the CA
+chain AND the dialed hostname against the server-cert SANs (`managedSans` = the addresses the SERVER enumerated).
+A client dialing an address NOT in the SANs (a 2nd NIC/VPN IP, a typed FQDN, a `.local` name — MUCH more likely
+if mDNS ever advertises a name the server didn't SAN) gets `ERR_TLS_CERT_ALTNAME_INVALID` with an **UNCHANGED CA
+fingerprint** → eric's cert-change flow would fire the "server identity changed" alarm whose two fingerprints
+MATCH → trains users to click through the one screen that must stay scary. Must branch on the error code (C3).
+Fails closed (never mis-pins), so a condition, not a send-back.
+**Conditions — BUILD:**
+- **C1** the verified path is fully MAIN-resident: `client-connect-verified({host,port,expectedFingerprint,code})`
+  — MAIN fetches the CA, computes the fingerprint, compares, and pins **the exact bytes MAIN fetched**; NO caPem
+  round-trip through the renderer. For import-profile *verified*, pin the profile's caPem IN MAIN. The explicit
+  "Choose .crt…" path stays renderer-fed (the sole deliberate-operator exception).
+- **C2** compare the **locally-computed** fingerprint of the exact pinned bytes — NEVER the server-reported
+  `caFingerprintSha256` (`apiClient.js:248-249`); if `new X509Certificate(pem)` throws → treat as MISMATCH + refuse
+  (never "fail closed by luck"). Guarantee: *pinned bytes ≡ hashed bytes ≡ compared value.*
+- **C3** add `isCertError()` (covers `UNABLE_TO_VERIFY_LEAF_SIGNATURE` / `SELF_SIGNED_CERT_IN_CHAIN` /
+  `DEPTH_ZERO_SELF_SIGNED_CERT` / `ERR_TLS_CERT_ALTNAME_INVALID` / `CERT_HAS_EXPIRED` / `ERR_SSL_*`) routed BEFORE
+  `isNetworkError` (`main.js:383`). ALTNAME with an **unchanged** CA → a "certificate doesn't cover this address —
+  re-issue on the server / use the advertised address" state (fail-closed, NO re-pin offered), NOT the
+  identity-changed re-accept. Only a genuinely changed CA fingerprint reaches the refuse-is-default re-accept
+  modal. NEVER a `rejectUnauthorized:false` / `checkServerIdentity` bypass as the ALTNAME "fix".
+- **C4** keep the pairing lever real + honestly labelled: the S1 writer lets an admin set/clear a code (setting a
+  code = mandatory pairing on `/v1/ca`+`/v1/enroll`, the existing mechanism); raise it to ≥8 alnum OR add a
+  failed-pairing lockout on those routes (a 6-digit code is a 403/200 brute-force oracle today, checked before
+  rate-limiting); label it a **verification aid**, not the access control (the real gate = credentials + entitlement
+  + seat). NEVER mandatory-by-default (would break the env/sandbox/harness enrol paths).
+- **C5** the "enable requires host/port" gate is a Settings/renderer guard ONLY — no server-side hard requirement
+  in `resolveApiConfig`/`startApiServer`; the env path (`SCANFINDER_API`), the sandbox, and loopback `127.0.0.1`
+  (cert-free) must keep working. Treat `127.0.0.1` as a valid cert-free selection.
+**Conditions — TEST (each must genuinely FAIL on the bug it guards):**
+- **T1 (C2)** MITM `{caPem: attackerCA, caFingerprintSha256: victimFp}` on a verified connect with
+  `expectedFingerprint=victimFp` → REFUSE + attackerCA NOT pinned; malformed PEM + matching server-reported fp →
+  REFUSE, nothing pinned.
+- **T2 (C3)** host absent from the SANs → "address not covered" state, no re-pin, re-accept modal NOT shown; a
+  genuine CA change → re-accept modal, refuse-default, pins only on explicit confirm; a TLS-verify error classifies
+  as `isCertError` not `isNetworkError`.
+- **T3 (C4, PIN)** no code → `/v1/ca`=200 and `/v1/enroll` still enforces creds+entitlement+seat; code set → both
+  require a matching `?code=` (constant-time) — pins the default so a future dev can't silently flip pairing.
+- **T4** the S4/mDNS advert stays absent (or if built: default OFF, host/port only — NEVER the fingerprint — and
+  connect never depends on it).
+
 ## Slices (once vetted)
 - S1 — server: gate the enable switch on host/port; the unified "Connect a client" card (address + fingerprint +
   short code + QR + export profile).
