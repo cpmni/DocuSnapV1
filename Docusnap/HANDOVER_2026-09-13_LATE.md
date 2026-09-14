@@ -347,6 +347,12 @@ Install the core first, then the client; nothing is running at wrap.
   File — strips NO ordinal and takes no 2-digit year or `-`/`/` month-name shapes) and in
   `config/keyword_patterns.json validation_patterns.date` (the credibility gate + the Review badge — no ordinal, no
   `D-Mon-YYYY`); Python `validator.parse_date` already handles both. Fix = align JS + config with Python (reggie +
-  Oracle first — the patterns are shared JS/Python). NOT built yet. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
+  Oracle first — the patterns are shared JS/Python). NOT built yet.
+
+**Installers REBUILT on this commit (`99959c2`, 12:59-13:03) — these SUPERSEDE every earlier pair today:**
+- core **`dist\ScanFinder Setup 2.0.0-r20260914-1159-99959c2-TEST.exe`** (352.5 MB; packaged `--smoke-boot` identity
+  `{"testBuild":true,"buildRev":"20260914-1159-99959c2-TEST"}`, `--smoke-windows` 14/14);
+- client **`client\dist\ScanFinder Search Client Setup 1.0.2-r20260914-1202-99959c2.exe`** (106.1 MB; contract 1.6.0).
+Install the core first, then the client; nothing is running at wrap. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
 stacking; 403 wording; the S2 reads' 404 flip) · the owner's answer on "content tables" (PDF reader question,
 `pendingfeatures.md`) · everything in the earlier lists.
