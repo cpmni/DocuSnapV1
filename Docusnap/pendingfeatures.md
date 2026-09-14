@@ -5367,6 +5367,12 @@ only for the small reads (page / thumb / count / outline — never the array ren
 worker below with its lifecycle rules (per-request timeout + kill + restart, spawn-per-call fallback, per-file
 quarantine after two deaths, recycle after N requests, a `will-quit` kill). Pre-existing, noted: no previewService
 spawn has a timeout, and the `/v1` page / count / outline reads lack find's in-flight cap.**
+> **BUILT 2026-09-14 (afternoon; contract 1.6.0):** the coalesced spawn — `pages.py --page-info` (+ `--also`) answers
+> page(s) + count + bookmarks in ONE process; the viewer's first paint is one call (no count probe, no outline read),
+> and the owner's follow-on ask — **read-ahead of the next 3 pages in one background batch** — rides the same call
+> (`_prefetchAhead`, one batch in flight, a page reached mid-batch waits for it). Docs: `docs/detached-client.md`.
+> Remaining per-page fixed cost is now ONE spawn per first paint + one per batch of three.
+
 **DESIGNED, NOT BUILT — a later slice (Oracle first): a PERSISTENT render worker.** One long-lived Python process
 (`render/pages.py --serve`: JSON lines on stdin/stdout — count / page / thumb / outline / full-array, one PDF open
 at a time, the same server-side path rules) owned by `previewService` (`renderWorker.js`: lazy start, restart on

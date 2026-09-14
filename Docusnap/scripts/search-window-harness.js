@@ -44,6 +44,9 @@ const WF = argv.includes('--workflow');
 // --role admin|edit: the signed-in role the stubs report (default admin). An EDIT run pins "hidden beats refused":
 // no [Cancel route], no "+ New stamp", no Empty bin / permanent delete — and the admin-only channels never called.
 const ROLE = argOf('--role') || 'admin';
+// --race: the read-ahead RACE scenario (Oracle 2026-09-14 C1) — a batch landing late from a PREVIOUS selection must not
+// free the current selection's one-batch latch. Its own run, so the standard runs keep exact call counts.
+const RACE = argv.includes('--race');
 const HTML = argOf('--html') || (CLIENT ? path.join(ROOT, 'client', 'renderer', 'search', 'index.html')
                                         : path.join(ROOT, 'src', 'windows', 'search', 'index.html'));
 const PRELOAD = CLIENT ? path.join(ROOT, 'client', 'preload.js') : path.join(ROOT, 'src', 'preload.js');
@@ -87,6 +90,15 @@ const OPEN_ROUTES = { 2: [{ id: 13, to_username: 'boss', from_username: 'harness
 const cancelRoute = (id) => { for (const k of Object.keys(OPEN_ROUTES)) { const i = OPEN_ROUTES[k].findIndex(r => r.id === Number(id)); if (i >= 0) { const [r] = OPEN_ROUTES[k].splice(i, 1); return { ...r, state: 'recalled', version: r.version + 1 }; } } return null; };
 const OLD14 = !atLeast(SERVER_CONTRACT, '1.4.0');   // client mode: a core without the 1.4.0 routes answers 404
 const OLD15 = !atLeast(SERVER_CONTRACT, '1.5.0');   // … and without the 1.5.0 outline read
+const OLD16 = !atLeast(SERVER_CONTRACT, '1.6.0');   // … and without the 1.6.0 page-info (one-request first paint + read-ahead)
+// page-info world: page(s) + count + bookmarks in ONE answer; doc 3's count is 2 (its page_count is NULL in the row).
+const pageInfoOf = (id, page, also) => {
+  const r = byId(id); if (!r || !/\.pdf$/i.test(r.original_filename)) return null;
+  const n = Number(id) === 3 ? 2 : (r.page_count || 1);
+  const images = {};
+  for (const i of [Number(page), ...((also || []).map(Number))]) if (i >= 0 && i < n) images[String(i)] = PNG;
+  return { pages: n, outline: OUTLINE[Number(id)] || [], images };
+};
 // Contents panel (1.5.0): doc 1 (3 pages) carries bookmarks — two top-level, one nested, one without a page.
 // Doc 3 has NO recorded page_count (the probe says 2) and a bookmark pointing beyond it → the entry must read as
 // UNAVAILABLE (never a dead button) and a click must explain itself (Oracle 2026-09-14 condition 1).
@@ -130,6 +142,7 @@ if (CLIENT) {
   stub('client-find', (id, q) => (LITE ? notFound : ok({ kind: 'pdf', pages: 3, matches: String(q).toLowerCase() === 'inv' ? [{ page: 0, x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.12 }] : [] })));
   stub('client-spreadsheet', (id) => (LITE ? notFound : ok({ grid: Number(id) === 2 ? { sheets: [{ name: 'Sheet1', rows: [['Item', 'Qty'], ['Bolt', '12']] }], truncated: false } : null })));
   stub('client-outline', (id) => (OLD15 ? notFound : ok({ outline: OUTLINE[Number(id)] || [] })));   // 1.5.0 Contents panel
+  stub('client-page-info', (id, page, also) => (OLD16 ? notFound : ok(pageInfoOf(id, page, also) || { pages: null, outline: [], images: {} })));   // 1.6.0
   // Contract 1.4.0 (per-doc routes / history, admin cancel, new stamp type; the stamped-copy pages are older).
   // Doc 3 answers 404 on BOTH per-doc reads = "hidden from you" (the core's accessService hides existence): the cap
   // must survive it (Oracle 2026-09-14 condition 2) — doc 2's banner is read AFTER doc 3 in the drive.
@@ -157,6 +170,7 @@ stub('get-document-detail', (id) => { const r = byId(id); return r ? { ...r, ext
 stub('get-document-page', (id, idx, scale) => { const r = byId(id); return (r && /\.pdf$/i.test(r.original_filename)) ? PNG : null; });
 stub('get-document-page-count', (id) => (Number(id) === 3 ? 2 : (byId(id) && byId(id).page_count) || null));
 stub('get-document-outline', (id) => OUTLINE[Number(id)] || []);
+stub('get-document-page-info', (id, page, also) => pageInfoOf(id, page, also));
 stub('get-document-pages', (id) => { const r = byId(id); return (r && /\.pdf$/i.test(r.original_filename)) ? [PNG] : []; });
 stub('find-in-document', (id, q) => ({ kind: 'text', pages: 3, matches: String(q).toLowerCase() === 'inv' ? [{ page: 0, x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.12 }] : [] }));
 stub('get-spreadsheet-grid', (id) => (Number(id) === 2 ? { sheets: [{ name: 'Sheet1', rows: [['Item', 'Qty'], ['Bolt', '12']] }], truncated: false } : null));
@@ -202,6 +216,8 @@ const DRIVE = `(async () => {
   const WF14 = WF && ${!CLIENT || !OLD14};
   const ROLE = '${ROLE}'; const ADMIN = ROLE === 'admin';
   const CONTENTS = ${!CLIENT || !OLD15};   // the 1.5.0 Contents panel is backed (core always; client vs a ≥ 1.5.0 core)
+  const PAGEINFO = ${!CLIENT || !OLD16};   // the 1.6.0 one-request first paint + read-ahead is backed
+  const RACE = ${RACE};
   // OLDER = this client knows more than the stubbed core (any remediable drift → the "newer core needed" hint).
   const OLDER = ${CLIENT && !atLeast(SERVER_CONTRACT, CLIENT_CONTRACT || '0.0.0')};
   const checks = [];
@@ -232,6 +248,7 @@ const DRIVE = `(async () => {
   ok('preview: fields table rendered (Company/Type/Reference/Date/Status + extras)', $$('.pf-row').length >= 6);
   ok('preview: no confidence band on a CONFIRMED doc', !$('.pf-confband'));
   ok('preview: page nav shown with 1 / 3 (' + (LITE ? 'full render' : 'sparse array from page_count') + ')', await until(() => vis($('#page-nav')) && $('#page-label').textContent.trim() === '1 / 3'));
+  if (PAGEINFO) ok('read-ahead (1.6.0): pages 2 and 3 arrive in the background after the first paint (one batch process) — page flips are then instant', await until(() => !!window.SearchState.currentPages[1] && !!window.SearchState.currentPages[2]));
   if (LITE) {
     ok('preview (lite client): Find cluster HIDDEN (caps.find false — the core has no /v1 find)', await until(() => !vis($('#match-nav')) && !vis($('#match-sep'))));
     ok('preview (lite client): no highlight overlay drawn', $$('#preview-hl-layer .pv-hl').length === 0);
@@ -423,6 +440,48 @@ const DRIVE = `(async () => {
       click($('#stamp-popup .sp-x'));
       await until(() => $('#stamp-popup').style.display === 'none');
     }
+  }
+
+  if (RACE && PAGEINFO) {
+    // Oracle 2026-09-14 C1 — the read-ahead latch belongs to ONE selection. Wrap the transport in-page: doc 3 (A) gets a
+    // SLOW read-ahead batch (250 ms), doc 1 (B) is made an 8-page document with a bookmark far beyond its first batch
+    // and a slower batch (500 ms). Select A, then B; A's batch lands while B's is in flight; jump B to page 5 (its own
+    // per-page render) → the re-arm must NOT start a second batch while B's first is still out: never more than ONE
+    // read-ahead batch in flight for B.
+    const T = window.SearchTransport, orig = T.getDocumentPageInfo;
+    let inflightB = 0, maxInflightB = 0, batchesB = 0;
+    const delay = (ms) => new Promise(r => setTimeout(r, ms));
+    T.getDocumentPageInfo = async (id, page, also, scale, fmt) => {
+      const isBatch = !(Number(page) === 0 && (!also || !also.length));
+      const isB = Number(id) === 1;
+      if (isB && isBatch) { inflightB++; batchesB++; maxInflightB = Math.max(maxInflightB, inflightB); }
+      try {
+        const info = await orig(id, page, also, scale, fmt);
+        if (isB && info) {
+          info.pages = 8; info.outline = [{ title: 'Far', page: 4, level: 0 }];
+          // The stubbed world knows 3 pages for doc 1: synthesise the "extra" pages from page 1's image so the
+          // 8-page document is fully renderable for this scenario.
+          const any = Object.values(info.images || {})[0] || window.SearchState.currentPages[0];
+          info.images = info.images || {};
+          for (const i of [Number(page), ...(also || []).map(Number)]) if (i < 8 && any) info.images[String(i)] = any;
+        }
+        if (isBatch) await delay(isB ? 500 : 250);
+        return info;
+      } finally { if (isB && isBatch) inflightB--; }
+    };
+    try {
+      click($('.result-item[data-id="3"]'));
+      ok('race: A (doc 3) painted; its slow read-ahead batch is in flight', await until(() => window.SearchState.selectedDoc && window.SearchState.selectedDoc.id === 3 && $('#page-label').textContent.trim() === '1 / 2'));
+      click($('.result-item[data-id="1"]'));
+      ok('race: B (doc 1, made 8 pages) painted with the "Far" bookmark; its batch [1,2,3] in flight', await until(() => window.SearchState.selectedDoc && window.SearchState.selectedDoc.id === 1 && $('#page-label').textContent.trim() === '1 / 8' && !!$$('#preview-outline-list .pv-outline-item').find(b => b.textContent === 'Far')));
+      await sleep(320);                                                                  // A's batch lands mid-B
+      click($$('#preview-outline-list .pv-outline-item').find(b => b.textContent === 'Far'), 'Contents: Far');
+      ok('race: the jump to page 5 rendered its own page (5 / 8)', await until(() => $('#page-label').textContent.trim() === '5 / 8'));
+      await sleep(80);
+      ok('race (Oracle C1): a late batch from the previous selection did NOT free the latch — never more than ONE read-ahead batch in flight for B (max ' + maxInflightB + ')', maxInflightB <= 1);
+      await until(() => inflightB === 0, 2000);
+      ok('race: once B\\'s first batch landed, the re-arm read ahead from page 5 (a second, sequential batch)', await until(() => batchesB >= 2 && !!window.SearchState.currentPages[5], 2500));
+    } finally { T.getDocumentPageInfo = orig; }
   }
 
   if (CLIENT) {

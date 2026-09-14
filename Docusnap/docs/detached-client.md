@@ -103,6 +103,19 @@ the add-on off. (Design history: `memory/scanfinder-*` + the plan in `.claude/pl
   simply keeps sending PNG. Pins: `src/modules/api/test_v1_preview_reads.js`, `python_backend/tests/
   test_pages_outline_format.py` (run under BOTH `py -3.12` and `vendor\python\python.exe`), the pop-out + core
   functional pins (the Contents click renders the target page; hidden vs an older core).
+- **PAGE-INFO — one request for the first paint + the read-ahead (contract 1.5.0 → 1.6.0 MINOR, 2026-09-14)**:
+  `GET …/documents/{id}/page-info?page=&also=&scale=&fmt=` → `{pages, outline, images: {"<index>": dataURI}}` —
+  render/pages.py `--page-info --page N --also a,b,c` in ONE process: the page(s), the page count and the bookmarks
+  together (the pop-out's first paint used to be up to three requests: the page, the count probe, the outline).
+  `also` = extra page indexes; junk / duplicates / the page itself / out-of-range dropped, then capped at **4** per
+  request (bounded work for an authenticated LAN user); `scale` and `fmt` as on `/page`; images carry ONLY the asked
+  indexes as `data:image/…` strings; a non-PDF answers `{pages:null, outline:[], images:{}}` without a spawn. Same
+  gates as `/page`. The shared viewer paints page 1 from one call with no `also` (the batch must never delay the
+  first paint), then READS AHEAD: the next 3 pages in one background call, one batch in flight, re-armed from the
+  page in view, a page reached mid-batch waits for the batch. Client cap `pageInfo` needs both sides ≥ 1.6.0 (a
+  `docRead` — a hidden doc's 404 → null → the per-page reads); against a 1.5.0 core the pop-out uses the per-page
+  reads + the outline read (pin run A6). Pins: `src/modules/api/test_v1_preview_reads.js`, the Python pin, the
+  pop-out + core functional pins (one page-info for the first paint, one for the read-ahead, no per-page read).
 - **SEARCH POP-OUT (client search parity S1, 2026-09-13)**: the client's search is the SHARED search screen
   (`client/renderer/shared/` = generated copies of `src/windows/shared/{search-ui,theme.css,fonts,patterns}`,
   `scripts/sync-client-search.js`, pin `test_client_search_sync.js`) in its own window

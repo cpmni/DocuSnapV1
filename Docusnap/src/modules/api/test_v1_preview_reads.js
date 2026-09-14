@@ -43,6 +43,12 @@ function fakeSpawn(exe, args, opts) {
   if (/pdf_find\.py$/.test(script)) out = JSON.stringify({ kind: 'pdf', pages: 40, matches: [{ page: 0, x0: 0.1, y0: 0.2, x1: 0.3, y1: 0.22, secret_path: 'C:/x' }] });
   else if (args.includes('--count')) out = JSON.stringify({ pages: 7 });
   else if (args.includes('--outline')) out = JSON.stringify({ outline: [{ title: 'Cover', page: 0, level: 0 }, { title: 'Terms', page: 2, level: 1 }, { title: 'x'.repeat(400), page: -1, level: 99 }, { title: '', page: 5, level: 0 }] });
+  else if (args.includes('--page-info')) {
+    const idx = [arg('--page'), ...String(arg('--also') || '').split(',').filter(Boolean)];
+    const images = {}; for (const i of idx) images[String(Number(i))] = `data:image/${arg('--format') === 'auto' ? 'jpeg' : 'png'};base64,PI${Number(i)}`;
+    images['77'] = 'data:image/png;base64,UNASKED'; images['3'] = 'C:/leak/not-a-data-url';   // the service must drop an unasked-for index + a non-data value for an asked one
+    out = JSON.stringify({ pages: 7, outline: [{ title: 'Cover', page: 0, level: 0 }, { title: '', page: 3, level: 0 }], images });
+  }
   else if (args.includes('--thumb')) out = JSON.stringify(`data:image/${arg('--format') === 'auto' || arg('--format') === 'jpeg' ? 'jpeg' : 'png'};base64,PAGE${arg('--page')}S${arg('--scale')}`);
   else out = JSON.stringify([]);
   const finish = () => { proc.stdout.emit('data', Buffer.from(out)); proc.emit('close', 0); };
@@ -113,9 +119,9 @@ async function main() {
   void login;
 
   console.log('contract');
-  check('API_CONTRACT_VERSION is 1.5.0', api.API_CONTRACT_VERSION === '1.5.0');
+  check('API_CONTRACT_VERSION is 1.6.0', api.API_CONTRACT_VERSION === '1.6.0');
   const health = await request(port, 'GET', '/v1/health');
-  check('health advertises 1.5.0', health.json && health.json.contractVersion === '1.5.0');
+  check('health advertises 1.6.0', health.json && health.json.contractVersion === '1.6.0');
 
   console.log('auth / entitlement on every read');
   for (const p of ['/v1/documents/1/page/0', '/v1/documents/1/page-count', '/v1/documents/1/find?q=inv', '/v1/documents/2/spreadsheet']) {
@@ -165,6 +171,21 @@ async function main() {
   check('a non-PDF → { outline: [] } without spawning', r.status === 200 && Array.isArray(r.json.outline) && r.json.outline.length === 0 && spawns.length === before2);
   check('a missing document → 404 (hides existence)', (await request(port, 'GET', '/v1/documents/999/outline', { token: adminT })).status === 404);
   check('unauthenticated → 401', (await request(port, 'GET', '/v1/documents/1/outline', {})).status === 401);
+
+  console.log('page-info (1.6.0) — ONE process for the first paint + the read-ahead batch');
+  r = await request(port, 'GET', '/v1/documents/1/page-info?page=0&also=2,x,2,0,1,3,4,5,6,9999999&scale=50&fmt=auto', { token: readT });
+  sp = spawns[spawns.length - 1];
+  check('200 { pages, outline, images } from ONE --page-info spawn (readonly may read)', r.status === 200 && r.json.pages === 7 && Array.isArray(r.json.outline) && r.json.images && typeof r.json.images === 'object' && sp.args.includes('--page-info'));
+  check('`also` sanitised: junk / duplicates / the page itself / out-of-range dropped, then capped at 4 → --also 2,1,3,4', sp.args[sp.args.indexOf('--also') + 1] === '2,1,3,4');
+  check('page / scale / fmt forwarded and clamped (--page 0, --scale 4, --format auto)', sp.args[sp.args.indexOf('--page') + 1] === '0' && sp.args[sp.args.indexOf('--scale') + 1] === '4' && sp.args[sp.args.indexOf('--format') + 1] === 'auto');
+  check('images carry ONLY the asked-for indexes (0 + also 2,1,4) as data: URLs — the unasked index 77 and the non-data value for asked index 3 are dropped', Object.keys(r.json.images).sort().join() === '0,1,2,4' && Object.values(r.json.images).every(v => /^data:image\/jpeg;base64,PI\d$/.test(v)) && !/leak|UNASKED/.test(r.raw));
+  check('outline re-validated (the empty title dropped)', r.json.outline.length === 1 && r.json.outline[0].title === 'Cover');
+  check('the DTO carries ONLY pages / outline / images (no paths)', Object.keys(r.json).sort().join() === 'images,outline,pages' && !/C:\//.test(r.raw));
+  const before3 = spawns.length;
+  r = await request(port, 'GET', '/v1/documents/3/page-info?page=0', { token: readT });
+  check('a non-PDF → { pages: null, outline: [], images: {} } without spawning', r.status === 200 && r.json.pages === null && Array.isArray(r.json.outline) && r.json.outline.length === 0 && Object.keys(r.json.images).length === 0 && spawns.length === before3);
+  check('a missing document → 404 (hides existence)', (await request(port, 'GET', '/v1/documents/999/page-info?page=0', { token: adminT })).status === 404);
+  check('unauthenticated → 401', (await request(port, 'GET', '/v1/documents/1/page-info?page=0', {})).status === 401);
 
   console.log('page-count');
   r = await request(port, 'GET', '/v1/documents/1/page-count', { token: readT });

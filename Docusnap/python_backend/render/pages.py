@@ -12,6 +12,7 @@ import pypdfium2 as pdfium
 # Bounds a decompression/pixel-bomb page (a tiny page declaring enormous dimensions). INERT on real
 # docs — min(scale, …) equals `scale` for every normal page (A4 at scale 1.5 is ~1240px « 10000).
 _MAX_RENDER_DIM = int(os.environ.get("OCR_MAX_RENDER_DIM", "10000") or "10000")   # px per axis
+_ALSO_MAX = 8   # --page-info: extra pages per process beyond --page (the viewer asks for 3; the /v1 lane caps at 4)
 
 def _win_long_path(path):
     """Win32 silently strips trailing dots/spaces from path components
@@ -137,12 +138,37 @@ def main():
     # raster/scan page, PNG for a vector page). The full-page array render stays PNG.
     parser.add_argument('--format', choices=['png', 'jpeg', 'auto'], default='png')
     parser.add_argument('--quality', type=int, default=90, help='JPEG quality for --format jpeg/auto (50..95)')
+    # PAGE-INFO MODE (Oracle 2026-09-14 C5 — ONE process for the viewer's first paint instead of up to three):
+    # renders --page (plus any --also indexes, a comma list, capped) at --scale/--format and prints
+    # {"pages": N, "outline": [...], "images": {"<index>": dataURI, ...}}. The same call, with --also, is the
+    # viewer's READ-AHEAD of the pages after the one in view (one process for the batch, not one per page).
+    parser.add_argument('--page-info', action='store_true', help='print {"pages","outline","images"} for --page (+ --also)')
+    parser.add_argument('--also', default='', help='extra page indexes to render in the same process, e.g. 1,2,3')
     args = parser.parse_args()
 
     doc = pdfium.PdfDocument(_win_long_path(args.file))
 
     if args.count:
         print(json.dumps({"pages": len(doc)}), flush=True)
+        return
+
+    if args.page_info:
+        n = len(doc)
+        scale = args.scale if args.scale is not None else 1.5
+        want = [args.page]
+        for tok in str(args.also or '').split(','):
+            tok = tok.strip()
+            if tok.lstrip('-').isdigit():
+                want.append(int(tok))
+        images, seen = {}, set()
+        for idx in want:
+            if idx < 0 or idx >= n or idx in seen:
+                continue                                   # out of range / duplicate → silently skipped
+            if len(images) >= 1 + _ALSO_MAX:
+                break                                      # bounded work per process
+            seen.add(idx)
+            images[str(idx)] = _render_page(doc[idx], scale, fmt=args.format, quality=args.quality)
+        print(json.dumps({"pages": n, "outline": _outline(doc), "images": images}), flush=True)
         return
 
     if args.outline:

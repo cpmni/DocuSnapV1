@@ -101,10 +101,12 @@ async function _showPage(idx) {
   if (idx < 0 || idx >= s.currentPages.length) return;
   s.currentPage = idx;
   if (!s.currentPages[idx]) {
-    const mine = s.selectedDoc;
+    const mine = s.selectedDoc, arr = s.currentPages;
     let uri = null;
-    try { uri = await window.SearchTransport.getDocumentPage(mine.id, idx, SEARCH_RENDER_SCALE, SEARCH_RENDER_FORMAT); } catch { /* leave the hole */ }
+    // A read-ahead batch already rendering this page? Wait for it — never start a second process for the same page.
+    try { const job = _pageJobs.get(idx); uri = await (job || _renderOne(mine, idx)); } catch { /* leave the hole */ }
     if (s.selectedDoc !== mine || s.currentPage !== idx) return;   // a newer selection / page won meanwhile
+    if (s.currentPages !== arr) return;                            // the page SET was swapped meanwhile (stamped ⇄ original) — never overwrite it
     if (uri) s.currentPages[idx] = uri;
   }
   if (s.currentPages[idx]) {
@@ -113,6 +115,7 @@ async function _showPage(idx) {
     document.getElementById('preview-img-placeholder').style.display = 'none';
   }
   _syncPageNav();
+  _prefetchAhead(s.selectedDoc, idx);   // keep the next few pages ready (one background process, when the transport can)
 }
 
 // ── Zoom / scroll / pan (owner control model 2026-09-13) ───────────────────────
@@ -134,6 +137,60 @@ const SEARCH_RENDER_SCALE = 3;
 // JPEG (measured: 0.03 s to encode + 0.8 MB, against 0.84 s + 5 MB as PNG at this scale) and a vector/text page
 // as lossless PNG. A transport/core that ignores it simply keeps sending PNG.
 const SEARCH_RENDER_FORMAT = 'auto';
+// READ-AHEAD (owner 2026-09-14: "prefetch 2 or 3 pages after the one in view so page skipping is seamless"): after
+// a page is shown, the next PREFETCH_AHEAD holes are rendered in ONE background process (transport.getDocumentPageInfo
+// with `also`), one batch at a time; a page the user reaches while its batch is still rendering waits for that batch
+// instead of starting a second process. The first paint stays a single-page call so it is never delayed by the batch.
+const PREFETCH_AHEAD = 3;
+let _pageJobs = new Map();      // idx -> Promise<string|null> — renders in flight for the CURRENT selection
+let _prefetchBusy = false;      // ONE read-ahead batch in flight for the current selection (identity-guarded below)
+let _prefetchHold = false;      // the first batch waits for the search-term find on a searched document (Oracle C5)
+function _resetPageJobs() { _pageJobs = new Map(); _prefetchBusy = false; _prefetchHold = false; }
+function _renderOne(doc, idx) {
+  const jobs = _pageJobs;
+  const p = Promise.resolve().then(() => window.SearchTransport.getDocumentPage(doc.id, idx, SEARCH_RENDER_SCALE, SEARCH_RENDER_FORMAT));
+  jobs.set(idx, p);
+  p.then(() => { if (jobs.get(idx) === p) jobs.delete(idx); }, () => { if (jobs.get(idx) === p) jobs.delete(idx); });
+  return p;
+}
+function _prefetchAhead(doc, idx) {
+  const s = window.SearchState, T = window.SearchTransport;
+  if (!doc || s.selectedDoc !== doc || _prefetchBusy || _prefetchHold) return;
+  if (!_cap('pageInfo') || !T || typeof T.getDocumentPageInfo !== 'function') return;
+  const want = [];
+  for (let i = idx + 1; i <= idx + PREFETCH_AHEAD && i < s.currentPages.length; i++) {
+    if (!s.currentPages[i] && !_pageJobs.has(i)) want.push(i);
+  }
+  if (!want.length) return;
+  const jobs = _pageJobs;
+  _prefetchBusy = true;
+  const batch = Promise.resolve()
+    .then(() => T.getDocumentPageInfo(doc.id, want[0], want.slice(1), SEARCH_RENDER_SCALE, SEARCH_RENDER_FORMAT))
+    .then((info) => (info && info.images && typeof info.images === 'object') ? info.images : {}, () => ({}));
+  for (const i of want) {
+    const p = batch.then((images) => (typeof images[i] === 'string' ? images[i] : null));
+    jobs.set(i, p);
+    p.then((uri) => {
+      if (jobs.get(i) === p) jobs.delete(i);
+      // Write only into the SAME selection's CURRENT page array (a newer selection, or the stamped/original swap,
+      // replaces the array — a late render must never land in it or extend a shorter one).
+      if (uri && s.selectedDoc === doc && jobs === _pageJobs && i < s.currentPages.length && !s.currentPages[i]) s.currentPages[i] = uri;
+    }, () => { if (jobs.get(i) === p) jobs.delete(i); });
+  }
+  // The latch belongs to THIS selection: a batch landing late from a previous selection must not free the current
+  // one's (Oracle 2026-09-14 C1 — else the next flip spawns a second concurrent batch).
+  const release = () => { if (jobs === _pageJobs) _prefetchBusy = false; };
+  batch.then(() => {
+    release();
+    if (s.selectedDoc === doc && jobs === _pageJobs) _prefetchAhead(doc, s.currentPage);   // keep the window ahead of the reader
+  }, release);
+}
+// Release the first-batch hold (after the search-term find on a searched document) and start reading ahead.
+function _prefetchRelease(doc) {
+  _prefetchHold = false;
+  const s = window.SearchState;
+  if (doc && s.selectedDoc === doc) _prefetchAhead(doc, s.currentPage);
+}
 
 // ── Contents (the PDF's bookmarks / outline) ──────────────────────────────────
 // Fetched once per document per window session (a spawn on the core), AFTER page 1 is painted so it never
@@ -432,6 +489,7 @@ async function selectDoc(doc) {
   resetPreviewView();                        // each new document opens at 100%, un-panned
   _clearMatches();                           // drop the previous doc's search highlights
   _clearOutline();                           // and its Contents panel
+  _resetPageJobs();                          // and its in-flight page renders / read-ahead
 
   // The fetch sequence is wrapped so ANY failure (a missing IPC handler after a stale-main
   // update, a DB hiccup, the doc deleted mid-click, an IPC error) shows an honest state
@@ -459,7 +517,30 @@ async function selectDoc(doc) {
     // A transport without a single-page read (caps.singlePage === false) takes the full-render path.
     const _pageCount = Number(merged.page_count) || 0;
     const _isPdf = /\.pdf$/i.test(merged.original_filename || merged.stored_filename || '');
-    if (_isPdf && _cap('singlePage')) {
+    let painted = false;          // page 1 is in currentPages[0] + the array is sized
+    let outlineFromInfo = null;   // the bookmarks arrived with the first paint (no separate outline read)
+    if (_isPdf && _cap('pageInfo') && typeof window.SearchTransport.getDocumentPageInfo === 'function') {
+      // ONE process for the first paint — page 1 + the page count + the bookmarks together (Oracle 2026-09-14 C5:
+      // this used to be up to three processes: the page, the count probe, the outline). No `also` here: the first
+      // paint must never wait for the read-ahead; that batch starts right after the page is shown (_prefetchAhead).
+      let info = null;
+      try { info = await window.SearchTransport.getDocumentPageInfo(doc.id, 0, [], SEARCH_RENDER_SCALE, SEARCH_RENDER_FORMAT); } catch { info = null; }
+      if (s.selectedDoc !== mine) return;
+      const first = (info && info.images && typeof info.images[0] === 'string') ? info.images[0] : null;
+      if (first) {
+        // The FILE's count is authoritative (a stale row page_count above the real count would offer pages that
+        // render as duplicates of the last page); the row is only the fallback when the answer carries none.
+        const count = (Number.isFinite(info.pages) && info.pages >= 1) ? info.pages : Math.max(1, _pageCount);
+        s.currentPages = count > 1 ? new Array(count) : [first];
+        s.currentPages[0] = first;
+        s.currentPage = 0;
+        outlineFromInfo = Array.isArray(info.outline) ? info.outline : [];
+        _outlineCache.set(doc.id, Promise.resolve(outlineFromInfo));
+        painted = true;
+      }
+      // else: fall through to the per-page path below (an older transport answer, a hidden doc's null, a failure)
+    }
+    if (!painted && _isPdf && _cap('singlePage')) {
       const first = await window.SearchTransport.getDocumentPage(doc.id, 0, SEARCH_RENDER_SCALE, SEARCH_RENDER_FORMAT);
       if (s.selectedDoc !== mine) return;
       if (first) {
@@ -486,7 +567,7 @@ async function selectDoc(doc) {
         if (s.selectedDoc !== mine) return;
         s.currentPage = 0;
       }
-    } else {
+    } else if (!painted) {
       // DE-PATHED (owner 2026-08-02): rows no longer carry paths; fetch by docId alone — an
       // unresolvable file simply yields []. One render call (single page / image = cheap).
       s.currentPages = await window.SearchTransport.getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE);
@@ -495,11 +576,16 @@ async function selectDoc(doc) {
     }
 
     if (s.currentPages.length > 0) {
+      // On a SEARCHED document the highlight is what the user is waiting for: the find (a Tesseract run on a scan)
+      // goes first and the read-ahead batch starts after it lands (Oracle 2026-09-14 C5 — two-core contention).
+      const q = s.query || '';
+      _prefetchHold = !!(q && _cap('find'));
       await _showPage(0);
-      _loadOutline(mine);   // the Contents panel, after the first paint (never before it); staleness-guarded inside
+      // The Contents panel, after the first paint (never before it): from the first-paint answer when it carried the
+      // bookmarks, else its own (staleness-guarded) read.
+      if (outlineFromInfo) _renderOutline(outlineFromInfo); else _loadOutline(mine);
       // Seed the Find-in-document box with the active list term, so what's highlighted matches the box
       // (and the operator can edit it to search within this doc). Empty when opened without a search.
-      const q = s.query || '';
       const findInput = document.getElementById('inp-find-doc');
       if (findInput) { findInput.value = q; findInput.classList.remove('no-match'); }
       // Jump to / highlight the active search term (born-digital PDFs; best-effort, staleness-guarded).
@@ -511,6 +597,7 @@ async function selectDoc(doc) {
           _matches = (res && Array.isArray(res.matches)) ? res.matches : [];
           if (_matches.length) _gotoMatch(0); else { _updateMatchNav(); if (findInput) findInput.classList.add('no-match'); _noteFindOutcome(res, findInput); }
         } catch { _clearMatches(); }
+        _prefetchRelease(mine);
       }
     } else {
       // No image pages. An .xlsx has no rendered page but we CAN show its cells (route 1, dependency-

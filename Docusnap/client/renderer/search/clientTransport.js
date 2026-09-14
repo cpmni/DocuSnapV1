@@ -82,6 +82,7 @@
     caps: {
       singlePage: false, pageCount: false, find: false, spreadsheet: false,   // S2 (version-gated below)
       outline: false,                                                        // 1.5.0 Contents panel (version-gated below)
+      pageInfo: false,                                                       // 1.6.0 one-request first paint + read-ahead (version-gated below)
       bin: true, restoreAll: false, sendBack: false,
       localFile: false, review: false, print: false,
       stamps: true,                                                           // S4: the /v1 stamp routes
@@ -113,6 +114,10 @@
     getDocumentPageCount: capGated('pageCount', null, (id) => api.getPageCount(id), (j) => (Number.isFinite(j.count) && j.count > 0 ? j.count : null)),
     // 1.5.0: the PDF's bookmarks for the Contents panel — a per-document read (404 = hidden doc → [], cap kept).
     getDocumentOutline:   docRead('outline', [], (id) => api.getOutline(id), (j) => (Array.isArray(j.outline) ? j.outline : [])),
+    // 1.6.0: page(s) + count + bookmarks in ONE request (the first paint, then the read-ahead batch). A hidden doc's
+    // 404 → null for that call (the viewer falls back to the per-page reads), cap kept.
+    getDocumentPageInfo:  docRead('pageInfo', null, (id, page, also, scale, fmt) => api.getPageInfo(id, page, also, scale, fmt),
+                                  (j) => ({ pages: (Number.isFinite(j.pages) && j.pages > 0) ? j.pages : null, outline: Array.isArray(j.outline) ? j.outline : [], images: (j.images && typeof j.images === 'object') ? j.images : {} })),
     // find: a status-0 envelope is the client's OWN timeout/error (never a lost connection) → the shared UI's
     // "took too long" state; a real non-200 rejects like the core bridge (→ _clearMatches, as today).
     findInDocument:       async (id, q) => {
@@ -193,7 +198,10 @@
     // 1.5.0: the Contents panel (the PDF's bookmarks) — any role may read it.
     const serverHas15 = atLeast(sv, '1.5.0'), clientHas15 = atLeast(cc, '1.5.0');
     T.caps.outline = serverHas15 && clientHas15;
-    const serverBehind = (clientHasS2 && !serverHasS2) || (clientHas14 && !serverHas14) || (clientHas15 && !serverHas15);
+    // 1.6.0: one request for the first paint + the read-ahead batch (falls back to the per-page reads otherwise).
+    const serverHas16 = atLeast(sv, '1.6.0'), clientHas16 = atLeast(cc, '1.6.0');
+    T.caps.pageInfo = serverHas16 && clientHas16;
+    const serverBehind = (clientHasS2 && !serverHasS2) || (clientHas14 && !serverHas14) || (clientHas15 && !serverHas15) || (clientHas16 && !serverHas16);
     T.capabilityInfo = { serverVersion: sv || null, clientContract: cc || null, serverBehind, ready: true };
     return T.capabilityInfo;
   };

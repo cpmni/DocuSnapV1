@@ -286,6 +286,39 @@ pop-out 392 across five runs (the Contents click renders the target page; hidden
   `{"testBuild":true,"buildRev":"20260914-1005-9cbe928-TEST"}`, `--smoke-windows` 14/14; the packaged `pages.pyc`
   answers `--outline` and `--format auto` under the vendored Python);
 - client **`client\dist\ScanFinder Search Client Setup 1.0.2-r20260914-1008-9cbe928.exe`** (106.1 MB; contract 1.5.0).
-Install the core first, then the client; nothing is running at wrap. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
+Install the core first, then the client; nothing is running at wrap.
+
+---
+
+## ADDENDUM 5 — 2026-09-14 (afternoon): ONE process for the first paint + a 3-page READ-AHEAD (contract 1.6.0)
+
+**Owner:** "go ahead with the --page-info single spawn — can we prefetch 2 or 3 pages after the one in view to ensure
+page skipping is seamless?" Oracle SIGN-OFF-W/COND (`docs/oracle_log.md`), C1-C5 built.
+
+**In plain terms**
+- Opening a PDF in Search now asks Python ONCE for page 1, the page count and the bookmarks together (it used to be up
+  to three separate starts). No count probe, no separate bookmarks read.
+- As soon as a page is on screen, the NEXT THREE pages render in one background call; a page you reach while that
+  call is still running waits for it instead of starting another. Flipping forward is instant once they land. On a
+  document you reached through a search term, the read-ahead starts after the term highlight, so the highlight is
+  never delayed by it.
+- Older cores: the client falls back to the per-page reads (and the 1.5.0 bookmarks read); an older client just
+  keeps using the per-page reads against a new core.
+
+**Server / client:** `render/pages.py --page-info --page N --also a,b,c` → `{pages, outline, images}`;
+`previewService.getDocumentPageInfo` (also deduped / whitelisted / capped 8, images filtered to the asked indexes and
+to `data:image/` strings); desktop `get-document-page-info` IPC; `/v1 GET /documents/:id/page-info` (same gates as
+`/page`, `also` capped at 4 per request); **contract 1.5.0 → 1.6.0**; client apiClient / main / preload /
+clientTransport (cap `pageInfo`, a `docRead`). Shared viewer `searchPreview.js`: the first paint via page-info (no
+`also`), `_prefetchAhead` (PREFETCH_AHEAD = 3, one batch in flight per selection, identity-guarded latch, re-armed
+from the page in view), `_pageJobs` (a page reached mid-batch awaits it), the stamped ⇄ original swap guard, the
+file's count wins over a stale row, `_prefetchHold` until the find lands.
+
+**Verification:** `npm run test:pins` green; the harness gained `--race` (both apps: a late batch from a previous
+selection never frees the latch; the re-arm is sequential) and the pop-out pin an A6 run against a 1.5.0 core (the
+fallback path) + A7 (the race); exact call-count pins (two page-info calls for doc 1: the first paint, one batch; no
+per-page read, no count probe, no outline read); `test_v1_preview_reads` covers the route (sanitised `also`, clamps,
+image filtering, non-PDF without a spawn, 404/401); the Python pin under both interpreters.
+**Installers REBUILT on this commit** — file names at the end of this addendum. Still owed: the dead-provider tidy-up · the Oracle's non-blocking notes (banner + assign form
 stacking; 403 wording; the S2 reads' 404 flip) · the owner's answer on "content tables" (PDF reader question,
 `pendingfeatures.md`) · everything in the earlier lists.

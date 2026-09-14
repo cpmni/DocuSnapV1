@@ -23,7 +23,7 @@ const { URL } = require('url');
 
 // The contract version this client build targets — keep in lockstep with the
 // server's API_CONTRACT_VERSION (src/modules/api/handler.js).
-const CLIENT_CONTRACT = '1.5.0';   // keep in lockstep with the server's API_CONTRACT_VERSION (1.5.0: + the outline read for the Contents panel + fmt=auto on the page read; 1.4.0: + per-doc routes/history, admin cancel, new stamp type; 1.3.0: + the four preview reads for the search pop-out; 1.2.0: + Quick File upload)
+const CLIENT_CONTRACT = '1.6.0';   // keep in lockstep with the server's API_CONTRACT_VERSION (1.6.0: + page-info, one request for the first paint + the read-ahead; 1.5.0: + the outline read for the Contents panel + fmt=auto on the page read; 1.4.0: + per-doc routes/history, admin cancel, new stamp type; 1.3.0: + the four preview reads for the search pop-out; 1.2.0: + Quick File upload)
 
 function parseVer(v) {
   const m = String(v || '').match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -176,6 +176,15 @@ function createClient(opts = {}) {
   async function getOutline(id) {
     return request('GET', `/v1/documents/${encodeURIComponent(id)}/outline`, { withAuth: true });
   }
+  // 1.6.0: ONE request for the first paint (page + count + bookmarks) and for the read-ahead batch (`also` = the
+  // next page indexes). Renders up to 5 pages server-side → a longer idle timeout than a single page.
+  async function getPageInfo(id, page, also, scale, fmt) {
+    const q = new URLSearchParams({ page: String(Math.max(0, page | 0)), scale: String(scale || 3) });
+    const extra = (Array.isArray(also) ? also : []).map(n => Number(n)).filter(n => Number.isInteger(n) && n >= 0);
+    if (extra.length) q.set('also', extra.join(','));
+    if (fmt === 'auto' || fmt === 'jpeg') q.set('fmt', fmt);
+    return request('GET', `/v1/documents/${encodeURIComponent(id)}/page-info?${q}`, { withAuth: true, timeoutMs: 90000 });
+  }
   async function find(id, query) {
     const q = new URLSearchParams({ q: String(query || '') });
     return request('GET', `/v1/documents/${encodeURIComponent(id)}/find?${q}`, { withAuth: true, timeoutMs: 180000 });
@@ -275,7 +284,7 @@ function createClient(opts = {}) {
 
   return {
     connect, login, logout, changePassword, entitlement, search, getDocument, getPages, getThumbnail, ping, fetchCa, enroll,
-    getPage, getPageCount, find, getSpreadsheet, getOutline,
+    getPage, getPageCount, find, getSpreadsheet, getOutline, getPageInfo,
     intakeDocTypes, intakeSubmit,
     workflow: { list: wfList, counts: wfCounts, recipients, assign, claim, resolve, recall, stamped: wfStamped,
                 stampTypes, canStamp: stampCan, stampList, stampPlace, stampedDoc,

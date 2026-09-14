@@ -275,6 +275,17 @@ function getDocumentPageCount(db, { docId, folderPath, filename }, deps) {
  * Entries are re-validated here (type, length, cap) — defence in depth over the Python cap.
  * @returns {Promise<Array<{title:string,page:number|null,level:number}>>}
  */
+// Re-validate an outline list from the render script (defence in depth over the Python cap): title string ≤ 200,
+// page int ≥ 0 or null, level 0..8, ≤ 500 entries, empty titles dropped.
+function _sanitizeOutline(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  return list.slice(0, 500).map(e => ({
+    title: String((e && e.title) || '').slice(0, 200),
+    page: (e && Number.isInteger(e.page) && e.page >= 0) ? e.page : null,
+    level: (e && Number.isInteger(e.level) && e.level > 0) ? Math.min(e.level, 8) : 0,
+  })).filter(e => e.title);
+}
+
 function getDocumentOutline(db, { docId, folderPath, filename }, deps) {
   const { path, spawn, pythonExe, pythonArgs, renderScript } = deps;
   const log = deps.log || console.log;
@@ -290,17 +301,58 @@ function getDocumentOutline(db, { docId, folderPath, filename }, deps) {
     proc.stderr.on('data', d => { err += d.toString(); });
     proc.on('error', (e) => { log(`[outline] spawn error for ${filePath}: ${e.message}`); resolve([]); });
     proc.on('close', (code) => {
-      try {
-        const raw = JSON.parse(out);
-        const list = Array.isArray(raw && raw.outline) ? raw.outline : [];
-        resolve(list.slice(0, 500).map(e => ({
-          title: String((e && e.title) || '').slice(0, 200),
-          page: (e && Number.isInteger(e.page) && e.page >= 0) ? e.page : null,
-          level: (e && Number.isInteger(e.level) && e.level > 0) ? Math.min(e.level, 8) : 0,
-        })).filter(e => e.title));
-      } catch (e) {
+      try { resolve(_sanitizeOutline((JSON.parse(out) || {}).outline)); }
+      catch (e) {
         log(`[outline] failed for ${filePath} — exit=${code} parse_error=${e.message}` + (err ? ` stderr=${err.trim().slice(0, 200)}` : ''));
         resolve([]);
+      }
+    });
+  });
+}
+
+/**
+ * ONE process for the viewer's first paint — and for its read-ahead (Oracle 2026-09-14 C5): render `page` plus
+ * up to PAGE_INFO_ALSO_MAX `also` indexes at `scale`/`format`, and return the page count + the outline in the same
+ * answer: { pages: int|null, outline: [...], images: { "<index>": dataURI } }. Replaces up to three spawns
+ * (page 1, the count probe, the outline) with one, and renders a batch of upcoming pages in one process instead
+ * of one process per page. null for a non-PDF / unresolvable file / failure (the caller falls back to the
+ * per-page reads). Same server-side path resolution as every other read; images keyed by the indexes asked for.
+ * @returns {Promise<{pages:number|null, outline:Array, images:Object}|null>}
+ */
+const PAGE_INFO_ALSO_MAX = 8;
+function getDocumentPageInfo(db, { docId, folderPath, filename, page, also, scale, format }, deps) {
+  const { path, spawn, pythonExe, pythonArgs, renderScript } = deps;
+  const log = deps.log || console.log;
+  if (!folderPath || !filename) return Promise.resolve(null);
+  const filePath = _resolveDocFile(db, { docId, folderPath, filename }, deps);
+  if (!filePath) return Promise.resolve(null);
+  if (path.extname(filePath).toLowerCase() !== '.pdf') return Promise.resolve(null);
+  const py = pythonExe();
+  const primary = Math.max(0, page | 0);
+  const extra = [...new Set((Array.isArray(also) ? also : []).map(x => Number(x)).filter(x => Number.isInteger(x) && x >= 0 && x !== primary))].slice(0, PAGE_INFO_ALSO_MAX);
+  const args = ['--file', filePath, '--page-info', '--page', String(primary)];
+  if (extra.length) args.push('--also', extra.join(','));
+  if (scale && scale > 0) args.push('--scale', String(scale));
+  if (format === 'auto' || format === 'jpeg') args.push('--format', format);
+  const wanted = new Set([primary, ...extra].map(String));
+  return new Promise((resolve) => {
+    const proc = spawn(py, pythonArgs(renderScript, ...args), { windowsHide: true });
+    let out = '', err = '';
+    proc.stdout.on('data', d => { out += d.toString(); });
+    proc.stderr.on('data', d => { err += d.toString(); });
+    proc.on('error', (e) => { log(`[page-info] spawn error for ${filePath}: ${e.message}`); resolve(null); });
+    proc.on('close', (code) => {
+      try {
+        const raw = JSON.parse(out) || {};
+        const images = {};
+        for (const [k, v] of Object.entries(raw.images || {})) {
+          if (wanted.has(String(k)) && typeof v === 'string' && v.startsWith('data:image/')) images[String(Number(k))] = v;
+        }
+        const pages = (Number.isInteger(raw.pages) && raw.pages > 0) ? raw.pages : null;
+        resolve({ pages, outline: _sanitizeOutline(raw.outline), images });
+      } catch (e) {
+        log(`[page-info] failed for ${filePath} p${primary} — exit=${code} parse_error=${e.message}` + (err ? ` stderr=${err.trim().slice(0, 200)}` : ''));
+        resolve(null);
       }
     });
   });
@@ -441,4 +493,4 @@ function getSpreadsheetGrid(db, { docId, folderPath, filename }, deps) {
   catch (e) { log(`[grid] parse failed for ${filePath}: ${e.message}`); return null; }
 }
 
-module.exports = { getDocumentDetail, getDocumentPages, getDocumentPage, getDocumentPageCount, getDocumentOutline, getThumbnail, findInDocument, getSpreadsheetGrid, resolveDocFile: _resolveDocFile };
+module.exports = { getDocumentDetail, getDocumentPages, getDocumentPage, getDocumentPageCount, getDocumentOutline, getDocumentPageInfo, PAGE_INFO_ALSO_MAX, getThumbnail, findInDocument, getSpreadsheetGrid, resolveDocFile: _resolveDocFile };

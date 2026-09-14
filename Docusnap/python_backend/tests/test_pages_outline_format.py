@@ -131,6 +131,20 @@ def main():
               code == 0 and isinstance(arr, list) and len(arr) == 1 and arr[0].startswith('data:image/png;base64,'))
         code, out, err = _run('--file', ras, '--count')
         check("--count still answers {\"pages\": 1}", code == 0 and json.loads(out) == {"pages": 1})
+
+        print("--page-info (one process: page(s) + count + bookmarks)")
+        if have_pypdf:
+            code, out, err = _run('--file', ol, '--page-info', '--page', '0', '--also', '2,1,99,2,-1', '--scale', '1', '--format', 'auto')
+            j = json.loads(out)
+            check("{pages, outline, images}: count 4, the 5 bookmarks, images for 0 + the valid extra indexes (out-of-range / duplicates skipped)",
+                  code == 0 and j.get('pages') == 4 and len(j.get('outline', [])) == 5 and sorted(j.get('images', {}).keys()) == ['0', '1', '2']
+                  and all(v.startswith('data:image/') for v in j['images'].values()))
+        code, out, err = _run('--file', ras, '--page-info', '--page', '0', '--scale', '1', '--format', 'auto')
+        j = json.loads(out)
+        check("a raster page under --page-info --format auto → its image is JPEG; no bookmarks → outline []", code == 0 and j.get('pages') == 1 and j.get('outline') == [] and j['images']['0'].startswith('data:image/jpeg;base64,'))
+        code, out, err = _run('--file', vec, '--page-info', '--page', '9')
+        j = json.loads(out)
+        check("an out-of-range --page → images {} (count still answered), never an error", code == 0 and j.get('pages') == 4 and j.get('images') == {})
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

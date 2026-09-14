@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('scanfinder', {
   getPage:         (id, index, scale, fmt) => ipcRenderer.invoke('client-get-page', id, index, scale, fmt),
   getPageCount:    (id) => ipcRenderer.invoke('client-page-count', id),
   getOutline:      (id) => ipcRenderer.invoke('client-outline', id),   // 1.5.0: the PDF's bookmarks (Contents panel)
+  getPageInfo:     (id, page, also, scale, fmt) => ipcRenderer.invoke('client-page-info', id, page, also, scale, fmt),   // 1.6.0: page(s) + count + bookmarks in one request
   find:            (id, query) => ipcRenderer.invoke('client-find', id, query),
   getSpreadsheet:  (id) => ipcRenderer.invoke('client-spreadsheet', id),
   isAuthenticated: () => ipcRenderer.invoke('client-authed'),

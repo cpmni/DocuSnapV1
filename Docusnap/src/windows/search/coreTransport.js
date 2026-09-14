@@ -35,6 +35,7 @@
     caps: {
       singlePage: true, pageCount: true, find: true, spreadsheet: true,
       outline: true,   // getDocumentOutline — the PDF's bookmarks (the Contents panel, 2026-09-14)
+      pageInfo: true,  // getDocumentPageInfo — ONE process for the first paint + the read-ahead batch (2026-09-14)
       bin: true, restoreAll: true, sendBack: true, localFile: true, review: true, print: true,
       stamps: true, settings: true,
       workflowHistory: true, docRoutes: true, adminCancel: true, stampCreate: true, stampedViewer: true,
@@ -54,6 +55,7 @@
     getDocumentPage:        (...a) => d.getDocumentPage(...a),
     getDocumentPageCount:   (...a) => d.getDocumentPageCount(...a),
     getDocumentOutline:     (...a) => d.getDocumentOutline(...a),
+    getDocumentPageInfo:    (...a) => d.getDocumentPageInfo(...a),
     findInDocument:         (...a) => d.findInDocument(...a),
     getSpreadsheetGrid:     (...a) => d.getSpreadsheetGrid(...a),
     getDocumentThumbnail:   (...a) => d.getDocumentThumbnail(...a),

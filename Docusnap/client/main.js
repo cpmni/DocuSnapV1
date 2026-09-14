@@ -488,6 +488,7 @@ ipcMain.handle('client-get-thumbnail', async (_e, id) => {
 // heartbeat within seconds.
 ipcMain.handle('client-get-page',    guarded((_e, id, index, scale, fmt) => client.getPage(id, index, scale, fmt)));
 ipcMain.handle('client-outline',     guarded((_e, id) => client.getOutline(id)));   // 1.5.0: the PDF's bookmarks (Contents panel)
+ipcMain.handle('client-page-info',   guarded((_e, id, page, also, scale, fmt) => client.getPageInfo(id, page, also, scale, fmt)));   // 1.6.0: first paint + read-ahead in one request
 ipcMain.handle('client-page-count',  guarded((_e, id) => client.getPageCount(id)));
 ipcMain.handle('client-spreadsheet', guarded((_e, id) => client.getSpreadsheet(id)));
 ipcMain.handle('client-find', async (_e, id, query) => {

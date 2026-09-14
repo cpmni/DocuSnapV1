@@ -290,6 +290,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   getDocumentPage:             (id, index, scale, format) => ipcRenderer.invoke('get-document-page', id, index, scale, format),
   getDocumentPageCount:        (id)         => ipcRenderer.invoke('get-document-page-count', id),
   getDocumentOutline:          (id)         => ipcRenderer.invoke('get-document-outline', id),   // the PDF's bookmarks → the Contents panel
+  getDocumentPageInfo:         (id, page, also, scale, format) => ipcRenderer.invoke('get-document-page-info', id, page, also, scale, format),   // one process: page(s) + count + bookmarks
   findInDocument:              (id, query) => ipcRenderer.invoke('find-in-document', id, query),
   getSpreadsheetGrid:          (id)         => ipcRenderer.invoke('get-spreadsheet-grid', id),
   getEnhancedPreview:          (data)       => ipcRenderer.invoke('get-enhanced-preview', data),

@@ -48,13 +48,14 @@ console.log('IPC arity at the adapter seam');
 const calls = rec.calls || [];
 const has = (ch, pred) => calls.some(([c, a]) => c === ch && (!pred || pred(a)));
 check('search-documents called with the params object (fullText inv)', has('search-documents', a => a[0] && a[0].fullText === 'inv'));
-check('get-document-page (id 1, index 0, scale 3, "auto") — the lazy page-1 read asking for JPEG-for-scans', has('get-document-page', a => a[0] === 1 && a[1] === 0 && a[2] === 3 && a[3] === 'auto'));
-check('get-document-page (id 1, index 1, scale 3) — the hole rendered on page-next', has('get-document-page', a => a[0] === 1 && a[1] === 1 && a[2] === 3));
-check('get-document-outline (1) — the Contents panel read, AFTER the page-1 read (never before the first paint)', has('get-document-outline', a => a[0] === 1)
-      && calls.findIndex(([c, a]) => c === 'get-document-outline' && a[0] === 1) > calls.findIndex(([c, a]) => c === 'get-document-page' && a[0] === 1 && a[1] === 0));
-check('get-document-page (id 1, index 2) — the Contents click ("Terms") rendered page 3', has('get-document-page', a => a[0] === 1 && a[1] === 2 && a[2] === 3));
-check('a KNOWN page_count is never probed (no get-document-page-count for id 1)', !has('get-document-page-count', a => a[0] === 1));
-check('an UNKNOWN page_count IS probed (get-document-page-count for id 3)', has('get-document-page-count', a => a[0] === 3));
+check('get-document-page-info (1, 0, [], 3, "auto") — ONE process for the first paint (page 1 + count + bookmarks), no `also`', has('get-document-page-info', a => a[0] === 1 && a[1] === 0 && Array.isArray(a[2]) && a[2].length === 0 && a[3] === 3 && a[4] === 'auto'));
+check('get-document-page-info (1, 1, [2], 3, "auto") — the read-ahead batch for pages 2-3 in ONE process, after the first paint', has('get-document-page-info', a => a[0] === 1 && a[1] === 1 && JSON.stringify(a[2]) === '[2]' && a[3] === 3 && a[4] === 'auto')
+      && calls.findIndex(([c, a]) => c === 'get-document-page-info' && a[0] === 1 && a[1] === 1) > calls.findIndex(([c, a]) => c === 'get-document-page-info' && a[0] === 1 && a[1] === 0));
+check('doc 1: NO per-page read at all (page-next and the Contents click "Terms" were served from the read-ahead)', !has('get-document-page', a => a[0] === 1));
+check('doc 1: EXACTLY two page-info calls (the first paint, then ONE read-ahead batch) — a duplicate batch would show here (Oracle C4)', calls.filter(([c, a]) => c === 'get-document-page-info' && a[0] === 1).length === 2);
+check('doc 1: NO separate outline read (the bookmarks came with the first paint)', !has('get-document-outline', a => a[0] === 1));
+check('no page-count probe anywhere (the count comes with page-info — even for doc 3 whose page_count is NULL)', !has('get-document-page-count'));
+check('doc 3 (count unknown in the row): first paint via page-info, then its read-ahead of page 2', has('get-document-page-info', a => a[0] === 3 && a[1] === 0) && has('get-document-page-info', a => a[0] === 3 && a[1] === 1));
 check('get-document-pages (id 2, null, null, 3) — the non-PDF full-render arity preserved', has('get-document-pages', a => a[0] === 2 && a[1] === null && a[2] === null && a[3] === 3));
 check('find-in-document (1, "inv") — the list-term highlight', has('find-in-document', a => a[0] === 1 && a[1] === 'inv'));
 check('get-spreadsheet-grid (2) — the xlsx grid', has('get-spreadsheet-grid', a => a[0] === 2));
@@ -82,6 +83,19 @@ console.log('S4 — the shared workflow / mailbox / stamp modules on the core (h
     check('the History block read doc 1 ({documentId:1}) and the routed banner read doc 2 ({documentId:2}) — preload payload shapes preserved',
           has2('workflow-doc-history', a => a[0] && a[0].documentId === 1) && has2('workflow-doc-routes', a => a[0] && a[0].documentId === 2));
     check('the two-step cancel called workflow-admin-cancel with {id:13, version:1}', has2('workflow-admin-cancel', a => a[0] && a[0].id === 13 && a[0].version === 1));
+  }
+}
+
+console.log('read-ahead RACE (Oracle 2026-09-14 C1) — a late batch from a previous selection must not free the current one\'s latch');
+{
+  const rep3 = path.join(tmp, 'report-race.json');
+  const r3 = spawnSync(exe, [path.join(ROOT, 'scripts', 'search-window-harness.js'), '--race', '--report', rep3], { cwd: ROOT, env, encoding: 'utf8', timeout: 120000, windowsHide: true });
+  let rec3 = null; try { rec3 = JSON.parse(fs.readFileSync(rep3, 'utf8')); } catch {}
+  check('the race run produced a report', !!rec3);
+  if (rec3) {
+    console.log(`harness(--race) exit ${r3.status}; ${rec3.checks.length} in-page checks`);
+    for (const c of rec3.checks.filter(c => /^race/.test(c.name))) check(c.name, c.ok);
+    check('every in-page check of the race run passed', rec3.checks.every(c => c.ok));
   }
 }
 

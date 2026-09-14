@@ -58,12 +58,11 @@ console.log('A1. functional — PARITY: the pop-out against a core that has the 
     const has = (ch, pred) => calls.some(([c, a]) => c === ch && (!pred || pred(a)));
     check('client-search called with the params object (fullText inv from the deep-link)', has('client-search', a => a[0] && a[0].fullText === 'inv'));
     check('client-get-document for the clicked docs', has('client-get-document', a => a[0] === 1) && has('client-get-document', a => a[0] === 3));
-    check('client-get-page (1, 0, 3, "auto") — the lazy page-1 read over /v1, asking for JPEG-for-scans', has('client-get-page', a => a[0] === 1 && a[1] === 0 && a[2] === 3 && a[3] === 'auto'));
-    check('client-outline (1) — the Contents panel read, AFTER the page-1 read', has('client-outline', a => a[0] === 1)
-          && calls.findIndex(([c, a]) => c === 'client-outline' && a[0] === 1) > calls.findIndex(([c, a]) => c === 'client-get-page' && a[0] === 1 && a[1] === 0));
-    check('client-get-page (1, 2, 3, "auto") — the Contents click ("Terms") rendered page 3', has('client-get-page', a => a[0] === 1 && a[1] === 2 && a[2] === 3 && a[3] === 'auto'));
-    check('client-get-page (1, 1, 3) — the hole rendered on page-next', has('client-get-page', a => a[0] === 1 && a[1] === 1 && a[2] === 3));
-    check('a KNOWN page_count is never probed; the UNKNOWN one is (client-page-count for 3 only)', !has('client-page-count', a => a[0] === 1) && has('client-page-count', a => a[0] === 3));
+    check('client-page-info (1, 0, [], 3, "auto") — ONE request for the first paint (page 1 + count + bookmarks), no `also`', has('client-page-info', a => a[0] === 1 && a[1] === 0 && Array.isArray(a[2]) && a[2].length === 0 && a[2].length === 0 && a[3] === 3 && a[4] === 'auto'));
+    check('client-page-info (1, 1, [2], 3, "auto") — the read-ahead batch for pages 2-3 in ONE request, after the first paint', has('client-page-info', a => a[0] === 1 && a[1] === 1 && JSON.stringify(a[2]) === '[2]' && a[3] === 3 && a[4] === 'auto')
+          && calls.findIndex(([c, a]) => c === 'client-page-info' && a[0] === 1 && a[1] === 1) > calls.findIndex(([c, a]) => c === 'client-page-info' && a[0] === 1 && a[1] === 0));
+    check('doc 1: NO per-page read, NO separate outline read, NO count probe (all came with page-info / the read-ahead)', !has('client-get-page', a => a[0] === 1) && !has('client-outline', a => a[0] === 1) && !has('client-page-count'));
+    check('doc 1: EXACTLY two page-info requests (the first paint, then ONE read-ahead batch) — a duplicate batch would show here (Oracle C4)', calls.filter(([c, a]) => c === 'client-page-info' && a[0] === 1).length === 2);
     check('client-find (1, "inv") — the list-term highlight over /v1', has('client-find', a => a[0] === 1 && a[1] === 'inv'));
     check('client-spreadsheet (2) — the xlsx grid over /v1', has('client-spreadsheet', a => a[0] === 2));
     check('client-get-pages only as the non-PDF full render (id 2)', has('client-get-pages', a => a[0] === 2) && !has('client-get-pages', a => a[0] === 1));
@@ -93,7 +92,7 @@ console.log('A2. functional — LITE: the same pop-out against an OLDER core (1.
     const has = (ch, pred) => calls.some(([c, a]) => c === ch && (!pred || pred(a)));
     check('lite: pages come from the full render for every previewed doc (client-get-pages 1, 3, 2)', has('client-get-pages', a => a[0] === 1) && has('client-get-pages', a => a[0] === 3) && has('client-get-pages', a => a[0] === 2));
     check('lite: the S2 channels are NEVER called (caps gated off by the handshake, not by a 404 round-trip)', !calls.some(([c]) => /^client-get-page$|^client-page-count$|^client-find$|^client-spreadsheet$/.test(c)));
-    check('lite: the 1.5.0 outline channel is never called either', !has('client-outline'));
+    check('lite: the 1.5.0 outline and 1.6.0 page-info channels are never called either', !has('client-outline') && !has('client-page-info'));
   }
 }
 
@@ -136,7 +135,28 @@ console.log('A4. functional — WORKFLOW against a 1.3.0 core: the 1.4.0 bits hi
     check('1.3.0 core: the 1.4.0 channels are NEVER called (doc-routes / doc-history / admin-cancel / stamp-type-create)',
           !calls.some(([c]) => /^client-wf-doc-routes$|^client-wf-doc-history$|^client-wf-admin-cancel$|^client-wf-stamp-type-create$/.test(c)));
     check('1.3.0 core: the S2 reads still run (the two gates are independent)', calls.some(([c]) => c === 'client-get-page'));
-    check('1.3.0 core: the 1.5.0 outline channel is never called (Contents panel hidden by the handshake)', !calls.some(([c]) => c === 'client-outline'));
+    check('1.3.0 core: the 1.5.0 outline and 1.6.0 page-info channels are never called (hidden by the handshake)', !calls.some(([c]) => c === 'client-outline') && !calls.some(([c]) => c === 'client-page-info'));
+  }
+}
+
+console.log('A7. functional — the read-ahead RACE on the client (Oracle 2026-09-14 C1): a late batch from a previous selection never frees the latch');
+{
+  const run = runHarness(null, ['--race']);
+  if (run) {
+    const { rec } = run;
+    check('the race scenario ran in the pop-out (its checks are in the in-page list above)', rec.checks.some(c => /^race \(Oracle C1\)/.test(c.name) && c.ok));
+  }
+}
+
+console.log('A6. functional — against a 1.5.0 core: the Contents panel through its own outline read, pages through the per-page reads (no page-info)');
+{
+  const run = runHarness('1.5.0');
+  if (run) {
+    const { calls } = run;
+    const has = (ch, pred) => calls.some(([c, a]) => c === ch && (!pred || pred(a)));
+    check('1.5.0 core: page-info is never asked; the S2 per-page read serves page 1 with fmt=auto', !has('client-page-info') && has('client-get-page', a => a[0] === 1 && a[1] === 0 && a[2] === 3 && a[3] === 'auto'));
+    check('1.5.0 core: the Contents panel came from the 1.5.0 outline read (client-outline 1)', has('client-outline', a => a[0] === 1));
+    check('1.5.0 core: the unknown count is probed the old way (client-page-count for 3)', has('client-page-count', a => a[0] === 3));
   }
 }
 
@@ -164,7 +184,9 @@ console.log('B. source — the Oracle S1 conditions');
   check("main (S2): client-find is NOT guarded() — a timeout returns a kind:'timeout' envelope instead of tripping the connection overlay",
         /ipcMain\.handle\('client-find', async \(_e, id, query\) => \{\s*try \{ const r = await client\.find\(id, query\); markConnection\(true\); return r; \}/.test(mainJs) && /kind: timedOut \? 'timeout' : 'error'/.test(mainJs) && !/ipcMain\.handle\('client-find',\s*guarded/.test(mainJs));
   const apiC = read('client', 'apiClient.js');
-  check('apiClient: CLIENT_CONTRACT 1.5.0 in lockstep; find carries a LONG idle timeout', /CLIENT_CONTRACT = '1\.5\.0'/.test(apiC) && /\/find\?\$\{q\}`, \{ withAuth: true, timeoutMs: 180000 \}/.test(apiC));
+  check('apiClient: CLIENT_CONTRACT 1.6.0 in lockstep; find carries a LONG idle timeout', /CLIENT_CONTRACT = '1\.6\.0'/.test(apiC) && /\/find\?\$\{q\}`, \{ withAuth: true, timeoutMs: 180000 \}/.test(apiC));
+  check('apiClient (1.6.0): getPageInfo reads /documents/:id/page-info with page / also / scale / fmt and a longer idle timeout',
+        /\/v1\/documents\/\$\{encodeURIComponent\(id\)\}\/page-info\?\$\{q\}`, \{ withAuth: true, timeoutMs: 90000 \}/.test(apiC) && /if \(extra\.length\) q\.set\('also', extra\.join\(','\)\);/.test(apiC) && /getOutline, getPageInfo,/.test(apiC));
   check('apiClient (1.5.0): getPage forwards fmt=auto|jpeg only; getOutline reads /documents/:id/outline',
         /if \(fmt === 'auto' \|\| fmt === 'jpeg'\) q\.set\('fmt', fmt\);/.test(apiC) && /\/v1\/documents\/\$\{encodeURIComponent\(id\)\}\/outline`/.test(apiC) && /getSpreadsheet, getOutline,/.test(apiC));
   check('apiClient (1.4.0): the four workflow routes — documents/:id/routes + /history, routes/:id/cancel, POST stamp-types',
@@ -172,7 +194,10 @@ console.log('B. source — the Oracle S1 conditions');
         && /\/v1\/workflow\/routes\/\$\{id\}\/cancel`, \{ withAuth: true, body: \{ version, reason \} \}/.test(apiC) && /request\('POST', '\/v1\/workflow\/stamp-types'/.test(apiC)
         && /docRoutes: wfDocRoutes, docHistory: wfDocHistory, adminCancel: wfAdminCancel, stampTypeCreate/.test(apiC));
   const srvH = read('src', 'modules', 'api', 'handler.js');
-  check('server: API_CONTRACT_VERSION 1.5.0 (lockstep with the client)', /API_CONTRACT_VERSION = '1\.5\.0'/.test(srvH));
+  check('server: API_CONTRACT_VERSION 1.6.0 (lockstep with the client)', /API_CONTRACT_VERSION = '1\.6\.0'/.test(srvH));
+  check('server (1.6.0): the page-info route sits behind the same gates as /page and caps `also` at PAGE_INFO_ALSO_MAX_V1 (bounded work per request)',
+        /documents\/\(\\\\d\+\)\/page-info\$/.test(srvH) && /infoMatch\) \{\s*\n\s*const session = requireSession\(req, res\); if \(!session\) return;\s*\n\s*const id = Number\(infoMatch\[1\]\);\s*\n\s*if \(!_gateDoc\(session, id\)\) return;/.test(srvH)
+        && /const PAGE_INFO_ALSO_MAX_V1 = 4;/.test(srvH) && /\.slice\(0, PAGE_INFO_ALSO_MAX_V1\)/.test(srvH));
   check('server (1.5.0): the outline route sits behind the same gates as /page (requireSession → _gateDoc → server-side resolution) and the page read takes fmt=auto|jpeg only',
         /documents\/\(\\\\d\+\)\/outline\$/.test(srvH) && /outlineMatch\) \{\s*\n\s*const session = requireSession\(req, res\); if \(!session\) return;\s*\n\s*const id = Number\(outlineMatch\[1\]\);\s*\n\s*if \(!_gateDoc\(session, id\)\) return;/.test(srvH)
         && /const format = \(fmtRaw === 'auto' \|\| fmtRaw === 'jpeg'\) \? fmtRaw : undefined;/.test(srvH));
@@ -206,7 +231,9 @@ console.log('B. source — the Oracle S1 conditions');
         /const serverHas14 = atLeast\(sv, '1\.4\.0'\);/.test(adapter) && /const clientHas14 = atLeast\(cc, '1\.4\.0'\);/.test(adapter)
         && /const role = \(window\.SearchState && window\.SearchState\.role\) \|\| null;/.test(adapter)
         && /T\.caps\.docRoutes = on14 && writer; T\.caps\.workflowHistory = on14 && writer;/.test(adapter) && /T\.caps\.adminCancel = on14 && admin; T\.caps\.stampCreate = on14 && admin;/.test(adapter)
-        && /serverBehind = \(clientHasS2 && !serverHasS2\) \|\| \(clientHas14 && !serverHas14\) \|\| \(clientHas15 && !serverHas15\)/.test(adapter));
+        && /serverBehind = \(clientHasS2 && !serverHasS2\) \|\| \(clientHas14 && !serverHas14\) \|\| \(clientHas15 && !serverHas15\) \|\| \(clientHas16 && !serverHas16\)/.test(adapter));
+  check('client adapter (1.6.0): the pageInfo cap needs both sides ≥ 1.6.0; page-info is a docRead (404 = hidden doc → null, cap kept — the viewer falls back to the per-page reads)',
+        /T\.caps\.pageInfo = serverHas16 && clientHas16;/.test(adapter) && /getDocumentPageInfo:\s+docRead\('pageInfo', null, \(id, page, also, scale, fmt\) => api\.getPageInfo\(id, page, also, scale, fmt\)/.test(adapter) && /pageInfo: false,/.test(adapter));
   check('client adapter (1.5.0): the Contents cap needs both sides ≥ 1.5.0; the outline is a docRead (404 = hidden doc, cap kept); the page read forwards fmt',
         /T\.caps\.outline = serverHas15 && clientHas15;/.test(adapter) && /getDocumentOutline:\s+docRead\('outline', \[\], \(id\) => api\.getOutline\(id\)/.test(adapter)
         && /getDocumentPage:\s+capGated\('singlePage', null, \(id, index, scale, fmt\) => api\.getPage\(id, index, scale, fmt\)/.test(adapter) && /outline: false,/.test(adapter));

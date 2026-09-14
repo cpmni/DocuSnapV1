@@ -1119,6 +1119,28 @@ function register(ctx) {
     });
   });
 
+  // ── PAGE-INFO: ONE render process for the viewer's first paint (page + count + bookmarks) and for its
+  //    read-ahead batch (`also` = the next few page indexes). Same gates + server-side resolution.
+  ipcMain.handle('get-document-page-info', async (_e, docId, page, also, scale, format) => {
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    let rFolder = null, rFile = null;
+    if (row) {
+      const pick = row.working_path || row.stored_path
+        || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null);
+      if (pick) { rFolder = path.dirname(pick); rFile = path.basename(pick); }
+    }
+    if (!rFolder || !rFile) return null;
+    const fmt = (format === 'auto' || format === 'jpeg') ? format : undefined;
+    return previewService.getDocumentPageInfo(db, { docId, folderPath: rFolder, filename: rFile, page, also: Array.isArray(also) ? also : [], scale, format: fmt }, {
+      fs, path, spawn, pythonExe, pythonArgs,
+      renderScript: ctx.resourcePath('python_backend', 'render', 'pages.py'),
+    });
+  });
+
   // ── The PDF's OUTLINE (bookmarks / table of contents) for the Search viewer's Contents panel ──
   //    [{title, page, level}], page = 0-based; [] when none. Same server-side resolution; no render.
   ipcMain.handle('get-document-outline', async (_e, docId) => {

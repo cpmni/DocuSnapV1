@@ -46,7 +46,7 @@ const path              = require('path');
 const WF_HTTP = { FORBIDDEN: 403, STAMP_FORBIDDEN: 403, NOT_FOUND: 404, CONFLICT: 409 };
 const wfStatus = (code) => WF_HTTP[code] || 400;
 
-const API_CONTRACT_VERSION = '1.5.0';   // 1.5.0: + GET /documents/:id/outline (the PDF's bookmarks → the Contents panel) and the page read's optional fmt=auto|jpeg (2026-09-14; the client gates its Contents cap on ≥ 1.5.0). 1.4.0: + per-document open-routes / decision-history reads, admin route cancel, new stamp type (the search pop-out's last hidden workflow bits, 2026-09-14; the client gates those caps on ≥ 1.4.0). 1.3.0: + the four preview READS (page / page-count / find / spreadsheet — client search parity S2, 2026-09-13; the client gates its lazy-page/find/grid caps on ≥ 1.3.0). 1.2.0: + POST /v1/documents/intake (Quick File upload). NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
+const API_CONTRACT_VERSION = '1.6.0';   // 1.6.0: + GET /documents/:id/page-info (ONE render process for the pop-out's first paint + its read-ahead batch; the client gates its pageInfo cap on ≥ 1.6.0). 1.5.0: + GET /documents/:id/outline (the PDF's bookmarks → the Contents panel) and the page read's optional fmt=auto|jpeg (2026-09-14; the client gates its Contents cap on ≥ 1.5.0). 1.4.0: + per-document open-routes / decision-history reads, admin route cancel, new stamp type (the search pop-out's last hidden workflow bits, 2026-09-14; the client gates those caps on ≥ 1.4.0). 1.3.0: + the four preview READS (page / page-count / find / spreadsheet — client search parity S2, 2026-09-13; the client gates its lazy-page/find/grid caps on ≥ 1.3.0). 1.2.0: + POST /v1/documents/intake (Quick File upload). NB: ADDING endpoints (e.g. recycle bin) needs no bump — the
                                         // handshake checks MAJOR only. Keep server + client in lockstep.
 const API_PREFIX = '/v1';
 const CLIENT_CONTRACT_HEADER = 'x-scanfinder-client-contract';
@@ -88,6 +88,7 @@ const FIND_Q_MAX = 200;
 const FIND_OCR_PAGES_V1 = 12;          // PREVIEW_FIND_OCR_PAGES for the /v1 lane (desktop default 30)
 const PAGE_SCALE_MIN = 1, PAGE_SCALE_MAX = 4, PAGE_SCALE_DEFAULT = 3;
 const PAGE_INDEX_MAX = 5000;
+const PAGE_INFO_ALSO_MAX_V1 = 4;   // /page-info: extra pages one request may rasterise beyond `page` (the pop-out's read-ahead asks for 3)
 
 // Quick File UPLOAD (POST /v1/documents/intake) — the first body-bearing WRITE on /v1 (Oracle
 // 2026-09-13, SIGN-OFF-W/COND). Its body may be large (a base64 file), so it does NOT reuse the 1 MB
@@ -642,6 +643,30 @@ function createRequestListener(ctx) {
           ? await previewService.getDocumentPage(getDb(), { docId: id, folderPath, filename, index, scale, format }, pageDeps())
           : null;
         return sendJson(res, 200, { page: page || null });
+      }
+
+      // GET /v1/documents/:id/page-info?page=&also=&scale=&fmt=  → { pages, outline, images:{"<i>": dataUrl} }
+      // ONE render process for the pop-out's first paint (page + count + bookmarks) and for its read-ahead batch
+      // (contract 1.6.0, 2026-09-14). `also` = up to PAGE_INFO_ALSO_MAX_V1 extra indexes (bounded work per request —
+      // an authenticated LAN user must not be able to ask one request to rasterise a whole book). Same gates as /page.
+      const infoMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/page-info$`));
+      if (req.method === 'GET' && infoMatch) {
+        const session = requireSession(req, res); if (!session) return;
+        const id = Number(infoMatch[1]);
+        if (!_gateDoc(session, id)) return;
+        const page = Math.min(PAGE_INDEX_MAX, Math.max(0, Number(url.searchParams.get('page')) | 0));
+        const also = [...new Set(String(url.searchParams.get('also') || '').split(',').map(s => s.trim()).filter(s => /^\d+$/.test(s))
+          .map(Number).filter(n => n >= 0 && n <= PAGE_INDEX_MAX && n !== page))].slice(0, PAGE_INFO_ALSO_MAX_V1);
+        const rawScale = Number(url.searchParams.get('scale'));
+        const scale = Number.isFinite(rawScale) && rawScale > 0
+          ? Math.min(PAGE_SCALE_MAX, Math.max(PAGE_SCALE_MIN, rawScale)) : PAGE_SCALE_DEFAULT;
+        const fmtRaw = String(url.searchParams.get('fmt') || '').toLowerCase();
+        const format = (fmtRaw === 'auto' || fmtRaw === 'jpeg') ? fmtRaw : undefined;
+        const { folderPath, filename } = _resolveDocArgs(id);
+        const info = (folderPath && filename)
+          ? await previewService.getDocumentPageInfo(getDb(), { docId: id, folderPath, filename, page, also, scale, format }, pageDeps())
+          : null;
+        return sendJson(res, 200, info ? { pages: info.pages, outline: info.outline, images: info.images } : { pages: null, outline: [], images: {} });
       }
 
       // GET /v1/documents/:id/outline → { outline: [{title, page, level}] }  (the PDF's bookmarks — the Contents

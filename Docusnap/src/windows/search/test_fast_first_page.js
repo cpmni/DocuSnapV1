@@ -41,17 +41,29 @@ console.log('3. renderer renders ONLY page 1 for a multi-page PDF, then loads th
 {
   const pv = read('src/windows/shared/search-ui/searchPreview.js');   // the shared search UI (2026-09-13)
   check('page 1 painted first for ANY PDF (not gated on a known page_count; only the transport CAP gates it)',
-        /if \(_isPdf && _cap\('singlePage'\)\)/.test(pv) && /const _pageCount = Number\(merged\.page_count\) \|\| 0;/.test(pv));
+        /if \(!painted && _isPdf && _cap\('singlePage'\)\)/.test(pv) && /const _pageCount = Number\(merged\.page_count\) \|\| 0;/.test(pv));
+  check('ONE process for the first paint when the transport has page-info (page 1 + count + bookmarks; NO `also` so the batch never delays it), per-page path as the fallback',
+        /if \(_isPdf && _cap\('pageInfo'\) && typeof window\.SearchTransport\.getDocumentPageInfo === 'function'\)/.test(pv)
+        && /getDocumentPageInfo\(doc\.id, 0, \[\], SEARCH_RENDER_SCALE, SEARCH_RENDER_FORMAT\)/.test(pv)
+        && /outlineFromInfo = Array\.isArray\(info\.outline\) \? info\.outline : \[\];/.test(pv) && /painted = true;/.test(pv));
+  check('read-ahead: the next PREFETCH_AHEAD holes render in ONE background batch after a page is shown; a page reached mid-batch waits for it (never a second process)',
+        /const PREFETCH_AHEAD = 3;/.test(pv) && /_prefetchAhead\(s\.selectedDoc, idx\);/.test(pv)
+        && /T\.getDocumentPageInfo\(doc\.id, want\[0\], want\.slice\(1\), SEARCH_RENDER_SCALE, SEARCH_RENDER_FORMAT\)/.test(pv)
+        && /const job = _pageJobs\.get\(idx\); uri = await \(job \|\| _renderOne\(mine, idx\)\);/.test(pv) && /if \(!doc \|\| s\.selectedDoc !== doc \|\| _prefetchBusy \|\| _prefetchHold\) return;/.test(pv));
+  check('the read-ahead latch belongs to ONE selection (identity-guarded reset — Oracle C1); a render landing after the stamped/original swap never overwrites it (C2); the file\'s count wins (C3); the first batch waits for the find on a searched doc (C5)',
+        /const release = \(\) => \{ if \(jobs === _pageJobs\) _prefetchBusy = false; \};/.test(pv) && /if \(s\.currentPages !== arr\) return;/.test(pv)
+        && /i < s\.currentPages\.length && !s\.currentPages\[i\]\) s\.currentPages\[i\] = uri;/.test(pv) && /info\.pages >= 1\) \? info\.pages : Math\.max\(1, _pageCount\)/.test(pv)
+        && /_prefetchHold = !!\(q && _cap\('find'\)\);/.test(pv) && /_prefetchRelease\(mine\);/.test(pv));
   check('page-1 render via getDocumentPage(doc.id, 0, …) asking for the auto (JPEG-for-scans) format', /getDocumentPage\(doc\.id, 0, SEARCH_RENDER_SCALE, SEARCH_RENDER_FORMAT\)/.test(pv) && /const SEARCH_RENDER_FORMAT = 'auto';/.test(pv));
   check('SPARSE page array when count known; single-page array otherwise (NOT all pages up front)',
         /s\.currentPages = _pageCount > 1 \? new Array\(_pageCount\) : \[first\]/.test(pv));
   check('unknown count (NULL/0): page 1 shown, count PROBED cheaply (no all-pages render) for nav',
         /if \(_pageCount <= 1 && _cap\('pageCount'\)\)[\s\S]{0,700}getDocumentPageCount\(doc\.id\)\.then/.test(pv)
         && /const arr = new Array\(cnt\);[\s\S]{0,80}arr\[0\] = s\.currentPages\[0\]/.test(pv));
-  check('_showPage is lazy: fetches a hole via getDocumentPage(mine.id, idx, …)',
-        /async function _showPage/.test(pv) && /getDocumentPage\(mine\.id, idx, SEARCH_RENDER_SCALE, SEARCH_RENDER_FORMAT\)/.test(pv));
-  check('the Contents panel loads AFTER the first paint (never before it) and is staleness-guarded',
-        /await _showPage\(0\);\s*\n\s*_loadOutline\(mine\);/.test(pv) && /if \(window\.SearchState\.selectedDoc !== doc\) return;/.test(pv) && /_clearOutline\(\);/.test(pv));
+  check('_showPage is lazy: a hole is fetched on demand (_renderOne → getDocumentPage(doc.id, idx, …)) unless a read-ahead batch already carries it',
+        /async function _showPage/.test(pv) && /_renderOne\(mine, idx\)/.test(pv) && /function _renderOne\(doc, idx\)[\s\S]{0,200}getDocumentPage\(doc\.id, idx, SEARCH_RENDER_SCALE, SEARCH_RENDER_FORMAT\)/.test(pv));
+  check('the Contents panel loads AFTER the first paint (never before it) — from the first-paint answer when it carried the bookmarks, else its own staleness-guarded read',
+        /await _showPage\(0\);[\s\S]{0,400}if \(outlineFromInfo\) _renderOutline\(outlineFromInfo\); else _loadOutline\(mine\);/.test(pv) && /if \(window\.SearchState\.selectedDoc !== doc\) return;/.test(pv) && /_clearOutline\(\);/.test(pv));
   check('full getDocumentPages is only the FALLBACK/else path, not the multi-page happy path',
         pv.indexOf('getDocumentPage(doc.id, 0') < pv.indexOf('getDocumentPages(doc.id, null, null, SEARCH_RENDER_SCALE)'));
   check('staleness-guarded (a newer selection wins)', /const first = await window\.SearchTransport\.getDocumentPage[\s\S]{0,80}if \(s\.selectedDoc !== mine\) return;/.test(pv));

@@ -69,9 +69,14 @@ dead provider marked, tidy-up queued. Oracle SIGN-OFF-W/COND 2026-09-14, conditi
 SCAN page at scale 3 = 0.84 s + 5 MB) → scan pages now JPEG via `--format auto` (`?fmt=auto`; vector pages stay PNG;
 Review/teach untouched): 1.3 s → 0.48 s, 5.6 MB → 1.2 MB; thumbnails capped at 2 in flight, LIFO, gone rows forgotten
 (pin `src/windows/shared/test_search_thumbs_queue.js`). Oracle SIGN-OFF-W/COND (conditions built: unavailable outline
-entries never dead; the queue rules; Python pin under BOTH interpreters). **NEXT speed step (Oracle-ruled): ONE
-`--page-info` spawn for the first paint BEFORE any persistent worker** (`pendingfeatures.md`). Still owed: mig 166 flip
-gate · the dead-provider tidy-up · the Oracle's non-blocking notes · the 34-blank-pages owner question.
+entries never dead; the queue rules; Python pin under BOTH interpreters). **AFTERNOON — `--page-info` + READ-AHEAD BUILT
+(handover ADDENDUM 5; contract 1.5.0 → 1.6.0):** ONE process for the first paint (page 1 + count + bookmarks —
+`pages.py --page-info`, `previewService.getDocumentPageInfo`, `get-document-page-info`, `GET /v1/documents/:id/page-info`,
+cap `pageInfo`) + the next 3 pages in one background batch (`searchPreview._prefetchAhead`, one batch per selection with an
+identity-guarded latch, a page reached mid-batch awaits it, the stamped⇄original swap guard, the file's count wins, the
+batch waits for the find on a searched doc). Oracle SIGN-OFF-W/COND C1-C5 built; harness `--race` run on both apps; exact
+call-count pins. The persistent render worker stays a LATER slice (`pendingfeatures.md`). Still owed: mig 166 flip gate ·
+the dead-provider tidy-up · the Oracle's non-blocking notes · the 34-blank-pages owner question.
 Follow-ups: the /v1 purge fix, a `/v1` MINOR for the pop-out's hidden bits, client `npm run dist` in lockstep. Memory
 `project_client_search_parity_20260913.md`.
 
