@@ -1263,7 +1263,7 @@ function showLocatedPick(f, typed, hits, idx){
       `<button class="btn primary" id="rb-loc-yes">Yes — teach this spot →</button>`+
       `<span class="rb-sep"></span>`+
       `<button class="btn ghost quiet" id="rb-loc-back">Back</button>`+
-      `<button class="btn ghost quiet" id="rb-loc-fixed">Save without a spot</button>`+
+      `<button class="btn ghost quiet" id="rb-loc-fixed" title="Keep the value you typed and don't tie it to a place on the page">Keep it as typed</button>`+
     `</div>`);
   onConfirm('rb-loc-yes', ()=>useLocatedBox(f, typed, h.box));
   if (hits.length > 1){

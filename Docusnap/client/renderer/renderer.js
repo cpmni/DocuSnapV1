@@ -477,6 +477,17 @@ async function openTeachWindow(opts) {
   } catch (e) { toast(`Could not open Teach — ${(e && e.message) || 'unknown error'}.`, 'err'); }
 }
 $('nav-teach').addEventListener('click', () => openTeachWindow());
+// After teaching from the pop-out (or any change made elsewhere), the sidebar Review count can lag until the
+// next 60s poll — Chris r2 #1 saw "Review 12" persist after a doc was filed. Refresh it the moment this main
+// window regains focus (e.g. when the operator returns from the Teach pop-out), debounced.
+let _lastReturnRefresh = 0;
+function _refreshOnReturn() {
+  if (!role || !canDecide()) return;
+  const now = Date.now(); if (now - _lastReturnRefresh < 1500) return;
+  _lastReturnRefresh = now; refreshReviewCounts();
+}
+window.addEventListener('focus', _refreshOnReturn);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) _refreshOnReturn(); });
 $('nav-mailbox').addEventListener('click', () => setView('mailbox'));
 $('nav-review').addEventListener('click', () => setView('review'));
 $('nav-quickfile').addEventListener('click', () => setView('quickfile'));

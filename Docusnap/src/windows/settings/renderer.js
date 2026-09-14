@@ -246,7 +246,15 @@ async function initClientApiSection() {
   const teachTgl = document.getElementById('teach-over-client-toggle');
   const teachStatus = document.getElementById('teach-over-client-status');
   if (teachTgl) {
-    const paint = () => { if (teachStatus) teachStatus.textContent = teachTgl.checked ? 'On — an admin on the search client can teach documents in this PC\'s review queue.' : 'Off.'; };
+    const paint = () => {
+      if (!teachStatus) return;
+      if (!teachTgl.checked) { teachStatus.textContent = 'Off.'; return; }
+      // Chris r1 #1: teaching does nothing until search-client CONNECTIONS (the toggle above) are also on.
+      const connOff = tgl && !tgl.checked;
+      teachStatus.textContent = connOff
+        ? 'On — but search-client connections above are OFF, so no client can reach this PC yet. Turn those on too.'
+        : 'On — an admin on the search client can teach documents in this PC\'s review queue.';
+    };
     try { teachTgl.checked = String(await api.getSetting('teach_over_client_enabled')) === 'true'; } catch {}
     paint();
     teachTgl.onchange = async () => {
