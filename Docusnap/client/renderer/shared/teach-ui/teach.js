@@ -25,6 +25,12 @@ const $ = (id) => document.getElementById(id);
 //             review queue only; the empty state points at the main PC (Oracle C7).
 //   review  — open the core's Review window (the follow-up card's "Check them in Review").
 const _cap = (name) => { const c = D && D.caps; return !c || c[name] !== false; };
+// batchCommit is OPT-IN (absent = false, the opposite of _cap's absent = true): the CORE runs the desktop's
+// 6-call commit; only the client (which sets caps.batchCommit=true) collapses them into one /v1/teach/commit.
+const _batchCommit = () => !!(D && D.caps && D.caps.batchCommit === true);
+// A client-minted idempotency key for a teach commit (stable across a retry of the SAME teach — see doCommit).
+function _uuid(){ try { if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID(); } catch {}
+  return 'tc-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10); }
 
 const TYPE_MAP = { Text: 'text', Date: 'date', Currency: 'currency', Number: 'number' };
 
@@ -2156,6 +2162,44 @@ async function doCommit(){
         $('nm-keep')?.addEventListener('click', () => { state.issuerNearMatchAck = true; $('commit-err').textContent=''; doCommit(); });
         return;
       }
+    }
+    // Teach-over-client (S3): the CLIENT can't fire the 6 desktop calls separately — a dropped LAN socket
+    // between them would leave a half-born template that mis-extracts every sibling. Build the WHOLE teaching
+    // into ONE payload and fire a single transactional /v1/teach/commit. Cap OFF on the core → the original
+    // 6-call path below runs, byte-identical. The idempotency key is minted ONCE per teach (reused on a retry
+    // of the same teach, e.g. the ack "keep" buttons re-enter doCommit → the server dedups).
+    if (_batchCommit()) {
+      state.teachCommitId = state.teachCommitId || _uuid();
+      const _saB = _sampleAngleForCommit();
+      const listCaptions = [], fixedB = [], hiddenB = [], mappingsB = [];
+      for (const f of state.fields){
+        const r = state.results[f.key]; if (!r) continue;
+        if (isListField(f)) { if (r.status === 'done' && r.listCaption) listCaptions.push({ field_key: f.key, label: r.listCaption }); continue; }
+        if (r.status === 'fixed') { if (r.value) fixedB.push({ field_key: f.key, value: r.value }); continue; }
+        if (r.status === 'skip') { if (r.hideForLayout) hiddenB.push(f.key); continue; }
+        if (!r.target) continue;
+        const a = r.anchor || (isIssuerField(f)
+          ? { x: r.target.x, y: r.target.y, w: r.target.w, h: r.target.h }
+          : { x: Math.max(0, r.target.x - 0.1), y: r.target.y, w: 0.1, h: r.target.h });
+        mappingsB.push({ field_key: f.key, page_number: Number.isInteger(r.page) ? r.page : 0, anchor_text: r.anchor_text || null,
+          anchor_x_norm: a.x, anchor_y_norm: a.y, anchor_w_norm: a.w, anchor_h_norm: a.h,
+          target_x_norm: r.target.x, target_y_norm: r.target.y, target_w_norm: r.target.w, target_h_norm: r.target.h,
+          search_expansion: 0.04 });
+      }
+      const res = await D.commitTeach({
+        teachCommitId: state.teachCommitId,
+        document_id: state.doc.id, document_type_slug: state.docTypeSlug, supplier_name: supplier, allValues,
+        sample_deskew_angle: _saB.angle, angle_measured: _saB.measured,
+        listCaptions, fixed: fixedB, hidden: hiddenB, mappings: mappingsB,
+        acknowledgeTypeSplit: !!state.typeSplitAck, acknowledgeIssuerNearMatch: !!state.issuerNearMatchAck,
+        taught_fields: state.fields.map(f => f.key),
+      });
+      if (!res || res.ok === false || res.success === false){ throw new Error((res && res.error) || 'Could not save the taught document.'); }
+      $('done-warn').textContent = res.landmarksWarn
+        ? 'Heads-up: this page didn\'t have many distinct printed words, so extraction may be less tolerant of crooked or rescaled scans. A cleaner/straighter example helps.' : '';
+      setStep(5);
+      renderTeachFollowup();
+      return;
     }
     // 1) create/refresh the template + pin this page as the sample (→ landmarks)
     const _sa = _sampleAngleForCommit();     // page 0's MEASURED tilt (the pinned sample page) — see toggleTeachDeskew

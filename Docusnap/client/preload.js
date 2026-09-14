@@ -106,6 +106,8 @@ contextBridge.exposeInMainWorld('scanfinder', {
     createDocType:     (draft) => ipcRenderer.invoke('client-teach-create-doctype', draft),
     docTypeCatalog:    ()      => ipcRenderer.invoke('client-teach-doctype-catalog'),
     addDocTypePresets: (slugs) => ipcRenderer.invoke('client-teach-doctype-presets', slugs),
+    // S3: the ONE transactional commit (create template + mappings + file the exemplar).
+    commit:            (payload) => ipcRenderer.invoke('client-teach-commit', payload),
   },
   // Teach pop-out window (mirrors openSearch): open/focus the window; the pop-out pulls its target doc once,
   // learns the signed-in role (currentUser) and the server's abilities (serverInfo), and reports a 401.

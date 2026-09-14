@@ -31,10 +31,14 @@ check('missing keys (old callers) → not written', W({}).measured === false && 
 console.log('2 the promote road (source pins)');
 const rh = read('src/modules/review/handler.js');
 const promo = rh.slice(rh.indexOf("ipcMain.handle('promote-to-template'"), rh.indexOf("ipcMain.handle('promote-to-template'") + 5000);
+// The synchronous wizard-angle write moved into the SHARED core _promoteTemplateCoreSync (also /v1/teach/commit),
+// so the guarded-UPDATE + C3-warn pins search that function; the IPC handler keeps the payload validation + the
+// async fallback (Oracle C-S3-1, 2026-09-14).
+const core = rh.slice(rh.indexOf('function _promoteTemplateCoreSync'), rh.indexOf('function _promoteTemplateCoreSync') + 2400);
 check('the wizard angle is validated once from the payload', /const wizardAngle = _wizardSampleAngle\(payload\);/.test(promo));
-check('written ONLY when measured, ONLY when still NULL (guarded UPDATE)', /if \(wizardAngle\.measured\) \{[\s\S]{0,400}UPDATE templates SET sample_deskew_angle = \? WHERE id = \? AND sample_deskew_angle IS NULL/.test(promo));
-check('C3: a REUSED template with a ≥0.3° mismatch WARNs (never overwrites)', /result\.created === false\s*&& Math\.abs\(Number\(before\.sample_deskew_angle\) - wizardAngle\.angle\) >= 0\.3/.test(promo) && /re-teach frame mix/.test(promo));
-check('the async detect stays the fallback AFTER the sync write', promo.indexOf('UPDATE templates SET sample_deskew_angle') < promo.indexOf('ctx.generateSampleAngle(result.templateId)'));
+check('written ONLY when measured, ONLY when still NULL (guarded UPDATE)', /if \(wizardAngle && wizardAngle\.measured\) \{[\s\S]{0,400}UPDATE templates SET sample_deskew_angle = \? WHERE id = \? AND sample_deskew_angle IS NULL/.test(core));
+check('C3: a REUSED template with a ≥0.3° mismatch WARNs (never overwrites)', /result\.created === false\s*&& Math\.abs\(Number\(before\.sample_deskew_angle\) - wizardAngle\.angle\) >= 0\.3/.test(core) && /re-teach frame mix/.test(core));
+check('the sync core runs BEFORE the async detect fallback', promo.indexOf('_promoteTemplateCoreSync(') < promo.indexOf('ctx.generateSampleAngle(result.templateId)') && /UPDATE templates SET sample_deskew_angle/.test(core));
 
 console.log('3 the wizard side');
 const tw = read('src/windows/shared/teach-ui/teach.js');

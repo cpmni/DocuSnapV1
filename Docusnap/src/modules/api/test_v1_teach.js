@@ -33,7 +33,7 @@ licensing.licenseDenied = () => null;
 
 let entitled = true;
 let spawnDelayMs = 5;
-const writes = [], unlinks = [];
+const writes = [], unlinks = [], filed = [];
 
 // Fake region.py: routes stdout by the flag in argv, emits close after spawnDelayMs so concurrent
 // requests overlap for the in-flight-cap test.
@@ -79,7 +79,15 @@ async function main() {
       ? ({ entitled: true, feature: 'detached_client', search: { entitled: true, seats: 99 }, workflow: { entitled: true, seats: 99 } })
       : ({ entitled: false, feature: 'detached_client', search: { entitled: false }, workflow: { entitled: false } }),
     app: { getPath: () => '/tmp' },
-    fs: { writeFileSync: (p) => { writes.push(p); }, unlinkSync: (p) => { unlinks.push(p); }, existsSync: () => true },
+    fs: { writeFileSync: (p) => { writes.push(p); }, unlinkSync: (p) => { unlinks.push(p); }, existsSync: () => true, mkdirSync: () => {} },
+    path: require('path'),
+    templatesDir: () => require('os').tmpdir(),
+    // A stub reviewService for the teach-commit filing step (teachCommit calls reviewSvc.confirm): mark the
+    // doc confirmed + return a filename, so the /v1 route's filing is exercised without real PDF I/O.
+    reviewService: {
+      confirm: async (_db, _actor, payload) => { filed.push(payload.document_id); db.prepare("UPDATE documents SET status='confirmed' WHERE id=?").run(payload.document_id); return { ok: true, filename: `TAUGHT-${payload.document_id}.pdf` }; },
+      queue: () => [], deferred: () => [],
+    },
     spawn: fakeSpawn,
     pythonExe: () => 'py',
     pythonArgs: (script, ...a) => [script, ...a],
@@ -185,6 +193,76 @@ async function main() {
         && (added.json.results || []).some(r => r.slug === addable.slug && r.status === 'added'));
   const listed2 = await request(port, 'GET', '/v1/doc-types', { token: adminT });
   check('the added preset now appears in GET /doc-types', (listed2.json.types || []).some(t => t.slug === addable.slug));
+
+  // ── S3: the transactional teach commit (POST /v1/teach/commit) ───────────────────────────────────────
+  console.log('S3 the transactional teach commit');
+  const typeSlug = created.json.type.slug;   // 'client-test-type' from the S2 create
+  const typeId   = created.json.id;
+  const commitBody = (over) => Object.assign({
+    teachCommitId: 'tc-fixed-1', document_id: null, document_type_slug: typeSlug, supplier_name: 'Widgetworks Ltd',
+    allValues: { supplier_name: 'Widgetworks Ltd', widget_reference: 'WR-100' },
+    sample_deskew_angle: 0, angle_measured: false,
+    listCaptions: [], fixed: [], hidden: [],
+    mappings: [{ field_key: 'widget_reference', page_number: 0, anchor_text: 'Ref',
+      anchor_x_norm: 0.1, anchor_y_norm: 0.1, anchor_w_norm: 0.1, anchor_h_norm: 0.05,
+      target_x_norm: 0.25, target_y_norm: 0.1, target_w_norm: 0.2, target_h_norm: 0.05, search_expansion: 0.04 }],
+    acknowledgeTypeSplit: true, acknowledgeIssuerNearMatch: true, taught_fields: ['widget_reference'],
+  }, over || {});
+  const commit = (opts) => request(port, 'POST', '/v1/teach/commit', opts);
+  const mkDoc = () => db.prepare("INSERT INTO documents (document_type_id, original_filename, stored_filename, status, folder_path, logo_phash, keyword_fingerprint) VALUES (?,?,?,?,?,?,?)")
+    .run(typeId, 'exemplar.pdf', 'exemplar.pdf', 'needs_review', '/inbox', null, '[]').lastInsertRowid;
+
+  // auth + switch (the switch is still OFF here — seeded false by migration 168)
+  const docA = mkDoc();
+  check('POST /teach/commit: no token → 401', (await commit({ body: commitBody({ document_id: docA }) })).status === 401);
+  check('POST /teach/commit: readonly → 403', (await commit({ token: readT, body: commitBody({ document_id: docA }) })).status === 403);
+  check('POST /teach/commit: EDIT (writer, non-admin) → 403 (teach is admin-only)', (await commit({ token: editT, body: commitBody({ document_id: docA }) })).status === 403);
+  const off = await commit({ token: adminT, body: commitBody({ document_id: docA }) });
+  check('POST /teach/commit: switch OFF → 409 FEATURE_DISABLED', off.status === 409 && off.json.code === 'FEATURE_DISABLED');
+
+  // enable the operator switch
+  learning.setSetting(db, 'teach_over_client_enabled', 'true');
+
+  // validation
+  check('unknown doc type → 400', (await commit({ token: adminT, body: commitBody({ document_id: docA, document_type_slug: 'no-such-type' }) })).status === 400);
+  check('unknown field in a mapping → 400', (await commit({ token: adminT, body: commitBody({ document_id: docA, mappings: [{ field_key: 'not_a_field', page_number: 0, anchor_x_norm: 0.1, anchor_y_norm: 0.1, anchor_w_norm: 0.1, anchor_h_norm: 0.05, target_x_norm: 0.2, target_y_norm: 0.1, target_w_norm: 0.1, target_h_norm: 0.05 }] }) })).status === 400);
+  check('off-page target box → 400', (await commit({ token: adminT, body: commitBody({ document_id: docA, mappings: [{ field_key: 'widget_reference', page_number: 0, anchor_x_norm: 0.1, anchor_y_norm: 0.1, anchor_w_norm: 0.1, anchor_h_norm: 0.05, target_x_norm: 0.9, target_y_norm: 0.1, target_w_norm: 0.5, target_h_norm: 0.05 }] }) })).status === 400);
+  check('a structural role as a fixed value → 400', (await commit({ token: adminT, body: commitBody({ document_id: docA, fixed: [{ field_key: 'supplier_name', value: 'x' }] }) })).status === 400);
+  const confirmedDoc = mkDoc(); db.prepare("UPDATE documents SET status='confirmed' WHERE id=?").run(confirmedDoc);
+  check('a non-teachable (already-filed) document → 4xx', [400, 409].includes((await commit({ token: adminT, body: commitBody({ teachCommitId: 'tc-x', document_id: confirmedDoc }) })).status));
+
+  // happy path
+  const tCountBefore = db.prepare('SELECT COUNT(*) c FROM templates').get().c;
+  const ok1 = await commit({ token: adminT, body: commitBody({ document_id: docA }) });
+  check('happy path → 200 {ok, templateId, filename}', ok1.status === 200 && ok1.json.ok === true && ok1.json.templateId > 0 && typeof ok1.json.filename === 'string');
+  const tid = ok1.json.templateId;
+  check('a template row was created', !!db.prepare('SELECT id FROM templates WHERE id=?').get(tid));
+  check('the mapping was written for widget_reference', !!db.prepare("SELECT 1 FROM template_field_mappings WHERE template_id=? AND field_key='widget_reference'").get(tid));
+  check('the teach_commits ledger is done + carries the templateId', (() => { const r = db.prepare("SELECT status, template_id FROM teach_commits WHERE commit_id='tc-fixed-1'").get(); return r && r.status === 'done' && r.template_id === tid; })());
+  check('the exemplar was filed (reviewService.confirm ran)', filed.includes(docA));
+
+  // idempotency — replay the SAME teachCommitId returns the SAME template, no second template
+  const ok2 = await commit({ token: adminT, body: commitBody({ document_id: docA }) });
+  check('idempotent replay → same templateId', ok2.status === 200 && ok2.json.templateId === tid);
+  check('no second template was created on replay', db.prepare('SELECT COUNT(*) c FROM templates').get().c === tCountBefore + 1);
+
+  // ack enforcement (monkeypatch the near-match + type-split lookups to FIRE)
+  const learnMod = require('../../../database/modules/learning');
+  const tsMod = require('../../../database/modules/typeSplit');
+  const _nm = learnMod.findNearMatchIdentity, _ts = tsMod.checkTypeSplit;
+  learnMod.findNearMatchIdentity = () => ({ near: true, existing: 'Widgetworks Limited' });
+  const nmDoc = mkDoc();
+  const nmRes = await commit({ token: adminT, body: commitBody({ teachCommitId: 'tc-nm', document_id: nmDoc, acknowledgeIssuerNearMatch: false }) });
+  check('a firing near-match without the ack → 409 ISSUER_NEAR_MATCH', nmRes.status === 409 && nmRes.json.code === 'ISSUER_NEAR_MATCH');
+  learnMod.findNearMatchIdentity = _nm;
+  tsMod.checkTypeSplit = () => ({ split: true });
+  const tsDoc = mkDoc();
+  const tsRes = await commit({ token: adminT, body: commitBody({ teachCommitId: 'tc-ts', document_id: tsDoc, acknowledgeTypeSplit: false }) });
+  check('a firing type-split without the ack → 409 TYPE_SPLIT', tsRes.status === 409 && tsRes.json.code === 'TYPE_SPLIT');
+  check('type-split gate OFF → no 409 (parity with the desktop setting)', (() => { learning.setSetting(db, 'type_split_confirm_gate', 'false'); const r = commitBody({ teachCommitId: 'tc-ts2', document_id: mkDoc(), acknowledgeTypeSplit: false }); return true; })());
+  const tsOff = await commit({ token: adminT, body: commitBody({ teachCommitId: 'tc-ts2', document_id: mkDoc(), acknowledgeTypeSplit: false }) });
+  check('with type_split_confirm_gate OFF the type-split ack is not enforced', tsOff.status === 200);
+  tsMod.checkTypeSplit = _ts; learning.setSetting(db, 'type_split_confirm_gate', 'true');
 
   server.close();
   console.log(`\n${fail === 0 ? 'ALL PASS' : fail + ' FAILED'}`);

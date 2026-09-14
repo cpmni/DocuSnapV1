@@ -1663,57 +1663,24 @@ function register(ctx) {
       return { success: false, error: 'Select a document type before adding to Template Manager.' };
     }
     try {
-      const result = await _upsertTemplate(ctx, db, document_id, {
-        allValues, document_type_slug, supplier_name, dtInfo,
+      // The synchronous create + sample-pin + wizard-angle write is the shared core (also /v1/teach/commit).
+      const result = _promoteTemplateCoreSync(ctx, db, document_id, {
+        allValues, document_type_slug, supplier_name, dtInfo, wizardAngle,
       });
       if (result && result.skipped === 'generic-type') {
         return { success: false, error: 'General Documents are filed without templates — there is nothing to add to the Template Manager.' };
       }
-      // Pin the promoted document as the template's sample so the template
-      // editor, opened straight from here, has it loaded in the preview pane
-      // (no second manual browse). This is the doc the admin just curated, so
-      // it is the right representative sample.
       if (result.templateId) {
-        templates.setSampleDocument(db, result.templateId, document_id);
-        // Derive registration landmarks from the just-pinned sample (best-effort), so a
-        // teach-created template gets the SAME drift correction as every other pin path
-        // (set-template-sample / import-sample). Without this, teach templates had no
-        // landmarks -> registration inert -> a mapping box drifts onto the wrong row
-        // (the "90 Galaorm Road 7" case). Never blocks the commit; generateLandmarks
-        // resolves (never rejects) and the template still works via anchors meanwhile.
+        // Best-effort async enrichment (OUTSIDE any tx). Derive registration landmarks from the just-pinned
+        // sample so a teach-created template gets the SAME drift correction as every other pin path (without
+        // it, teach templates had no landmarks -> registration inert -> a box drifts onto the wrong row, the
+        // "90 Galaorm Road 7" case). generateSampleAngle is the fallback for a non-wizard pin (the wizard's
+        // measured angle was already written synchronously in the core above). generateFingerprint fills an
+        // empty born-digital fingerprint. None block the commit; each resolves rather than rejects.
         try { if (ctx.generateLandmarks) await ctx.generateLandmarks(result.templateId); }
         catch (e) { console.error('promote-to-template landmarks:', e.message); }
-        // TEACH-COMMIT SAMPLE ANGLE (2026-09-07, 007 → Oracle C1-C3): the wizard already MEASURED the sample's
-        // tilt (get-page-deskew, the same detect_skew_angle); write it SYNCHRONOUSLY here, guarded `IS NULL`,
-        // so the template's compose frame is known before the first sibling is read. The async detect below
-        // stays the fallback for every non-wizard pin. Never write from an unmeasured page (a 0 from a parse
-        // failure is not "level"). C3: on a REUSED template the sample is re-pinned but its angle is not reset
-        // (templates.setSampleDocument) — a box drawn on the NEW sample's frame would be composed with the OLD
-        // sample's angle; warn loudly (per-mapping teach angles are logged in pendingfeatures.md).
-        if (wizardAngle.measured) {
-          try {
-            const before = db.prepare('SELECT sample_deskew_angle FROM templates WHERE id = ?').get(result.templateId);
-            if (before && before.sample_deskew_angle == null) {
-              db.prepare('UPDATE templates SET sample_deskew_angle = ? WHERE id = ? AND sample_deskew_angle IS NULL')
-                .run(wizardAngle.angle, result.templateId);
-              console.log(`[templates] sample angle written at commit from the wizard: template ${result.templateId} = ${wizardAngle.angle.toFixed(2)} deg`);
-            } else if (before && result.created === false
-                       && Math.abs(Number(before.sample_deskew_angle) - wizardAngle.angle) >= 0.3) {
-              const _msg = `[templates] re-teach frame mix: template ${result.templateId} keeps sample angle `
-                + `${Number(before.sample_deskew_angle).toFixed(2)} deg but the new sample measures ${wizardAngle.angle.toFixed(2)} deg `
-                + `— boxes drawn on this sample are composed with the OLD angle (per-mapping teach angle: pendingfeatures.md)`;
-              console.warn(_msg); try { ctx.logger?.warn?.(_msg); } catch {}
-            }
-          } catch (e) { console.error('promote-to-template wizard sample-angle:', e.message); }
-        }
-        // TEACH_ANGLE_COMPOSE enabler: record the sample's tilt NOW so the first process of a
-        // sibling composes the teach coords to level (else the lazy heal lands it one batch late).
         try { if (ctx.generateSampleAngle) await ctx.generateSampleAngle(result.templateId); }
         catch (e) { console.error('promote-to-template sample-angle:', e.message); }
-        // Same for the keyword FINGERPRINT — a teach-promoted born-digital template
-        // (whose sample doc may have an empty stored ocr_text) would otherwise be born
-        // fingerprint-less and only matchable by an unreliable logo phash. Fills only
-        // when empty; best-effort, never blocks the commit.
         try { if (ctx.generateFingerprint) await ctx.generateFingerprint(result.templateId); }
         catch (e) { console.error('promote-to-template fingerprint:', e.message); }
       }
@@ -1783,6 +1750,7 @@ function register(ctx) {
 let _sharedReviewServiceInstance = null;
 // _wizardSampleAngle: TEACH-COMMIT SAMPLE ANGLE (2026-09-07), the pure payload validator (test_promote_sample_angle.js)
 module.exports = { _wizardSampleAngle, _writeTemplateFileForSync, register, _buildTemplateFields, _upsertTemplate, purgeDocumentFiles,   // _buildTemplateFields + _upsertTemplate exported for tests (test_build_template_fields.js, test_upsert_type_link.js)
+                   teachCommit, _promoteTemplateCoreSync,   // the transactional /v1/teach/commit core + its shared sync heart (teach-over-client S3; _promoteTemplateCoreSync exported for the equivalence pin)
                    getReviewService: () => _sharedReviewServiceInstance };
 
 // ── Template create / update ──────────────────────────────────────────────────
@@ -1798,7 +1766,13 @@ function _wizardSampleAngle(payload) {
   return { angle: a, measured: true };
 }
 
-async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }) {
+// _upsertTemplateSync is the FULLY SYNCHRONOUS heart (no `await` anywhere in its body — every templates.*
+// write, _buildTemplateFields, _writeTemplateFile and the reuse arms are sync). It exists so /v1/teach/commit
+// can run the template create + its mappings inside ONE better-sqlite3 db.transaction() (Oracle C-S3-1,
+// 2026-09-14): the returned templateId is only reachable synchronously — calling the async wrapper inside a tx
+// would hand back an unresolved Promise (templateId === undefined) and write mappings against nothing. The
+// async `_upsertTemplate` wrapper below preserves every existing caller's `await` contract.
+function _upsertTemplateSync(ctx, db, document_id, { allValues, document_type_slug, supplier_name, dtInfo }) {
   // Generic Document (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §3, pinned trade-off):
   // the heterogeneous "General Document" pile must NEVER mint templates — a generic-born
   // template could later Stage-0-match and stamp generic over a doc a real type fits.
@@ -2077,6 +2051,203 @@ async function _upsertTemplate(ctx, db, document_id, { allValues, document_type_
     _writeTemplateFile(db, newTemplateId, path, fs, templatesDir());
     return { created: true, templateId: newTemplateId, name };
   }
+}
+
+// The async wrapper — every existing caller (onTaughtConfirm, promote-to-template, link-document-to-template)
+// awaits this and is byte-identical; only the /v1 teach-commit tx uses the sync core directly (Oracle C-S3-1).
+async function _upsertTemplate(ctx, db, document_id, opts) {
+  return _upsertTemplateSync(ctx, db, document_id, opts);
+}
+
+// The synchronous heart of promote-to-template shared by the desktop IPC and /v1/teach/commit so both build a
+// byte-identical template (Oracle C-S3-1, 2026-09-14): upsert the template + pin the sample doc + write the
+// wizard's MEASURED sample angle (IS NULL-guarded — the 2026-09-07 placement fix, C6). The async best-effort
+// enrichment (generateLandmarks / generateSampleAngle / generateFingerprint) stays with each caller, OUTSIDE
+// any tx. Returns the _upsertTemplateSync result ({templateId, created, name} or {skipped}).
+function _promoteTemplateCoreSync(ctx, db, document_id, { allValues, document_type_slug, supplier_name, dtInfo, wizardAngle }) {
+  const templates = require('../../../database/modules/templates');   // module-level fn — not in register()'s scope
+  const result = _upsertTemplateSync(ctx, db, document_id, { allValues, document_type_slug, supplier_name, dtInfo });
+  if (!result || result.skipped) return result;
+  if (result.templateId) {
+    // Pin the promoted document as the template's sample (the doc the admin just curated).
+    templates.setSampleDocument(db, result.templateId, document_id);
+    // TEACH-COMMIT SAMPLE ANGLE (C6): the wizard already MEASURED the sample's tilt; write it SYNCHRONOUSLY,
+    // guarded IS NULL, so the compose frame is known before the first sibling reads. Never from an unmeasured
+    // page. On a REUSED template a differing new-sample angle is warned (the old angle still composes).
+    if (wizardAngle && wizardAngle.measured) {
+      try {
+        const before = db.prepare('SELECT sample_deskew_angle FROM templates WHERE id = ?').get(result.templateId);
+        if (before && before.sample_deskew_angle == null) {
+          db.prepare('UPDATE templates SET sample_deskew_angle = ? WHERE id = ? AND sample_deskew_angle IS NULL')
+            .run(wizardAngle.angle, result.templateId);
+          console.log(`[templates] sample angle written at commit from the wizard: template ${result.templateId} = ${wizardAngle.angle.toFixed(2)} deg`);
+        } else if (before && result.created === false
+                   && Math.abs(Number(before.sample_deskew_angle) - wizardAngle.angle) >= 0.3) {
+          const _msg = `[templates] re-teach frame mix: template ${result.templateId} keeps sample angle `
+            + `${Number(before.sample_deskew_angle).toFixed(2)} deg but the new sample measures ${wizardAngle.angle.toFixed(2)} deg `
+            + `— boxes drawn on this sample are composed with the OLD angle (per-mapping teach angle: pendingfeatures.md)`;
+          console.warn(_msg); try { ctx.logger?.warn?.(_msg); } catch {}
+        }
+      } catch (e) { console.error('promote wizard sample-angle:', e.message); }
+    }
+  }
+  return result;
+}
+
+// teachCommit — the ONE transactional server-side teach commit shared by /v1/teach/commit (teach-over-client
+// S3, 2026-09-14; Oracle SIGN-OFF-W/COND C-S3-1..6). It collapses the desktop wizard's 6-call doCommit into an
+// atomic unit so a dropped LAN socket can never leave a half-born template that mis-extracts every sibling. ALL
+// learning/schema writes live HERE (the /v1 handler stays a thin guard + this call — the source-contract pin).
+// Order mirrors the desktop doCommit: promote (create template + sample pin + wizard angle) → list captions →
+// fixed → hidden → mappings, all inside ONE better-sqlite3 tx (rollback = nothing half-born); then file the
+// exemplar OUTSIDE the tx via the shared reviewService (file I/O + Python can't be in a sync tx); then
+// best-effort async enrichment. Idempotent on teachCommitId (a flaky-LAN retry returns the same template).
+// Returns {ok, ...} or {ok:false, code, error}. actor = {userId, username, role}. reviewSvc is injected by the
+// /v1 caller (its own createReviewService instance); it falls back to the desktop's shared instance.
+async function teachCommit(ctx, db, payload, actor, reviewSvc) {
+  const doctypes       = require('../../../database/modules/document_types');
+  const templates      = require('../../../database/modules/templates');
+  const labelOverrides = require('../../../database/modules/label_overrides');
+  const learning       = require('../../../database/modules/learning');
+  const p = payload || {};
+  const commitId = String(p.teachCommitId || '').trim();
+  if (!commitId) return { ok: false, code: 'BAD_REQUEST', error: 'teachCommitId is required' };
+  const documentId = Number(p.document_id);
+  if (!Number.isInteger(documentId) || documentId <= 0) return { ok: false, code: 'BAD_REQUEST', error: 'document_id is required' };
+
+  // 1. IDEMPOTENCY short-circuit — a completed commit replays its stored result (no dup template, no re-file).
+  const prior = db.prepare('SELECT template_id, filename, status FROM teach_commits WHERE commit_id = ?').get(commitId);
+  if (prior && prior.status === 'done') {
+    return { ok: true, templateId: prior.template_id, filename: prior.filename, idempotentReplay: true };
+  }
+
+  // 2. VALIDATE everything before any write.
+  const slug = String(p.document_type_slug || '').trim();
+  const dtInfo = slug ? doctypes.getWithFields(db, slug) : null;
+  if (!dtInfo) return { ok: false, code: 'BAD_REQUEST', error: 'unknown document type' };
+  const fieldKeys = new Set((dtInfo.fields || []).map(f => f.key));
+  const doc = db.prepare('SELECT id, status, intake, folder_path, original_filename FROM documents WHERE id = ?').get(documentId);
+  if (!doc) return { ok: false, code: 'NOT_FOUND', error: 'document not found' };
+  if (doc.intake === 'direct') return { ok: false, code: 'NOT_TEACHABLE', error: 'a Quick File document is filed without OCR — it cannot be taught' };
+  if (!['needs_review', 'pending', 'deferred'].includes(String(doc.status))) {
+    // A same-commitId replay whose exemplar was already filed (a crash/race after step 3) is treated as SUCCESS.
+    if (String(doc.status) === 'confirmed' && prior) {
+      return { ok: true, templateId: prior.template_id, filename: prior.filename, idempotentReplay: true };
+    }
+    return { ok: false, code: String(doc.status) === 'confirmed' ? 'ALREADY_FILED' : 'NOT_TEACHABLE',
+             error: String(doc.status) === 'confirmed' ? 'that document has already been filed — re-import it to teach' : 'that document is not in the review queue' };
+  }
+  const mappings = Array.isArray(p.mappings) ? p.mappings : [];
+  if (mappings.length > 64) return { ok: false, code: 'BAD_REQUEST', error: 'too many field mappings (max 64)' };
+  const REQ = ['anchor_x_norm', 'anchor_y_norm', 'anchor_w_norm', 'anchor_h_norm', 'target_x_norm', 'target_y_norm', 'target_w_norm', 'target_h_norm'];
+  for (const m of mappings) {
+    if (!m || !m.field_key) return { ok: false, code: 'BAD_REQUEST', error: 'a mapping is missing field_key' };
+    if (!fieldKeys.has(m.field_key)) return { ok: false, code: 'BAD_REQUEST', error: `field ${m.field_key} is not on this document type` };
+    if (REQ.some(k => m[k] == null)) return { ok: false, code: 'BAD_REQUEST', error: 'anchor and target boxes are both required' };
+    for (const k of REQ) { const v = Number(m[k]); if (!Number.isFinite(v) || v < 0 || v > 1) return { ok: false, code: 'BAD_REQUEST', error: `invalid ${k}` }; }
+    for (const side of ['anchor', 'target']) {
+      const x = Number(m[`${side}_x_norm`]), y = Number(m[`${side}_y_norm`]), w = Number(m[`${side}_w_norm`]), h = Number(m[`${side}_h_norm`]);
+      if (w <= 0 || h <= 0) return { ok: false, code: 'BAD_REQUEST', error: `${side} box has no area` };
+      if (x + w > 1.0001 || y + h > 1.0001) return { ok: false, code: 'BAD_REQUEST', error: `${side} box off the page` };
+    }
+  }
+  const fixed = Array.isArray(p.fixed) ? p.fixed : [];
+  const hidden = Array.isArray(p.hidden) ? p.hidden : [];
+  const listCaptions = Array.isArray(p.listCaptions) ? p.listCaptions : [];
+  for (const f of fixed) {
+    if (!f || !fieldKeys.has(f.field_key)) return { ok: false, code: 'BAD_REQUEST', error: 'a fixed value names an unknown field' };
+    if (doctypes.isStructuralKey(dtInfo, f.field_key)) return { ok: false, code: 'BAD_REQUEST', error: 'a structural role cannot be given a fixed value' };
+  }
+  for (const k of hidden) {
+    if (!fieldKeys.has(k)) return { ok: false, code: 'BAD_REQUEST', error: 'a hidden field is unknown' };
+    if (doctypes.isStructuralKey(dtInfo, k)) return { ok: false, code: 'BAD_REQUEST', error: 'a structural role cannot be hidden' };
+  }
+
+  // 3. SERVER-SIDE ACK ENFORCEMENT (pre-tx) — a scripted client cannot skip the mis-teach guards the wizard asks.
+  const supplierName = String((p.allValues && p.allValues.supplier_name) || p.supplier_name || '').trim();
+  if (learning.getSetting(db, 'type_split_confirm_gate', 'true') !== 'false' && process.env.TYPE_SPLIT_CONFIRM_GATE !== '0') {
+    try {
+      const ts = require('../../../database/modules/typeSplit').checkTypeSplit(db, supplierName, slug);
+      if (ts && ts.split && !p.acknowledgeTypeSplit) return { ok: false, code: 'TYPE_SPLIT', error: (ts && ts.message) || 'this would split a one-type history for this issuer — confirm the type first' };
+    } catch {}
+  }
+  try {
+    const nm = learning.findNearMatchIdentity(db, supplierName);
+    if (nm && nm.near && !p.acknowledgeIssuerNearMatch) return { ok: false, code: 'ISSUER_NEAR_MATCH', error: (nm && nm.message) || 'this issuer is very close to an existing one — confirm it is a different company' };
+  } catch {}
+
+  // 4. THE ATOMIC UNIT (step 3): ledger 'pending' + promote core + captions + fixed + hidden + mappings.
+  const wizardAngle = _wizardSampleAngle(p);
+  let templateId = null, created = null;
+  const runTx = db.transaction(() => {
+    db.prepare("INSERT OR IGNORE INTO teach_commits (commit_id, document_id, status, user_id) VALUES (?, ?, 'pending', ?)")
+      .run(commitId, documentId, (actor && actor.userId) || null);
+    const result = _promoteTemplateCoreSync(ctx, db, documentId, {
+      allValues: p.allValues || {}, document_type_slug: slug, supplier_name: supplierName, dtInfo, wizardAngle,
+    });
+    if (!result || result.skipped) throw new Error(result && result.skipped === 'generic-type' ? 'General Documents are filed without templates' : 'could not create the template');
+    templateId = result.templateId; created = result.created;
+    for (const c of listCaptions) {
+      const fld = (dtInfo.fields || []).find(f => f.key === (c && c.field_key));
+      if (!fld || String(fld.type || '').toLowerCase() !== 'list') continue;   // desktop teach-list-caption parity
+      const label = String((c && c.label) || '').trim(); if (!label) continue;
+      labelOverrides.addLabelOverride(db, { doc_type_slug: slug, field_key: c.field_key, label, exclusive: 0, template_id: 0 });
+    }
+    for (const f of fixed) { if (f && f.value != null && String(f.value) !== '') templates.setFieldFixedValue(db, templateId, f.field_key, f.value); }
+    for (const k of hidden) { templates.setHiddenField(db, templateId, k, true); }
+    for (const m of mappings) {
+      templates.saveMapping(db, templateId, {
+        field_key: m.field_key,
+        page_number: Number.isInteger(m.page_number) ? m.page_number : 0,
+        anchor_text: m.anchor_text || null,
+        anchor_x_norm: Number(m.anchor_x_norm), anchor_y_norm: Number(m.anchor_y_norm), anchor_w_norm: Number(m.anchor_w_norm), anchor_h_norm: Number(m.anchor_h_norm),
+        target_x_norm: Number(m.target_x_norm), target_y_norm: Number(m.target_y_norm), target_w_norm: Number(m.target_w_norm), target_h_norm: Number(m.target_h_norm),
+        search_expansion: m.search_expansion != null ? Number(m.search_expansion) : 0.04,
+        enabled: 1,
+      });
+    }
+  });
+  try { runTx(); }
+  catch (e) { return { ok: false, code: 'COMMIT_FAILED', error: (e && e.message) || 'could not save the template' }; }
+
+  // 5. FILE the exemplar OUTSIDE the tx via the shared reviewService (same instance + onTaughtConfirm the desktop
+  //    uses). F-02: folder_path/original_filename come from the DOC ROW, never the client body.
+  const svc = reviewSvc || _sharedReviewServiceInstance;
+  let filename = null, isDuplicate = false;
+  if (svc) {
+    const conf = await svc.confirm(db, actor, {
+      document_id: documentId, folder_path: doc.folder_path, original_filename: doc.original_filename,
+      corrections: {}, allValues: p.allValues || {}, supplier_name: supplierName || null,
+      document_type: dtInfo.name, document_type_slug: slug,
+      taught_fields: Array.isArray(p.taught_fields) ? p.taught_fields : [],
+      bulk: false, allowRefile: false,   // server-decided; a queue confirm must LOSE the race, never overwrite
+    });
+    if (!conf.ok) {
+      // C-S3-3: a concurrent same-commitId double-fire — the loser sees ALREADY_FILED; treat as SUCCESS (the
+      // template it made is correct; the winner filed the doc). Any other failure: the template is saved +
+      // extracts siblings correctly, only the exemplar sits unfiled in the queue → admin re-confirms (self-heal).
+      if (conf.code === 'ALREADY_FILED') {
+        const cur = db.prepare('SELECT filename FROM teach_commits WHERE commit_id = ?').get(commitId);
+        filename = (cur && cur.filename) || null;
+      } else {
+        return { ok: false, code: conf.code || 'FILE_FAILED', error: conf.error || 'the template was saved but the document could not be filed', templateId };
+      }
+    } else { filename = conf.filename; isDuplicate = !!conf.isDuplicate; }
+  }
+
+  // 6. BEST-EFFORT async enrichment (never blocks). Same order + set as promote-to-template; the wizard sample
+  //    angle was already written synchronously in step 4, so generateSampleAngle is the no-op fallback.
+  let landmarksWarn = false;
+  if (templateId) {
+    try { if (ctx.generateLandmarks)   await ctx.generateLandmarks(templateId); }   catch (e) { console.error('teach-commit landmarks:', e.message); }
+    try { if (ctx.generateSampleAngle) await ctx.generateSampleAngle(templateId); } catch (e) { console.error('teach-commit sample-angle:', e.message); }
+    try { if (ctx.generateFingerprint) await ctx.generateFingerprint(templateId); } catch (e) { console.error('teach-commit fingerprint:', e.message); }
+    try { landmarksWarn = (db.prepare('SELECT COUNT(*) c FROM template_landmarks WHERE template_id = ?').get(templateId).c || 0) < 2; } catch {}
+  }
+
+  // 7. ledger 'done' (idempotency complete).
+  try { db.prepare("UPDATE teach_commits SET template_id = ?, filename = ?, status = 'done', done_at = datetime('now') WHERE commit_id = ?").run(templateId, filename, commitId); } catch {}
+  return { ok: true, templateId, filename, isDuplicate, landmarksWarn, created };
 }
 
 // Fields proven VARIABLE by confirmed history: >=2 distinct final confirmed

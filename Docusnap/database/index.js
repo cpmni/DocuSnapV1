@@ -3434,6 +3434,33 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 167 (date_forms_wide): ${e.message}`); }
   }
 
+  // ── migration 168: teach-over-client S3 — the teach_commits idempotency ledger + teach_over_client_enabled
+  //    (2026-09-14; teach-over-client design + Oracle C-S3-5/C-S3-6). teach_commits keys the client-minted
+  //    teachCommitId so a flaky-LAN retry of POST /v1/teach/commit returns the SAME template (no dup); a row is
+  //    written 'pending' INSIDE the commit's step-3 transaction and promoted to 'done' at the end (C-S3-5, the
+  //    crash window closed). teach_over_client_enabled is a PLAIN operator switch (like direct_intake_enabled /
+  //    departments_enabled — NOT a TEST_SWITCH_KEYS engine read, Oracle C-S3-6), default OFF: remote teaching is
+  //    off until the owner turns it on. Additive + byte-identical when empty/off.
+  if (!applied.has(168)) {
+    try {
+      if (!tableExists(db, 'teach_commits')) {
+        db.exec(`CREATE TABLE teach_commits (
+          commit_id   TEXT PRIMARY KEY,
+          document_id INTEGER,
+          template_id INTEGER,
+          filename    TEXT,
+          status      TEXT NOT NULL DEFAULT 'pending',   -- 'pending' | 'done'
+          user_id     INTEGER,
+          created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+          done_at     TEXT
+        )`);
+      }
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('teach_over_client_enabled', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (168)').run();
+      console.log('JS migration 168 applied: teach-over-client (teach_commits idempotency ledger), teach_over_client_enabled seeded OFF — additive, byte-identical when off');
+    } catch (e) { console.warn(`  migration 168 (teach-over-client): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

@@ -55,7 +55,10 @@
     checkTypeSplit:          (...a) => d.checkTypeSplit(...a),
     getTeachFollowup:        (...a) => d.getTeachFollowup(...a),
     getTemplateDetail:       (...a) => d.getTemplateDetail(...a),
-    // the commit sequence (S3 collapses these into one transactional /v1 route on the client)
+    // the commit sequence — the CORE runs these 6 in order (caps.batchCommit is absent here). The client sets
+    // caps.batchCommit=true and takes the single-call commitTeach path instead; commitTeach is defined here only
+    // to satisfy the transport contract (the core never calls it) — invoking it would be a wiring bug.
+    commitTeach:             () => { throw new Error('commitTeach is the client batch path; the core commits via the 6 calls'); },
     promoteToTemplate:       (...a) => d.promoteToTemplate(...a),
     saveTemplateMapping:     (...a) => d.saveTemplateMapping(...a),
     setTemplateFieldFixed:   (...a) => d.setTemplateFieldFixed(...a),

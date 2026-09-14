@@ -60,6 +60,36 @@ main-window button + `teach_over_client_enabled` land with S3, so S2 is plumbing
 live old-core/new-client mismatch (the pair ships together; the MAJOR-only contract check means any 1.x pair is
 compatible). NOT committed as user-facing until S3.
 
+**S3 BUILT 2026-09-14 (the transactional commit; Oracle SIGN-OFF-W/COND C-S3-1..6 all met; full pin gate 368
+files, 367 green — the 1 red is the run-order-only flake `test_ref_class_fix`).** `POST /v1/teach/commit`
+(contract 1.7.0) collapses the desktop's 6-call doCommit into ONE atomic unit. ALL learning/schema writes live
+in the exported `review/handler.teachCommit(ctx, db, payload, actor, reviewSvc)`; the /v1 route is a thin guard
+(admin → license re-check → `teach_over_client_enabled` switch (mig 168, plain setting default OFF, NOT
+TEST_SWITCH) → in-flight cap 1 in a `finally`) + one call (the source-contract pin `test_v1_confirm_never_teaches`
+holds: no stray learning write anywhere else in /v1, and the plain /confirm route still hardcodes
+`taught_fields:[]`). Flow: idempotency short-circuit on `teachCommitId` (ledger `teach_commits`, mig 168) →
+validate (teachable row, field membership, coords, structural refusals, ≤64 mappings) → server-side ACK
+enforcement (checkTypeSplit/findNearMatchIdentity fire → 409 unless acknowledged; respects
+`type_split_confirm_gate`) → ONE better-sqlite3 tx { ledger 'pending' (C-S3-5) + `_promoteTemplateCoreSync` +
+captions + fixed + hidden + mappings } → file the exemplar OUTSIDE the tx via the injected reviewService (F-02:
+folder_path/original_filename from the DOC ROW, never the body; C-S3-2) with `allowRefile:false` (a concurrent
+ALREADY_FILED replay = success, C-S3-3) → best-effort async landmarks/fingerprint → ledger 'done'.
+**C-S3-1 (the mandatory catch):** `_upsertTemplate` was split into a sync core `_upsertTemplateSync` + an async
+wrapper, and the promote sync trio (upsert + sample pin + wizard-angle IS-NULL write, C6) extracted to the
+shared `_promoteTemplateCoreSync` — so the desktop IPC and /v1 build a template through the SAME sync functions
+(the `test_v1_teach_equivalence` gate proves BYTE-IDENTICAL rows across {templates, template_fields,
+template_field_mappings, template_hidden_fields, template_landmarks, field_label_overrides}). Calling the async
+`_upsertTemplate` inside a sync tx would hand back an unresolved Promise (templateId undefined) — that was the
+Oracle's Q4 catch. **Client:** the shared `doCommit` gained an opt-in `caps.batchCommit` branch (core cap ABSENT
+→ the 6-call path, byte-identical; client sets it true) that builds ONE payload → `TeachTransport.commitTeach`
+→ `POST /v1/teach/commit` with a per-teach idempotency UUID. `apiClient.teach.commit` + preload + `client/main`
+handler + `coreTeachTransport.commitTeach` (a throw — the core never calls it) for the no-direct-IPC contract.
+**Entry gate:** a client `nav-teach` button (ADMIN-only, shown on login) opens the teach pop-out — the feature
+is now user-reachable once the owner turns `teach_over_client_enabled` on. Pins: `test_v1_teach` gained the S3
+commit matrix (auth incl. edit-403, switch-off 409, validation 400s, happy path + rows + ledger, idempotent
+replay, ack 409s + gate-off parity); `test_v1_teach_equivalence` (T1); `test_v1_confirm_never_teaches` (T3);
+`test_promote_sample_angle` re-pointed at the moved sync core.
+
 ## Oracle conditions (2026-09-14) — SIGN OFF WITH CONDITIONS
 Premise HELD (A is a coherent v1 cut; the one-shot transactional commit is the right design; `_upsertTemplate`
 verified to have no `await` before its row writes → the sync transaction is feasible). Two premise CORRECTIONS
@@ -249,9 +279,9 @@ teach cap on ≥ 1.7.0 (hides teach on an older core).
   Contract 1.7.0; `test_v1_teach.js` reads.
 - **S2 — Doc-type create. [BUILT 2026-09-14]** `POST /v1/doc-types` (admin) + `GET /v1/doc-types/catalog` +
   `POST /v1/doc-types/presets`; the create draft + catalog over /v1 (edit-existing hidden via caps.editType).
-- **S3 — The commit (highest blast radius → the Oracle gate is here).** `POST /v1/teach/commit` transactional +
-  idempotent + admin-gated + `teach_over_client_enabled` OFF + server-side acks + audit. Relax the confirm
-  route's `taught_fields:[]` hardcode ONLY on the teach path (teaching never smuggles through plain confirm).
+- **S3 — The commit. [BUILT 2026-09-14]** `POST /v1/teach/commit` transactional + idempotent + admin-gated +
+  `teach_over_client_enabled` OFF + server-side acks + audit; the plain confirm route keeps `taught_fields:[]`
+  (teaching never smuggles through it — the teach path calls reviewService.confirm directly inside teachCommit).
 - **S4 — client-PC upload-to-teach (owner B, IN SCOPE).** `POST /v1/teach/stage` — see the "B" section below.
   Sequence after S3. Additive; the transactional-commit design is untouched.
 

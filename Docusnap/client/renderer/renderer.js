@@ -299,6 +299,7 @@ $('login-btn').addEventListener('click', async () => {
     $('nav-recycle').style.display = canDecide() ? '' : 'none';   // delete/restore is Admin/Edit
     $('nav-review').style.display  = canDecide() ? '' : 'none';   // review/file is Admin/Edit
     $('nav-quickfile').style.display = canDecide() ? '' : 'none'; // Quick File upload is Admin/Edit (server re-checks + gates on enabled)
+    $('nav-teach').style.display = (role === 'admin') ? '' : 'none'; // Teach-over-client is ADMIN-only (server re-checks role + entitlement + the teach_over_client_enabled switch; an old core 404s → shown)
     if (canDecide()) refreshReviewCounts();                       // seed the Review nav badge
     const ent = await api.entitlement();
     if (!(ent.json && ent.json.entitled)) {
@@ -468,6 +469,14 @@ async function openSearchWindow(opts) {
   } catch (e) { toast(`Could not open Search — ${(e && e.message) || 'unknown error'}.`, 'err'); }
 }
 $('nav-search').addEventListener('click', () => openSearchWindow());
+// Teach opens the shared teach wizard in its own pop-out (the same code the core Teach window runs, over /v1).
+async function openTeachWindow(opts) {
+  try {
+    const r = await api.openTeach(opts || {});
+    if (!(r && r.ok)) toast(r && r.error === 'not signed in' ? 'Sign in first, then open Teach.' : `Could not open Teach${r && r.error ? ' — ' + r.error : ''}.`, 'err');
+  } catch (e) { toast(`Could not open Teach — ${(e && e.message) || 'unknown error'}.`, 'err'); }
+}
+$('nav-teach').addEventListener('click', () => openTeachWindow());
 $('nav-mailbox').addEventListener('click', () => setView('mailbox'));
 $('nav-review').addEventListener('click', () => setView('review'));
 $('nav-quickfile').addEventListener('click', () => setView('quickfile'));

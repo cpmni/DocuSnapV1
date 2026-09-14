@@ -103,6 +103,10 @@ const PAGE_INFO_ALSO_MAX_V1 = 4;   // /page-info: extra pages one request may ra
 const INTAKE_MAX_INFLIGHT = 2;
 let _intakeInFlight = 0;
 const INTAKE_MAX_MB_CEIL = 100;         // hard ceiling on the admin-settable direct_intake_max_mb for THIS lane
+// Teach-over-client S3: the transactional commit spawns Python (landmarks/fingerprint), so ONE at a time —
+// a remote trigger must not fan out CPU-heavy work on the host (Oracle C-S3-3).
+const TEACH_COMMIT_MAX_INFLIGHT = 1;
+let _teachCommitInFlight = 0;
 
 // Read a size-capped body (bytes) for the upload lane. Rejects past `maxBytes` mid-stream + destroys the
 // socket. Returns the raw Buffer; the caller JSON-parses (the base64 rides inside the JSON envelope).
@@ -267,8 +271,9 @@ function createRequestListener(ctx) {
   // Detached-client add-on entitlement (ctx may override for tests/demo).
   const checkEntitlement = ctx.checkEntitlement || (() => entitlementService.checkClientEntitlement(getDb()));
   // Routes that expose the licensed feature itself (gated); auth/health/entitlement are not.
-  // review + doc-types ride the SAME search/client entitlement (role supplies the privilege).
-  const FEATURE_ROUTE = new RegExp(`^${API_PREFIX}/(search|documents|workflow|review|doc-types)(/|$)`);
+  // review + doc-types ride the SAME search/client entitlement (role supplies the privilege). teach-over-client
+  // (S3): /v1/teach/* is entitlement-gated too (an unentitled install exposes no teach surface; Oracle C-S3-4).
+  const FEATURE_ROUTE = new RegExp(`^${API_PREFIX}/(search|documents|workflow|review|doc-types|teach)(/|$)`);
   const WORKFLOW_ROUTE = new RegExp(`^${API_PREFIX}/workflow(/|$)`);   // gated on the workflow add-on, not just search
 
   const pageDeps = () => ({
@@ -917,6 +922,38 @@ function createRequestListener(ctx) {
           list_field_scan:          g('list_field_scan', 'false'),
           barcode_field:            g('barcode_field', 'false'),
         });
+      }
+
+      // ── Teach-over-client S3: the ONE transactional teach commit (create template + mappings + fixed +
+      //    hidden + captions, then file the exemplar). ADMIN-only + license re-check + the operator opt-in
+      //    switch (default OFF) + an in-flight cap of 1. The whole learning/schema write lives in
+      //    reviewHandler.teachCommit (this route is a thin guard + one call — the source-contract pin). F-02:
+      //    the exemplar's on-disk path is resolved SERVER-SIDE inside teachCommit from the doc row, never the
+      //    body. Contract 1.7.0. (Oracle SIGN-OFF-W/COND C-S3-1..6, 2026-09-14.)
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/teach/commit`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (session.role !== 'admin') return sendJson(res, 403, { error: 'only an admin can teach a document from the search client' });
+        const db = getDb();
+        if (require('../licensing/handler').licenseDenied(db)) return sendJson(res, 403, { error: 'A valid license is required to teach documents.', code: 'LICENSE' });
+        if (String(learning.getSetting(db, 'teach_over_client_enabled', 'false')) !== 'true') {
+          return sendJson(res, 409, { code: 'FEATURE_DISABLED', error: "Teaching from the search client isn't enabled on this server." });
+        }
+        if (_teachCommitInFlight >= TEACH_COMMIT_MAX_INFLIGHT) return sendJson(res, 429, { error: 'a teach is already in progress — retry' });
+        _teachCommitInFlight++;
+        try {
+          let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+          const r = await require('../review/handler').teachCommit(ctx, db, body, actorOf(session), reviewSvc);
+          if (!r || !r.ok) {
+            const map = { BAD_REQUEST: 400, NOT_FOUND: 404, NOT_TEACHABLE: 400, ALREADY_FILED: 409,
+                          TYPE_SPLIT: 409, ISSUER_NEAR_MATCH: 409, COMMIT_FAILED: 500, FILE_FAILED: 500 };
+            return sendJson(res, (r && map[r.code]) || 400, { ok: false, error: (r && r.error) || 'teach failed', code: (r && r.code) || null, ...(r && r.templateId ? { templateId: r.templateId } : {}) });
+          }
+          try { audit({ user_id: session.userId, action: 'teach_commit', action_category: 'learning', outcome: 'success',
+                        document_id: Number(body && body.document_id) || null,
+                        metadata: { via: 'client', ip: clientIp(req), template_id: r.templateId, created: !!r.created } }); } catch {}
+          return sendJson(res, 200, { ok: true, templateId: r.templateId, filename: r.filename, isDuplicate: !!r.isDuplicate, landmarksWarn: !!r.landmarksWarn });
+        } catch (e) { log('[api] teach-commit: ' + (e && e.message)); return sendJson(res, 500, { error: 'teach failed' }); }
+        finally { _teachCommitInFlight--; }
       }
 
       if (req.method === 'GET' && pathname === `${API_PREFIX}/documents/deleted`) {

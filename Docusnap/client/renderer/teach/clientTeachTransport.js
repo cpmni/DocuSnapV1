@@ -40,7 +40,10 @@
   const T = {
     // editType=false → the "Edit this type…" affordance (edit an EXISTING type mid-teach) is hidden: over /v1
     // the wizard can CREATE a type (S2) but editing an existing one's fields/roles/keywords is not exposed yet.
-    caps: { import: false, review: false, settings: true, editType: false },
+    // batchCommit=true (S3) → doCommit builds the WHOLE teaching into one payload and fires ONE transactional
+    // POST /v1/teach/commit (commitTeach below) instead of the desktop's 6 separate calls, so a dropped socket
+    // can never leave a half-born template. The core leaves batchCommit ABSENT → its 6-call path is unchanged.
+    caps: { import: false, review: false, settings: true, editType: false, batchCommit: true },
 
     // ── real S1 reads over /v1 ────────────────────────────────────────────────────────────────────────
     getReviewQueue:   async () => unwrap(await api.review.queue(), (j) => j.queue || []),
@@ -89,7 +92,17 @@
     stagePdfForTeach:       soon('Importing a file to teach from the search client is coming soon.'),
     processFolder:          soon('Importing a file to teach from the search client is coming soon.'),
 
-    // ── S3 (the transactional commit) — not over /v1 yet: honest "coming soon" ──────────────────────────
+    // ── S3 (the transactional commit) over /v1 ──────────────────────────────────────────────────────────
+    // The client takes the caps.batchCommit path: doCommit builds one payload → commitTeach → POST
+    // /v1/teach/commit (admin + entitlement + license + the teach_over_client_enabled switch, server-side). A
+    // 4xx from a validation/ack/switch problem is returned as {ok:false,error} so doCommit shows it inline; a
+    // 401/402/403 throws. The 6 desktop calls below are NEVER invoked on the client (the batch path replaces
+    // them) — kept as honest "coming soon" only so a stray reference can't be "not a function".
+    commitTeach: async (payload) => {
+      const r = await api.teach.commit(payload);
+      if (r && (r.status === 400 || r.status === 409)) return { ok: false, error: (r.json && r.json.error) || 'Could not save the taught document.', code: r.json && r.json.code };
+      return unwrap(r, (j) => j);   // {ok, templateId, filename, landmarksWarn}
+    },
     promoteToTemplate:      soon('Saving a taught document from the search client is coming soon.'),
     saveTemplateMapping:    soon('Saving a taught document from the search client is coming soon.'),
     setTemplateFieldFixed:  soon('Saving a taught document from the search client is coming soon.'),

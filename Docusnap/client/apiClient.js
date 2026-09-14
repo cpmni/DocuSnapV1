@@ -293,6 +293,10 @@ function createClient(opts = {}) {
   const teachCreateDocType = (draft) => request('POST', '/v1/doc-types', { withAuth: true, body: draft || {} });
   const teachDocTypeCatalog = () => request('GET', '/v1/doc-types/catalog', { withAuth: true });
   const teachAddPresets    = (slugs) => request('POST', '/v1/doc-types/presets', { withAuth: true, body: { slugs: Array.isArray(slugs) ? slugs : (slugs ? [slugs] : []) } });
+  // Teach-over-client S3: the ONE transactional commit (create template + mappings + fixed + hidden + captions,
+  // then file the exemplar). Admin + entitlement + license + the server switch, all server-side. Longer idle —
+  // it spawns Python (landmarks/fingerprint) after the tx.
+  const teachCommit        = (payload) => request('POST', '/v1/teach/commit', { withAuth: true, body: payload || {}, timeoutMs: 120000 });
 
   return {
     connect, login, logout, changePassword, entitlement, search, getDocument, getPages, getThumbnail, ping, fetchCa, enroll,
@@ -307,7 +311,8 @@ function createClient(opts = {}) {
               ocrRegion: revOcrRegion },
     teach: { ocrRegion: revOcrRegion, ocrRegionBoxes: teachRegionBoxes, ocrPageWords: teachPageWords,
              pageDeskew: teachPageDeskew, config: teachConfig,
-             createDocType: teachCreateDocType, docTypeCatalog: teachDocTypeCatalog, addDocTypePresets: teachAddPresets },
+             createDocType: teachCreateDocType, docTypeCatalog: teachDocTypeCatalog, addDocTypePresets: teachAddPresets,
+             commit: teachCommit },
     isAuthenticated: () => !!token,
     _setToken: (t) => { token = t; }, // test/diagnostic aid only
   };

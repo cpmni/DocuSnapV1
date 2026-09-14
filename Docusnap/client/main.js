@@ -476,6 +476,8 @@ ipcMain.handle('client-teach-config',       guarded(()                          
 ipcMain.handle('client-teach-create-doctype',  guarded((_e, draft) => client.teach.createDocType(draft)));
 ipcMain.handle('client-teach-doctype-catalog', guarded(()          => client.teach.docTypeCatalog()));
 ipcMain.handle('client-teach-doctype-presets', guarded((_e, slugs) => client.teach.addDocTypePresets(slugs)));
+// S3: the transactional teach commit over /v1 (admin + entitlement + license + server switch, all server-side).
+ipcMain.handle('client-teach-commit',          guarded((_e, payload) => client.teach.commit(payload)));
 
 // ── Quick File (non-OCR upload) ─────────────────────────────────────────────────────────────────────
 // Paths NEVER cross to the renderer: the picked file lives in a MAIN-side token map; the renderer sends a
