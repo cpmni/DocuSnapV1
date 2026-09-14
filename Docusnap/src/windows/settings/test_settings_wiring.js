@@ -313,6 +313,7 @@ for (const [id, key, consumer] of SETTING_SWITCHES) {
     'learning-repair-console-toggle', 'learning-repair-forget-toggle',
     // UI / licensing / diagnostics
     'help-mode-toggle', 'close-to-tray-toggle', 'wf-addon-toggle', 'client-api-toggle',
+    'teach-over-client-toggle',   // S3: an operator deployment switch (like client-api-toggle) — customer-facing
     'diag-toggle', 'telemetry-toggle',
   ]);
   const leaked = htmlToggleIds.filter(id => !devSet.has(id) && !VISIBLE_ALLOWLIST.has(id));

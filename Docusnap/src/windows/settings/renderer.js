@@ -242,6 +242,19 @@ async function initClientApiSection() {
   try { render(await api.clientApiGetStatus()); }
   catch { statusEl.textContent = 'Unavailable (admin only)'; return; }
 
+  // Teach-over-client (S3) — a plain operator switch, default OFF; set-setting is admin-gated in main.
+  const teachTgl = document.getElementById('teach-over-client-toggle');
+  const teachStatus = document.getElementById('teach-over-client-status');
+  if (teachTgl) {
+    const paint = () => { if (teachStatus) teachStatus.textContent = teachTgl.checked ? 'On — an admin on the search client can teach documents in this PC\'s review queue.' : 'Off.'; };
+    try { teachTgl.checked = String(await api.getSetting('teach_over_client_enabled')) === 'true'; } catch {}
+    paint();
+    teachTgl.onchange = async () => {
+      try { await api.setSetting('teach_over_client_enabled', teachTgl.checked ? 'true' : 'false'); paint(); }
+      catch { teachTgl.checked = !teachTgl.checked; if (teachStatus) teachStatus.textContent = 'Could not save.'; }
+    };
+  }
+
   // Managed certificate (Certificate Wizard) status + fingerprint.
   const certStatusEl = document.getElementById('client-api-cert-status');
   const certFpEl = document.getElementById('client-api-cert-fp');
