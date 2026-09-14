@@ -25,6 +25,7 @@ const LOCATIONS = {
   modules: ['src/modules'],            // recursed one level: src/modules/<area>/test_*.js
   services: ['src/services'],
   windows: ['src/windows'],            // recursed one level: src/windows/<win>/test_*.js
+  client: ['client/lib'],              // the detached client's own unit pins (e.g. certVerify — the connection trust decisions)
 };
 
 function listPins(dir, depth) {
