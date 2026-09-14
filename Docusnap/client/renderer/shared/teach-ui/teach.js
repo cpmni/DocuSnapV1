@@ -2329,6 +2329,12 @@ function _applyTeachCaps(){
     const empty = $('doc-picker-empty');
     if (empty) empty.textContent = 'No documents are waiting to teach — scan or import one on the main Scan Finder PC first, then it appears here.';
   }
+  // EDIT an EXISTING type mid-teach is not exposed over /v1 (client caps.editType=false). CREATE (a new
+  // type, or one from the catalog) still works; only the "Edit this type…" affordance is hidden.
+  if (!_cap('editType')){
+    const eb = $('btn-teach-edit-type'); if (eb) eb.style.display = 'none';
+    const ed = $('teach-edit-type-desc'); if (ed) ed.style.display = 'none';
+  }
 }
 
 (async function init(){

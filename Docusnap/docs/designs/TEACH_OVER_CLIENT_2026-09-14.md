@@ -37,6 +37,29 @@ risk: `client/renderer/teach/index.html` is GENERATED once (not synced/pinned), 
 wizard's DOM must be followed by re-running `scripts/gen-client-teach-index.js` (add an element-ID parity
 check when convenient).
 
+**S2 BUILT 2026-09-14 (doc-type CREATE over `/v1`; full pin gate 366 files, 365 green — the 1 red is the
+run-order-only flake `test_ref_class_fix`, which passes 87/0 in isolation on this HEAD and on a stashed-clean
+HEAD; core + `--client` teach harness both green).** Three ADMIN-only routes on the entitlement-gated
+`/doc-types` feature route (contract stays 1.7.0 — adding endpoints needs no bump): `POST /v1/doc-types`
+(create a type + fields + structural roles), `GET /v1/doc-types/catalog` (the preset catalog + `already_present`),
+`POST /v1/doc-types/presets` (add ticked presets). SCHEMA only — no template/learning write (that is S3). The
+transactional create was EXTRACTED to `document_types.createTypeWithFields(db, data)` (single source; the
+Settings `create-doc-type-with-fields` IPC now calls it too → both roads build a byte-identical type; the IPC
+keeps its own `requireRole('admin')` + `notifyAllWindows`). A validation failure returns 400 `{error}` so the
+wizard shows it inline exactly as on the core (the editor/catalog already try/catch + handle `{success:false}`).
+Client: `apiClient.teach.{createDocType,docTypeCatalog,addDocTypePresets}` + preload bridge +
+`client/main.js` handlers + `clientTeachTransport` wiring (`createDocTypeWithFields`/`getDoctypeCatalog`/
+`addDoctypePresets` now real; a 400 maps to `{success:false,error}`, other non-200 throws). EDIT-an-existing-type
+stays OUT of v1 scope: a new client cap `caps.editType=false` HIDES the "Edit this type…" affordance in the
+shared wizard (`_applyTeachCaps`; core cap absent = true → the button is unchanged), and the edit writes
+(addField/updateField/deleteField/updateDocumentType/addLabelOverrides/deleteLabelOverride) keep their honest
+"coming soon". Pins: `test_v1_teach.js` gained the S2 auth matrix (401/readonly-403/**edit-403 pins admin-only**),
+create happy-path (returns `{success,id,type}`, roles bound, reads back through GET /doc-types), duplicate-name
+400 rollback, and the catalog read + preset add. **Still deferred (as S1):** the admin-only entry gate + the
+main-window button + `teach_over_client_enabled` land with S3, so S2 is plumbing, not yet user-reachable — no
+live old-core/new-client mismatch (the pair ships together; the MAJOR-only contract check means any 1.x pair is
+compatible). NOT committed as user-facing until S3.
+
 ## Oracle conditions (2026-09-14) — SIGN OFF WITH CONDITIONS
 Premise HELD (A is a coherent v1 cut; the one-shot transactional commit is the right design; `_upsertTemplate`
 verified to have no `await` before its row writes → the sync transaction is feasible). Two premise CORRECTIONS
@@ -224,7 +247,8 @@ teach cap on ≥ 1.7.0 (hides teach on an older core).
   `client/renderer/teach/{index.html,clientTeachTransport.js}` + preload; wire ocr-region(+boxes),
   ocr-page-words, page-deskew, templates/:id, check-*, followup. `caps.import=false`, `caps.review=false`.
   Contract 1.7.0; `test_v1_teach.js` reads.
-- **S2 — Doc-type create.** `POST /v1/doc-types` (admin). DocTypeEditor/Catalog fully over /v1.
+- **S2 — Doc-type create. [BUILT 2026-09-14]** `POST /v1/doc-types` (admin) + `GET /v1/doc-types/catalog` +
+  `POST /v1/doc-types/presets`; the create draft + catalog over /v1 (edit-existing hidden via caps.editType).
 - **S3 — The commit (highest blast radius → the Oracle gate is here).** `POST /v1/teach/commit` transactional +
   idempotent + admin-gated + `teach_over_client_enabled` OFF + server-side acks + audit. Relax the confirm
   route's `taught_fields:[]` hardcode ONLY on the teach path (teaching never smuggles through plain confirm).

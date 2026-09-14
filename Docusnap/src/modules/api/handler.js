@@ -1306,6 +1306,47 @@ function createRequestListener(ctx) {
         return sendJson(res, 200, { types: dto.projectDocTypes(doctypes.getAllWithFieldsAll(getDb())) });
       }
 
+      // ── Teach-over-client S2: create a document type from the client teach wizard (contract 1.7.0) ──────
+      // The wizard's "create a new type" and "Add from catalog" paths. ADMIN-only (mirrors the desktop
+      // create-doc-type-with-fields / get-doctype-catalog / add-doctype-presets, all requireRole('admin')); the
+      // /doc-types feature route already carries the detached-client entitlement gate. SCHEMA only — no
+      // template/learning write here (the template teach = mappings/fixed/hidden is S3's transactional commit).
+      // A validation failure returns 400 {error} so the wizard shows it inline exactly as on the core.
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/doc-types`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (session.role !== 'admin') return sendJson(res, 403, { error: 'only an admin can create a document type' });
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const r = doctypes.createTypeWithFields(getDb(), {
+          name: body && body.name, fields: body && body.fields,
+          ref_field_key: body && body.ref_field_key, date_field_key: body && body.date_field_key,
+          title_aliases: body && body.title_aliases,
+        });
+        if (!r.success) return sendJson(res, 400, { error: r.error });
+        try { audit({ user_id: session.userId, action: 'doc_type_create', action_category: 'admin', outcome: 'success',
+                      metadata: { via: 'client', ip: clientIp(req), type_id: r.id, name: String((body && body.name) || '').trim() } }); } catch {}
+        return sendJson(res, 200, { success: true, id: r.id, type: r.type, notices: r.notices || [] });
+      }
+
+      // The ready-made preset catalog + whether each is already installed (the wizard's "Add from catalog").
+      if (req.method === 'GET' && pathname === `${API_PREFIX}/doc-types/catalog`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (session.role !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
+        return sendJson(res, 200, { catalog: doctypes.getPresetCatalog(getDb()) });
+      }
+
+      // Add the ticked catalog presets (create type + fields + roles + label seeds, per slug).
+      if (req.method === 'POST' && pathname === `${API_PREFIX}/doc-types/presets`) {
+        const session = requireSession(req, res); if (!session) return;
+        if (session.role !== 'admin') return sendJson(res, 403, { error: 'only an admin can add a document type' });
+        let body; try { body = await readJsonBody(req); } catch (e) { return sendJson(res, 400, { error: e.message }); }
+        const slugs = Array.isArray(body && body.slugs) ? body.slugs : (body && body.slugs ? [body.slugs] : []);
+        if (!slugs.length) return sendJson(res, 400, { error: 'Select at least one document type to add.' });
+        let results; try { results = doctypes.addPresetTypes(getDb(), slugs); } catch (e) { return sendJson(res, 500, { error: e.message }); }
+        try { audit({ user_id: session.userId, action: 'doc_type_presets_add', action_category: 'admin', outcome: 'success',
+                      metadata: { via: 'client', ip: clientIp(req), slugs } }); } catch {}
+        return sendJson(res, 200, { success: true, results });
+      }
+
       // Confirm / file a reviewed document.
       const confirmMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/confirm$`));
       if (req.method === 'POST' && confirmMatch) {

@@ -102,6 +102,10 @@ contextBridge.exposeInMainWorld('scanfinder', {
     ocrPageWords:   (id, imageBase64)   => ipcRenderer.invoke('client-teach-page-words', id, imageBase64),
     pageDeskew:     (id, imageBase64, minAngle) => ipcRenderer.invoke('client-teach-page-deskew', id, imageBase64, minAngle),
     config:         () => ipcRenderer.invoke('client-teach-config'),
+    // S2 (contract 1.7.0): create a document type / add catalog presets (admin-only server-side).
+    createDocType:     (draft) => ipcRenderer.invoke('client-teach-create-doctype', draft),
+    docTypeCatalog:    ()      => ipcRenderer.invoke('client-teach-doctype-catalog'),
+    addDocTypePresets: (slugs) => ipcRenderer.invoke('client-teach-doctype-presets', slugs),
   },
   // Teach pop-out window (mirrors openSearch): open/focus the window; the pop-out pulls its target doc once,
   // learns the signed-in role (currentUser) and the server's abilities (serverInfo), and reports a 401.

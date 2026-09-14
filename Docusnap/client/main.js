@@ -472,6 +472,10 @@ ipcMain.handle('client-teach-region-boxes', guarded((_e, id, imageBase64)       
 ipcMain.handle('client-teach-page-words',   guarded((_e, id, imageBase64)           => client.teach.ocrPageWords(id, imageBase64)));
 ipcMain.handle('client-teach-page-deskew',  guarded((_e, id, imageBase64, minAngle) => client.teach.pageDeskew(id, imageBase64, minAngle)));
 ipcMain.handle('client-teach-config',       guarded(()                              => client.teach.config()));
+// Teach-over-client S2: create a document type / add catalog presets over /v1 (admin-only server-side).
+ipcMain.handle('client-teach-create-doctype',  guarded((_e, draft) => client.teach.createDocType(draft)));
+ipcMain.handle('client-teach-doctype-catalog', guarded(()          => client.teach.docTypeCatalog()));
+ipcMain.handle('client-teach-doctype-presets', guarded((_e, slugs) => client.teach.addDocTypePresets(slugs)));
 
 // ── Quick File (non-OCR upload) ─────────────────────────────────────────────────────────────────────
 // Paths NEVER cross to the renderer: the picked file lives in a MAIN-side token map; the renderer sends a

@@ -289,6 +289,10 @@ function createClient(opts = {}) {
   const teachPageWords   = (id, imageBase64) => request('POST', `/v1/documents/${id}/ocr-page-words`,   { withAuth: true, body: { imageBase64 }, timeoutMs: 120000 });
   const teachPageDeskew  = (id, imageBase64, minAngle) => request('POST', `/v1/documents/${id}/page-deskew`, { withAuth: true, body: { imageBase64, minAngle }, timeoutMs: 120000 });
   const teachConfig      = () => request('GET', '/v1/teach/config', { withAuth: true });
+  // Teach-over-client S2 (contract 1.7.0): create a document type / add catalog presets — ADMIN-only server-side.
+  const teachCreateDocType = (draft) => request('POST', '/v1/doc-types', { withAuth: true, body: draft || {} });
+  const teachDocTypeCatalog = () => request('GET', '/v1/doc-types/catalog', { withAuth: true });
+  const teachAddPresets    = (slugs) => request('POST', '/v1/doc-types/presets', { withAuth: true, body: { slugs: Array.isArray(slugs) ? slugs : (slugs ? [slugs] : []) } });
 
   return {
     connect, login, logout, changePassword, entitlement, search, getDocument, getPages, getThumbnail, ping, fetchCa, enroll,
@@ -302,7 +306,8 @@ function createClient(opts = {}) {
               confirm: revConfirm, defer: revDefer, undefer: revUndefer, viewing: revViewing, release: revRelease,
               ocrRegion: revOcrRegion },
     teach: { ocrRegion: revOcrRegion, ocrRegionBoxes: teachRegionBoxes, ocrPageWords: teachPageWords,
-             pageDeskew: teachPageDeskew, config: teachConfig },
+             pageDeskew: teachPageDeskew, config: teachConfig,
+             createDocType: teachCreateDocType, docTypeCatalog: teachDocTypeCatalog, addDocTypePresets: teachAddPresets },
     isAuthenticated: () => !!token,
     _setToken: (t) => { token = t; }, // test/diagnostic aid only
   };

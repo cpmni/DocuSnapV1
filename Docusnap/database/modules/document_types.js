@@ -882,6 +882,58 @@ function addPresetTypes(db, slugs) {
   return results;
 }
 
+// Create a custom type + its fields + structural roles in ONE transaction — the reusable core shared by
+// the Settings/teach-wizard "create-doc-type-with-fields" IPC AND the /v1 teach-over-client create route
+// (2026-09-14). Admin-gating and the window-notify stay with each caller; this is the pure DB unit so both
+// roads build a byte-identical type. Returns {success, id, type, notices} on success, {success:false, error}
+// on a name clash / validation fail (atomic rollback — nothing half-created).
+function createTypeWithFields(db, data) {
+  const name = ((data && data.name) || '').trim();
+  if (!name) return { success: false, error: 'A document type name is required.' };
+  const fields = Array.isArray(data && data.fields) ? data.fields : [];
+  if (!fields.length) return { success: false, error: 'Add at least one field.' };
+  // Match addField's key derivation EXACTLY so ref/date roles bind to the keys the fields are
+  // actually created with (shared canonical safeSlug).
+  const slug = (s) => safeSlug(s, { fallback: 'field' });
+  const refKey  = data.ref_field_key  ? slug(data.ref_field_key)  : null;
+  const dateKey = data.date_field_key ? slug(data.date_field_key) : null;
+  // Validate aliases up front so a name-collision returns a clean {error}, notices reach the UI.
+  let aliasNotices = [];
+  if (data.title_aliases != null) {
+    const na = normaliseTitleAliases(db, data.title_aliases, name);
+    if (na.error) return { success: false, error: na.error };
+    aliasNotices = na.notices;
+  }
+  try {
+    const tx = db.transaction(() => {
+      const res = addType(db, { name, ref_field_key: refKey, date_field_key: dateKey, title_aliases: data.title_aliases });
+      const typeId = res.lastInsertRowid;
+      let order = 10;
+      for (const f of fields) {
+        if (!f || !(f.key || f.label)) continue;
+        addField(db, {
+          document_type_id: typeId,
+          key:        f.key || f.label,
+          label:      f.label || f.key,
+          type:       f.type || 'text',
+          required:   f.required ? 1 : 0,
+          sort_order: order,
+        });
+        order += 10;
+      }
+      // Force the structural ID fields (Company + Date) AFTER the user fields, so a wizard-designated
+      // date is respected and nothing is left missing.
+      ensureStructuralRoles(db, typeId);
+      return typeId;
+    });
+    const id = tx();
+    const created = getAllWithFieldsAll(db).find(t => t.id === id) || null;
+    return { success: true, id, type: created, notices: aliasNotices };
+  } catch (e) {
+    return { success: false, error: e.message };  // UNIQUE name clash etc. — atomic rollback
+  }
+}
+
 // A4 of the type-split arc (2026-08-22): seed the catalog's title aliases onto an EXISTING install's
 // types that carry none — matched by preset NAME, NEVER overwriting an operator's own aliases (a
 // non-empty row is left alone), and through normaliseTitleAliases so the alias==another-type-name
@@ -913,6 +965,6 @@ module.exports = {
   assertStructuralRequired,
   reshapeCustomerIdentityTypes, cleanupStaleCustomerLearning,
   COMPANY_KEYS, isStructuralKey, normaliseTitleAliases,
-  PRESET_CATALOG, presetSlug, getPresetCatalog, addPresetTypes,
+  PRESET_CATALOG, presetSlug, getPresetCatalog, addPresetTypes, createTypeWithFields,
   GENERIC_SLUG, getGenericType,
 };

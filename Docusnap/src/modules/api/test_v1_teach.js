@@ -6,6 +6,11 @@
  *   POST /v1/documents/:id/ocr-page-words     (typed-value locate; {w,h,words}) — its OWN in-flight cap
  *   POST /v1/documents/:id/page-deskew        (straighten; {angle,image,measured}) — region.py expand=False (Oracle C3)
  *   GET  /v1/teach/config                     (the wizard's feature flags; a fixed allowlist)
+ * Plus the teach-over-client S2 doc-type CREATE routes (2026-09-14, contract 1.7.0; ADMIN-only — a create is
+ * the strictest desktop gate):
+ *   POST /v1/doc-types                        (create a type + fields + structural roles; reuses createTypeWithFields)
+ *   GET  /v1/doc-types/catalog                (the preset catalog + already_present flags)
+ *   POST /v1/doc-types/presets                (add ticked catalog presets)
  * Verifies: auth (401) + role (readonly 403), the happy-path shapes, a full-page-sized body is ACCEPTED
  * (over the 1MB default JSON cap → the dedicated TEACH_IMG cap), missing imageBase64 → 400, the page-words
  * in-flight cap (429) AND that the slot FREES after the batch, and teach/config reflects a setting.
@@ -88,8 +93,9 @@ async function main() {
   const ins = db.prepare("INSERT INTO users (id, username, display_name, password_hash, role, is_active) VALUES (?,?,?,?,?,1)");
   ins.run(1, 'admin', 'Admin', h, 'admin');
   ins.run(2, 'reader', 'Reader', h, 'readonly');
+  ins.run(3, 'editor', 'Editor', h, 'edit');
   const login = async (u) => (await request(port, 'POST', '/v1/auth/login', { body: { username: u, password: PWD } })).json?.token;
-  const adminT = await login('admin'); const readT = await login('reader');
+  const adminT = await login('admin'); const readT = await login('reader'); const editT = await login('editor');
 
   const post = (route, opts) => request(port, 'POST', `/v1/documents/1/${route}`, opts);
 
@@ -138,6 +144,47 @@ async function main() {
   learning.setSetting(db, 'list_field_scan', 'true');
   const cfg1 = await request(port, 'GET', '/v1/teach/config', { token: adminT });
   check('teach/config reflects a live setting change (list_field_scan → true)', cfg1.json.list_field_scan === 'true');
+
+  // ── S2: create a document type (POST /v1/doc-types) — ADMIN-only ─────────────────────────────────────
+  const draft = { name: 'Client Test Type', fields: [
+    { label: 'Document Issuer', key: 'supplier_name', type: 'text' },
+    { label: 'Widget Reference', type: 'reference' },
+    { label: 'Date', type: 'date' },
+  ], ref_field_key: 'Widget Reference', date_field_key: 'Date' };
+  const dtPost = (opts) => request(port, 'POST', '/v1/doc-types', opts);
+  check('POST /doc-types: no token → 401', (await dtPost({ body: draft })).status === 401);
+  check('POST /doc-types: readonly → 403', (await dtPost({ token: readT, body: draft })).status === 403);
+  check('POST /doc-types: EDIT (writer, non-admin) → 403 (create is admin-only)', (await dtPost({ token: editT, body: draft })).status === 403);
+  check('POST /doc-types: missing name → 400', (await dtPost({ token: adminT, body: { fields: draft.fields } })).status === 400);
+  check('POST /doc-types: no fields → 400', (await dtPost({ token: adminT, body: { name: 'Empty' } })).status === 400);
+  const created = await dtPost({ token: adminT, body: draft });
+  check('POST /doc-types: admin happy path → 200 {success, id, type}',
+        created.status === 200 && created.json.success === true && created.json.id > 0 && created.json.type && created.json.type.slug);
+  // The type is real: it reads back through GET /doc-types with its fields + the structural roles bound.
+  const listed = await request(port, 'GET', '/v1/doc-types', { token: adminT });
+  const madeType = (listed.json.types || []).find(t => t.id === created.json.id);
+  check('created type appears in GET /doc-types with its ref/date roles bound',
+        !!madeType && madeType.ref_field_key === 'widget_reference' && madeType.date_field_key === 'date'
+        && (madeType.fields || []).some(f => f.key === 'supplier_name'));
+  // A duplicate NAME clashes → 400 {error} (inline, not a throw): mirrors the core create.
+  const dup = await dtPost({ token: adminT, body: draft });
+  check('POST /doc-types: duplicate name → 400 {error} (atomic rollback, shown inline)', dup.status === 400 && typeof dup.json.error === 'string');
+
+  // ── S2: the catalog + preset add ────────────────────────────────────────────────────────────────────
+  check('GET /doc-types/catalog: readonly → 403', (await request(port, 'GET', '/v1/doc-types/catalog', { token: readT })).status === 403);
+  const cat = await request(port, 'GET', '/v1/doc-types/catalog', { token: adminT });
+  check('GET /doc-types/catalog → 200 {catalog:[...]}', cat.status === 200 && Array.isArray(cat.json.catalog) && cat.json.catalog.length > 0);
+  const addable = (cat.json.catalog || []).find(p => p.already_present === false);
+  check('the catalog offers an addable (not-yet-installed) preset', !!addable);
+  const prPost = (opts) => request(port, 'POST', '/v1/doc-types/presets', opts);
+  check('POST /doc-types/presets: EDIT (non-admin) → 403', (await prPost({ token: editT, body: { slugs: [addable && addable.slug] } })).status === 403);
+  check('POST /doc-types/presets: empty slugs → 400', (await prPost({ token: adminT, body: { slugs: [] } })).status === 400);
+  const added = await prPost({ token: adminT, body: { slugs: [addable.slug] } });
+  check('POST /doc-types/presets: admin adds a preset → 200 {success, results: [added]}',
+        added.status === 200 && added.json.success === true
+        && (added.json.results || []).some(r => r.slug === addable.slug && r.status === 'added'));
+  const listed2 = await request(port, 'GET', '/v1/doc-types', { token: adminT });
+  check('the added preset now appears in GET /doc-types', (listed2.json.types || []).some(t => t.slug === addable.slug));
 
   server.close();
   console.log(`\n${fail === 0 ? 'ALL PASS' : fail + ' FAILED'}`);

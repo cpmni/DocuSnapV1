@@ -114,53 +114,11 @@ function register(ctx) {
   // and ref/date keys are matched to those slugs so the assignment is valid.
   ipcMain.handle('create-doc-type-with-fields', (_e, data) => {
     requireRole('admin');
-    const db = getDb();
-    const name = ((data && data.name) || '').trim();
-    if (!name) return { success: false, error: 'A document type name is required.' };
-    const fields = Array.isArray(data && data.fields) ? data.fields : [];
-    if (!fields.length) return { success: false, error: 'Add at least one field.' };
-    // Match addField's key derivation EXACTLY so ref/date roles bind to the keys
-    // the fields are actually created with (shared canonical safeSlug).
-    const slug = (s) => safeSlug(s, { fallback: 'field' });
-    const refKey  = data.ref_field_key  ? slug(data.ref_field_key)  : null;
-    const dateKey = data.date_field_key ? slug(data.date_field_key) : null;
-    // Validate aliases up front so a name-collision returns a clean {error} (addType would
-    // throw inside the transaction → caught below either way) and notices reach the UI.
-    let aliasNotices = [];
-    if (data.title_aliases != null) {
-      const na = doctypes.normaliseTitleAliases(db, data.title_aliases, name);
-      if (na.error) return { success: false, error: na.error };
-      aliasNotices = na.notices;
-    }
-    try {
-      const tx = db.transaction(() => {
-        const res = doctypes.addType(db, { name, ref_field_key: refKey, date_field_key: dateKey, title_aliases: data.title_aliases });
-        const typeId = res.lastInsertRowid;
-        let order = 10;
-        for (const f of fields) {
-          if (!f || !(f.key || f.label)) continue;
-          doctypes.addField(db, {
-            document_type_id: typeId,
-            key:        f.key || f.label,
-            label:      f.label || f.key,
-            type:       f.type || 'text',
-            required:   f.required ? 1 : 0,
-            sort_order: order,
-          });
-          order += 10;
-        }
-        // Force the structural ID fields (Company + Date) AFTER the user fields, so a
-        // wizard-designated date is respected and nothing is left missing.
-        doctypes.ensureStructuralRoles(db, typeId);
-        return typeId;
-      });
-      const id = tx();
-      const created = doctypes.getAllWithFieldsAll(db).find(t => t.id === id) || null;
-      notifyAllWindows('doc-types-changed');   // other open windows reload their doc-type lists
-      return { success: true, id, type: created, notices: aliasNotices };
-    } catch (e) {
-      return { success: false, error: e.message };  // UNIQUE name clash etc. — atomic rollback
-    }
+    // The transactional create is the shared document_types.createTypeWithFields (also the /v1
+    // teach-over-client create route) so both roads build a byte-identical type.
+    const r = doctypes.createTypeWithFields(getDb(), data);
+    if (r.success) notifyAllWindows('doc-types-changed');   // other open windows reload their doc-type lists
+    return r;
   });
 
   // Preset document-type catalog (Settings → Document Types → "Add from catalog…").
