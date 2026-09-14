@@ -21,9 +21,9 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-13 LATE (CLIENT SEARCH PARITY BUILT — S0/S0b/S1/S2/S4: ONE shared search screen for core + client):
-**READ `HANDOVER_2026-09-13_LATE.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `d9cee32`; origin CURRENT (all
-pushed).** No installer. The evening handover's resume plan ran END TO END (Oracle SIGN-OFF-W/COND `docs/oracle_log.md`
+## ⏭ LATEST — 2026-09-14 MORNING (Chris cards 1-8 BUILT on the shared search screen + client; the parity arc S0-S4 shipped 2026-09-13):
+**READ `HANDOVER_2026-09-13_LATE.md` FIRST (its ADDENDUM 2 = the morning's card work).** Branch `feat/teach-side-overnight`;
+**HEAD = `0f58ecb` + the docs commit; origin CURRENT (all pushed).** No installer. The evening handover's resume plan ran END TO END (Oracle SIGN-OFF-W/COND `docs/oracle_log.md`
 2026-09-13; plan doc carries a binding AMENDMENTS box + per-slice status): **S0 `48fba8f`** the Search screen's JS →
 `src/windows/shared/search-ui/` (plain globals, IO only via `window.SearchTransport`; core adapter
 `src/windows/search/coreTransport.js` = pure pass-through; caps hide what a transport can't do; drift guards = committed
@@ -41,8 +41,16 @@ the client can't back → `_cap()` + client cap false. **RUNNING:** core dev app
 SPAWN_ENTRIES; count pins 49→50; activity-strip pin) · first-paint pips FIXED (`SearchResults.redecorate`) · the owner's
 "search window doesn't open" PROVEN OK on real core code (sandbox dev core + real client over CDP, 20/20; the look-alike =
 a stale session after a core restart → now says so, `5195bfa`) · Chris on both apps → `docs/CHRIS_FULL_APP_REVIEW_2026-09-14.md`
-(YES; **card 1 = the `/v1` purge leaves the filed PDF + xml on disk — PRE-EXISTING, APPROVAL-CLASS, morning #1**; card 2
-client bin pane won't let go; card 3 client Quick File lists no types). Sandbox left running (core CDP 9223 · client 9226).
+(YES, 8 cards). **MORNING 2026-09-14 (owner: "Continue with Chris's fixes in the recommended order") — ALL 8 BUILT + PUSHED:**
+`0129053` card 1 (the `/v1` purge now removes the FILED copy + xml through the desktop's helper `review/handler.
+purgeDocumentFiles`; pin `test_v1_purge_files`) · `ff49223` cards 2/4/6/7 in the SHARED screen (a purge clears the preview;
+`SearchQuery.setQuery` / `SearchPreview.openDocById` = the deep-link entry points that leave the bin/mailbox first; the stamp
+popup re-reads `stamp.can()` on open; a read-only "Waiting on you…" door; local-time history + display name) · `0f58ecb`
+cards 3/5/8 client (Quick File lists the catalog presets as `new:<slug>` — `/v1` intake resolves it, admin only; "Awaiting
+others" counts open routes; window "ScanFinder Client" + `app.setName`). Pins 360/361 (the 1 red `test_ref_class_fix` =
+flaky under load, green alone) · `--smoke-windows` 14/14 · owner's core + client RESTARTED on this code. Outcomes table in
+the Chris doc. Sandbox still running (core CDP 9223 · client 9226). Still owed: the `/v1` MINOR for the pop-out's hidden
+workflow bits · mig 166 flip gate · client `npm run dist` in lockstep (1.3.0) · the 34-blank-pages owner question.
 Follow-ups: the /v1 purge fix, a `/v1` MINOR for the pop-out's hidden bits, client `npm run dist` in lockstep. Memory
 `project_client_search_parity_20260913.md`.
 

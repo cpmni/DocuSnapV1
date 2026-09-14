@@ -5312,5 +5312,14 @@ routes mirroring the desktop IPC handlers (`workflow-doc-history`, `workflow-doc
 already exercises the shared UI on both apps.
 
 > **FIXED 2026-09-13 night** (the first-paint confidence-pip finding above): `SearchResults.redecorate()` re-renders the
-> LAST result set once the entitlement is known (no second search — pinned: `search-documents` runs exactly twice in the
-> harness session: initial + back-from-bin). Core + client (shared module).
+> LAST result set once the entitlement is known (no second search — pinned: `search-documents` runs exactly 3 times in the
+> harness session: initial + `setQuery` after the bin purge + back-from-bin; the re-decoration never adds one). Core +
+> client (shared module).
+
+## 2026-09-14 — import: a 34-page stack from `.sf_separated_originals` came in as 34 BLANK pages (Chris, owner question)
+Chris's driver imported the app-managed `.sf_separated_originals` folder (SEPARATED originals — an artefact, not an
+import source) and every page rendered blank. Two questions before anything is built: is importing from that folder
+meaningful at all (if not, the import picker could refuse/skip app-managed folders), and if it is, why blank — a
+separated original that is itself a separator-only stack, or a render path that misses those files? Reproduce with the
+sandbox seed (`scripts/seed-chris-sandbox.js`) before deciding. Chris's other 8 cards from the same round are DONE
+(`docs/CHRIS_FULL_APP_REVIEW_2026-09-14.md` outcomes table).

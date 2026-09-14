@@ -64,6 +64,13 @@ the add-on off. (Design history: `memory/scanfinder-*` + the plan in `.claude/pl
   advertising ≥ 1.3.0 (`clientTransport.js refreshCaps`); an older core → the controls hide + the pop-out
   shows "Some tools need a newer ScanFinder on the core PC". Pins: `src/modules/api/test_v1_preview_reads.js`,
   `scripts/test_client_search_popout.js` (parity + lite runs).
+- **Chris 2026-09-14 cards on the /v1 lane (no contract bump)**: `DELETE …/documents/{id}/purge` + `POST …/purge-all`
+  remove EVERY app-owned file through the desktop's own helper `review/handler.purgeDocumentFiles` (working copy +
+  the FILED copy + the `.metadata` xml sidecar; paths resolved server-side from the row) — the lane used to unlink
+  the working copy only, leaving the filed PDF on disk (pin `src/modules/api/test_v1_purge_files.js`). The Quick
+  File intake `POST /v1/documents/intake` accepts `documentTypeId: "new:<slug>"` = a catalog PRESET set up on first
+  use via `doctypes.addPresetTypes` (ADMIN only → 403 otherwise; idempotent — an already-present preset resolves to
+  its id; unknown slug → 400 `unknown_type`), the same create-on-first-use the core's Quick File pane does.
 - **SEARCH POP-OUT (client search parity S1, 2026-09-13)**: the client's search is the SHARED search screen
   (`client/renderer/shared/` = generated copies of `src/windows/shared/{search-ui,theme.css,fonts,patterns}`,
   `scripts/sync-client-search.js`, pin `test_client_search_sync.js`) in its own window

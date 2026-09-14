@@ -139,3 +139,44 @@ but worth a look); Demo Docs has no .xlsx/.docx so the grid path was not exercis
 ### Approval-class (logged, not done)
 The `/v1` purge fix (card 1) · the `/v1` MINOR for the pop-out's hidden workflow bits · the mig 166 flip gate · any
 customer-default flip · the client `npm run dist` in lockstep (contract 1.3.0).
+
+---
+
+## ADDENDUM 2 — MORNING 2026-09-14: Chris cards 1-8 BUILT (owner: "Continue with Chris's fixes in the recommended order")
+
+**Commits (all pushed, origin current):** `0129053` card 1 · `ff49223` cards 2/4/6/7 (shared screen) · `0f58ecb`
+cards 3/5/8 (client) · the docs commit. Per-card outcomes table at the end of `docs/CHRIS_FULL_APP_REVIEW_2026-09-14.md`.
+
+**What changed, in plain terms**
+1. **Permanent delete from the client now really deletes the file** — the filed PDF and its xml note, not just the app's
+   working copy. Both apps share one helper for it (`review/handler.purgeDocumentFiles`); the desktop path is unchanged.
+   New pin `src/modules/api/test_v1_purge_files.js`.
+2. **The bin lets go** — a document you permanently delete leaves the preview; a Home search or "open this document"
+   that arrives while the window is in the bin or the mailbox leaves that view first (`SearchQuery.setQuery` /
+   `SearchPreview.openDocById` are now the ONLY entry points for that — the core's Quick-find and the client's Home
+   search, recent row and live push all go through them).
+3. **Client Quick File on a fresh install** lists the catalog presets (admin) and explains itself when there is nothing
+   to pick; the core sets a preset up on first use (`new:<slug>` on the intake POST, admin only, idempotent).
+4. **"Can stamp" reaches an open Search window** — the popup re-asks when it opens.
+5. **Home "Awaiting others"** counts routes still waiting, not the ones already approved/rejected.
+6. **A read-only person with a request waiting** gets a "✉ Waiting on you…" button (Got it / Approve; no stamp/send
+   panels). The client's main-window mailbox already offered "Got it" regardless of role (verified in code).
+7. **Stamp history** shows local time (DD-MM-YYYY HH:MM) and the person's display name.
+8. **Titles:** the client's main window is "ScanFinder Client" (the pop-out keeps "ScanFinder — Search"); native
+   dialogs say "ScanFinder Search Client".
+
+**Verification:** `npm run test:pins` **360/361** — the one red, `src/services/test_ref_class_fix.js`, is the pre-existing
+flaky pin (87/87 when run alone; a timing-sensitive byte-identical compare under the parallel suite) · the four search
+pins green (purge-files 5, functional core 77, pop-out 209, sync 32) · `--smoke-windows` **14/14** run in DEV against a
+throwaway userData (`SCANFINDER_SMOKE_DIR=<dir> electron.exe . --smoke-windows`) · the owner's core (`TEST_BUILD=1`, /v1
+on 8765) + client were RESTARTED on this code at 04:02 (the client will show its login screen — the old session died
+with the old core).
+
+**Harness notes:** core-side bin mutation stubs (`purge-document` etc.) were missing (the drive now purges from the
+rail); the read-only popup check stubs `stamp.can` false; the "searches ran exactly twice" pins are "exactly 3" now
+(initial + `setQuery` + back-from-bin — the first-paint re-decoration is still not a fetch).
+
+**Still owed (unchanged):** the `/v1` MINOR for the pop-out's hidden workflow bits · the mig 166 flip gate · the client
+`npm run dist` in lockstep (1.3.0) · the owner's answer on the "doesn't open" moment (§3 above) · the 34-blank-pages
+question (`pendingfeatures.md`). The sandbox (core CDP 9223 / client 9226) is still up on the OLD code; kill filters in
+"Running at wrap".

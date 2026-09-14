@@ -146,3 +146,21 @@ Card 2 — the client's bin view that won't let go, compounded by card 1's orpha
 | 7 | shared `searchStamp.js` `_fmtDT` | `String(iso).slice(0,16)` prints the UTC hour; the page stamp uses local time. Pre-existing on the core. | `new Date(iso).toLocale…` + display name over username + DD-MM-YYYY. | owner go (cosmetic) |
 | 8 | client `main.js` `createWindow` title; dialog titles | The main window is titled "ScanFinder — Search" (same as the pop-out); native dialog title = the app name from package.json (`scanfinder-client`). | Main window "ScanFinder Client"; `productName`/`app.setName` for dialogs. | owner go (cosmetic) |
 | — | 34-page stack from `.sf_separated_originals` imported as 34 BLANK pages | Not tonight's subject; that folder holds SEPARATED originals (an app-managed artefact, not an import source) — a Chris-driver choice, but blank pages on import deserve a look. | Check with the owner whether importing from `.sf_separated_originals` is meaningful; if so, why blank. | owner question |
+
+## Outcomes — 2026-09-14 morning (owner: "Continue with Chris's fixes in the recommended order")
+
+All 8 cards built in order 1→8 and pushed. `npm run test:pins` 360/361 (the one red, `test_ref_class_fix`, is the
+pre-existing flaky pin — green when run alone), `--smoke-windows` 14/14, the sync pin green (the client copy of the shared
+screen regenerated). The owner's core (`TEST_BUILD=1`) + client were restarted on this code.
+
+| # | Outcome | Commit |
+|---|---|---|
+| 1 | **DONE.** `/v1` purge + purge-all go through `review/handler.purgeDocumentFiles` (working copy + FILED copy + `.metadata` xml) — the desktop's own helper, now exported; the row is deleted after. Pin `src/modules/api/test_v1_purge_files.js`. The warning "and its file" is TRUE again. | `0129053` |
+| 2 | **DONE (shared screen).** (a) `searchResults._act` clears the preview when an acted id is the selected doc. (b) `SearchQuery.setQuery(q)` / `SearchPreview.openDocById(id)` are the entry points for an external term / document and leave the bin + mailbox views first; the core Quick-find and the client pop-out deep-links use them. Harness-pinned on both apps. | `ff49223` |
+| 3 | **DONE.** The client's Quick File lists the installed types + the catalog presets (`new:<slug>`, admin only), with a hint line when there is nothing to pick; `/v1/documents/intake` resolves `new:<slug>` through `doctypes.addPresetTypes` (admin only, idempotent) before filing. | `0f58ecb` |
+| 4 | **DONE (shared screen).** `SearchStamp.open()` re-reads `stamp.can()` when it opens and re-renders the actions. | `ff49223` |
+| 5 | **DONE.** `refreshBadges` counts the OPEN routes (pending/claimed) in Sent as `counts.sentOpen`; the Home "Awaiting others" card shows that. | `0f58ecb` |
+| 6 | **DONE (shared screen).** A read-only user with a route waiting on them gets a "✉ Waiting on you…" door in the doc actions; the popup titles itself "Waiting on you", hides the stamp + send panels and keeps Got it / Approve. The client MAIN-window mailbox rows were verified in code: "Got it" for FYI items is already un-gated there (`mbRow` + `decisionBar`) — the missing door was the pop-out. | `ff49223` |
+| 7 | **DONE (shared screen).** `_fmtDT` prints local `DD-MM-YYYY HH:MM`; `stampService.stampsForDocument` adds `placedByName` (display name, username fallback) and the history shows it. | `ff49223` |
+| 8 | **DONE.** Main window "ScanFinder Client"; `app.setName('ScanFinder Search Client')` with the userData path pinned first (dialog titles), the pop-out keeps "ScanFinder — Search". | `0f58ecb` |
+| — | The 34 blank pages from `.sf_separated_originals` — still an owner question, logged in `pendingfeatures.md`. | — |
