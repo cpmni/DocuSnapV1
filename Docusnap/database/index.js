@@ -3461,6 +3461,26 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 168 (teach-over-client): ${e.message}`); }
   }
 
+  // ── migration 169: enforce the two 2026-09-15 security fixes by DEFAULT (owner flip 2026-09-15). Both
+  //    shipped DARK (byte-identical OFF) and each was recommended ON by its designer:
+  //      • v1_force_password_change (eric, A1) — a never-changed temp-password /v1 session is refused every
+  //        route but change-password/logout;
+  //      • backup_import_seat_only (gary, Chris card 7) — a Settings-backup restore needs a verified paid
+  //        SEAT, so a forged same-machine device fingerprint can't authorise it.
+  //    Seed both '1' so every install — new AND existing, on next start — enforces (fail-secure). INSERT OR
+  //    IGNORE: the keys were never written before, so this seeds them ON everywhere; a later deliberate '0'
+  //    is respected. Not an engine switch (value '1', read `=== '1'`), so it is NOT in the 'true'-valued
+  //    ALL_ON_DEFAULTS lists — pinned by database/test_security_defaults.js.
+  if (!applied.has(169)) {
+    try {
+      let n = 0;
+      n += db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('v1_force_password_change', '1')`).run().changes;
+      n += db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('backup_import_seat_only', '1')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (169)').run();
+      console.log(`JS migration 169 applied: security enforcement ON by default (v1_force_password_change, backup_import_seat_only) — ${n} row(s) seeded`);
+    } catch (e) { console.warn(`  migration 169 (security enforcement defaults): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

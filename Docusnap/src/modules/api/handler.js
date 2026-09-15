@@ -297,10 +297,10 @@ function createRequestListener(ctx) {
     log,
   });
 
-  // A1 (2026-09-15): force a temp-password change over /v1. DARK — default OFF, so a restricted
-  // session is NEVER refused (byte-identical to the historical behaviour). Flip the setting
-  // `v1_force_password_change` = '1' to enforce (eric/gary recommend defaulting it ON in shipped
-  // builds via a future migration/build-arm). The switch doubles as the kill switch.
+  // A1 (2026-09-15): force a temp-password change over /v1. ENFORCED BY DEFAULT since mig 169 (owner flip
+  // 2026-09-15) — a fresh/existing install seeds `v1_force_password_change` = '1' so a restricted session
+  // is refused every route but change-password/logout. The switch doubles as the kill switch: set it '0'
+  // to restore the historical (byte-identical) behaviour. Was DARK/default-OFF at build (2026-09-15 night).
   const v1ForcePasswordChange = () => {
     try { return learning.getSetting(getDb(), 'v1_force_password_change') === '1'; } catch { return false; }
   };

@@ -669,10 +669,11 @@ function register(ctx) {
   // this machine's fp is a deterministic hash of locally-readable public data — so a same-machine
   // allow keyed on `backupFp === curFp` is forgeable on any un-licensed machine. When the DARK
   // switch `backup_import_seat_only` is ON, that untrusted branch is skipped and ONLY a verified
-  // paid SEAT authorises a restore (the anchor a non-origin machine cannot mint). Default OFF =
-  // byte-identical to the historical behaviour; the owner flips it to enforce. The seat decision
-  // itself is the pure predicate src/lib/deviceImportGate.js (which never receives device_fp, so
-  // same-machine equality can't be reintroduced through it).
+  // paid SEAT authorises a restore (the anchor a non-origin machine cannot mint). ENFORCED BY DEFAULT
+  // since mig 169 (owner flip 2026-09-15 — seeds '1' on every install); set it '0' to restore the
+  // historical (byte-identical) behaviour. The seat decision itself is the pure predicate
+  // src/lib/deviceImportGate.js (which never receives device_fp, so same-machine equality can't be
+  // reintroduced through it).
   function _backupImportSeatOnly() {
     try { return learning.getSetting(getDb(), 'backup_import_seat_only') === '1'; } catch { return false; }
   }
