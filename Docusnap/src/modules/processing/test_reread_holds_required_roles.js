@@ -88,5 +88,20 @@ check('control: with required=0 roles S3-C5 is BLIND (the pre-fix state)', holds
 check('control: with required=0 roles the first-fill hold is BLIND (the pre-fix state)', holds.holdFirstFills(db, d2, ex2, holdsMod.NOTES.manual).length === 0);
 check('…and the startup heal restores them', (runMigrations(db), req(tid, 'reference_number') === 1));
 
+console.log('\n§4 owner exhibit (2026-09-15): a clipped-year baseline is JUNK, not a "check which is right" offer');
+// Before the date_parse fix, validDate("October 14, 202") returned TRUE (year never checked), so the S3-C5
+// guard (rereadHolds.js:110) did NOT fire and the owner saw "Read differently after learning — was
+// 'October 14, 202', now '14-10-2026'. Please check which is right." offering a clipped date. Now the clipped
+// year is invalid → the guard treats it as a junk baseline → a clean first-fill "confirm once" hold instead.
+const d3 = mk([{ key: 'supplier_name', value: SUP }, { key: 'reference_number', value: 'CJB-3000' }, { key: 'date', value: 'October 14, 202' }]);
+const ex3 = snapshot(d3);
+setRows(d3, [{ key: 'supplier_name', value: SUP }, { key: 'reference_number', value: 'CJB-3000' }, { key: 'date', value: '14-10-2026' }]);
+const chg3 = holds.holdChangedReads(db, d3, ex3);
+check("no 'Read differently after learning' note on the clipped-year date (RED before the fix)",
+      !chg3.some(c => c.key === 'date') && !/Read differently after learning/.test(ext(d3, 'date').validation_note || ''));
+const held3 = holds.holdFirstFills(db, d3, ex3, holdsMod.NOTES.ready);
+check('the clipped-year baseline is treated as a first-fill and held with a confirm-once note instead',
+      held3.some(h => h.key === 'date') && /confirm once/.test(ext(d3, 'date').validation_note || ''));
+
 console.log(fails ? `\n${fails} FAILED` : '\nAll required-role reread-hold checks passed');
 process.exit(fails ? 1 : 0);

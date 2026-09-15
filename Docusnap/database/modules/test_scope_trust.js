@@ -230,11 +230,24 @@ function main() {
   // ── 10. validDate — calendar bounds ─────────────────────────────────────────
   section('10. validDate (calendar bounds)');
   const vd = trust.validDate;
+  // validDate now delegates to the shared date_parse.parseDate (the confirm door + folder builder), so the
+  // auto-file gate accepts EXACTLY the dates a human confirm accepts. Year is REQUIRED (2026-09-15 fix).
   check("valid DD-MM-YYYY",  vd('05-06-2026') === true);
-  check("valid D/M/YY",      vd('9/8/25') === true);
   check("valid YYYY-MM-DD",  vd('2026-08-09') === true);
   check("valid text month",  vd('6 Aug 2026') === true);
-  check("valid leap 29 Feb", vd('29-02-2024') === true);
+  check("valid text month 2-digit year (pivot 69)", vd('6 Aug 26') === true);
+  check("valid ordinal text month", vd('23rd Aug 2026') === true);
+  check("valid leap 29 Feb 2024", vd('29-02-2024') === true);
+  // PINNED TRADE-OFF (2026-09-15, Oracle cond 3): a numeric 2-digit year is NOT fileable — the confirm door
+  // (date_parse.parseDate) rejects it, so the gate MUST agree. Do NOT "restore" 2-digit-numeric leniency.
+  check("reject numeric 2-digit year 9/8/25", vd('9/8/25') === false);
+  check("reject numeric 2-digit year 14-10-20", vd('14-10-20') === false);
+  // PINNED (calendar round-trip): non-leap 29 Feb is refused (was leap-lenient in the old local copy).
+  check("reject non-leap 29 Feb 2025", vd('29-02-2025') === false);
+  // The owner exhibit (2026-09-15): a clipped 3-digit year is invalid → the re-read note is suppressed.
+  check("reject clipped 3-digit year 'October 14, 202'", vd('October 14, 202') === false);
+  check("reject numeric 3-digit year 14-10-202", vd('14-10-202') === false);
+  check("reject absent year 'October 14'", vd('October 14') === false);
   check("reject day 45",     vd('45/67/8901') === false);
   check("reject month 13",   vd('13/13/2026') === false);
   check("reject 31 Feb",     vd('31/02/2026') === false);
@@ -251,6 +264,14 @@ function main() {
     });
     const g = trust.docTrustGate(db, badDate, 'Anconia Corp', 'invoice');
     check("out-of-range date (no note) → blocked", g.ok === false && g.reason === 'invalid-date:invoice_date');
+    // 2026-09-15 (Oracle cond 5): a clipped 3-digit-year date, un-flagged, must be blocked by the gate too
+    // (the old year-blind _validDate let it through). date role, no validation_note → reaches the STRICT arm.
+    const clippedYear = seedDoc(db, tid, {
+      supplier: 'Anconia Corp', when: '2026-06-03T10:00:30Z', template: 7,
+      fields: { supplier_name: 'Anconia Corp', invoice_date: 'October 14, 202', invoice_number: 'INV3001b', total: '250.00' },
+    });
+    const gc = trust.docTrustGate(db, clippedYear, 'Anconia Corp', 'invoice');
+    check("clipped 3-digit-year date (no note) → blocked", gc.ok === false && gc.reason === 'invalid-date:invoice_date');
     const okDate = seedDoc(db, tid, {
       supplier: 'Anconia Corp', when: '2026-06-03T10:01:00Z', template: 7,
       fields: { supplier_name: 'Anconia Corp', invoice_date: '05-06-2026', invoice_number: 'INV3002', total: '250.00' },

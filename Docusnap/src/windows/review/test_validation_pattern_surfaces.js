@@ -128,7 +128,7 @@ console.log('\nTHE MIRROR MUST NOT GO STALE — the renderer still implements th
   // The three JS readers carry the SAME month-name regex fragment as the canonical door, so the badge/wizard/drawn
   // reader can never disagree with what confirm files.
   const FRAG = '(?:st|nd|rd|th)?\\s*[,./\\\\-]?\\s*([A-Za-z]{3,9})\\.?\\s*[,./\\\\-]?\\s*(\\d{2}|\\d{4})$/i';
-  for (const [label, rel] of [['filing/handler.js parseDate (the confirm door)', ['..', '..', '..', 'src', 'modules', 'filing', 'handler.js']],
+  for (const [label, rel] of [['database/modules/date_parse.js parseDate (the confirm door)', ['..', '..', '..', 'database', 'modules', 'date_parse.js']],
                               ['review/renderer.js _matchStrictDate (drawn dates)', ['renderer.js']],
                               ['teach-ui/teach.js _parsesAsDate (the wizard\'s date check)', ['..', 'shared', 'teach-ui', 'teach.js']]]) {
     const src = fs.readFileSync(path.join(__dirname, ...rel), 'utf8');
@@ -139,7 +139,7 @@ console.log('\nTHE MIRROR MUST NOT GO STALE — the renderer still implements th
   // Oracle C3 (2026-09-14): the MONTH-FIRST fragment is pinned LITERALLY too — its day→year separator is the one
   // place the rule must NOT allow "nothing" (digits→digits: "Aug 2026" would otherwise split into 20 + 26).
   const FRAG_MDY = '(?:(?:st|nd|rd|th)\\s*[,./\\\\-]?\\s*|\\s*[,./\\\\-]\\s*|\\s+)(\\d{2}|\\d{4})$/i';
-  for (const [label, rel] of [['filing/handler.js parseDate', ['..', '..', '..', 'src', 'modules', 'filing', 'handler.js']],
+  for (const [label, rel] of [['database/modules/date_parse.js parseDate', ['..', '..', '..', 'database', 'modules', 'date_parse.js']],
                               ['review/renderer.js _matchStrictDate', ['renderer.js']],
                               ['teach-ui/teach.js _parsesAsDate', ['..', 'shared', 'teach-ui', 'teach.js']]]) {
     const src = fs.readFileSync(path.join(__dirname, ...rel), 'utf8');

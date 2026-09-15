@@ -4,6 +4,9 @@ const path = require('path');
 // Learning Repair "start fresh" (mig 90): a stamped document leaves the graduation window + roster
 // exactly as it leaves getFieldFormats — '' until stamped (test_learning_excluded_readers.js).
 const { learningExcludedSql } = require('./machine_vias');
+// The ONE date parser (shared with filing's confirm door + folder builder), so the auto-file date gate
+// and the re-read holds accept EXACTLY the dates a human confirm/the filename builder accept. See date_parse.js.
+const { parseDate: _parseDate } = require('./date_parse');
 
 /**
  * database/modules/trust.js
@@ -177,26 +180,16 @@ const _dateish = v => {
   return _MONTHS.test(s) && /\d/.test(s);                           // 6 Aug 2026
 };
 
-// Calendar-bounded date validity (reggie T1). The shared date PATTERN is unbounded, so a
-// STRICT date field could auto-file "45/67/8901", "13/13/2026" or "31/02/2026" with no flag.
-// This bounds day/month; leap-lenient (Feb 29 allowed in any year) so it never false-rejects
-// a genuinely valid date. It CANNOT catch a wrong-but-valid date (a mis-read month that is
-// still a real date) — that residual needs cross-field/parse consistency, not a shape check.
-const _MONTH_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-const _MONTH_NUM = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+// Date validity = "a real calendar date the confirm door + folder builder would accept" — delegated to the
+// ONE shared parser (database/modules/date_parse.parseDate). The previous local copy validated day+month but
+// NEVER the year, so a clipped 'October 14, 202' / a 2-digit numeric '9/8/25' passed — a gap in the STRICT
+// auto-file date gate below AND the source of the "Read differently after learning — check which is right"
+// noise note (rereadHolds.js:110 suppression guard). Delegating makes the gate agree exactly with the human
+// door: the year is required (4-digit, or a 2-digit month-name year pivoted at 69; 3-digit refused) and the
+// value must round-trip a real calendar date (so 31/02, non-leap 29/02, and rollovers are refused). reggie +
+// gary → Oracle SIGN-OFF-W/COND 2026-09-15. Pinned in test_scope_trust.js §10 + a byte-identical parse test.
 function _validDate(v) {
-  const s = String(v == null ? '' : v).trim();
-  if (!s) return false;
-  const num = s.match(/^(\d{1,4})[/\-.](\d{1,2})[/\-.](\d{1,4})$/);
-  if (num) {
-    const day = num[1].length === 4 ? +num[3] : +num[1];   // YYYY-MM-DD vs DD-MM-YYYY
-    const mon = +num[2];
-    return mon >= 1 && mon <= 12 && day >= 1 && day <= _MONTH_DAYS[mon - 1];
-  }
-  const mon = _MONTH_NUM[(s.match(/[A-Za-z]{3,}/) || [''])[0].slice(0, 3).toLowerCase()];
-  const dayTok = s.match(/\b(\d{1,2})\b/);
-  if (mon && dayTok) { const d = +dayTok[1]; return d >= 1 && d <= _MONTH_DAYS[mon - 1]; }
-  return false;
+  return _parseDate(String(v == null ? '' : v).trim()) != null;
 }
 
 // IBAN mod-97 checksum (reggie T2): rearrange (move the first 4 chars to the end), map letters
