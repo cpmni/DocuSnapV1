@@ -131,6 +131,18 @@ contextBridge.exposeInMainWorld('scanfinder', {
   },
 });
 
+// The shared teach doc-picker (shared/thumbs.js) loads page-1 thumbnails through
+// window.docusnap.getDocumentThumbnail — the CORE app's global name. On the client the bridge is
+// `scanfinder`, so `window.docusnap` is otherwise undefined and every teach thumbnail came back blank.
+// Expose a MINIMAL `docusnap` with just that one method (it unwraps the /v1 {status,json:{thumbnail}}
+// envelope to the thumbnail string; the server resolves the file by id, F-02). Same narrow, token-free
+// posture as the scanfinder bridge; the search list uses its own SearchThumbs+transport and is untouched.
+contextBridge.exposeInMainWorld('docusnap', {
+  getDocumentThumbnail: (id) => ipcRenderer.invoke('client-get-thumbnail', id)
+    .then((r) => (r && r.status === 200 && r.json ? (r.json.thumbnail || null) : null))
+    .catch(() => null),
+});
+
 // ── Keyboard-focus repair (Windows) — mirrors the core app's preload ───────────
 // Electron on Windows can leave the render widget WITHOUT keyboard focus while the OS
 // window still has focus, so a click into a text field shows no caret until you click

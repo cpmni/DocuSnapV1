@@ -16,7 +16,7 @@
  *   SCANFINDER_CLIENT_API_URL  optional env override of the saved server (dev/launcher).
  */
 
-const { app, BrowserWindow, ipcMain, dialog, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, screen, Tray, Menu } = require('electron');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -39,6 +39,8 @@ const ALLOW_SELF_SIGNED = !app.isPackaged && process.env.SCANFINDER_CLIENT_ALLOW
 // name WITHOUT moving userData (app.getPath('userData') derives from the name — pin the current path first).
 { const ud = app.getPath('userData'); app.setName('ScanFinder Search Client'); app.setPath('userData', ud); }
 let win = null;
+let clientTray = null;      // system-tray icon (kept referenced so it isn't GC'd)
+let isQuitting = false;     // true only on a real quit (tray Exit / OS) — lets the main window actually close instead of hiding to tray
 let serverConfig = null;   // { host, port, tls } | null
 let client = null;         // rebuilt whenever the server changes
 // Search pop-out (client search parity S1, 2026-09-13; Oracle-vetted): a SECOND top-level window that runs the
@@ -134,8 +136,32 @@ function createWindow() {
   win.webContents.on('did-finish-load', grabFocus);
   win.on('focus', grabFocus);
   win.on('show', grabFocus);
-  // The main window is the sign-in surface: when it goes, the search pop-out goes with it (Oracle seam 7).
+  // Close-to-tray: a USER close (the X) hides the main window and keeps the app running in the tray
+  // (mirrors the core app). The app fully quits ONLY via the tray's Exit (or an OS/before-quit), which
+  // sets isQuitting so this interceptor lets the close proceed. The token stays in main either way.
+  win.on('close', (e) => { if (!isQuitting) { e.preventDefault(); try { win.hide(); } catch {} } });
+  // The main window is the sign-in surface: when it goes (a REAL close), the pop-outs go with it (Oracle seam 7).
   win.on('closed', () => { win = null; closeSearchWindow('main-window-closed'); closeTeachWindow('main-window-closed'); });
+}
+
+// ── System tray — the client tucks to the tray on close and keeps its connection alive; it fully quits
+//    only via the tray's Exit (or a real OS/before-quit). Mirrors the core app's tray behaviour. ──────
+function showMainWindow() {
+  if (win && !win.isDestroyed()) { try { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } catch {} }
+  else createWindow();
+}
+function setupClientTray() {
+  if (clientTray) return;
+  try {
+    clientTray = new Tray(path.join(__dirname, 'assets', 'icon.ico'));
+    clientTray.setToolTip('ScanFinder Client');
+    clientTray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Open ScanFinder Client', click: () => showMainWindow() },
+      { type: 'separator' },
+      { label: 'Exit', click: () => { isQuitting = true; app.quit(); } },
+    ]));
+    clientTray.on('double-click', () => showMainWindow());
+  } catch (e) { try { console.error('[client-tray] could not create tray: ' + (e && e.message)); } catch {} }
 }
 
 // ── Search pop-out window ──────────────────────────────────────────────────────
@@ -759,6 +785,12 @@ app.whenReady().then(() => {
   serverConfig = loadServerConfig();
   if (serverConfig) buildClient(serverConfig);
   createWindow();
+  setupClientTray();
 });
+// A real quit (tray Exit, OS shutdown, Ctrl-C) must let the main window's close proceed instead of
+// hiding it to the tray.
+app.on('before-quit', () => { isQuitting = true; });
+// The main window HIDES to the tray on the X (close intercepted, not destroyed), so this normally never
+// fires while the app is tray-resident; it still quits cleanly on a real teardown.
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

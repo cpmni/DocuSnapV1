@@ -3481,6 +3481,22 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 169 (security enforcement defaults): ${e.message}`); }
   }
 
+  // ── migration 170: turn teach-over-client ON by default (owner decision 2026-09-15). mig 168 seeded
+  //    teach_over_client_enabled 'false' on every DB, so this UPSERT-forces it 'true' (INSERT OR IGNORE
+  //    would be a dead guard against that existing seed). Remote teaching from the search client is now
+  //    enabled out of the box; it stays ADMIN + entitlement + license gated at the /v1 routes, and a
+  //    later deliberate 'false' still turns it off (the switch is the kill switch). Pinned by
+  //    database/test_teach_default_on.js. A permanent default flip (not a test-build force-ON), so it
+  //    carries the release-gate label:
+  // @DEFAULT_FLIP 170
+  if (!applied.has(170)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('teach_over_client_enabled', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (170)').run();
+      console.log('JS migration 170 applied: teach_over_client_enabled ON by default (UPSERT true)');
+    } catch (e) { console.warn(`  migration 170 (teach_over_client default ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

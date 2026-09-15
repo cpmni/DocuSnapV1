@@ -237,7 +237,9 @@ async function main() {
   const mkDoc = () => db.prepare("INSERT INTO documents (document_type_id, original_filename, stored_filename, status, folder_path, logo_phash, keyword_fingerprint) VALUES (?,?,?,?,?,?,?)")
     .run(typeId, 'exemplar.pdf', 'exemplar.pdf', 'needs_review', '/inbox', null, '[]').lastInsertRowid;
 
-  // auth + switch (the switch is still OFF here — seeded false by migration 168)
+  // auth + switch. mig 170 now DEFAULTS teach_over_client_enabled ON, so force it OFF here to exercise
+  // the disabled path (originally seeded false by migration 168).
+  learning.setSetting(db, 'teach_over_client_enabled', 'false');
   const docA = mkDoc();
   check('POST /teach/commit: no token → 401', (await commit({ body: commitBody({ document_id: docA }) })).status === 401);
   check('POST /teach/commit: readonly → 403', (await commit({ token: readT, body: commitBody({ document_id: docA }) })).status === 403);

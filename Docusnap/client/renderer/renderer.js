@@ -315,8 +315,6 @@ $('import-profile-btn').addEventListener('click', async () => {
   $('srv-cert-name').textContent = 'from profile · ' + (r.fingerprint ? r.fingerprint.slice(0, 17) + '…' : '');
   await _finishConnect(await api.connectAccept({ host: r.host, port: r.port }));
 });
-// The old "fetch certificate" button now runs the same verified connect as Connect (fetch + check + pin).
-$('fetch-ca-btn').addEventListener('click', () => $('connect-btn').click());
 // ── S3: scan a QR (the "Connect a client" code from the main PC) → auto-fill + auto-verify against its
 //    fingerprint (the off-network anchor). jsQR decodes the pixels in the renderer; the fingerprint check + pin
 //    happen in MAIN (connectVerified). ──────────────────────────────────────────────────────────────────────
