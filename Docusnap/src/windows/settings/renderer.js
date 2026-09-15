@@ -413,12 +413,30 @@ async function initClientApiSection() {
     }
     showAddrWarn('');   // valid (or turning off) → clear the prompt
     try {
+      // Persist the typed address + port BEFORE enabling. clientApiSetEnabled reads them from the DB
+      // server-side, and the field's own change-saver is fire-and-forget, so without an awaited write
+      // here the server can start on the stale/loopback host (the "IP stays at localhost" bug).
+      if (tgl.checked) {
+        try { await api.setSetting('client_api_host', (host.value || '').trim()); } catch {}
+        try { await api.setSetting('client_api_port', (port.value || '').trim()); } catch {}
+      }
       render(await api.clientApiSetEnabled(tgl.checked));
       // The listener binds asynchronously, so re-poll shortly to flip "starting…" → "Running".
       setTimeout(async () => { try { render(await api.clientApiGetStatus()); renderCert(await api.clientApiCertStatus()); await renderConnectCard(); } catch { /* ignore */ } }, 900);
     } catch (e) { statusEl.textContent = 'Error: ' + (e && e.message); tgl.checked = !tgl.checked; }
   });
-  const saver = (el, k) => el.addEventListener('change', () => { try { api.setSetting(k, el.value.trim()); } catch {} });
+  // Persist host/port on edit; if the server is already running, restart it so the new address/port
+  // rebinds immediately (the listener is idempotent, so a change alone never takes effect otherwise).
+  const saver = (el, k) => el.addEventListener('change', async () => {
+    try { await api.setSetting(k, el.value.trim()); } catch {}
+    if (tgl.checked) {
+      try {
+        await api.clientApiSetEnabled(false);
+        render(await api.clientApiSetEnabled(true));
+        setTimeout(async () => { try { render(await api.clientApiGetStatus()); renderCert(await api.clientApiCertStatus()); await renderConnectCard(); } catch { /* ignore */ } }, 900);
+      } catch (e) { statusEl.textContent = 'Error: ' + (e && e.message); }
+    }
+  });
   saver(host, 'client_api_host'); saver(port, 'client_api_port');
   // Clear the red prompt as soon as the person starts typing an address/port.
   host.addEventListener('input', () => { if (host.value.trim()) showAddrWarn(''); });
