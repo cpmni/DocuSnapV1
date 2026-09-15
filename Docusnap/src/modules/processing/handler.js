@@ -9,6 +9,8 @@ const os   = require('os');
 const path = require('path');
 const fs   = require('fs');
 const diaglog = require('../diaglog');
+// D2 / D-C11: viewer-scoped count broadcasts (helper resolves the desktop operator).
+const { broadcastCounts, broadcastReviewCount, broadcastStuckCount } = require('../../lib/countBroadcast');
 const { buildSegmentArgs, buildSplitPlan } = require('./split_plan');
 const { clampSlipCount, nextSlipRange, slipPackName, pad4 } = require('./slip_pack');
 
@@ -2490,8 +2492,9 @@ function register(ctx) {
     try {
       const db = getDb();
       runHoldingReconcile(db, logger);
-      notifyMainWindow?.('stuck-count-changed',
-        require('../../../database/modules/documents').getStuckCount(db));
+      // D2 / D-C11: startup reconcile fires PRE-LOGIN (no operator yet) — a system-health count, so
+      // broadcast the GLOBAL stuck count explicitly (SYSTEM_ACTOR). The post-login IPC pull re-scopes.
+      broadcastStuckCount(notifyMainWindow, db, require('../../../database/modules/departmentVisibility').SYSTEM_ACTOR);
     } catch (e) { logger?.warn(`[reconcile] startup sweep skipped: ${e.message}`); }
   });
 
@@ -3425,8 +3428,7 @@ function register(ctx) {
     // and refresh the stuck-doc count for the launchpad surface.
     runHoldingReconcile(db, logger);
     try {
-      notifyMainWindow?.('stuck-count-changed',
-        require('../../../database/modules/documents').getStuckCount(db));
+      broadcastStuckCount(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
     } catch {}
     // A SPAWN_FAILED sentinel that was healed by the re-drive (failedShards now empty) does not count
     // against success; an unhealed shard (failedShards non-empty) or a real non-zero worker exit does.
@@ -4782,8 +4784,7 @@ function register(ctx) {
         const documents = require('../../../database/modules/documents');
         notifyMainWindow('doc-auto-filed', { docId: filedAll[filedAll.length - 1], count: getAutoFiledIds(db).length });
         notifyMainWindow('scope-auto-filed', { supplier: sup, typeSlug: slug, filed: filedAll.slice() });
-        notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-        notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+        broadcastCounts(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
       } catch { /* broadcast is best-effort */ }
     }
     return { ok: true, filed: filedAll, dropped: droppedAll, passes };
@@ -5004,7 +5005,7 @@ function register(ctx) {
     const ev = _reviewEvents ? _reviewEvents.get(db, eventId) : null;
     if (!ev) return { ok: false, reason: 'unknown-event', docs: [] };
     const documents = require('../../../database/modules/documents');
-    return { ok: true, docs: documents.getByIds(db, ev.ids || []) };
+    return { ok: true, docs: documents.getByIds(db, ev.ids || [], getCurrentUser()) };   // D2: viewer-scoped
   });
   // File All Ready kept-back receipt: the renderer sends only the DROPPED set (docId + reason code) — never
   // filed ids (those were recorded per-doc as approved|bulk). The ledger merges the reasons into this run's
@@ -5079,8 +5080,7 @@ function register(ctx) {
     // a convention undo forgets a filing rule — nothing was put back, so no put_back receipt (Oracle C5)
     if (undone.length && ev.undo.type !== 'convention') recordReviewEvent(db, { kind: 'put_back', ids: undone, scope: ev.scope || { supplier: null, typeSlug: null }, undo: null });
     try {
-      notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-      notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+      broadcastCounts(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
     } catch { /* count broadcast is best-effort */ }
     return { ok: true, undone, refused, event: updated };
   });
@@ -5112,8 +5112,7 @@ function register(ctx) {
     } catch { /* audit is best-effort */ }
     if (undone.length) recordReviewEvent(db, { kind: 'put_back', ids: undone, scope: { supplier: null, typeSlug: null }, undo: null });   // B1: an undo is a receipt too
     try {
-      notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-      notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+      broadcastCounts(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
     } catch { /* count broadcast is best-effort */ }
     return { ok: true, undone, refused };
   });
@@ -6111,8 +6110,7 @@ function register(ctx) {
       try { fs.unlinkSync(recordedOriginal); } catch (e) { logger?.warn('Could not delete original after split:', e.message); }
     }
 
-    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    broadcastCounts(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
 
     return { success: true, files: createdFiles, docIds };
   });
@@ -6498,7 +6496,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       } catch (e) {
         logger?.warn(`Could not stow failed original ${msg.original_filename || '?'}: ${e.message}`);
       }
-      try { notifyMainWindow?.('stuck-count-changed', documents.getStuckCount(db)); } catch {}
+      broadcastStuckCount(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped (best-effort inside)
     }
     return;
   }
@@ -6628,8 +6626,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
     if (exFields) logger.log(`  Fields: ${exFields}`);
   }
 
-  notifyMainWindow('review-count-changed', documents.getReviewCount(db));
-  notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+  broadcastCounts(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
 
   // ── Deferred FILE IO (QA audit #4) ───────────────────────────────────────────
   // Everything above is fast, indexed DB work that MUST stay on the synchronous
@@ -6873,7 +6870,7 @@ async function _autoFileDoc(db, docId, folderPath, notifyMainWindow, logger) {
   logger?.log(`Auto-filed (100%): ${doc.original_filename} → ${fr.filename}`);
   try {
     notifyMainWindow?.('doc-auto-filed', { docId, count: getAutoFiledIds(db).length });
-    notifyMainWindow?.('review-count-changed', documents.getReviewCount(db));
+    broadcastReviewCount(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped (no-op if notify absent)
   } catch {}
   // Slice 1 (learn-on-commit): auto-file is the THIRD commit route — keep the matched template's
   // identity converging on it too, or a supplier whose docs all auto-file would never converge past
