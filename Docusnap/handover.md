@@ -1,58 +1,36 @@
-# Handover — mig 162 skew arc + Quick File/Departments plan
-Branch: feat/teach-side-overnight · Updated: 2026-09-12
+# Handover — Quick File shipped; Departments next
+Branch: feat/teach-side-overnight · Updated: 2026-09-15 (evening)
 
 ## Goal
-Ridgeway #358 skew exhibit (ref `VS-72672` vs page `WS-73673`): measure, fix DARK, gate. Then the owner's plan for a
-non-OCR "Quick File" lane + department-scoped document visibility. Both done; gate half-run. Full detail:
-`HANDOVER_2026-09-12_EVENING.md` (read first), `CLAUDE.md` LATEST block.
+Ship Quick File (non-OCR "just file this doc") safely as a customer default; next build-out = Departments (access control).
 
-## Done (committed, NONE pushed — owner's call)
-- `79cb655` feat mig 162 `deskew_retry_field_adopt` DARK (`process_docs.py` helpers + call site, `engine.py` hoisted `_FILING_SANITY_YEAR_ABSENT_MARK`, mig 162, `dark_switches.js` → 46, `_reconcileEnv` nesting, harness `RR_LOG_MATCH`/`RR_LOG_OUT`, pins 62 py + `test_migration162_deskew_field_adopt.js`, runner `TESTING/_measure/deskew_field_adopt_20260912/run_gate.sh`)
-- `7fd1400` docs plan `docs/designs/QUICKFILE_AND_DEPARTMENTS_PLAN_2026-09-12.md` (+ eric arch doc, barry brainstorm); Oracle blocks in `docs/oracle_log.md`
-- `a1529a1` `93cf1ec` `cd39307` `6588b0d` handover/docs (gate result, census, dev-app kill note)
-- Published plan page: https://claude.ai/code/artifact/c93e7a50-036d-40af-bf88-b802fb55c25e
+## Done (committed — 3 UNPUSHED: ee5d756, b14209e, bdf1f3b)
+- `ee5d756` fix(settings): search-client IP fix — await-save host/port before enabling + restart listener on host/port edit (was binding loopback despite a typed LAN IP).
+- `b14209e` feat(quickfile): Q-C2 write-side safety — `src/lib/intakeGuard.js` + belt in `database/modules/documents.js` (deconfirm + requeue) + guards at reviewService.confirm / repairService.sendBackToReview / reprocess-document / settings raw-deconfirm. /v1 contract 1.7.0→1.8.0 (+`intake` on search DTO); client CLIENT_CONTRACT 1.8.0 (lockstep). Pins: test_intake_guard(.source_contract).
+- `bdf1f3b` feat(quickfile): **graduate to default-ON (mig 171 @DEFAULT_FLIP)** + delist from dark_switches (count 51→50, both count pins) + Chris finding-1 fix (toolbar/menu/bulk send-back hide in searchResults.js) + finding-5 copy. Chris report `docs/CHRIS_FULL_APP_REVIEW_2026-09-15.md`.
+- Both installers built at bdf1f3b: core `dist\ScanFinder Setup 2.0.0-r20260915-1509-bdf1f3b.exe` (hardened, smoke 14/14) + client `client\dist\ScanFinder Search Client Setup 1.0.2-r20260915-1549-bdf1f3b.exe`. Full pins 376/376.
 
-## In progress — UNCOMMITTED
-- Nothing tracked. Untracked `HANDOVER_2026-09-12.md` (the morning handover, previous session) — leave or add like the others.
-- Gate BASE cell (RR_APP_ENV=0 + parent, = mig 153 OFF) still running detached at wrap: OFF arm done, ON arm in flight;
-  outputs `stress_test/out/deskew_field_adopt_20260912/base_{off,on}.*`, diff prints to `<scratchpad>/gate_all.log`
-  (session scratch — if lost, re-run `bash TESTING/_measure/deskew_field_adopt_20260912/run_gate.sh base`).
+## In progress — UNCOMMITTED (both docs, safe to commit)
+- `docs/designs/DEPARTMENTS_D2_PLAN_2026-09-15.md` (NEW — the Departments build-out plan; owner asked for it).
+- `handover.md` (this file). Pre-existing `M handover.md` is superseded by this write.
 
 ## Next steps
-1. Push (owner). Relaunch the dev app — the system KILLED it for low memory during the gate; arming dance for key 46
-   (`HANDOVER_2026-09-12_EVENING.md` §3), then FULL reprocess #358 → expect `WS-73673` @82 held, no `Use` button.
-2. Read the base-cell diff; pass = M=0 + wouldFile set-EQUALITY. Armed cell already PASS (M=0, 0 deltas, 0 fires).
-3. Flip decision for 162 needs the 605 corpus (`RR_DB` → a DB holding it; none on disk) + Oracle; zero fires ⇒ DARK.
-4. Plan: answer the 10 questions (§8 of the plan doc); approve D-C6 = `accessService.gateEnabled()` ignores
-   `ACCESS_GATE_ENABLED` when `app.isPackaged` (one line, pattern `processing/handler.js:2286-2294`, pin
-   `src/services/test_access_service.js:117-127`) as its own commit BEFORE anything else.
-5. Learning Repair candidates from the baseline: #163 (`DN-64470` confirmed, page prints `DN-64472`), #273 (Marlowe SO
-   confirmed under Vellum & Crane). Adjudicate at the pixels.
-6. New backlog item (top of `pendingfeatures.md`): the hold-RELEASE class — 6 delivery notes whose raw "doesn't appear
-   on this page" was a skew garble of the full-page pass; straightening corroborates the SAME value @100. Own Oracle arc.
+1. Owner runs the DB-encryption ship drills 1-3 on the installed hardened build (recipe `docs/designs/DB_ENCRYPTION_SHIP_DRILLS_2026-09-15.md`) → closes that arc. Their hands (GUI).
+2. **Build out Departments** per `docs/designs/DEPARTMENTS_D2_PLAN_2026-09-15.md`: D2 sweep (thread viewer + visibleDocSql into ~12 readers + count-broadcast collapse + consistency/mutation pins) → D3/D4 (taggers + Settings UI) → D2b (/v1 upload tagging) → flip. Each slice: advisor + Oracle gate + corpus M=0.
+3. Push the 3 commits when owner says.
+4. Quick File v1.1 fast-follows (queued, owner-vet): in-place Edit details; typed "100%"→"Typed"; onboarding line; drop "No OCR"; delete+refile ghost folder (app-wide); recycle-bin wording (app-wide).
 
-## Decisions & rationale (non-obvious)
-- Retry door = ref/date ROLE note only (never supplier-only): a role note is never soft-clearable → review-bound by
-  construction; a supplier-only note would pay a full straighten pass for zero upside (Oracle C1).
-- Whole-doc adopt stays gated on the RAW engine flag: opening it to note-only docs would also widen the dev-armed
-  `DESKEW_CORROB_AUTOFILE` population, the one road that skips a hold (Oracle S1).
-- Field adopt requires `_corrob_licensed_keyword` (no disagree + keyword witness), not bare `independent_agree`.
-- Overall becomes min(raw, straightened): the 88 floor is NOT a second checkpoint (floor relax for licensed records) —
-  the role NOTE is the sole checkpoint (pinned C7).
-- Plan rulings: dept delete = RESTRICT + retire (SET NULL is fail-open); typed docs marked `intake='direct'` with a
-  NON-switchable learning clause (not `confirmed_via`); drag-drop v1.1 (changes the audit's M4/M9 boundary).
+## Decisions & rationale
+- Quick File scope = local + /v1, NO in-place edit v1 (edit-by-refile; owner chose). Departments deferred as its own build.
+- Flip enables BOTH local + /v1 lanes (same switch) — Oracle NOD: safe with Departments DARK (no isolation promised; /v1 still entitlement+seat+admin gated; learning-exclusion is NON-switchable).
+- mig 171 = UPSERT (not INSERT OR IGNORE — mig 165 pre-seeded 'false'); delist from dark_switches or build_arming disarms it (release gate enforces both).
 
 ## Gotchas
-- Parent pin `test_deskew_review_retry.py` C14 uses `str.find` first occurrence — never write the literals
-  `_deskew_retry_apply_holds(raw_extractions, raw2)` / `raw_extractions = raw2` above the retry block.
-- `_appSpawnEnv` spreads `{...process.env, ...appEnv}`: an explicit env var only wins when the DB lacks the key 'true';
-  a mig-153-OFF cell needs `RR_APP_ENV=0` + `DESKEW_REVIEW_RETRY=1` explicitly.
-- Bash heredocs with backticks/quotes broke twice — write a scratch file, `cat >>` it.
-- Live DB read-only via `ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe <script>`; writes = owner `!`.
-- Arc B (mig 160) abstains on #358 by its own bar (3 human confirms < 5) — not a bug; don't "fix" it.
+- Shared search-ui edits: change `src/windows/shared/search-ui/*` ONLY, then `node scripts/sync-client-search.js` (client copy is generated; no-direct-IPC pin scans comments too).
+- `/v1` intake lands `department_id=NULL` — MUST tag when Departments ships (watch-item logged in both plan docs).
+- Chris sandbox still running: port 9223, PID 11360 (next /christest recycles it).
+- Live DB `%APPDATA%\ScanFinder\docusnap.db` blocked to Claude's script tools.
 
 ## Verify
-- `PYTHONIOENCODING=utf-8 py -3.12 python_backend/tests/test_deskew_retry_field_adopt.py` (62) · `…/test_deskew_review_retry.py` (36)
-- `ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe database/modules/test_migration162_deskew_field_adopt.js` · `…test_migration137_test_switch_reset.js` (46)
-- `npm run test:pins` → 342/343 (red = pre-existing `test_activity_strip`)
-- `bash TESTING/_measure/deskew_field_adopt_20260912/run_gate.sh armed|base|all`
+- `node scripts/run-pins.js` (376/376) · `node scripts/check-release-migrations.js` ("50 DARK keys guarded")
+- Pin: `ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron src/services/test_intake_guard.js`
