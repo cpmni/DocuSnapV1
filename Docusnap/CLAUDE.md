@@ -21,7 +21,30 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-15 DAY (security enforced by default + teach-over-client ON + S4 live-verified + a client polish loop):
+## ⏭ LATEST — 2026-09-15 EVENING (Departments D2 + D-C11 built · date-year fix · two LAN-blocker fixes · client-Review scoped · both installers rebuilt):
+**READ `HANDOVER_2026-09-15_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `8ec76de`; origin at
+`38bbb88` (the `8ec76de` docs commit is UNPUSHED, the rest pushed); tree clean; migration 171; `npm run test:pins`
+377/377.** Both installers rebuilt (signed; hardened core): `dist\ScanFinder Setup 2.0.0-r20260915-1820-38bbb88.exe`
++ `client\dist\ScanFinder Search Client Setup 1.0.2-r20260915-1824-38bbb88.exe`. **Shipped (6 commits):**
+`acd0b29` **Departments D2** — the visibility sweep + per-doc WRITE gates + count-broadcast collapse, DARK
+(`departments_enabled` off, byte-identical when empty; Oracle W/COND; primitive `departmentVisibility` + new
+`src/lib/countBroadcast.js`; pins `test_department_visibility.js` §1-§15) · `fddc003` **D-C11** processing
+broadcasts → the viewer-scoped helper (missed from acd0b29) · `16fba41` **core `127` LAN bug** —
+`client_api_host/port` are PROTECTED settings so the UI's generic `set-setting` was refused → the typed address
+never saved → server stuck on 127; fix = a dedicated admin `client-api-set-config` writer (protection UNCHANGED;
+pin `test_protected_settings.js`) · `7200a60` **client startup crash** (`lib/`+`windowBounds.js` were missing from
+the client build `files` allowlist; verified now in the asar) · `38bbb88` **date-year validator** —
+`trust._validDate` checked month+day but NEVER the year (clipped `October 14, 202` / `9/8/25` passed), a gap in
+the auto-file gate + the "Read differently…check which is right" noise note; fix = extract the ONE parser to
+`database/modules/date_parse.js`, `trust.validDate = parseDate(v) != null`, `filing` re-exports byte-identical
+(Oracle W/COND; 377/377 + a 700-corpus no-regression census green) · `8ec76de` **docs** (client-Review plan,
+UNPUSHED). **DEFERRED but SCOPE-VETTED:** Review over the search client (barry + Oracle W/COND) —
+`docs/designs/CLIENT_REVIEW_PARITY_PLAN_2026-09-15.md`. **OWED before the `departments_enabled` FLIP:** D2b (/v1
+intake dept tagging), D3/D4 (taggers + Settings UI), the denial matrix (`docs/designs/DEPARTMENTS_D2_PLAN_2026-09-15.md`).
+NEXT: push `8ec76de`? · owner live-tests both installers on the VM (core `0.0.0.0`→save+TLS; client no-crash).
+Memory `project_client_review_multiuser.md` (corrected stale claims).
+
+## Prior — 2026-09-15 DAY (security enforced by default + teach-over-client ON + S4 live-verified + a client polish loop):
 **READ `HANDOVER_2026-09-15_DAY.md` FIRST** (then `HANDOVER_2026-09-15_NIGHT.md` for the night run that
 preceded it). Branch `feat/teach-side-overnight`; **HEAD `60e37c0`; origin CURRENT (all pushed); NO
 uncommitted code; migration 170; pins 373/373.** NO installer built (owner: next builds FULLY HARDENED via
