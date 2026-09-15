@@ -184,8 +184,11 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
                                 JOIN document_types dt ON dt.id = f.document_type_id`).all()) {
     (typeFieldKeys[r.slug] || (typeFieldKeys[r.slug] = [])).push(r.key);
   }
+  // Q-C4 (Quick File): a typed (intake='direct') doc was never scanned — scoring it against the OCR
+  // pipeline would manufacture M (a .docx OCRs to nothing). Exclude it from GT selection. The clause is
+  // vacuous on the 605 corpus / any warm DB with no typed rows.
   let conf = db.prepare(`SELECT d.id, d.supplier_name, d.reference_number, d.doc_date, d.original_filename, d.stored_path, d.working_path, d.template_id, dt.slug type_slug
-    FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.status = 'confirmed'`).all();
+    FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.status = 'confirmed' AND COALESCE(d.intake,'') <> 'direct'`).all();
   // RR_IDS=11,13,300 — reprocess ONLY these confirmed docs (a targeted "why is this held" question in
   // minutes). The DB is untouched, so scope trust / formats / templates are the REAL state — unlike
   // demoting the other docs on a copy, which silently un-graduates every scope (2026-08-27 lesson).
@@ -195,7 +198,7 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
     console.log(`    [ids] RR_IDS — ${conf.length} of the confirmed docs selected (${[..._ids].join(',')})`);
   }
   const exByDoc = {};
-  for (const e of db.prepare(`SELECT e.document_id, e.field_key, e.display_value FROM extractions e JOIN documents d ON d.id = e.document_id WHERE d.status = 'confirmed'`).all())
+  for (const e of db.prepare(`SELECT e.document_id, e.field_key, e.display_value FROM extractions e JOIN documents d ON d.id = e.document_id WHERE d.status = 'confirmed' AND COALESCE(d.intake,'') <> 'direct'`).all())
     (exByDoc[e.document_id] || (exByDoc[e.document_id] = {}))[e.field_key] = e.display_value;
 
   // Stage the confirmed files into a temp folder keyed by doc<id><ext> (map back by filename).

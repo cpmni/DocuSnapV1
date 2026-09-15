@@ -56,6 +56,14 @@ function renderActions(doc) {
     });
   } else {
     if (doc.status === 'confirmed') {
+      // Quick File (Q-C2, 2026-09-15): a typed (intake='direct') doc was never scanned, so it can't be
+      // sent back to Review — hide the send-back dead-end and say why (the service refuses it regardless).
+      if (doc.intake === 'direct') {
+        const n = document.createElement('div');
+        n.textContent = 'Quick Filed — typed details, not reviewed. To change it, delete and Quick File it again.';
+        n.style.cssText = 'font-size:12px;color:var(--muted);margin-top:4px;';
+        docSection.appendChild(n);
+      } else
       // Send a filed doc back to the Review queue (Admin) — de-confirms it; the file stays put
       // until re-confirmed (repair-deconfirm keeps stored_path). First action so it's prominent.
       if (isAdmin && _cap('sendBack')) _btn(docSection, '↩ Send back to Review', () => {

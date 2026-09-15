@@ -506,6 +506,13 @@ function register(ctx) {
     // One door serves all three send-back surfaces (Repair panel + Search preview/bulk); the
     // service atomically de-confirms + retracts this doc's confirm-planted hints + deletes its
     // corrections rows (the re-confirm echo) + stamps the suspect-field notes. See repairService.
+    // Quick File (Q-C2, Oracle 2026-09-15): refuse a typed (intake='direct') doc up front so BOTH the
+    // un-plant path and the REPAIR_UNPLANT=0 raw-deconfirm fallback return the same recovery sentence
+    // (deconfirmDocument's belt is the structural backstop for the fallback).
+    {
+      const _qf = require('../../lib/intakeGuard').guard(db, docId, 'send-back');
+      if (_qf) return { ok: false, error: _qf.message };
+    }
     if (process.env.REPAIR_UNPLANT !== '0') {
       let r;
       try { r = require('../../services/repairService').sendBackToReview(db, docId, opts || {}); }

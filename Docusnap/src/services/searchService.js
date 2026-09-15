@@ -87,6 +87,7 @@ const SEARCH_ROW_FIELDS = [
   'id', 'supplier_name', 'reference_number', 'doc_date', 'status',
   'type_name', 'type_slug', 'overall_confidence', 'original_filename', 'stored_filename',
   'page_count', 'deleted_at', 'document_type_id', 'confirmed_at', 'processed_at', 'template_id',
+  'intake',   // Quick File: 'direct' for a typed doc — the search UI hides the Review dead-end for it (Q-C2)
 ];
 function projectSearchRow(row) {
   const out = {};

@@ -3763,6 +3763,14 @@ function register(ctx) {
   ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams, deskewOnce, forcedTypeSlug }) => {
     const sess    = requireRole('admin', 'edit');
     const db      = getDb();
+    // Quick File (Q-C2 / Oracle Condition B, 2026-09-15): a typed (intake='direct') doc has no scan to
+    // re-read — reprocessing would OCR-overwrite the typed metadata and force the row into Review (a
+    // stuck, corrupted state). Refuse BEFORE the busy-check and the success audit below, so a refused
+    // reprocess is neither blocked as "busy" nor recorded as a reprocess. Plain recovery sentence.
+    {
+      const _qf = require('../../lib/intakeGuard').guard(db, docId, 'reprocess');
+      if (_qf) return { success: false, error: _qf.message, code: _qf.error };
+    }
     // Multi-point licensing enforcement (F-01): reprocess re-runs the extraction
     // pipeline — same network-free cached-license re-check as bulk import.
     const licenseDenial = require('../licensing/handler').licenseDenied(db);

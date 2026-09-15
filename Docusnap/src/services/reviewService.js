@@ -22,6 +22,7 @@
  *    simply omits them.
  */
 
+const intakeGuard = require('../lib/intakeGuard');   // Quick File Q-C2: refuse the write-side learning path for a typed doc
 function fail(code, error, extra) { return { ok: false, success: false, code, error, ...(extra || {}) }; }
 
 /** Q1 switch (2026-08-22): keep the drained original on filing. Env KEEP_PROCESSED_ORIGINALS=0/1
@@ -117,6 +118,10 @@ function createReviewService(deps = {}) {
 
     const docRow = documents.getById(db, document_id);
     if (!docRow) return fail('NOT_FOUND', 'Document not found.');
+    // Quick File (Q-C2, Oracle 2026-09-15): a typed (intake='direct') row never enters the write-side
+    // learning path. Placed before ANY claim/write, so it covers desktop confirm-review, /v1 confirm,
+    // batch-correct and Edit-in-Review (allowRefile) in one spot. Fail-toward-refusal, the safe state.
+    if (intakeGuard.isDirectIntake(db, document_id)) return fail('QUICK_FILE_NOT_REVIEWABLE', intakeGuard.MESSAGES.confirm);
     // A6 (type-split arc): did THIS document carry the Fix A type-ambiguity note before the confirm?
     // Read pre-claim (the confirm clears notes); consumed by the after-hook only. Never fatal.
     let _typeSplitNoted = false;

@@ -4,7 +4,7 @@ const path = require('path');
 // Learning Repair start-fresh predicate (mig 90) — carried ONLY by getFieldValueSuggestions (the Review
 // type-ahead is a learning surface). search / the recovery browse lists / the counters / the writers
 // deliberately do NOT carry it: a stamped document stays filed, searchable and repairable.
-const { learningExcludedSql } = require('./machine_vias');
+const { learningExcludedSql, _hasIntakeColumn } = require('./machine_vias');
 const departmentVisibility = require('./departmentVisibility');   // D2 list gate (inert when no departments)
 
 // Best-effort single-row query — returns null instead of throwing (used to probe optional
@@ -366,12 +366,16 @@ function getDeletedCount(db) {
 function requeueConfirmedDocsForScope(db, { supplier_name, document_type_slug } = {}) {
   if (!document_type_slug) return { changes: 0 };
   const sn = supplier_name || null;
+  // Quick File belt (Q-C2, Oracle 2026-09-15): a typed (intake='direct') row must NEVER move to
+  // needs_review — it was never read, so it cannot be re-checked or re-learned. Column-guarded so a
+  // pre-mig-165 fixture is byte-identical; the clause is vacuous on real docs (intake IS NULL).
+  const intakeBelt = _hasIntakeColumn(db) ? " AND COALESCE(intake,'') <> 'direct'" : '';
   return db.prepare(`
     UPDATE documents
        SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL${_hasPutBackAt(db) ? ", put_back_at = datetime('now')" : ''}
      WHERE status = 'confirmed'
        AND (@sn IS NULL OR supplier_name = @sn COLLATE NOCASE)
-       AND document_type_id = (SELECT id FROM document_types WHERE slug = @slug)
+       AND document_type_id = (SELECT id FROM document_types WHERE slug = @slug)${intakeBelt}
   `).run({ sn, slug: document_type_slug });
 }
 
@@ -396,8 +400,12 @@ function deconfirmDocument(db, id) {
   const declineStamp = (_hasRefileDeclined(db) && _putbackRefileEnabled(db))
     ? ", refile_declined_at = CASE WHEN putback_refiled_at IS NOT NULL THEN datetime('now') ELSE refile_declined_at END"
     : '';
+  // Quick File belt (Q-C2, Oracle 2026-09-15): a typed (intake='direct') row can never be sent back
+  // to Review — the structural backstop behind intakeGuard's user-facing refusal, so even a future
+  // caller that skips the guard cannot un-confirm a typed doc. Column-guarded + vacuous on real docs.
+  const intakeBelt = _hasIntakeColumn(db) ? " AND COALESCE(intake,'') <> 'direct'" : '';
   return db.prepare(
-    `UPDATE documents SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL${viaClear}${pbStamp}${declineStamp} WHERE id = ? AND status = 'confirmed'`
+    `UPDATE documents SET status = 'needs_review', confirmed_at = NULL, confirmed_by_username = NULL${viaClear}${pbStamp}${declineStamp} WHERE id = ? AND status = 'confirmed'${intakeBelt}`
   ).run(id);
 }
 // Column-presence cache for documents.refile_declined_at / putback_refiled_at (mig 87) — WeakMap per DB

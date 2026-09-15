@@ -39,6 +39,7 @@
 
 const documents = require('../../database/modules/documents');
 const learning = require('../../database/modules/learning');
+const intakeGuard = require('../lib/intakeGuard');   // Quick File Q-C2: refuse send-back for a typed doc (belt backstops it)
 
 const NOTE_PREFIX = 'Sent back from Learning Repair';
 const GENERIC_NOTE = NOTE_PREFIX + ' — please re-check this document before filing.';
@@ -60,6 +61,10 @@ function _learningExcluded(db, docId) {
 }
 
 function sendBackToReview(db, docId, { suspects, source } = {}) {
+  // Quick File (Q-C2, Oracle 2026-09-15): a typed (intake='direct') row can't be sent to Review — refuse
+  // with the plain recovery sentence BEFORE the transaction (the deconfirmDocument belt is the backstop).
+  const _qf = intakeGuard.guard(db, docId, 'send-back');
+  if (_qf) return _qf;
   // Chris round 17 card 8: every Search send-back said "Sent back from Learning Repair" — name the real door.
   const _prefix = source === 'search' ? 'Sent back from Search'
                 : source === 'quick_check' ? 'Sent back from Quick check'
@@ -139,7 +144,11 @@ function deleteToRecycleBin(db, docId) {
     const doc = db.prepare('SELECT status FROM documents WHERE id = ?').get(docId);
     if (!doc) return { ok: false, changes: 0 };
     let unplanted = null;
-    if (doc.status === 'confirmed') {
+    // Quick File (Q-C2 Condition C, Oracle 2026-09-15): a typed (intake='direct') doc planted NO learning
+    // (Q-C1 excludes it everywhere), so there is nothing to retract and no learning_retracted_at to stamp.
+    // Skipping keeps restore a clean no-op too (the replant branch below keys off that stamp). softDelete
+    // still runs — deleting a Quick Filed doc works normally.
+    if (doc.status === 'confirmed' && !intakeGuard.isDirectIntake(db, docId)) {
       if (_retractedAlready(db, docId)) {
         unplanted = { decremented: 0, deleted: 0, skipped: 'already-retracted' };   // Oracle C1: never twice
       } else {
