@@ -179,7 +179,7 @@ function getFieldValueSuggestions(db, documentId, fieldKey) {
   return out;
 }
 
-function getReviewQueue(db) {
+function getReviewQueue(db, viewer) {
   // review_flag_count: how many of the doc's fields carry a validation note or a
   // correction candidate — lets the review list colour "corrected/flagged" rows
   // distinctly without loading every field. Read-only enrichment; no change to
@@ -266,7 +266,7 @@ function getReviewQueue(db) {
       ) AS missing_required_labels
     FROM documents d
     LEFT JOIN document_types dt ON dt.id = d.document_type_id
-    WHERE d.status = 'needs_review'
+    WHERE d.status = 'needs_review'${departmentVisibility.visibleDocSql(db, viewer, 'd')}
     ORDER BY d.processed_at DESC
   `).all();
   _stampPutBackRefileable(db, _rows);
@@ -297,19 +297,19 @@ function _stampPutBackRefileable(db, rows) {
   } catch { /* fail-closed: a put-back doc simply stays held */ }
 }
 
-function getDeferredQueue(db) {
+function getDeferredQueue(db, viewer) {
   return db.prepare(`
     SELECT d.*, dt.name as type_name, dt.slug as type_slug
     FROM documents d
     LEFT JOIN document_types dt ON dt.id = d.document_type_id
-    WHERE d.status = 'deferred'
+    WHERE d.status = 'deferred'${departmentVisibility.visibleDocSql(db, viewer, 'd')}
     ORDER BY d.processed_at DESC
   `).all();
 }
 
 // Docs by id in the SAME shape as getReviewQueue (any non-deleted status) — used to re-surface
 // the recently AUTO-FILED (confirmed) docs into the Review list so they can be checked/edited.
-function getByIds(db, ids) {
+function getByIds(db, ids, viewer) {
   if (!Array.isArray(ids) || !ids.length) return [];
   const ph = ids.map(() => '?').join(',');
   return db.prepare(`
@@ -321,7 +321,7 @@ function getByIds(db, ids) {
       ) AS review_flag_count
     FROM documents d
     LEFT JOIN document_types dt ON dt.id = d.document_type_id
-    WHERE d.id IN (${ph}) AND d.status != 'deleted'
+    WHERE d.id IN (${ph}) AND d.status != 'deleted'${departmentVisibility.visibleDocSql(db, viewer, 'd')}
     ORDER BY d.confirmed_at DESC, d.id DESC
   `).all(...ids);
 }
@@ -343,17 +343,17 @@ function restoreDeleted(db, id) {
     "UPDATE documents SET status = ?, deleted_at = NULL WHERE id = ?"
   ).run(to, id);
 }
-function getDeletedQueue(db) {
+function getDeletedQueue(db, viewer) {
   return db.prepare(`
     SELECT d.*, dt.name as type_name, dt.slug as type_slug
     FROM documents d
     LEFT JOIN document_types dt ON dt.id = d.document_type_id
-    WHERE d.status = 'deleted'
+    WHERE d.status = 'deleted'${departmentVisibility.visibleDocSql(db, viewer, 'd')}
     ORDER BY d.deleted_at DESC
   `).all();
 }
-function getDeletedCount(db) {
-  return db.prepare("SELECT COUNT(*) as n FROM documents WHERE status = 'deleted'").get().n;
+function getDeletedCount(db, viewer) {
+  return db.prepare(`SELECT COUNT(*) as n FROM documents WHERE status = 'deleted'${departmentVisibility.visibleDocSql(db, viewer, '')}`).get().n;
 }
 
 // ── Recovery: de-confirm a scope's documents ─────────────────────────────────
@@ -363,6 +363,12 @@ function getDeletedCount(db) {
 // supplier_name / document_type_id / working_path / extractions so a reprocess re-files
 // correctly. Requires the doc-type SLUG (never scopes to "all types"). The heaviest
 // recovery intensity — "start this type's learning over" — used only when the user opts in.
+// D2 (Oracle cond 5): DELIBERATELY department-BLIND. Learning is scope-wide (supplier+type), and
+// so is un-learning: an admin's Learning-Repair requeue must reset EVERY confirmed doc in the
+// scope, across all departments, or the derived learning would go inconsistent. This is NOT a
+// visibility surface (the rows never render to the actor) — do NOT add visibleDocSql here; that
+// would silently leave other departments' docs feeding stale learning. Pinned in
+// test_department_visibility.js §14.
 function requeueConfirmedDocsForScope(db, { supplier_name, document_type_slug } = {}) {
   if (!document_type_slug) return { changes: 0 };
   const sn = supplier_name || null;
@@ -458,7 +464,7 @@ function getConfirmedDocsForScope(db, { supplier_name, document_type_slug } = {}
 
 // Same column projection as getConfirmedDocsForScope, but for a specific id set — used by
 // Learning Repair to union full-type-pool outliers into a supplier-filtered browse list.
-function getConfirmedDocsByIds(db, ids) {
+function getConfirmedDocsByIds(db, ids, viewer) {
   const list = [...new Set((ids || []).map(Number).filter(Number.isFinite))];
   if (!list.length) return [];
   const ph = list.map(() => '?').join(',');
@@ -466,7 +472,7 @@ function getConfirmedDocsByIds(db, ids) {
     SELECT d.id, d.original_filename, d.supplier_name, d.doc_date, d.reference_number,
            d.confirmed_at, d.stored_filename, d.stored_path, d.folder_path, d.working_path
     FROM documents d
-    WHERE d.status = 'confirmed' AND d.id IN (${ph})
+    WHERE d.status = 'confirmed' AND d.id IN (${ph})${departmentVisibility.visibleDocSql(db, viewer, 'd')}
     ORDER BY d.confirmed_at DESC
   `).all(...list);
 }
@@ -519,9 +525,9 @@ function getConfirmedFieldValues(db, id) {
   return out;
 }
 
-function getReviewCount(db) {
+function getReviewCount(db, viewer) {
   return db.prepare(
-    "SELECT COUNT(*) as n FROM documents WHERE status = 'needs_review'"
+    `SELECT COUNT(*) as n FROM documents WHERE status = 'needs_review'${departmentVisibility.visibleDocSql(db, viewer, '')}`
   ).get().n;
 }
 
@@ -532,8 +538,8 @@ function getReviewCount(db) {
 // file" over 20 untyped docs — this split had no "no type" leg and no acknowledged-flag
 // exemption while File All had both; Oracle C4b.1: one classifier, both sides, same commit).
 // Do not re-implement the flag logic in SQL here.
-function getReviewSplit(db) {
-  const rows = getReviewQueue(db);
+function getReviewSplit(db, viewer) {
+  const rows = getReviewQueue(db, viewer);
   // FAR two-tier rule (far_lowconf_valued_only, gate-unify slice): when ON, only a VALUED
   // below-threshold read counts as "needs a look" — the renderer caches the same setting at
   // queue load. OFF = byte-identical to today.
@@ -555,9 +561,9 @@ function _farValuedOnlyEnabled(db) {
   } catch { return false; }
 }
 
-function getDeferredCount(db) {
+function getDeferredCount(db, viewer) {
   return db.prepare(
-    "SELECT COUNT(*) as n FROM documents WHERE status = 'deferred'"
+    `SELECT COUNT(*) as n FROM documents WHERE status = 'deferred'${departmentVisibility.visibleDocSql(db, viewer, '')}`
   ).get().n;
 }
 
@@ -565,30 +571,32 @@ function getDeferredCount(db) {
 // from the capped search list), so they reflect the true volume up to 999+. confirmed_at
 // is ISO-8601 UTC, which compares lexicographically = chronologically; the index
 // idx_documents_status_conf keeps this cheap as the corpus grows.
-function getFiledCounts(db) {
+function getFiledCounts(db, viewer) {
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
   const weekAgo      = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  // The department fragment embeds the uid as an int literal (no '?'), so the single reused stmt's
+  // one positional param (confirmed_at) is unaffected.
   const stmt = db.prepare(
-    "SELECT COUNT(*) as n FROM documents WHERE status = 'confirmed' AND confirmed_at >= ?"
+    `SELECT COUNT(*) as n FROM documents WHERE status = 'confirmed' AND confirmed_at >= ?${departmentVisibility.visibleDocSql(db, viewer, '')}`
   );
   return { today: stmt.get(startOfToday).n, week: stmt.get(weekAgo).n, month: stmt.get(startOfMonth).n };
 }
 
 // "Stuck" documents — extraction failed, so they hold at status='error'. These
 // are the records behind the launchpad "couldn't be read" surface + reprocess.
-function getStuckCount(db) {
+function getStuckCount(db, viewer) {
   return db.prepare(
-    "SELECT COUNT(*) as n FROM documents WHERE status = 'error'"
+    `SELECT COUNT(*) as n FROM documents WHERE status = 'error'${departmentVisibility.visibleDocSql(db, viewer, '')}`
   ).get().n;
 }
 
-function getStuckQueue(db) {
+function getStuckQueue(db, viewer) {
   return db.prepare(`
     SELECT id, original_filename, folder_path, working_path, error_message, processed_at
     FROM documents
-    WHERE status = 'error'
+    WHERE status = 'error'${departmentVisibility.visibleDocSql(db, viewer, '')}
     ORDER BY processed_at DESC
   `).all();
 }

@@ -118,6 +118,11 @@ function applyForConfirm(db, opts) {
 
   // Candidate siblings: QUEUED only, same scope, not this document, not workflow-locked, not open
   // in front of somebody else. `document_id <> ?` is on the SELECT and on every write.
+  // D2 (Oracle cond 5): DELIBERATELY department-BLIND. A class fix propagates a ref correction across
+  // the whole (supplier, type) scope regardless of department — this is scope-wide learning, not a
+  // visibility surface (the rows never render to the actor; only their extraction values are healed).
+  // Do NOT add visibleDocSql here: it would make a same-supplier heal depend on the actor's department
+  // (a functional regression), not close a leak. See docs/designs/DEPARTMENTS_D2_PLAN §cond-5.
   let rows;
   try {
     rows = db.prepare(`

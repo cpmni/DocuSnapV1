@@ -13,6 +13,13 @@
  * membership are queried LIVE (a department/membership created mid-session takes effect next request).
  */
 
+// SYSTEM_ACTOR — the honest, greppable opt-out for a genuine unfiltered read (a maintenance sweep,
+// a system op that must see every document regardless of department). Maps to '' / {deny:false}.
+// Wire NOTHING to it without a documented reason: a future dev must never reach for `null` (which
+// fail-closes to shared-only, line ~67) or fake `{role:'admin'}` to mean "system". Pin
+// test_department_sweep.js asserts `grep SYSTEM_ACTOR` returns only intentional bypasses (today: zero).
+const SYSTEM_ACTOR = Object.freeze({ __system: true });
+
 const _tablesCache = new WeakMap();
 function _hasTables(db) {
   if (!db) return false;
@@ -42,6 +49,7 @@ function _allDepartments(db, userId) {
  *   untagged (NULL) / not configured / admin / all_departments / member → { deny:false }; else { deny:true }.
  */
 function decision(db, user, doc) {
+  if (user === SYSTEM_ACTOR) return { deny: false };     // explicit system read
   const deptId = doc && doc.department_id;
   if (deptId == null) return { deny: false };            // shared
   if (!configured(db)) return { deny: false };           // nothing configured
@@ -60,6 +68,7 @@ function decision(db, user, doc) {
  * a literal (no param plumbing across the ~12 list readers). An unknown/blank viewer sees SHARED only.
  */
 function visibleDocSql(db, user, alias = 'd') {
+  if (user === SYSTEM_ACTOR) return '';                  // explicit system read (unfiltered)
   if (!configured(db)) return '';
   if (user && user.role === 'admin') return '';
   const a = alias ? `${alias}.` : '';
@@ -69,4 +78,4 @@ function visibleDocSql(db, user, alias = 'd') {
   return ` AND (${a}department_id IS NULL OR ${a}department_id IN (SELECT department_id FROM user_departments WHERE user_id = ${uid}))`;
 }
 
-module.exports = { configured, decision, visibleDocSql };
+module.exports = { configured, decision, visibleDocSql, SYSTEM_ACTOR };

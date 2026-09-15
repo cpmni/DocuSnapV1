@@ -90,9 +90,12 @@ function createReviewService(deps = {}) {
   const recordReviewEvent    = deps.recordReviewEvent    || (() => null);
 
   // ── Queue reads (Admin/Edit; the caller gates) ────────────────────────────────
-  const queue    = (db) => documents.getReviewQueue(db);
-  const deferred = (db) => documents.getDeferredQueue(db);
-  const counts   = (db) => ({ review: documents.getReviewCount(db), deferred: documents.getDeferredCount(db) });
+  // D2: viewer scopes the read to documents the caller may see (department visibility). '' when no
+  // departments exist / admin / all_departments (byte-identical). The caller passes its actor (desktop
+  // getCurrentUser() / the /v1 session); an omitted viewer fail-closes to shared-only once configured.
+  const queue    = (db, viewer) => documents.getReviewQueue(db, viewer);
+  const deferred = (db, viewer) => documents.getDeferredQueue(db, viewer);
+  const counts   = (db, viewer) => ({ review: documents.getReviewCount(db, viewer), deferred: documents.getDeferredCount(db, viewer) });
 
   // ── Confirm / file ────────────────────────────────────────────────────────────
   async function confirm(db, actor, payload, internal = {}) {

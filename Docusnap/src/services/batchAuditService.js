@@ -112,7 +112,7 @@ function createBatchAuditService(deps) {
   // PROJECTED read — no stored_path/folder_path/working_path/ocr_text ever crosses to the renderer
   // (Oracle C5). Preview is fetched separately via get-document-pages, which resolves stored_path
   // server-side from the row (the grid supplies no path).
-  function buildGrid(db, { eventId } = {}) {
+  function buildGrid(db, { eventId, viewer } = {}) {
     const ev = getEvent(db, eventId);
     if (!ev) return { ok: false, reason: 'unknown-event', rows: [] };
     const ids = (ev.ids || []).map(Number).filter(Boolean);
@@ -127,7 +127,7 @@ function createBatchAuditService(deps) {
     const byDoc = {};
     for (const e of exRows) (byDoc[e.document_id] || (byDoc[e.document_id] = [])).push(e);
 
-    const docs = documents.getByIds(db, ids);   // returns d.* — PROJECT below, never return raw
+    const docs = documents.getByIds(db, ids, viewer);   // D2: viewer-scoped; returns d.* — PROJECT below, never return raw
     const rows = docs
       .filter(d => d.status === 'confirmed')     // C6: a put-back doc is needs_review → excluded
       .map(d => ({

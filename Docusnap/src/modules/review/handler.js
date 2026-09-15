@@ -10,6 +10,8 @@ const os = require('os');
 // counts + the template freeze judgement) must agree with getFieldFormats / scopeTrust, so a stamped
 // document leaves them too ('' until stamped; test_learning_excluded_readers.js).
 const { learningExcludedSql } = require('../../../database/modules/machine_vias');
+// D2 / D-C11: viewer-scoped count broadcasts (resolve the desktop operator inside the helper).
+const { broadcastCounts, broadcastReviewCount, broadcastStuckCount } = require('../../lib/countBroadcast');
 
 // ── Deferred source-file move (confirm/commit path) ──────────────────────────
 // commitDocument copies the original scan to its filed location immediately,
@@ -76,7 +78,9 @@ function _scheduleSourceMove(ctx, db, documents, { srcPath, originalFilename }) 
   // scheduled removal just because another confirm arrived.
   if (_pendingSourceMove) _runPendingSourceMove(ctx, 'flushed before next confirm');
 
-  if (documents.getReviewCount(db) > 0) {
+  // D2: SYSTEM read — this is source-file housekeeping ("is the queue non-empty at all"), not a
+  // viewer-facing list, so it wants the GLOBAL count regardless of department. Explicit opt-out.
+  if (documents.getReviewCount(db, require('../../../database/modules/departmentVisibility').SYSTEM_ACTOR) > 0) {
     _pendingSourceMove = { srcPath, originalFilename, timer: null };
     ctx.logger?.log(`[filing] source move deferred to next document load: ${originalFilename}`);
   } else {
@@ -112,6 +116,19 @@ function register(ctx) {
     if (!accessService.gateEnabled()) return;
     const acc = accessService.canAccessDocument(db, sess, docId);
     if (!acc.allow) throw Object.assign(new Error('You do not have permission to view this document.'), { code: 'FORBIDDEN' });
+  };
+  // D2 (Oracle cond 2): restore is the one write path whose doc is status='deleted'. canAccessDocument
+  // (accessService.js:81) denies EVERY deleted doc to non-admins BEFORE the department check, so it would
+  // wrongly block a legit restore of a SHARED (NULL) deleted doc. Gate the deleted path on the department
+  // decision DIRECTLY. Admin bypasses; inert/byte-identical when no departments exist (decision → deny:false).
+  const _departmentVisibility = require('../../../database/modules/departmentVisibility');
+  const _assertDeletedDocAccess = (db, sess, docId) => {
+    if (!accessService.gateEnabled()) return;
+    if (sess && sess.role === 'admin') return;
+    const doc = documents.getById(db, docId);
+    if (!doc) throw Object.assign(new Error('You do not have permission to view this document.'), { code: 'FORBIDDEN' });
+    const dd = _departmentVisibility.decision(db, sess, doc);
+    if (dd && dd.deny) throw Object.assign(new Error('You do not have permission to view this document.'), { code: 'FORBIDDEN' });
   };
   // Shared in-process presence map (the "being reviewed by" signal) — the SAME instance the /v1
   // client API publishes to, so a desktop reviewer is visible to clients and vice-versa.
@@ -177,8 +194,7 @@ function register(ctx) {
       }
     },
     notifyCounts: (db) => {
-      notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-      notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+      broadcastCounts(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
     },
     // Slice 3 (amount routing): capture the total's trust context before the note-clear, and — detached +
     // fail-open — auto-create an approval route from it. Both no-op unless WORKFLOW_AMOUNT_ROUTING is armed
@@ -238,7 +254,7 @@ function register(ctx) {
   ipcMain.handle('get-autofiled-grid', (_e, { eventId } = {}) => {
     requireRole('admin', 'edit');
     if (!_batchAuditEnabled()) return { ok: false, reason: 'disabled', rows: [] };
-    return batchAudit.buildGrid(getDb(), { eventId });
+    return batchAudit.buildGrid(getDb(), { eventId, viewer: getCurrentUser() });   // D2: viewer-scoped
   });
 
   // Batch correct — loops reviewService.confirm(allowRefile,bulk) per CHANGED doc in main, cross-
@@ -273,7 +289,7 @@ function register(ctx) {
     catch (e) { return { ok: false, error: 'Send-back failed (nothing was changed): ' + (e.message || e) }; }
     if (r && r.ok) {
       try { logAudit(db, { action: 'quick_check_send_to_review', action_category: 'document', target_type: 'document', target_id: id, outcome: 'success' }); } catch {}
-      try { notifyMainWindow('review-count-changed', documents.getReviewCount(db)); } catch {}
+      broadcastReviewCount(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped (best-effort inside)
     }
     return r;
   });
@@ -462,11 +478,13 @@ function register(ctx) {
     catch (e) { logger?.warn?.(`get-field-suggestions: ${e.message}`); return []; }
   });
 
-  ipcMain.handle('get-review-queue',  () => { requireRole('admin', 'edit'); return documents.getReviewQueue(getDb()); });
-  ipcMain.handle('get-deferred-queue',() => { requireRole('admin', 'edit'); return documents.getDeferredQueue(getDb()); });
-  ipcMain.handle('get-review-count',  () => { requireRole('admin', 'edit'); return documents.getReviewCount(getDb()); });
-  ipcMain.handle('get-review-split',  () => { requireRole('admin', 'edit'); return documents.getReviewSplit(getDb()); });
-  ipcMain.handle('get-deferred-count',() => { requireRole('admin', 'edit'); return documents.getDeferredCount(getDb()); });
+  // D2: every list/count read is scoped to the logged-in operator (getCurrentUser()) — department
+  // visibility. Byte-identical when no departments exist / operator is admin / all_departments.
+  ipcMain.handle('get-review-queue',  () => { requireRole('admin', 'edit'); return documents.getReviewQueue(getDb(), getCurrentUser()); });
+  ipcMain.handle('get-deferred-queue',() => { requireRole('admin', 'edit'); return documents.getDeferredQueue(getDb(), getCurrentUser()); });
+  ipcMain.handle('get-review-count',  () => { requireRole('admin', 'edit'); return documents.getReviewCount(getDb(), getCurrentUser()); });
+  ipcMain.handle('get-review-split',  () => { requireRole('admin', 'edit'); return documents.getReviewSplit(getDb(), getCurrentUser()); });
+  ipcMain.handle('get-deferred-count',() => { requireRole('admin', 'edit'); return documents.getDeferredCount(getDb(), getCurrentUser()); });
 
   // Advanced → "View learning history": list the confirmed values learned for a
   // (supplier, doc-type, field) scope, and purge a value that shouldn't exist for the field
@@ -553,7 +571,7 @@ function register(ctx) {
     // Chris round 17 card 4: derive-don't-maintain — the rolling id SET never forgets a doc that was put
     // back / sent back / re-filed by hand, so the tile counted 35 in-queue docs as "filed automatically".
     // Only docs STILL confirmed by a machine door (a via, or the import's 'Auto-filed (…)' username) count.
-    const docs = (ids.length ? documents.getByIds(db, ids) : [])
+    const docs = (ids.length ? documents.getByIds(db, ids, getCurrentUser()) : [])   // D2: viewer-scoped
       .filter(d => d && d.status === 'confirmed' && (d.confirmed_via || /^Auto-filed/.test(String(d.confirmed_by_username || ''))));
     return { count: docs.length, docs, approvedIds: approved };
   });
@@ -1273,12 +1291,14 @@ function register(ctx) {
   ipcMain.handle('defer-document', (_e, docId) => {
     const db = getDb();
     const sess = requireUnlocked(db, docId, 'defer');
+    _assertDocAccess(db, sess, docId);   // D2: a held restricted docId must not be mutable by a non-member
     return reviewService.defer(db, { username: sess.username, role: sess.role }, docId).ok;
   });
 
   ipcMain.handle('restore-deferred', (_e, docId) => {
     const db = getDb();
     const sess = requireUnlocked(db, docId, 'restore');
+    _assertDocAccess(db, sess, docId);   // D2: doc is 'deferred' (live) — canAccessDocument applies
     return reviewService.restore(db, { username: sess.username, role: sess.role }, docId).ok;
   });
 
@@ -1329,12 +1349,12 @@ function register(ctx) {
     // Blocked while under an open APPROVAL route (an open FYI route never blocks — FYI slice);
     // admin override proceeds and the route-close below leaves the honest tombstone.
     const sess = requireUnlocked(db, docId, 'delete');
+    _assertDocAccess(db, sess, docId);   // D2 per-doc write gate (live doc)
     documents.softDelete(db, docId);
     _closeRoutesForDeleted(db, [docId], sess.displayName || sess.username);
     logAudit(db, { action: 'document_deleted', action_category: 'document', target_type: 'document',
       target_id: docId, document_id: docId, outcome: 'success', metadata: { soft: true } });
-    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    broadcastCounts(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
     notifyBinChanged();
     return true;
   });
@@ -1348,14 +1368,14 @@ function register(ctx) {
   ipcMain.handle('discard-stuck-docs', (_e, ids) => {
     requireRole('admin', 'edit');
     const db = getDb();
-    const stuckIds = documents.getStuckQueue(db).map(d => d.id);
+    const stuckIds = documents.getStuckQueue(db, getCurrentUser()).map(d => d.id);   // D2: only discard stuck docs the operator can see
     const set = (Array.isArray(ids) && ids.length) ? stuckIds.filter(id => ids.includes(id)) : stuckIds;
     for (const id of set) {
       documents.softDelete(db, id);
       logAudit(db, { action: 'document_deleted', action_category: 'document', target_type: 'document',
         target_id: id, document_id: id, outcome: 'success', metadata: { soft: true, reason: 'stuck_discarded' } });
     }
-    notifyMainWindow('stuck-count-changed', documents.getStuckCount(db));
+    broadcastStuckCount(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
     notifyBinChanged();
     return { discarded: set.length };
   });
@@ -1366,17 +1386,17 @@ function register(ctx) {
   ipcMain.handle('get-deleted-queue', () => {
     requireRole('admin', 'edit');
     const { projectSearchRow } = require('../../services/searchService');
-    return documents.getDeletedQueue(getDb()).map(projectSearchRow);
+    return documents.getDeletedQueue(getDb(), getCurrentUser()).map(projectSearchRow);   // D2: viewer-scoped bin
   });
 
   ipcMain.handle('restore-document', (_e, docId) => {
-    requireRole('admin', 'edit');
+    const sess = requireRole('admin', 'edit');
     const db = getDb();
+    _assertDeletedDocAccess(db, sess, docId);   // D2: deleted-status path — dept decision direct (canAccessDocument would block shared-deleted)
     documents.restoreDeleted(db, docId);
     logAudit(db, { action: 'document_restored', action_category: 'document', target_type: 'document',
       target_id: docId, document_id: docId, outcome: 'success' });
-    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    broadcastCounts(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
     notifyBinChanged();
     return true;
   });
@@ -1386,12 +1406,11 @@ function register(ctx) {
   ipcMain.handle('restore-all-deleted', () => {
     requireRole('admin', 'edit');
     const db = getDb();
-    const ids = documents.getDeletedQueue(db).map(d => d.id);
+    const ids = documents.getDeletedQueue(db, getCurrentUser()).map(d => d.id);   // D2: only restore what the operator can see
     for (const id of ids) documents.restoreDeleted(db, id);
     logAudit(db, { action: 'recycle_bin_restored', action_category: 'document', target_type: 'document',
       outcome: 'success', metadata: { count: ids.length } });
-    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    broadcastCounts(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
     notifyBinChanged();   // once for the whole bulk restore, never per-row
     return { restored: ids.length };
   });
@@ -1430,7 +1449,7 @@ function register(ctx) {
   ipcMain.handle('purge-all-deleted', () => {
     requireRole('admin');
     const db = getDb();
-    const ids = documents.getDeletedQueue(db).map(d => d.id);
+    const ids = documents.getDeletedQueue(db, getCurrentUser()).map(d => d.id);   // D2: admin → all; scoped for a future non-admin purge path
     for (const id of ids) _purgeOne(db, id);
     logAudit(db, { action: 'recycle_bin_emptied', action_category: 'document', target_type: 'document',
       outcome: 'success', metadata: { count: ids.length } });
@@ -1453,20 +1472,20 @@ function register(ctx) {
     // Previously-unguarded door: open routes (approve included) were stranded pending-forever
     // against the deleted docs. One notify for the whole batch (Oracle C2).
     _closeRoutesForDeleted(db, rows.map(r => r.id), deletedByName);
-    notifyMainWindow(countEvent, status === 'needs_review'
-      ? documents.getReviewCount(db) : documents.getDeferredCount(db));
+    notifyMainWindow(countEvent, status === 'needs_review'   // D2 / D-C11: viewer-scoped
+      ? documents.getReviewCount(db, getCurrentUser()) : documents.getDeferredCount(db, getCurrentUser()));
     notifyBinChanged();   // once after the loop — a 45-doc Delete-All is ONE bin event
     return { success: true, deleted: n };
   }
 
   ipcMain.handle('delete-all-review', async () => {
     const sess = requireRole('admin');
-    return _deleteQueue('needs_review', documents.getReviewQueue(getDb()), 'review-count-changed', sess.displayName || sess.username);
+    return _deleteQueue('needs_review', documents.getReviewQueue(getDb(), sess), 'review-count-changed', sess.displayName || sess.username);   // D2: admin → all
   });
 
   ipcMain.handle('delete-all-deferred', async () => {
     const sess = requireRole('admin');
-    return _deleteQueue('deferred', documents.getDeferredQueue(getDb()), 'deferred-count-changed', sess.displayName || sess.username);
+    return _deleteQueue('deferred', documents.getDeferredQueue(getDb(), sess), 'deferred-count-changed', sess.displayName || sess.username);   // D2: admin → all
   });
 
   // ── Confirm review ──────────────────────────────────────────────────────────
@@ -1740,8 +1759,7 @@ function register(ctx) {
   ipcMain.on('notify-review-complete', () => {
     if (!hasRole('admin', 'edit')) return;
     const db = getDb();
-    notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-    notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
+    broadcastCounts(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
   });
 }
 

@@ -26,7 +26,7 @@ check("CROSS-CHECKS the docId against the event ids (C5 trust model, never trust
 check("calls repairService.sendBackToReview with source 'quick_check'",
   /sendBackToReview\(db, id, \{ source: 'quick_check' \}\)/.test(ipc.slice(0, 900)));
 check("audits + refreshes the review count on success",
-  /'quick_check_send_to_review'/.test(ipc.slice(0, 1100)) && /review-count-changed/.test(ipc.slice(0, 1100)));
+  /'quick_check_send_to_review'/.test(ipc.slice(0, 1100)) && /broadcast(?:Review)?Count\(notifyMainWindow, db\)/.test(ipc.slice(0, 1100)));
 check("no license gate (it UN-files, not files) — no licenseDenied call in the handler body",
   !/licenseDenied/.test(ipc.slice(0, 1100)));
 

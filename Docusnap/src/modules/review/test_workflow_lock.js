@@ -37,7 +37,7 @@ function freshDb() {
     CREATE TABLE documents (id INTEGER PRIMARY KEY, status TEXT, working_path TEXT,
       folder_path TEXT, original_filename TEXT);
     CREATE TABLE document_routes (id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER,
-      state TEXT DEFAULT 'pending', action_required TEXT);
+      state TEXT DEFAULT 'pending', action_required TEXT, from_user_id INTEGER, to_user_id INTEGER);
   `);
   db.prepare(`INSERT INTO documents (id,status) VALUES (1,'needs_review'),(2,'needs_review')`).run();
   // doc 1 has an OPEN APPROVE route (locked); doc 2 has none. (action_required added for the

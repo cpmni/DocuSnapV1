@@ -8,6 +8,13 @@
  *     A mutation control: deleting the fragment from the "reader" breaks the consistency (the pin isn't vacuous).
  *  §5 setDocumentDepartment WIDENING rule: edit narrows to own dept; edit CANNOT widen to NULL / a foreign dept; admin can.
  *  §6 deleteDepartment refused while referenced (fail-closed); retire still restricts.
+ *  §7 documents.search honours the threaded viewer.
+ *  §8 the by-id open path runs the per-doc gate.
+ *  §9 the list/count READER sweep (getReviewQueue/Count, getByIds, getDeferred/StuckCount/Queue) honours the viewer + SYSTEM_ACTOR control.
+ *  §10 recycle bin scoped by department DECISION (canAccessDocument short-circuits deleted → the bin/restore gate keys on decision).
+ *  §11 getReviewSplit(viewer).total === getReviewCount(viewer) (D-C? no badge flicker).
+ *  §12 SYSTEM_ACTOR contract + source (unfiltered read is explicit; the sweep IPC handlers pass the operator, never SYSTEM_ACTOR).
+ *  §13 per-doc WRITE gates (Oracle cond 2): defer/delete/restore-deferred + restore-document's deleted-path twin.
  *   ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron src/services/test_department_visibility.js
  */
 const Database = require('better-sqlite3');
@@ -153,6 +160,138 @@ console.log('§8 source contract — the by-id open path runs the per-doc gate (
   const seg = i >= 0 ? h.slice(i, i + 1200) : '';
   check('_openResolvedDoc calls canAccessDocument(getCurrentUser) before opening the file',
     /canAccessDocument\(db,\s*getCurrentUser\(\)/.test(seg));
+}
+
+console.log('§9 the list/count reader sweep honours the viewer (+ SYSTEM_ACTOR control)');
+{
+  const { db, admin, editFin, editNone } = seed();
+  const documents = require('../../database/modules/documents');
+  const dv = require('../../database/modules/departmentVisibility');
+  const mk = (st, d) => db.prepare("INSERT INTO documents (original_filename, folder_path, status, department_id) VALUES ('d.pdf','/in',?,?)").run(st, d).lastInsertRowid;
+  const fin = dept.createDepartment(db, admin, 'Finance').id;
+  const hr  = dept.createDepartment(db, admin, 'HR').id;
+  dept.setMembership(db, admin, editFin.id, [fin]);
+  const rvShared = mk('needs_review', null), rvFin = mk('needs_review', fin), rvHr = mk('needs_review', hr);
+  const qids = (u) => documents.getReviewQueue(db, u).map(r => r.id).sort();
+  check('getReviewQueue: member sees shared+Finance, not HR', qids(editFin).join() === [rvShared, rvFin].sort().join());
+  check('getReviewQueue: outsider sees shared only', qids(editNone).join() === String(rvShared));
+  check('getReviewQueue: admin sees all', qids(admin).join() === [rvShared, rvFin, rvHr].sort().join());
+  check('getReviewCount: member=2, outsider=1, admin=3',
+    documents.getReviewCount(db, editFin) === 2 && documents.getReviewCount(db, editNone) === 1 && documents.getReviewCount(db, admin) === 3);
+  check('getByIds: outsider passing all three ids gets only the shared row back (drops tagged)',
+    documents.getByIds(db, [rvShared, rvFin, rvHr], editNone).map(r => r.id).join() === String(rvShared));
+  mk('deferred', fin); mk('deferred', null);
+  check('getDeferredCount: outsider = 1 (shared only)', documents.getDeferredCount(db, editNone) === 1);
+  mk('error', fin); mk('error', null);
+  check('getStuckCount/getStuckQueue: outsider = 1', documents.getStuckCount(db, editNone) === 1 && documents.getStuckQueue(db, editNone).length === 1);
+  check('control: SYSTEM_ACTOR read is unfiltered (all 3 review docs)', documents.getReviewCount(db, dv.SYSTEM_ACTOR) === 3);
+}
+
+console.log('§10 recycle bin scoped by department DECISION (canAccessDocument short-circuits deleted)');
+{
+  const { db, admin, editFin, editNone } = seed();
+  const documents = require('../../database/modules/documents');
+  const dv = require('../../database/modules/departmentVisibility');
+  const mk = (d) => db.prepare("INSERT INTO documents (original_filename, folder_path, status, department_id) VALUES ('d.pdf','/in','deleted',?)").run(d).lastInsertRowid;
+  const fin = dept.createDepartment(db, admin, 'Finance').id;
+  const hr  = dept.createDepartment(db, admin, 'HR').id;
+  dept.setMembership(db, admin, editFin.id, [fin]);
+  const delShared = mk(null), delFin = mk(fin), delHr = mk(hr);
+  const binIds = (u) => documents.getDeletedQueue(db, u).map(r => r.id).sort();
+  check('bin: member sees shared+Finance deleted, not HR', binIds(editFin).join() === [delShared, delFin].sort().join());
+  check('bin: outsider sees shared-deleted only', binIds(editNone).join() === String(delShared));
+  check('canAccessDocument denies ALL deleted to non-admin regardless of dept (why the bin gate uses decision)',
+    !access.canAccessDocument(db, editFin, delFin).allow && access.canAccessDocument(db, editFin, delFin).reason === 'deleted');
+  const doc = (id) => documents.getById(db, id);
+  check('restore gate (decision): member may restore its Finance deleted doc', dv.decision(db, editFin, doc(delFin)).deny === false);
+  check('restore gate (decision): member may restore a SHARED deleted doc', dv.decision(db, editFin, doc(delShared)).deny === false);
+  check('restore gate (decision): outsider DENIED restoring a Finance deleted doc', dv.decision(db, editNone, doc(delFin)).deny === true);
+  check('restore gate (decision): admin may restore any', dv.decision(db, admin, doc(delHr)).deny === false);
+}
+
+console.log('§11 getReviewSplit(viewer).total === getReviewCount(viewer) — same fragment, no badge flicker');
+{
+  const { db, admin, editFin, editNone } = seed();
+  const documents = require('../../database/modules/documents');
+  const mk = (d) => db.prepare("INSERT INTO documents (original_filename, folder_path, status, department_id) VALUES ('d.pdf','/in','needs_review',?)").run(d).lastInsertRowid;
+  const fin = dept.createDepartment(db, admin, 'Finance').id;
+  dept.setMembership(db, admin, editFin.id, [fin]);
+  mk(null); mk(fin); mk(dept.createDepartment(db, admin, 'HR').id);
+  for (const u of [admin, editFin, editNone])
+    check(`split.total === count for ${u.role} ${u.id}`, documents.getReviewSplit(db, u).total === documents.getReviewCount(db, u));
+}
+
+console.log('§12 SYSTEM_ACTOR contract + source — an unfiltered read is EXPLICIT, never the reader default');
+{
+  const { db, admin } = seed();
+  const dv = require('../../database/modules/departmentVisibility');
+  dept.createDepartment(db, admin, 'Finance');   // configured
+  check('visibleDocSql(SYSTEM_ACTOR) === "" even when configured', dv.visibleDocSql(db, dv.SYSTEM_ACTOR) === '');
+  check('decision(SYSTEM_ACTOR) never denies', dv.decision(db, dv.SYSTEM_ACTOR, { department_id: 999 }).deny === false);
+  const fs = require('fs'); const path = require('path');
+  const rh = fs.readFileSync(path.join(__dirname, '..', 'modules', 'review', 'handler.js'), 'utf8');
+  check('get-review-queue passes getCurrentUser(), not SYSTEM_ACTOR',
+    /get-review-queue'[\s\S]*?getReviewQueue\(getDb\(\), getCurrentUser\(\)\)/.test(rh));
+  check('SYSTEM_ACTOR referenced exactly once in review/handler.js (the documented filing-housekeeping site)',
+    (rh.match(/SYSTEM_ACTOR/g) || []).length === 1);
+}
+
+console.log('§13 per-doc write gates (Oracle cond 2) — defer/delete/restore-deferred + the deleted-path twin');
+{
+  const fs = require('fs'); const path = require('path');
+  const rh = fs.readFileSync(path.join(__dirname, '..', 'modules', 'review', 'handler.js'), 'utf8');
+  const seg = (name) => { const i = rh.indexOf(`ipcMain.handle('${name}'`); return i >= 0 ? rh.slice(i, i + 500) : ''; };
+  check('defer-document asserts per-doc access',       /_assertDocAccess\(db, sess, docId\)/.test(seg('defer-document')));
+  check('restore-deferred asserts per-doc access',     /_assertDocAccess\(db, sess, docId\)/.test(seg('restore-deferred')));
+  check('delete-document asserts per-doc access',      /_assertDocAccess\(db, sess, docId\)/.test(seg('delete-document')));
+  check('restore-document uses the DELETED-path gate (decision-direct, not canAccessDocument)',
+    /_assertDeletedDocAccess\(db, sess, docId\)/.test(seg('restore-document')));
+}
+
+console.log('§14 scope-wide learning is DELIBERATELY department-blind (Oracle cond 5)');
+{
+  const { db, admin } = seed();
+  const documents = require('../../database/modules/documents');
+  const invId = db.prepare("INSERT INTO document_types (name, slug, built_in) VALUES ('Invoice','invoice',1)").run().lastInsertRowid;
+  const fin = dept.createDepartment(db, admin, 'Finance').id;
+  const hr  = dept.createDepartment(db, admin, 'HR').id;
+  const mk = (d) => db.prepare("INSERT INTO documents (original_filename, folder_path, status, supplier_name, document_type_id, department_id) VALUES ('d.pdf','/in','confirmed','Acme',?,?)").run(invId, d).lastInsertRowid;
+  const a = mk(fin), b = mk(hr), c = mk(null);
+  const res = documents.requeueConfirmedDocsForScope(db, { supplier_name: 'Acme', document_type_slug: 'invoice' });
+  const st = (id) => db.prepare('SELECT status s FROM documents WHERE id=?').get(id).s;
+  check('requeue moves ALL scope docs across departments (Finance+HR+shared) → un-learn is scope-wide, not viewer-scoped',
+    st(a) === 'needs_review' && st(b) === 'needs_review' && st(c) === 'needs_review' && res.changes === 3);
+}
+
+console.log('§15 D-C11 — count broadcasts are viewer-scoped + no raw global broadcaster remains');
+{
+  const { db, admin, editFin, editNone } = seed();
+  const cb = require('../lib/countBroadcast');
+  const mk = (d) => db.prepare("INSERT INTO documents (original_filename, folder_path, status, department_id) VALUES ('d.pdf','/in','needs_review',?)").run(d).lastInsertRowid;
+  const fin = dept.createDepartment(db, admin, 'Finance').id;
+  dept.setMembership(db, admin, editFin.id, [fin]);
+  mk(null); mk(fin); mk(dept.createDepartment(db, admin, 'HR').id);
+  const cap = () => { const out = {}; return { notify: (ch, n) => { out[ch] = n; }, out }; };
+  let c = cap(); cb.broadcastCounts(c.notify, db, editFin);
+  check('broadcastCounts(member): review = shared+Finance = 2', c.out['review-count-changed'] === 2);
+  c = cap(); cb.broadcastCounts(c.notify, db, editNone);
+  check('broadcastCounts(outsider): review = shared only = 1', c.out['review-count-changed'] === 1);
+  c = cap(); cb.broadcastCounts(c.notify, db, admin);
+  check('broadcastCounts(admin): review = all = 3', c.out['review-count-changed'] === 3);
+  c = cap(); cb.broadcastCounts(c.notify, db, require('../../database/modules/departmentVisibility').SYSTEM_ACTOR);
+  check('broadcastCounts(SYSTEM_ACTOR): review = all = 3 (system, unfiltered)', c.out['review-count-changed'] === 3);
+  // Source contract: no raw global count broadcaster remains — every desktop count broadcast routes
+  // through countBroadcast, so a future edit can't reintroduce a leak-prone global count.
+  const fs = require('fs'); const path = require('path');
+  const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) return walk(p);
+    return (e.isFile() && e.name.endsWith('.js') && !e.name.startsWith('test_')) ? [p] : [];
+  });
+  const raw = /notify(?:MainWindow|AllWindows)\??\.?\(\s*['"](?:review|deferred|stuck)-count-changed['"]/;
+  const offenders = walk(path.join(__dirname, '..', 'modules')).filter(f => raw.test(fs.readFileSync(f, 'utf8')));
+  check('no raw notify*(\'*-count-changed\', …) broadcaster left in src/modules (all via countBroadcast)',
+    offenders.length === 0 || (console.log('    offenders: ' + offenders.join(', ')), false));
 }
 
 console.log(`\n${fails ? 'FAIL' : 'PASS'} — ${fails} failure(s)`);

@@ -37,7 +37,7 @@ console.log('2. every bin-mutating op fires it exactly once (bulk = once AFTER t
 {
   const rh = read('src/modules/review/handler.js');
   const between = (a, b) => rh.slice(rh.indexOf(a), b ? rh.indexOf(b) : undefined);
-  check('delete-document fires', /delete-document[\s\S]{0,900}notifyBinChanged\(\)/.test(rh));
+  check('delete-document fires', /delete-document[\s\S]{0,1000}notifyBinChanged\(\)/.test(rh));
   check('restore-document fires', /restore-document[\s\S]{0,700}notifyBinChanged\(\)/.test(rh));
   check('restore-all-deleted fires ONCE after its loop',
         /restore-all-deleted[\s\S]{0,900}notifyBinChanged\(\)/.test(rh)

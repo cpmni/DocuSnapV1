@@ -68,9 +68,9 @@ console.log('2. wiring — the discard path is registered, error-only guarded, a
   check('review handler registers discard-stuck-docs', /ipcMain\.handle\('discard-stuck-docs'/.test(rh));
   const body = rh.slice(rh.indexOf("ipcMain.handle('discard-stuck-docs'"), rh.indexOf("ipcMain.handle('discard-stuck-docs'") + 900);
   check('admin/edit gated', /requireRole\('admin', 'edit'\)/.test(body));
-  check('acts on the getStuckQueue set only (error-only guard)', /documents\.getStuckQueue\(db\)\.map\(d => d\.id\)/.test(body));
+  check('acts on the getStuckQueue set only (error-only guard)', /documents\.getStuckQueue\(db(,\s*getCurrentUser\(\))?\)\.map\(d => d\.id\)/.test(body));
   check('soft-deletes (recoverable — never a hard purge)', /documents\.softDelete\(db, id\)/.test(body) && !/deleteDoc/.test(body));
-  check('re-broadcasts the stuck count', /notifyMainWindow\('stuck-count-changed', documents\.getStuckCount\(db\)\)/.test(body));
+  check('re-broadcasts the stuck count', /broadcastStuckCount\(notifyMainWindow, db\)/.test(body));
   check('fires the bin-changed signal (the doc now lives in the bin)', /notifyBinChanged\(\)/.test(body));
 
   const pre = read('src/preload.js');

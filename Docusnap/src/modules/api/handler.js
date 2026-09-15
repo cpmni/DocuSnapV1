@@ -39,6 +39,7 @@ const workflowService   = require('../../services/workflowService');
 const entitlementService = require('../../services/entitlementService');
 const accessService      = require('../../services/accessService');
 const totp              = require('../../lib/totp');
+const { broadcastCounts } = require('../../lib/countBroadcast');   // D2 / D-C11: viewer-scoped desktop badge
 const certService       = require('../../services/certService');
 const path              = require('path');
 
@@ -241,11 +242,10 @@ function createRequestListener(ctx) {
   const reviewSvc = ctx.reviewService || reviewService.createReviewService({
     audit: (_db, entry) => audit(entry),
     notifyCounts: (db) => {
-      if (!ctx.notifyMainWindow) return;
-      try {
-        ctx.notifyMainWindow('review-count-changed',   documents.getReviewCount(db));
-        ctx.notifyMainWindow('deferred-count-changed', documents.getDeferredCount(db));
-      } catch { /* best-effort */ }
+      // D2 / D-C11: a /v1 confirm updates the CORE desktop badge with the CORE operator's own scoped
+      // counts (NOT the /v1 session — the client polls its own scoped /v1/review/counts). The helper
+      // resolves the desktop getCurrentUser() and no-ops when notifyMainWindow is absent.
+      broadcastCounts(ctx.notifyMainWindow, db);
     },
     // Q1 (2026-08-22): the keep-originals decision is made INSIDE reviewService.confirm (the one
     // gate) — this callback only runs when the service decided to remove. Do not re-check here.
@@ -1077,7 +1077,7 @@ function createRequestListener(ctx) {
       if (req.method === 'GET' && pathname === `${API_PREFIX}/documents/deleted`) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
-        const rows = documents.getDeletedQueue(getDb());
+        const rows = documents.getDeletedQueue(getDb(), actorOf(session));   // D2: viewer-scoped
         return sendJson(res, 200, { deleted: dto.projectSearchResult({ confirmed: rows, uncommitted: [] }).confirmed });
       }
 
@@ -1247,7 +1247,7 @@ function createRequestListener(ctx) {
       if (req.method === 'POST' && pathname === `${API_PREFIX}/documents/purge-all`) {
         const session = requireSession(req, res); if (!session) return;
         if (session.role !== 'admin') return sendJson(res, 403, { error: 'forbidden' });
-        const ids = documents.getDeletedQueue(getDb()).map(d => d.id);
+        const ids = documents.getDeletedQueue(getDb(), actorOf(session)).map(d => d.id);   // D2: admin → all; a dept user purges only what they can see
         for (const id of ids) { _purgeDocFiles(getDb(), id, { fs: ctx.fs || require('fs'), path: ctx.path || path }); documents.deleteDoc(getDb(), id); }
         try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {}   // once for the whole empty-bin
         audit({ user_id: session.userId, action: 'recycle_bin_emptied', action_category: 'document',
@@ -1435,7 +1435,7 @@ function createRequestListener(ctx) {
       if (req.method === 'GET' && pathname === `${API_PREFIX}/review/queue`) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
-        const rows = dto.projectReviewQueue(reviewSvc.queue(getDb()));
+        const rows = dto.projectReviewQueue(reviewSvc.queue(getDb(), actorOf(session)));   // D2: viewer-scoped
         const selfKey = viewerKeyOf(session);
         for (const r of rows) r.viewers = presence.viewers(r.id, selfKey);   // who else is in each doc
         return sendJson(res, 200, { queue: rows });
@@ -1443,7 +1443,7 @@ function createRequestListener(ctx) {
       if (req.method === 'GET' && pathname === `${API_PREFIX}/review/deferred`) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
-        const rows = dto.projectReviewQueue(reviewSvc.deferred(getDb()));
+        const rows = dto.projectReviewQueue(reviewSvc.deferred(getDb(), actorOf(session)));   // D2: viewer-scoped
         const selfKey = viewerKeyOf(session);
         for (const r of rows) r.viewers = presence.viewers(r.id, selfKey);
         return sendJson(res, 200, { deferred: rows });
@@ -1451,7 +1451,7 @@ function createRequestListener(ctx) {
       if (req.method === 'GET' && pathname === `${API_PREFIX}/review/counts`) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
-        return sendJson(res, 200, reviewSvc.counts(getDb()));
+        return sendJson(res, 200, reviewSvc.counts(getDb(), actorOf(session)));   // D2: viewer-scoped
       }
 
       // Document types + field definitions (review type dropdown, required-field highlighting).

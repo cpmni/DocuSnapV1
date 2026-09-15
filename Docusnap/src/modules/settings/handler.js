@@ -12,6 +12,7 @@ function register(ctx) {
   const templates = require('../../../database/modules/templates');
   const { safeSlug } = require('../../../database/modules/slug');
   const { requireRole, requireLogin, logAudit } = require('../auth/handler');
+  const { broadcastReviewCount } = require('../../lib/countBroadcast');   // D2 / D-C11: viewer-scoped
   // Setting keys whose VALUE is safe to record verbatim in the audit trail
   // (mode/threads/flags). Anything else (paths, patterns, unknown keys) logs the
   // key NAME + a "[set]" marker only — never the raw value (GDPR-aware).
@@ -353,7 +354,7 @@ function register(ctx) {
         outcome: 'success', metadata: { routes: res.closedRoutes.map(r => r.id), via: 'recovery' } }); } catch {}
       try { ctx.notifyWorkflowEvent && ctx.notifyWorkflowEvent({ event: 'auto_closed' }); } catch {}
     }
-    if (res.ok) notifyAllWindows('review-count-changed', require('../../../database/modules/documents').getReviewCount(db));
+    if (res.ok) broadcastReviewCount(notifyAllWindows, db);   // D2 / D-C11: viewer-scoped
     if (res.ok) { try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {} }   // set-aside docs land in the bin
     return { ...res, backup };
   });
@@ -439,7 +440,7 @@ function register(ctx) {
     let reread = false;
     if (res.ok) {
       try { reread = !!require('../processing/handler').scheduleQuietReread(db, { supplier: s.supplier_name, typeSlug: s.document_type_slug, reason: 'repair' }); } catch { reread = false; }
-      try { notifyAllWindows('review-count-changed', require('../../../database/modules/documents').getReviewCount(db)); } catch {}
+      broadcastReviewCount(notifyAllWindows, db);   // D2 / D-C11: viewer-scoped (best-effort inside)
     }
     return { ...res, reread };
   });
@@ -464,7 +465,7 @@ function register(ctx) {
   // ── Learning Repair (browse + preview + suspects + send-to-review) ───────────
   const repairSuspects = require('../../services/repairSuspects');
   ipcMain.handle('repair-overview', (_e, scope) => {
-    requireRole('admin');
+    const _sess = requireRole('admin');   // D2: pass the actor to the scoped reader (admin → unfiltered; avoids the shared-only footgun)
     const db = getDb();
     const documents = require('../../../database/modules/documents');
     const s = scope || {};
@@ -480,7 +481,7 @@ function register(ctx) {
     // list + preview), otherwise a supplier search would hide the very outliers it should surface.
     const have = new Set(docs.map(d => d.id));
     const missing = Object.keys(suspects.byId).map(Number).filter(id => !have.has(id));
-    if (missing.length) { try { docs.push(...documents.getConfirmedDocsByIds(db, missing)); } catch {} }
+    if (missing.length) { try { docs.push(...documents.getConfirmedDocsByIds(db, missing, _sess)); } catch {} }
     return { scope: sc, confirmedCount, documents: docs, suspects };
   });
   // Each field's CONFIRMED value (correction wins over the raw OCR read) for the Learning
@@ -522,14 +523,14 @@ function register(ctx) {
           logAudit(db, { action: 'repair_send_to_review', action_category: 'document', target_type: 'document',
             target_id: docId, outcome: 'success', details: JSON.stringify(r.unplanted) });
         } catch {}
-        notifyAllWindows('review-count-changed', documents.getReviewCount(db));
+        broadcastReviewCount(notifyAllWindows, db);   // D2 / D-C11: viewer-scoped
       }
       return { ok: !!r.ok };
     }
     const r = documents.deconfirmDocument(db, docId);
     if (r.changes) {
       try { logAudit(db, { action: 'repair_send_to_review', action_category: 'document', target_type: 'document', target_id: docId, outcome: 'success' }); } catch {}
-      notifyAllWindows('review-count-changed', documents.getReviewCount(db));
+      broadcastReviewCount(notifyAllWindows, db);   // D2 / D-C11: viewer-scoped
     }
     return { ok: r.changes > 0 };
   });
@@ -560,7 +561,7 @@ function register(ctx) {
         }
       } catch { /* best-effort — never blocks the delete */ }
       try { logAudit(db, { action: 'repair_delete', action_category: 'document', target_type: 'document', target_id: docId, outcome: 'success' }); } catch {}
-      notifyAllWindows('review-count-changed', documents.getReviewCount(db));
+      broadcastReviewCount(notifyAllWindows, db);   // D2 / D-C11: viewer-scoped
       try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {}   // repair-delete lands in the bin
     }
     return { ok: r.changes > 0 };

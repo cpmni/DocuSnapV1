@@ -43,8 +43,8 @@ function register(ctx) {
   // pulse — a direct SQL count, so it reflects true volume up to 999+ instead of being
   // capped by the search list. Read-only, login-gated like search.
   ipcMain.handle('get-filed-counts', () => {
-    requireLogin();
-    return documents.getFiledCounts(getDb());
+    const _u = requireLogin();
+    return documents.getFiledCounts(getDb(), _u);   // D2: viewer-scoped dashboard pulse
   });
 
   // Extra dashboard-card data (auto-file rate, storage, search clients, last backup). Read-only,
