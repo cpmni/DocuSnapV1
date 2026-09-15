@@ -52,6 +52,10 @@ const searchActions = read('src/windows/shared/search-ui/searchActions.js');
 check("shared searchActions hides the Review dead-end for a typed doc (doc.intake === 'direct')",
   searchActions.includes("doc.intake === 'direct'"));
 
+const searchResults = read('src/windows/shared/search-ui/searchResults.js');
+check('shared searchResults guards the toolbar/menu/bulk send-back for typed docs (_isTyped + _selHasSendable)',
+  searchResults.includes('_isTyped') && searchResults.includes('_selHasSendable'));
+
 const clientSearchActions = read('client/renderer/shared/search-ui/searchActions.js');
 check("client searchActions is in sync (carries the same intake branch)",
   clientSearchActions.includes("doc.intake === 'direct'"));

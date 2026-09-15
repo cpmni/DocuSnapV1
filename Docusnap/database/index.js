@@ -3497,6 +3497,28 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 170 (teach_over_client default ON): ${e.message}`); }
   }
 
+  // ── Migration 171 — Quick File ON by default (graduation of direct_intake_enabled) ───────────────
+  //    mig 165 seeded direct_intake_enabled 'false' on every DB, so this UPSERT-forces it 'true' (INSERT
+  //    OR IGNORE would be a dead guard against that existing seed — Oracle C2, 2026-09-15). Quick File —
+  //    the local lane AND the /v1 LAN upload (same switch) — is now on out of the box. The write-side
+  //    safety (a typed doc never enters Review, OCR, or learning) is enforced STRUCTURALLY + NON-
+  //    switchably: intakeGuard at the four write doors, the deconfirmDocument/requeue belt, and the
+  //    NON-switchable `COALESCE(intake,'')<>'direct'` clause in learningExcludedSql — none keyed on this
+  //    switch, so a later kill can never re-admit typed docs into learning. A deliberate 'false' still
+  //    turns BOTH lanes off (the kill switch: directIntakeService.enabled). direct_intake_enabled is
+  //    DELISTED from dark_switches.js the SAME commit (else build_arming would disarm it in a release
+  //    build). Chris-vetted 2026-09-15 (verdict YES). Pinned by test_migration137 (fresh install →
+  //    'true'; kill durable across relaunch) + the two count pins (TEST_SWITCH_KEYS 51→50). Departments
+  //    stays DARK. Permanent default flip, so it carries the release-gate label:
+  // @DEFAULT_FLIP 171
+  if (!applied.has(171)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('direct_intake_enabled', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (171)').run();
+      console.log('JS migration 171 applied: direct_intake_enabled ON by default (UPSERT true) — Quick File graduated');
+    } catch (e) { console.warn(`  migration 171 (quick file default ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

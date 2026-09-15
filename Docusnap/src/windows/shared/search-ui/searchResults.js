@@ -14,6 +14,14 @@ let _anchorId = null; // last single-clicked id (shift anchor)
 let _docById  = {};   // id → doc (for preview on single click)
 let _lastResults = null;   // the last rendered result set (so a decoration-only re-render needs no new search)
 
+// Quick File (Chris 2026-09-15 finding 1): a typed (intake='direct') doc can't be sent back to Review —
+// the pane already hides its send-back; these keep the SAME promise on the toolbar + right-click + bulk
+// paths (the backend refuses either way, but silently, which read as a dead-end). Client-side literal so
+// the shared UI stays IO-free (no main-process require — see the searchState.js header).
+const _QF_SENDBACK_REFUSAL = 'Quick Filed documents are typed, not scanned — they can’t be sent to Review. To change one, delete it and Quick File it again.';
+function _isTyped(id) { const d = _docById[id]; return !!(d && d.intake === 'direct'); }
+function _selHasSendable() { for (const id of _sel()) if (!_isTyped(id)) return true; return false; }
+
 // Re-render the LAST result set as-is (same rows, same order, selection kept) — for a decoration that
 // depends on state resolved AFTER the first paint: the results populate before the entitlement is known,
 // so the confidence pips/tints of the enhanced search were missing until the next search (the 2026-09-13
@@ -242,7 +250,7 @@ function _renderRail() {
   } else {
     del.style.display = canEdit ? '' : 'none'; del.title = 'Delete (move to recycle bin)'; del.disabled = !n;
     if (restore) restore.style.display = 'none';
-    if (back) { back.style.display = (_isAdmin() && _cap('sendBack')) ? '' : 'none'; back.disabled = !n; }
+    if (back) { back.style.display = (_isAdmin() && _cap('sendBack') && _selHasSendable()) ? '' : 'none'; back.disabled = !n; }
   }
 }
 
@@ -271,7 +279,7 @@ function _showMenu(x, y) {
       (_isAdmin() ? `<button data-act="purge" class="danger">Delete permanently${sfx}</button>` : '')
     // Send back to Review (Admin): de-confirms a filed doc so it re-enters the queue. Status-guarded
     // server-side (only currently-confirmed docs move), so a mixed/non-confirmed selection is a no-op.
-    : ((_isAdmin() && _cap('sendBack')) ? `<button data-act="sendback">Send back to Review${sfx}</button>` : '') +
+    : ((_isAdmin() && _cap('sendBack') && _selHasSendable()) ? `<button data-act="sendback">Send back to Review${sfx}</button>` : '') +
       `<button data-act="delete" class="danger">Delete${sfx}</button>`;
   document.body.appendChild(menu);
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
@@ -285,8 +293,19 @@ document.addEventListener('scroll', _closeMenu, true);
 
 // Apply the action to every selected row, then refresh.
 async function _act(kind) {
-  const ids = [..._sel()];
+  let ids = [..._sel()];
   if (!ids.length) return;
+  // Quick File (Chris 2026-09-15 finding 1): never send a typed doc back to Review. The toolbar/menu
+  // already hide send-back for an all-typed selection, but a mixed selection or a stale path could still
+  // reach here — skip the typed ids and say why, act on the rest. A pure-typed call short-circuits with
+  // the plain refusal instead of a scary confirm that silently does nothing.
+  let _qfSkipped = 0;
+  if (kind === 'sendback') {
+    const _before = ids.length;
+    ids = ids.filter(id => !_isTyped(id));
+    _qfSkipped = _before - ids.length;
+    if (!ids.length) { alert(_QF_SENDBACK_REFUSAL); return; }
+  }
   const noun = ids.length > 1 ? `${ids.length} documents` : 'this document';
   if (kind === 'delete' && !confirm(`Move ${noun} to the recycle bin? You can restore ${ids.length > 1 ? 'them' : 'it'} later.`)) return;
   if (kind === 'purge'  && !confirm(`Permanently delete ${noun} and ${ids.length > 1 ? 'their files' : 'its file'}? This cannot be undone.${await window.SearchState.purgeSuffix()}`)) return;
@@ -296,6 +315,7 @@ async function _act(kind) {
              : kind === 'sendback' ? window.SearchTransport.repairDeconfirm
              : window.SearchTransport.purgeDocument;
   try { for (const id of ids) await call(id); } catch (e) { console.error(`${kind} failed:`, e); }
+  if (_qfSkipped) alert(_QF_SENDBACK_REFUSAL);   // a mixed selection: tell the user the typed ones were left as-is
   _sel().clear();
   // The acted-on document must never linger in the preview with now-stale actions (Chris 2026-09-14 card 2:
   // a PURGED document kept a live Restore button on the client, which has no bin-changed push to clear it —

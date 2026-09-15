@@ -16,7 +16,7 @@ const { _hasIntakeColumn } = require('../../database/modules/machine_vias');
 
 const MESSAGES = {
   'send-back': "This is a Quick Filed document — it was typed, not scanned, so it can’t be sent to Review. To change its details, delete it and Quick File it again.",
-  'reprocess': "Quick Filed documents aren’t scanned, so there’s nothing to re-read. To scan the file instead, delete this entry and import it through Scan Documents.",
+  'reprocess': "Quick Filed documents aren’t scanned, so there’s nothing to re-read. To scan the file instead, delete this entry and bring it in through Process Documents.",
   'confirm':   "This is a Quick Filed document — it was typed, not scanned, so it doesn’t go through Review. To change its details, delete it and Quick File it again.",
 };
 

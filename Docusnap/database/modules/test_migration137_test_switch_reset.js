@@ -31,7 +31,7 @@ const get = (db, k) => { const r = db.prepare('SELECT value FROM settings WHERE 
 const stamped = (db) => new Set(db.prepare('SELECT version FROM migrations').all().map(r => r.version));
 
 // 24 at mig 137 (the 26 minus the two legitimate defaults) + 3 name-grow belts (mig 140, 2026-09-08).
-check('TEST_SWITCH_KEYS has 51 distinct keys', new Set(TEST_SWITCH_KEYS).size === 51 && TEST_SWITCH_KEYS.length === 51);  // 2026-09-14: +date_forms_wide (mig 167) → 51. 2026-09-13 evening: +template_date_invalid_yield_lowconf (mig 166) → 50. 2026-09-09: confusable_soften added (147) then GRADUATED (148 @DEFAULT_FLIP); +confusable_prefix_autofile (149) +sweep_inview_recheck (150) → 34; 2026-09-10: +template_edge_clip_heal (151) +role_disagree_refuse_at100 (152) +template_taught_corrob_adopt (153) +trust_ref_role_shape (154) +anchor_axis_lock (155) +name_role_nonname_flag (156) +template_drift_override_guard (157) +note_topic_dedup (158) → 42; 2026-09-11: +ref_confusable_flag (159) → 43; +filing_sanity_ref_reinstate (160) +template_code_left_grow (161) → 45; 2026-09-12: +deskew_retry_field_adopt (162) → 46; +deskew_false_absent_reflag (163) → 47; 2026-09-13: +departments_enabled +direct_intake_enabled (QuickFile+Departments, migs 164/165 feature master switches) → 49
+check('TEST_SWITCH_KEYS has 50 distinct keys', new Set(TEST_SWITCH_KEYS).size === 50 && TEST_SWITCH_KEYS.length === 50);  // 2026-09-15: direct_intake_enabled GRADUATED to default-ON (mig 171 @DEFAULT_FLIP, Chris-vetted) + DELISTED → 50. 2026-09-14: +date_forms_wide (mig 167) → 51. 2026-09-13 evening: +template_date_invalid_yield_lowconf (mig 166) → 50. 2026-09-09: confusable_soften added (147) then GRADUATED (148 @DEFAULT_FLIP); +confusable_prefix_autofile (149) +sweep_inview_recheck (150) → 34; 2026-09-10: +template_edge_clip_heal (151) +role_disagree_refuse_at100 (152) +template_taught_corrob_adopt (153) +trust_ref_role_shape (154) +anchor_axis_lock (155) +name_role_nonname_flag (156) +template_drift_override_guard (157) +note_topic_dedup (158) → 42; 2026-09-11: +ref_confusable_flag (159) → 43; +filing_sanity_ref_reinstate (160) +template_code_left_grow (161) → 45; 2026-09-12: +deskew_retry_field_adopt (162) → 46; +deskew_false_absent_reflag (163) → 47; 2026-09-13: +departments_enabled +direct_intake_enabled (QuickFile+Departments, migs 164/165 feature master switches) → 49
 check('money_sign_capture + ocr_parallel_import_enabled are NOT listed', !TEST_SWITCH_KEYS.includes('money_sign_capture') && !TEST_SWITCH_KEYS.includes('ocr_parallel_import_enabled'));
 
 // 1. Fresh install.
@@ -44,6 +44,13 @@ const notOff = TEST_SWITCH_KEYS.filter(k => get(db, k) !== 'false');
 check("every TEST switch is 'false' on a fresh install", notOff.length === 0, notOff.join(','));
 check("money_sign_capture stays 'true' (legit default, excluded)", get(db, 'money_sign_capture') === 'true');
 check("filing_sanity_confusable_soften defaulted 'true' on a fresh install (mig 148 @DEFAULT_FLIP, 2026-09-09)", get(db, 'filing_sanity_confusable_soften') === 'true');
+// Quick File graduation (mig 171 @DEFAULT_FLIP, 2026-09-15): direct_intake_enabled ON by default + delisted.
+check("direct_intake_enabled defaulted 'true' on a fresh install (mig 171 @DEFAULT_FLIP, Quick File graduated)", get(db, 'direct_intake_enabled') === 'true');
+check('direct_intake_enabled is DELISTED from TEST_SWITCH_KEYS (so build_arming never disarms it in a release build)', !TEST_SWITCH_KEYS.includes('direct_intake_enabled'));
+// Kill durable: a deliberate 'false' survives the next start (mig 171 is one-shot, delisted → build_arming leaves it).
+db.prepare("UPDATE settings SET value = 'false' WHERE key = 'direct_intake_enabled'").run();
+quiet(() => runMigrations(db));
+check("a deliberate direct_intake_enabled='false' survives a relaunch (mig 171 one-shot, not a sweep)", get(db, 'direct_intake_enabled') === 'false');
 check("resolve_ref_near_miss ends 'false' (121 → 124 → 137 ordering)", get(db, 'resolve_ref_near_miss') === 'false');
 for (const n of TEST_BUILD_MIGS) if (stamped(db).has(n)) fails += 0; // historical stamps are fine on old DBs; a fresh DB simply never sees them
 check('a fresh install never stamps a deleted test-build migration', !TEST_BUILD_MIGS.some(n => stamped(db).has(n)));

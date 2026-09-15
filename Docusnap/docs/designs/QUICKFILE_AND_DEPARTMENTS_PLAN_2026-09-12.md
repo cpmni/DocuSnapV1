@@ -173,6 +173,13 @@ starter see last year's invoices?" (D6 bulk apply) · reprocess type flip must n
   once departments exist. Part of D2.
 - `/v1 review/:id/viewing` (`api/handler.js:918-925`) returns other viewers' names for ANY id (writer-only). Part of D2.
 - The XML sidecar duplicates every field value in plaintext beside the file (D5's optional no-sidecar setting).
+- **⚠ WATCH-ITEM (added 2026-09-15, Oracle flip-nod): the /v1 Quick File upload lands `department_id=NULL`.**
+  Quick File graduated to default-ON (mig 171) BEFORE Departments — the `/v1/documents/intake` handler
+  (`src/modules/api/handler.js` ~1174-1179) passes NO departmentId, so an uploaded doc is shared/all-visible.
+  Harmless today (Departments DARK → no isolation promised), but when Departments ships this is a
+  department-BYPASS on the LAN lane. **D2/D3 MUST tag + enforce department on the /v1 upload path** (the
+  desktop `directIntakeService.update()` already threads departmentId + canAccessDocument; the intake
+  `submit()` over /v1 does not). Do not close the Departments arc without revisiting this endpoint.
 
 ## 7. Build order, gates, conventions
 Each slice: own setting seeded OFF (mig), listed in `TEST_SWITCH_KEYS`, byte-identical OFF (pinned), advisor + Oracle

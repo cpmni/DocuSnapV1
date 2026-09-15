@@ -245,12 +245,13 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   the truthful note out of every CLEARABLE_NOTE_MARKS / class-F set (bilingual pin); the doc still flagged/held.
   'deskew_false_absent_reflag',
   // ── QuickFile + Departments (2026-09-13, plan docs/designs/QUICKFILE_AND_DEPARTMENTS_PLAN_2026-09-12.md;
-  //    Oracle SIGN-OFF-W/COND Q-C1..12 + D-C1..12). Both are FEATURE MASTER switches (not reading toggles):
-  //    they gate the admin UI + the WRITE side only. The read/exclusion behaviour is DATA-driven and
-  //    fail-closed (a department-tagged doc is restricted, a documents.intake='direct' row is learning-excluded,
-  //    regardless of the switch). Seeded OFF by migs 164/165; byte-identical when the tables/columns are empty.
+  //    Oracle SIGN-OFF-W/COND Q-C1..12 + D-C1..12). FEATURE MASTER switches (not reading toggles): they gate
+  //    the admin UI + the WRITE side only. The read/exclusion behaviour is DATA-driven and fail-closed (a
+  //    department-tagged doc is restricted, a documents.intake='direct' row is learning-excluded, regardless
+  //    of the switch). Seeded OFF by migs 164/165; byte-identical when the tables/columns are empty.
+  //    NOTE: direct_intake_enabled GRADUATED to default-ON (mig 171 @DEFAULT_FLIP, 2026-09-15, Chris-vetted) —
+  //    DELISTED from here so build_arming never disarms it in a release build. departments_enabled stays DARK.
   'departments_enabled',
-  'direct_intake_enabled',
   // template_date_invalid_yield_lowconf (mig 166, 2026-09-13, gary → Oracle pass): an IMPOSSIBLE taught
   // date (parse+salvage both None) yields to a valid label-matched keyword date even below the 90 floor
   // (seeded custom date fields structurally read 85). impossible arm only; kw leg only; auto-file-neutral
