@@ -385,7 +385,7 @@ async function initClientApiSection() {
 
   try {
     host.value = (await api.getSetting('client_api_host')) || '';
-    port.value = (await api.getSetting('client_api_port')) || '';
+    port.value = (await api.getSetting('client_api_port')) || '8765';   // pre-fill the default port (editable) so it needn't be typed
     cert.value = (await api.getSetting('client_api_tls_cert')) || '';
     key.value  = (await api.getSetting('client_api_tls_key')) || '';
     // Auto-open the managed-cert disclosure only when a LAN (non-loopback) host is set —
@@ -394,17 +394,24 @@ async function initClientApiSection() {
     if (cd) { const h = (host.value || '').trim(); cd.open = !!h && h !== '127.0.0.1' && h !== 'localhost'; }
   } catch { /* ignore */ }
 
+  // Red inline prompt ABOVE the address field — shown when access is turned on before the details are
+  // populated (an empty host would silently bind loopback, and no client on another PC could reach it).
+  const addrWarn = document.getElementById('client-api-addr-warn');
+  const showAddrWarn = (msg) => { if (addrWarn) { addrWarn.textContent = msg || ''; addrWarn.style.display = msg ? '' : 'none'; } };
   tgl.addEventListener('change', async () => {
     // Oracle C5: enabling requires an address + port — a UI guard ONLY (the server keeps its env/loopback paths).
     if (tgl.checked) {
       const h = (host.value || '').trim(), p = (port.value || '').trim();
       if (!h || !p) {
         tgl.checked = false;
-        statusEl.textContent = 'Enter an address (127.0.0.1 for this PC only, or the LAN address) and a port first.';
+        showAddrWarn(!h
+          ? 'Enter this PC’s address first — type 0.0.0.0 to let other PCs on your network connect, or 127.0.0.1 for this PC only.'
+          : 'Enter a port (e.g. 8765) before turning access on.');
         try { (h ? port : host).focus(); } catch {}
         return;
       }
     }
+    showAddrWarn('');   // valid (or turning off) → clear the prompt
     try {
       render(await api.clientApiSetEnabled(tgl.checked));
       // The listener binds asynchronously, so re-poll shortly to flip "starting…" → "Running".
@@ -413,6 +420,9 @@ async function initClientApiSection() {
   });
   const saver = (el, k) => el.addEventListener('change', () => { try { api.setSetting(k, el.value.trim()); } catch {} });
   saver(host, 'client_api_host'); saver(port, 'client_api_port');
+  // Clear the red prompt as soon as the person starts typing an address/port.
+  host.addEventListener('input', () => { if (host.value.trim()) showAddrWarn(''); });
+  port.addEventListener('input', () => { if (port.value.trim()) showAddrWarn(''); });
   // "Connect a client" card — the one-time code buttons.
   const ccGen = document.getElementById('cc-pair-gen');
   if (ccGen) ccGen.addEventListener('click', async () => { try { await api.clientApiPairingGenerate({ minutes: 10 }); await refreshPairing(); await loadConnectQr(); } catch { /* ignore */ } });

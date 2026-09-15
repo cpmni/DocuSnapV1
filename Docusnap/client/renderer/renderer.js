@@ -165,7 +165,7 @@ function _syncCertRow() {
 }
 function fillServerForm(cfg) {
   $('srv-host').value = cfg.host || '';
-  $('srv-port').value = cfg.port || '';
+  $('srv-port').value = cfg.port || '8765';   // pre-fill the default port (editable) so it needn't be typed
   $('srv-tls').checked = !!cfg.tls;
   _caPem = cfg.caPem || null;
   $('srv-cert-name').textContent = _caPem ? 'certificate pinned' : 'none selected';
