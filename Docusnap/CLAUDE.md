@@ -21,7 +21,30 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-14 EVENING (a full day on the shared search screen + client, then the DATE FORMS fix; TEST installers for the customer):
+## ⏭ LATEST — 2026-09-15 DAY (security enforced by default + teach-over-client ON + S4 live-verified + a client polish loop):
+**READ `HANDOVER_2026-09-15_DAY.md` FIRST** (then `HANDOVER_2026-09-15_NIGHT.md` for the night run that
+preceded it). Branch `feat/teach-side-overnight`; **HEAD `60e37c0`; origin CURRENT (all pushed); NO
+uncommitted code; migration 170; pins 373/373.** NO installer built (owner: next builds FULLY HARDENED via
+`build:release`, HELD until the hardening is done). Owner-driven live-vet loop. **Shipped (5 commits):**
+`ac967e8` **mig 169** enforces the two 2026-09-15 security fixes BY DEFAULT (`v1_force_password_change` +
+`backup_import_seat_only`, INSERT OR IGNORE '1', fail-secure; pin `test_security_defaults.js`); `81b1c3e`
+**mig 170 `@DEFAULT_FLIP 170`** teach_over_client_enabled ON by default (UPSERT 'true'; pin
+`test_teach_default_on.js`) + **client teach thumbnails fixed** (shared `thumbs.js` reads
+`window.docusnap`, but the client bridge is `window.scanfinder` → expose a minimal `window.docusnap`
+getDocumentThumbnail shim in `client/preload.js`; LIVE-confirmed) + **client close-to-tray** (mirrors core;
+`Tray`/`Menu`/`isQuitting`) + removed the stale client "Get certificate from server…" button; `60e37c0`
+**red address prompt above the IP field** when access is switched on empty (empty host silently binds
+loopback) + **default port 8765 pre-filled** (editable) in core Settings + client connect. **S4
+(upload-to-teach) LIVE-VERIFIED** end-to-end over a real /v1 server (stage→OCR-import→commit→filed→idempotent
+replay; graduation gate intact). **Security audit (owner asked): CLIENT clean (token in main memory only,
+never on disk, renderer can't read it); CORE mostly clean, ONE caveat — DB plaintext by default,
+`users.totp_secret` cleartext (only if 2FA on).** **NEXT SESSION = the hardening decision (2a whole-DB
+encryption [recommended, has a recovery-code/data-loss trade] vs 2b encrypt just the TOTP secret) — ASK
+which first; then the fully-hardened build.** Release-gate rule learned: a UPSERT-to-'true' migration needs
+`// @DEFAULT_FLIP <N>` directly above its `if (!applied.has(N))`. Memory
+`project_teach_over_client_20260914.md` + `project_v1_backup_security_fixes_20260915.md`.
+
+## Prior — 2026-09-14 EVENING (a full day on the shared search screen + client, then the DATE FORMS fix; TEST installers for the customer):
 **READ `HANDOVER_2026-09-14_EVENING.md` FIRST** (cold start: state, the installer pair, the date rule, the owner's answered
 questions, the approval queue, commands, constraints). Branch `feat/teach-side-overnight`; **HEAD `2da47b2` on `18bd9a2`;
 origin CURRENT (all pushed); tree clean; NOTHING running.** **The pair to ship the test customer:** core
