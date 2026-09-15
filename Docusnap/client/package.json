@@ -51,6 +51,9 @@
       "main.js",
       "preload.js",
       "apiClient.js",
+      "windowBounds.js",
+      "lib/**/*",
+      "!lib/test_*.js",
       "renderer/**/*",
       "assets/**/*",
       "package.json"
