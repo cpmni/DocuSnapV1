@@ -2566,16 +2566,24 @@ document.getElementById('dbenc-encrypt')?.addEventListener('click', async () => 
   } catch { show('Encryption could not be armed.', 'err'); }
 });
 
-// The masked one-time-code dialog with a typed confirm. Resolves true only when the user types
-// the exact phrase and confirms; cancel / backdrop-Escape resolve false. Mirrors the
-// showSecretDialog / showTypedConfirmDialog conventions (data-help-ignore + repairModalInputFocus).
+// The masked one-time-code dialog with a PROOF-OF-POSSESSION confirm. Resolves true only when the user
+// types back the last 5-char block of their code (or the whole code) and confirms; cancel / backdrop-
+// Escape resolve false. The old reflexive "I HAVE SAVED IT" phrase never verified the user actually held
+// the code — the one key to the encrypted DB (Oracle 2026-09-15). Matching + glyph-folding live in the
+// shared window.DbCodeConfirm (pinned). Paste is blocked on the confirm input so it cannot be satisfied
+// without reading the code. Mirrors the showSecretDialog conventions (data-help-ignore + repairModalInputFocus).
 function showDbCodeCeremony(code) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center;';
     overlay.setAttribute('data-help-ignore', '1');
     const masked = code.replace(/[^-]/g, '•');
-    const REQUIRED = 'I HAVE SAVED IT';
+    // Fallback matcher if the shared script failed to load (defensive; smoke-windows would already refuse
+    // such a build). Requires the whole code, folded, to avoid a weaker gate than the shared one.
+    const confirmMatches = (val) => (window.DbCodeConfirm
+      ? window.DbCodeConfirm.matches(val, code)
+      : String(val || '').toUpperCase().replace(/[\s-]+/g, '').replace(/O/g, '0').replace(/[IL]/g, '1').replace(/U/g, 'V')
+          === String(code).toUpperCase().replace(/[\s-]+/g, '').replace(/O/g, '0').replace(/[IL]/g, '1').replace(/U/g, 'V'));
     overlay.innerHTML = `
       <div style="width:400px; background:var(--surface); border:1px solid var(--border2); border-radius:10px;
                   padding:18px; display:flex; flex-direction:column; gap:12px; font-family:var(--sans); color:var(--text);">
@@ -2593,8 +2601,8 @@ function showDbCodeCeremony(code) {
           <button id="dbc-copy" style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--border2); background:transparent; color:var(--text); font-family:inherit; font-size:12px; cursor:pointer;">Copy</button>
           <button id="dbc-print" style="flex:1; padding:8px; border-radius:6px; border:1px solid var(--border2); background:transparent; color:var(--text); font-family:inherit; font-size:12px; cursor:pointer;">Print…</button>
         </div>
-        <div style="font-size:11px; color:var(--muted);">Type <strong style="color:var(--text); font-family:var(--mono);">${REQUIRED}</strong> to turn on encryption:</div>
-        <input id="dbc-input" type="text" spellcheck="false" autocomplete="off" style="padding:9px; border-radius:6px; border:1px solid var(--border2); background:var(--bg); color:var(--text); font-family:var(--mono); font-size:13px;">
+        <div style="font-size:11px; color:var(--muted);">To confirm you have saved it, reveal the code and type back its <strong style="color:var(--text);">last block</strong> — the 5 characters after the final dash:</div>
+        <input id="dbc-input" type="text" spellcheck="false" autocomplete="off" placeholder="last 5 characters" style="padding:9px; border-radius:6px; border:1px solid var(--border2); background:var(--bg); color:var(--text); font-family:var(--mono); font-size:13px; letter-spacing:.08em; text-transform:uppercase;">
         <div style="display:flex; gap:8px;">
           <button id="dbc-cancel" style="flex:1; padding:9px; border-radius:6px; border:1px solid var(--border2); background:transparent; color:var(--muted); font-family:inherit; font-size:12px; cursor:pointer;">Cancel</button>
           <button id="dbc-ok" disabled style="flex:1; padding:9px; border-radius:6px; border:none; background:var(--accent); color:#fff; font-family:inherit; font-size:12px; font-weight:500; cursor:pointer; opacity:.45;">Turn on encryption</button>
@@ -2606,7 +2614,7 @@ function showDbCodeCeremony(code) {
     const btnOk  = overlay.querySelector('#dbc-ok');
     let revealed = false;
     const close   = (r) => { overlay.remove(); document.removeEventListener('keydown', onKey); resolve(r); };
-    const matches = () => input.value.trim().toUpperCase() === REQUIRED;
+    const matches = () => confirmMatches(input.value);
     const sync    = () => { btnOk.disabled = !matches(); btnOk.style.opacity = matches() ? '1' : '.45'; };
     const onKey   = (e) => { if (e.key === 'Escape') close(false); else if (e.key === 'Enter' && matches()) close(true); };
     overlay.querySelector('#dbc-show').addEventListener('click', (e) => {
@@ -2619,6 +2627,8 @@ function showDbCodeCeremony(code) {
     });
     overlay.querySelector('#dbc-print').addEventListener('click', () => printDbCode(code));
     input.addEventListener('input', sync);
+    // Block paste: the confirm must prove the user READ/SAVED the code, not that it is on the clipboard.
+    input.addEventListener('paste', (e) => e.preventDefault());
     overlay.querySelector('#dbc-cancel').addEventListener('click', () => close(false));
     btnOk.addEventListener('click', () => { if (matches()) close(true); });
     overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(false); });
