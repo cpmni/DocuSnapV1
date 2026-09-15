@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "title": "Import a folder of scans and file the first document",
+  "description": "ScanFinder's equivalent of 'create a project and run a scan': point it at a folder, process it, review and confirm one document.",
+  "target_length_sec": 60,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": { "window_title": "ScanFinder", "cdp_port": 9222, "maximize": true },
+  "record": { "mode": "window", "fps": 30 },
+  "captions": { "position": "bottom", "font_size": 26 },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "Here's how to import a folder of scanned documents into ScanFinder and file them.",
+      "caption": "Import scans into ScanFinder",
+      "duration_sec": 4
+    },
+    {
+      "id": "open_import",
+      "action": "move_and_click",
+      "target": { "selector": "#btn-import", "window": "ScanFinder" },
+      "narration": "Start on the Import screen.",
+      "caption": "1. Open Import",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "choose_folder",
+      "action": "move_and_click",
+      "target": { "selector": "#folder-box", "window": "ScanFinder" },
+      "narration": "Click the folder box and choose the folder your scanner saves into.",
+      "caption": "2. Choose your scans folder",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "type_folder_path",
+      "action": "type_text",
+      "wait_for": { "window": "Select the folder of scanned documents to import", "timeout": 10 },
+      "text": "C:\\Scans\\Demo",
+      "narration": "",
+      "caption": "2. Choose your scans folder",
+      "duration_sec": 3
+    },
+    {
+      "id": "confirm_folder",
+      "action": "press_keys",
+      "keys": "enter",
+      "presses": 2,
+      "narration": "",
+      "caption": "2. Choose your scans folder",
+      "duration_sec": 2.5
+    },
+    {
+      "id": "folder_set",
+      "action": "wait",
+      "narration": "ScanFinder shows how many documents it found.",
+      "caption": "Documents found in the folder",
+      "duration_sec": 3
+    },
+    {
+      "id": "process",
+      "action": "move_and_click",
+      "target": { "selector": "#btn-run", "window": "ScanFinder" },
+      "narration": "Now click Process Documents.",
+      "caption": "3. Click Process Documents",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "processing",
+      "action": "wait",
+      "narration": "ScanFinder reads every page, works out who sent it, the date and the reference, and files the ones it is sure about.",
+      "caption": "Reading each page…",
+      "duration_sec": 12
+    },
+    {
+      "id": "open_review",
+      "action": "move_and_click",
+      "wait_for": { "selector": "#btn-review-docs", "window": "ScanFinder", "timeout": 60 },
+      "target": { "selector": "#btn-review-docs", "window": "ScanFinder" },
+      "narration": "Anything it wants you to check lands in Review. Click Review your documents.",
+      "caption": "4. Review your documents",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "review_fields",
+      "action": "wait",
+      "wait_for": { "window": "ScanFinder — Review", "timeout": 15 },
+      "narration": "Each document shows the page on the right and the details it read on the left.",
+      "caption": "Check the details it read",
+      "duration_sec": 5
+    },
+    {
+      "id": "confirm",
+      "action": "move_and_click",
+      "target": { "selector": "#btn-confirm", "window": "ScanFinder — Review" },
+      "narration": "If they look right, click Confirm.",
+      "caption": "5. Click Confirm to file it",
+      "duration_sec": 4
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "The document is filed into a company, year and month folder, and ScanFinder learns from your confirmation for next time.",
+      "caption": "Filed — and ScanFinder learns from it",
+      "duration_sec": 6
+    }
+  ]
+}

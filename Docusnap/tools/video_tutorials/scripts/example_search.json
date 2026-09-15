@@ -1,0 +1,68 @@
+{
+  "version": 1,
+  "title": "Search inside your scanned documents",
+  "description": "Open Search, type a word, open a result and see the page.",
+  "target_length_sec": 40,
+  "app": { "window_title": "ScanFinder", "cdp_port": 9222, "maximize": true },
+  "record": { "mode": "window", "fps": 30 },
+  "captions": { "position": "bottom", "font_size": 26 },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "Here's how to find any document ScanFinder has filed, just by typing a word.",
+      "caption": "Search your scanned documents",
+      "duration_sec": 4
+    },
+    {
+      "id": "open_search",
+      "action": "move_and_click",
+      "target": { "selector": "#btn-search", "window": "ScanFinder" },
+      "narration": "Click Search in the side bar.",
+      "caption": "1. Click Search",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "type_query",
+      "action": "type_text",
+      "wait_for": { "window": "ScanFinder — Search", "selector": "#inp-fulltext", "timeout": 15 },
+      "target": { "selector": "#inp-fulltext", "window": "ScanFinder — Search" },
+      "text": "invoice",
+      "narration": "Type anything that's printed on the document — a supplier, a reference, an amount.",
+      "caption": "2. Type a word from the document",
+      "duration_sec": 5
+    },
+    {
+      "id": "run_search",
+      "action": "move_and_click",
+      "target": { "selector": "#btn-search", "window": "ScanFinder — Search" },
+      "narration": "Then click Search.",
+      "caption": "3. Click Search",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "results",
+      "action": "wait",
+      "narration": "Matching documents appear on the left.",
+      "caption": "Matches appear on the left",
+      "duration_sec": 3
+    },
+    {
+      "id": "open_result",
+      "action": "move_and_click",
+      "target": { "selector": ".result-row", "window": "ScanFinder — Search" },
+      "narration": "Click one to see the page on the right.",
+      "caption": "4. Click a result to preview it",
+      "duration_sec": 4
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "That's it — every word on every page is searchable the moment a document is filed.",
+      "caption": "Every page is searchable",
+      "duration_sec": 5
+    }
+  ]
+}

@@ -82,3 +82,7 @@ build_js/
 # repo root (the known Backup/ trap) would have committed them.
 recovered_inbox/
 templates/
+
+# Tutorial-video runner (tools/video_tutorials): its venv + rendered MP4/timeline outputs.
+tools/video_tutorials/.venv/
+tools/video_tutorials/out/
