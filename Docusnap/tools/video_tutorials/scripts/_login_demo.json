@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "title": "_login_demo (internal — record.py signs the demo admin in after an app restart)",
+  "lead_in_sec": 0.2,
+  "lead_out_sec": 0.2,
+  "app": { "window_title": "ScanFinder", "cdp_port": 9222, "maximize": false },
+  "record": { "mode": "screen" },
+  "steps": [
+    { "id": "username", "action": "type_text",
+      "wait_for": { "window": "ScanFinder — Sign in", "selector": "#login-username", "timeout": 30 },
+      "target": { "selector": "#login-username", "window": "ScanFinder — Sign in" }, "text": "{{USER}}", "clear": true,
+      "narration": "", "caption": "", "duration_sec": 0.8 },
+    { "id": "password", "action": "type_text",
+      "target": { "selector": "#login-password", "window": "ScanFinder — Sign in" }, "text": "{{PASS}}", "enter": true,
+      "narration": "", "caption": "", "duration_sec": 3 },
+    { "id": "tour_skip", "action": "move_and_click", "optional": true,
+      "wait_for": { "window": "Welcome to Scan Finder", "selector": "#skip", "timeout": 6 },
+      "target": { "selector": "#skip", "window": "Welcome to Scan Finder" },
+      "narration": "", "caption": "", "duration_sec": 1 }
+  ]
+}

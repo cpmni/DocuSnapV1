@@ -77,8 +77,8 @@ pyautogui.FAILSAFE = True   # slam the mouse into the top-left corner to abort a
 pyautogui.PAUSE = 0.05
 
 ACTIONS = (
-    "move_and_click", "click", "double_click", "right_click", "move_to",
-    "type_text", "press_keys", "scroll", "wait", "focus_window", "launch_app",
+    "move_and_click", "click", "double_click", "right_click", "move_to", "drag",
+    "type_text", "press_keys", "scroll", "wait", "focus_window", "launch_app", "eval_js",
 )
 TARGET_KINDS = ("selector", "rel", "abs", "image")
 
@@ -139,6 +139,12 @@ def _validate_target(t: Any, where: str) -> Optional[dict]:
         o = t["offset"]
         if not (isinstance(o, (list, tuple)) and len(o) == 2):
             raise ScriptError(f"{where}: target.offset must be [dx, dy]")
+    if "at" in t:
+        a = t["at"]
+        if not (isinstance(a, (list, tuple)) and len(a) == 2 and all(isinstance(n, (int, float)) and 0 <= n <= 1 for n in a)):
+            raise ScriptError(f"{where}: target.at must be [fx, fy] fractions inside the element (0..1)")
+        if k != "selector":
+            raise ScriptError(f"{where}: target.at only applies to selector targets")
     return t
 
 
@@ -189,6 +195,13 @@ def load_script(path: str) -> Script:
         needs_target = action in ("move_and_click", "click", "double_click", "right_click", "move_to")
         if needs_target and target is None:
             raise ScriptError(f"{where} ({sid}): action {action} needs a target")
+        if action == "drag":
+            _validate_target(s.get("from"), f"{where} ({sid}).from")
+            _validate_target(s.get("to"), f"{where} ({sid}).to")
+            if not s.get("from") or not s.get("to"):
+                raise ScriptError(f"{where} ({sid}): drag needs 'from' and 'to' targets")
+        if action == "eval_js" and not isinstance(s.get("js"), str):
+            raise ScriptError(f"{where} ({sid}): eval_js needs a string 'js'")
         if action == "type_text" and not isinstance(s.get("text"), str):
             raise ScriptError(f"{where} ({sid}): type_text needs a string 'text'")
         if action == "press_keys" and not s.get("keys"):
@@ -233,6 +246,13 @@ user32.ShowWindow.argtypes = [HWND, ctypes.c_int]
 user32.SetForegroundWindow.argtypes = [HWND]
 user32.GetParent.argtypes = [HWND]
 user32.GetParent.restype = HWND
+user32.GetClassNameW.argtypes = [HWND, ctypes.c_wchar_p, ctypes.c_int]
+user32.GetWindowThreadProcessId.argtypes = [HWND, ctypes.c_void_p]
+user32.AttachThreadInput.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_bool]
+user32.BringWindowToTop.argtypes = [HWND]
+user32.GetAncestor.argtypes = [HWND, ctypes.c_uint]
+user32.GetAncestor.restype = HWND
+user32.GetForegroundWindow.restype = HWND
 user32.GetWindowLongW.argtypes = [HWND, ctypes.c_int]
 user32.SetWindowLongW.argtypes = [HWND, ctypes.c_int, ctypes.c_long]
 dwmapi.DwmGetWindowAttribute.argtypes = [HWND, ctypes.c_uint, ctypes.c_void_p, ctypes.c_uint]
@@ -264,17 +284,33 @@ def list_windows() -> list[tuple[int, str]]:
     return out
 
 
+APP_WINDOW_CLASSES = ("Chrome_WidgetWin_1", "#32770")   # Electron windows · native dialogs
+
+
+def window_class(hwnd: int) -> str:
+    buf = ctypes.create_unicode_buffer(64)
+    user32.GetClassNameW(hwnd, buf, 64)
+    return buf.value
+
+
 def find_window(title: str) -> Optional[int]:
-    """Exact (dash-normalised) title match first, then substring. Returns an HWND or None."""
+    """Exact (dash-normalised) title match first; then a substring match restricted to app-class windows
+    (an Electron window or a native dialog). A bare substring over every window once matched the owner's
+    TERMINAL tab titled '… ScanFinder …' and clicked into it — so no last-resort match. Returns HWND or None."""
     want = _norm_title(title)
     wins = list_windows()
     for h, name in wins:
         if _norm_title(name) == want:
             return h
     for h, name in wins:
-        if want in _norm_title(name):
+        if want in _norm_title(name) and window_class(h) in APP_WINDOW_CLASSES:
             return h
     return None
+
+
+def is_foreground(hwnd: int) -> bool:
+    fg = user32.GetForegroundWindow()
+    return bool(fg) and (fg == hwnd or user32.GetAncestor(fg, 2) == hwnd)
 
 
 def wait_for_window(title: str, timeout: float) -> int:
@@ -315,12 +351,32 @@ def bring_to_front(hwnd: int, maximize: bool = False) -> None:
         user32.ShowWindow(hwnd, SW_RESTORE)
     if maximize:
         user32.ShowWindow(hwnd, SW_MAXIMIZE)
-    # Windows only honours SetForegroundWindow from a process that recently received input; a
-    # synthetic ALT tap is the documented workaround.
-    user32.keybd_event(0x12, 0, 0, 0)
-    user32.keybd_event(0x12, 0, 2, 0)
-    user32.SetForegroundWindow(hwnd)
-    time.sleep(0.3)
+    # Windows only honours SetForegroundWindow from the thread that owns the current foreground window.
+    # Preferred: attach our input queue to that thread for the call (no synthetic keystrokes — an ALT tap
+    # while a text field is focused can swallow the next characters). Fallback: the classic ALT tap.
+    fg = user32.GetForegroundWindow()
+    if fg and fg != hwnd:
+        kernel32 = ctypes.windll.kernel32
+        fg_thread = user32.GetWindowThreadProcessId(fg, None)
+        me = kernel32.GetCurrentThreadId()
+        attached = fg_thread and fg_thread != me and user32.AttachThreadInput(me, fg_thread, True)
+        try:
+            user32.SetForegroundWindow(hwnd)
+        finally:
+            if attached:
+                user32.AttachThreadInput(me, fg_thread, False)
+    else:
+        user32.SetForegroundWindow(hwnd)
+    # ALWAYS to the top of the z-order too: being the foreground window does not imply being on top
+    # (the backdrop's topmost-toggle can sit above a foreground app window and swallow every click).
+    user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040)   # HWND_TOP, NOMOVE|NOSIZE|SHOWWINDOW
+    user32.BringWindowToTop(hwnd)
+    time.sleep(0.25)
+    if not is_foreground(hwnd):
+        user32.keybd_event(0x12, 0, 0, 0)
+        user32.keybd_event(0x12, 0, 2, 0)
+        user32.SetForegroundWindow(hwnd)
+        time.sleep(0.3)
 
 
 def virtual_screen_origin() -> tuple[int, int]:
@@ -329,6 +385,14 @@ def virtual_screen_origin() -> tuple[int, int]:
 
 def primary_screen_rect() -> tuple[int, int, int, int]:
     return 0, 0, user32.GetSystemMetrics(SM_CXSCREEN), user32.GetSystemMetrics(SM_CYSCREEN)
+
+
+def work_area_rect() -> tuple[int, int, int, int]:
+    """Primary monitor minus the taskbar (SPI_GETWORKAREA)."""
+    r = wt.RECT()
+    if user32.SystemParametersInfoW(48, 0, ctypes.byref(r), 0):
+        return r.left, r.top, r.right - r.left, r.bottom - r.top
+    return primary_screen_rect()
 
 
 # ===== DevTools (CDP) resolver — CSS selector → element rect, for the DEV app ========================================
@@ -370,7 +434,7 @@ class CDP:
         ws = create_connection(ws_url, timeout=5, suppress_origin=True)
         try:
             ws.send(json.dumps({"id": 1, "method": "Runtime.evaluate",
-                                "params": {"expression": expression, "returnByValue": True}}))
+                                "params": {"expression": expression, "returnByValue": True, "awaitPromise": True}}))
             while True:
                 msg = json.loads(ws.recv())
                 if msg.get("id") == 1:
@@ -388,7 +452,7 @@ class CDP:
 (() => {
   const el = document.querySelector(%s);
   if (!el) return { error: 'no element matches' };
-  el.scrollIntoView({ block: 'center', inline: 'center' });
+  el.scrollIntoView({ block: 'nearest', inline: 'nearest' });   // 'center' would re-centre an oversized page canvas
   const r = el.getBoundingClientRect();
   const cs = getComputedStyle(el);
   const visible = r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none' && cs.opacity !== '0';
@@ -414,6 +478,7 @@ class TargetResolver:
     def __init__(self, app: dict, cdp_port: Optional[int] = None):
         self.app = app
         self.cdp = CDP(int(cdp_port or app.get("cdp_port") or 9222))
+        self.last_hwnd: Optional[int] = None   # the OS window the last rel/selector target was resolved in
 
     def _window_for(self, target: dict) -> str:
         return str(target.get("window") or self.app.get("window_title") or "ScanFinder")
@@ -435,6 +500,7 @@ class TargetResolver:
                 time.sleep(0.25)
 
     def _resolve_once(self, t: dict) -> tuple[float, float, str]:
+        self.last_hwnd = None
         if "abs" in t:
             x, y = t["abs"]
             return float(x), float(y), f"abs({x},{y})"
@@ -445,6 +511,7 @@ class TargetResolver:
                 raise RuntimeError(f"window {title!r} not found")
             cx, cy, cw, ch = client_rect(hwnd)
             fx, fy = t["rel"]
+            self.last_hwnd = hwnd
             return cx + cw * fx, cy + ch * fy, f"rel({fx},{fy}) of {title!r}"
         if "image" in t:
             path = t["image"]
@@ -470,11 +537,14 @@ class TargetResolver:
                 raise RuntimeError(f"OS window for page {rect.get('title')!r} not found")
             cx, cy, cw, ch = client_rect(hwnd)
             dpr = float(rect.get("dpr") or 1.0)
-            x = cx + (rect["x"] + rect["w"] / 2) * dpr
-            y = cy + (rect["y"] + rect["h"] / 2) * dpr
+            fx, fy = (t.get("at") or (0.5, 0.5))   # point inside the element (fractions), default centre
+            x = cx + (rect["x"] + rect["w"] * fx) * dpr
+            y = cy + (rect["y"] + rect["h"] * fy) * dpr
             if not (cx <= x <= cx + cw and cy <= y <= cy + ch):
                 raise RuntimeError(f"{t['selector']!r} resolved outside the window client area ({x:.0f},{y:.0f})")
-            return x, y, f"{t['selector']} in {rect.get('title')!r}"
+            self.last_hwnd = hwnd
+            at = f"@{t['at']}" if t.get("at") else ""
+            return x, y, f"{t['selector']}{at} in {rect.get('title')!r}"
         raise RuntimeError(f"unsupported target {t}")
 
     def wait_for(self, cond: dict, timeout: float) -> None:
@@ -491,12 +561,28 @@ class CaptionOverlay:
     WS_EX_TRANSPARENT, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE = 0x20, 0x80000, 0x80, 0x8000000
     GWL_EXSTYLE = -20
 
-    def __init__(self, region: tuple[int, int, int, int], style: dict):
+    def __init__(self, region: tuple[int, int, int, int], style: dict, captions: bool = True,
+                 backdrop: Optional[str] = None):
         import tkinter as tk
         self.region = region
         self.style = style
+        self.captions = captions
         self.root = tk.Tk()
         self.root.withdraw()
+        self.backdrop = None
+        if backdrop:
+            # A plain full-screen window BEHIND the app: hides the desktop/terminal/other apps when the
+            # recorded window is small (sign-in, wizard, dialogs). Never topmost, never activates.
+            bx, by, bw, bh = work_area_rect()
+            self.backdrop = tk.Toplevel(self.root)
+            self.backdrop.overrideredirect(True)
+            self.backdrop.configure(bg=backdrop)
+            self.backdrop.geometry(f"{bw}x{bh}+{bx}+{by}")
+            self.backdrop.update_idletasks()
+            self.backdrop.update()
+            self.backdrop_hwnd = user32.GetParent(self.backdrop.winfo_id()) or self.backdrop.winfo_id()
+            user32.SetWindowLongW(self.backdrop_hwnd, self.GWL_EXSTYLE,
+                                  user32.GetWindowLongW(self.backdrop_hwnd, self.GWL_EXSTYLE) | self.WS_EX_NOACTIVATE | self.WS_EX_TOOLWINDOW)
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
         self.root.attributes("-alpha", float(style.get("opacity", 0.92)))
@@ -513,6 +599,15 @@ class CaptionOverlay:
         self.root.update_idletasks()
         self._make_click_through()
 
+    def place_backdrop_under(self, hwnd: Optional[int]) -> None:
+        """Insert the backdrop DIRECTLY BELOW `hwnd` in the z-order (no activation): app > backdrop > the rest.
+        Called at every step start and after every re-front, because each app window hand-off (Terms closes,
+        the wizard opens) lets Windows activate whatever was next — usually the presenter's terminal."""
+        if not self.backdrop or not hwnd:
+            return
+        # SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW
+        user32.SetWindowPos(self.backdrop_hwnd, hwnd, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0040)
+
     def _make_click_through(self) -> None:
         # Tk wraps the toplevel: winfo_id() is the inner child, GetParent() the real frame window.
         # Style ONLY the wrapper. (Making the inner child WS_EX_LAYERED hides it — a layered window is
@@ -527,7 +622,7 @@ class CaptionOverlay:
 
     def set_caption(self, text: str) -> None:
         text = (text or "").strip()
-        if not text:
+        if not text or not self.captions:
             self.root.withdraw()
             return
         self.label.config(text=text)
@@ -544,17 +639,23 @@ class CaptionOverlay:
         self._make_click_through()   # Tk may recreate its wrapper window on deiconify — re-apply
         self.root.update_idletasks()
 
-    def run(self, work: Callable[[Callable[[str], None]], None]) -> None:
-        """Run `work(set_caption)` on a worker thread while tkinter owns the main thread."""
+    def run(self, work: Callable[[Callable[[str], None], Callable[[], None]], None]) -> None:
+        """Run `work(set_caption, raise_backdrop)` on a worker thread while tkinter owns the main thread.
+        Both callables are thread-safe posts; the Tk work happens here on the main thread."""
         q: queue.Queue = queue.Queue()
         outcome: dict = {}
 
-        def post(text: str) -> None:
+        def post_caption(text: str) -> None:
             q.put(("caption", text))
+
+        def post_backdrop(under_hwnd: Optional[int]) -> None:
+            done = threading.Event()
+            q.put(("backdrop", (done, under_hwnd)))
+            done.wait(1.0)
 
         def worker() -> None:
             try:
-                work(post)
+                work(post_caption, post_backdrop)
             except BaseException as e:  # noqa: BLE001 — re-raised on the main thread below
                 outcome["error"] = e
             finally:
@@ -568,6 +669,10 @@ class CaptionOverlay:
                     kind, val = q.get_nowait()
                     if kind == "caption":
                         self.set_caption(val)
+                    elif kind == "backdrop":
+                        done, under = val
+                        self.place_backdrop_under(under)
+                        done.set()
                     elif kind == "done":
                         self.root.quit()
                         return
@@ -743,16 +848,56 @@ class Timeline:
 class Actions:
     def __init__(self, script: Script, resolver: TargetResolver, sleep: Callable[[float], None]):
         self.script, self.resolver, self.sleep = script, resolver, sleep
+        self.after_front: Callable[[int], None] = lambda _h: None   # runner hook: re-seat the backdrop under hwnd
 
     def _goto(self, st: Step) -> tuple[int, int]:
         x, y, desc = self.resolver.resolve(st.target, float(st.params.get("resolve_timeout", 8)))
         log(f"  → {desc} = ({x},{y})")
+        hwnd = self.resolver.last_hwnd
+        if hwnd and not is_foreground(hwnd):
+            # Something else took focus (the owner's terminal, a notification…) and may now COVER the
+            # target — a click would land on it. Re-front the app window first, never maximise here.
+            log("  ! target window not in front — bringing it forward")
+            bring_to_front(hwnd, maximize=False)
+        if hwnd:
+            self.after_front(hwnd)
         pyautogui.moveTo(x, y, duration=float(st.params.get("move_duration", 0.6)), tween=pyautogui.easeInOutQuad)
         self.sleep(float(st.params.get("hover_sec", 0.25)))   # a beat so the viewer sees where the cursor landed
         return x, y
 
     def move_to(self, st: Step) -> None:
         self._goto(st)
+
+    def drag(self, st: Step) -> None:
+        """Left-drag from `from` to `to` (both targets) — e.g. drawing a teach box on a page."""
+        timeout = float(st.params.get("resolve_timeout", 8))
+        x1, y1, d1 = self.resolver.resolve(st.params["from"], timeout)
+        x2, y2, d2 = self.resolver.resolve(st.params["to"], timeout)
+        log(f"  → drag {d1} ({x1},{y1}) → {d2} ({x2},{y2})")
+        hwnd = self.resolver.last_hwnd
+        if hwnd and not is_foreground(hwnd):
+            log("  ! target window not in front — bringing it forward")
+            bring_to_front(hwnd, maximize=False)
+        if hwnd:
+            self.after_front(hwnd)
+        button = str(st.params.get("button", "left"))   # "right" = pan gesture in the teach/preview panes
+        pyautogui.moveTo(x1, y1, duration=float(st.params.get("move_duration", 0.6)), tween=pyautogui.easeInOutQuad)
+        self.sleep(float(st.params.get("hover_sec", 0.3)))
+        pyautogui.mouseDown(button=button)
+        self.sleep(0.15)
+        pyautogui.moveTo(x2, y2, duration=float(st.params.get("drag_duration", 0.9)), tween=pyautogui.easeInOutQuad)
+        self.sleep(0.15)
+        pyautogui.mouseUp(button=button)
+
+    def eval_js(self, st: Step) -> None:
+        """Run JavaScript in an app page over DevTools (dev app only). Demo/privacy hook — e.g. set the import
+        folder without opening the native picker (which would show the presenter's own folder tree)."""
+        window = str(st.params.get("window") or self.script.app.get("window_title") or "ScanFinder")
+        target = self.resolver.cdp.find_target(window)
+        if not target:
+            raise RuntimeError(f"no DevTools page titled like {window!r}")
+        val = self.resolver.cdp.evaluate(target, st.params["js"])
+        log(f"  → eval_js in {target.get('title')!r} = {json.dumps(val)[:120]}")
 
     def move_and_click(self, st: Step) -> None:
         x, y = self._goto(st)
@@ -817,6 +962,7 @@ class Actions:
         title = str(st.params.get("window") or self.script.app["window_title"])
         hwnd = wait_for_window(title, float(st.params.get("timeout", 10)))
         bring_to_front(hwnd, maximize=bool(st.params.get("maximize", False)))
+        self.after_front(hwnd)
 
     def launch_app(self, st: Step) -> None:
         exe = str(st.params.get("exe") or self.script.app.get("exe"))
@@ -861,15 +1007,15 @@ class Runner:
             x, y, w, h = rec["region"]
             return int(x), int(y), int(w), int(h)
         if rec["mode"] == "screen":
-            return primary_screen_rect()
+            return work_area_rect()   # primary monitor without the taskbar
         title = str(rec.get("window") or self.opts.window or self.script.app["window_title"])
         hwnd = wait_for_window(title, 10)
         return frame_rect(hwnd)
 
     def prepare_window(self) -> None:
         title = str(self.opts.window or self.script.app["window_title"])
-        hwnd = wait_for_window(title, 10)
-        bring_to_front(hwnd, maximize=bool(self.script.app.get("maximize", True)))
+        self.app_hwnd = wait_for_window(title, 10)
+        bring_to_front(self.app_hwnd, maximize=bool(self.script.app.get("maximize", True)))
         log(f"window {title!r} in front (maximize={self.script.app.get('maximize', True)})")
 
     def verify_targets(self) -> int:
@@ -891,13 +1037,25 @@ class Runner:
                     log(f"FAIL {st.id:<22} {label}: {e}")
         return fails
 
-    def run_steps(self, set_caption: Callable[[str], None]) -> None:
+    def current_app_window(self) -> Optional[int]:
+        """The app window to keep the backdrop under: the foreground window if it is an app window, else the
+        last window a target resolved in, else the window the run started on."""
+        fg = user32.GetForegroundWindow()
+        if fg and window_class(fg) in APP_WINDOW_CLASSES:
+            return fg
+        return self.resolver.last_hwnd or getattr(self, "app_hwnd", None)
+
+    def run_steps(self, set_caption: Callable[[str], None],
+                  place_backdrop: Callable[[Optional[int]], None] = lambda _h: None) -> None:
         tl, script = self.timeline, self.script
+        self.actions.after_front = place_backdrop
         self.sleep(script.lead_in_sec)
+        place_backdrop(self.current_app_window())
         for i, st in enumerate(script.steps):
             start = time.monotonic()
             log(f"step {i + 1}/{len(script.steps)} {st.id} [{st.action}] {st.duration_sec:.1f}s  {st.caption!r}")
             set_caption(st.caption)
+            place_backdrop(self.current_app_window())   # each window hand-off may have surfaced the terminal
             tl.mark(i, "actual_start", "running")
             try:
                 if st.wait_for:
@@ -945,7 +1103,14 @@ class Runner:
             log(f"starting in {n}… (hands off the mouse; top-left corner = abort)")
             time.sleep(1)
 
-        overlay = CaptionOverlay(region, script.captions) if opts.captions == "live" else None
+        backdrop = script.record.get("backdrop")
+        overlay = None
+        if opts.captions == "live" or backdrop:
+            overlay = CaptionOverlay(region, script.captions, captions=(opts.captions == "live"), backdrop=backdrop)
+            if backdrop:
+                overlay.root.update()
+                bring_to_front(self.app_hwnd, maximize=False)   # the new backdrop came up in front — put the app back
+                overlay.place_backdrop_under(self.app_hwnd)
         exit_code = 0
         try:
             if recorder:
@@ -955,7 +1120,7 @@ class Runner:
             if overlay:
                 overlay.run(self.run_steps)
             else:
-                self.run_steps(lambda _t: None)
+                self.run_steps(lambda _t: None, lambda _h: None)
             log("steps finished")
         except KeyboardInterrupt:
             self.stop_event.set()

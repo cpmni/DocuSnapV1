@@ -6,6 +6,18 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
+## ✅ DONE 2026-09-15/16 NIGHT — FIVE YOUTUBE TUTORIAL VIDEOS recorded automatically (owner: "use the night run to make useful instructional videos… Goodnight mr claude") — `HANDOVER_2026-09-16_VIDEOS.md`
+Autonomous run. **Deliverable = `Desktop\Tutorials\`**: `first-run-setup` (4:00, licence screen + account + recovery
+code + terms + every wizard choice with its reason) · `teach-a-document` (2:40) · `import-a-folder` (1:35) ·
+`review-and-confirm` (1:40) · `search-for-a-document` (1:10), each with `.narration.json` (timestamped lines for the
+TTS pass) + `.captions.srt`, plus `tts_manifest.json` (learning order) + `README.md`. Recorded on a sandboxed dev
+copy at the neutral `C:\ScanFinderDemo` (demo admin, 9 demo invoices); the licence screen was filmed via a local
+fake licence server (config swap self-restoring; `git status config` clean). Tooling grew: `drag`/`eval_js`/`at`
+actions, backdrop window, `record.py` (profile · fake-licence segment · join · publish). Frames of every video were
+inspected (backdrop, no personal paths, correct read-backs, confirm really filed). **Repeat only if:** a UI change
+breaks a script (`--dry-run --verify`), or the owner wants re-takes (optional: search video after review so results
+show "filed" rather than "Needs Review").
+
 ## ✅ DONE 2026-09-15 NIGHT — Chris A+B on connect/teach/QuickFile + safe fix pass + 2 security fixes + S4 upload-to-teach (owner: "please do all if possible. Goodnight") — `HANDOVER_2026-09-15_NIGHT.md`
 Autonomous run. **5 commits, ALL LOCAL/UNPUSHED; full pin gate 371/371 GREEN.** (1) **Chris ROUND A ×2** (this
 session's + the prior session's Chris, which completed tonight) — both **YES**, both verified teach + Quick File

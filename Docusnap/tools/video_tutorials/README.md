@@ -82,8 +82,31 @@ python scanfinder_video_runner.py --script scripts\example_search.json --out out
 # 4. record
 python scanfinder_video_runner.py --script scripts\example_search.json --out out\search.mp4
 ```
-A 3-second countdown runs first — take your hands off the mouse. **Abort:** slam the mouse into the
-top-left corner of the screen (pyautogui fail-safe) or Ctrl+C in the terminal.
+A 3-second countdown runs first — take your hands off the mouse **and keyboard** for the whole run
+(typing focuses your terminal, which then covers the app; keystrokes land in whichever window has focus).
+The runner re-fronts the target window before every click as a safety net, but a stray keypress during a
+`type_text` step still corrupts the text. **Abort:** slam the mouse into the top-left corner of the screen
+(pyautogui fail-safe) or Ctrl+C in the terminal.
+
+**Zero-setup path:** `python record.py scripts\<name>.json --publish "%USERPROFILE%\Desktop\Tutorials"`
+prepares a sandboxed demo copy of the app at the neutral `C:\ScanFinderDemo` (own data folder, `Scans\First`
+one demo invoice, `Scans\Batch` eight invoices from two suppliers, `Filed Documents` as the pre-seeded output
+folder, demo admin `admin` / `Scan-Finder-2026`), launches it with DevTools, signs in, imports `Scans\First`
+once, closes any leftover child window, then records and publishes (mp4 + captions.srt + narration.json +
+`tts_manifest.json` in learning order). `--as-is` records the app exactly as it is (the first-run video),
+`--reset` wipes the demo profile, `--down` stops the demo app, `--prepare` just readies the app.
+
+**The five tutorials, in order** (each script is the storyboard):
+`first-run-a-account-licence.json` + `first-run-b-setup-wizard.json` (joined by `--licence-intro`) ·
+`teach-a-document.json` · `import-a-folder.json` · `review-and-confirm.json` · `search-for-a-document.json`.
+They depend on each other's app state (teach needs the imported example; import feeds review; review/search
+need the batch), so re-record in that order after a `--reset`.
+The complete first run including the licence screen (account → licence → terms → wizard):
+`python record.py scripts\first-run-b-setup-wizard.json --as-is --licence-intro scripts\first-run-a-account-licence.json`
+— segment A runs on a licence-less profile so the licence screen appears after the account is created
+(explain + hover only; a real "Start trial" would contact the licensing server); the licence rows are then
+restored, the app restarts and signs in silently, segment B films from the Terms window, and the two clips
+and their timelines are joined into one MP4/SRT/narration set.
 
 Options: `--captions live|burn|none` (live = overlay window, default; burn = post-process from the SRT;
 none) · `--fps 30` · `--ffmpeg PATH` · `--cdp-port 9222` · `--window "ScanFinder"` · `--countdown 3`
@@ -132,12 +155,21 @@ still frames at both ends. Narration ≈ 2.5 words per second — size each step
 | `move_and_click` / `click` | `target`, `button`, `clicks`, `move_duration` (0.6), `hover_sec` (0.25) |
 | `double_click`, `right_click` | same as above |
 | `move_to` | `target` — hover only, to point at something |
+| `drag` | `from`, `to` (targets; use `at` fractions on a page canvas), `button` (`left` draws a teach box, `right` pans), `drag_duration` |
 | `type_text` | `text`, optional `target` (clicked first), `clear`, `enter`, `interval` |
 | `press_keys` | `keys`: `"enter"` or `["ctrl","f"]`, `presses` |
 | `scroll` | `amount` (negative = down), optional `target` |
 | `wait` | nothing — hold the caption for `duration_sec` |
 | `focus_window` | `window`, `maximize` |
+| `eval_js` | `window`, `js` — run JavaScript in an app page over DevTools (dev app only). A demo/privacy hook: e.g. set the import folder without opening the native picker (which would show the presenter's own folder tree) |
 | `launch_app` | `exe`, `args`, `cwd`, `wait_for_window` (usually not needed — app already open) |
+
+**Native dialogs are never filmed.** The Windows folder/file pickers show the presenter's OneDrive name and
+pinned folders. The scripts avoid them: the setup wizard's output folder is pre-seeded (`record.py`), the
+import folder is set with `eval_js` (mirrors what the picker would do), and Teach picks from the queue.
+
+**Selector targets can take `"at": [fx, fy]`** — a point inside the element as fractions — which is how a
+teach box is drawn on `#pageCanvas` (fractions of the page: measure them on a rendered page image).
 
 Any step may carry `wait_for: {"window": "...", "selector": "...", "timeout": 10}` — a pre-condition
 polled before the action (a child window opening, a native dialog appearing, a button becoming visible).
@@ -150,6 +182,10 @@ Waiting time is not charged to `duration_sec`. `"optional": true` lets a failing
 - `"abs": [1200, 640]` — screen pixels (fragile: breaks on any resize).
 - `"image": "assets/run_button.png"` (+ `"confidence": 0.9` with opencv) — crop a PNG of the control.
 - `"offset": [dx, dy]` — pixel nudge applied to any of the above.
+
+**Small windows (sign-in, wizard):** use `"record": {"mode": "screen", "backdrop": "#1f2430"}` — the
+runner captures the work area (no taskbar) and puts a plain-colour window behind the app so your desktop,
+terminal and other apps never appear in the video.
 
 **Window titles** (exact; any dash style is accepted):
 `ScanFinder` (main) · `ScanFinder — Review` · `ScanFinder — Search` · `Scan Finder — Settings` ·

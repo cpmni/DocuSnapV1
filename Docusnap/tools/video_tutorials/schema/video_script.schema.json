@@ -30,6 +30,7 @@
         "mode": { "enum": ["window", "screen", "region"], "default": "window" },
         "window": { "type": "string", "description": "Window whose frame is captured in mode=window (default app.window_title)." },
         "region": { "type": "array", "items": { "type": "integer" }, "minItems": 4, "maxItems": 4, "description": "[x, y, w, h] screen pixels for mode=region." },
+        "backdrop": { "type": "string", "description": "Colour (e.g. '#1f2430') for a plain full-screen window placed BEHIND the app — hides the desktop/other apps when the recorded windows are small (sign-in, wizard). mode=screen crops to the work area (no taskbar)." },
         "fps": { "type": "integer", "minimum": 10, "maximum": 60, "default": 30 }
       }
     },
@@ -67,7 +68,8 @@
         "image": { "type": "string", "description": "PNG of the control, path relative to the script file; pyautogui image search." },
         "confidence": { "type": "number", "minimum": 0.5, "maximum": 1, "description": "Image-match tolerance (needs opencv-python)." },
         "window": { "type": "string", "description": "Which app window the selector/rel is in (default app.window_title). Use the exact titles: 'ScanFinder', 'ScanFinder — Review', 'ScanFinder — Search', 'Scan Finder — Settings', 'Teach a new document — Scan Finder'." },
-        "offset": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "[dx, dy] pixels added to the resolved point." }
+        "offset": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "[dx, dy] pixels added to the resolved point." },
+        "at": { "type": "array", "items": { "type": "number", "minimum": 0, "maximum": 1 }, "minItems": 2, "maxItems": 2, "description": "Selector targets only: [fx, fy] point inside the element's box as fractions (default centre) — e.g. a spot on a page canvas." }
       },
       "oneOf": [
         { "required": ["selector"] },
@@ -93,7 +95,11 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
-        "action": { "enum": ["move_and_click", "click", "double_click", "right_click", "move_to", "type_text", "press_keys", "scroll", "wait", "focus_window", "launch_app"] },
+        "action": { "enum": ["move_and_click", "click", "double_click", "right_click", "move_to", "drag", "type_text", "press_keys", "scroll", "wait", "focus_window", "launch_app", "eval_js"] },
+        "from": { "$ref": "#/definitions/target", "description": "drag: start point." },
+        "to": { "$ref": "#/definitions/target", "description": "drag: end point." },
+        "drag_duration": { "type": "number", "description": "drag: seconds for the drag glide (default 0.9)." },
+        "js": { "type": "string", "description": "eval_js: JavaScript evaluated in the named window's page over DevTools (dev app only)." },
         "target": { "$ref": "#/definitions/target" },
         "wait_for": { "$ref": "#/definitions/wait_for" },
         "narration": { "type": "string", "description": "Spoken line for the later TTS pass. Empty for silent steps. Keep to ~2.5 words per second of duration." },

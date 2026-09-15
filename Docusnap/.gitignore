@@ -83,6 +83,8 @@ build_js/
 recovered_inbox/
 templates/
 
-# Tutorial-video runner (tools/video_tutorials): its venv + rendered MP4/timeline outputs.
+# Tutorial-video runner (tools/video_tutorials): its venv + rendered MP4/timeline outputs, and the
+# transient backup record.py keeps while it points the DEV app at its fake licence server.
 tools/video_tutorials/.venv/
 tools/video_tutorials/out/
+config/license.json.videobak

@@ -38,6 +38,19 @@ Canonical flows (each is a finished 40–70 s video):
 - **Teach a new document** — `#btn-teach` → the wizard window; steps involve drawing a box (a drag) — NOT supported by the runner; script only up to the wizard opening, or use `wait` steps with captions over the owner doing the draw by hand (`"optional": true` on nothing; just narrate).
 - **Settings tour** — `#btn-settings` → Settings window; tab buttons carry `data-tab` (grep for the slug), so `[data-tab="filesfiling"]`-style selectors are fine once verified.
 
+## Privacy + narration rules (owner, 2026-09-15 night)
+- NEVER film a native Windows dialog (folder/file picker: shows the presenter's OneDrive name + pinned folders). Import folder → `eval_js` recipe (copy it from `scripts/import-a-folder.json`); output folder → pre-seeded by `record.py`; Teach → pick from the queue (`#doc-picker .card`). Small windows (sign-in, wizard) → `"record": {"mode": "screen", "backdrop": "#1f2430"}`.
+- Paths on camera must be neutral (`C:\ScanFinderDemo\…`) — never `C:\Users\<name>`.
+- Narration = a real instructional voice: what the screen is, what to click, and WHY each option is what it is (the reason a customer would care). Casual, not cheesy; ≤ ~2.8 words/second; an explain step (hover the control while the reason is narrated) followed by the choose step.
+- Deliver via `python record.py scripts\<slug>.json --publish "%USERPROFILE%\Desktop\Tutorials"` (mp4 + captions.srt + narration.json for the TTS pass).
+
+## Verified flow facts (2026-09-15 night — real recordings)
+- **Teach** (`Teach a new document — Scan Finder`): welcome `#btn-next` → picker `#doc-picker .card` → `#btn-next` → type `#type-grid .card[data-slug="invoice"]` → `#btn-next` → fields in `sort_order` (Invoice: Document Issuer, Invoice Date, Invoice Number). The page pane centres an oversized canvas: first `eval_js` `document.querySelector('#pageCanvas').parentElement.scrollTop = 0`; then `drag` on `#pageCanvas` with `at` fractions of the PAGE (Copperfield invoice: issuer [0.16,0.036]→[0.51,0.070]; date [0.79,0.157]→[0.915,0.182]; number [0.79,0.135]→[0.915,0.160]); read-back → `#rb-yes`; after the last field the footer `#btn-next` reads "Review →" → `#commit-summary` → `#btn-next` saves → `#btn-teach-another` on Done. Zoom buttons `#tz-in/#tz-out/#tz-reset`; right-drag pans.
+- **Review** (`ScanFinder — Review`): queue is GROUPED by sender — `#queue-list .queue-group-head` (click to expand) → `#queue-list .qi-name` (doc) → `#fields-panel .field-input` (inputs carry `data-key`) → `#btn-confirm` (auto-loads the next doc) · `#btn-file-all-review`.
+- **Import**: `#btn-import` → `#folder-box` (hover + narrate; then `eval_js` sets the folder) → `#btn-run` → `wait_for` `#btn-review-docs` (timeout ≥ 300; 8 docs ≈ 35 s).
+- **Search**: `#inp-find-doc` is pre-filled with the search term — use `"clear": true` before typing.
+- The wizard rewrites `data-threads` values at runtime → use `.card[data-threads]:nth-child(2)` for Balanced.
+
 ## Output template (Markdown)
 ```
 ## <Title>  (~NN s)

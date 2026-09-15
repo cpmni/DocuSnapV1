@@ -21,7 +21,22 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-15 EVENING (Departments D2 + D-C11 built · date-year fix · two LAN-blocker fixes · client-Review scoped · both installers rebuilt):
+## ⏭ LATEST — 2026-09-15/16 NIGHT (the TUTORIAL-VIDEO tool built + FIVE YouTube tutorials recorded to `Desktop\Tutorials`):
+**READ `HANDOVER_2026-09-16_VIDEOS.md` FIRST.** No app code touched; pins untouched. New tooling
+`tools/video_tutorials/` (`scanfinder_video_runner.py` drives the UI over DevTools + pyautogui, records with FFmpeg
+gdigrab, click-through caption overlay + backdrop; `record.py` = sandboxed demo profile at the neutral
+`C:\ScanFinderDemo`, fake-licence segment, join, `--publish`) + the **`/makescript`** skill (storyboard + JSON with
+grep-verified selectors; privacy + narration rules). **Deliverable:** `Desktop\Tutorials\` — first-run-setup (4:00,
+incl. the licence screen) · teach-a-document · import-a-folder · review-and-confirm · search-for-a-document, each with
+`.narration.json` (timestamped lines for the owner's TTS pass) + `.captions.srt`, `tts_manifest.json`, `README.md`.
+Frames of every video inspected (no personal paths/terminal; teach read-backs correct; Confirm really filed).
+**Gotchas learned:** the packaged app refuses `--remote-debugging-port` (dev app only); the dev licence gate re-fetches
+this PC's seat online (hence the fake server + self-restoring `config/license.json` swap — `git status config` clean);
+native dialogs leak the presenter's folder tree (never filmed); the owner's terminal steals focus on any keypress
+(re-front per step; an early run typed "Demo Admin" into the terminal prompt — unsent). **Owner next:** TTS + upload;
+optional search re-take after review; the 09-15 EVENING queue below is unchanged (push `8ec76de`, VM live-test, D2b/D3/D4).
+
+## Prior — 2026-09-15 EVENING (Departments D2 + D-C11 built · date-year fix · two LAN-blocker fixes · client-Review scoped · both installers rebuilt):
 **READ `HANDOVER_2026-09-15_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `8ec76de`; origin at
 `38bbb88` (the `8ec76de` docs commit is UNPUSHED, the rest pushed); tree clean; migration 171; `npm run test:pins`
 377/377.** Both installers rebuilt (signed; hardened core): `dist\ScanFinder Setup 2.0.0-r20260915-1820-38bbb88.exe`

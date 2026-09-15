@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "title": "_import_demo (internal — record.py imports Scans\\First silently so the teach video has an example)",
+  "description": "Sets the import folder over DevTools (no native picker) and processes it; waits for the batch to finish.",
+  "lead_in_sec": 0.2,
+  "lead_out_sec": 0.2,
+  "app": { "window_title": "ScanFinder", "cdp_port": 9222, "maximize": true },
+  "record": { "mode": "window" },
+  "steps": [
+    { "id": "open_import", "action": "move_and_click",
+      "target": { "selector": "#btn-import", "window": "ScanFinder" }, "narration": "", "caption": "", "duration_sec": 1.5 },
+    { "id": "set_folder", "action": "eval_js", "window": "ScanFinder",
+      "js": "(async () => { const folder = \"{{SCANS_FIRST_JS}}\"; selectedFolder = folder; const parts = folder.replace(/\\\\/g, '/').split('/'); folderDisplay.textContent = parts.length > 3 ? '…/' + parts.slice(-2).join('/') : folder; folderDisplay.title = folder; folderDisplay.classList.add('set'); folderBox.classList.remove('cue'); btnRun.disabled = false; const d = document.getElementById('dash-folder'); if (d) { d.textContent = folder; d.classList.add('set'); } await showFolderPreview(folder); return folder; })()",
+      "narration": "", "caption": "", "duration_sec": 1.5 },
+    { "id": "process", "action": "move_and_click",
+      "target": { "selector": "#btn-run", "window": "ScanFinder" }, "narration": "", "caption": "", "duration_sec": 2 },
+    { "id": "wait_processed", "action": "wait",
+      "wait_for": { "window": "ScanFinder", "selector": "#btn-review-docs", "timeout": 900 },
+      "narration": "", "caption": "", "duration_sec": 1 },
+    { "id": "back_home", "action": "move_and_click",
+      "target": { "selector": "#btn-home", "window": "ScanFinder" }, "narration": "", "caption": "", "duration_sec": 1 }
+  ]
+}
