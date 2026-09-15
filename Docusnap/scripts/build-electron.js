@@ -61,7 +61,12 @@ const pkgPath = path.join(ROOT, 'package.json');
 const origPkg = fs.readFileSync(pkgPath, 'utf8');
 const pkgObj = JSON.parse(origPkg);
 pkgObj.build.files = [
-  { from: 'build_js/src', to: 'src', filter: ['**/*'] },
+  // '!services/departmentService.js': the DARK Departments-foundation service is orphaned (referenced only
+  // in comments, never require()d — grep-verified 2026-09-15), so esbuild never inlines it and it would ship
+  // as READABLE access-control source under a crown-jewel dir → verify-release-artifact's source-protection
+  // gate refuses. Exclude it until Departments is wired into the main graph, at which point esbuild inlines +
+  // removes it from build_js and this negation is a harmless no-op. Remove then.
+  { from: 'build_js/src', to: 'src', filter: ['**/*', '!services/departmentService.js'] },
   { from: 'build_js/database', to: 'database', filter: ['**/*'] },
   'assets/**/*',
   'package.json',
