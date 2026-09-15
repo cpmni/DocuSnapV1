@@ -119,6 +119,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // Detached search-client API hosting (admin-only; Settings → Search client access).
   clientApiGetStatus:  ()    => ipcRenderer.invoke('client-api-get-status'),
   clientApiSetEnabled: (on)  => ipcRenderer.invoke('client-api-set-enabled', on),
+  clientApiSetConfig:  (cfg) => ipcRenderer.invoke('client-api-set-config', cfg || {}),
   clientApiCertStatus:   ()  => ipcRenderer.invoke('client-api-cert-status'),
   clientApiCertGenerate: ()  => ipcRenderer.invoke('client-api-cert-generate'),
   clientApiCertExport:   ()  => ipcRenderer.invoke('client-api-cert-export'),

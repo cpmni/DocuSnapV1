@@ -1844,6 +1844,28 @@ function register(ctx) {
     if (cfg.host !== '127.0.0.1' && cfg.host !== 'localhost') ensureManagedCert(ctx);
     return startApiServer(ctx);
   });
+  // The DEDICATED admin writer for the client-api host/port/cert-path settings. `client_api_*` is a
+  // protected-settings key (src/lib/protectedSettings) so the GENERIC `set-setting` IPC + backup restore
+  // refuse it (a crafted backup must not stand up the LAN API / leak topology). The Settings UI was
+  // (wrongly) saving the typed address through that generic door, so the write was silently refused and the
+  // server stayed on the 127.0.0.1 default — the "IP stays at localhost" bug. This is the direct path the
+  // protectedSettings comment names ("written only by the dedicated client-api handlers"). Admin-gated;
+  // writes only the whitelisted client-api keys; validates the port. Restarting is the caller's job
+  // (clientApiSetEnabled false→true) so a mid-edit save never rebinds unexpectedly.
+  ipcMain.handle('client-api-set-config', (_e, cfg = {}) => {
+    requireRole('admin');
+    const db = getDb();
+    const written = {};
+    if (cfg.host != null) { learning.setSetting(db, 'client_api_host', String(cfg.host).trim()); written.host = true; }
+    if (cfg.port != null) {
+      const p = parseInt(cfg.port, 10);
+      if (!(Number.isInteger(p) && p >= 1 && p <= 65535)) throw Object.assign(new Error('Enter a port between 1 and 65535.'), { code: 'BAD_PORT' });
+      learning.setSetting(db, 'client_api_port', String(p)); written.port = true;
+    }
+    if (cfg.tlsCert !== undefined) { learning.setSetting(db, 'client_api_tls_cert', String(cfg.tlsCert || '').trim()); written.tlsCert = true; }
+    if (cfg.tlsKey !== undefined)  { learning.setSetting(db, 'client_api_tls_key',  String(cfg.tlsKey  || '').trim()); written.tlsKey  = true; }
+    return { ok: true, written, ...apiStatus(ctx) };
+  });
   // Pairing code — the "Connect a client" verification aid (Oracle C4). Setting a code makes /v1/ca + /v1/enroll
   // require a matching ?code= (pairingOk); it is NOT the access control (that stays credentials + entitlement +
   // seat) and is NEVER mandatory-by-default. Admin-only; the code is shown to the admin so they can read/QR it.

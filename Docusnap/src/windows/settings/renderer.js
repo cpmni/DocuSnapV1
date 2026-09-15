@@ -413,12 +413,12 @@ async function initClientApiSection() {
     }
     showAddrWarn('');   // valid (or turning off) → clear the prompt
     try {
-      // Persist the typed address + port BEFORE enabling. clientApiSetEnabled reads them from the DB
-      // server-side, and the field's own change-saver is fire-and-forget, so without an awaited write
-      // here the server can start on the stale/loopback host (the "IP stays at localhost" bug).
+      // Persist the typed address + port BEFORE enabling, via the DEDICATED client-api writer.
+      // client_api_* is a protected-settings key, so the generic set-setting door REFUSES it — writing
+      // host/port through set-setting here was silently swallowed, leaving the server on the 127.0.0.1
+      // default (the "IP stays at localhost" bug). clientApiSetConfig is the direct admin door.
       if (tgl.checked) {
-        try { await api.setSetting('client_api_host', (host.value || '').trim()); } catch {}
-        try { await api.setSetting('client_api_port', (port.value || '').trim()); } catch {}
+        try { await api.clientApiSetConfig({ host: (host.value || '').trim(), port: (port.value || '').trim() }); } catch {}
       }
       render(await api.clientApiSetEnabled(tgl.checked));
       // The listener binds asynchronously, so re-poll shortly to flip "starting…" → "Running".
@@ -427,8 +427,15 @@ async function initClientApiSection() {
   });
   // Persist host/port on edit; if the server is already running, restart it so the new address/port
   // rebinds immediately (the listener is idempotent, so a change alone never takes effect otherwise).
+  // client_api_* is protected against the generic set-setting door (backup/self-grant guard), so these
+  // fields save through the DEDICATED clientApiSetConfig writer instead — otherwise the write is refused
+  // and the address/port/cert never persist (the "IP stays at localhost" bug).
+  const _cfgKey = { client_api_host: 'host', client_api_port: 'port', client_api_tls_cert: 'tlsCert', client_api_tls_key: 'tlsKey' };
   const saver = (el, k) => el.addEventListener('change', async () => {
-    try { await api.setSetting(k, el.value.trim()); } catch {}
+    try {
+      if (_cfgKey[k]) await api.clientApiSetConfig({ [_cfgKey[k]]: el.value.trim() });
+      else await api.setSetting(k, el.value.trim());
+    } catch {}
     if (tgl.checked) {
       try {
         await api.clientApiSetEnabled(false);

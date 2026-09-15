@@ -30,5 +30,20 @@ const no  = (k) => { const ok = isProtectedSettingKey(k) === false; console.log(
 ['theme', 'output_folder', 'filename_pattern', 'auto_file_threshold', 'critical_field_conf_floor',
  'processing_mode', 'watch_folder', 'template_learn_on_confirm'].forEach(no);
 
+// REGRESSION (2026-09-15, the "IP stays at localhost" bug): because client_api_* is protected here, the
+// settings UI must write host/port/cert through the DEDICATED clientApiSetConfig door — NOT the generic
+// set-setting IPC (which refuses a protected key and silently swallows it, leaving the server on 127.0.0.1).
+{
+  const fs = require('fs'); const path = require('path');
+  const rend = fs.readFileSync(path.join(__dirname, '..', 'windows', 'settings', 'renderer.js'), 'utf8');
+  const bad = rend.match(/setSetting\(\s*['"]client_api_[a-z_]+['"]/g) || [];
+  const okNoGeneric = bad.length === 0;
+  console.log(`  ${okNoGeneric ? 'OK ' : 'BAD'} settings renderer never writes client_api_* via the (refused) generic set-setting${okNoGeneric ? '' : ' — ' + bad.join(', ')}`);
+  if (!okNoGeneric) fail++;
+  const okDedicated = /clientApiSetConfig\(/.test(rend);
+  console.log(`  ${okDedicated ? 'OK ' : 'BAD'} settings renderer uses the dedicated clientApiSetConfig writer`);
+  if (!okDedicated) fail++;
+}
+
 console.log(fail ? `\n${fail} FAILED` : '\nAll protected-setting-key checks passed');
 process.exit(fail ? 1 : 0);
