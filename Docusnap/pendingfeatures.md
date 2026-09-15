@@ -9,6 +9,29 @@
 
 ---
 
+## 2026-09-15 — Review over the search client (client UI, core does the work) — SCOPE VETTED, NOT built
+Full plan: `docs/designs/CLIENT_REVIEW_PARITY_PLAN_2026-09-15.md`. barry scoped + Oracle SIGN-OFF-WITH-CONDITIONS
+(both this session). A fully-featured Review in the detached client; the core does all OCR/extraction/filing/
+learning, the client relays coords + confirms. Licensed add-on on the EXISTING search seat (no new flag) — rides
+`detached_client_licensed` + writer role like `/v1` confirm/defer already do. Same shared-ui + injected-transport
++ generated-client-copy + no-direct-IPC/staleness pin pattern as search-parity (`scripts/sync-client-search.js`).
+- **Rails already exist** (Oracle-traced): `/v1/review/queue|deferred|counts`, the full preview surface,
+  confirm/defer/undefer, `ocr-region-boxes` draw-a-box, presence, doc-types. Missing (simple reads): a `/v1`
+  validation-patterns GET + per-field "show where it reads" boxes.
+- **v1 boundary:** queue + preview + field editor + draw-a-box + confirm/defer, on the search seat. Core-only:
+  reprocess / Learning Repair / settings / template wizard (deep-link to the existing client Teach instead).
+- **Key correction:** the desktop draw-a-box is ITSELF low-DPI (108) — no full-DPI read to fall short of; crop the
+  remote box from the 216-DPI `/v1 /page` render → equal-or-better. Do NOT build a client-only full-DPI re-read
+  (WRONG-LAYER). Delete is already over `/v1` (UI just omits the affordance). `project_client_review_multiuser.md`
+  is stale (no client review exists; the stale-refile gap is closed).
+- **Must-do conditions (Oracle):** the held-gate acknowledge round-trips (TYPE_SPLIT/ISSUER_NEAR_MATCH/
+  PREFIX_OUTLIER/INVALID_DATE) or a blocked doc strands a remote reviewer; surface the confirm ripple (class-fix/
+  issuer-fill fire on the core, undo is desktop-only) in the confirm DTO; 429 handling; crop-scale floor before S3;
+  S0 is a FOCUSED carve of the 9,400-line renderer, NOT a byte-identical extract.
+- **Slices:** S0 focused shared review-ui → S1 read-only → S2 write loop + acks + ripple → S3 draw-a-box (after the
+  crop floor) → S4 fidelity polish → L4 team inbox (later). Gate per plan (read-agreement parity M=0, confirm-gate
+  conformance, race pin, desktop regression, entitlement pin).
+
 ## 2026-09-12 — Suspect-code label re-read (first-pass, text-led) — Oracle SEND BACK → DO NOTHING (NOT built; do not re-attempt without a real exhibit)
 - **STATUS (Oracle re-vet 2026-09-12, both pillars verified false at source — DO NOTHING):** the arc is vacuous +
   unsafe as drawn. (1) `VS-72672` is SHAPE-VALID (`_fold_shape` folds it + `WS-73673` both to `@@-#`; mig-160 says
