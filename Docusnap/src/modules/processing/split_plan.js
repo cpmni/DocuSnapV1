@@ -23,11 +23,20 @@
  * carrying `slip_aborted` is ignored (defence in depth; segment_docs already omits it).
  */
 
-function buildSegmentArgs({ filePath, templatesFile, tesseract, slips }) {
+function buildSegmentArgs({ filePath, templatesFile, tesseract, slips, docTypesFile, configFile, titleSlug, continuationVeto }) {
   const args = ['--file', filePath];
   if (templatesFile) args.push('--templates-file', templatesFile);
   if (tesseract) args.push('--tesseract', tesseract);
   if (slips) args.push('--slips');
+  // DARK switches (2026-09-16, Oracle (A) C2 / (B) C8): argv is the ONLY kill — the pre-pass spawn never carries the
+  // DB-bridged env. Emitted only when ON (OFF argv byte-identical even when the files are known); the title arm
+  // needs the doc-types file (never a null in argv — the Oracle C1 class); patterns fall back to the bundled config.
+  if (titleSlug && docTypesFile) {
+    args.push('--doc-types-file', docTypesFile);
+    if (configFile) args.push('--config-file', configFile);
+    args.push('--title-slug');
+  }
+  if (continuationVeto) args.push('--continuation-veto');
   return args;
 }
 

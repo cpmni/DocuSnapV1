@@ -25,6 +25,8 @@ adds per-page rendering + the template match.
 
 from __future__ import annotations
 
+import re
+
 # Default keyword-fingerprint overlap a later page must share with the template it matched
 # to count as an independent FIRST page. 0.5 = at least half the template's signature words
 # present on the page — high enough that an invoice's continuation pages (line items only)
@@ -88,6 +90,50 @@ def is_document_start(text: str) -> bool:
     return has_recipient and has_num_or_date
 
 
+# ── SELF-DECLARED CONTINUATION VETO (2026-09-16; Oracle (B) slice 1, DARK `segment_continuation_veto`) ────────
+# The first-page signature is "a known template matches AND the keyword-fingerprint overlap clears the floor" —
+# but the fingerprint IS the letterhead words, and a real continuation page (logo + name + address repeated,
+# line items below) reproduces it (measured: 6/6 repeat-letterhead 2-page controls cut at page 2 —
+# TESTING/_measure/watch_separate_soak_20260916/controls). On a manual import that is a SILENT TRUNCATION: page 1
+# files as a one-page document, page 2 becomes an orphan. A page that DECLARES ITSELF a continuation is never a
+# boundary, whatever the template/overlap/doc-start legs say:
+#   • "Page n of N" / "Page n/N" / "Page n" with n >= 2 — anywhere on the page (a page number describes the page it
+#     is printed on; "Page 1 of 2" never suppresses);
+#   • "continued" / "(cont.)" / "continuation" — in the TOP band only and never "continued on …" (that footer sits
+#     on the page BEFORE the continuation);
+#   • "brought forward" / "B/F" — in the top band (the balance carried in from the previous page; "carried forward"
+#     is deliberately EXCLUDED — it marks the page before).
+# Page 0 is never affected (always document 1). OCR failure direction: a garbled marker = today's behaviour; a
+# first page misread as "Page 2 of 2" = an under-split → a multi-page heuristic cut → the mig-176 belt holds it
+# (fail-toward-review). Pure; pinned in tests/test_segmentation.py.
+# "Page n of N" / "Page n/N" anywhere EXCEPT as the object of "on"/"see"/"to" ("continued on page 2 of 3" is the
+# page BEFORE talking about its successor); the bare "Page n" form only as a page-number LINE of its own.
+_PAGE_N_OF_N_RE = re.compile(r"(?<!\bon\s)(?<!\bsee\s)(?<!\bto\s)\bpage\s*(\d{1,3})\s*(?:of|/)\s*(\d{1,3})\b")
+_PAGE_N_RE      = re.compile(r"(?m)^\s*page\s+(\d{1,3})\s*$")
+_CONT_RE        = re.compile(r"(?<![a-z])(?:continued|continuation|cont\.)(?![a-z])(?!\s+(?:on|overleaf|next|from))")
+_BF_RE          = re.compile(r"(?<![a-z])(?:brought\s+forward|b/f)(?![a-z])")
+CONTINUATION_TOP_LINES = 12
+
+
+def is_continuation_page(text: str) -> bool:
+    """Does this page DECLARE ITSELF a continuation of the previous one? See the block comment above.
+    Pure; never raises; empty/None → False."""
+    try:
+        low = (text or "").lower()
+        if not low.strip():
+            return False
+        for m in _PAGE_N_OF_N_RE.finditer(low):
+            if int(m.group(1)) >= 2:
+                return True
+        for m in _PAGE_N_RE.finditer(low):
+            if int(m.group(1)) >= 2:
+                return True
+        top = "\n".join([l for l in low.splitlines() if l.strip()][:CONTINUATION_TOP_LINES])
+        return bool(_CONT_RE.search(top) or _BF_RE.search(top))
+    except Exception:
+        return False
+
+
 def decide_boundary(matched_id, current_id, fp_overlap: float, doc_start: bool,
                     fp_floor: float = FIRST_PAGE_FP_FLOOR) -> bool:
     """Whether a (non-first) page starts a NEW document. True when ANY holds:
@@ -126,11 +172,48 @@ def page_is_first(page_text: str, page_image, templates: list,
     }
 
 
+# ── TITLE-THREADED page match (2026-09-16; gary → Oracle (A) SIGN-OFF-W/COND, DARK `segment_title_slug`) ──────
+# The pre-pass used to call identify_template with THREE args — no `detected_slug` / `title_trusted` — so on a
+# same-letterhead supplier the sibling tie-break degenerates to the most-confirmed sibling (identical fingerprints
+# → a stable-sort tie), and when that sibling's type reliably prints a heading that is absent here, the
+# TYPE-PRESENCE VETO refuses it → `{'template': None, 'type_refused': True}` → the page could never be a boundary
+# (every missed boundary in the 2026-09-16 templated stacks). The full pipeline threads the page's OWN title
+# (TYPE-PRECEDENCE 2026-07-09); this does the same, as a CASCADE that can never lose today's boundary:
+#   1. a TRUSTED heading → identify_template(…, slug, True)   (the `matching` branch picks the right sibling)
+#   2. any installed slug  → identify_template(…, slug, False)  (the matching branch needs no trust)
+#   3. today's 3-arg call                                        (the fallback on None / any type_refused)
+# Measured (4-arm per-page census, probe_4arm_stacks.txt): base 72/95 boundaries → cascade 79/95, 0 lost,
+# 0 over-splits; real_34 34/34 and the singles unchanged. `title_ctx is None` (the switch OFF) → the 3-arg
+# call exactly as before (byte-identical).
+def page_match(page_image, text: str, templates: list, title_ctx=None):
+    from extraction.template_matcher import identify_template
+    if not title_ctx:
+        return identify_template(page_image, text or "", templates)
+    slug, trusted = None, False
+    try:
+        from extraction.keyword import title_signal
+        slug, trusted = title_signal(text or "", title_ctx.get("patterns"), title_ctx.get("doc_types"))
+    except Exception:
+        slug, trusted = None, False
+    m = None
+    if slug and trusted:
+        m = identify_template(page_image, text or "", templates, slug, True)
+    if slug and not (m or {}).get("template"):
+        m = identify_template(page_image, text or "", templates, slug, False)
+    if not (m or {}).get("template"):
+        m = identify_template(page_image, text or "", templates)
+    return m
+
+
 def detect_segments(pdf_path: str, templates: list, tesseract_path: str | None = None,
-                    born_digital: bool = True, fp_floor: float = FIRST_PAGE_FP_FLOOR) -> dict:
+                    born_digital: bool = True, fp_floor: float = FIRST_PAGE_FP_FLOOR,
+                    title_ctx: dict | None = None, continuation_veto: bool = False) -> dict:
     """Render each page of `pdf_path`, decide which pages are independent first pages, and
     return {page_count, segments, first_pages, reasons}. A non-PDF, a single-page PDF, no
-    templates, or any error → a single whole-document segment (no split)."""
+    templates, or any error → a single whole-document segment (no split).
+    `title_ctx` = {'patterns', 'doc_types'} threads the page's own title into the match (DARK
+    segment_title_slug); `continuation_veto` suppresses a boundary on a self-declared continuation
+    page (DARK segment_continuation_veto). Both default OFF → byte-identical."""
     import os
     result_single = {"page_count": 1, "segments": [[0, 0]], "first_pages": [0], "reasons": ["whole document"]}
     if not templates or not str(pdf_path).lower().endswith(".pdf") or not os.path.isfile(pdf_path):
@@ -156,9 +239,9 @@ def detect_segments(pdf_path: str, templates: list, tesseract_path: str | None =
         except Exception:
             pass
 
-    from extraction.template_matcher import identify_template, extract_keyword_fingerprint
+    from extraction.template_matcher import extract_keyword_fingerprint
 
-    # Per-page signals: (matched template id | None, fingerprint overlap, doc-start flag).
+    # Per-page signals: (matched template id | None, fingerprint overlap, doc-start flag, self-declared cont.).
     signals: list[tuple] = []
     for i in range(n):
         page = doc[i]
@@ -170,12 +253,13 @@ def detect_segments(pdf_path: str, templates: list, tesseract_path: str | None =
         except Exception:
             img = None
         text = _page_text(page, img, born_digital, tesseract_path)
-        match = identify_template(img, text or "", templates)
+        match = page_match(img, text or "", templates, title_ctx)
         tmpl = (match or {}).get("template") or {}
         mid = tmpl.get("id") if match else None
         overlap = fingerprint_overlap(extract_keyword_fingerprint(text or ""),
                                       tmpl.get("keyword_fingerprint")) if match else 0.0
-        signals.append((mid, overlap, is_document_start(text)))
+        signals.append((mid, overlap, is_document_start(text),
+                        bool(continuation_veto and i > 0 and is_continuation_page(text))))
 
     # Walk the pages, tracking the CURRENT document's identity so a different known type
     # OR a generic new-document header starts a fresh segment.
@@ -183,11 +267,13 @@ def detect_segments(pdf_path: str, templates: list, tesseract_path: str | None =
     reasons: list[str] = ["document start"]
     current_id = signals[0][0]
     for i in range(1, n):
-        mid, overlap, ds = signals[i]
+        mid, overlap, ds, self_cont = signals[i]
         boundary = decide_boundary(mid, current_id, overlap, ds, fp_floor)
+        if boundary and self_cont:
+            boundary = False                      # the page says it is a continuation — never a cut
         flags.append(boundary)
         if not boundary:
-            reasons.append("continuation")
+            reasons.append("self-declared continuation" if self_cont else "continuation")
         elif mid is not None and overlap >= fp_floor and mid == current_id:
             reasons.append("first-page fingerprint")
         elif mid is not None and mid != current_id:

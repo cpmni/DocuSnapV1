@@ -888,6 +888,46 @@ def _fuzzy_heading(seg0: str, phrase_lc: str, vocab_lc) -> bool:
     return (r_self - second) >= _FUZZY_HEADING_MARGIN
 
 
+def title_signal(ocr_text: str, patterns: dict | None, doc_types: list | None) -> tuple:
+    """The page's OWN title as (installed_slug | None, trusted: bool) — the process_docs recipe
+    (~L1140-1154, L1373) factored out for the separation pre-pass (segmentation.page_match, DARK
+    `segment_title_slug`; gary → Oracle (A) C3, 2026-09-16):
+      • known names = every installed type whose reading_mode is not 'none' (a Quick-File form is never
+        a detection candidate);
+      • per-type title aliases, tolerant of the stored JSON string;
+      • trusted = the detection is a real standalone HEADING and its confidence >= 70.
+    Two deliberate, PINNED divergences from the pipeline: no uninstalled-name slug fallback (for a
+    BOUNDARY decision an unknown heading must fall back to today's call, never to a refuse), and the
+    slug is only ever an INSTALLED type's slug. Pure; never raises; (None, False) on any doubt."""
+    try:
+        if not ocr_text or not patterns or not doc_types:
+            return None, False
+        known = [dt.get("name") for dt in doc_types
+                 if dt.get("name") and str(dt.get("reading_mode") or "read").lower() != "none"]
+        if not known:
+            return None, False
+        aliases = {}
+        for dt in doc_types:
+            al = dt.get("title_aliases")
+            if isinstance(al, str):
+                try:
+                    al = json.loads(al)
+                except Exception:
+                    al = []
+            if al and dt.get("name"):
+                aliases[dt["name"]] = al
+        det = detect_document_type(ocr_text, patterns, known, aliases or None)
+        if not det or not det.get("type"):
+            return None, False
+        slug = next((dt.get("slug") for dt in doc_types if dt.get("name") == det["type"]), None)
+        if not slug:
+            return None, False
+        trusted = bool(det.get("heading")) and (det.get("confidence") or 0) >= 70
+        return slug, trusted
+    except Exception:
+        return None, False
+
+
 def detect_document_type(ocr_text: str, patterns: dict,
                           known_types: list[str] | None = None,
                           type_aliases: dict | None = None) -> dict | None:

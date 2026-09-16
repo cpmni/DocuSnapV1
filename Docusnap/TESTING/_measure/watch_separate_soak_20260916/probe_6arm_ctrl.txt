@@ -1,0 +1,8 @@
+ctrl_i_copperfield.pdf exp=[1] | base=[1, 2] r=1 lost=0 over=1 | pipe=[1, 2] r=1 lost=0 over=1 | fb=[1, 2] r=1 lost=0 over=1 | casc=[1, 2] r=1 lost=0 over=1 | cont=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0
+ctrl_i_copperfield_so.pdf exp=[1] | base=[1, 2] r=1 lost=0 over=1 | pipe=[1, 2] r=1 lost=0 over=1 | fb=[1, 2] r=1 lost=0 over=1 | casc=[1, 2] r=1 lost=0 over=1 | cont=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0
+ctrl_i_thornbury.pdf exp=[1] | base=[1, 2] r=1 lost=0 over=1 | pipe=[1, 2] r=1 lost=0 over=1 | fb=[1, 2] r=1 lost=0 over=1 | casc=[1, 2] r=1 lost=0 over=1 | cont=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0
+ctrl_ii_copperfield.pdf exp=[1] | base=[1, 2] r=1 lost=0 over=1 | pipe=[1, 2] r=1 lost=0 over=1 | fb=[1, 2] r=1 lost=0 over=1 | casc=[1, 2] r=1 lost=0 over=1 | cont=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0
+ctrl_ii_copperfield_so.pdf exp=[1] | base=[1, 2] r=1 lost=0 over=1 | pipe=[1, 2] r=1 lost=0 over=1 | fb=[1, 2] r=1 lost=0 over=1 | casc=[1, 2] r=1 lost=0 over=1 | cont=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0
+ctrl_ii_thornbury.pdf exp=[1] | base=[1, 2] r=1 lost=0 over=1 | pipe=[1, 2] r=1 lost=0 over=1 | fb=[1, 2] r=1 lost=0 over=1 | casc=[1, 2] r=1 lost=0 over=1 | cont=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0
+
+TOTAL files=6 expected=6 base: right=6 lost-vs-base=0 over-splits=6 | pipe: right=6 lost-vs-base=0 over-splits=6 | fb: right=6 lost-vs-base=0 over-splits=6 | casc: right=6 lost-vs-base=0 over-splits=6 | cont: right=6 lost-vs-base=0 over-splits=0 | both: right=6 lost-vs-base=0 over-splits=0

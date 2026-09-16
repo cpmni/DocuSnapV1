@@ -3623,6 +3623,47 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 176 (split_segment_multipage_hold): ${e.message}`); }
   }
 
+  // ── migration 177: segment_continuation_veto seeded OFF (2026-09-16; Oracle (B) slice 1, SIGN-OFF-W/COND C8).
+  //    The separator's first-page signature is "a known template matches AND the keyword-fingerprint overlap
+  //    clears the floor" — but the fingerprint IS the letterhead words, and a real continuation page that
+  //    repeats the letterhead reproduces it: measured 6/6 repeat-letterhead 2-page controls CUT at page 2 by
+  //    today's pre-pass (a silent truncation on manual import: page 1 files as a one-page document, page 2
+  //    orphans). When ON, a page that DECLARES ITSELF a continuation ("Page n of N" with n >= 2, "continued" /
+  //    "(cont.)" in the top band, "brought forward" / "B/F") is never a cut (segmentation.is_continuation_page;
+  //    page 0 untouched). Argv-only kill (`--continuation-veto`; the pre-pass spawn never carries the DB-bridged
+  //    env). DARK (in TEST_SWITCH_KEYS); byte-identical OFF. ⚑ FLIP GATE: the pure pins (n>=2 only; "Page 1 of N"
+  //    never; page 0 never) + the controls census (0/6 cut) + the stacks/real_34 lost-vs-base = 0 (seg_probe4.py)
+  //    + the end-to-end TRUNCATION metric (0 auto-filed docs whose page_count < the GT document's).
+  if (!applied.has(177)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('segment_continuation_veto', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (177)').run();
+      console.log(`JS migration 177 applied: segment_continuation_veto (a self-declared continuation page is never a cut) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 177 (segment_continuation_veto): ${e.message}`); }
+  }
+
+  // ── migration 178: segment_title_slug seeded OFF (2026-09-16; gary → Oracle (A) SIGN-OFF-W/COND C1-C7).
+  //    The pre-pass called identify_template with THREE args — no detected_slug/title_trusted — so on a
+  //    same-letterhead supplier the sibling tie-break degenerates to the most-confirmed sibling (identical
+  //    fingerprints → a stable-sort tie), and when that sibling's type reliably prints a heading that is absent
+  //    here the TYPE-PRESENCE VETO refuses it → the page could never be a boundary (every missed boundary in the
+  //    2026-09-16 templated stacks; a supplier's LESS-common types are under-split systematically). When ON, the
+  //    page's OWN title is threaded as a CASCADE (trusted heading → untrusted installed slug → today's call;
+  //    each step falls back on None / any type_refused — a page can never lose today's boundary; keyword.
+  //    title_signal = the process_docs recipe, installed slugs only). Measured: base 72/95 boundaries → 79/95,
+  //    0 lost, 0 over-splits; real_34 34/34 unchanged. Argv-only kill (`--title-slug` + the doc-types/config
+  //    files). DARK (in TEST_SWITCH_KEYS); byte-identical OFF. ⚑ FLIP GATE (Oracle C5-C7): the extended controls
+  //    (logo-only p2, logo+name-line p2, full-header p2, "Page 1 of 2" first page) over-splits <= base on every
+  //    file + stacks lost-vs-base = 0 + real_34 34/34 + the end-to-end TRUNCATION metric = 0, AND (B) slice 2
+  //    (supplier-aware identity_change) shipped — or (i)+(ii) measured 0 delta.
+  if (!applied.has(178)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('segment_title_slug', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (178)').run();
+      console.log(`JS migration 178 applied: segment_title_slug (thread each page's own title into the separator's template match) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 178 (segment_title_slug): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

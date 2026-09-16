@@ -34,7 +34,8 @@ corpus (a migrated copy), same method, identical results to 09-12: 159 = M=0 / 6
 became customer defaults — **mig 172 (`name_role_nonname_flag`) + mig 173 (`ref_confusable_flag`)** — and left
 the dark list. The same run re-checked two more: `deskew_corrob_autofile` did nothing on this corpus (stays off);
 **`template_pad_date_adopt` passed for the second time** (M=0, its one change = the correct date, twice) and the
-owner flipped it too — **mig 174**. **47 keys remain dark.** All three stay switchable OFF.
+owner flipped it too — **mig 174**. Then `watch_separate_enabled` (mig 175) after its soak was actually run. Two
+NEW dark keys landed the same day (migs 177/178, the scanned-stack splitting fixes below). **48 keys are dark.**
 
 ---
 
@@ -103,6 +104,19 @@ owner flipped it too — **mig 174**. **47 keys remain dark.** All three stay sw
 **Sweep / reprocess:**
 - **sweep_inview_recheck** — re-offer the auto-file countdown when the view settles on a ready doc.
 - **quick_reprocess_enabled** — the imageless quick-reprocess path (kept off; own gate).
+
+**Scanned-stack splitting (2026-09-16, both built after the watch soak; `docs/designs/SEPARATOR_ACCURACY_2026-09-16.md`):**
+- **segment_continuation_veto** (mig 177) — a page that says it is a continuation ("Page 2 of 2", "continued",
+  "brought forward") is never cut off as its own document. Fixes a pre-existing silent truncation: today a
+  multi-page invoice whose page 2 repeats the letterhead is cut in two (6 of 6 test controls), and on a manual
+  import page 1 files as a one-page invoice with page 2 lost as an orphan. _Census: 0/14 controls cut (was 10),
+  nothing lost on the stacks, the 34-alert bundle unchanged. Flip gate: the end-to-end truncation count = 0
+  (RESULT.md "e2e"). Owner's go._
+- **segment_title_slug** (mig 178) — the splitter now reads each page's own printed title before matching it to a
+  template, so a supplier's less-common document types (a sales order after a worksheet from the same letterhead)
+  are cut correctly instead of riding on the previous page. _Census: 72 → 79 of 95 boundaries, none lost, no new
+  over-splits; the Oracle's feared side-effect on logo-only continuation pages measured 0. Flip gate: the same
+  truncation count + the owner's go (the Oracle's alternative condition — a 0 delta on those controls — is met)._
 
 ## ⚪ PARKED — measured to do nothing on current docs; stays off unless a real case appears (1)
 - **anchor_axis_lock** — reconstruct a free-text value's left edge from the label column. _Censused zero fires; needs a real docket corpus before it's worth flipping._

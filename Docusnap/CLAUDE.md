@@ -943,6 +943,9 @@ document_routes — document_id(FK cascade), from/to_user_id+username,
   `title_trusted` = the type is a STRUCTURAL standalone HEADING (not a confidence threshold). Both args
   computed ONCE in `process_docs`, threaded IDENTICALLY into BOTH identify_template calls (no split-
   brain); custom-type TITLE ALIASES (`document_types.title_aliases`) feed it via detect_document_type.
+  The batch-separation PRE-PASS (`ocr/segmentation.py page_match`, via `segment_docs.py`) is a THIRD caller: it
+  threads the SAME title (`keyword.title_signal`) as a CASCADE under DARK `segment_title_slug` (mig 178) — it
+  persists no template/type, so its narrower, fallback-guarded signal is not a split-brain; OFF = the 3-arg call.
   Guarded by `tests/test_template_matcher.py`. Full detail: `docs/extraction-pipeline.md`.
 - **Stage 0.5** `template_mapper.py` — admin-drawn anchor→target zone mappings. Absolute-target-first
   read → inline-harvest / relocate off the located label → registration fallback ("register, then read").

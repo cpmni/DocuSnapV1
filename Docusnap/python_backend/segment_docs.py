@@ -57,6 +57,13 @@ def main():
     parser.add_argument("--tesseract", default=None, help="Tesseract executable (for scanned pages)")
     parser.add_argument("--slips", action="store_true",
                         help="Scan for printed separator sheets (Filing Slips) before template segmentation")
+    # DARK switches (2026-09-16; both argv-only — the pre-pass spawn never carries the DB-bridged env):
+    parser.add_argument("--doc-types-file", default=None, help="JSON list of installed doc types (for --title-slug)")
+    parser.add_argument("--config-file", default=None, help="keyword_patterns.json path (for --title-slug)")
+    parser.add_argument("--title-slug", action="store_true",
+                        help="thread each page's own detected title into the template match (segment_title_slug)")
+    parser.add_argument("--continuation-veto", action="store_true",
+                        help="a page that declares itself a continuation is never a cut (segment_continuation_veto)")
     args = parser.parse_args()
 
     if not os.path.isfile(args.file):
@@ -90,9 +97,21 @@ def main():
         except Exception as exc:            # fail safe: never let the slip rung kill the pre-pass
             slip_aborted = str(exc)
 
+    # Title context ONLY when --title-slug AND the doc-types file loads (patterns fall back to the bundled config).
+    title_ctx = None
+    if args.title_slug:
+        doc_types = load_json_arg(args.doc_types_file)
+        if doc_types:
+            try:
+                from extraction.keyword import load_patterns
+                title_ctx = {"patterns": load_patterns(args.config_file), "doc_types": doc_types}
+            except Exception:
+                title_ctx = None
+
     try:
         from ocr.segmentation import detect_segments
-        res = detect_segments(args.file, templates, tesseract_path=args.tesseract)
+        res = detect_segments(args.file, templates, tesseract_path=args.tesseract,
+                              title_ctx=title_ctx, continuation_veto=bool(args.continuation_veto))
         res["success"] = True
         if slip_aborted:
             # Visible in the dev-inspector trace: explains WHY a slip-bearing file fell

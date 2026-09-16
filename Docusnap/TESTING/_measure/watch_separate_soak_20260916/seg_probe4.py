@@ -53,32 +53,38 @@ def arms(img, text):
     if not (casc or {}).get("template"):
         casc = base
     ds = S.is_document_start(text)
-    return {"base": (*sig_of(base, text), ds), "pipe": (*sig_of(pipe, text), ds), "fb": (*sig_of(fb, text), ds), "casc": (*sig_of(casc, text), ds)}, (slug, trusted)
+    sc = S.is_continuation_page(text)          # the self-declared continuation veto (mig 177) — applied by walk() for the *+veto arms
+    return {"base": (*sig_of(base, text), ds, sc), "pipe": (*sig_of(pipe, text), ds, sc), "fb": (*sig_of(fb, text), ds, sc),
+            "casc": (*sig_of(casc, text), ds, sc), "cont": (*sig_of(base, text), ds, sc), "both": (*sig_of(casc, text), ds, sc)}, (slug, trusted)
 
-def walk(sigs):
+VETO_ARMS = ("cont", "both")
+def walk(sigs, veto=False):
     flags = [True]; cur = sigs[0][0]
     for i in range(1, len(sigs)):
-        mid, ov, ds = sigs[i]; b = S.decide_boundary(mid, cur, ov, ds); flags.append(b)
+        mid, ov, ds, sc = sigs[i]; b = S.decide_boundary(mid, cur, ov, ds)
+        if b and veto and sc: b = False
+        flags.append(b)
         if b: cur = mid
     return [i + 1 for i, f in enumerate(flags) if f]
 
-T = {a: {"right": 0, "lost": 0, "over": 0} for a in ("base", "pipe", "fb", "casc")}; EXP = 0; FILES = 0
+ARMS = ("base", "pipe", "fb", "casc", "cont", "both")
+T = {a: {"right": 0, "lost": 0, "over": 0} for a in ARMS}; EXP = 0; FILES = 0
 for name in sorted(gt):
     p = os.path.join(bdir, name)
     if not os.path.isfile(p) or (only and not name.startswith(only)): continue
     exp = [d["pages"][0] for d in gt[name]["docs"]]; inside = {pg for d in gt[name]["docs"] for pg in range(d["pages"][0] + 1, d["pages"][1] + 1)}
     doc = pdfium.PdfDocument(p); n = len(doc)
     if n < 2: continue
-    per = {"base": [], "pipe": [], "fb": [], "casc": []}; titles = []
+    per = {a: [] for a in ARMS}; titles = []
     for i in range(n):
         page = doc[i]; img = page.render(scale=150 / 72).to_pil()
         text = S._page_text(page, img, True, pytesseract.pytesseract.tesseract_cmd) or ""
         s, tt = arms(img, text); titles.append(tt)
         for a in per: per[a].append(s[a])
-    b = {a: walk(per[a]) for a in per}
+    b = {a: walk(per[a], veto=(a in VETO_ARMS)) for a in per}
     EXP += len(exp); FILES += 1
     line = f"{name:18} exp={exp}"
-    for a in ("base", "pipe", "fb", "casc"):
+    for a in ARMS:
         right = len(set(b[a]) & set(exp)); lost = len((set(b["base"]) & set(exp)) - set(b[a])); over = len(set(b[a]) & inside)
         T[a]["right"] += right; T[a]["lost"] += lost; T[a]["over"] += over
         line += f" | {a}={b[a]} r={right} lost={lost} over={over}"

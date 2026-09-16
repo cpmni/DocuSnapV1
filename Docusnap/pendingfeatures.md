@@ -5478,3 +5478,18 @@ signature when the type has learned heading stats (the positive twin of the veto
 fingerprint MINUS the supplier's branding tokens; or require `is_document_start`-style header markers; or a
 "Page 2 of N" / "continued" negative marker. Gate: the controls (0/6 cut) + the stacks (no boundary lost vs
 today) + real_34 34/34, via `seg_probe4.py`. Independent of the under-split title fix (which changes nothing here).
+
+> **ORACLE RULING + PARTLY BUILT 2026-09-16 (same day)** — `docs/oracle_log.md` 2026-09-16 separator entry;
+> `docs/designs/SEPARATOR_ACCURACY_2026-09-16.md`. Three over-split paths (overlap, same-supplier identity change,
+> generic doc-start on a full header). **Slice 1 BUILT DARK = mig 177 `segment_continuation_veto`** (the negative
+> marker: "Page n of N" n ≥ 2 / "continued" / "brought forward" → never a cut; 0/14 controls, nothing lost).
+> Rejected levers: fingerprint-minus-branding (collapses the 34-alert bundle), doc-start as the sole fix, the
+> "heading present" positive twin. **STILL OPEN:** slice 2 — supplier-aware identity change (census same-supplier
+> identity_change-only boundaries = 0 first; the (A) title fix's FLIP is coupled to it, or to the measured 0 delta
+> on logo-only/name-line p2 controls — which measured 0); slice 3 — the human checkpoint for the residual (a
+> heuristic 1-page cut with NO ref AND NO date AND the same supplier as the preceding segment → hold BOTH with the
+> segment-hold sentence; Print Tracker alerts never trip it); and a **recovery path** — an over-split has no
+> user-visible way back today (the original sits in `.sf_separated_originals` unadvertised; Review has Split, no
+> Rejoin) — barry/eric before slice 3's note points anywhere. Plain consequence the Oracle named: a Sage-class
+> page 2 (ref + date + supplier repeated) orphans as a `…-DUPLICATE.pdf` beside the truncated page 1 — two wrong
+> filed documents and nothing in Review.

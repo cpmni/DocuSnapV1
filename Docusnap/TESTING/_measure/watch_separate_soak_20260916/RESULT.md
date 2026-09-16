@@ -103,6 +103,20 @@ page 1 files as a 1-page document — the real invoice, silently missing its pag
 orphan. The title fix (1) neither adds to nor removes this (identical 6/6). Oracle ruling on the layer: see the
 oracle_log entry of 2026-09-16 (separator).
 
+## Separator fixes — BUILT DARK the same day (migs 177/178) + the e2e truncation gate
+`docs/designs/SEPARATOR_ACCURACY_2026-09-16.md` (both arcs, the Oracle's conditions, the six-arm census table).
+**e2e (Oracle C6):** the sandbox restarted on the new code with BOTH switches armed (`segment_title_slug`,
+`segment_continuation_veto` = 'true' in the sandbox DB) + mig 176; ONE manual import of all 40 files (the 22
+stacks + the 14 controls; `gt_e2e.json`, 150 GT docs) → 134 documents (`soak_e2e_check.js`, `e2e_result.txt`):
+- **TRUNCATION metric = 0** — no auto-filed document is shorter than its GT document; every genuine 2-page control
+  stayed whole (the veto), the "Page 1 of 2" stacks cut exactly at doc B.
+- 133 / 134 cuts exact; 67 one-page cuts auto-filed, every one with ref + date + supplier; every multi-page
+  heuristic cut held + marked (mig 176).
+- The 1 wrong cut = `bundle_05.pdf`: three NON-templated docs whose only recognised first page is page 1 → never
+  split → imported WHOLE (3 pages) and auto-filed under page 1's identity. That is the pre-existing "class the
+  belt cannot see" (pendingfeatures.md), untouched by either switch (base does the same) — the Oracle's slice 3
+  belt / a separator-side signal is the lever.
+
 ## Seam found → CLOSED the same day (the belt above); the residual is separator ACCURACY
 The hold is an IMPORT-TIME skip only (`autoFileRun=false`): a held segment carries no durable mark, so a later
 "File all ready" click or the scope sweep (`scope_sweep_enabled`, ON on the owner's install) can file a merged

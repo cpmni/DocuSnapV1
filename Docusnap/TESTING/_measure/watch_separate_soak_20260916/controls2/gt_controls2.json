@@ -1,0 +1,122 @@
+{
+ "ctrl2_i_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "Desktop\\Demo Docs\\Copperfield Electrical\\invoice\\Processed\\CopperfieldElectrical_invoice_01.pdf",
+    "label": "genuine 2-page invoice; p2 = i (logo only) \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl2_ii_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "Desktop\\Demo Docs\\Copperfield Electrical\\invoice\\Processed\\CopperfieldElectrical_invoice_01.pdf",
+    "label": "genuine 2-page invoice; p2 = ii (logo + name line) \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl2_iii_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "Desktop\\Demo Docs\\Copperfield Electrical\\invoice\\Processed\\CopperfieldElectrical_invoice_01.pdf",
+    "label": "genuine 2-page invoice; p2 = iii (full header + Page 2 of 2) \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl2_iv_copperfield.pdf": {
+  "page_count": 3,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "A",
+    "label": "doc A (Page 1 of 2 + Page 2 of 2)"
+   },
+   {
+    "pages": [
+     3,
+     3
+    ],
+    "src": "B",
+    "label": "doc B (Page 1 of 1) \u2014 MUST cut here"
+   }
+  ]
+ },
+ "ctrl2_i_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "Desktop\\Demo Docs\\Thornbury Fasteners\\invoice\\ThornburyFasteners_invoice_01.pdf",
+    "label": "genuine 2-page invoice; p2 = i (logo only) \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl2_ii_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "Desktop\\Demo Docs\\Thornbury Fasteners\\invoice\\ThornburyFasteners_invoice_01.pdf",
+    "label": "genuine 2-page invoice; p2 = ii (logo + name line) \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl2_iii_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "Desktop\\Demo Docs\\Thornbury Fasteners\\invoice\\ThornburyFasteners_invoice_01.pdf",
+    "label": "genuine 2-page invoice; p2 = iii (full header + Page 2 of 2) \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl2_iv_thornbury.pdf": {
+  "page_count": 3,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "A",
+    "label": "doc A (Page 1 of 2 + Page 2 of 2)"
+   },
+   {
+    "pages": [
+     3,
+     3
+    ],
+    "src": "B",
+    "label": "doc B (Page 1 of 1) \u2014 MUST cut here"
+   }
+  ]
+ }
+}

@@ -252,6 +252,23 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // typed/taught value — no auto-file decision there). Byte-identical OFF. ⚑ FLIP GATE: realdoc M=0 +
   // wouldFile set-equality + the VAL_CENSUS_DIR crop/keyword census OFF vs ON (every new acceptance a real date).
   'date_forms_wide',
+  // segment_continuation_veto (mig 177, 2026-09-16, Oracle (B) slice 1): the separator's first-page signature is
+  // "template match + letterhead-fingerprint overlap", which a continuation page that REPEATS the letterhead
+  // reproduces (6/6 repeat-letterhead 2-page controls cut at page 2 today = a silent truncation on manual import).
+  // When ON, a page that declares itself a continuation ("Page n of N" n>=2, "continued"/"(cont.)" in the top
+  // band, "brought forward"/"B/F") is never a cut. Argv-only kill (`--continuation-veto`). Byte-identical OFF.
+  // ⚑ FLIP GATE: pure pins + the controls census 0/6 cut + stacks/real_34 lost-vs-base 0 + the end-to-end
+  // TRUNCATION metric (TESTING/_measure/watch_separate_soak_20260916/seg_probe4.py + controls/).
+  'segment_continuation_veto',
+  // segment_title_slug (mig 178, 2026-09-16, gary → Oracle (A) SIGN-OFF-W/COND C1-C7): the pre-pass matched pages
+  // WITHOUT the page's own title, so a same-letterhead sibling tie fell to the most-confirmed sibling and the
+  // type-presence veto refused it → the page could never be a boundary (every missed boundary in the templated
+  // stacks). When ON, the title is threaded as a cascade (trusted → untrusted installed slug → today's call, each
+  // falling back on None/refuse — never loses today's boundary): 72/95 → 79/95, 0 lost, 0 over-splits. Argv-only
+  // kill (`--title-slug` + the doc-types/config files). Byte-identical OFF. ⚑ FLIP GATE (Oracle C5-C7): the
+  // extended controls over-splits <= base per file + stacks lost 0 + real_34 34/34 + the truncation metric 0, AND
+  // (B) slice 2 (supplier-aware identity_change) shipped — or the logo-only/name-line p2 controls measured 0 delta.
+  'segment_title_slug',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

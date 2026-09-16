@@ -54,5 +54,20 @@ check('aborted + 2 template segments ⇒ plain template split (minFiles=2, no se
 console.log('§6 toRanges formatting');
 check('single-page and multi-page groups', toRanges([[0, 0], [2, 5]]) === '1,3-6');
 
+console.log('§7 the separator DARK switches ride argv ONLY (2026-09-16: segment_title_slug + segment_continuation_veto)');
+a = buildSegmentArgs({ filePath: 'f.pdf', templatesFile: 't.json', tesseract: null, slips: false, docTypesFile: 'd.json', configFile: 'c.json', titleSlug: true, continuationVeto: true });
+check('both ON: doc-types + config + --title-slug + --continuation-veto appended, in that order',
+  eq(a, ['--file', 'f.pdf', '--templates-file', 't.json', '--doc-types-file', 'd.json', '--config-file', 'c.json', '--title-slug', '--continuation-veto']), JSON.stringify(a));
+a = buildSegmentArgs({ filePath: 'f.pdf', templatesFile: 't.json', tesseract: null, slips: false, docTypesFile: 'd.json', configFile: 'c.json', titleSlug: false, continuationVeto: false });
+check("both OFF with the files KNOWN: today's argv byte-identical (the files are not emitted)", eq(a, ['--file', 'f.pdf', '--templates-file', 't.json']), JSON.stringify(a));
+a = buildSegmentArgs({ filePath: 'f.pdf', templatesFile: 't.json', tesseract: null, slips: false, docTypesFile: null, configFile: 'c.json', titleSlug: true, continuationVeto: false });
+check('title ON but no doc-types file: NO --title-slug, no file args, no null/undefined in argv (Oracle C1 class)',
+  eq(a, ['--file', 'f.pdf', '--templates-file', 't.json']) && a.every(x => typeof x === 'string'), JSON.stringify(a));
+a = buildSegmentArgs({ filePath: 'f.pdf', templatesFile: null, tesseract: null, slips: true, docTypesFile: 'd.json', configFile: null, titleSlug: true, continuationVeto: true });
+check('no config file: --doc-types-file + --title-slug still emitted (patterns fall back to the bundled config)',
+  eq(a, ['--file', 'f.pdf', '--slips', '--doc-types-file', 'd.json', '--title-slug', '--continuation-veto']), JSON.stringify(a));
+a = buildSegmentArgs({ filePath: 'f.pdf', templatesFile: 't.json', tesseract: null, slips: false });
+check('legacy call (no new keys at all): argv unchanged', eq(a, ['--file', 'f.pdf', '--templates-file', 't.json']), JSON.stringify(a));
+
 console.log(`\n${fails ? 'FAIL' : 'PASS'} — ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);
