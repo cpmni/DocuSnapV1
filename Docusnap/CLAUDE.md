@@ -34,7 +34,9 @@ Frames of every video inspected (no personal paths/terminal; teach read-backs co
 this PC's seat online (hence the fake server + self-restoring `config/license.json` swap — `git status config` clean);
 native dialogs leak the presenter's folder tree (never filmed); the owner's terminal steals focus on any keypress
 (re-front per step; an early run typed "Demo Admin" into the terminal prompt — unsent). **Owner next:** TTS + upload;
-optional search re-take after review; the 09-15 EVENING queue below is unchanged (push `8ec76de`, VM live-test, D2b/D3/D4).
+optional search re-take after review. **NEXT SESSION (owner 09-16): DARK-SWITCH FLIP TESTING** — resume from the
+09-15 EVENING block's flip-census pointers (`docs/DARK_SWITCH_LEDGER.md`, `TESTING/_measure/flip_corpus_20260912/CENSUS.md`,
+`RR_APP_ENV=1` baseline, copy+migrate the 700 corpus first); the rest of that queue (push `8ec76de`, VM live-test, D2b/D3/D4) unchanged.
 
 ## Prior — 2026-09-15 EVENING (Departments D2 + D-C11 built · date-year fix · two LAN-blocker fixes · client-Review scoped · both installers rebuilt):
 **READ `HANDOVER_2026-09-15_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `8ec76de`; origin at

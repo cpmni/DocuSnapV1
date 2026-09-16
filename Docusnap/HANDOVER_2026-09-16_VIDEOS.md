@@ -5,6 +5,15 @@ skill (committed at the end of the run — see `git log -3`). No app code touche
 last run). The handover queue from 2026-09-15 EVENING (push `8ec76de`, VM live-test of both installers, Departments
 D2b/D3/D4) is STILL parked — nothing there moved tonight.
 
+## ⏭ NEXT SESSION = DARK-SWITCH FLIP TESTING (owner, 2026-09-16 morning: "continue with the switch testing")
+Resume from `HANDOVER_2026-09-15_EVENING.md` → "Deferred → Dark-switch flip census": the 4 proven switches in
+`docs/DARK_SWITCH_LEDGER.md` (migs 156/159 re-confirm, `deskew_corrob_autofile` re-run; `watch_separate_enabled`
+is a soak, no 700-census) + `TESTING/_measure/flip_corpus_20260912/CENSUS.md`. Harness rules: baseline
+`RR_APP_ENV=1` (the `=0` arm is the vacuous trap), the Desktop 700 corpus (`Desktop\Flip Corpus 700\warm_700.db`)
+is pre-`intake` → COPY to scratch + migrate before running (recipe in the 09-15 EVENING session), the 3 shell-env
+switches are read outside `_appSpawnEnv`. Customer-default flips = approval-class (owner decides per switch).
+Open from tonight, not blocking: `voice.py` (edge-tts voice-over automation for the tutorials) — build on request.
+
 ## What the owner asked (verbatim intent)
 "Use the night run to make useful instructional videos for YouTube. Output to `Desktop\Tutorials` with a file to
 generate timestamped TTS. Nothing of my laptop layout/folders in the videos. Teach first, then import, then review.
