@@ -1,17 +1,19 @@
 'use strict';
 /*
- * test_default_flip_156_159.js — migrations 172 + 173: the two flip-census graduates of 2026-09-16.
+ * test_default_flip_156_159.js — migrations 172 + 173 + 174: the flip-census graduates of 2026-09-16.
  *
  *   mig 172  name_role_nonname_flag  (seeded OFF by mig 156)  — flag+hold a name-role field that reads as a bare
  *                                                                postcode / email / VAT / IBAN
  *   mig 173  ref_confusable_flag     (seeded OFF by mig 159)  — flag a class-outlier O/0, I/1, S/5 confusable on
  *                                                                the REF role so it can't auto-file a wrong filename
+ *   mig 174  template_pad_date_adopt (seeded OFF by mig 143)  — swap a clipped taught date for the corroborated
+ *                                                                wider read (the one adopt == GT, twice)
  *
- * Both passed the 700-doc flip census twice (2026-09-12 at mig 163, 2026-09-16 at mig 171): M=0, no value
- * changes, real fires on the injected failure shapes, file→hold only (never hold→file). The owner approved the
- * customer-default flip on 2026-09-16. This pin is their home — a future dev cannot silently drop either
- * flip (returning customer installs to the silent-misfile behaviour) or re-list a graduated key (which would
- * let build_arming disarm it on the first release launch) without going red.
+ * All three passed the 700-doc flip census twice (2026-09-12 at mig 163, 2026-09-16 at mig 171): M=0, real fires
+ * on the injected/real failure shapes, never a new wrong file (172/173 file→hold only; 174's single value change
+ * is the correct date). The owner approved the customer-default flips on 2026-09-16. This pin is their home — a
+ * future dev cannot silently drop a flip (returning customer installs to the silent-misfile behaviour) or re-list
+ * a graduated key (which would let build_arming disarm it on the first release launch) without going red.
  *
  * Run: ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe database/test_default_flip_156_159.js
  */
@@ -31,6 +33,7 @@ const quiet = (fn) => { const o = console.log; console.log = () => {}; try { ret
 const FLIPS = [
   { key: 'name_role_nonname_flag', seed: 156, flip: 172, env: 'NAME_ROLE_NONNAME_FLAG' },
   { key: 'ref_confusable_flag',    seed: 159, flip: 173, env: 'REF_CONFUSABLE_FLAG' },
+  { key: 'template_pad_date_adopt', seed: 143, flip: 174, env: 'TEMPLATE_PAD_DATE_ADOPT' },
 ];
 
 console.log('1. a fresh install has both graduates ON');
@@ -82,8 +85,8 @@ console.log('\n5. the flips are labelled UPSERT migrations that the release gate
       new RegExp(`INSERT OR IGNORE INTO settings \\(key, value\\) VALUES \\('${f.key}', 'false'\\)`).test(src));
   }
   const hits = scan({ indexSrc: src, otherFiles: [], pkgJson: {} }).hits;
-  const mine = hits.filter(h => /17[23]/.test(String(h.detail)) || /name_role_nonname_flag|ref_confusable_flag/.test(String(h.detail)));
-  check('the release gate raises NO hit on migrations 172/173 (labelled + delisted = a legitimate default)', mine.length === 0);
+  const mine = hits.filter(h => /17[234]/.test(String(h.detail)) || /name_role_nonname_flag|ref_confusable_flag|template_pad_date_adopt/.test(String(h.detail)));
+  check('the release gate raises NO hit on migrations 172/173/174 (labelled + delisted = a legitimate default)', mine.length === 0);
   if (mine.length) console.log('    ' + mine.map(h => `${h.belt}:${h.line} ${h.detail}`).join('\n    '));
 }
 

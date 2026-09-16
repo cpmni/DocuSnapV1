@@ -20,8 +20,8 @@
  *     it because the owner's old DB pre-dated that list.
  *   - ocr_parallel_import_enabled — promoted to a customer default by mig 139 (its sole writer).
  *   - filing_sanity_confusable_soften (147→148), direct_intake_enabled (165→171), name_role_nonname_flag
- *     (156→172), ref_confusable_flag (159→173) — DARK seeds that GRADUATED via a labelled @DEFAULT_FLIP
- *     migration and left this list in that same commit.
+ *     (156→172), ref_confusable_flag (159→173), template_pad_date_adopt (143→174) — DARK seeds that GRADUATED
+ *     via a labelled @DEFAULT_FLIP migration and left this list in that same commit.
  */
 const TEST_SWITCH_KEYS = Object.freeze([
   // mig 106 (2026-09-03)
@@ -83,13 +83,9 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   design violation: a soft note never reflects a changed value). `_flaggedSoftAware` must treat any
   //   `_isLaneHoldNote` row as never-soft BEFORE this key flips. pendingfeatures.md 2026-09-12 entry.
   'optional_soft_flag_autofile',
-  // template_pad_date_adopt (mig 143, 2026-09-09 Q4): the ADOPT twin of template_pad_date_containment_flag —
-  // a taught date box clipping the leading digit is read wide; when the pad value is corroborated by a second
-  // page family (keyword/crop) + page-present + the tight read is the uncorroborated outlier, SWAP to it
-  // (conf>=90, flag cleared, mapping-bucketed) so the corroborated correct date auto-files instead of holding.
-  // HARD dependency: template_pad_window_read ON. ⚑ FLIP GATE: unit adopt + pinned trade-offs + realdoc M=0 +
-  // fire census (every adopt==GT, no new wrong file) → Oracle. Advisor: gary + reggie (date polarity).
-  'template_pad_date_adopt',
+  // template_pad_date_adopt (mig 143) — GRADUATED to a customer default by mig 174 (2026-09-16, 700-corpus census
+  // M=0 + the one adopt == GT, twice) and DELISTED here the same commit. Its build notes live on the mig-143 block
+  // in database/index.js.
   // type_split_teach_scope_suppress (mig 144, 2026-09-09 Q1, herald): the type-split ask is a confirmed-COUNT
   // predicate that treats a wizard-TAUGHT type as unsupported until its 2nd doc, so it re-asks "file as X?" on
   // a type the human already taught. When ON, checkTypeSplit stands down iff a teach-origin template exists for

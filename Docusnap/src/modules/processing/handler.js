@@ -446,7 +446,8 @@ function _reconcileEnv(db) {
     // TEMPLATE_PAD_DATE_ADOPT (2026-09-09, Q4, gary): the ADOPT twin of the pad-window date flag — when the
     // wider read parses to a DIFFERENT date that a second family (keyword) corroborates + is page-present +
     // the tight read is the uncorroborated outlier, SWAP to the pad value (conf>=90, flag cleared) so the
-    // corroborated correct date auto-files instead of being held. DARK (mig 143); requires pad_window_read ON.
+    // corroborated correct date auto-files instead of being held. Seeded OFF by mig 143; DEFAULT ON since mig 174
+    // (2026-09-16, 700-corpus census PASS ×2); requires pad_window_read ON. A deliberate 'false' still turns it off.
     if (learning.getSetting(db, 'template_pad_date_adopt', 'false') === 'true') env.TEMPLATE_PAD_DATE_ADOPT = '1';
     // Pad-window CODE read — the code sibling of the date slice above. A taught CODE box too tight for
     // its value clips the leading glyphs ('PO-48009' -> '-48009') or garbles it; a wider row-bounded

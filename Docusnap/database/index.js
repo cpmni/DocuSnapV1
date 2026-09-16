@@ -3557,6 +3557,24 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 173 (ref_confusable_flag default ON): ${e.message}`); }
   }
 
+  // ── migration 174: template_pad_date_adopt GRADUATES to a customer default (2026-09-16, owner go). mig 143
+  //    seeded it 'false' on every install, so this UPSERT-forces it 'true' (same dead-guard reason as 172/173).
+  //    Gate met (the mig-143 FLIP GATE above): unit adopt + the pinned trade-offs at build (2026-09-09, gary +
+  //    reggie) + the 700-doc flip census run TWICE (2026-09-12 at mig 163 and 2026-09-16 at mig 171): M=0 both
+  //    times, exactly ONE value change both times and it is the correct date (#279 statement `13-04-2020` →
+  //    `23-04-2026` via `template_mapping_padadopt`, every adopt == GT), wouldFile set-equal (0 new filers, 0 new
+  //    wrong files). HARD dependency template_pad_window_read is ON on every install (ALL_ON_DEFAULTS_93). A later
+  //    deliberate 'false' still turns it off. DELISTED from dark_switches.js the SAME commit. Pinned by
+  //    database/test_default_flip_156_159.js. Permanent default flip, so it carries the label:
+  // @DEFAULT_FLIP 174
+  if (!applied.has(174)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('template_pad_date_adopt', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (174)').run();
+      console.log('JS migration 174 applied: template_pad_date_adopt ON by default (UPSERT true) — census PASS ×2, graduated');
+    } catch (e) { console.warn(`  migration 174 (template_pad_date_adopt default ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

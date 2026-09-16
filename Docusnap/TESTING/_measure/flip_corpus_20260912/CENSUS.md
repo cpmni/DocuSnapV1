@@ -69,17 +69,18 @@ disagreeing docs (1 silent, #166), 36 `total`-rounding noise, M_type 0.
 | **ref_confusable_flag** | 159 | **0** | 0 | 6 (all six injected `S0-#####` Harrowgate sales orders) | 2 (#134, #139) | 0 | **PASS ×2 → FLIPPED, mig 173** |
 | **name_role_nonname_flag** | 156 | **0** | 0 | 5 (all five injected `BT1 1HE` Pelican customer_name) | 1 (#460) | 0 | **PASS ×2 → FLIPPED, mig 172** |
 | deskew_corrob_autofile | — | **0** | 0 | **0** (the 3 straighten-changed fields #63/#65/#67 all KEPT their confirm-once hold under ON) | 0 | 0 | SAFETY PASS, **EFFICACY VACUOUS** — byte-identical to OFF; stays DARK (zero fires ⇒ no flip evidence here; the 09-01 owner-DB census is still the only efficacy signal) |
-| template_pad_date_adopt | 143 | **0** | 1 | 1 | 0 | 0 | **PASS ×2** — the same real heal as 09-12 (#279 statement date `13-04-2020` → `23-04-2026`, `template_mapping_padadopt`), 0 new filers → flip-ready, awaiting owner go |
+| **template_pad_date_adopt** | 143 | **0** | 1 | 1 | 0 | 0 | **PASS ×2 → FLIPPED, mig 174** — the same real heal as 09-12 (#279 statement date `13-04-2020` → `23-04-2026`, `template_mapping_padadopt`), 0 new filers (the "fire" is the pre-existing `padcodeflag` note on #532, present in both arms) |
 
 Results per arm: `rerun_20260916/cmp_{159,156,DCA,143}.txt`; the raw consensus rows (`base_env1.jsonl`,
 `on{159,156,DCA,143}_env1.jsonl`, 400 rows each) stayed in the session scratchpad
 (`…/2d87d505-1b3b-4522-b756-384e51badc0d/scratchpad/`).
 
-**The flip (one commit):** mig 172 + 173 UPSERT the settings `'true'` under `// @DEFAULT_FLIP` labels; both
-keys DELISTED from `dark_switches.js` (release gate → "48 DARK keys guarded"); pins: new
-`database/test_default_flip_156_159.js` (fresh-install ON, upgrade-from-seeded-false ON, kill durable, delisted,
-labelled, gate-clean, handler bridge), `test_migration156_nonname_flag.js` reworked to the graduated contract, the
-two count pins 50→48. Ledger `docs/DARK_SWITCH_LEDGER.md` updated. `watch_separate_enabled` = a soak (not a
+**The flips:** mig 172 + 173 (`764b397`), then mig 174 (owner: "flip 143 as well") UPSERT the settings `'true'`
+under `// @DEFAULT_FLIP` labels; all three keys DELISTED from `dark_switches.js` (release gate → "47 DARK keys
+guarded"); pins: `database/test_default_flip_156_159.js` (fresh-install ON, upgrade-from-seeded-false ON, kill
+durable, delisted, labelled, gate-clean, handler bridge — covers all three), `test_migration156_nonname_flag.js` +
+`test_migration143_pad_date_adopt.js` reworked to the graduated contract, the two count pins 50→47. Ledger
+`docs/DARK_SWITCH_LEDGER.md` updated. `watch_separate_enabled` = a soak (not a
 700-census); its owner-run soak already PASSED — flip is the owner's call.
 
 ## format_class_join finding (for the morning)

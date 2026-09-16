@@ -32,8 +32,9 @@ live re-judge already done 2026-09-10.
 corpus (a migrated copy), same method, identical results to 09-12: 159 = M=0 / 6 fires / 2 file→hold; 156 = M=0 /
 5 fires / 1 file→hold; neither changed a single value or let anything new auto-file. With the owner's go they
 became customer defaults — **mig 172 (`name_role_nonname_flag`) + mig 173 (`ref_confusable_flag`)** — and left
-the dark list (48 keys remain). Both stay switchable OFF. The same run re-checked `deskew_corrob_autofile` and
-`template_pad_date_adopt` (results in the census file).
+the dark list. The same run re-checked two more: `deskew_corrob_autofile` did nothing on this corpus (stays off);
+**`template_pad_date_adopt` passed for the second time** (M=0, its one change = the correct date, twice) and the
+owner flipped it too — **mig 174**. **47 keys remain dark.** All three stay switchable OFF.
 
 ---
 
@@ -64,7 +65,7 @@ the dark list (48 keys remain). Both stay switchable OFF. The same run re-checke
 - **template_date_left_clip_grow** — recover a date whose leading digit was clipped.
 - **template_pad_date_containment_flag** — flag a taught date box that's clipping a digit.
 - **template_clip_commit_left_slack** — don't false-flag a correctly-read date with a clipped edge.
-- **template_pad_date_adopt** — swap in a corroborated wider-read date so it files instead of holding.
+- ~~**template_pad_date_adopt**~~ — **✅ FLIPPED ON 2026-09-16 (mig 174)** — see DONE below.
 - **role_disagree_refuse_at100** — stop a clipped date auto-filing at a fake 100% score.
 
 **Auto-file friction (turn a "held" doc into "filed" where it's safe):**
@@ -109,8 +110,10 @@ the dark list (48 keys remain). Both stay switchable OFF. The same run re-checke
 **2026-09-16 (migs 172/173):** **name_role_nonname_flag** — a "name" field that is really a bare postcode / email /
 VAT number / IBAN is now held for a look instead of filing silently (census: 5 fires, 1 held, nothing broken, twice);
 **ref_confusable_flag** — a reference with an O-vs-0 / I-vs-1 / S-vs-5 look-alike in the wrong place is now held
-instead of filing under a wrong name (census: 6 fires, 2 held, nothing broken, twice). Both still switchable off.
-Earlier: **filing_sanity_confusable_soften** (reclassify a
+instead of filing under a wrong name (census: 6 fires, 2 held, nothing broken, twice); **template_pad_date_adopt**
+(mig 174) — a taught date box that clipped the first digit now takes the wider read when the page backs it up, so
+the correct date files instead of waiting (census: one swap, it was the right date, twice). All three still
+switchable off. Earlier: **filing_sanity_confusable_soften** (reclassify a
 one-glyph confusable — census passed, shipped), **ocr_parallel_import_enabled** (faster imports), **money_sign_capture**
 (read `CR` / parentheses as a credit sign). The pad-window reads that make clipped crops read correctly
 (**template_pad_window_read/code**) and the projection-variance straightener are also on by default. So the pipeline
