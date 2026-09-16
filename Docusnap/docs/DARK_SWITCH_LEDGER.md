@@ -39,7 +39,10 @@ owner flipped it too — **mig 174**. **47 keys remain dark.** All three stay sw
 ---
 
 ## 🟢 READY — safety test passed, awaiting your go (2)
-- **watch_separate_enabled** — keeps a watched folder's imports in their own batch. _Soak test PASSED._
+- ~~**watch_separate_enabled**~~ — **✅ FLIPPED ON 2026-09-16 (mig 175)** after the soak was actually RUN (the 09-12
+  "Soak test PASSED" line had no run behind it — corrected the same day). Result: analyzer PASS (16 bundles split,
+  no loop / loss / error), the real 34-page bundle 34/34, 0 genuine single docs over-split, every produced segment
+  held and none auto-filed. Full record: `TESTING/_measure/watch_separate_soak_20260916/RESULT.md`. See DONE below.
 - **deskew_corrob_autofile** — auto-files a straighten-recovered value when two independent sources agree.
   _Census was met once, but on possibly-poisoned data — wants one clean re-run on the new corpus before flip._
 
@@ -112,8 +115,10 @@ VAT number / IBAN is now held for a look instead of filing silently (census: 5 f
 **ref_confusable_flag** — a reference with an O-vs-0 / I-vs-1 / S-vs-5 look-alike in the wrong place is now held
 instead of filing under a wrong name (census: 6 fires, 2 held, nothing broken, twice); **template_pad_date_adopt**
 (mig 174) — a taught date box that clipped the first digit now takes the wider read when the page backs it up, so
-the correct date files instead of waiting (census: one swap, it was the right date, twice). All three still
-switchable off. Earlier: **filing_sanity_confusable_soften** (reclassify a
+the correct date files instead of waiting (census: one swap, it was the right date, twice); **watch_separate_enabled**
+(mig 175) — a bundled scan dropped in the WATCH folder is now split into its documents like a manual import, each
+one held for a look (soak: real 34-page bundle 34/34, nothing lost, nothing looped, nothing over-split, nothing
+filed unseen). All four still switchable off. Earlier: **filing_sanity_confusable_soften** (reclassify a
 one-glyph confusable — census passed, shipped), **ocr_parallel_import_enabled** (faster imports), **money_sign_capture**
 (read `CR` / parentheses as a credit sign). The pad-window reads that make clipped crops read correctly
 (**template_pad_window_read/code**) and the projection-variance straightener are also on by default. So the pipeline

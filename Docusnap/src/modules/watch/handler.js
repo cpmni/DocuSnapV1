@@ -338,7 +338,7 @@ async function _drainQueue(db) {
 
   let files = _queue.splice(0, _queue.length);   // take the whole current queue
 
-  // ── Separation parity (DARK watch_separate_enabled, 2026-09-01) ──────────────────────────────
+  // ── Separation parity (watch_separate_enabled, 2026-09-01; DEFAULT ON since mig 175, 2026-09-16 soak PASS) ──
   // Split multi-document PDFs IN THE WATCH FOLDER over the EXPLICIT stable set, before sharding — the
   // same pre-pass manual import runs. `_separating` blocks the poll (and drain re-entry) for the whole
   // span, so a segment written mid-pass can never be re-detected between the split and the pre-mark.

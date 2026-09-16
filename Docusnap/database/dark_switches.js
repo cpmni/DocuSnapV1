@@ -20,8 +20,9 @@
  *     it because the owner's old DB pre-dated that list.
  *   - ocr_parallel_import_enabled — promoted to a customer default by mig 139 (its sole writer).
  *   - filing_sanity_confusable_soften (147→148), direct_intake_enabled (165→171), name_role_nonname_flag
- *     (156→172), ref_confusable_flag (159→173), template_pad_date_adopt (143→174) — DARK seeds that GRADUATED
- *     via a labelled @DEFAULT_FLIP migration and left this list in that same commit.
+ *     (156→172), ref_confusable_flag (159→173), template_pad_date_adopt (143→174), watch_separate_enabled
+ *     (mig-137 'false' → 175) — DARK seeds that GRADUATED via a labelled @DEFAULT_FLIP migration and left this
+ *     list in that same commit.
  */
 const TEST_SWITCH_KEYS = Object.freeze([
   // mig 106 (2026-09-03)
@@ -32,9 +33,10 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   was MET 2026-09-01 on the owner's DB, but DO NOT FLIP without a COLD census (M=7 there was poisoned GT) — owner's call.
   'deskew_corrob_autofile',
   'quick_reprocess_enabled',
-  // ⚑ FLIP GATE (no seed migration — mig 106 was its only writer): the owner-run watch-separation SOAK,
-  //   docs/designs/WATCH_SEPARATE_SOAK_GATE_2026-09-02.md + stress_test/watch_separate_soak.js → PASS.
-  'watch_separate_enabled',
+  // watch_separate_enabled — GRADUATED to a customer default by mig 175 (2026-09-16: the soak gate of
+  //   docs/designs/WATCH_SEPARATE_SOAK_GATE_2026-09-02.md was RUN in a sandbox — analyzer PASS, real bundle 34/34,
+  //   0 over-split, every segment held; TESTING/_measure/watch_separate_soak_20260916/) and DELISTED here the
+  //   same commit.
   // migs 108-118 (2026-09-03/04) — the reference-flag family
   'format_variance_relax_ref',
   'format_variance_relax_ref_inline',

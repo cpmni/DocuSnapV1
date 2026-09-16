@@ -100,6 +100,16 @@ produced stay as normal documents.
 
 ---
 
+## RESULT — soak RUN 2026-09-16 → PASS → mig 175 (default ON)
+Run in a sandbox on a copy of the owner's live DB (28 templates); the real 34-page Print Tracker bundle + 10
+templated synthetic stacks + 5 mixed stacks + 5 genuine multi-page singles, dropped a few at a time and then all
+at once. Analyzer **PASS** (16 split PDFs, 14 batches exit 0, 0 loops, 0 errors, 0 orphans, 0 double-accepts).
+Real bundle **34/34**; singles **0 over-split**; **91 segments produced, all held, 0 auto-filed**. Synthetic stacks
+under-split where a page failed the first-page fingerprint floor ("continuation") — the shared conservative rule,
+never worse than OFF. Full record + scripts: `TESTING/_measure/watch_separate_soak_20260916/RESULT.md`. Seam logged
+(import-time hold only → a later File-All / scope sweep can file a merged clean segment unseen; follow-up belt in
+pendingfeatures.md).
+
 ## Notes / seams
 - The literal watch/import spawn code-merge is DONE (`buildWorkerCommand`, steps 1+2, 2026-09-02) so the
   per-doc READS are already identical by arrival path; this gate is only about the SEPARATION pre-pass.

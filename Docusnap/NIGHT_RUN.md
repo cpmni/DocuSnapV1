@@ -187,15 +187,11 @@ and, with no safe route, that item STOPS** — never improvise around a refusal.
   `db.backup()` copy (`RR_APP_ENV=1`, `OCR_RENDER_DPI=200`, dedup `RR_IDS`): assert 0 value diffs, enumerate
   the new sign-notes, human-eyeball each as a TRUE mis-typed-credit catch vs a false flag. Repeat if: the
   money reader or `_NEG_MARKERS` change.
-- **2026-09-02 · [FLIP GATE, owner-machine] `watch_separate_enabled` SOAK** — the higher-value watch/manual
-  parity win (a bundled multi-doc PDF splits on manual but imports WHOLE on watch until this flips). Built DARK
-  `29adce2`, unit-pinned (`test_watch_separation.js` 17: re-import guard + no-loss + held-set = segments). The
-  UNMEASURED risk is empirical: does the real separator split real bundles at the RIGHT boundary on the
-  UNATTENDED auto-file-held path, no loop, no loss. **Gate protocol: `docs/designs/WATCH_SEPARATE_SOAK_GATE_
-  2026-09-02.md`** — pre-check (pin green) → arm ON in a SANDBOX watch folder → feed the known bundles (Demo
-  Docs Print Tracker) + genuine single docs (over-split control) → `node stress_test/watch_separate_soak.js
-  --watch-folder <dir>` (mines processing.log for loop/loss/error → PASS/FAIL/INCONCLUSIVE) → human boundary +
-  held-review check → owner flip. Flip is approval-class; kill-switch stays.
+- ~~**2026-09-02 · [FLIP GATE, owner-machine] `watch_separate_enabled` SOAK**~~ — **✅ DONE 2026-09-16** (run in a
+  sandbox on a live-DB copy: analyzer PASS, real 34-page bundle 34/34, 0 over-split, every segment held, 0
+  auto-filed → mig 175 default ON; `TESTING/_measure/watch_separate_soak_20260916/RESULT.md`). Repeat if: the
+  separator (`ocr/segmentation.py`, `segment_docs.py`, `pdf_splitter.py`) or `watch/handler.js` separation fold
+  changes — same harness, same bundles.
 - **2026-08-31 · [owner-machine VM gate] Confirm the batch-import crash fix** (BUILT — see the DONE ledger). Three
   remaining checks need a low-RAM VM / the real corpus / the friend's log (Oracle C6.5): (1) a hundreds-of-PDFs import
   on a memory-pressured VM survives, logs the spawn failure, shows the truthful "left in your source folder" message,
@@ -386,6 +382,11 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-09-16 DAY · `watch_separate_enabled` SOAK run (sandbox on a live-DB copy) → PASS → mig 175 default ON.**
+  Analyzer PASS (16 split PDFs, 0 loop/loss/error/orphan), real 34-page bundle 34/34, 5/5 singles not over-split,
+  91 segments all held, 0 auto-filed; synthetic same-logo stacks under-split = the separator's fingerprint floor
+  (shared with manual import). Record + reusable harness `TESTING/_measure/watch_separate_soak_20260916/`. Seam
+  → pendingfeatures.md (durable "look first" mark for watch segments). Repeat if: separator or watch fold changes.
 - **2026-09-08 NIGHT · Items 1–7 ALL DONE (6 commits `5db333e`…`ef12f72` + wrap; `HANDOVER_2026-09-09.md`).**
   1 The 17 red JS pins were ALL STALE (0 real regressions) → 325/325 (`5db333e`; producer/supplier-scoped-sweep/v1-gate verified sound).
   2 `--smoke-windows` built + pinned 33/33; PACKAGED build's window smoke 14/14 (`82843a0`) → target `dist/ScanFinder Setup 2.0.0-r20260908-2238-ef12f72.exe`.

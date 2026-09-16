@@ -5443,3 +5443,15 @@ sandbox seed (`scripts/seed-chris-sandbox.js`) before deciding. Chris's other 8 
 > (`processing/handler.js isAppManagedFolder` + the process-folder guard; pin `test_import_app_managed_folder.js`).
 > Why blank: that folder holds the ORIGINAL multi-document stacks the separator already split and filed, so a
 > re-import queues the whole stack as one document — not worth chasing further.
+
+## 2026-09-16 — watch-split segments: a DURABLE "look first" mark (found by the watch_separate soak; not a blocker)
+`watch_separate_enabled` is ON by default since mig 175. A segment the watch folder produced is HELD only by an
+IMPORT-TIME skip (`autoFileRun=false` in `src/modules/watch/handler.js`) — the document carries no durable mark, so
+a later "File all ready" click (`review/handler.js` → `isAutoFileEligible`) or the scope sweep
+(`scope_sweep_enabled`, ON on the owner's install) can file a merged, 100 %-clean segment nobody has opened. The
+soak showed the merged case is real: a page that fails the separator's first-page fingerprint floor rides on the
+previous document (e.g. #633 Ridgeway worksheet p2-3 @100 %, no note). Proposed belt: stamp watch-produced
+segments with a review-required mark that `isAutoFileEligible` honours until a human opens the doc (the
+`put_back_at` shape, cleared on view/confirm). Separate item: the separator's same-logo sibling accuracy (a
+Copperfield sales order after a Copperfield worksheet reads as "continuation") — a fingerprint-floor / sibling
+resolution improvement, gated by the same soak harness (`TESTING/_measure/watch_separate_soak_20260916/`).

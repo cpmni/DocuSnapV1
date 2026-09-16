@@ -1,0 +1,214 @@
+BAD bundle_01.pdf (4p, expect 4 doc(s)) — BOUNDARY MISMATCH expected [[1,1],[2,2],[3,3],[4,4]] got [[1,1],[2,3],[4,4]]
+    #631 p1-1 1p needs_review · Saltmarsh Seafoods · Delivery Note · — · — · 82%  notes: delivery_number: 'DN-79533' doesn't appear on this page as written — please check the reference before filing.
+    #633 p2-3 2p needs_review · Ridgeway Plant Hire · Worksheet · — · — · 100%
+    #628 p4-4 1p needs_review · Northgate Textiles · Sales Order · — · — · 78%  notes: sales_order_number: The taught box read 'SO-71008' but the text beside its label reads 'SO-71009' — the box may be clipping the first character; please check which is printed.
+        expected: SaltmarshSeafoods_delivery_docket_10.pdf
+        expected: RidgewayPlantHire_worksheet_17.pdf
+        expected: NorthgateTextiles_sales_order_19.pdf
+BAD bundle_02.pdf (3p, expect 3 doc(s)) — BOUNDARY MISMATCH expected [[1,1],[2,2],[3,3]] got [[1,2],[3,3]]
+    #635 p1-2 2p needs_review · Northgate Textiles · Delivery Note · — · — · 90%  notes: supplier_name: Couldn't match this document to the supplier's saved Delivery Note layout — please check the document type; confirming will teach this layout.
+    #632 p3-3 1p needs_review · Thornbury Fasteners · Delivery Note · — · — · 100%
+        expected: NorthgateTextiles_delivery_docket_05.pdf
+        expected: ThornburyFasteners_delivery_docket_08.pdf
+BAD bundle_03.pdf (4p, expect 4 doc(s)) — BOUNDARY MISMATCH expected [[1,1],[2,2],[3,3],[4,4]] got [[1,1],[2,3],[4,4]]
+    #629 p1-1 1p needs_review · Larkspur Interiors · Invoice · — · — · 65%  notes: supplier_name: The letterhead reads 'Larkspur Interiors' — filled in for you, but please confirm it's the sender, not the customer, before filing.
+    #630 p2-3 2p needs_review · Marlowe Medical Supplies · Sales Order · — · — · 100%
+    #636 p4-4 1p needs_review · Larkspur Interiors · Sales Order · — · — · 71%  notes: sales_order_number: The taught box read 'SO-19/4:' but the text beside its label reads 'SO-15747' — the box may be clipping the first character; please check which is printed.
+        expected: LarkspurInteriors_invoice_08.pdf
+        expected: MarloweMedicalSupplies_sales_order_02.pdf
+        expected: LarkspurInteriors_sales_order_06.pdf
+BAD bundle_04.pdf (5p, expect 5 doc(s)) — BOUNDARY MISMATCH expected [[1,1],[2,2],[3,3],[4,4],[5,5]] got [[1,1],[2,2],[3,3],[4,5]]
+    #640 p1-1 1p needs_review · Northgate Textiles · Purchase Order · — · — · 56%  notes: supplier_name: This purchase order is on Northgate Textiles's letterhead but names 'Wilowbrook Nurseries' as the supplier — confirm which company to file under. Couldn't match this document to the supplier's saved Purchase Order layout — please check the document type; confirming will teach this layout.
+    #637 p2-2 1p needs_review · Ridgeway Plant Hire · Delivery Note · — · — · 100%
+    #639 p3-3 1p needs_review · Saltmarsh Seafoods · Invoice · — · — · 94%  notes: supplier_name: Couldn't match this document to the supplier's saved Invoice layout — please check the document type; confirming will teach this layout.
+    #641 p4-5 2p needs_review · Marlowe Medical Supplies · Sales Order · — · — · 100%
+        expected: NorthgateTextiles_purchase_order_06.pdf
+        expected: RidgewayPlantHire_delivery_docket_01.pdf
+        expected: SaltmarshSeafoods_invoice_13.pdf
+        expected: MarloweMedicalSupplies_sales_order_07.pdf
+BAD bundle_05.pdf (3p, expect 3 doc(s)) — MISSING (no document produced)
+BAD bundle_06.pdf (5p, expect 5 doc(s)) — MISSING (no document produced)
+BAD bundle_07.pdf (4p, expect 4 doc(s)) — MISSING (no document produced)
+BAD bundle_08.pdf (4p, expect 4 doc(s)) — MISSING (no document produced)
+BAD bundle_mp_01.pdf (6p, expect 5 doc(s)) — BOUNDARY MISMATCH expected [[1,1],[2,2],[3,4],[5,5],[6,6]] got [[1,1],[2,2],[3,6]]
+    #642 p1-1 1p needs_review · Larkspur Interiors · Delivery Note · — · — · 88%
+    #638 p2-2 1p needs_review · Ridgeway Plant Hire · Worksheet · — · — · 100%
+    #657 p3-6 4p needs_review · Ironbridge Fabrication · Invoice · — · — · 100%  notes: invoice_date: Found '12-10-2025' after straightening — confirm once. | invoice_number: Found 'INV-82570' after straightening — confirm once.
+        expected: LarkspurInteriors_delivery_docket_07.pdf
+        expected: RidgewayPlantHire_worksheet_11.pdf
+        expected: multipage_001.pdf (2-page single)
+BAD bundle_mp_02.pdf (6p, expect 5 doc(s)) — MISSING (no document produced)
+OK  single_01.pdf (2p, expect 1 doc(s)) — OK
+    #634 p1-2 2p needs_review · — · Invoice · — · — · 62%  notes: supplier_name: Your own company's name was read here, and the issuer's letterhead couldn't be read. Please pick who issued this document. Couldn't match this document to the supplier's saved Invoice layout — please check the document type; confirming will teach this layout.
+OK  single_02.pdf (2p, expect 1 doc(s)) — OK
+    #688 p1-2 2p needs_review · — · Invoice · — · — · 62%  notes: supplier_name: Your own company's name was read here, and the issuer's letterhead couldn't be read. Please pick who issued this document. Couldn't match this document to the supplier's saved Invoice layout — please check the document type; confirming will teach this layout.
+OK  single_03.pdf (2p, expect 1 doc(s)) — OK
+    #674 p1-2 2p needs_review · — · Invoice · — · — · 62%  notes: supplier_name: Your own company's name was read here, and the issuer's letterhead couldn't be read. Please pick who issued this document. Couldn't match this document to the supplier's saved Invoice layout — please check the document type; confirming will teach this layout.
+OK  single_04.pdf (2p, expect 1 doc(s)) — OK
+    #678 p1-2 2p needs_review · — · Invoice · — · — · 62%  notes: invoice_date: Found '12-10-2025' after straightening — confirm once. | invoice_number: Read differently after straightening — was '12-10-2025', now 'INV-82570' — confirm once. | supplier_name: Your own company's name was read here, and the issuer's letterhead couldn't be read. Please pick who issued this document. Couldn't match this document to the supplier's saved Invoice layout — please check the document type; confirming will teach this layout.
+OK  single_05.pdf (2p, expect 1 doc(s)) — OK
+    #682 p1-2 2p needs_review · — · Invoice · — · — · 62%  notes: invoice_date: Found '02-05-2025' after straightening — confirm once. | invoice_number: Found 'INV-71067' after straightening — confirm once. | supplier_name: Your own company's name was read here, and the issuer's letterhead couldn't be read. Please pick who issued this document. Couldn't match this document to the supplier's saved Invoice layout — please check the document type; confirming will teach this layout.
+OK  real_34.pdf (34p, expect 34 doc(s)) — OK
+    #645 p1-1 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #649 p2-2 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #665 p3-3 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #677 p4-4 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%  notes: model: read 'Ecosys MA3S00cix' here, but another check read 'Ecosys MA3500cix' — this sender's references usually have 4 digits. Please pick the right value.
+    #675 p5-5 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #670 p6-6 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 75%  notes: reference_number: manually mapped value differs from the usual format for this field — please verify | customer: format differs from the usual — please verify
+    #687 p7-7 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%  notes: customer: looks like a document heading, not a name — please verify
+    #673 p8-8 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 75%  notes: reference_number: manually mapped value differs from the usual format for this field — please verify
+    #668 p9-9 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #647 p10-10 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 75%  notes: reference_number: The taught box read 'RFUYSUSS1' but the text beside its label reads 'RFC9508317' — the box may be clipping the first character; please check which is printed.
+    #646 p11-11 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 82%  notes: reference_number: The taught box read '1625802868' but the text beside its label reads '1G25802868' — the box may be clipping the first character; please check which is printed.
+    #648 p12-12 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #644 p13-13 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #664 p14-14 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #654 p15-15 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #643 p16-16 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #652 p17-17 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 75%  notes: reference_number: The taught box read 'W2Z9/6Z0UU0' but the text beside its label reads 'W2S7828006' — the box may be clipping the first character; please check which is printed.
+    #653 p18-18 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%  notes: customer: doesn't read like a name — please verify
+    #651 p19-19 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #650 p20-20 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 75%  notes: reference_number: manually mapped value differs from the usual format for this field — please verify
+    #671 p21-21 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #660 p22-22 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%  notes: customer: format differs from the usual — please verify
+    #655 p23-23 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #658 p24-24 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #662 p25-25 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 75%  notes: reference_number: manually mapped value differs from the usual format for this field — please verify
+    #659 p26-26 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #656 p27-27 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 75%  notes: reference_number: The taught box read 'W2Z00/406979' but the text beside its label reads 'W2S8745899' — the box may be clipping the first character; please check which is printed.
+    #681 p28-28 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 75%  notes: reference_number: manually mapped value differs from the usual format for this field — please verify
+    #667 p29-29 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 82%  notes: customer: looks like a document heading, not a name — please verify | reference_number: 'RFHO/38865' doesn't appear on this page as written — please check the reference before filing.
+    #661 p30-30 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 75%  notes: reference_number: manually mapped value differs from the usual format for this field — please verify | customer: format differs from the usual — please verify
+    #672 p31-31 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #669 p32-32 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #666 p33-33 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+    #663 p34-34 1p needs_review · Print Tracker Doc · Print Tracker · — · — · 100%
+        expected: page 1 (manual path split this into 34 on 2026-09-01)
+        expected: page 2 (manual path split this into 34 on 2026-09-01)
+        expected: page 3 (manual path split this into 34 on 2026-09-01)
+        expected: page 4 (manual path split this into 34 on 2026-09-01)
+        expected: page 5 (manual path split this into 34 on 2026-09-01)
+        expected: page 6 (manual path split this into 34 on 2026-09-01)
+        expected: page 7 (manual path split this into 34 on 2026-09-01)
+        expected: page 8 (manual path split this into 34 on 2026-09-01)
+        expected: page 9 (manual path split this into 34 on 2026-09-01)
+        expected: page 10 (manual path split this into 34 on 2026-09-01)
+        expected: page 11 (manual path split this into 34 on 2026-09-01)
+        expected: page 12 (manual path split this into 34 on 2026-09-01)
+        expected: page 13 (manual path split this into 34 on 2026-09-01)
+        expected: page 14 (manual path split this into 34 on 2026-09-01)
+        expected: page 15 (manual path split this into 34 on 2026-09-01)
+        expected: page 16 (manual path split this into 34 on 2026-09-01)
+        expected: page 17 (manual path split this into 34 on 2026-09-01)
+        expected: page 18 (manual path split this into 34 on 2026-09-01)
+        expected: page 19 (manual path split this into 34 on 2026-09-01)
+        expected: page 20 (manual path split this into 34 on 2026-09-01)
+        expected: page 21 (manual path split this into 34 on 2026-09-01)
+        expected: page 22 (manual path split this into 34 on 2026-09-01)
+        expected: page 23 (manual path split this into 34 on 2026-09-01)
+        expected: page 24 (manual path split this into 34 on 2026-09-01)
+        expected: page 25 (manual path split this into 34 on 2026-09-01)
+        expected: page 26 (manual path split this into 34 on 2026-09-01)
+        expected: page 27 (manual path split this into 34 on 2026-09-01)
+        expected: page 28 (manual path split this into 34 on 2026-09-01)
+        expected: page 29 (manual path split this into 34 on 2026-09-01)
+        expected: page 30 (manual path split this into 34 on 2026-09-01)
+        expected: page 31 (manual path split this into 34 on 2026-09-01)
+        expected: page 32 (manual path split this into 34 on 2026-09-01)
+        expected: page 33 (manual path split this into 34 on 2026-09-01)
+        expected: page 34 (manual path split this into 34 on 2026-09-01)
+OK  tb_01.pdf (5p, expect 5 doc(s)) — OK
+    #686 p1-1 1p needs_review · Copperfield Electrical · Worksheet · — · — · 100%
+    #680 p2-2 1p needs_review · Thornbury Fasteners · Delivery Note · — · — · 100%
+    #676 p3-3 1p needs_review · Ridgeway Plant Hire · Delivery Note · — · — · 100%
+    #692 p4-4 1p needs_review · Ironbridge Fabrication · Invoice · — · — · 100%
+    #679 p5-5 1p needs_review · Copperfield Electrical · Sales Order · — · — · 100%
+        expected: CopperfieldElectrical_worksheet_16.pdf
+        expected: ThornburyFasteners_delivery_docket_05.pdf
+        expected: RidgewayPlantHire_delivery_docket_17.pdf
+        expected: IronbridgeFabrication_invoice_15.pdf
+        expected: CopperfieldElectrical_sales_order_01.pdf
+OK  tb_02.pdf (5p, expect 5 doc(s)) — OK
+    #684 p1-1 1p needs_review · Thornbury Fasteners · Worksheet · — · — · 100%
+    #693 p2-2 1p needs_review · Vellum & Crane Stationers · Sales Order · — · — · 75%  notes: sales_order_number: 'SO-375' doesn't appear on this page as written — please check the reference before filing.
+    #700 p3-3 1p needs_review · Thornbury Fasteners · Delivery Note · — · — · 75%  notes: delivery_number: A wider reading of this box shows 'DN-64472', which differs from the value shown here — please check which is printed.
+    #685 p4-4 1p needs_review · Ironbridge Fabrication · Invoice · — · — · 100%
+    #683 p5-5 1p needs_review · Ridgeway Plant Hire · Worksheet · — · — · 100%
+        expected: ThornburyFasteners_worksheet_20.pdf
+        expected: Vellum&CraneStationers_sales_order_10.pdf
+        expected: ThornburyFasteners_delivery_docket_10.pdf
+        expected: IronbridgeFabrication_invoice_12.pdf
+        expected: RidgewayPlantHire_worksheet_13.pdf
+BAD tb_03.pdf (5p, expect 5 doc(s)) — BOUNDARY MISMATCH expected [[1,1],[2,2],[3,3],[4,4],[5,5]] got [[1,2],[3,3],[4,4],[5,5]]
+    #698 p1-2 2p needs_review · Ridgeway Plant Hire · Delivery Note · — · — · 100%
+    #689 p3-3 1p needs_review · Thornbury Fasteners · Delivery Note · — · — · 100%
+    #691 p4-4 1p needs_review · Copperfield Electrical · Sales Order · — · — · 100%
+    #697 p5-5 1p needs_review · Saltmarsh Seafoods · Delivery Note · — · — · 100%
+        expected: RidgewayPlantHire_delivery_docket_16.pdf
+        expected: ThornburyFasteners_delivery_docket_11.pdf
+        expected: CopperfieldElectrical_sales_order_18.pdf
+        expected: SaltmarshSeafoods_delivery_docket_13.pdf
+BAD tb_04.pdf (7p, expect 7 doc(s)) — BOUNDARY MISMATCH expected [[1,1],[2,2],[3,3],[4,4],[5,5],[6,6],[7,7]] got [[1,2],[3,4],[5,5],[6,7]]
+    #708 p1-2 2p needs_review · Vellum & Crane Stationers · Delivery Note · — · — · 100%
+    #695 p3-4 2p needs_review · Northgate Textiles · Sales Order · — · — · 80%  notes: sales_order_number: this could read 'SO-61040' or '$O-61040' (S and $ look alike on a scan) — one character differs; showing 'SO-61040' — please check which is printed
+    #690 p5-5 1p needs_review · Northgate Textiles · Sales Order · — · — · 100%
+    #706 p6-7 2p needs_review · Thornbury Fasteners · Invoice · — · — · 100%
+        expected: Vellum&CraneStationers_delivery_docket_11.pdf
+        expected: NorthgateTextiles_sales_order_10.pdf
+        expected: NorthgateTextiles_sales_order_01.pdf
+        expected: ThornburyFasteners_invoice_12.pdf
+BAD tb_05.pdf (5p, expect 5 doc(s)) — BOUNDARY MISMATCH expected [[1,1],[2,2],[3,3],[4,4],[5,5]] got [[1,2],[3,3],[4,4],[5,5]]
+    #699 p1-2 2p needs_review · Copperfield Electrical · Worksheet · — · — · 100%
+    #696 p3-3 1p needs_review · Ironbridge Fabrication · Invoice · — · — · 100%
+    #703 p4-4 1p needs_review · Copperfield Electrical · Purchase Order · — · — · 100%
+    #714 p5-5 1p needs_review · Saltmarsh Seafoods · Delivery Note · — · — · 100%
+        expected: CopperfieldElectrical_worksheet_13.pdf
+        expected: IronbridgeFabrication_invoice_16.pdf
+        expected: CopperfieldElectrical_purchase_order_17.pdf
+        expected: SaltmarshSeafoods_delivery_docket_16.pdf
+BAD tb_06.pdf (5p, expect 5 doc(s)) — BOUNDARY MISMATCH expected [[1,1],[2,2],[3,3],[4,4],[5,5]] got [[1,2],[3,3],[4,4],[5,5]]
+    #704 p1-2 2p needs_review · Thornbury Fasteners · Invoice · — · — · 100%
+    #694 p3-3 1p needs_review · Marlowe Medical Supplies · Sales Order · — · — · 100%
+    #713 p4-4 1p needs_review · Vellum & Crane Stationers · Delivery Note · — · — · 100%
+    #702 p5-5 1p needs_review · Meadowvale Dairy Wholesale · Credit Note · — · — · 100%
+        expected: ThornburyFasteners_invoice_19.pdf
+        expected: MarloweMedicalSupplies_sales_order_17.pdf
+        expected: Vellum&CraneStationers_delivery_docket_15.pdf
+        expected: Meadowvale-Dairy_credit_note_0011.pdf
+BAD tb_07.pdf (6p, expect 6 doc(s)) — BOUNDARY MISMATCH expected [[1,1],[2,2],[3,3],[4,4],[5,5],[6,6]] got [[1,2],[3,3],[4,4],[5,5],[6,6]]
+    #705 p1-2 2p needs_review · Vellum & Crane Stationers · Delivery Note · — · — · 100%
+    #707 p3-3 1p needs_review · Castellan Security Systems · Worksheet · — · — · 100%
+    #720 p4-4 1p needs_review · Vellum & Crane Stationers · Delivery Note · — · — · 100%
+    #716 p5-5 1p needs_review · Northgate Textiles · Sales Order · — · — · 100%  notes: sales_order_number: Read differently after straightening — was 'CO-54575', now 'SO-54575' — confirm once. | customer_name: Read differently after straightening — was 'Kinafisher Print Studio', now 'Kingfisher Print Studio' — confirm once.
+    #701 p6-6 1p needs_review · Saltmarsh Seafoods · Delivery Note · — · — · 100%
+        expected: Vellum&CraneStationers_delivery_docket_09.pdf
+        expected: Castellan-Security_service_worksheet_0011.pdf
+        expected: Vellum&CraneStationers_delivery_docket_04.pdf
+        expected: NorthgateTextiles_sales_order_14.pdf
+        expected: SaltmarshSeafoods_delivery_docket_11.pdf
+BAD tb_08.pdf (5p, expect 5 doc(s)) — BOUNDARY MISMATCH expected [[1,1],[2,2],[3,3],[4,4],[5,5]] got [[1,1],[2,3],[4,4],[5,5]]
+    #717 p1-1 1p needs_review · Thornbury Fasteners · Worksheet · — · — · 100%
+    #709 p2-3 2p needs_review · Veltrix Automotive Parts · Sales Order · — · — · 100%
+    #711 p4-4 1p needs_review · Vellum & Crane Stationers · Delivery Note · — · — · 77%  notes: delivery_number: The taught position and the full-page read disagreed — using the full-page value; please verify.
+    #710 p5-5 1p needs_review · Marlowe Medical Supplies · Sales Order · — · — · 100%
+        expected: ThornburyFasteners_worksheet_14.pdf
+        expected: Veltrix-Automotive_sales_order_0011.pdf
+        expected: Vellum&CraneStationers_delivery_docket_10.pdf
+        expected: MarloweMedicalSupplies_sales_order_20.pdf
+BAD tb_same_01.pdf (5p, expect 5 doc(s)) — BOUNDARY MISMATCH expected [[1,1],[2,2],[3,3],[4,4],[5,5]] got [[1,1],[2,2],[3,5]]
+    #723 p1-1 1p needs_review · Copperfield Electrical · Purchase Order · — · — · 100%
+    #721 p2-2 1p needs_review · Copperfield Electrical · Purchase Order · — · — · 100%
+    #712 p3-5 3p needs_review · Copperfield Electrical · Worksheet · — · — · 100%
+        expected: CopperfieldElectrical_purchase_order_16.pdf
+        expected: CopperfieldElectrical_purchase_order_13.pdf
+        expected: CopperfieldElectrical_worksheet_08.pdf
+BAD tb_same_02.pdf (5p, expect 5 doc(s)) — BOUNDARY MISMATCH expected [[1,1],[2,2],[3,3],[4,4],[5,5]] got [[1,1],[2,3],[4,4],[5,5]]
+    #722 p1-1 1p needs_review · Thornbury Fasteners · Invoice · — · — · 71%  notes: invoice_number: The taught box read 'NV-023277' but the text beside its label reads 'INV-93277' — the box may be clipping the first character; please check which is printed.
+    #718 p2-3 2p needs_review · Thornbury Fasteners · Invoice · — · — · 100%
+    #719 p4-4 1p needs_review · Thornbury Fasteners · Delivery Note · — · — · 100%
+    #715 p5-5 1p needs_review · Thornbury Fasteners · Invoice · — · — · 100%
+        expected: ThornburyFasteners_invoice_15.pdf
+        expected: ThornburyFasteners_invoice_10.pdf
+        expected: ThornburyFasteners_delivery_docket_19.pdf
+        expected: ThornburyFasteners_invoice_14.pdf
+files OK 8 / BAD 18 · segments produced 91 · docs held 96 · auto-filed 0 · new docs total 96

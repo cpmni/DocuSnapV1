@@ -3575,6 +3575,29 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 174 (template_pad_date_adopt default ON): ${e.message}`); }
   }
 
+  // ── migration 175: watch_separate_enabled GRADUATES to a customer default (2026-09-16, owner go after the
+  //    soak). The watch folder now runs the SAME multi-document separation pre-pass a manual import runs, so a
+  //    bundled scan dropped in the watch folder is split into per-document segments instead of importing as ONE
+  //    document under page 1's identity. Gate (docs/designs/WATCH_SEPARATE_SOAK_GATE_2026-09-02.md) run
+  //    2026-09-16 in a sandbox on a copy of the owner's live DB (TESTING/_measure/watch_separate_soak_20260916/):
+  //    analyzer PASS (16 split PDFs, 14 batches exit 0, 0 re-import loops, 0 separation errors, 0 orphaned
+  //    originals, no file accepted twice); the real 34-page bundle split 34/34 (= the manual path's 09-01
+  //    result); 0 genuine multi-page singles over-split (5/5); every one of the 91 produced segments HELD, 0
+  //    auto-filed. Synthetic stacks under-split where a page failed the separator's first-page fingerprint floor
+  //    ("continuation") — the shared conservative heuristic, identical on manual import, never worse than the
+  //    whole-bundle import OFF gives. No seed migration ever wrote this key (mig 106 was deleted; mig 137 seeded
+  //    'false' from the dark list), so this is an UPSERT. A deliberate 'false' still turns it off (the switch stays
+  //    the kill switch; rollback = one setting). DELISTED from dark_switches.js the SAME commit. Pinned by
+  //    database/test_watch_separate_default_on.js. Permanent default flip, so it carries the label:
+  // @DEFAULT_FLIP 175
+  if (!applied.has(175)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('watch_separate_enabled', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (175)').run();
+      console.log('JS migration 175 applied: watch_separate_enabled ON by default (UPSERT true) — soak PASS, graduated');
+    } catch (e) { console.warn(`  migration 175 (watch_separate_enabled default ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
