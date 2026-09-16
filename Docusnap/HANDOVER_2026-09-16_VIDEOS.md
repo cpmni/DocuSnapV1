@@ -1,9 +1,16 @@
 # HANDOVER 2026-09-16 — the tutorial-video night run (cold start for the next session)
 
-Branch `feat/teach-side-overnight`. Everything from this session is in `tools/video_tutorials/` + the `/makescript`
-skill (committed at the end of the run — see `git log -3`). No app code touched. Pins untouched (377/377 at the
-last run). The handover queue from 2026-09-15 EVENING (push `8ec76de`, VM live-test of both installers, Departments
-D2b/D3/D4) is STILL parked — nothing there moved tonight.
+## STATE (verified at wrap, 2026-09-16 morning)
+- Branch `feat/teach-side-overnight`, **HEAD `303f192`**. **4 commits UNPUSHED** (owner's call): `704d0c6` runner +
+  `/makescript` · `01dc323` record.py + the five tutorials · `7a82dce` next-session pointer · `303f192` voice.py.
+  Earlier `8ec76de`/`c539a7f` are on origin.
+- Tree: no uncommitted work from this session (the `??` leftovers — `_c.db-*`, `scratchpad/007_*`, old docs/tests,
+  `../Docusnap - Copy*` — predate it and were never touched). `config/license.json` restored; no `.videobak`.
+- **No app code touched**; migration 171 unchanged; pins untouched (377/377 at the last run, 09-15 EVENING).
+- Demo dev app STOPPED (port 9222 closed). Demo profile `C:\ScanFinderDemo` (~10 MB) left in place; `record.py --reset`
+  removes it. Videos + voice-overs in `Desktop\Tutorials` (10 MP4s: 5 silent originals + 5 `-final` with voice).
+- The 2026-09-15 EVENING queue (VM live-test of both installers, Departments D2b/D3/D4) is STILL parked — nothing there
+  moved. The terminal prompt line may still hold the stray text "Demo Admin" (unsent) — clear it.
 
 ## ⏭ NEXT SESSION = DARK-SWITCH FLIP TESTING (owner, 2026-09-16 morning: "continue with the switch testing")
 Resume from `HANDOVER_2026-09-15_EVENING.md` → "Deferred → Dark-switch flip census": the 4 proven switches in
