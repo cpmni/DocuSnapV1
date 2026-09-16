@@ -42,7 +42,7 @@ check('migration 163 stamped', applied.has(163));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 163 applied/.test(l) && /seeded OFF/.test(l)));
 check(`a fresh (non-TEST) install ends with ${KEY} === 'false' (DARK)`, get(db, KEY) === 'false');
 check(`${KEY} is in TEST_SWITCH_KEYS`, TEST_SWITCH_KEYS.includes(KEY));
-check('TEST_SWITCH_KEYS is now 50 (mig 163 + departments_enabled + mig 166 date-yield + mig 167 date_forms_wide; direct_intake_enabled graduated to default-ON via mig 171 + delisted 2026-09-15)', TEST_SWITCH_KEYS.length === 50);
+check('TEST_SWITCH_KEYS is now 48 (mig 163 + departments_enabled + mig 166 date-yield + mig 167 date_forms_wide; direct_intake_enabled graduated via mig 171 2026-09-15; name_role_nonname_flag + ref_confusable_flag graduated via migs 172/173 2026-09-16, all delisted)', TEST_SWITCH_KEYS.length === 48);
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('mig 163 is an INSERT OR IGNORE seed of false', new RegExp(`INSERT OR IGNORE INTO settings \\(key, value\\) VALUES \\('${KEY}', 'false'\\)`).test(src));
 check('NO numbered force-ON twin exists', !new RegExp(`VALUES \\('${KEY}', 'true'\\)`).test(src));

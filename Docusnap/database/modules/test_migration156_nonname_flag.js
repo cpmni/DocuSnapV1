@@ -3,11 +3,15 @@
 /**
  * test_migration156_nonname_flag.js — mig 156 seeds `name_role_nonname_flag` OFF (2026-09-10; reggie+gary →
  * Oracle SIGN-OFF-W/COND). A name-role field whose whole value is a bare postcode/email/GB-VAT/IBAN is
- * flagged + held (value kept, note + `+nonname_flag` method sentinel, cap ≤69, needs_review). DARK until its
- * predicate pins + the both-ON mig-142 pin + accepted_names batch-stall pin + realdoc M=0 + the live Vellum
- * doc + Oracle. Pins: mig stamped, seeded 'false', IN TEST_SWITCH_KEYS (armed by the runtime test-build road,
- * never a numbered force-ON), NO force-ON twin, not in ALL_ON_DEFAULTS_93, handler maps it to the Python env,
- * a later manual ON survives the next start.
+ * flagged + held (value kept, note + `+nonname_flag` method sentinel, cap ≤69, needs_review).
+ *
+ * GRADUATED 2026-09-16: mig 172 (@DEFAULT_FLIP) UPSERT-forces it 'true' after the 700-doc flip census passed
+ * twice (M=0, 5 fires, 1 file→hold, 0 hold→file) and the key LEFT TEST_SWITCH_KEYS in the same commit. This
+ * pin now records BOTH halves of that history: the mig-156 seed is still an INSERT OR IGNORE of 'false' (an
+ * old DB upgrading through 156 → 172 must end ON), the key is delisted, a fresh install ends 'true', the handler
+ * still bridges it to the Python env, and a deliberate 'false' survives the next start (172 is one-shot).
+ * The fuller default-on contract (upgrade path, label, kill durability for both graduated keys) is
+ * database/test_default_flip_156_159.js.
  *
  *   ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe database/modules/test_migration156_nonname_flag.js
  */
@@ -28,24 +32,29 @@ const applied = new Set(db.prepare('SELECT version FROM migrations').all().map(r
 
 check('migration 156 stamped', applied.has(156));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 156 applied/.test(l) && /seeded OFF/.test(l)));
-check('a fresh (non-TEST) install ends with name_role_nonname_flag === false (DARK)',
-      get('name_role_nonname_flag') === 'false');
-check('name_role_nonname_flag is in TEST_SWITCH_KEYS (armed by the runtime test-build road)',
-      TEST_SWITCH_KEYS.includes('name_role_nonname_flag'));
+check('migration 172 (the graduation) stamped', applied.has(172));
+check("a fresh install ends with name_role_nonname_flag === 'true' (mig 172 @DEFAULT_FLIP, 2026-09-16)",
+      get('name_role_nonname_flag') === 'true');
+check('name_role_nonname_flag is DELISTED from TEST_SWITCH_KEYS (so build_arming never disarms it on a release launch)',
+      !TEST_SWITCH_KEYS.includes('name_role_nonname_flag'));
 
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
-check('mig 156 is an INSERT OR IGNORE seed of false',
+check('mig 156 is still an INSERT OR IGNORE seed of false (history preserved for the upgrade path)',
       /INSERT OR IGNORE INTO settings \(key, value\) VALUES \('name_role_nonname_flag', 'false'\)/.test(src));
-check('NO numbered force-ON twin exists', !/VALUES \('name_role_nonname_flag', 'true'\)/.test(src));
+check("mig 172 is the ONLY writer of 'true' and it is a labelled UPSERT (never a numbered TEST force-ON)",
+      (src.match(/VALUES \('name_role_nonname_flag', 'true'\)/g) || []).length === 1
+      && /\/\/ @DEFAULT_FLIP 172\s*\n\s*if \(!applied\.has\(172\)\)/.test(src)
+      && /INSERT INTO settings \(key, value\) VALUES \('name_role_nonname_flag', 'true'\) ON CONFLICT\(key\) DO UPDATE SET value = 'true'/.test(src));
 check('not in ALL_ON_DEFAULTS_93', !/ALL_ON_DEFAULTS_93 = \[[\s\S]*?'name_role_nonname_flag'[\s\S]*?\];/.test(src));
 
 const hsrc = fs.readFileSync(path.join(ROOT, 'src', 'modules', 'processing', 'handler.js'), 'utf8');
 check('handler maps name_role_nonname_flag → env.NAME_ROLE_NONNAME_FLAG',
       /getSetting\(db, 'name_role_nonname_flag', 'false'\) === 'true'\) env\.NAME_ROLE_NONNAME_FLAG = '1'/.test(hsrc));
 
-db.prepare("UPDATE settings SET value = 'true' WHERE key = 'name_role_nonname_flag'").run();
+db.prepare("UPDATE settings SET value = 'false' WHERE key = 'name_role_nonname_flag'").run();
 console.log = () => {}; runMigrations(db); console.log = origLog;
-check('a later manual ON survives the next start', get('name_role_nonname_flag') === 'true');
+check("a deliberate 'false' survives the next start (mig 172 is one-shot, not a sweep — the setting stays the kill switch)",
+      get('name_role_nonname_flag') === 'false');
 
 console.log(fails ? `\nFAILED: ${fails}` : '\nALL PASS');
 process.exit(fails ? 1 : 0);

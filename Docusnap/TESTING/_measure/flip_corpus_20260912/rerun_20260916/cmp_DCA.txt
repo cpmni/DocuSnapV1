@@ -1,0 +1,18 @@
+docs compared: 400 (missing in ON: 0, missing in OFF: 0)
+wouldFile OFF 192 / ON 192
+
+M (correct OFF -> wrong ON): 0
+
+HEALS (wrong OFF -> correct ON): 0
+
+file->hold: 0
+hold->file: 0
+
+FIRES (/straightening/): 4
+  #63 date: '28-07-2026' [keyword] note=Found '28-07-2026' after straightening — confirm once.
+  #65 date: '25-08-2026' [keyword] note=Found '25-08-2026' after straightening — confirm once.
+  #67 customer_name: 'en fo ol' [template_mapping] note=Read differently after straightening — was 'Bramblewood Joinery Ltd', now 'en fo ol' — confirm once.
+  #67 date: '06-05-2026' [keyword] note=Found '06-05-2026' after straightening — confirm once.
+
+field VALUE changes: 0
+field NOTE-only changes: 0

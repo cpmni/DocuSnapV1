@@ -22,12 +22,18 @@ that unblocks the pile.
 **2026-09-12 UPDATE — the 700-doc test set is BUILT and the first censuses have run.** `Desktop\Flip Corpus 700\`
 (warm DB `warm_700.db`) is sound at the faithful operating point (ref 97% / date 99% / 179-of-400 auto-file /
 0 wrong filing-field auto-files). Full method + results: `TESTING/_measure/flip_corpus_20260912/CENSUS.md`.
-Two fixes PASSED (M=0 + a real fire + a clean file→hold) and are **flip-ready, awaiting the owner's go** (a flip
-is a customer-default = approval-class, so it was NOT done autonomously): **`ref_confusable_flag` (159)** and
+Two fixes PASSED (M=0 + a real fire + a clean file→hold): **`ref_confusable_flag` (159)** and
 **`name_role_nonname_flag` (156)**. `format_class_join` is M=0 but showed a broader blast radius than its pins
 claim (re-arms total-format checks on unrelated invoices) → stays WAITING pending a look. `trust_ref_role_shape`
 (154) + `template_drift_override_guard` (157) safety-passed on the synthetic set (M=0); their efficacy is the
 live re-judge already done 2026-09-10.
+
+**2026-09-16 UPDATE — the two passers were RE-CENSUSED at the current code (mig 171) and FLIPPED ON.** Same
+corpus (a migrated copy), same method, identical results to 09-12: 159 = M=0 / 6 fires / 2 file→hold; 156 = M=0 /
+5 fires / 1 file→hold; neither changed a single value or let anything new auto-file. With the owner's go they
+became customer defaults — **mig 172 (`name_role_nonname_flag`) + mig 173 (`ref_confusable_flag`)** — and left
+the dark list (48 keys remain). Both stay switchable OFF. The same run re-checked `deskew_corrob_autofile` and
+`template_pad_date_adopt` (results in the census file).
 
 ---
 
@@ -49,9 +55,9 @@ live re-judge already done 2026-09-10.
 - **template_edge_clip_heal** — recover a code with a single edge glyph cut off.
 - **template_drift_override_guard** — don't relocate a value onto a look-alike label (the "CH1 2HU" root cause; live-confirmed).
 - **trust_ref_role_shape** — verify a reference by its learned *shape*, not a fixed list (unblocks 20 held Thornbury invoices).
-- **name_role_nonname_flag** — flag a "name" field that's actually a postcode / email / VAT number. **✅ census PASSED 2026-09-12 (M=0, fires on 5 postcodes, 1 file→hold) — flip-ready, awaiting owner go.**
+- ~~**name_role_nonname_flag**~~ — **✅ FLIPPED ON 2026-09-16 (mig 172)** — see DONE below.
 - **note_topic_dedup** — collapse a wall of duplicate "check this code" notes into one.
-- **ref_confusable_flag** — flag an O-vs-0 style confusable in a reference so it can't silently misfile. **✅ census PASSED 2026-09-12 (M=0, fires on 6 confusable refs, 2 file→hold) — flip-ready, awaiting owner go.**
+- ~~**ref_confusable_flag**~~ — **✅ FLIPPED ON 2026-09-16 (mig 173)** — see DONE below.
 
 **Dates:**
 - **date_forms_wide** (2026-09-14, mig 167) — read a written-out date however it is punctuated: "23rd Aug 2026", "23, aug 26", "23-aug-26", "23.Aug.2026", "Aug. 23 2026", "23 Sept 2026", an OCR-glued "23Aug2026", with or without a leading day name. Only dates with a month NAME (numeric dates untouched). The desktop confirm door and the Review/Teach readers take these forms already, switch or not; this switch is the reading engine's half (credibility gate + keyword qualification + parse). Test (Oracle C5): the 605-doc M=0 + would-file set-equality OFF vs ON, plus the crop/keyword acceptance census OFF vs ON where every NEW acceptance is checked by eye against the page (a wider pattern must only ever admit a real date); run with the mig-166 date fix in its shipping (off) state so the two date fixes are measured apart. Then your go.
@@ -100,7 +106,11 @@ live re-judge already done 2026-09-10.
 ---
 
 ## ✅ DONE — already turned on and shipping (for reassurance)
-Recent fixes that passed their test and made it into the product: **filing_sanity_confusable_soften** (reclassify a
+**2026-09-16 (migs 172/173):** **name_role_nonname_flag** — a "name" field that is really a bare postcode / email /
+VAT number / IBAN is now held for a look instead of filing silently (census: 5 fires, 1 held, nothing broken, twice);
+**ref_confusable_flag** — a reference with an O-vs-0 / I-vs-1 / S-vs-5 look-alike in the wrong place is now held
+instead of filing under a wrong name (census: 6 fires, 2 held, nothing broken, twice). Both still switchable off.
+Earlier: **filing_sanity_confusable_soften** (reclassify a
 one-glyph confusable — census passed, shipped), **ocr_parallel_import_enabled** (faster imports), **money_sign_capture**
 (read `CR` / parentheses as a credit sign). The pad-window reads that make clipped crops read correctly
 (**template_pad_window_read/code**) and the projection-variance straightener are also on by default. So the pipeline

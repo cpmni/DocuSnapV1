@@ -1,0 +1,28 @@
+docs compared: 400 (missing in ON: 0, missing in OFF: 0)
+wouldFile OFF 192 / ON 190
+
+M (correct OFF -> wrong ON): 0
+
+HEALS (wrong OFF -> correct ON): 0
+
+file->hold: 2
+  #134 sales_order: ok -> below-floor
+  #139 sales_order: ok -> below-floor
+hold->file: 0
+
+FIRES (/character an OCR often confuses/): 6
+  #133 sales_order_number: 'S0-37846' [keyword] note=The reference 'S0-37846' has a character an OCR often confuses (O/0, I/1, S/5) — please check it against the page before filing.
+  #134 sales_order_number: 'S0-49782' [keyword] note=The reference 'S0-49782' has a character an OCR often confuses (O/0, I/1, S/5) — please check it against the page before filing.
+  #135 sales_order_number: 'S0-88740' [keyword] note=The reference 'S0-88740' has a character an OCR often confuses (O/0, I/1, S/5) — please check it against the page before filing.
+  #138 sales_order_number: 'S0-18801' [keyword] note=The reference 'S0-18801' has a character an OCR often confuses (O/0, I/1, S/5) — please check it against the page before filing.
+  #139 sales_order_number: 'S0-66881' [keyword] note=The reference 'S0-66881' has a character an OCR often confuses (O/0, I/1, S/5) — please check it against the page before filing.
+  #140 sales_order_number: 'S0-55676' [keyword] note=The reference 'S0-55676' has a character an OCR often confuses (O/0, I/1, S/5) — please check it against the page before filing.
+
+field VALUE changes: 0
+field NOTE-only changes: 6
+  #133 sales_order_number: note 'null' -> 'The reference 'S0-37846' has a character an OCR often confuses (O/0, I/1, S/5) — please check it against the page before filing.'
+  #134 sales_order_number: note 'null' -> 'The reference 'S0-49782' has a character an OCR often confuses (O/0, I/1, S/5) — please check it against the page before filing.'
+  #135 sales_order_number: note 'null' -> 'The reference 'S0-88740' has a character an OCR often confuses (O/0, I/1, S/5) — please check it against the page before filing.'
+  #138 sales_order_number: note 'null' -> 'The reference 'S0-18801' has a character an OCR often confuses (O/0, I/1, S/5) — please check it against the page before filing.'
+  #139 sales_order_number: note 'null' -> 'The reference 'S0-66881' has a character an OCR often confuses (O/0, I/1, S/5) — please check it against the page before filing.'
+  #140 sales_order_number: note 'null' -> 'The reference 'S0-55676' has a character an OCR often confuses (O/0, I/1, S/5) — please check it against the page before filing.'

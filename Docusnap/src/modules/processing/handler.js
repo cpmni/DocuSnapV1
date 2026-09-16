@@ -374,7 +374,8 @@ function _reconcileEnv(db) {
     // NAME_ROLE_NONNAME_FLAG (2026-09-10, reggie+gary → Oracle SIGN-OFF-W/COND): a name-role field whose whole
     // value is a deterministic non-name shape (bare postcode/email/VAT/IBAN — a drifted mapping onto the
     // postcode line of a multi-line customer block) is flagged + held for review instead of silently auto-filed.
-    // DARK (mig 156), byte-identical OFF.
+    // Seeded OFF by mig 156; DEFAULT ON since mig 172 (2026-09-16, 700-corpus census PASS ×2). A deliberate
+    // 'false' still turns it off (the setting is the kill switch). Byte-identical OFF.
     if (learning.getSetting(db, 'name_role_nonname_flag', 'false') === 'true') env.NAME_ROLE_NONNAME_FLAG = '1';
     // TEMPLATE_DRIFT_OVERRIDE_GUARD (2026-09-10, 007 → Oracle SIGN-OFF-W/COND): the Stage-0.5 drift override may
     // only DISCARD a credible absolute read when the label was CREDIBLY located (taught/exact, or match_score
@@ -384,7 +385,8 @@ function _reconcileEnv(db) {
     // REF_CONFUSABLE_FLAG (2026-09-11, reggie+gary → Oracle; Chris Card 1): a REF-role value with a class-outlier
     // letter/digit OCR confusable ("SO"→"S0" on a scan) — a valid shape with no history that no other arc catches —
     // is capped ≤69 + noted so it holds for review instead of auto-filing a wrong filename. FLAG-ONLY, no-history
-    // fallback, glyph-attestation disarm, born-digital skipped. DARK (mig 159), byte-identical OFF.
+    // fallback, glyph-attestation disarm, born-digital skipped. Seeded OFF by mig 159; DEFAULT ON since mig 173
+    // (2026-09-16, 700-corpus census PASS ×2). A deliberate 'false' still turns it off. Byte-identical OFF.
     if (learning.getSetting(db, 'ref_confusable_flag', 'false') === 'true') env.REF_CONFUSABLE_FLAG = '1';
     // FILING_SANITY_REF_REINSTATE (2026-09-11, 007+reggie+gary → Oracle B1-B5; Ridgeway VS-72672 vs page
     // WS-73673): after Gate C flags a Stage-0.5 located ref winner as page-ABSENT, reinstate a retained

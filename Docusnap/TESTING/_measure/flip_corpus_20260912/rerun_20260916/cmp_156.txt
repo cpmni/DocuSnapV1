@@ -1,0 +1,25 @@
+docs compared: 400 (missing in ON: 0, missing in OFF: 0)
+wouldFile OFF 192 / ON 191
+
+M (correct OFF -> wrong ON): 0
+
+HEALS (wrong OFF -> correct ON): 0
+
+file->hold: 1
+  #460 invoice: ok -> flagged
+hold->file: 0
+
+FIRES (/nonname_flag|not a name/): 5
+  #455 customer_name: 'BT1 1HE' [template_mapping+nonname_flag] note=This reads like a postcode, not a name — please check the value.
+  #456 customer_name: 'BT1 1HE' [template_mapping+nonname_flag] note=This reads like a postcode, not a name — please check the value.
+  #458 customer_name: 'BT1 1HE' [template_mapping+nonname_flag] note=This reads like a postcode, not a name — please check the value.
+  #459 customer_name: 'BT1 1HE' [template_mapping+nonname_flag] note=This reads like a postcode, not a name — please check the value.
+  #460 customer_name: 'BT1 1HE' [keyword+nonname_flag] note=This reads like a postcode, not a name — please check the value.
+
+field VALUE changes: 0
+field NOTE-only changes: 5
+  #455 customer_name: note 'null' -> 'This reads like a postcode, not a name — please check the value.'
+  #456 customer_name: note 'null' -> 'This reads like a postcode, not a name — please check the value.'
+  #458 customer_name: note 'null' -> 'This reads like a postcode, not a name — please check the value.'
+  #459 customer_name: note 'null' -> 'This reads like a postcode, not a name — please check the value.'
+  #460 customer_name: note 'null' -> 'This reads like a postcode, not a name — please check the value.'

@@ -1,0 +1,17 @@
+docs compared: 400 (missing in ON: 0, missing in OFF: 0)
+wouldFile OFF 192 / ON 192
+
+M (correct OFF -> wrong ON): 0
+
+HEALS (wrong OFF -> correct ON): 1
+  #279 statement date: OFF '13-04-2020' -> ON '23-04-2026' [template_mapping_padadopt]
+
+file->hold: 0
+hold->file: 0
+
+FIRES (/pad_date_adopt|wider/): 1
+  #532 invoice_number: 'QS-652081' [template_mapping_padcodeflag] note=A wider reading of this box shows 'QS-65208', which differs from the value shown here — please check which is printed.
+
+field VALUE changes: 1
+  #279 statement_date: '13-04-2020' -> '23-04-2026' [template_mapping_paddisagree -> template_mapping_padadopt]
+field NOTE-only changes: 0

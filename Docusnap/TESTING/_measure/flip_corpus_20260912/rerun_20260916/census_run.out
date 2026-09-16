@@ -1,0 +1,11 @@
+=== base_env1 (-) start 09:50:32
+   -> 400 rows, exit 0 , end 10:00:50
+=== on159_env1 (REF_CONFUSABLE_FLAG) start 10:00:51
+   -> 400 rows, exit 0 , end 10:10:51
+=== on156_env1 (NAME_ROLE_NONNAME_FLAG) start 10:10:51
+   -> 400 rows, exit 0 , end 10:20:38
+=== onDCA_env1 (DESKEW_CORROB_AUTOFILE) start 10:20:38
+   -> 400 rows, exit 0 , end 10:30:35
+=== on143_env1 (TEMPLATE_PAD_DATE_ADOPT) start 10:30:35
+   -> 400 rows, exit 0 , end 10:40:18
+CENSUS DONE 10:40:18

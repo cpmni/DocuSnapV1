@@ -3519,6 +3519,44 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 171 (quick file default ON): ${e.message}`); }
   }
 
+  // ── migration 172: name_role_nonname_flag GRADUATES to a customer default (2026-09-16, owner go). mig 156
+  //    seeded it 'false' on every install, so this UPSERT-forces it 'true' (INSERT OR IGNORE would be a dead
+  //    guard against that seed). Gate met: Oracle SIGN-OFF-W/COND at build (2026-09-10) + the 700-doc flip
+  //    census re-run at HEAD/mig 171 (TESTING/_measure/flip_corpus_20260912/CENSUS.md, 2026-09-16): M=0,
+  //    0 value changes, 5 fires (every injected bare-postcode customer_name), 1 file→hold (#460), 0 hold→file,
+  //    0 new wrong auto-files — identical to the 2026-09-12 census; live exhibit Vellum & Crane #243. FLAG+HOLD
+  //    only (value kept, cap ≤69, review-bound; the `+nonname_flag` sentinel is non-soft so mig-142 can't
+  //    dissolve it). A later deliberate 'false' still turns it off (the switch stays the kill switch). DELISTED
+  //    from dark_switches.js the SAME commit (else build_arming would disarm it on the first release launch).
+  //    Pinned by database/test_default_flip_156_159.js. Permanent default flip, so it carries the label:
+  // @DEFAULT_FLIP 172
+  if (!applied.has(172)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('name_role_nonname_flag', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (172)').run();
+      console.log('JS migration 172 applied: name_role_nonname_flag ON by default (UPSERT true) — census PASS, graduated');
+    } catch (e) { console.warn(`  migration 172 (name_role_nonname_flag default ON): ${e.message}`); }
+  }
+
+  // ── migration 173: ref_confusable_flag GRADUATES to a customer default (2026-09-16, owner go). mig 159
+  //    seeded it 'false' on every install, so this UPSERT-forces it 'true' (same dead-guard reason as 172).
+  //    Gate met: Oracle at build (2026-09-11, Chris Card 1) + the 700-doc flip census re-run at HEAD/mig 171
+  //    (2026-09-16): M=0, 0 value changes, 6 fires (every injected `S0-#####` scanned sales-order ref — the
+  //    letter-O-read-as-digit-0 class that used to auto-file a wrong filename silently), 2 file→hold
+  //    (#134, #139), 0 hold→file, 0 new wrong auto-files — identical to the 2026-09-12 census. FLAG-ONLY (never
+  //    edits the value; cap ≤69 + note → held via the ref-role note); glyph-attestation disarm + born-digital
+  //    skip keep a repeat supplier from batch-stalling. A later deliberate 'false' still turns it off. DELISTED
+  //    from dark_switches.js the SAME commit. Pinned by database/test_default_flip_156_159.js. Permanent
+  //    default flip, so it carries the label:
+  // @DEFAULT_FLIP 173
+  if (!applied.has(173)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('ref_confusable_flag', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (173)').run();
+      console.log('JS migration 173 applied: ref_confusable_flag ON by default (UPSERT true) — census PASS, graduated');
+    } catch (e) { console.warn(`  migration 173 (ref_confusable_flag default ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

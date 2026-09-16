@@ -54,6 +54,34 @@ Same arm mechanism, over all 400. Reusable runner: `widen_run.sh`.
   template_fragment_containment_yield, type_uninstalled_heading_fold (geometry-inert on the synthetic set;
   low value). Re-run: `bash TESTING/_measure/flip_corpus_20260912/widen_run.sh` (edit the SWITCHES list).
 
+## 2026-09-16 RE-RUN at HEAD (mig 171) → 156 + 159 FLIPPED (migs 172/173)
+Owner: "continue with the switch testing … then flip 156 and 159". Same corpus + method; the Desktop warm DB
+was 3 migrations stale (pre-`intake`), so it was COPIED to scratch + migrated 163→171 (`rerun_20260916/mig.js`;
+the owner's file untouched). Runner `rerun_20260916/census_run.sh` (baseline OFF = `RR_APP_ENV=1`, then ONE
+switch ON per arm via shell env), analysis `rerun_20260916/compare.js` (per-doc OFF-vs-ON: M / heals /
+file→hold / hold→file / fires / every field value+note diff). ~10 min per arm, 8 shards.
+
+**Baseline is deterministic:** identical to the 09-15 date-fix census — 192/400 would-file, the same 13
+disagreeing docs (1 silent, #166), 36 `total`-rounding noise, M_type 0.
+
+| fix | mig | M | value changes | fires | file→hold | hold→file | verdict |
+|---|---|---|---|---|---|---|---|
+| **ref_confusable_flag** | 159 | **0** | 0 | 6 (all six injected `S0-#####` Harrowgate sales orders) | 2 (#134, #139) | 0 | **PASS ×2 → FLIPPED, mig 173** |
+| **name_role_nonname_flag** | 156 | **0** | 0 | 5 (all five injected `BT1 1HE` Pelican customer_name) | 1 (#460) | 0 | **PASS ×2 → FLIPPED, mig 172** |
+| deskew_corrob_autofile | — | **0** | 0 | **0** (the 3 straighten-changed fields #63/#65/#67 all KEPT their confirm-once hold under ON) | 0 | 0 | SAFETY PASS, **EFFICACY VACUOUS** — byte-identical to OFF; stays DARK (zero fires ⇒ no flip evidence here; the 09-01 owner-DB census is still the only efficacy signal) |
+| template_pad_date_adopt | 143 | **0** | 1 | 1 | 0 | 0 | **PASS ×2** — the same real heal as 09-12 (#279 statement date `13-04-2020` → `23-04-2026`, `template_mapping_padadopt`), 0 new filers → flip-ready, awaiting owner go |
+
+Results per arm: `rerun_20260916/cmp_{159,156,DCA,143}.txt`; the raw consensus rows (`base_env1.jsonl`,
+`on{159,156,DCA,143}_env1.jsonl`, 400 rows each) stayed in the session scratchpad
+(`…/2d87d505-1b3b-4522-b756-384e51badc0d/scratchpad/`).
+
+**The flip (one commit):** mig 172 + 173 UPSERT the settings `'true'` under `// @DEFAULT_FLIP` labels; both
+keys DELISTED from `dark_switches.js` (release gate → "48 DARK keys guarded"); pins: new
+`database/test_default_flip_156_159.js` (fresh-install ON, upgrade-from-seeded-false ON, kill durable, delisted,
+labelled, gate-clean, handler bridge), `test_migration156_nonname_flag.js` reworked to the graduated contract, the
+two count pins 50→48. Ledger `docs/DARK_SWITCH_LEDGER.md` updated. `watch_separate_enabled` = a soak (not a
+700-census); its owner-run soak already PASSED — flip is the owner's call.
+
 ## format_class_join finding (for the morning)
 Its env flag changes `total_amount` format-checking on suppliers with NO joined scope (Meadowvale +
 Quillstone invoices), adding review-bound "format differs from the usual" notes on correctly-read totals

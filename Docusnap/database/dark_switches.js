@@ -19,6 +19,9 @@
  *   - money_sign_capture — a legitimate fresh-install default (ALL_ON_DEFAULTS_93); mig 123 only force-ONed
  *     it because the owner's old DB pre-dated that list.
  *   - ocr_parallel_import_enabled — promoted to a customer default by mig 139 (its sole writer).
+ *   - filing_sanity_confusable_soften (147→148), direct_intake_enabled (165→171), name_role_nonname_flag
+ *     (156→172), ref_confusable_flag (159→173) — DARK seeds that GRADUATED via a labelled @DEFAULT_FLIP
+ *     migration and left this list in that same commit.
  */
 const TEST_SWITCH_KEYS = Object.freeze([
   // mig 106 (2026-09-03)
@@ -158,17 +161,9 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // checkpoint). Byte-identical OFF. ⚑ FLIP GATE: pins + fire-census on a real docket corpus (zero fires ⇒ stay
   // DARK) + the both-ON mig-142 pins + realdoc M=0 → Oracle. docs/designs/ANCHOR_AXIS_LOCK_2026-09-10.md.
   'anchor_axis_lock',
-  // name_role_nonname_flag (mig 156, 2026-09-10, reggie+gary → Oracle SIGN-OFF-W/COND): a NAME-ROLE field
-  // (customer_name/supplier_name) whose WHOLE value is a deterministic non-name shape — a bare UK postcode
-  // (CH1 2HU), email, GB VAT or IBAN — is a wrong-type read (a template_mapping zone drifted onto the
-  // postcode line of a multi-line customer block). Flag+hold: keep the value, stamp a note + `+nonname_flag`
-  // method sentinel, cap ≤69, route to review. The sentinel makes the note NON-SOFT so mig-142 can't dissolve
-  // it on the optional customer_name (isNonNameFlagRow, trust.js). Exempts human methods + accepted_names /
-  // dominant-confirmed (a supplier's legitimate recurring value never stalls its batch). Deterministic subset
-  // ONLY — a word-like wrong line still needs the parked below-relocate placement arc. Byte-identical OFF.
-  // ⚑ FLIP GATE: predicate pins (postcode/email/vat/iban flag; real names incl. postcode-containing don't) +
-  // the both-ON mig-142 pin + accepted_names batch-stall pin + realdoc M=0 + the live Vellum doc → Oracle.
-  'name_role_nonname_flag',
+  // name_role_nonname_flag (mig 156) — GRADUATED to a customer default by mig 172 (2026-09-16, 700-corpus census
+  // M=0 + 5 fires + 1 file→hold, twice) and DELISTED here the same commit. Its build notes live on the mig-156
+  // block in database/index.js.
   // template_drift_override_guard (mig 157, 2026-09-10, 007 → Oracle SIGN-OFF-W/COND C1): the Stage-0.5 drift
   // guard DISCARDS a credible absolute read and relocates off the located label — but _locate_anchor's fuzzy
   // fallback can match a cross-word stranger (address line "Chester" scores 0.667 vs "Customer") ~2.5 lines
@@ -188,15 +183,9 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // ⚑ FLIP GATE: unit pins (lane-hold survives both ways; absent+advisory both kept; different-topic not merged;
   // OFF concat-identical; mark-sync) + realdoc M=0 + the auto-file set-equality corpus gate (ON==OFF).
   'note_topic_dedup',
-  // ref_confusable_flag (mig 159, 2026-09-11, reggie+gary → Oracle; Chris Card 1): a REF-role value with a
-  // letter/digit OCR confusable that is a class-outlier in its token (a digit-0 read where a letter-O belongs —
-  // "SO"→"S0" on a scan) is a VALID shape with no history, so no format/soften/near-miss arc catches it and it
-  // auto-files a wrong FILENAME silently. When ON, a 5th content-nature ref-flag caps ≤69 + sets a validation_note
-  // (held via the ref-role note — no trust.js change), FLAG-ONLY (never auto-corrects; SO vs S0 is unknowable
-  // without history). No-history FALLBACK (skips when a history arc already spoke); glyph-attestation disarm so a
-  // repeat supplier's legitimate glyph never batch-stalls; born-digital skipped (a text-layer 0 is real). Byte-
-  // identical OFF. docs/designs/REF_CONFUSABLE_FLAG_2026-09-11.md.
-  'ref_confusable_flag',
+  // ref_confusable_flag (mig 159) — GRADUATED to a customer default by mig 173 (2026-09-16, 700-corpus census
+  // M=0 + 6 fires + 2 file→hold, twice) and DELISTED here the same commit. Its build notes live on the mig-159
+  // block in database/index.js + docs/designs/REF_CONFUSABLE_FLAG_2026-09-11.md.
   // filing_sanity_ref_reinstate (mig 160, 2026-09-11, 007+reggie+gary → Oracle SIGN-OFF-W/COND B1-B5;
   // Ridgeway VS-72672 vs page WS-73673): the ref arbiter protects a Stage-0.5 located winner by AUTHORITY,
   // so a wrong OFF-PAGE value (a clipped taught crop) commits and Gate C only FLAGS it while the correct
