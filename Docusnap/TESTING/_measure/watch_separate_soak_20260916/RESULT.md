@@ -117,6 +117,19 @@ stacks + the 14 controls; `gt_e2e.json`, 150 GT docs) → 134 documents (`soak_e
   belt cannot see" (pendingfeatures.md), untouched by either switch (base does the same) — the Oracle's slice 3
   belt / a separator-side signal is the lever.
 
+## A third lever measured — identity change by a KNOWN SUPPLIER NAME (template-free) — `seg_probe5.py`
+The remaining 16/95 stack misses are pages whose supplier has no template for that type (incl. the whole
+non-templated 3-doc stack `bundle_05` that imports whole). Signal: a non-first page whose top band (12 lines)
+names a known supplier (templates' names ∪ every confirmed `supplier_name`, 22 here) different from the current
+document's → boundary; plus "current doc named nobody known, this page names one". Seven arms
+(`probe_name7_stacks.txt`, `probe_name7_controls.txt`, `probe_name_ctrl3.txt`): stacks base 72 · cascade+veto
+79 · **name (len / pos / top4 / ctx variants) 93 / 95**, ctx without the unknown→known sub-rule 91; 0 lost, 0
+over-splits in every arm; real_34 34/34; every control set 0 over-splits in the name arms — including NEW B2B
+controls (`controls3/`, `make_controls3.py`: page 1's "Bill To" names the OTHER known supplier; a letterhead-only
+page 2 with/without "Page 2 of 2"; a true 2-doc switch). The one over-split in that set (a letterhead-only,
+marker-less page 2) is in every arm incl. base — the Oracle's slice-3 residual, not the name rule. Design → gary →
+Oracle (`docs/oracle_log.md`); not built at the time of writing.
+
 ## Seam found → CLOSED the same day (the belt above); the residual is separator ACCURACY
 The hold is an IMPORT-TIME skip only (`autoFileRun=false`): a held segment carries no durable mark, so a later
 "File all ready" click or the scope sweep (`scope_sweep_enabled`, ON on the owner's install) can file a merged

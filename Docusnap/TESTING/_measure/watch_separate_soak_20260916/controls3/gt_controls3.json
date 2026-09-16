@@ -1,0 +1,96 @@
+{
+ "ctrl3_b2b_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "copperfield",
+    "label": "Copperfield Electrical invoice whose Bill To names Thornbury Fasteners (a known supplier); p2 continuation (no marker) \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl3_b2bmk_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "copperfield",
+    "label": "Copperfield Electrical invoice whose Bill To names Thornbury Fasteners (a known supplier); p2 continuation + Page 2 of 2 \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl3_switch_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     1
+    ],
+    "src": "copperfield",
+    "label": "Copperfield Electrical invoice (Bill To Thornbury Fasteners)"
+   },
+   {
+    "pages": [
+     2,
+     2
+    ],
+    "src": "other",
+    "label": "Thornbury Fasteners's own invoice \u2014 MUST cut here"
+   }
+  ]
+ },
+ "ctrl3_b2b_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "thornbury",
+    "label": "Thornbury Fasteners invoice whose Bill To names Copperfield Electrical (a known supplier); p2 continuation (no marker) \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl3_b2bmk_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "thornbury",
+    "label": "Thornbury Fasteners invoice whose Bill To names Copperfield Electrical (a known supplier); p2 continuation + Page 2 of 2 \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl3_switch_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     1
+    ],
+    "src": "thornbury",
+    "label": "Thornbury Fasteners invoice (Bill To Copperfield Electrical)"
+   },
+   {
+    "pages": [
+     2,
+     2
+    ],
+    "src": "other",
+    "label": "Copperfield Electrical's own invoice \u2014 MUST cut here"
+   }
+  ]
+ }
+}
