@@ -21,7 +21,22 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-15/16 NIGHT (the TUTORIAL-VIDEO tool built + FIVE YouTube tutorials recorded to `Desktop\Tutorials`):
+## ⏭ LATEST — 2026-09-16 DAY (the DARK-SWITCH FLIP CENSUS re-run at HEAD + the FIRST TWO FLIPS shipped):
+**READ `HANDOVER_2026-09-16_FLIPS.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `764b397`; 5 commits
+UNPUSHED** (the 4 video-night commits + this one); migration **173**; pins 377/378 (the 1 red = the known
+`test_v1_teach_equivalence` run-order flake, ALL PASS standalone); release gate "48 DARK keys guarded". The tree's
+7 `tools/video_tutorials/` modifications pre-date this session (owner's own, untouched). **Done:** the 700-corpus
+census re-run at mig 171 (copy+migrate the Desktop fixture; `TESTING/_measure/flip_corpus_20260912/CENSUS.md`
+2026-09-16 section + the reusable `rerun_20260916/` runner/comparator) — 159 + 156 IDENTICAL to 09-12 (M=0, real
+fires, file→hold only) → **owner go → mig 172 `name_role_nonname_flag` + mig 173 `ref_confusable_flag` are customer
+defaults** (`@DEFAULT_FLIP`, delisted, pin `database/test_default_flip_156_159.js`); `deskew_corrob_autofile`
+byte-identical to OFF on the corpus (stays DARK); **`template_pad_date_adopt` (143) PASS ×2 = flip-ready (owner's
+call)**; `watch_separate_enabled` soak-only (owner's call). Traps: the Bash tool's 10-min background cap (launch a
+census DETACHED via PowerShell `Start-Process bash`); a `TaskStop` leaves the bash running its NEXT arm (kill by PID,
+bash first); never run pins while arms run. **NEXT:** push · flip 143 / watch_separate? · the 09-15 EVENING queue
+(VM live-test both installers; Departments D2b/D3/D4; client-Review S0).
+
+## Prior — 2026-09-15/16 NIGHT (the TUTORIAL-VIDEO tool built + FIVE YouTube tutorials recorded to `Desktop\Tutorials`):
 **READ `HANDOVER_2026-09-16_VIDEOS.md` FIRST.** No app code touched; pins untouched. New tooling
 `tools/video_tutorials/` (`scanfinder_video_runner.py` drives the UI over DevTools + pyautogui, records with FFmpeg
 gdigrab, click-through caption overlay + backdrop; `record.py` = sandboxed demo profile at the neutral
