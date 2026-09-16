@@ -49,7 +49,7 @@
   false M).
 
 ## NEXT (owner decides)
-- **Push** the commits (`git push origin feat/teach-side-overnight`; 7 unpushed at wrap — see `git log origin/feat/teach-side-overnight..HEAD`).
+- **Push** the commits (`git push origin feat/teach-side-overnight`; 9 unpushed at wrap, HEAD `8bf1bc4` + this fix — see `git log origin/feat/teach-side-overnight..HEAD`).
 - Flip **`watch_separate_enabled`**? (soak PASSED, owner-run; a soak, not a 700-census) — same shape as `764b397`
   (would be mig 175). `deskew_corrob_autofile` stays DARK (vacuous here).
 - The rest of the flip queue is in `docs/DARK_SWITCH_LEDGER.md` (🟡 WAITING; most are geometry-inert on the synthetic

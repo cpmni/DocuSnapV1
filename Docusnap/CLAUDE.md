@@ -22,8 +22,8 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-09-16 DAY (the DARK-SWITCH FLIP CENSUS re-run at HEAD + the FIRST TWO FLIPS shipped):
-**READ `HANDOVER_2026-09-16_FLIPS.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD = see `git log` (the
-mig-174 flip commit on top of `764b397`/`3d021b7`); 7 commits UNPUSHED** (the 4 video-night commits + 3 today);
+**READ `HANDOVER_2026-09-16_FLIPS.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `8bf1bc4` (flips `764b397` +
+`cb60e3a`); 9 commits UNPUSHED** (`git rev-list --count origin/feat/teach-side-overnight..HEAD`);
 migration **174**; pins green bar the known `test_v1_teach_equivalence` run-order flake (ALL PASS standalone);
 release gate "47 DARK keys guarded". The tree's
 7 `tools/video_tutorials/` modifications pre-date this session (owner's own, untouched). **Done:** the 700-corpus
