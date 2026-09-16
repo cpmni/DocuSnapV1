@@ -6,9 +6,10 @@
 - Tree: the 7 `tools/video_tutorials/` modifications (6 script JSONs + `voice.py`) were ALREADY uncommitted when this
   session started (09-16 morning, before the census) and were NOT touched — the owner's own edits; leave or commit as
   they see fit. Nothing else uncommitted.
-- Migration version **176** (172-175 flips + 176 the split-segment hold seed). `npm run test:pins` 381/382
-  (the 1 red = the pre-existing `test_ref_class_fix.js` timing flake). Release gate: "46 DARK keys guarded".
-  HEAD `db04a8f` + the docs commit; origin current.
+- Migration version **178** (172-175 flips + 176 the split-segment hold seed + 177/178 the two DARK separator
+  fixes). `npm run test:pins` 382/383 (the 1 red = the pre-existing `test_ref_class_fix.js` timing flake, passes
+  ~1 in 2 standalone). Release gate: "48 DARK keys guarded". HEAD = the separator commit + this docs commit
+  (`git log -3`); origin current after each push.
 - No app running. No installer built (the flips ship in the next build; they also activate on the owner's live
   install at its next `npm start` / installed-app launch via migs 172/173/174).
 - **Second commit this session (owner: "flip 143 as well"): mig 174 `template_pad_date_adopt` ON by default** —
@@ -52,6 +53,33 @@ a second-boundary under load; passes 1 in 3 standalone), not this change.
 (a stack whose only recognised first page is page 1 is never split → imports whole). Oracle's separate fork, not
 done: with the dangerous population now marked, the 09-01 import-time hold of 1-page WATCH cuts could be relaxed
 to match manual (34 alerts → zero clicks) — owner's call.
+
+## FOURTH thing this session: the separator's accuracy — two DARK arcs (migs 177/178; the last commit on the branch)
+Owner: "continue" (the recommended open item). Diagnosed at the source with per-page probes
+(`TESTING/_measure/watch_separate_soak_20260916/seg_probe*.py`), gary designed, Oracle **SIGN-OFF-W/COND**, built DARK:
+- **`segment_continuation_veto` (mig 177)** — a page that says it is a continuation ("Page 2 of 2", "continued",
+  "brought forward") is never cut off. Fixes a PRE-EXISTING silent truncation nobody had seen: the splitter's
+  "first page" test is letterhead words + a template match, and a real continuation page that repeats the
+  letterhead passes it — 6/6 repeat-letterhead 2-page controls were cut in two by today's code (on a manual import
+  page 1 files as a one-page invoice, page 2 orphans). The soak's "0 over-splits" had been vacuous (non-templated
+  singles). With the veto: 0/14 controls cut, nothing lost elsewhere.
+- **`segment_title_slug` (mig 178)** — the splitter now reads each page's own printed title before matching it to a
+  template (a cascade with a fallback that can never lose today's cut). Root cause of the under-splits: the pre-pass
+  never got the 2026-07-09 title-precedence fix, so same-letterhead siblings collapsed to the most-confirmed one and
+  the type-presence veto refused it. 72 → 79 of 95 stack boundaries, 0 lost, 0 new over-splits.
+- Both switches ride ARGV only (`--continuation-veto`, `--title-slug …`) — the pre-pass spawn never sees the
+  DB-bridged env. `handler._separationOpts` reads the two settings at both callers.
+- **Gates green** (six-arm census + the end-to-end truncation metric = 0 over a 134-doc armed import) — **the flips
+  are your call**; the Oracle coupled the title flip to a supplier-aware identity check OR a measured 0 delta on
+  logo-only/name-line continuation pages (measured 0). Record: `docs/designs/SEPARATOR_ACCURACY_2026-09-16.md`.
+- **Still open (Oracle slices 2/3 + a recovery path):** supplier-aware identity change; an orphan-shaped 1-page-cut
+  belt (no ref AND no date AND same supplier as the preceding cut → hold both); Review has Split but no Rejoin and
+  the original stack sits in `.sf_separated_originals` unadvertised; the 150-DPI heading-garble residual (5
+  boundaries); the never-split whole-stack class (`bundle_05`: three non-templated docs imported whole and
+  auto-filed under page 1 — base does the same).
+- Traps: the app TRIMS the repo-root `processing.log` (~1 MB) mid-run → never slice by line number; the DB/drain
+  uniquify a repeated name with `-N` → classify by `page_count`, and match a `_split_pA-B` range BEFORE stripping a
+  suffix; `window.docusnap.processFolder(path)` over CDP wants a forward-slash path and a non-awaiting call.
 
 ## Plain-English meaning for the customer
 - A "name" box that actually reads as a bare postcode / email / VAT number / IBAN now waits for a look instead of

@@ -22,10 +22,10 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-09-16 DAY (the DARK-SWITCH FLIP CENSUS re-run at HEAD + the FIRST TWO FLIPS shipped):
-**READ `HANDOVER_2026-09-16_FLIPS.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `db04a8f`+ (flips `764b397`/`cb60e3a`/`ad4b79b`,
-the belt `db04a8f`); origin CURRENT — everything PUSHED 2026-09-16 (incl. the video-night commits);**
-migration **176**; pins 381/382 (the 1 red = the PRE-EXISTING `test_ref_class_fix.js` timing flake — ARM B hashes
-two corpora built at different moments); release gate "46 DARK keys guarded". The tree's
+**READ `HANDOVER_2026-09-16_FLIPS.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD = the separator commit + its docs (`git log -3`; flips
+`764b397`/`cb60e3a`/`ad4b79b`, the belt `db04a8f`); origin CURRENT — everything PUSHED 2026-09-16;**
+migration **178**; pins 382/383 (the 1 red = the PRE-EXISTING `test_ref_class_fix.js` timing flake — ARM B hashes
+two corpora built at different moments); release gate "48 DARK keys guarded". The tree's
 7 `tools/video_tutorials/` modifications pre-date this session (owner's own, untouched). **Done:** the 700-corpus
 census re-run at mig 171 (copy+migrate the Desktop fixture; `TESTING/_measure/flip_corpus_20260912/CENSUS.md`
 2026-09-16 section + the reusable `rerun_20260916/` runner/comparator) — 159 + 156 IDENTICAL to 09-12 (M=0, real
@@ -39,7 +39,16 @@ all 91 segments held) → mig 175 default ON**; the seam it exposed (import-time
 auto-filed 12/16 on manual import) → **BUILT the same day: `split_segment_multipage_hold` mig 176 default ON
 (`db04a8f`; gary → Oracle SIGN-OFF-W/COND C1-C10; every multi-page cut of a heuristic split gets a "— confirm once."
 ref-role note on BOTH paths, carried across reprocess, own reason kind in Review; replay ON = 0 auto-filed, 1-page
-cuts untouched; `docs/designs/SPLIT_SEGMENT_HOLD_2026-09-16.md`)**. Traps: the Bash tool's 10-min background cap
+cuts untouched; `docs/designs/SPLIT_SEGMENT_HOLD_2026-09-16.md`)**. Then the SEPARATOR itself, diagnosed at the
+source (`TESTING/_measure/watch_separate_soak_20260916/seg_probe*.py`) → gary → Oracle SIGN-OFF-W/COND → **two
+DARK arcs (`docs/designs/SEPARATOR_ACCURACY_2026-09-16.md`): mig 177 `segment_continuation_veto`** (a
+self-declared continuation page — "Page 2 of 2"/"continued"/"brought forward" — is never a cut; closes a
+PRE-EXISTING silent truncation: 6/6 repeat-letterhead 2-page controls were cut at page 2 by today's code) **+ mig
+178 `segment_title_slug`** (the pre-pass never got the 2026-07-09 title precedence → the page's own title threaded
+as a fallback-guarded cascade: 72 → 79/95 stack boundaries, 0 lost). Both argv-only kills; six-arm census + e2e
+truncation metric = 0 → **gates green, flips = owner's call**. Owed (Oracle): supplier-aware identity change
+(slice 2), the orphan-shaped 1-page-cut belt (slice 3), a Rejoin/recovery path, the 150-DPI heading-garble
+residual, the never-split whole-stack class. Traps: the Bash tool's 10-min background cap
 (launch a census DETACHED via PowerShell `Start-Process bash`); a `TaskStop` leaves the bash running its NEXT arm
 (kill by PID, bash first); never run pins while arms run; the soak sandbox app may still be up on port 9223.
 **NEXT:** the 09-15 EVENING queue (VM live-test both installers; Departments D2b/D3/D4; client-Review S0) · a fresh
