@@ -6,10 +6,14 @@
 - Tree: the 7 `tools/video_tutorials/` modifications (6 script JSONs + `voice.py`) were ALREADY uncommitted when this
   session started (09-16 morning, before the census) and were NOT touched — the owner's own edits; leave or commit as
   they see fit. Nothing else uncommitted.
-- Migration version **173** (172 + 173 new). `npm run test:pins` 377/378 green (the 1 red =
-  `test_v1_teach_equivalence`, the known run-order flake; ALL PASS standalone). Release gate: "48 DARK keys guarded".
+- Migration version **174** (172 + 173 + 174 new). `npm run test:pins` green bar the known run-order flake
+  (`test_v1_teach_equivalence`, ALL PASS standalone). Release gate: "47 DARK keys guarded".
 - No app running. No installer built (the flips ship in the next build; they also activate on the owner's live
-  install at its next `npm start` / installed-app launch via mig 172/173).
+  install at its next `npm start` / installed-app launch via migs 172/173/174).
+- **Second commit this session (owner: "flip 143 as well"): mig 174 `template_pad_date_adopt` ON by default** —
+  same shape as `764b397` (UPSERT + `@DEFAULT_FLIP` + delist + the shared pin extended + count pins 48→47 +
+  `test_migration143_pad_date_adopt.js` reworked). HARD dependency `template_pad_window_read` verified ON on a
+  fresh install AND in the census DB (pinned).
 
 ## What happened (owner: "read the handover and continue with the switch tests … then flip 156 and 159")
 1. **Census re-run at HEAD** on the 700-doc synthetic warm corpus (`Desktop\Flip Corpus 700\warm_700.db`, COPIED to
@@ -31,8 +35,10 @@
 ## Plain-English meaning for the customer
 - A "name" box that actually reads as a bare postcode / email / VAT number / IBAN now waits for a look instead of
   filing silently. A reference with an O-vs-0 / I-vs-1 / S-vs-5 look-alike in the wrong place now waits for a look
-  instead of filing under a wrong name. Neither ever changes a value; both are just a "please check" hold. Both can
-  be switched off (Settings → the dev switches, or a settings write) and the off choice sticks.
+  instead of filing under a wrong name. Neither ever changes a value; both are just a "please check" hold.
+- A taught date box that clipped the first digit now takes the wider read when a second reading of the page backs
+  it up, so the correct date files instead of waiting (mig 174; the census's one swap was the right date, twice).
+- All three can be switched off (Settings → the dev switches, or a settings write) and the off choice sticks.
 
 ## Traps learned (also in memory `project_flip_corpus_pipeline_20260912.md`)
 - The Bash tool's background mode has a 10-minute cap → launch a multi-arm census DETACHED (PowerShell `Start-Process
@@ -43,9 +49,9 @@
   false M).
 
 ## NEXT (owner decides)
-- **Push** the 5 commits (`git push origin feat/teach-side-overnight`).
-- Flip **`template_pad_date_adopt` (143)**? PASS ×2 with a real heal; would be mig 174 (@DEFAULT_FLIP + delist + pin,
-  the same shape as `764b397`). Also **`watch_separate_enabled`** (soak PASSED, owner-run) — same shape.
+- **Push** the commits (`git push origin feat/teach-side-overnight`; 7 unpushed at wrap — see `git log origin/feat/teach-side-overnight..HEAD`).
+- Flip **`watch_separate_enabled`**? (soak PASSED, owner-run; a soak, not a 700-census) — same shape as `764b397`
+  (would be mig 175). `deskew_corrob_autofile` stays DARK (vacuous here).
 - The rest of the flip queue is in `docs/DARK_SWITCH_LEDGER.md` (🟡 WAITING; most are geometry-inert on the synthetic
   corpus → efficacy only on real exhibits; `format_class_join` HOLD on blast radius).
 - Then the standing 09-15 EVENING queue: VM live-test of both installers; Departments D2b/D3/D4 before the
