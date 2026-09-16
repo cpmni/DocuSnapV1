@@ -3598,6 +3598,31 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 175 (watch_separate_enabled default ON): ${e.message}`); }
   }
 
+  // ── migration 176: split_segment_multipage_hold seeded ON (2026-09-16; gary → Oracle SIGN-OFF-W/COND
+  //    C1-C10, owner go). The multi-document separator UNDER-SPLITS when a page fails its first-page
+  //    fingerprint floor (same-logo sibling types, non-templated pages) — document A's page + a stranger
+  //    page B come out as ONE multi-page segment that reads 100 % clean from page A (soak 2026-09-16, #633),
+  //    and on a manual import that segment AUTO-FILED (company B's page bound inside A's filed PDF, in A's
+  //    folder, unfindable). The watch path held it only at import time (autoFileRun=false — no row fact),
+  //    so File-All / the scope sweep could file it later unseen. When ON, every multi-page segment of a
+  //    HEURISTIC split (the rewrite set from _separateBatchDocuments; sheet-bounded cuts exempt; 1-page
+  //    cuts untouched) is stamped a lane-hold note on its ref-role row at import, on BOTH arrival paths:
+  //    `isAutoFileEligible` (the ONE predicate) refuses it at import, File-All-Ready, the sweep and the
+  //    reprocess offer; a reprocess carries the mark (split_plan.carrySegmentHold); a human Confirm (or
+  //    Mark reviewed → File All) clears it. HOLD-ONLY: never files, never edits a value; byte-identical on
+  //    every non-split import + every 1-page cut (the 34-alert one-click File-All flow is untouched).
+  //    Seeded 'true' by INSERT OR IGNORE (a plain seed of an UNLISTED key — the mig-169 shape, gate-clean;
+  //    not a DARK reading fix: it cannot change a committed value); a deliberate 'false' is the durable
+  //    kill. Go-forward only — rows imported before this carry no mark (an owner-run one-shot is documented
+  //    in TESTING/_measure/watch_separate_soak_20260916/RESULT.md). Pinned by database/test_segment_hold_default.js.
+  if (!applied.has(176)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('split_segment_multipage_hold', 'true')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (176)').run();
+      console.log(`JS migration 176 applied: split_segment_multipage_hold (a multi-page cut of a heuristic split is held for one human look) seeded ON (${n} row)`);
+    } catch (e) { console.warn(`  migration 176 (split_segment_multipage_hold): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

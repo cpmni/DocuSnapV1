@@ -1,0 +1,7 @@
+docs 104 (ids 826..929)
+  1-page cut      n=85 marked=0 autoFiled=0 eligibleNow=55 held=85
+  multi-page cut  n=14 marked=14 autoFiled=0 eligibleNow=0 held=14
+  whole file      n=5 marked=0 autoFiled=0 eligibleNow=0 held=5
+VIOLATIONS 0 — every multi-page cut marked + not filed + not eligible; no mark on any 1-page cut or whole file
+  e.g. #829 bundle_03_split_p2-3-1.pdf: sales_order_number: Pages 2–3 were cut from a multi-document scan; check every page belongs to this document (if one doesn't, use Split) — confirm once.
+  e.g. #832 bundle_01_split_p2-3-1.pdf: reference_number: Pages 2–3 were cut from a multi-document scan; check every page belongs to this document (if one doesn't, use Split) — confirm once.

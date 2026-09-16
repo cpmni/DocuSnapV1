@@ -3349,6 +3349,13 @@ function renderCleanHoldReason(el, doc) {
       'flagged': fieldName
         ? `<strong>${escHtml(fieldName)}</strong> was flagged by a formatting check.`
         : 'a value was flagged by a formatting check.',
+      // Split-segment hold (2026-09-16, Oracle C4): a multi-page cut of a heuristic split may carry a
+      // stranger page behind its first page — say that, not "a formatting check", and point at Split.
+      'segment-hold': (v.pages && v.pages.from && v.pages.to)
+        ? `pages <strong>${v.pages.from}–${v.pages.to}</strong> were cut from a multi-document scan — check every page `
+          + `belongs to this document (if one doesn't, use <strong>Split</strong>), then confirm.`
+        : 'these pages were cut from a multi-document scan — check every page belongs to this document '
+          + '(if one doesn\'t, use <strong>Split</strong>), then confirm.',
       // The note is OBSOLETE and the app knows it (Review already hides it) — but the stored row
       // still holds the document, so say so plainly and point at the one-document re-read that
       // clears it. Never at "Reprocess all": re-reading 200 pages to clear one stale note is the

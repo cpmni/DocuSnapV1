@@ -11,7 +11,7 @@ const fs   = require('fs');
 const diaglog = require('../diaglog');
 // D2 / D-C11: viewer-scoped count broadcasts (helper resolves the desktop operator).
 const { broadcastCounts, broadcastReviewCount, broadcastStuckCount } = require('../../lib/countBroadcast');
-const { buildSegmentArgs, buildSplitPlan } = require('./split_plan');
+const { buildSegmentArgs, buildSplitPlan, segmentHoldPages, carrySegmentHold, hasSegmentHold, segmentHoldNote } = require('./split_plan');
 const { clampSlipCount, nextSlipRange, slipPackName, pad4 } = require('./slip_pack');
 
 // SECURITY (Stage 2 — M11): call Windows system binaries by ABSOLUTE path. A bare image name is
@@ -2926,7 +2926,10 @@ function register(ctx) {
           continue;
         }
         separated += 1;
-        rewrites.push({ original: name, segments: made.map(f => path.basename(f)) });
+        // `separators` (2026-09-16, split-segment hold): a sheet-bounded cut is an operator-declared boundary,
+        // so split_plan.segmentHoldPages exempts every segment of a rewrite with separators > 0. Additive —
+        // watch's applySeparationToTracked reads only original/segments.
+        rewrites.push({ original: name, segments: made.map(f => path.basename(f)), separators: plan.separators || 0 });
         if (plan.separators) {
           log?.(`${name} — ${plan.separators} separator sheet(s) found · ${made.length} document(s) imported · sheets removed · original kept safe`);
           trace?.({ ev: 'slip_split', file: name, separators: plan.separators, payloads: plan.payloads, made: made.length });
@@ -3234,7 +3237,7 @@ function register(ctx) {
               // unset → the row link falls back to opening Review at the first doc.
               _recordDevDoc(msg);
               try {
-                const io = _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun);
+                const io = _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun, { segmentHold: segHold });
                 if (io && typeof io.then === 'function') pendingFileIo.push(io);
               }
               catch (e) { logger?.err?.(`_handleFileMessage failed: ${msg.original_filename || '?'} — ${e && e.message}`); }
@@ -3267,6 +3270,12 @@ function register(ctx) {
       });
     });
 
+    // Split-segment hold (2026-09-16, Oracle C1-C10): the multi-page segments of a HEURISTIC split, keyed by
+    // basename → {from,to}. Declared in the handler scope so the runWorker closure above (which runs only
+    // after the separation block below has executed) sees the assignment; threaded into _handleFileMessage
+    // so a merged cut is stamped for one human look instead of auto-filing (it used to — "only the count
+    // is used" discarded the rewrites).
+    let segHold = null;
     // ── Auto document separation (Stage 1) ── runs BEFORE the worker set is built, so
     // both the single-worker (scans the folder) and multi-worker (enumerates it) paths
     // pick up the per-document segments. Fail-safe: a detector/splitter failure just
@@ -3297,8 +3306,9 @@ function register(ctx) {
             (text, meta) => mirror(event.sender, 'process-progress', { type: 'log', text, phase: true, ...(meta || {}) }),
             sepP, slipsOn,
             (ev) => mirror(event.sender, 'process-trace', ev));
-          const n = (sepRes && sepRes.separated) || 0;   // richer return {separated,rewrites,consumed}; import re-scans, so only the count is used
-          if (n) logger?.log(`[separation] separated ${n} multi-document PDF(s) before processing`);
+          const n = (sepRes && sepRes.separated) || 0;   // import re-scans the folder for the segments themselves
+          segHold = segmentHoldPages(sepRes && sepRes.rewrites);   // the multi-page heuristic cuts → held for a look
+          if (n) logger?.log(`[separation] separated ${n} multi-document PDF(s) before processing${segHold.size ? ` (${segHold.size} multi-page cut(s) will be held for a look)` : ''}`);
         } catch (e) {
           logger?.warn(`[separation] pre-pass failed (continuing without split): ${e.message}`);
         }
@@ -3611,6 +3621,17 @@ function register(ctx) {
     const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge, _hiddenKeys,
       { imageless: _imageless, taughtKeys: _taughtKeys, contestedOut: _contested, stats: _mergeStats,
         noteTopicDedup: require('./composeNote').noteDedupOn(db) });   // mig 158 DARK — off ⇒ byte-identical
+    // SPLIT-SEGMENT HOLD carry (2026-09-16, Oracle C1 — slice 2, same release): the hold is a property of the
+    // FILE's page composition, not of any read, so no re-read may shed it. The merge keeps a lane-hold note
+    // only when the fresh value equals the stored one (`used_new` drops it; a stub is not carried) — put the
+    // sentence back on the merged ref-role row here, BEFORE the row write and before rereadHolds reads the
+    // stored rows. Pure + idempotent (split_plan.carrySegmentHold); a no-op when no stored row carried it.
+    try {
+      if ((existing || []).some(r => hasSegmentHold(r && r.validation_note))) {
+        const _sr = reprocDocTypeId != null ? (db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(reprocDocTypeId) || {}) : {};
+        carrySegmentHold(existing, mergedRows, { refKey: _sr.ref_field_key, dateKey: _sr.date_field_key });
+      }
+    } catch (e) { try { logger?.warn?.(`[segment-hold] carry failed for doc ${docId}: ${e && e.message}`); } catch {} }
 
     // C7: an imageless run never blanks a stored supplier (the logo identity arm never runs, so a
     // text-only blank read must not NULL the column). C4: when a guard kept ≥1 stored image/taught read,
@@ -6437,7 +6458,7 @@ function formatFileError(msg) {
   return { logLine, summary, diag };
 }
 
-function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun = true) {
+function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun = true, opts = {}) {
   if (msg.type === 'file_begin') {
     logger?.log(`File begin: ${msg.filename}`);
     return;
@@ -6585,6 +6606,21 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
     }));
     learning.insertExtractions(db, docId, rows);
   }
+  // SPLIT-SEGMENT HOLD (2026-09-16; gary → Oracle SIGN-OFF-W/COND C1-C10; mig 176 default ON). A multi-page
+  // segment of a HEURISTIC split (the rewrite set threaded in `opts.segmentHold` by both arrival paths) may
+  // be document A's page + a stranger page B the separator failed to cut — it reads 100 % clean from page A.
+  // Stamp a lane-hold note on its ref-role row NOW, before the chip verdict below and before _maybeAutoFile,
+  // so the ONE predicate (isAutoFileEligible) refuses it at import, File-All-Ready, the sweep and the
+  // reprocess offer until a human confirms it. Rows-first placement (Oracle C2: success branch only).
+  try {
+    const _segHold = opts && opts.segmentHold;
+    if (_segHold && typeof _segHold.get === 'function' && _segHold.has(msg.original_filename)
+        && learning.getSetting(db, 'split_segment_multipage_hold', 'true') === 'true') {
+      _stampSegmentHold(db, docId, document_type_id, _segHold.get(msg.original_filename));
+      msg.needs_review = true;   // the T1 legacy bail reads this; the authoritative refusal is the DB note
+      logger?.log?.(`[segment-hold] ${msg.original_filename}: multi-page cut of a heuristic split — held for one look`);
+    }
+  } catch (e) { try { logger?.warn?.(`[segment-hold] stamp failed for doc ${docId}: ${e && e.message}`); } catch {} }
   // BARCODE INVENTORY (2026-08-26, DARK `barcode_inventory`): persist the page decodes the emit
   // carried (tri-state: key absent ⇒ nothing written). Best-effort — a barcode row must never fail
   // an import.
@@ -6693,6 +6729,38 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
 // chain serialises them with event-loop yields between docs; the per-doc catch keeps one failed
 // commit from aborting the rest (each doc still rolls itself back inside _autoFileDoc).
 let _autoFileChain = Promise.resolve();
+
+// SPLIT-SEGMENT HOLD stamp (2026-09-16; Oracle C3 target order). Puts the "Pages a–b were cut from a
+// multi-document scan … — confirm once." sentence on ONE row Review can render: the ref-role row → the
+// date-role row → a VISIBLE valued non-identity row of this type (preferring one with no note) →
+// supplier_name LAST (issuerSiblingFillService machine-clears supplier_name notes on siblings, so it is
+// the last resort) → a stub row on the ref key. Idempotent (the mark is stamped once). Never files,
+// never edits a value. `range` = {from,to} from split_plan.segmentHoldPages.
+function _stampSegmentHold(db, docId, documentTypeId, range) {
+  const rows = db.prepare('SELECT id, field_key, display_value, validation_note FROM extractions WHERE document_id = ? ORDER BY id').all(docId);
+  if (rows.some(r => hasSegmentHold(r.validation_note))) return { stamped: false, reason: 'already' };
+  const sentence = segmentHoldNote(range ? range.from : 0, range ? range.to : 0);
+  const dt = documentTypeId != null ? (db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(documentTypeId) || {}) : {};
+  const typeKeys = documentTypeId != null
+    ? new Set(db.prepare('SELECT key FROM fields WHERE document_type_id = ?').all(documentTypeId).map(r => r.key)) : null;
+  const byKey = k => (k ? rows.find(r => r.field_key === k) : null);
+  const visibleValued = rows.filter(r => String(r.display_value || '').trim() && !['supplier_name', 'customer_name'].includes(r.field_key)
+                                      && (!typeKeys || typeKeys.has(r.field_key)));
+  const target = byKey(dt.ref_field_key) || byKey(dt.date_field_key)
+    || visibleValued.find(r => !String(r.validation_note || '').trim()) || visibleValued[0]
+    || byKey('supplier_name') || null;
+  if (target) {
+    const prior = String(target.validation_note || '').trim();
+    db.prepare('UPDATE extractions SET validation_note = ? WHERE id = ?').run(prior ? `${sentence} ${prior}` : sentence, target.id);
+    return { stamped: true, field_key: target.field_key };
+  }
+  const key = dt.ref_field_key || 'supplier_name';
+  const learning = require('../../../database/modules/learning');
+  learning.insertExtractions(db, docId, [{ field_key: key, raw_value: null, display_value: null, confidence: 0,
+    extraction_method: 'segment_hold', validation_note: sentence, corrected_to: null, anchor_label: null,
+    candidates: null, suggested_supplier: null, corroboration: null, charset_flag_meta: null }]);
+  return { stamped: true, field_key: key, stub: true };
+}
 
 // The quiet lane's hold family (S3-C5 + every "— confirm once." note). Shared by mergeReprocessRows.
 function _isLaneHoldNote(note) {
@@ -7000,6 +7068,7 @@ module.exports = {
   killAll,
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
+  _stampSegmentHold,                 // split-segment hold (2026-09-16) — pinned by test_segment_hold_stamp.js
   formatFileError,
   flushPendingDrains: _flushPendingDrains,
   // Slice 1 (2026-08-21): the human-confirm trigger for the scope-local auto-accept. A no-op until

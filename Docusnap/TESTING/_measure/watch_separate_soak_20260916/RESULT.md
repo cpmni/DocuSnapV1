@@ -54,7 +54,28 @@ PASS on the gate's automated criteria + the gate's own controlled bundle (the re
 not a property of the watch flag. Flip = mig 175 (`@DEFAULT_FLIP`, delisted, pin
 `database/test_watch_separate_default_on.js`). Rollback = set `watch_separate_enabled` 'false'.
 
-## Seam found (follow-up, NOT a blocker — logged in pendingfeatures.md)
+## The belt — `split_segment_multipage_hold` (mig 176, same day; gary → Oracle SIGN-OFF-W/COND C1-C10)
+Same sandbox, same 22-file set (`gt.json`), the sandbox app restarted on the new code. `soak_on_check.js` buckets
+every produced doc by the app's own `page_count` (the DB / drain uniquify a repeated name with a trailing `-N`, so a
+name regex misreads `_split_p4-1`) and asserts: every multi-page cut marked + not filed + not eligible; no mark on
+any 1-page cut or whole file.
+
+| arm | docs | multi-page cuts | marked | auto-filed | eligible now | 1-page cuts auto-filed |
+|---|---|---|---|---|---|---|
+| manual import, belt OFF (old code; `manual_off.log`) | 102 | 16 | — | **12** (all @100 %) | — | 50 |
+| watch, belt ON (`on_watch_result.txt`) | 104 | 14 | **14** | 0 | **0** | 0 (import-held as before; 55 already "ready" for the one-click File All) |
+| manual import, belt ON (`on_manual_result.txt`, `manual_on.log`) | 104 | 14 | **14** | **0** | **0** | **55** (unchanged behaviour) |
+
+VIOLATIONS 0 on both ON arms. The 5 genuine multi-page singles (never split) carry no mark. bundle_mp_01/02's
+genuine 2-page doc rode inside a heuristic cut and is HELD — the pinned trade-off, observed. Reason panel: kind
+`segment-hold` + "pages 2–3 were cut from a multi-document scan… use Split".
+
+**Owner-run one-shot for rows imported BEFORE the belt** (go-forward only, never in a migration): in the dev
+console, `H._stampSegmentHold(db, docId, document_type_id, {from,to})` per doc, or the SQL shape
+`SELECT id, original_filename, page_count FROM documents WHERE status='needs_review' AND original_filename LIKE
+'%\_split\_p%' ESCAPE '\' AND page_count >= 2` to list the candidates first.
+
+## Seam found → CLOSED the same day (the belt above); the residual is separator ACCURACY
 The hold is an IMPORT-TIME skip only (`autoFileRun=false`): a held segment carries no durable mark, so a later
 "File all ready" click or the scope sweep (`scope_sweep_enabled`, ON on the owner's install) can file a merged
 100 %-clean segment nobody opened. Proposed belt: stamp watch-produced segments with a review-required mark that

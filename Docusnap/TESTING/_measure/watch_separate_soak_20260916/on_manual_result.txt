@@ -1,0 +1,7 @@
+docs 104 (ids 930..1033)
+  1-page cut      n=85 marked=0 autoFiled=55 eligibleNow=0 held=30
+  multi-page cut  n=14 marked=14 autoFiled=0 eligibleNow=0 held=14
+  whole file      n=5 marked=0 autoFiled=0 eligibleNow=0 held=5
+VIOLATIONS 0 — every multi-page cut marked + not filed + not eligible; no mark on any 1-page cut or whole file
+  e.g. #934 bundle_01_split_p2-3.pdf: reference_number: Pages 2–3 were cut from a multi-document scan; check every page belongs to this document (if one doesn't, use Split) — confirm once.
+  e.g. #935 bundle_02_split_p1-2.pdf: delivery_number: Pages 1–2 were cut from a multi-document scan; check every page belongs to this document (if one doesn't, use Split) — confirm once. | supplier_name: Couldn't match this document to the supplier's saved Delivery Note layout — please check the document type; confirming will teach this layout.

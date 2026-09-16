@@ -622,7 +622,19 @@ function register(ctx) {
     // document for good. Report the class distinctly so Review can say the truthful thing and
     // point at the ONE-document re-read that actually clears it, instead of a mystery flag that
     // sends the customer to Reprocess All. Read-only: the row is not touched here.
+    // SPLIT-SEGMENT HOLD (2026-09-16, Oracle C4): the mark on a noted row means "this multi-page cut of a
+    // heuristic split needs one look" — never "flagged by a formatting check" (a false pointer). Report its
+    // own kind + the page range so Review says the truthful thing and points at Split. Read-only.
     if (kind === 'flagged') {
+      try {
+        const SP = require('../processing/split_plan');
+        const held = db.prepare(`SELECT field_key, validation_note FROM extractions
+                                  WHERE document_id = ? AND TRIM(COALESCE(validation_note,'')) <> ''`).all(doc.id)
+          .find(e => SP.hasSegmentHold(e.validation_note));
+        if (held) { out.kind = 'segment-hold'; out.field = held.field_key; out.pages = SP.segmentHoldRange(held.validation_note); }
+      } catch { /* advisory — never break the reason panel */ }
+    }
+    if (kind === 'flagged' && out.kind === 'flagged') {
       try {
         const STALE = /doesn't match this supplier's saved layout|match this document to (?:the supplier's|a) saved/i;
         const noted = db.prepare(`SELECT field_key, validation_note FROM extractions

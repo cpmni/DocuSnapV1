@@ -1,0 +1,17 @@
+MANUAL import, belt OFF (old code), 2026-09-16 — 102 docs processed
+auto-filed total: 62
+auto-filed MULTI-PAGE split segments (the merged-cut class): 12
+  Auto-filed (100%): bundle_01_split_p2-3.pdf → Worksheet.26-12-2026.WS-89028.pdf
+  Auto-filed (100%): bundle_04_split_p4-5.pdf → Sales-Order.07-06-2026.SO-90127.pdf
+  Auto-filed (100%): bundle_03_split_p2-3.pdf → Sales-Order.21-11-2026.SO-66532.pdf
+  Auto-filed (100%): tb_03_split_p1-2.pdf → Delivery-Note.07-01-2026.DN-92788.pdf
+  Auto-filed (100%): tb_04_split_p1-2.pdf → Delivery-Note.24-08-2026.DN-77201.pdf
+  Auto-filed (100%): tb_04_split_p6-7.pdf → Invoice.24-09-2026.INV-10776.pdf
+  Auto-filed (100%): tb_05_split_p1-2.pdf → Worksheet.24-02-2026.WS-69146.pdf
+  Auto-filed (100%): tb_06_split_p1-2.pdf → Invoice.09-09-2026.INV-50787.pdf
+  Auto-filed (100%): tb_07_split_p1-2.pdf → Delivery-Note.28-10-2026.DN-23634.pdf
+  Auto-filed (100%): tb_08_split_p2-3.pdf → Sales-Order.15-04-2026.VXS34353.pdf
+  Auto-filed (100%): tb_same_01_split_p3-5.pdf → Worksheet.13-02-2026.WS-13171.pdf
+  Auto-filed (100%): tb_same_02_split_p2-3.pdf → Invoice.14-10-2026.INV-34487.pdf
+multi-page split segments processed: 16
+separations: 0

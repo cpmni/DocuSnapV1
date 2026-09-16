@@ -110,6 +110,15 @@ owner flipped it too — **mig 174**. **47 keys remain dark.** All three stay sw
 ---
 
 ## ✅ DONE — already turned on and shipping (for reassurance)
+**2026-09-16 (mig 176) — `split_segment_multipage_hold`, a NEW belt that shipped ON from day one (not a dark seed):**
+when the app splits a scanned stack into documents and one of the cuts has more than one page, that cut now waits
+for one look before filing — because the splitter sometimes misses a boundary and leaves a stranger page riding
+behind the first one (the soak caught it; with the belt off a manual import filed **12 of 16** such cuts at 100 %,
+each one another company's page bound inside the wrong PDF). One-page cuts and cuts made with separator sheets are
+untouched (the 34-alert stack still files with one click). Review says why ("pages 2–3 were cut from a multi-document
+scan… use Split") and Confirm clears it. Off switch: `split_segment_multipage_hold = 'false'`. What it can NOT see: a
+stack the splitter never cut at all (only page 1 recognised) still imports whole — that is the splitter's accuracy,
+a separate item. Design record: `docs/designs/SPLIT_SEGMENT_HOLD_2026-09-16.md`.
 **2026-09-16 (migs 172/173):** **name_role_nonname_flag** — a "name" field that is really a bare postcode / email /
 VAT number / IBAN is now held for a look instead of filing silently (census: 5 fires, 1 held, nothing broken, twice);
 **ref_confusable_flag** — a reference with an O-vs-0 / I-vs-1 / S-vs-5 look-alike in the wrong place is now held

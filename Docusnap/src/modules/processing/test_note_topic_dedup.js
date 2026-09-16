@@ -47,6 +47,16 @@ check('handler.js:1664 shape — a different-topic note still concats even ON', 
 check('ABSENT is preserved even ON (concat, matches _neitherOnPage regex)',
       /doesn't appear on this page as written/.test(site1(ABSENT, SOFT, true)));
 
+console.log('split-segment hold (2026-09-16, Oracle C5) — its OWN topic, never de-duped:');
+{
+  const { segmentHoldNote } = require('./split_plan');
+  const hold = segmentHoldNote(2, 3);
+  const advisory = "one character differs; showing 'SO-61040' — please check which is printed";
+  check('hold (existing) + ref advisory (incoming) → null (concat: BOTH sentences survive)', composeNote(hold, advisory) === null);
+  check('ref advisory (existing) + hold (incoming) → null too', composeNote(advisory, hold) === null);
+  check('hold + a lane-hold "confirm once" note → null (different topics)', composeNote(hold, 'Read differently after learning — confirm once.') === null);
+}
+
 console.log('mark-sync — every JS mark literal is still a substring of the live Python constant:');
 const eng = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'python_backend', 'extraction', 'engine.py'), 'utf8');
 const tm  = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'python_backend', 'extraction', 'template_mapper.py'), 'utf8');

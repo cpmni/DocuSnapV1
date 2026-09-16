@@ -5455,3 +5455,11 @@ segments with a review-required mark that `isAutoFileEligible` honours until a h
 `put_back_at` shape, cleared on view/confirm). Separate item: the separator's same-logo sibling accuracy (a
 Copperfield sales order after a Copperfield worksheet reads as "continuation") — a fingerprint-floor / sibling
 resolution improvement, gated by the same soak harness (`TESTING/_measure/watch_separate_soak_20260916/`).
+
+> **RESOLVED 2026-09-16 (same day) — BUILT, default ON (mig 176 `split_segment_multipage_hold`).** gary → Oracle
+> SIGN-OFF-W/COND C1-C10; design record `docs/designs/SPLIT_SEGMENT_HOLD_2026-09-16.md`. NOT the `put_back_at` shape
+> (File-All's put-back bypass would lift it) — a lane-hold NOTE on the ref-role row, threaded from the separator's
+> rewrite set on BOTH arrival paths, carried across reprocess, its own reason kind in Review. Measured exposure it
+> closes: 12 of 16 multi-page cuts auto-filed at 100 % on a manual import with the belt OFF.
+> **STILL OPEN:** the separator-ACCURACY item above (same-logo sibling fingerprint floor) and the class the belt
+> cannot see — a stack whose only recognised first page is page 1 imports WHOLE (never split, so never marked).

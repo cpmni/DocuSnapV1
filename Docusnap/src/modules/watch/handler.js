@@ -346,6 +346,7 @@ async function _drainQueue(db) {
   // .sf_separated_originals/ (a subfolder the non-recursive poll ignores). Fresh segments are HELD for
   // review on this unattended path (a wrong-but-clean boundary must not auto-file with nobody watching).
   let heldNames = null;
+  let segHold = null;   // split-segment hold (2026-09-16): the multi-page heuristic cuts → a durable note, not just the import-time skip
   if (files.length && learning.getSetting(db, 'watch_separate_enabled', 'false') === 'true') {
     _separating = true;
     try {
@@ -361,6 +362,7 @@ async function _drainQueue(db) {
         files = applySeparationToTracked(files, _tracked, sep.rewrites, sep.consumed, Date.now());
         heldNames = new Set();
         for (const r of (sep.rewrites || [])) for (const s of (r.segments || [])) heldNames.add(s);
+        segHold = require('../processing/split_plan').segmentHoldPages(sep.rewrites);
         if (sep.separated) _log('log', `[watch] separated ${sep.separated} multi-document PDF(s) — ${files.length} document(s) to process`);
       }
     } catch (e) { _log('err', `[watch] separation failed (processing whole files): ${e && e.message}`); }
@@ -372,7 +374,7 @@ async function _drainQueue(db) {
   _inFlight = shards.length;
   try { processing.beginWatchActivity(files.length); } catch {}   // Review "importing" bar (reprocess paused)
   for (const shard of shards) {
-    _processBatch(db, shard, heldNames)
+    _processBatch(db, shard, heldNames, segHold)
       .catch(e => _log('err', `[watch] batch processing error — ${e.message}`))
       .finally(() => {
         for (const f of shard) { const rec = _tracked.get(f); if (rec) rec.state = 'done'; }
@@ -385,7 +387,7 @@ async function _drainQueue(db) {
   }
 }
 
-async function _processBatch(db, filenames, heldNames = null) {
+async function _processBatch(db, filenames, heldNames = null, segHold = null) {
   const { spawn, pythonExe, pythonArgs, tesseractPath, backendScript,
           configPath, notifyMainWindow } = _ctx;
   const processing = require('../processing/handler');
@@ -490,13 +492,13 @@ async function _processBatch(db, filenames, heldNames = null) {
             // the WHOLE call in setImmediate — as this did — mirrored the row BEFORE db_id existed, so
             // every watch-split row opened doc #1 and never showed "Filed". Mirrors the manual import path.
             try {
-              const io = processing.handleFileMessage(db, msg, watchFolder, notifyMainWindow, _ctx.logger, _autoFileRun);
+              const io = processing.handleFileMessage(db, msg, watchFolder, notifyMainWindow, _ctx.logger, _autoFileRun, { segmentHold: segHold });
               if (io && typeof io.then === 'function') io.catch((e) => _log('err', `[watch] file IO: ${e && e.message}`));
             } catch (e) {
               _log('err', `[watch] handleFileMessage failed: ${msg.original_filename || '?'} — ${e && e.message}`);
             }
           } else {
-            setImmediate(() => processing.handleFileMessage(db, msg, watchFolder, notifyMainWindow, _ctx.logger, _autoFileRun));
+            setImmediate(() => processing.handleFileMessage(db, msg, watchFolder, notifyMainWindow, _ctx.logger, _autoFileRun, { segmentHold: segHold }));
           }
           if (msg.type === 'log') {
             if      (msg.level === 'err')  _log('err',  `[watch] Python: ${msg.text}`);
