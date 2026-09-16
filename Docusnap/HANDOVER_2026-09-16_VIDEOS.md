@@ -12,7 +12,14 @@ is a soak, no 700-census) + `TESTING/_measure/flip_corpus_20260912/CENSUS.md`. H
 `RR_APP_ENV=1` (the `=0` arm is the vacuous trap), the Desktop 700 corpus (`Desktop\Flip Corpus 700\warm_700.db`)
 is pre-`intake` → COPY to scratch + migrate before running (recipe in the 09-15 EVENING session), the 3 shell-env
 switches are read outside `_appSpawnEnv`. Customer-default flips = approval-class (owner decides per switch).
-Open from tonight, not blocking: `voice.py` (edge-tts voice-over automation for the tutorials) — build on request.
+**`voice.py` BUILT + RUN (09-16 morning):** `Desktop\Tutorials\<name>-final.mp4` ×5 now carry a generated
+voice-over (edge-tts `en-GB-RyanNeural`, +10 % pace, one clip per narration line at its timestamp, loudnorm −16 LUFS,
+AAC) + `<name>-voice.wav`. Providers: edge (free) · elevenlabs · openai (API keys). Clips cached in
+`tools\video_tutorials\out\voice\`. **Known quality trade-off:** the narration is written at ~3 words/s, a little
+above the voice's natural pace — ~8 lines are stretched ≤1.2× and in the first-run wizard stretch (117–160 s) the
+voice runs 1.5–2.4 s behind the visuals. Listen first; remedies: `voice.py --all … --rate +15%` (faster voice),
+a different voice (`--voice en-GB-SoniaNeural`), or lengthen those `duration_sec` windows in the scripts and
+re-record. Networks with TLS inspection need `truststore` (installed; injected by voice.py).
 
 ## What the owner asked (verbatim intent)
 "Use the night run to make useful instructional videos for YouTube. Output to `Desktop\Tutorials` with a file to

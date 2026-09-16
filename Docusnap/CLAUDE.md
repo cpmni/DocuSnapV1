@@ -33,8 +33,9 @@ Frames of every video inspected (no personal paths/terminal; teach read-backs co
 **Gotchas learned:** the packaged app refuses `--remote-debugging-port` (dev app only); the dev licence gate re-fetches
 this PC's seat online (hence the fake server + self-restoring `config/license.json` swap — `git status config` clean);
 native dialogs leak the presenter's folder tree (never filmed); the owner's terminal steals focus on any keypress
-(re-front per step; an early run typed "Demo Admin" into the terminal prompt — unsent). **Owner next:** TTS + upload;
-optional search re-take after review. **NEXT SESSION (owner 09-16): DARK-SWITCH FLIP TESTING** — resume from the
+(re-front per step; an early run typed "Demo Admin" into the terminal prompt — unsent). **09-16 morning: `voice.py` built + run** — every tutorial now has a `-final.mp4` with an edge-tts voice-over
+(free Microsoft neural voice; elevenlabs/openai optional); known trade-off = dense narration → ≤1.2× stretch / ≤2.4 s
+lag in the wizard stretch (listen; `--rate +15%` or re-time). **Owner next:** listen + upload; optional search re-take. **NEXT SESSION (owner 09-16): DARK-SWITCH FLIP TESTING** — resume from the
 09-15 EVENING block's flip-census pointers (`docs/DARK_SWITCH_LEDGER.md`, `TESTING/_measure/flip_corpus_20260912/CENSUS.md`,
 `RR_APP_ENV=1` baseline, copy+migrate the 700 corpus first); the rest of that queue (push `8ec76de`, VM live-test, D2b/D3/D4) unchanged.
 

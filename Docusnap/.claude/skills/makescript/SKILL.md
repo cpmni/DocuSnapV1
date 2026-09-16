@@ -41,7 +41,8 @@ Canonical flows (each is a finished 40–70 s video):
 ## Privacy + narration rules (owner, 2026-09-15 night)
 - NEVER film a native Windows dialog (folder/file picker: shows the presenter's OneDrive name + pinned folders). Import folder → `eval_js` recipe (copy it from `scripts/import-a-folder.json`); output folder → pre-seeded by `record.py`; Teach → pick from the queue (`#doc-picker .card`). Small windows (sign-in, wizard) → `"record": {"mode": "screen", "backdrop": "#1f2430"}`.
 - Paths on camera must be neutral (`C:\ScanFinderDemo\…`) — never `C:\Users\<name>`.
-- Narration = a real instructional voice: what the screen is, what to click, and WHY each option is what it is (the reason a customer would care). Casual, not cheesy; ≤ ~2.8 words/second; an explain step (hover the control while the reason is narrated) followed by the choose step.
+- Narration = a real instructional voice: what the screen is, what to click, and WHY each option is what it is (the reason a customer would care). Casual, not cheesy; an explain step (hover the control while the reason is narrated) followed by the choose step.
+- **Size `duration_sec` to the words: ≥ 0.45 s per word (≈ 2.2 words/s) + 1 s for a click.** Measured 2026-09-16: the edge-tts voice at +10 % speaks ~2.4 words/s; lines written at 3 words/s had to be stretched 1.2× or ran 2 s late. Voice-over is then `python voice.py <name>.narration.json`.
 - Deliver via `python record.py scripts\<slug>.json --publish "%USERPROFILE%\Desktop\Tutorials"` (mp4 + captions.srt + narration.json for the TTS pass).
 
 ## Verified flow facts (2026-09-15 night — real recordings)

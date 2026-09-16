@@ -123,9 +123,11 @@ real folder holding 3–5 small PDFs, and give the `processing` step enough seco
 | `out\search.captions.srt` | the captions as subtitles — re-burn, edit, or upload to YouTube |
 | `out\search.narration.json` | narration lines with start/end — the input for the TTS pass |
 
-Later, with a voice track: `ffmpeg -i out\search.mp4 -i voice.wav -c:v copy -c:a aac -shortest out\search_final.mp4`.
-Generate one clip per narration line and place each at its `start` (or one continuous track from the
-timings) — the `narration.json` carries everything needed.
+**Voice-over:** `python voice.py out\search.narration.json` (or `--all DIR`) generates one clip per narration line
+(default Microsoft Edge neural voice `en-GB-RyanNeural` via `edge-tts`, free; `--provider elevenlabs|openai` with an
+API key), speeds a clip up only if it overruns its window (≤ 1.25×), lays the clips at their `start` times,
+loudness-normalises, and muxes → `<name>-final.mp4` + `<name>-voice.wav`. Clips are cached in `out\voice\`.
+Needs internet for edge-tts; on AV/proxy-inspected networks `truststore` (in requirements) supplies the certificates.
 
 ---
 

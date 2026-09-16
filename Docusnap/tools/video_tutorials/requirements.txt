@@ -3,4 +3,6 @@ pyautogui>=0.9.54          # mouse/keyboard driving + image targets
 pillow>=10.0               # screenshots for image targets (pyautogui dependency)
 websocket-client>=1.7      # DevTools (CDP) client for {"selector": ...} targets — dev app only
 pynput>=1.7                # typing non-ASCII text (optional but cheap)
+edge-tts>=7.0              # voice.py default TTS (Microsoft Edge neural voices, free)
+truststore>=0.9            # voice.py: TLS via the Windows certificate store (AV/proxy-inspected networks)
 # opencv-python>=4.9       # OPTIONAL: enables "confidence" on image targets
