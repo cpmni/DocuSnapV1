@@ -6,8 +6,8 @@
 - Tree: the 7 `tools/video_tutorials/` modifications (6 script JSONs + `voice.py`) were ALREADY uncommitted when this
   session started (09-16 morning, before the census) and were NOT touched — the owner's own edits; leave or commit as
   they see fit. Nothing else uncommitted.
-- Migration version **174** (172 + 173 + 174 new). `npm run test:pins` green bar the known run-order flake
-  (`test_v1_teach_equivalence`, ALL PASS standalone). Release gate: "47 DARK keys guarded".
+- Migration version **175** (172 + 173 + 174 + 175 new). `npm run test:pins` 379/379 green. Release gate:
+  "46 DARK keys guarded".
 - No app running. No installer built (the flips ship in the next build; they also activate on the owner's live
   install at its next `npm start` / installed-app launch via migs 172/173/174).
 - **Second commit this session (owner: "flip 143 as well"): mig 174 `template_pad_date_adopt` ON by default** —
@@ -49,9 +49,18 @@
   false M).
 
 ## NEXT (owner decides)
-- ~~Push~~ — DONE (origin current).
-- Flip **`watch_separate_enabled`**? (soak PASSED, owner-run; a soak, not a 700-census) — same shape as `764b397`
-  (would be mig 175). `deskew_corrob_autofile` stays DARK (vacuous here).
+- ~~Push~~ — DONE (origin current after each step).
+- ~~Flip `watch_separate_enabled`~~ — **DONE, mig 175**, but NOT on the earlier "soak PASSED" claim: that ledger line
+  (09-12) had NO run behind it. The owner chose "run the soak first"; it was run 2026-09-16 in a sandbox on a copy of
+  the live DB (`TESTING/_measure/watch_separate_soak_20260916/RESULT.md` + reusable harness): analyzer PASS, the real
+  34-page bundle 34/34, 0 over-split, 91 segments all held, 0 auto-filed; synthetic same-logo stacks under-split =
+  the separator's fingerprint floor (shared with manual import, never worse than OFF). **Seam logged in
+  `pendingfeatures.md`:** the hold is import-time only → a later File-All / scope sweep can file a merged clean
+  segment unseen → a durable "look first" mark is the follow-up belt. `deskew_corrob_autofile` stays DARK.
+- **The soak sandbox app may still be running** (dev app, DevTools port 9223, `DOCUSNAP_USERDATA=<scratch>\soak\
+  userData`, a COPY of the live DB with sandbox paths; login admin / Scan-Finder-2026). Harmless; close it from its
+  window or kill the electron whose command line carries `--remote-debugging-port=9223`. Its scratch folder dies
+  with the session.
 - The rest of the flip queue is in `docs/DARK_SWITCH_LEDGER.md` (🟡 WAITING; most are geometry-inert on the synthetic
   corpus → efficacy only on real exhibits; `format_class_join` HOLD on blast radius).
 - Then the standing 09-15 EVENING queue: VM live-test of both installers; Departments D2b/D3/D4 before the

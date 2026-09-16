@@ -24,19 +24,22 @@ touches that area — read the pointed-to doc BEFORE working in it:
 ## ⏭ LATEST — 2026-09-16 DAY (the DARK-SWITCH FLIP CENSUS re-run at HEAD + the FIRST TWO FLIPS shipped):
 **READ `HANDOVER_2026-09-16_FLIPS.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `c3ca29e`+ (flips `764b397` +
 `cb60e3a`); origin CURRENT — everything PUSHED 2026-09-16 (incl. the video-night commits);**
-migration **174**; pins green bar the known `test_v1_teach_equivalence` run-order flake (ALL PASS standalone);
-release gate "47 DARK keys guarded". The tree's
+migration **175**; pins 379/379; release gate "46 DARK keys guarded". The tree's
 7 `tools/video_tutorials/` modifications pre-date this session (owner's own, untouched). **Done:** the 700-corpus
 census re-run at mig 171 (copy+migrate the Desktop fixture; `TESTING/_measure/flip_corpus_20260912/CENSUS.md`
 2026-09-16 section + the reusable `rerun_20260916/` runner/comparator) — 159 + 156 IDENTICAL to 09-12 (M=0, real
 fires, file→hold only) → **owner go → mig 172 `name_role_nonname_flag` + mig 173 `ref_confusable_flag` are customer
 defaults** (`@DEFAULT_FLIP`, delisted, pin `database/test_default_flip_156_159.js`); then **owner: "flip 143 as
 well" → mig 174 `template_pad_date_adopt` ON by default** (PASS ×2, the one adopt == GT; pad_window_read dep pinned);
-`deskew_corrob_autofile` byte-identical to OFF on the corpus (stays DARK); `watch_separate_enabled` soak-only
-(owner's call, would be mig 175). Traps: the Bash tool's 10-min background cap (launch a census DETACHED via
-PowerShell `Start-Process bash`); a `TaskStop` leaves the bash running its NEXT arm (kill by PID, bash first); never
-run pins while arms run. **NEXT:** watch_separate flip? · the 09-15 EVENING queue (VM live-test both installers;
-Departments D2b/D3/D4; client-Review S0) · a fresh build carries migs 172-174.
+`deskew_corrob_autofile` byte-identical to OFF on the corpus (stays DARK); **`watch_separate_enabled` → its soak
+gate was found NEVER RUN (the ledger's "PASSED" was unbacked) → RUN 2026-09-16 in a sandbox on a live-DB copy
+(`TESTING/_measure/watch_separate_soak_20260916/RESULT.md`: analyzer PASS, real 34-page bundle 34/34, 0 over-split,
+all 91 segments held) → mig 175 default ON**; seam → `pendingfeatures.md` (import-time hold only; File-All/sweep can
+file a merged clean segment unseen → durable "look first" mark owed). Traps: the Bash tool's 10-min background cap
+(launch a census DETACHED via PowerShell `Start-Process bash`); a `TaskStop` leaves the bash running its NEXT arm
+(kill by PID, bash first); never run pins while arms run; the soak sandbox app may still be up on port 9223.
+**NEXT:** the 09-15 EVENING queue (VM live-test both installers; Departments D2b/D3/D4; client-Review S0) · a fresh
+build carries migs 172-175 · the watch-segment "look first" belt.
 
 ## Prior — 2026-09-15/16 NIGHT (the TUTORIAL-VIDEO tool built + FIVE YouTube tutorials recorded to `Desktop\Tutorials`):
 **READ `HANDOVER_2026-09-16_VIDEOS.md` FIRST.** No app code touched; pins untouched. New tooling
