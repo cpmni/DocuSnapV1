@@ -22,8 +22,8 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-09-16 DAY (the DARK-SWITCH FLIP CENSUS re-run at HEAD + the FIRST TWO FLIPS shipped):
-**READ `HANDOVER_2026-09-16_FLIPS.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `8bf1bc4` (flips `764b397` +
-`cb60e3a`); 9 commits UNPUSHED** (`git rev-list --count origin/feat/teach-side-overnight..HEAD`);
+**READ `HANDOVER_2026-09-16_FLIPS.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `c3ca29e`+ (flips `764b397` +
+`cb60e3a`); origin CURRENT — everything PUSHED 2026-09-16 (incl. the video-night commits);**
 migration **174**; pins green bar the known `test_v1_teach_equivalence` run-order flake (ALL PASS standalone);
 release gate "47 DARK keys guarded". The tree's
 7 `tools/video_tutorials/` modifications pre-date this session (owner's own, untouched). **Done:** the 700-corpus
@@ -35,8 +35,8 @@ well" → mig 174 `template_pad_date_adopt` ON by default** (PASS ×2, the one a
 `deskew_corrob_autofile` byte-identical to OFF on the corpus (stays DARK); `watch_separate_enabled` soak-only
 (owner's call, would be mig 175). Traps: the Bash tool's 10-min background cap (launch a census DETACHED via
 PowerShell `Start-Process bash`); a `TaskStop` leaves the bash running its NEXT arm (kill by PID, bash first); never
-run pins while arms run. **NEXT:** push · watch_separate? · the 09-15 EVENING queue (VM live-test both installers;
-Departments D2b/D3/D4; client-Review S0).
+run pins while arms run. **NEXT:** watch_separate flip? · the 09-15 EVENING queue (VM live-test both installers;
+Departments D2b/D3/D4; client-Review S0) · a fresh build carries migs 172-174.
 
 ## Prior — 2026-09-15/16 NIGHT (the TUTORIAL-VIDEO tool built + FIVE YouTube tutorials recorded to `Desktop\Tutorials`):
 **READ `HANDOVER_2026-09-16_VIDEOS.md` FIRST.** No app code touched; pins untouched. New tooling

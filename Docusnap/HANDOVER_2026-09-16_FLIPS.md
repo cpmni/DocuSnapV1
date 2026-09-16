@@ -1,8 +1,8 @@
 # HANDOVER 2026-09-16 DAY — the dark-switch flip census re-run + the first two flips
 
 ## STATE (verified at wrap)
-- Branch `feat/teach-side-overnight`, **HEAD `764b397`** (this session's ONE commit). **5 commits UNPUSHED** (owner's
-  call): `704d0c6` · `01dc323` · `7a82dce` · `303f192` (the 09-15/16 video night) · `764b397` (the flips).
+- Branch `feat/teach-side-overnight`, **HEAD `c3ca29e` + this docs fix; origin CURRENT — everything PUSHED
+  2026-09-16 on the owner's "push it"** (the 4 video-night commits + today's flips `764b397`/`cb60e3a` + docs).
 - Tree: the 7 `tools/video_tutorials/` modifications (6 script JSONs + `voice.py`) were ALREADY uncommitted when this
   session started (09-16 morning, before the census) and were NOT touched — the owner's own edits; leave or commit as
   they see fit. Nothing else uncommitted.
@@ -49,7 +49,7 @@
   false M).
 
 ## NEXT (owner decides)
-- **Push** the commits (`git push origin feat/teach-side-overnight`; 9 unpushed at wrap, HEAD `8bf1bc4` + this fix — see `git log origin/feat/teach-side-overnight..HEAD`).
+- ~~Push~~ — DONE (origin current).
 - Flip **`watch_separate_enabled`**? (soak PASSED, owner-run; a soak, not a 700-census) — same shape as `764b397`
   (would be mig 175). `deskew_corrob_autofile` stays DARK (vacuous here).
 - The rest of the flip queue is in `docs/DARK_SWITCH_LEDGER.md` (🟡 WAITING; most are geometry-inert on the synthetic
