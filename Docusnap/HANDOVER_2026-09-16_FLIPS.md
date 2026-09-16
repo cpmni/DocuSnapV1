@@ -6,8 +6,9 @@
 - Tree: the 7 `tools/video_tutorials/` modifications (6 script JSONs + `voice.py`) were ALREADY uncommitted when this
   session started (09-16 morning, before the census) and were NOT touched — the owner's own edits; leave or commit as
   they see fit. Nothing else uncommitted.
-- Migration version **175** (172 + 173 + 174 + 175 new). `npm run test:pins` 379/379 green. Release gate:
-  "46 DARK keys guarded".
+- Migration version **176** (172-175 flips + 176 the split-segment hold seed). `npm run test:pins` 381/382
+  (the 1 red = the pre-existing `test_ref_class_fix.js` timing flake). Release gate: "46 DARK keys guarded".
+  HEAD `db04a8f` + the docs commit; origin current.
 - No app running. No installer built (the flips ship in the next build; they also activate on the owner's live
   install at its next `npm start` / installed-app launch via migs 172/173/174).
 - **Second commit this session (owner: "flip 143 as well"): mig 174 `template_pad_date_adopt` ON by default** —
@@ -31,6 +32,26 @@
    `database/test_default_flip_156_159.js` (fresh-install ON · upgrade-from-seeded-false ON · a deliberate 'false'
    survives a relaunch · delisted · labelled · release-gate clean · handler bridge); `test_migration156_nonname_flag.js`
    reworked to the graduated contract; count pins 50→48; ledger + handler comments updated.
+
+## THIRD thing this session: the split-segment "look first" belt (`db04a8f`, mig 176, default ON)
+Owner: "keep going with the recommended work … build it once the oracle signs off". gary designed → Oracle
+SIGN-OFF-W/COND C1-C10 (the Oracle run died once on a network error and was RESUMED via SendMessage with its
+context intact — that works). Built exactly to the conditions: the separator's rewrite set (now carrying
+`separators`) is threaded to `_handleFileMessage` on BOTH arrival paths; every MULTI-page segment of a HEURISTIC
+split gets a "— confirm once." lane-hold note on its ref-role row (C3 target order) before the auto-file decision,
+so the ONE predicate refuses it at import / File-All-Ready / the sweep (Tier 2 pinned) / the reprocess offer;
+slice 2 carries the mark across a reprocess; Review's reason panel says "pages 2–3 were cut from a multi-document
+scan… use Split" (C4); `composeNote` never de-dups it (C5). Measured: belt OFF, a manual import auto-filed **12 of
+16** multi-page cuts at 100 %; belt ON, **0** (14/14 marked, held) on both watch and manual replays, one-page cuts
+untouched (the 34-alert one-click flow intact). Design record `docs/designs/SPLIT_SEGMENT_HOLD_2026-09-16.md`;
+Oracle entry appended to `docs/oracle_log.md`; pins `test_segment_hold_{predicate,stamp}.js` +
+`database/test_segment_hold_default.js` + a C5 case in `test_note_topic_dedup.js`. Suite 381/382 — the red
+`test_ref_class_fix.js` is a PRE-EXISTING timing flake (ARM B hashes two corpora built at different moments →
+a second-boundary under load; passes 1 in 3 standalone), not this change.
+**Still open (pendingfeatures.md):** the separator's same-logo sibling accuracy, and the class the belt cannot see
+(a stack whose only recognised first page is page 1 is never split → imports whole). Oracle's separate fork, not
+done: with the dangerous population now marked, the 09-01 import-time hold of 1-page WATCH cuts could be relaxed
+to match manual (34 alerts → zero clicks) — owner's call.
 
 ## Plain-English meaning for the customer
 - A "name" box that actually reads as a bare postcode / email / VAT number / IBAN now waits for a look instead of

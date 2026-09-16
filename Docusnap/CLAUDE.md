@@ -22,9 +22,10 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-09-16 DAY (the DARK-SWITCH FLIP CENSUS re-run at HEAD + the FIRST TWO FLIPS shipped):
-**READ `HANDOVER_2026-09-16_FLIPS.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `c3ca29e`+ (flips `764b397` +
-`cb60e3a`); origin CURRENT — everything PUSHED 2026-09-16 (incl. the video-night commits);**
-migration **175**; pins 379/379; release gate "46 DARK keys guarded". The tree's
+**READ `HANDOVER_2026-09-16_FLIPS.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `db04a8f`+ (flips `764b397`/`cb60e3a`/`ad4b79b`,
+the belt `db04a8f`); origin CURRENT — everything PUSHED 2026-09-16 (incl. the video-night commits);**
+migration **176**; pins 381/382 (the 1 red = the PRE-EXISTING `test_ref_class_fix.js` timing flake — ARM B hashes
+two corpora built at different moments); release gate "46 DARK keys guarded". The tree's
 7 `tools/video_tutorials/` modifications pre-date this session (owner's own, untouched). **Done:** the 700-corpus
 census re-run at mig 171 (copy+migrate the Desktop fixture; `TESTING/_measure/flip_corpus_20260912/CENSUS.md`
 2026-09-16 section + the reusable `rerun_20260916/` runner/comparator) — 159 + 156 IDENTICAL to 09-12 (M=0, real
@@ -34,8 +35,11 @@ well" → mig 174 `template_pad_date_adopt` ON by default** (PASS ×2, the one a
 `deskew_corrob_autofile` byte-identical to OFF on the corpus (stays DARK); **`watch_separate_enabled` → its soak
 gate was found NEVER RUN (the ledger's "PASSED" was unbacked) → RUN 2026-09-16 in a sandbox on a live-DB copy
 (`TESTING/_measure/watch_separate_soak_20260916/RESULT.md`: analyzer PASS, real 34-page bundle 34/34, 0 over-split,
-all 91 segments held) → mig 175 default ON**; seam → `pendingfeatures.md` (import-time hold only; File-All/sweep can
-file a merged clean segment unseen → durable "look first" mark owed). Traps: the Bash tool's 10-min background cap
+all 91 segments held) → mig 175 default ON**; the seam it exposed (import-time hold only; a merged multi-page cut
+auto-filed 12/16 on manual import) → **BUILT the same day: `split_segment_multipage_hold` mig 176 default ON
+(`db04a8f`; gary → Oracle SIGN-OFF-W/COND C1-C10; every multi-page cut of a heuristic split gets a "— confirm once."
+ref-role note on BOTH paths, carried across reprocess, own reason kind in Review; replay ON = 0 auto-filed, 1-page
+cuts untouched; `docs/designs/SPLIT_SEGMENT_HOLD_2026-09-16.md`)**. Traps: the Bash tool's 10-min background cap
 (launch a census DETACHED via PowerShell `Start-Process bash`); a `TaskStop` leaves the bash running its NEXT arm
 (kill by PID, bash first); never run pins while arms run; the soak sandbox app may still be up on port 9223.
 **NEXT:** the 09-15 EVENING queue (VM live-test both installers; Departments D2b/D3/D4; client-Review S0) · a fresh
