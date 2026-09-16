@@ -1,0 +1,22 @@
+tb_01.pdf          exp=[1, 2, 3, 4, 5] | base=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | pipe=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | fb=[1, 2, 3, 4, 5] r=5 lost=0 over=0
+     titles: [('p1', 'worksheet', 'T'), ('p2', 'delivery_note', 'T'), ('p3', 'delivery_note', 'T'), ('p4', 'invoice', 'T'), ('p5', 'sales_order', 'T')]
+tb_02.pdf          exp=[1, 2, 3, 4, 5] | base=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | pipe=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | fb=[1, 2, 3, 4, 5] r=5 lost=0 over=0
+     titles: [('p1', 'worksheet', '-'), ('p2', 'sales_order', '-'), ('p3', 'delivery_note', '-'), ('p4', 'invoice', 'T'), ('p5', 'worksheet', '-')]
+tb_03.pdf          exp=[1, 2, 3, 4, 5] | base=[1, 3, 4, 5] r=4 lost=0 over=0 | pipe=[1, 3, 4, 5] r=4 lost=0 over=0 | fb=[1, 3, 4, 5] r=4 lost=0 over=0
+     titles: [('p1', 'delivery_note', '-'), ('p2', 'sales_order', '-'), ('p3', 'delivery_note', '-'), ('p4', 'sales_order', '-'), ('p5', 'delivery_note', 'T')]
+tb_04.pdf          exp=[1, 2, 3, 4, 5, 6, 7] | base=[1, 3, 5, 6] r=4 lost=0 over=0 | pipe=[1, 3, 5, 6, 7] r=5 lost=0 over=0 | fb=[1, 3, 5, 6, 7] r=5 lost=0 over=0
+     titles: [('p1', 'delivery_note', '-'), ('p2', None, '-'), ('p3', 'sales_order', '-'), ('p4', None, '-'), ('p5', 'sales_order', '-'), ('p6', 'invoice', 'T'), ('p7', 'worksheet', 'T')]
+tb_05.pdf          exp=[1, 2, 3, 4, 5] | base=[1, 3, 4, 5] r=4 lost=0 over=0 | pipe=[1, 3, 4, 5] r=4 lost=0 over=0 | fb=[1, 3, 4, 5] r=4 lost=0 over=0
+     titles: [('p1', 'worksheet', 'T'), ('p2', 'delivery_note', 'T'), ('p3', 'invoice', 'T'), ('p4', 'purchase_order', 'T'), ('p5', 'delivery_note', 'T')]
+tb_06.pdf          exp=[1, 2, 3, 4, 5] | base=[1, 3, 4, 5] r=4 lost=0 over=0 | pipe=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | fb=[1, 2, 3, 4, 5] r=5 lost=0 over=0
+     titles: [('p1', 'invoice', 'T'), ('p2', 'purchase_order', 'T'), ('p3', 'sales_order', '-'), ('p4', 'delivery_note', '-'), ('p5', 'credit_note', '-')]
+tb_07.pdf          exp=[1, 2, 3, 4, 5, 6] | base=[1, 3, 4, 5, 6] r=5 lost=0 over=0 | pipe=[1, 2, 4, 5, 6] r=5 lost=1 over=0 | fb=[1, 2, 3, 4, 5, 6] r=6 lost=0 over=0
+     titles: [('p1', 'delivery_note', '-'), ('p2', 'worksheet', 'T'), ('p3', 'invoice', 'T'), ('p4', 'delivery_note', 'T'), ('p5', 'sales_order', '-'), ('p6', 'delivery_note', 'T')]
+tb_08.pdf          exp=[1, 2, 3, 4, 5] | base=[1, 2, 4, 5] r=4 lost=0 over=0 | pipe=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | fb=[1, 2, 3, 4, 5] r=5 lost=0 over=0
+     titles: [('p1', 'worksheet', '-'), ('p2', 'sales_order', 'T'), ('p3', 'worksheet', 'T'), ('p4', 'delivery_note', '-'), ('p5', 'sales_order', '-')]
+tb_same_01.pdf     exp=[1, 2, 3, 4, 5] | base=[1, 2, 3] r=3 lost=0 over=0 | pipe=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | fb=[1, 2, 3] r=3 lost=0 over=0
+     titles: [('p1', 'purchase_order', 'T'), ('p2', 'purchase_order', 'T'), ('p3', 'worksheet', '-'), ('p4', 'sales_order', '-'), ('p5', 'sales_order', '-')]
+tb_same_02.pdf     exp=[1, 2, 3, 4, 5] | base=[1, 2, 4, 5] r=4 lost=0 over=0 | pipe=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | fb=[1, 2, 3, 4, 5] r=5 lost=0 over=0
+     titles: [('p1', 'invoice', 'T'), ('p2', 'invoice', 'T'), ('p3', 'worksheet', 'T'), ('p4', None, '-'), ('p5', 'invoice', 'T')]
+
+TOTAL files=10 expected=53 base: right=42 lost-vs-base=0 over-splits=0 | pipe: right=48 lost-vs-base=1 over-splits=0 | fb: right=47 lost-vs-base=0 over-splits=0

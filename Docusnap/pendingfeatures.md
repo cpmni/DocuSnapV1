@@ -5463,3 +5463,18 @@ resolution improvement, gated by the same soak harness (`TESTING/_measure/watch_
 > closes: 12 of 16 multi-page cuts auto-filed at 100 % on a manual import with the belt OFF.
 > **STILL OPEN:** the separator-ACCURACY item above (same-logo sibling fingerprint floor) and the class the belt
 > cannot see — a stack whose only recognised first page is page 1 imports WHOLE (never split, so never marked).
+
+## 2026-09-16 — the separator OVER-SPLITS a genuine multi-page document whose page 2 repeats the letterhead (pre-existing; found by the soak's controls)
+`ocr/segmentation.py` cuts a page as a new document when a known template matches it AND `fingerprint_overlap ≥ 0.5` —
+but `extract_keyword_fingerprint` is the LETTERHEAD words, and a real continuation page (logo + name + address
+repeated, line items below) clears it. Measured with six controls (`TESTING/_measure/watch_separate_soak_20260916/
+controls/`, a 2-page Copperfield / Thornbury invoice or sales order, page 2 = the letterhead band + line items,
+with or without a repeated heading): **6/6 cut at page 2 by `segment_docs.py` today**, reason "first-page
+fingerprint". The type-presence veto only saves it when the picked sibling's type has ≥ 3 learned heading samples
+and the heading is absent. On MANUAL import that is a silent truncation: page 1 files as a one-page invoice, page 2
+becomes an orphan. Watch holds both. Candidate levers (Oracle to rule on the layer, see `docs/oracle_log.md`
+2026-09-16 separator entry): require the picked type's heading PRESENT in the top band for the first-page
+signature when the type has learned heading stats (the positive twin of the veto); or score the overlap on the
+fingerprint MINUS the supplier's branding tokens; or require `is_document_start`-style header markers; or a
+"Page 2 of N" / "continued" negative marker. Gate: the controls (0/6 cut) + the stacks (no boundary lost vs
+today) + real_34 34/34, via `seg_probe4.py`. Independent of the under-split title fix (which changes nothing here).

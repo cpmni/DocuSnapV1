@@ -75,6 +75,34 @@ console, `H._stampSegmentHold(db, docId, document_type_id, {from,to})` per doc, 
 `SELECT id, original_filename, page_count FROM documents WHERE status='needs_review' AND original_filename LIKE
 '%\_split\_p%' ESCAPE '\' AND page_count >= 2` to list the candidates first.
 
+## Separator accuracy — diagnosed (2026-09-16, later): TWO classes, one under-split and one OVER-split
+Probes: `seg_probe.py` (per-page signals), `seg_probe1/3.py` (the matcher's raw return on a missed page),
+`seg_probe2.py` / `seg_probe4.py` (A/B and the 4-arm per-PAGE census), `make_controls.py` + `controls/`.
+
+**1. UNDER-split (the merged cuts) — root cause = a title-blind pre-pass.** Every missed boundary in the templated
+stacks was a `type_refused` return from `identify_template`: the pre-pass passes no `detected_slug`/`title_trusted`
+(the full pipeline does — the 2026-07-09 TYPE-PRECEDENCE fix never reached the separator), so the same-logo sibling
+tie-break is a keyword coin flip; a wrong sibling trips the TYPE-PRESENCE VETO → refuse → the pre-pass reads it as
+"no match" → continuation. 4-arm per-page census (`probe_4arm_stacks.txt`, 95 expected boundaries): base **72**;
+pipeline recipe (slug even untrusted, no fallback) 78 but LOST 1 (tb_07 p3, a wrong trusted title → the
+trusted-title refuse); trusted-only + fallback 77, 0 lost; **cascade (trusted → untrusted slug → baseline, each
+falling back on None/refuse) 79, 0 lost**; 0 over-splits in every arm on the stacks; real_34 34/34 and the
+non-templated singles unchanged in every arm (`probe_4arm_controls.txt`). Residual 5 misses = 150-DPI heading
+garble ("WORKS HEET", "DELIVE") — an OCR-quality item, separate.
+
+**2. OVER-split (NEW, pre-existing, all arms incl. today's baseline).** Six controls (`controls/`): a genuine 2-page
+invoice / sales order from a supplier with 3-5 same-letterhead sibling templates whose page 2 repeats the
+LETTERHEAD (logo + name + address), with (ii) or without (i) a repeated trusted heading. **`segment_docs.py`
+itself cuts every one at page 2 — reason "first-page fingerprint"** (`probe_4arm_ctrl.txt`, 6/6 in all four
+arms). Mechanism: `extract_keyword_fingerprint` IS the letterhead words, which the continuation page repeats, so
+`fingerprint_overlap ≥ 0.5` on page 2; the type-presence veto protects only when the picked sibling's type has
+learned heading stats. The docstring promise ("a continuation page carries the logo but NOT the first page's
+keyword fingerprint") is false whenever the letterhead repeats. The soak's earlier "0 over-splits on singles" was
+VACUOUS (those singles were non-templated suppliers → no match → no boundary). Consequence today on MANUAL import:
+page 1 files as a 1-page document — the real invoice, silently missing its page 2 — and page 2 becomes a 1-page
+orphan. The title fix (1) neither adds to nor removes this (identical 6/6). Oracle ruling on the layer: see the
+oracle_log entry of 2026-09-16 (separator).
+
 ## Seam found → CLOSED the same day (the belt above); the residual is separator ACCURACY
 The hold is an IMPORT-TIME skip only (`autoFileRun=false`): a held segment carries no durable mark, so a later
 "File all ready" click or the scope sweep (`scope_sweep_enabled`, ON on the owner's install) can file a merged

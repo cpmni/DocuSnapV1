@@ -1,0 +1,80 @@
+{
+ "ctrl_i_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "Desktop\\Demo Docs\\Copperfield Electrical\\invoice\\Processed\\CopperfieldElectrical_invoice_01.pdf",
+    "label": "genuine 2-page invoice of a multi-type supplier \u2014 p2 repeats the letterhead only \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl_ii_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "Desktop\\Demo Docs\\Copperfield Electrical\\invoice\\Processed\\CopperfieldElectrical_invoice_01.pdf",
+    "label": "genuine 2-page invoice of a multi-type supplier \u2014 p2 repeats the letterhead + the trusted heading + Page 2 of 2 \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl_i_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "Desktop\\Demo Docs\\Thornbury Fasteners\\invoice\\ThornburyFasteners_invoice_01.pdf",
+    "label": "genuine 2-page invoice of a multi-type supplier \u2014 p2 repeats the letterhead only \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl_ii_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "Desktop\\Demo Docs\\Thornbury Fasteners\\invoice\\ThornburyFasteners_invoice_01.pdf",
+    "label": "genuine 2-page invoice of a multi-type supplier \u2014 p2 repeats the letterhead + the trusted heading + Page 2 of 2 \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl_i_copperfield_so.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "Desktop\\Demo Docs\\Copperfield Electrical\\sales_order\\CopperfieldElectrical_sales_order_01.pdf",
+    "label": "genuine 2-page sales_order of a multi-type supplier \u2014 p2 repeats the letterhead only \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl_ii_copperfield_so.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "Desktop\\Demo Docs\\Copperfield Electrical\\sales_order\\CopperfieldElectrical_sales_order_01.pdf",
+    "label": "genuine 2-page sales_order of a multi-type supplier \u2014 p2 repeats the letterhead + the trusted heading + Page 2 of 2 \u2014 must NOT split"
+   }
+  ]
+ }
+}

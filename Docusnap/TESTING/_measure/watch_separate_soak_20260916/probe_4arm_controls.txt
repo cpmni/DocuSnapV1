@@ -1,0 +1,8 @@
+real_34.pdf        exp=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34] | base=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34] r=34 lost=0 over=0 | pipe=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34] r=34 lost=0 over=0 | fb=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34] r=34 lost=0 over=0 | casc=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34] r=34 lost=0 over=0
+single_01.pdf      exp=[1] | base=[1] r=1 lost=0 over=0 | pipe=[1] r=1 lost=0 over=0 | fb=[1] r=1 lost=0 over=0 | casc=[1] r=1 lost=0 over=0
+single_02.pdf      exp=[1] | base=[1] r=1 lost=0 over=0 | pipe=[1] r=1 lost=0 over=0 | fb=[1] r=1 lost=0 over=0 | casc=[1] r=1 lost=0 over=0
+single_03.pdf      exp=[1] | base=[1] r=1 lost=0 over=0 | pipe=[1] r=1 lost=0 over=0 | fb=[1] r=1 lost=0 over=0 | casc=[1] r=1 lost=0 over=0
+single_04.pdf      exp=[1] | base=[1] r=1 lost=0 over=0 | pipe=[1] r=1 lost=0 over=0 | fb=[1] r=1 lost=0 over=0 | casc=[1] r=1 lost=0 over=0
+single_05.pdf      exp=[1] | base=[1] r=1 lost=0 over=0 | pipe=[1] r=1 lost=0 over=0 | fb=[1] r=1 lost=0 over=0 | casc=[1] r=1 lost=0 over=0
+
+TOTAL files=6 expected=39 base: right=39 lost-vs-base=0 over-splits=0 | pipe: right=39 lost-vs-base=0 over-splits=0 | fb: right=39 lost-vs-base=0 over-splits=0 | casc: right=39 lost-vs-base=0 over-splits=0
