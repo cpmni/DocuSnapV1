@@ -29,11 +29,10 @@ const quiet = (fn) => { const o = console.log; console.log = () => {}; try { ret
 // number/date witness) starts a new document; the names ride their OWN temp JSON (`--known-suppliers-file`).
 // mig 180 (2026-09-17): segment_pair_hold — the S4 silent-truncation belt; NO argv (the Python `weak_pages` class is
 // unconditional metadata, the JS consumer is the switched half — read at the stamp site like mig 176's).
-// segment_continuation_veto (mig 177) GRADUATED to a customer default via mig 181 on 2026-09-17 (owner go) — its home is now
-// database/test_default_flip_177.js; the argv pin for `--continuation-veto` stays below.
-const SEEDS = [{ key: 'segment_title_slug', mig: 178, flag: '--title-slug' },
-               { key: 'segment_known_supplier_change', mig: 179, flag: '--known-supplier-change' },
-               { key: 'segment_pair_hold', mig: 180, flag: null }];
+// segment_continuation_veto (mig 177), segment_title_slug (178) and segment_known_supplier_change (179) GRADUATED to
+// customer defaults via migs 181/182/183 on 2026-09-17 (owner go) — their homes are database/test_default_flip_177.js and
+// database/test_default_flip_178_179.js; their argv pins stay below.
+const SEEDS = [{ key: 'segment_pair_hold', mig: 180, flag: null }];
 const src = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
 
 for (const s of SEEDS) {
@@ -70,7 +69,8 @@ console.log('\nargv is the ONLY kill (the pre-pass spawn env carries no DB-bridg
     !/SEGMENT_TITLE_SLUG|SEGMENT_CONTINUATION_VETO|SEGMENT_KNOWN_SUPPLIER_CHANGE/.test(hsrc));
   const py = fs.readFileSync(path.join(REPO, 'python_backend', 'segment_docs.py'), 'utf8');
   for (const s of SEEDS) if (s.flag) check(`segment_docs.py takes ${s.flag}`, py.includes(`"${s.flag}"`));
-  check('segment_docs.py still takes --continuation-veto (the graduated mig-177 switch rides argv exactly as before)', py.includes('"--continuation-veto"'));
+  check('segment_docs.py still takes --continuation-veto / --title-slug / --known-supplier-change (the graduated switches ride argv exactly as before)',
+    py.includes('"--continuation-veto"') && py.includes('"--title-slug"') && py.includes('"--known-supplier-change"'));
   check('segment_docs.py reads NO env switch for these', !/SEGMENT_TITLE_SLUG|SEGMENT_CONTINUATION_VETO|SEGMENT_KNOWN_SUPPLIER_CHANGE|SEGMENT_PAIR_HOLD/.test(py));
   check('segment_docs.py arms the rule only with --known-supplier-change AND a non-empty names list',
     py.includes('if isinstance(names, list) and names:') && py.includes('known=known'));

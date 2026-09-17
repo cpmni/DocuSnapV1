@@ -3736,6 +3736,54 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 181 (segment_continuation_veto default ON): ${e.message}`); }
   }
 
+  // ── migration 182: segment_title_slug GRADUATES to a customer default (2026-09-17 evening, owner go). The
+  //    multi-document separator now reads each page's own printed title ("DELIVERY NOTE", "WORKSHEET") before
+  //    matching it to a template — as a CASCADE (trusted title → any installed slug → today's 3-arg call, each step
+  //    falling back on None / type_refused, so a page can never lose today's boundary). Root cause it fixes: on a
+  //    same-letterhead supplier the sibling fingerprints are identical, so the tie-break picked the most-confirmed
+  //    sibling every time and the type-presence veto refused it whenever that type's heading was absent → the
+  //    supplier's LESS-common document types were glued onto the previous document. Gate (gary → Oracle (A)
+  //    SIGN-OFF-W/COND C1-C7; docs/designs/SEPARATOR_ACCURACY_2026-09-16.md): stacks 72 → 79/95 boundaries with 0
+  //    lost ✓ · extended controls over-splits ≤ base per file (strictly fewer) ✓ · real_34 34/34 ✓ · e2e truncation
+  //    0 ✓ · the Oracle's coupling (slice 2 OR a measured 0 delta on the logo-only / name-line p2 controls) met by
+  //    measurement (0 in every arm) ✓. mig 178 seeded 'false' (kept), so this is an UPSERT; a deliberate 'false'
+  //    still turns it off. Argv-only switch (`--title-slug` + the doc-types/config files, emitted by
+  //    _separationOpts at both callers). DELISTED from dark_switches.js the SAME commit. Pinned by
+  //    database/test_default_flip_178_179.js. Permanent default flip, so it carries the label:
+  // @DEFAULT_FLIP 182
+  if (!applied.has(182)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('segment_title_slug', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (182)').run();
+      console.log("JS migration 182 applied: segment_title_slug ON by default (UPSERT true) — the separator reads each page's own title; gate green, graduated");
+    } catch (e) { console.warn(`  migration 182 (segment_title_slug default ON): ${e.message}`); }
+  }
+
+  // ── migration 183: segment_known_supplier_change GRADUATES to a customer default (2026-09-17 evening, owner go).
+  //    A non-first page in a scanned stack whose letterhead band names one of the install's OWN known suppliers
+  //    (human confirms >= 3 + frozen taught identities — learning.getKnownSupplierNames) that differs from every
+  //    known name on the current document's first page, AND carries a labelled number/date marker (or a recipient
+  //    block + a real date, or a trusted title when mig 178 is armed), starts a new document — the template-free leg
+  //    the separator lacked (a non-templated stack imported WHOLE and auto-filed under page 1). Guards, each with its
+  //    own control: name admission (no "PT"/"ME"/"Chris Docs"), the ONE letterhead-band definition + an item-table
+  //    cut + a 6-line bound, the c/o / delivered-by / via / attn / FAO exclusion, a money-line exclusion, suffix-
+  //    stripped prefix-tolerant same-supplier (suppress-only), the first-page SET as a wide read, "unknown → known"
+  //    DROPPED + pinned, the continuation veto last. Gate (gary → Oracle SIGN-OFF-W/COND C1-C9, 2026-09-17): stacks
+  //    79 → 91/95 with 0 lost and 0 over-splits ✓ · controls1-5 0 new over-splits ✓ · real_34 + singles 39/39 ✓ ·
+  //    the owner's own multi-page PDFs 0 unexplained plan changes ✓ · e2e (three switches, 72 files, 189 docs) added
+  //    0 truncations ✓. mig 179 seeded 'false' (kept), so this is an UPSERT; a deliberate 'false' still turns it off.
+  //    Argv-only switch (`--known-suppliers-file X --known-supplier-change`, the names on their OWN temp JSON written
+  //    by _separationOpts at both callers). DELISTED from dark_switches.js the SAME commit. Pinned by
+  //    database/test_default_flip_178_179.js. Permanent default flip, so it carries the label:
+  // @DEFAULT_FLIP 183
+  if (!applied.has(183)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('segment_known_supplier_change', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (183)').run();
+      console.log('JS migration 183 applied: segment_known_supplier_change ON by default (UPSERT true) — a page naming a different known supplier starts a new document; gate green, graduated');
+    } catch (e) { console.warn(`  migration 183 (segment_known_supplier_change default ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

@@ -23,10 +23,11 @@ touches that area — read the pointed-to doc BEFORE working in it:
 
 ## ⏭ LATEST — 2026-09-17 AFTERNOON (the S4 SILENT-TRUNCATION BELT built DARK, mig 180 · the `vinny-video` agent created):
 **READ `HANDOVER_2026-09-17.md` FIRST** (written for a claude-opus-4-8 session: explicit, step-by-step). Branch
-`feat/teach-side-overnight`; **HEAD = the mig-181 flip commit on `2a88d1f` (docs) on `6514f3f` (vinny) on `2e9f72a` (the belt); origin
-BEHIND — NOT pushed (owner's call);** migration **181** (**mig 181 = `segment_continuation_veto` FLIPPED ON by default, owner's go
-2026-09-17 evening; `deskew_corrob_autofile` stays OFF; flips of 178/179 = owner decision pending, explanations given**);
-`TEST_SWITCH_KEYS` **49**; `node scripts/run-pins.js` **385/385** before the flip (re-run at the next start). The owner's 7
+`feat/teach-side-overnight`; **HEAD = the migs-182/183 flip commit on `70dda77` (mig 181) on `2a88d1f` (docs) on `6514f3f` (vinny) on
+`2e9f72a` (the belt); origin BEHIND — NOT pushed (owner's call);** migration **183** (**migs 181/182/183 = `segment_continuation_veto` /
+`segment_title_slug` / `segment_known_supplier_change` FLIPPED ON by default, owner's go 2026-09-17 evening, each `@DEFAULT_FLIP` +
+delisted + pinned (`test_default_flip_177.js`, `test_default_flip_178_179.js`); `deskew_corrob_autofile` stays OFF by decision**);
+`TEST_SWITCH_KEYS` **47**; `node scripts/run-pins.js` **385/385** before the flips (re-run at the next start, expect 387 files). The owner's 7
 `tools/video_tutorials/` edits stay uncommitted (theirs). The sandbox app (live-DB COPY) is still up on DevTools port 9223 — harmless.
 **Built:** the morning's e2e had caught the S4 class live (a 2-page doc whose page 2 repeats the letterhead with no page marker →
 cut at page 2 on the letterhead alone → page 1 AUTO-FILED as a complete 1-page doc, page 2 orphaned). gary → Oracle
@@ -43,7 +44,7 @@ functions, `weak_cut_census2.py`): exhibits 4/4 weak, real_34 0/33, stacks ~22 w
 **all 4 exhibit pairs held + marked, truncatedAutoFiled 0, no genuine doc held.** `hasSegmentHold` = EITHER family;
 `carrySegmentHold` carries every mark-bearing sentence; reason panel subkind `pair`. **Flip gate (Oracle): C9 cells (rasterised
 real_34, a young-install stack, the email-arm-only class arm, 178+179+belt over controls3/5) + C12 a one-click "Re-import as one
-document"/Rejoin — build C12 FIRST.** 177/178/179 gates green → flips = owner's call. **Also:** `.claude/agents/vinny-video.md`
+document"/Rejoin — build C12 FIRST.** 177/178/179 FLIPPED (migs 181-183). **Also:** `.claude/agents/vinny-video.md`
 (two-phase tutorial producer; British English, ONE voice per video alternating Ryan/Sonia across videos, 5-min cap). Traps: a
 PowerShell-written JSON carries a BOM; rebuild e2e folders in PowerShell not a bash `$(py -c …)` loop; restart the sandbox app
 after a `split_plan.js` change; PowerShell cannot run heredocs (commit via the Bash tool). **NEXT:** push? · C12 (barry+eric →

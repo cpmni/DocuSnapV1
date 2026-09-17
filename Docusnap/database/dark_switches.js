@@ -255,22 +255,13 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // segment_continuation_veto (mig 177, 2026-09-16, Oracle (B) slice 1) GRADUATED 2026-09-17 via mig 181 @DEFAULT_FLIP
   // (owner go; gate C8 green: 0/14 repeat-letterhead controls cut, stacks/real_34 lost 0, e2e truncation 0) — DELISTED;
   // pinned by database/test_default_flip_177.js. The setting stays the kill (`--continuation-veto` rides argv).
-  // segment_title_slug (mig 178, 2026-09-16, gary → Oracle (A) SIGN-OFF-W/COND C1-C7): the pre-pass matched pages
-  // WITHOUT the page's own title, so a same-letterhead sibling tie fell to the most-confirmed sibling and the
-  // type-presence veto refused it → the page could never be a boundary (every missed boundary in the templated
-  // stacks). When ON, the title is threaded as a cascade (trusted → untrusted installed slug → today's call, each
-  // falling back on None/refuse — never loses today's boundary): 72/95 → 79/95, 0 lost, 0 over-splits. Argv-only
-  // kill (`--title-slug` + the doc-types/config files). Byte-identical OFF. ⚑ FLIP GATE (Oracle C5-C7): the
-  // extended controls over-splits <= base per file + stacks lost 0 + real_34 34/34 + the truncation metric 0, AND
-  // (B) slice 2 (supplier-aware identity_change) shipped — or the logo-only/name-line p2 controls measured 0 delta.
-  'segment_title_slug',
-  // mig 179 (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C9): a non-first page whose letterhead band names a DIFFERENT
-  // known supplier (the install's own human-confirmed / frozen identities) and carries a labelled number/date marker
-  // starts a new document — the template-free leg the separator lacked (a whole non-templated stack imported WHOLE and
-  // auto-filed under page 1). Argv-only kill (`--known-suppliers-file` + `--known-supplier-change`). ⚑ FLIP GATE
-  // (Oracle C4-C6): controls1-5 0 over-splits with the shipped functions + stacks >= 91/95 lost 0 + real_34 34/34 +
-  // the 179-ON/178-OFF cell + e2e (truncation 0 AND held-wrong-cut 0) + the owner's own multi-page PDFs OFF-vs-ON diff.
-  'segment_known_supplier_change',
+  // segment_title_slug (mig 178, 2026-09-16, gary → Oracle (A) C1-C7) GRADUATED 2026-09-17 via mig 182 @DEFAULT_FLIP (owner
+  // go; gate green: stacks 72 → 79/95 lost 0, extended controls over-splits ≤ base, real_34 34/34, e2e truncation 0, the
+  // logo-only/name-line p2 delta 0) — DELISTED; pinned by database/test_default_flip_178_179.js. Argv-only switch (`--title-slug`).
+  // segment_known_supplier_change (mig 179, 2026-09-17, gary → Oracle C1-C9) GRADUATED 2026-09-17 via mig 183 @DEFAULT_FLIP
+  // (owner go; gate green: stacks 79 → 91/95 lost 0 over-splits 0, controls1-5 0 new over-splits, real_34 39/39, the owner's
+  // PDFs 0 unexplained deltas, e2e +0 truncations) — DELISTED; pinned by database/test_default_flip_178_179.js. Argv-only
+  // switch (`--known-suppliers-file X --known-supplier-change`).
   // mig 180 (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C12): the S4 silent-truncation belt — a WEAK (letterhead-only)
   // 1-page cut whose two halves read as ONE document (same supplier, no date on the later page, the same/no number)
   // holds BOTH halves with a durable "— confirm once." note; a complete later page releases the earlier one. The pre-pass

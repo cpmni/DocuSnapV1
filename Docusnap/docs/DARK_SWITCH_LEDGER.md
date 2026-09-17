@@ -112,12 +112,12 @@ NEW dark keys landed the same day (migs 177/178, the scanned-stack splitting fix
   controls), and on a manual import page 1 filed as a one-page invoice with page 2 lost as an orphan. _Census: 0/14
   controls cut (was 10), nothing lost on the stacks, the 34-alert bundle unchanged, end-to-end truncation 0
   (RESULT.md "e2e"). See DONE below._
-- **segment_title_slug** (mig 178) — the splitter now reads each page's own printed title before matching it to a
-  template, so a supplier's less-common document types (a sales order after a worksheet from the same letterhead)
-  are cut correctly instead of riding on the previous page. _Census: 72 → 79 of 95 boundaries, none lost, no new
-  over-splits; the Oracle's feared side-effect on logo-only continuation pages measured 0. Flip gate: the same
-  truncation count + the owner's go (the Oracle's alternative condition — a 0 delta on those controls — is met)._
-- **segment_known_supplier_change** (mig 179, 2026-09-17) — when a page in a scanned stack carries the name of one of
+- ~~**segment_title_slug**~~ (mig 178) — **✅ FLIPPED ON 2026-09-17 (mig 182), owner's go.** The splitter reads each page's
+  own printed title before matching it to a template, so a supplier's less-common document types (a sales order after
+  a worksheet from the same letterhead) are cut correctly instead of riding on the previous page. _Census: 72 → 79 of
+  95 boundaries, none lost, no new over-splits; the Oracle's feared side-effect on logo-only continuation pages
+  measured 0; end-to-end truncation 0. See DONE below._
+- ~~**segment_known_supplier_change**~~ (mig 179, 2026-09-17) — **✅ FLIPPED ON 2026-09-17 (mig 183), owner's go.** When a page in a scanned stack carries the name of one of
   YOUR OWN known suppliers (a company you have confirmed at least three times, or one of your taught layouts) and it is
   a different company from the page before, plus an invoice/order/docket number or date label, the splitter starts a
   new document there. Closes the case where a stack of documents from suppliers you have not taught a layout for was
@@ -173,7 +173,12 @@ the correct date files instead of waiting (census: one swap, it was the right da
 one held for a look (soak: real 34-page bundle 34/34, nothing lost, nothing looped, nothing over-split, nothing
 filed unseen); **segment_continuation_veto** (mig 181, 2026-09-17) — a page that says "Page 2 of 2" / "continued" /
 "brought forward" is never cut off as a separate document, so a two-page invoice that repeats its letterhead stays
-whole (census: 0 of 14 controls cut, nothing lost, end-to-end truncation 0). All five still switchable off. Earlier: **filing_sanity_confusable_soften** (reclassify a
+whole (census: 0 of 14 controls cut, nothing lost, end-to-end truncation 0); **segment_title_slug** (mig 182, 2026-09-17) —
+the splitter reads each page's printed title first, so a supplier's less-common paper types start their own document
+(72 → 79 of 95 stack boundaries, none lost, none over-split); **segment_known_supplier_change** (mig 183, 2026-09-17) — a
+page naming a different one of your well-known suppliers, with a number or date label, starts a new document even with
+no taught layout for that paper (79 → 91 of 95, none lost, none over-split, your own PDFs unchanged apart from the
+wrongly merged cuts, end-to-end truncation 0). All seven still switchable off. Earlier: **filing_sanity_confusable_soften** (reclassify a
 one-glyph confusable — census passed, shipped), **ocr_parallel_import_enabled** (faster imports), **money_sign_capture**
 (read `CR` / parentheses as a credit sign). The pad-window reads that make clipped crops read correctly
 (**template_pad_window_read/code**) and the projection-variance straightener are also on by default. So the pipeline

@@ -42,7 +42,7 @@ check('migration 163 stamped', applied.has(163));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 163 applied/.test(l) && /seeded OFF/.test(l)));
 check(`a fresh (non-TEST) install ends with ${KEY} === 'false' (DARK)`, get(db, KEY) === 'false');
 check(`${KEY} is in TEST_SWITCH_KEYS`, TEST_SWITCH_KEYS.includes(KEY));
-check('TEST_SWITCH_KEYS is now 49 (mig 163 + departments_enabled + mig 166 date-yield + mig 167 date_forms_wide; direct_intake_enabled graduated via mig 171 2026-09-15; name_role_nonname_flag + ref_confusable_flag + template_pad_date_adopt + watch_separate_enabled graduated via migs 172-175 2026-09-16, all delisted; +segment_title_slug (178) 2026-09-16; +segment_known_supplier_change (179) +segment_pair_hold (180) 2026-09-17; segment_continuation_veto (177) GRADUATED via mig 181 2026-09-17 + delisted)', TEST_SWITCH_KEYS.length === 49);
+check('TEST_SWITCH_KEYS is now 47 (mig 163 + departments_enabled + mig 166 date-yield + mig 167 date_forms_wide; direct_intake_enabled graduated via mig 171 2026-09-15; name_role_nonname_flag + ref_confusable_flag + template_pad_date_adopt + watch_separate_enabled graduated via migs 172-175 2026-09-16, all delisted; +segment_pair_hold (180) 2026-09-17; segment_continuation_veto (177→181) + segment_title_slug (178→182) + segment_known_supplier_change (179→183) GRADUATED 2026-09-17 + delisted)', TEST_SWITCH_KEYS.length === 47);
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('mig 163 is an INSERT OR IGNORE seed of false', new RegExp(`INSERT OR IGNORE INTO settings \\(key, value\\) VALUES \\('${KEY}', 'false'\\)`).test(src));
 check('NO numbered force-ON twin exists', !new RegExp(`VALUES \\('${KEY}', 'true'\\)`).test(src));
