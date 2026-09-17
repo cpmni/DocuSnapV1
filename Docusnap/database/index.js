@@ -3713,6 +3713,29 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 180 (segment_pair_hold): ${e.message}`); }
   }
 
+  // ── migration 181: segment_continuation_veto GRADUATES to a customer default (2026-09-17, owner go). A page that
+  //    declares itself a continuation ("Page 2 of 2", "Page 3/3", "continued", "brought forward" / "B/F") is never
+  //    cut off as a new document by the multi-document separator — closes a PRE-EXISTING silent truncation (the
+  //    separator's first-page signature is a letterhead fingerprint, so a continuation page that repeats the
+  //    letterhead used to be cut: 6/6 repeat-letterhead controls were cut at page 2 by the shipped code; on a manual
+  //    import page 1 filed as a one-page document and page 2 orphaned). Gate (Oracle (B) slice 1, C8;
+  //    docs/designs/SEPARATOR_ACCURACY_2026-09-16.md): pure pins ✓ · the 14 repeat-letterhead controls 0/14 cut ✓ ·
+  //    stacks + real_34 lost-vs-base 0 ✓ · the end-to-end truncation metric 0 over a 134-doc armed import ✓ · the
+  //    "Page 1 of 2" stack cut exactly right ✓. OCR failure direction: a garbled marker = today's behaviour; a first
+  //    page misread as "Page 2 of 2" = an under-split → a multi-page cut → the mig-176 belt holds it. mig 177 seeded
+  //    'false' (INSERT OR IGNORE, kept for the upgrade path), so this is an UPSERT; a deliberate 'false' afterwards
+  //    still turns it off (rollback = one setting). Argv-only switch (`--continuation-veto`, read at both pre-pass
+  //    callers by _separationOpts). DELISTED from dark_switches.js the SAME commit. Pinned by
+  //    database/test_default_flip_177.js. Permanent default flip, so it carries the label:
+  // @DEFAULT_FLIP 181
+  if (!applied.has(181)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('segment_continuation_veto', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (181)').run();
+      console.log('JS migration 181 applied: segment_continuation_veto ON by default (UPSERT true) — a self-declared continuation page is never cut; gate green, graduated');
+    } catch (e) { console.warn(`  migration 181 (segment_continuation_veto default ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

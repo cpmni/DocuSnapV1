@@ -106,12 +106,12 @@ NEW dark keys landed the same day (migs 177/178, the scanned-stack splitting fix
 - **quick_reprocess_enabled** — the imageless quick-reprocess path (kept off; own gate).
 
 **Scanned-stack splitting (2026-09-16, both built after the watch soak; `docs/designs/SEPARATOR_ACCURACY_2026-09-16.md`):**
-- **segment_continuation_veto** (mig 177) — a page that says it is a continuation ("Page 2 of 2", "continued",
-  "brought forward") is never cut off as its own document. Fixes a pre-existing silent truncation: today a
-  multi-page invoice whose page 2 repeats the letterhead is cut in two (6 of 6 test controls), and on a manual
-  import page 1 files as a one-page invoice with page 2 lost as an orphan. _Census: 0/14 controls cut (was 10),
-  nothing lost on the stacks, the 34-alert bundle unchanged. Flip gate: the end-to-end truncation count = 0
-  (RESULT.md "e2e"). Owner's go._
+- ~~**segment_continuation_veto**~~ (mig 177) — **✅ FLIPPED ON 2026-09-17 (mig 181), owner's go.** A page that says it is a
+  continuation ("Page 2 of 2", "continued", "brought forward") is never cut off as its own document. Fixed a
+  pre-existing silent truncation: a multi-page invoice whose page 2 repeats the letterhead was cut in two (6 of 6 test
+  controls), and on a manual import page 1 filed as a one-page invoice with page 2 lost as an orphan. _Census: 0/14
+  controls cut (was 10), nothing lost on the stacks, the 34-alert bundle unchanged, end-to-end truncation 0
+  (RESULT.md "e2e"). See DONE below._
 - **segment_title_slug** (mig 178) — the splitter now reads each page's own printed title before matching it to a
   template, so a supplier's less-common document types (a sales order after a worksheet from the same letterhead)
   are cut correctly instead of riding on the previous page. _Census: 72 → 79 of 95 boundaries, none lost, no new
@@ -171,7 +171,9 @@ instead of filing under a wrong name (census: 6 fires, 2 held, nothing broken, t
 the correct date files instead of waiting (census: one swap, it was the right date, twice); **watch_separate_enabled**
 (mig 175) — a bundled scan dropped in the WATCH folder is now split into its documents like a manual import, each
 one held for a look (soak: real 34-page bundle 34/34, nothing lost, nothing looped, nothing over-split, nothing
-filed unseen). All four still switchable off. Earlier: **filing_sanity_confusable_soften** (reclassify a
+filed unseen); **segment_continuation_veto** (mig 181, 2026-09-17) — a page that says "Page 2 of 2" / "continued" /
+"brought forward" is never cut off as a separate document, so a two-page invoice that repeats its letterhead stays
+whole (census: 0 of 14 controls cut, nothing lost, end-to-end truncation 0). All five still switchable off. Earlier: **filing_sanity_confusable_soften** (reclassify a
 one-glyph confusable — census passed, shipped), **ocr_parallel_import_enabled** (faster imports), **money_sign_capture**
 (read `CR` / parentheses as a credit sign). The pad-window reads that make clipped crops read correctly
 (**template_pad_window_read/code**) and the projection-variance straightener are also on by default. So the pipeline

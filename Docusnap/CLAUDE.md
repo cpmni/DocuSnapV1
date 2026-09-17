@@ -23,8 +23,10 @@ touches that area — read the pointed-to doc BEFORE working in it:
 
 ## ⏭ LATEST — 2026-09-17 AFTERNOON (the S4 SILENT-TRUNCATION BELT built DARK, mig 180 · the `vinny-video` agent created):
 **READ `HANDOVER_2026-09-17.md` FIRST** (written for a claude-opus-4-8 session: explicit, step-by-step). Branch
-`feat/teach-side-overnight`; **HEAD = the docs commit on `6514f3f` (vinny) on `2e9f72a` (the belt); origin BEHIND — NOT pushed
-(owner's call);** migration **180**; `TEST_SWITCH_KEYS` **50**; `node scripts/run-pins.js` **385/385**. The owner's 7
+`feat/teach-side-overnight`; **HEAD = the mig-181 flip commit on `2a88d1f` (docs) on `6514f3f` (vinny) on `2e9f72a` (the belt); origin
+BEHIND — NOT pushed (owner's call);** migration **181** (**mig 181 = `segment_continuation_veto` FLIPPED ON by default, owner's go
+2026-09-17 evening; `deskew_corrob_autofile` stays OFF; flips of 178/179 = owner decision pending, explanations given**);
+`TEST_SWITCH_KEYS` **49**; `node scripts/run-pins.js` **385/385** before the flip (re-run at the next start). The owner's 7
 `tools/video_tutorials/` edits stay uncommitted (theirs). The sandbox app (live-DB COPY) is still up on DevTools port 9223 — harmless.
 **Built:** the morning's e2e had caught the S4 class live (a 2-page doc whose page 2 repeats the letterhead with no page marker →
 cut at page 2 on the letterhead alone → page 1 AUTO-FILED as a complete 1-page doc, page 2 orphaned). gary → Oracle
