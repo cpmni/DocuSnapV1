@@ -22,7 +22,9 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-09-17 AFTERNOON (the S4 SILENT-TRUNCATION BELT built DARK, mig 180 · the `vinny-video` agent created):
-**READ `HANDOVER_2026-09-17.md` FIRST** (written for a claude-opus-4-8 session: explicit, step-by-step). Branch
+**READ `HANDOVER_2026-09-17.md` FIRST** (written for a claude-opus-4-8 session: explicit, step-by-step), then
+`HANDOVER_2026-09-17_C12_AND_SWITCHES.md` (Part A = the C12 recovery action to design/build; Part B = every remaining
+dark switch grouped by the test it still needs + the suggested order). Branch
 `feat/teach-side-overnight`; **HEAD = the migs-182/183 flip commit on `70dda77` (mig 181) on `2a88d1f` (docs) on `6514f3f` (vinny) on
 `2e9f72a` (the belt); origin BEHIND — NOT pushed (owner's call);** migration **183** (**migs 181/182/183 = `segment_continuation_veto` /
 `segment_title_slug` / `segment_known_supplier_change` FLIPPED ON by default, owner's go 2026-09-17 evening, each `@DEFAULT_FLIP` +

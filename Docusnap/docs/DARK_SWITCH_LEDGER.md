@@ -37,6 +37,13 @@ the dark list. The same run re-checked two more: `deskew_corrob_autofile` did no
 owner flipped it too — **mig 174**. Then `watch_separate_enabled` (mig 175) after its soak was actually run. Two
 NEW dark keys landed the same day (migs 177/178, the scanned-stack splitting fixes below). **48 keys are dark.**
 
+**2026-09-17 UPDATE — the splitter arcs.** Two more dark keys landed (mig 179 `segment_known_supplier_change`, mig 180
+`segment_pair_hold`), then the owner reviewed the four green-gated ones: **`segment_continuation_veto` (mig 181),
+`segment_title_slug` (mig 182) and `segment_known_supplier_change` (mig 183) were FLIPPED ON**; `deskew_corrob_autofile`
+stays off pending further testing (owner's decision). **47 keys are dark.** The per-switch test plan + order now lives in
+`HANDOVER_2026-09-17_C12_AND_SWITCHES.md` Part B (the section counts in the headings below are stale — the bullets are
+the truth: 1 ready-but-declined · 5 held · 34 waiting · 1 parked · the Departments feature master · today's pair belt).
+
 ---
 
 ## 🟢 READY — safety test passed, awaiting your go (2)
