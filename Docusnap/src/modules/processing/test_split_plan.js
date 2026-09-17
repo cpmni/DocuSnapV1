@@ -69,5 +69,18 @@ check('no config file: --doc-types-file + --title-slug still emitted (patterns f
 a = buildSegmentArgs({ filePath: 'f.pdf', templatesFile: 't.json', tesseract: null, slips: false });
 check('legacy call (no new keys at all): argv unchanged', eq(a, ['--file', 'f.pdf', '--templates-file', 't.json']), JSON.stringify(a));
 
+console.log('§8 mig 179 segment_known_supplier_change: the known-supplier file + flag ride together or not at all (2026-09-17, Oracle C5)');
+a = buildSegmentArgs({ filePath: 'f.pdf', templatesFile: 't.json', tesseract: null, slips: false, knownSuppliersFile: 'k.json', knownSupplierChange: true });
+check('ON with a file: --known-suppliers-file k.json --known-supplier-change appended LAST',
+  eq(a, ['--file', 'f.pdf', '--templates-file', 't.json', '--known-suppliers-file', 'k.json', '--known-supplier-change']), JSON.stringify(a));
+a = buildSegmentArgs({ filePath: 'f.pdf', templatesFile: 't.json', tesseract: null, slips: false, knownSuppliersFile: null, knownSupplierChange: true });
+check('ON but no file: NOTHING emitted (never a null path, never the flag without its file)',
+  eq(a, ['--file', 'f.pdf', '--templates-file', 't.json']) && a.every(x => typeof x === 'string'), JSON.stringify(a));
+a = buildSegmentArgs({ filePath: 'f.pdf', templatesFile: 't.json', tesseract: null, slips: false, knownSuppliersFile: 'k.json', knownSupplierChange: false });
+check("OFF with the file known: today's argv byte-identical", eq(a, ['--file', 'f.pdf', '--templates-file', 't.json']), JSON.stringify(a));
+a = buildSegmentArgs({ filePath: 'f.pdf', templatesFile: 't.json', tesseract: null, slips: false, docTypesFile: 'd.json', configFile: 'c.json', titleSlug: true, continuationVeto: true, knownSuppliersFile: 'k.json', knownSupplierChange: true });
+check('all three ON: title → veto → known, in that order',
+  eq(a, ['--file', 'f.pdf', '--templates-file', 't.json', '--doc-types-file', 'd.json', '--config-file', 'c.json', '--title-slug', '--continuation-veto', '--known-suppliers-file', 'k.json', '--known-supplier-change']), JSON.stringify(a));
+
 console.log(`\n${fails ? 'FAIL' : 'PASS'} — ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);

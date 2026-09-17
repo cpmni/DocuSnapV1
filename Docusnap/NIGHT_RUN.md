@@ -382,6 +382,11 @@ Regenerate after a big import: `TESTING/_measure/reslice_20260830/_build_test_co
 confirm/teach from this folder into the LIVE app.
 
 ## DONE ledger (newest first) — do NOT repeat unless the "repeat if" condition holds
+- **2026-09-17 · separator arc 3 (mig 179 `segment_known_supplier_change`, DARK) — census with the SHIPPED functions +
+  the owner-PDF plan diff + the three-switch e2e.** Stacks 72 → 91/95 (0 lost, 0 over-splits; 4 residual each a named
+  trade), real_34 + singles 39/39, controls1-5 0 new over-splits, owner PDFs 0 unexplained deltas; e2e in
+  `TESTING/_measure/watch_separate_soak_20260916/e2e3_result.txt` (`e2e3_run.sh` = the reusable driver). Repeat if:
+  `ocr/segmentation.py`, `header_band_lines`, the known-supplier reader or the pre-pass argv changes.
 - **2026-09-16 DAY · `watch_separate_enabled` SOAK run (sandbox on a live-DB copy) → PASS → mig 175 default ON.**
   Analyzer PASS (16 split PDFs, 0 loop/loss/error/orphan), real 34-page bundle 34/34, 5/5 singles not over-split,
   91 segments all held, 0 auto-filed; synthetic same-logo stacks under-split = the separator's fingerprint floor

@@ -24,8 +24,9 @@ touches that area — read the pointed-to doc BEFORE working in it:
 ## ⏭ LATEST — 2026-09-16 DAY (the DARK-SWITCH FLIP CENSUS re-run at HEAD + the FIRST TWO FLIPS shipped):
 **READ `HANDOVER_2026-09-16_FLIPS.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD = the separator commit + its docs (`git log -3`; flips
 `764b397`/`cb60e3a`/`ad4b79b`, the belt `db04a8f`); origin CURRENT — everything PUSHED 2026-09-16;**
-migration **178**; pins 382/383 (the 1 red = the PRE-EXISTING `test_ref_class_fix.js` timing flake — ARM B hashes
-two corpora built at different moments); release gate "48 DARK keys guarded". The tree's
+migration **179** (179 = the 09-17 arc-3 seed, see the end of this block); pins 382/383 at 178 (the 1 red = the
+PRE-EXISTING `test_ref_class_fix.js` timing flake — ARM B hashes two corpora built at different moments); release gate
+"49 DARK keys guarded". The tree's
 7 `tools/video_tutorials/` modifications pre-date this session (owner's own, untouched). **Done:** the 700-corpus
 census re-run at mig 171 (copy+migrate the Desktop fixture; `TESTING/_measure/flip_corpus_20260912/CENSUS.md`
 2026-09-16 section + the reusable `rerun_20260916/` runner/comparator) — 159 + 156 IDENTICAL to 09-12 (M=0, real
@@ -51,8 +52,23 @@ truncation metric = 0 → **gates green, flips = owner's call**. Owed (Oracle): 
 residual, the never-split whole-stack class. Traps: the Bash tool's 10-min background cap
 (launch a census DETACHED via PowerShell `Start-Process bash`); a `TaskStop` leaves the bash running its NEXT arm
 (kill by PID, bash first); never run pins while arms run; the soak sandbox app may still be up on port 9223.
+**09-17 morning (the same "continue"): separator ARC 3 built DARK — mig 179 `segment_known_supplier_change`**
+(handover "FIFTH thing"; `docs/designs/SEPARATOR_ACCURACY_2026-09-16.md` "Arc 3"; Oracle 2026-09-17 C1-C9): a page
+naming a DIFFERENT known supplier (the install's own human-confirmed ≥ 3 / frozen identities via
+`learning.getKnownSupplierNames`, the 18th excluded-reader) with a labelled number/date witness starts a new document
+— the template-free leg (a non-templated stack imported WHOLE under page 1, the class the mig-176 belt cannot see).
+`segmentation.walk_boundaries` = the pure page walk; `template_matcher.header_band_lines` = the ONE band definition;
+the names ride their OWN temp JSON (`_separationOpts(db, args, tempFiles)`; never buildTrainingArgs' args); argv-only
+kill. Census with the SHIPPED functions: stacks 72 → 79 → **91/95** (0 lost, 0 over-splits; 4 residual = named
+trades), controls1-5 0 new over-splits, the owner's PDFs 0 unexplained deltas; e2e three switches (72 files, 189 docs):
+mig 179 adds 0 truncations, `bundle_05` held 2-page + 1-page, whole-file parity identical → RESULT.md "Arc 3".
+**Flip = owner's call.** ⚠ **The wider e2e set CAUGHT the S4 class LIVE in TODAY's code:** a marker-less
+repeat-letterhead 2-page PO was cut at page 2 and its page 1 AUTO-FILED as a complete document (identical under base
+and 177+178) → the recommended NEXT arc (pendingfeatures.md 09-17 second entry: the Oracle's slice-3 belt, or a
+suppress-only "same supplier + no witness → never a fingerprint cut" extension of arc 3; gary → Oracle first). Still
+open: the same-issuer TYPE switch (`bundle_05`), slice 2, Rejoin. The sandbox app is up on port 9223 (harmless).
 **NEXT:** the 09-15 EVENING queue (VM live-test both installers; Departments D2b/D3/D4; client-Review S0) · a fresh
-build carries migs 172-175 · the watch-segment "look first" belt.
+build carries migs 172-176 · the flips of 177/178/179 (gates green, owner's call).
 
 ## Prior — 2026-09-15/16 NIGHT (the TUTORIAL-VIDEO tool built + FIVE YouTube tutorials recorded to `Desktop\Tutorials`):
 **READ `HANDOVER_2026-09-16_VIDEOS.md` FIRST.** No app code touched; pins untouched. New tooling

@@ -117,6 +117,22 @@ NEW dark keys landed the same day (migs 177/178, the scanned-stack splitting fix
   are cut correctly instead of riding on the previous page. _Census: 72 → 79 of 95 boundaries, none lost, no new
   over-splits; the Oracle's feared side-effect on logo-only continuation pages measured 0. Flip gate: the same
   truncation count + the owner's go (the Oracle's alternative condition — a 0 delta on those controls — is met)._
+- **segment_known_supplier_change** (mig 179, 2026-09-17) — when a page in a scanned stack carries the name of one of
+  YOUR OWN known suppliers (a company you have confirmed at least three times, or one of your taught layouts) and it is
+  a different company from the page before, plus an invoice/order/docket number or date label, the splitter starts a
+  new document there. Closes the case where a stack of documents from suppliers you have not taught a layout for was
+  never split at all — it imported as one file and filed under the first page's company. Guards: junk names ("PT",
+  "ME", "Chris Docs") never count; a "c/o …", "Delivered by …" or "Bill To" mention never counts; a name in the items
+  table never counts; the same company with "Ltd" added is the same company; a page that says "Page 2 of 2" is never
+  cut. _Census + end-to-end run: `TESTING/_measure/watch_separate_soak_20260916/RESULT.md` "Arc 3". Flip gate (Oracle
+  C4-C6): every control set 0 over-splits with the shipped code + the stacks ≥ 91/95 with nothing lost + the 34-alert
+  bundle 34/34 + the end-to-end run with all three splitter switches (no truncated cut, filed OR held) + your own
+  multi-page PDFs re-planned OFF vs ON with every difference reviewed. Owner's go. RESULT 2026-09-17: stacks 91/95
+  with nothing lost, every control set clean, your own PDFs unchanged except the wrongly-merged cuts, the end-to-end
+  run added no truncation and the un-split whole files filed exactly as before — gate green for THIS switch. The same
+  run also caught a PRE-EXISTING problem in today's shipping code: a 2-page order whose second page repeats the
+  letterhead with no page number was cut in two and its page 1 FILED as a complete document (page 2 left in Review).
+  That is not this switch; it is the next fix (pendingfeatures.md 2026-09-17)._
 
 ## ⚪ PARKED — measured to do nothing on current docs; stays off unless a real case appears (1)
 - **anchor_axis_lock** — reconstruct a free-text value's left edge from the label column. _Censused zero fires; needs a real docket corpus before it's worth flipping._

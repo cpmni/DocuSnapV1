@@ -25,7 +25,10 @@ let pass = 0, fail = 0;
 const check = (n, ok) => { if (ok) { pass++; console.log(`  ok  ${n}`); } else { fail++; console.log(`  FAIL ${n}`); } };
 const get = (db, k) => (db.prepare('SELECT value FROM settings WHERE key = ?').get(k) || {}).value;
 const quiet = (fn) => { const o = console.log; console.log = () => {}; try { return fn(); } finally { console.log = o; } };
-const SEEDS = [{ key: 'segment_continuation_veto', mig: 177, flag: '--continuation-veto' }, { key: 'segment_title_slug', mig: 178, flag: '--title-slug' }];
+// mig 179 (2026-09-17): segment_known_supplier_change — a page naming a DIFFERENT known supplier (+ a labelled
+// number/date witness) starts a new document; the names ride their OWN temp JSON (`--known-suppliers-file`).
+const SEEDS = [{ key: 'segment_continuation_veto', mig: 177, flag: '--continuation-veto' }, { key: 'segment_title_slug', mig: 178, flag: '--title-slug' },
+               { key: 'segment_known_supplier_change', mig: 179, flag: '--known-supplier-change' }];
 const src = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
 
 for (const s of SEEDS) {
@@ -50,15 +53,23 @@ console.log('\nargv is the ONLY kill (the pre-pass spawn env carries no DB-bridg
   check("handler reads segment_title_slug + segment_continuation_veto in _separationOpts and threads them as buildSegmentArgs opts",
     /titleSlug: learn\.getSetting\(db, 'segment_title_slug', 'false'\) === 'true'/.test(hsrc)
     && /continuationVeto: learn\.getSetting\(db, 'segment_continuation_veto', 'false'\) === 'true'/.test(hsrc));
-  check('BOTH pre-pass callers pass _separationOpts (watch separateFiles + the manual import block)',
-    hsrc.includes('_separationOpts(db, built && built.args)') && hsrc.includes('_separationOpts(db, trainingArgs)'));
-  check('no env bridge for either key (a DB→env bridge would be a dead switch in the pre-pass)',
-    !/SEGMENT_TITLE_SLUG|SEGMENT_CONTINUATION_VETO/.test(hsrc));
+  check('BOTH pre-pass callers pass _separationOpts WITH their cleanup array (watch separateFiles + the manual import block)',
+    hsrc.includes('_separationOpts(db, built && built.args, built ? built.tempFiles : null)') && hsrc.includes('_separationOpts(db, trainingArgs, tempFiles)'));
+  check('mig 179: the handler reads segment_known_supplier_change, asks learning.getKnownSupplierNames at minConfirms 3, writes its OWN temp JSON and pushes it to the caller\'s cleanup array',
+    /learn\.getSetting\(db, 'segment_known_supplier_change', 'false'\) === 'true'/.test(hsrc)
+    && /learn\.getKnownSupplierNames\(db, \{ minConfirms: 3 \}\)/.test(hsrc)
+    && /writeTempJson\('known_suppliers', names\)/.test(hsrc) && /tempFiles\.push\(f\)/.test(hsrc));
+  check('mig 179: the names file NEVER rides buildTrainingArgs (process_docs\' strict parse_args would refuse the flag)',
+    !/known-suppliers-file/.test(hsrc.slice(hsrc.indexOf('function buildTrainingArgs'), hsrc.indexOf('function _separationOpts'))));
+  check('no env bridge for any of the three keys (a DB→env bridge would be a dead switch in the pre-pass)',
+    !/SEGMENT_TITLE_SLUG|SEGMENT_CONTINUATION_VETO|SEGMENT_KNOWN_SUPPLIER_CHANGE/.test(hsrc));
   const py = fs.readFileSync(path.join(REPO, 'python_backend', 'segment_docs.py'), 'utf8');
   for (const s of SEEDS) check(`segment_docs.py takes ${s.flag}`, py.includes(`"${s.flag}"`));
-  check('segment_docs.py reads NO env switch for these', !/SEGMENT_TITLE_SLUG|SEGMENT_CONTINUATION_VETO/.test(py));
-  const hits = scan({ indexSrc: src, otherFiles: [], pkgJson: {} }).hits.filter(h => /17[78]/.test(String(h.detail)) || /segment_(title_slug|continuation_veto)/.test(String(h.detail)));
-  check('the release gate raises NO hit on migrations 177/178 (false seeds of listed keys)', hits.length === 0);
+  check('segment_docs.py reads NO env switch for these', !/SEGMENT_TITLE_SLUG|SEGMENT_CONTINUATION_VETO|SEGMENT_KNOWN_SUPPLIER_CHANGE/.test(py));
+  check('segment_docs.py arms the rule only with --known-supplier-change AND a non-empty names list',
+    py.includes('if isinstance(names, list) and names:') && py.includes('known=known'));
+  const hits = scan({ indexSrc: src, otherFiles: [], pkgJson: {} }).hits.filter(h => /17[789]/.test(String(h.detail)) || /segment_(title_slug|continuation_veto|known_supplier_change)/.test(String(h.detail)));
+  check('the release gate raises NO hit on migrations 177/178/179 (false seeds of listed keys)', hits.length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

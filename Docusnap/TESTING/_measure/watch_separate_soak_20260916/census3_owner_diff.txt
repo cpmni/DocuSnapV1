@@ -1,0 +1,23 @@
+207 PDFs under ['C:\\Users\\cmccu\\AppData\\Roaming/ScanFinder/inbox', 'C:/Users/cmccu/AppData/Local/Temp/claude/c--GIT-Projects-Docusnap/2d87d505-1b3b-4522-b756-384e51badc0d/scratchpad/soak/Filed']
+DELTA C:/Users/cmccu/AppData/Local/Temp/claude/c--GIT-Projects-Docusnap/2d87d505-1b3b-4522-b756-384e51badc0d/scratchpad/soak/Filed\Copperfield-Electrical\2026\February\Worksheet.24-02-2026.WS-69146.pdf (2 pages): two-switch [1] -> three-switch [1, 2]
+     p1: names=['Copperfield Electrical'] witness=True set=['Copperfield Electrical'] reason=document start
+     p2: names=['Thornbury Fasteners'] witness=True set=['Thornbury Fasteners'] reason=known supplier change
+DELTA C:/Users/cmccu/AppData/Local/Temp/claude/c--GIT-Projects-Docusnap/2d87d505-1b3b-4522-b756-384e51badc0d/scratchpad/soak/Filed\Marlowe-Medical-Supplies\2026\June\Sales-Order.07-06-2026.SO-90127.pdf (2 pages): two-switch [1] -> three-switch [1, 2]
+     p1: names=['Marlowe Medical Supplies'] witness=True set=['Marlowe Medical Supplies'] reason=document start
+     p2: names=['Ironbridge Fabrication'] witness=True set=['Ironbridge Fabrication'] reason=known supplier change
+DELTA C:/Users/cmccu/AppData/Local/Temp/claude/c--GIT-Projects-Docusnap/2d87d505-1b3b-4522-b756-384e51badc0d/scratchpad/soak/Filed\Marlowe-Medical-Supplies\2026\November\Sales-Order.21-11-2026.SO-66532.pdf (2 pages): two-switch [1] -> three-switch [1, 2]
+     p1: names=['Marlowe Medical Supplies'] witness=True set=['Marlowe Medical Supplies'] reason=document start
+     p2: names=['Vellum & Crane Stationers'] witness=True set=['Vellum & Crane Stationers'] reason=known supplier change
+DELTA C:/Users/cmccu/AppData/Local/Temp/claude/c--GIT-Projects-Docusnap/2d87d505-1b3b-4522-b756-384e51badc0d/scratchpad/soak/Filed\Ridgeway-Plant-Hire\2026\January\Delivery-Note.07-01-2026.DN-92788.pdf (2 pages): two-switch [1] -> three-switch [1, 2]
+     p1: names=['Ridgeway Plant Hire'] witness=True set=['Ridgeway Plant Hire'] reason=document start
+     p2: names=['Copperfield Electrical'] witness=True set=['Copperfield Electrical'] reason=known supplier change
+DELTA C:/Users/cmccu/AppData/Local/Temp/claude/c--GIT-Projects-Docusnap/2d87d505-1b3b-4522-b756-384e51badc0d/scratchpad/soak/Filed\Thornbury-Fasteners\2026\May\Worksheet.03-05-2026.WS-39650.pdf (3 pages): two-switch [1] -> three-switch [1, 3]
+     p1: names=['Thornbury Fasteners'] witness=True set=['Thornbury Fasteners'] reason=document start
+     p2: names=['Thornbury Fasteners'] witness=True set=['Thornbury Fasteners'] reason=continuation
+     p3: names=['Northgate Textiles'] witness=True set=['Northgate Textiles'] reason=known supplier change
+DELTA C:/Users/cmccu/AppData/Local/Temp/claude/c--GIT-Projects-Docusnap/2d87d505-1b3b-4522-b756-384e51badc0d/scratchpad/soak/Filed\Vellum-&-Crane-Stationers\2026\August\Delivery-Note.24-08-2026.DN-77201.pdf (2 pages): two-switch [1] -> three-switch [1, 2]
+     p1: names=['Vellum & Crane Stationers'] witness=True set=['Vellum & Crane Stationers'] reason=document start
+     p2: names=['Saltmarsh Seafoods'] witness=True set=['Saltmarsh Seafoods'] reason=known supplier change
+
+multi-page PDFs 25: identical plan 19, changed plan 6
+CENSUS3-DONE

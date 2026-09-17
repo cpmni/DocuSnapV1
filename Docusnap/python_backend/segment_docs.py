@@ -64,6 +64,11 @@ def main():
                         help="thread each page's own detected title into the template match (segment_title_slug)")
     parser.add_argument("--continuation-veto", action="store_true",
                         help="a page that declares itself a continuation is never a cut (segment_continuation_veto)")
+    parser.add_argument("--known-suppliers-file", default=None,
+                        help="JSON list of the install's known supplier names (for --known-supplier-change)")
+    parser.add_argument("--known-supplier-change", action="store_true",
+                        help="a non-first page naming a DIFFERENT known supplier (with a first-page witness) starts a "
+                             "new document (segment_known_supplier_change)")
     args = parser.parse_args()
 
     if not os.path.isfile(args.file):
@@ -108,10 +113,22 @@ def main():
             except Exception:
                 title_ctx = None
 
+    # Known-supplier population ONLY when --known-supplier-change AND the names file loads a non-empty list
+    # (mig 179; the list is admitted/prepared on this side — junk names never enter). Any failure → OFF (today's walk).
+    known = None
+    if args.known_supplier_change:
+        names = load_json_arg(args.known_suppliers_file)
+        if isinstance(names, list) and names:
+            try:
+                from ocr.segmentation import prepare_known_suppliers
+                known = prepare_known_suppliers(names) or None
+            except Exception:
+                known = None
+
     try:
         from ocr.segmentation import detect_segments
         res = detect_segments(args.file, templates, tesseract_path=args.tesseract,
-                              title_ctx=title_ctx, continuation_veto=bool(args.continuation_veto))
+                              title_ctx=title_ctx, continuation_veto=bool(args.continuation_veto), known=known)
         res["success"] = True
         if slip_aborted:
             # Visible in the dev-inspector trace: explains WHY a slip-bearing file fell

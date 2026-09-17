@@ -1,0 +1,26 @@
+  merged cut: #1173 bundle_01_split_p2-3.pdf pages 2,3 spans 2-2,3-3 status=needs_review marked=true
+  merged cut: #1186 bundle_05_split_p1-2.pdf pages 1,2 spans 1-1,2-2 status=needs_review marked=true
+  merged cut: #1213 bundle_mp_01_split_p3-6.pdf pages 3,6 spans 3-4,5-5,6-6 status=needs_review marked=true
+{
+ "docs": 189,
+ "unmatched": 0,
+ "exact": 178,
+ "wrongCut": 11,
+ "truncatedAutoFiled": 1,
+ "truncatedHeld": 7,
+ "merged": 3,
+ "mergedMarked": 3,
+ "mergedUnmarked": 0,
+ "onePageAuto": 82,
+ "onePageAutoIncomplete": 0,
+ "whole": 39
+}
+VIOLATIONS 8:
+  #1212 ctrl3_b2b_thornbury_split_p1.pdf TRUNCATED (pages 1,1 of GT 1,2 — Thornbury Fasteners invoice whose Bill To names Copperfield Electrical (a known supplier); p2 continuation (no marker) — must NOT split) and HELD (status=needs_review marked=false)
+  #1227 ctrl5_billto_copperfield_split_p1.pdf TRUNCATED (pages 1,1 of GT 1,2 — Copperfield Electrical invoice; multi-line Invoice To block naming Thornbury Fasteners two lines below the marker; p2 letterhead continuation — must NOT split) and HELD (status=needs_review marked=false)
+  #1229 ctrl3_b2b_thornbury_split_p2.pdf TRUNCATED (pages 2,2 of GT 1,2 — Thornbury Fasteners invoice whose Bill To names Copperfield Electrical (a known supplier); p2 continuation (no marker) — must NOT split) and HELD (status=needs_review marked=false)
+  #1230 ctrl5_blur_copperfield_split_p2.pdf TRUNCATED (pages 2,2 of GT 1,2 — Copperfield Electrical invoice with a BLURRED letterhead; p2 clean letterhead continuation — must NOT split (unknown->known dropped)) and HELD (status=needs_review marked=false)
+  #1233 ctrl5_billto_copperfield_split_p2.pdf TRUNCATED (pages 2,2 of GT 1,2 — Copperfield Electrical invoice; multi-line Invoice To block naming Thornbury Fasteners two lines below the marker; p2 letterhead continuation — must NOT split) and HELD (status=needs_review marked=false)
+  #1235 ctrl5_blur_copperfield_split_p1.pdf TRUNCATED (pages 1,1 of GT 1,2 — Copperfield Electrical invoice with a BLURRED letterhead; p2 clean letterhead continuation — must NOT split (unknown->known dropped)) and HELD (status=needs_review marked=false)
+  #1255 ctrl5_supplier_copperfield_split_p1.pdf TRUNCATED (pages 1,1 of GT 1,2) and AUTO-FILED
+  #1267 ctrl5_supplier_copperfield_split_p2.pdf TRUNCATED (pages 2,2 of GT 1,2 — Copperfield Electrical PO with 'Supplier: Thornbury Fasteners' in the band; p2 letterhead continuation — must NOT split) and HELD (status=needs_review marked=false)

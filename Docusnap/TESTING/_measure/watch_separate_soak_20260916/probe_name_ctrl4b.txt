@@ -1,0 +1,5 @@
+22 known supplier names
+ctrl4_bareco_copperfield.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | name_len=[1, 2] r=1 lost=0 over=1 | name_pos=[1, 2] r=1 lost=0 over=1 | name_top4=[1, 2] r=1 lost=0 over=1 | name_ctx=[1, 2] r=1 lost=0 over=1 | name_ctx_strict=[1, 2] r=1 lost=0 over=1
+ctrl4_bareco_thornbury.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | name_len=[1, 2] r=1 lost=0 over=1 | name_pos=[1, 2] r=1 lost=0 over=1 | name_top4=[1, 2] r=1 lost=0 over=1 | name_ctx=[1, 2] r=1 lost=0 over=1 | name_ctx_strict=[1, 2] r=1 lost=0 over=1
+
+TOTAL files=2 expected=2 base: right=2 lost-vs-base=0 over-splits=0 | both: right=2 lost-vs-base=0 over-splits=0 | name_len: right=2 lost-vs-base=0 over-splits=2 | name_pos: right=2 lost-vs-base=0 over-splits=2 | name_top4: right=2 lost-vs-base=0 over-splits=2 | name_ctx: right=2 lost-vs-base=0 over-splits=2 | name_ctx_strict: right=2 lost-vs-base=0 over-splits=2

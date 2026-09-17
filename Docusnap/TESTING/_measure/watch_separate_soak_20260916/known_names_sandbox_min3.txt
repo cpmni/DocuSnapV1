@@ -1,0 +1,22 @@
+20 known supplier names at minConfirms 3:
+  Bramblewood Joinery Ltd
+  Castellan Security Systems
+  Copperfield Electrical
+  Harrowgate Timber Supplies
+  Ironbridge Fabrication
+  Ironclad Tool Hire
+  Marlowe Medical Supplies
+  Meadowvale Dairy Wholesale
+  Nordwind Refrigeration Ltd
+  Northgate Textiles
+  Oakhaven Electrical Wholesale
+  Pelican Office Interiors
+  Print Tracker Doc
+  Ridgeway Plant Hire
+  Saltmarsh Seafoods
+  Silverbeck Cleaning Supplies
+  Thornbury Fasteners
+  Vellum & Crane Stationers
+  Veltrix Automotive Parts
+  PT
+written C:/Users/cmccu/AppData/Local/Temp/claude/c--GIT-Projects-Docusnap/2d87d505-1b3b-4522-b756-384e51badc0d/scratchpad/soak/known3.json

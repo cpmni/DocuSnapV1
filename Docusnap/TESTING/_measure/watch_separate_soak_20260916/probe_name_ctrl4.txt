@@ -1,0 +1,7 @@
+22 known supplier names
+ctrl4_by_copperfield.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | name_len=[1] r=1 lost=0 over=0 | name_pos=[1] r=1 lost=0 over=0 | name_top4=[1] r=1 lost=0 over=0 | name_ctx=[1] r=1 lost=0 over=0 | name_ctx_strict=[1] r=1 lost=0 over=0
+ctrl4_by_thornbury.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | name_len=[1] r=1 lost=0 over=0 | name_pos=[1] r=1 lost=0 over=0 | name_top4=[1] r=1 lost=0 over=0 | name_ctx=[1] r=1 lost=0 over=0 | name_ctx_strict=[1] r=1 lost=0 over=0
+ctrl4_co_copperfield.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | name_len=[1] r=1 lost=0 over=0 | name_pos=[1] r=1 lost=0 over=0 | name_top4=[1] r=1 lost=0 over=0 | name_ctx=[1] r=1 lost=0 over=0 | name_ctx_strict=[1] r=1 lost=0 over=0
+ctrl4_co_thornbury.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | name_len=[1] r=1 lost=0 over=0 | name_pos=[1] r=1 lost=0 over=0 | name_top4=[1] r=1 lost=0 over=0 | name_ctx=[1] r=1 lost=0 over=0 | name_ctx_strict=[1] r=1 lost=0 over=0
+
+TOTAL files=4 expected=4 base: right=4 lost-vs-base=0 over-splits=0 | both: right=4 lost-vs-base=0 over-splits=0 | name_len: right=4 lost-vs-base=0 over-splits=0 | name_pos: right=4 lost-vs-base=0 over-splits=0 | name_top4: right=4 lost-vs-base=0 over-splits=0 | name_ctx: right=4 lost-vs-base=0 over-splits=0 | name_ctx_strict: right=4 lost-vs-base=0 over-splits=0

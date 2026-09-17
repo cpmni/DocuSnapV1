@@ -40,7 +40,9 @@ for (const d of docs) {
     const truncated = covering.length === 1 && (range[1] - range[0] + 1) < (covering[0].pages[1] - covering[0].pages[0] + 1);
     const merged = covering.length > 1;
     if (merged) { T.merged++; if (marks.has(d.id)) T.mergedMarked++; else { T.mergedUnmarked++; bad.push(`#${d.id} ${d.original_filename} MERGED cut ${range} spans ${covering.length} GT docs and is NOT marked (status ${d.status})`); } }
-    if (truncated) { if (d.status === 'confirmed') { T.truncatedAutoFiled++; bad.push(`#${d.id} ${d.original_filename} TRUNCATED (pages ${range} of GT ${covering[0].pages}) and AUTO-FILED`); } else { T.truncatedHeld++; console.log(`  held wrong cut: #${d.id} ${d.original_filename} pages ${range} of GT ${covering[0].pages} (${covering[0].label}) status=${d.status} marked=${marks.has(d.id)}`); } }
+    // Oracle C6 (mig 179, 2026-09-17): a HELD wrong cut is a violation too — a false cut whose page 1 lands in Review
+    // is still a document sliced in two (the S4 silent class on manual import once a human confirms it unseen).
+    if (truncated) { if (d.status === 'confirmed') { T.truncatedAutoFiled++; bad.push(`#${d.id} ${d.original_filename} TRUNCATED (pages ${range} of GT ${covering[0].pages}) and AUTO-FILED`); } else { T.truncatedHeld++; bad.push(`#${d.id} ${d.original_filename} TRUNCATED (pages ${range} of GT ${covering[0].pages} — ${covering[0].label}) and HELD (status=${d.status} marked=${marks.has(d.id)})`); } }
     if (merged) console.log(`  merged cut: #${d.id} ${d.original_filename} pages ${range} spans ${covering.map(c => c.pages.join('-')).join(',')} status=${d.status} marked=${marks.has(d.id)}`);
   }
   if (p.range && range[0] === range[1] && d.status === 'confirmed') {
@@ -49,4 +51,4 @@ for (const d of docs) {
   }
 }
 console.log(JSON.stringify(T, null, 1));
-console.log(bad.length ? `VIOLATIONS ${bad.length}:\n  ` + bad.join('\n  ') : 'VIOLATIONS 0 — no truncated auto-file, every merged cut marked, every auto-filed 1-page cut has ref+date+supplier');
+console.log(bad.length ? `VIOLATIONS ${bad.length}:\n  ` + bad.join('\n  ') : 'VIOLATIONS 0 — no truncated cut (auto-filed OR held), every merged cut marked, every auto-filed 1-page cut has ref+date+supplier');

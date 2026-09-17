@@ -1,0 +1,80 @@
+{
+ "ctrl4_co_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "copperfield",
+    "label": "Copperfield Electrical invoice; p2 = letterhead + 'c/o Thornbury Fasteners' + items, no marker \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl4_by_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "copperfield",
+    "label": "Copperfield Electrical invoice; p2 = letterhead + 'Delivered by Thornbury Fasteners' + items, no marker \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl4_co_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "thornbury",
+    "label": "Thornbury Fasteners invoice; p2 = letterhead + 'c/o Saltmarsh Seafoods' + items, no marker \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl4_by_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "thornbury",
+    "label": "Thornbury Fasteners invoice; p2 = letterhead + 'Delivered by Saltmarsh Seafoods' + items, no marker \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl4_bareco_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "copperfield",
+    "label": "Copperfield Electrical invoice; p2 = BARE page starting 'c/o Thornbury Fasteners', no letterhead, no marker \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl4_bareco_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "thornbury",
+    "label": "Thornbury Fasteners invoice; p2 = BARE page starting 'c/o Saltmarsh Seafoods', no letterhead, no marker \u2014 must NOT split"
+   }
+  ]
+ }
+}

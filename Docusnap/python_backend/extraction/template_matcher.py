@@ -1300,6 +1300,14 @@ def header_band_text(ocr_text: str, max_lines: int = 20) -> str:
         Direct" letterhead at line 1 — a shorter fingerprint is safe, a gutted one is not).
         Harvest-side only, never retroactive — R1's intersect heals frozen fingerprints.
     Empty text → ''. A page whose FIRST line already carries a marker yields '' (no band)."""
+    return ' '.join(header_band_lines(ocr_text, max_lines))
+
+
+def header_band_lines(ocr_text: str, max_lines: int = 20) -> list:
+    """The letterhead band as its raw LINES — the exact lines header_band_text joins (ONE truncation rule;
+    the third consumer, 2026-09-17, is the separator's known-supplier-name rule, ocr/segmentation.py, which
+    needs line structure for its position bound + per-line context exclusions). Never call this with a
+    different rule in mind: change the truncation HERE and every consumer moves together."""
     _cpty_re = re.compile(r'\b(?:supplier|vendor)\b', re.IGNORECASE) \
         if os.environ.get('FINGERPRINT_COUNTERPARTY_MARKERS', '1') != '0' else None
     header_lines = []
@@ -1310,7 +1318,7 @@ def header_band_text(ocr_text: str, max_lines: int = 20) -> str:
         if _cpty_re is not None and _cpty_re.search(line):
             break  # buyer-issued counterparty block ("Supplier : <name>") — same rule
         header_lines.append(line)
-    return ' '.join(header_lines)
+    return header_lines
 
 
 def extract_keyword_fingerprint(ocr_text: str, max_words: int = 10) -> list:

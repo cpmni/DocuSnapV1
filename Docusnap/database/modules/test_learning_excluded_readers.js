@@ -52,6 +52,7 @@ console.log('1. SOURCE CONTRACT — every learning-feeding reader carries the ON
   const SITES = [
     // [file, function, the exact call form (alias!), minimum occurrences inside that function]
     ['database/modules/learning.js',     'findNearMatchIdentity',       "learningExcludedSql(db, '')", 1],   // bare FROM documents
+    ['database/modules/learning.js',     'getKnownSupplierNames',       "learningExcludedSql(db, '')", 1],   // mig 179 separator population (2026-09-17)
     ['database/modules/learning.js',     'getFieldFormats',             'learningExcludedSql(db)',     1],
     ['database/modules/learning.js',     'getFieldValueHistory',        'learningExcludedSql(db)',     1],
     ['database/modules/learning.js',     'getPrefixModelForScope',      'learningExcludedSql(db)',     1],
@@ -206,6 +207,7 @@ function snapshot(db, s) {
     docsFor:  learning.getDocumentsForFieldValue(db, { ...scope, value: 'INV1001' }).map(r => r.id),
     prefix:   (learning.getPrefixModelForScope(db, SUP, 'invoice', 'invoice_number') || {}).total || 0,
     near:     learning.findNearMatchIdentity(db, 'Anconia Corporatoin', { minConfirms: 1 }),   // 2 edits of the stored name
+    known:    learning.getKnownSupplierNames(db, { minConfirms: 4 }),                            // mig 179 separator population (5 confirms > 4 > 0)
     siteVar:  siteRow ? siteRow.is_variable : null,
     suspects: repairSuspects.computeSuspects(db, { document_type_slug: 'invoice' }),
     backfill: templateMerge.planBackfill(db),
@@ -246,6 +248,7 @@ const S = seedScope(armed);
   check('control: learning history 5 values; INV1001 -> doc A; prefix model total 5 (at its 5-count floor)',
         s0.history.length === 5 && s0.docsFor.join() === String(s.A) && s0.prefix === 5);
   check('control: the near-match gazetteer sees 5 human confirms', s0.near.near === true && s0.near.confirms === 5 && s0.near.source === 'confirms');
+  check('control: the separator population (mig 179) lists the supplier (5 >= 4)', s0.known.join() === SUP);
   check('control: `site` is VARIABLE (two distinct confirmed values in the type)', s0.siteVar === true);
   check('control: suspects + backfill run with the fragment armed (the SQL is valid)',
         s0.suspects && typeof s0.suspects.count === 'number' && Array.isArray(s0.backfill));
@@ -263,6 +266,7 @@ const S = seedScope(armed);
   check('stamp B: presence samples are 4', s1.nameN === 4 && s1.typeN === 4);
   check("stamp B: the type-ahead no longer offers B's value", s1.suggest.join() === without('INV1002'));
   check('stamp B: history 4 values; gazetteer confirms 4', s1.history.length === 4 && s1.near.confirms === 4);
+  check('stamp B: the separator population still lists the supplier (4 >= 4)', s1.known.join() === SUP);
   check('stamp B: the prefix model loses its evidence (4 < the 5-count dominance floor -> no model)', s1.prefix === 0);
   check('stamp B: `site` FREEZES again (the multi-valued witness left learning)', s1.siteVar === false);
   check('stamp B: search + the Repair browse list STILL see all five (filed, searchable, repairable)', s1.search === 5 && s1.browse === 5);
@@ -277,6 +281,7 @@ const S = seedScope(armed);
         s2.split.count === 0 && s2.nameN === 0 && s2.typeN === 0 && s2.suggest.length === 0
         && s2.history.length === 0 && s2.docsFor.length === 0 && s2.prefix === 0);
   check('all stamped: the gazetteer is EMPTY (Tier A gone; no frozen Tier B identity)', s2.near.near === false);
+  check('all stamped: the separator population is EMPTY (Tier A gone; no frozen Tier B identity)', s2.known.length === 0);
   check('all stamped: search + the Repair browse list STILL see all five', s2.search === 5 && s2.browse === 5);
 }
 
@@ -365,6 +370,8 @@ console.log('6. Q-C1 — a Quick File (intake=direct) row NEVER teaches, stays s
   check('Q-C1: the near-match gazetteer + prefix model ignore it (5, at floor)',
         learning.findNearMatchIdentity(db, 'Anconia Corporatoin', { minConfirms: 1 }).confirms === 5
         && ((learning.getPrefixModelForScope(db, SUP, 'invoice', 'invoice_number') || {}).total || 0) === 5);
+  check('Q-C1: the separator population (mig 179) never counts the typed doc (5 confirms: present at 5, absent at 6)',
+        learning.getKnownSupplierNames(db, { minConfirms: 5 }).join() === SUP && learning.getKnownSupplierNames(db, { minConfirms: 6 }).length === 0);
   check('Q-C1: the typed doc IS searchable (filed + findable — a Quick File doc is not hidden)',
         documents.search(db, { docType: 'invoice' }).length === 6);
   // NON-SWITCHABLE: the Learning Repair switch OFF does NOT re-admit a typed doc.

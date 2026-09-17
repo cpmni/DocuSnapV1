@@ -269,6 +269,13 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // extended controls over-splits <= base per file + stacks lost 0 + real_34 34/34 + the truncation metric 0, AND
   // (B) slice 2 (supplier-aware identity_change) shipped — or the logo-only/name-line p2 controls measured 0 delta.
   'segment_title_slug',
+  // mig 179 (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C9): a non-first page whose letterhead band names a DIFFERENT
+  // known supplier (the install's own human-confirmed / frozen identities) and carries a labelled number/date marker
+  // starts a new document — the template-free leg the separator lacked (a whole non-templated stack imported WHOLE and
+  // auto-filed under page 1). Argv-only kill (`--known-suppliers-file` + `--known-supplier-change`). ⚑ FLIP GATE
+  // (Oracle C4-C6): controls1-5 0 over-splits with the shipped functions + stacks >= 91/95 lost 0 + real_34 34/34 +
+  // the 179-ON/178-OFF cell + e2e (truncation 0 AND held-wrong-cut 0) + the owner's own multi-page PDFs OFF-vs-ON diff.
+  'segment_known_supplier_change',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

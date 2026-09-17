@@ -3664,6 +3664,32 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 178 (segment_title_slug): ${e.message}`); }
   }
 
+  // ── migration 179: segment_known_supplier_change seeded OFF (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C9).
+  //    After migs 177/178 the separator still misses a page whose supplier has NO template for that type — a whole
+  //    non-templated stack imports WHOLE and auto-files under page 1's identity (the class the mig-176 belt cannot
+  //    see: no cut, no rewrite to hold). When ON, a non-first page whose LETTERHEAD BAND names one of the install's
+  //    own KNOWN suppliers (human confirms >= 3 + frozen template identities, learning.getKnownSupplierNames) that
+  //    differs from every known name in the current document's first-page band, AND that carries a LABELLED
+  //    document-number/date marker (or a trusted title when mig 178 is armed), starts a new document
+  //    (segmentation.walk_boundaries "known supplier change"). Guards: name admission (no "PT"/"ME"/"Chris Docs"),
+  //    the ONE letterhead-band definition cut at recipient/counterparty markers + the item table + a 6-line position
+  //    bound, c/o / delivered-by context exclusion, money-line exclusion, suffix-stripped + prefix-tolerant
+  //    same-supplier (suppress-only), the FIRST-PAGE SET (an unlabelled recipient above the issuer never makes the
+  //    issuer a stranger), "unknown → known" DROPPED + pinned, the continuation veto last. Argv-only kill
+  //    (`--known-suppliers-file` + `--known-supplier-change`, both or neither; the names ride their own temp JSON,
+  //    never process_docs' strict args). DARK (in TEST_SWITCH_KEYS); byte-identical OFF. ⚑ FLIP GATE (Oracle C4-C6):
+  //    controls1-5 with the SHIPPED functions 0 over-splits + stacks >= 91/95 with 0 lost vs cascade+veto + real_34
+  //    34/34 + the 179-ON/178-OFF cell + the e2e with the three switches (truncation 0 AND held-wrong-cut 0, the
+  //    auto-file set of every non-split file identical) + the segment-plan OFF-vs-ON diff over the owner's own
+  //    multi-page PDFs reviewed.
+  if (!applied.has(179)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('segment_known_supplier_change', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (179)').run();
+      console.log(`JS migration 179 applied: segment_known_supplier_change (a page naming a different known supplier starts a new document) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 179 (segment_known_supplier_change): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

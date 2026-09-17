@@ -1,0 +1,182 @@
+{
+ "ctrl5_billto_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "copperfield",
+    "label": "Copperfield Electrical invoice; multi-line Invoice To block naming Thornbury Fasteners two lines below the marker; p2 letterhead continuation \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl5_coinv_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "copperfield",
+    "label": "Copperfield Electrical invoice; p2 BARE page 'c/o Thornbury Fasteners' + repeated Invoice No/Date + items \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl5_prefix_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "copperfield",
+    "label": "Copperfield Electrical invoice; p2 re-typed letterhead 'COPPERFIELD ELECTRICAL LTD' (prefix extension) + items, no marker \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl5_blur_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "copperfield",
+    "label": "Copperfield Electrical invoice with a BLURRED letterhead; p2 clean letterhead continuation \u2014 must NOT split (unknown->known dropped)"
+   }
+  ]
+ },
+ "ctrl5_supplier_copperfield.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "copperfield",
+    "label": "Copperfield Electrical PO with 'Supplier: Thornbury Fasteners' in the band; p2 letterhead continuation \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl5_billto_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "thornbury",
+    "label": "Thornbury Fasteners invoice; multi-line Invoice To block naming Saltmarsh Seafoods two lines below the marker; p2 letterhead continuation \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl5_coinv_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "thornbury",
+    "label": "Thornbury Fasteners invoice; p2 BARE page 'c/o Saltmarsh Seafoods' + repeated Invoice No/Date + items \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl5_prefix_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "thornbury",
+    "label": "Thornbury Fasteners invoice; p2 re-typed letterhead 'THORNBURY FASTENERS LTD' (prefix extension) + items, no marker \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl5_blur_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "thornbury",
+    "label": "Thornbury Fasteners invoice with a BLURRED letterhead; p2 clean letterhead continuation \u2014 must NOT split (unknown->known dropped)"
+   }
+  ]
+ },
+ "ctrl5_supplier_thornbury.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     2
+    ],
+    "src": "thornbury",
+    "label": "Thornbury Fasteners PO with 'Supplier: Saltmarsh Seafoods' in the band; p2 letterhead continuation \u2014 must NOT split"
+   }
+  ]
+ },
+ "ctrl5_nontpl2_a.pdf": {
+  "page_count": 2,
+  "docs": [
+   {
+    "pages": [
+     1,
+     1
+    ],
+    "src": "marlowe",
+    "label": "Marlowe invoice (no invoice template)"
+   },
+   {
+    "pages": [
+     2,
+     2
+    ],
+    "src": "ironbridge",
+    "label": "Ironbridge worksheet (no worksheet template) \u2014 MUST cut"
+   }
+  ]
+ },
+ "ctrl5_nontpl3_b.pdf": {
+  "page_count": 3,
+  "docs": [
+   {
+    "pages": [
+     1,
+     1
+    ],
+    "src": "ridgeway",
+    "label": "Ridgeway invoice (no invoice template)"
+   },
+   {
+    "pages": [
+     2,
+     2
+    ],
+    "src": "saltmarsh",
+    "label": "Saltmarsh invoice \u2014 MUST cut"
+   },
+   {
+    "pages": [
+     3,
+     3
+    ],
+    "src": "northgate",
+    "label": "Northgate invoice \u2014 MUST cut"
+   }
+  ]
+ }
+}

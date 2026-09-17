@@ -5493,3 +5493,38 @@ today) + real_34 34/34, via `seg_probe4.py`. Independent of the under-split titl
 > Rejoin) — barry/eric before slice 3's note points anywhere. Plain consequence the Oracle named: a Sage-class
 > page 2 (ref + date + supplier repeated) orphans as a `…-DUPLICATE.pdf` beside the truncated page 1 — two wrong
 > filed documents and nothing in Review.
+
+## 2026-09-17 — the separator's template-free leg BUILT DARK (mig 179 `segment_known_supplier_change`); the remaining hole = a SAME-issuer TYPE switch
+After migs 177/178 the separator still missed every page whose supplier has no template for that type, and a whole
+non-templated stack imported WHOLE and auto-filed under page 1 (the class the mig-176 belt cannot see: no cut, no
+rewrite to hold). Built DARK the same morning (gary → Oracle SIGN-OFF-W/COND C1-C9, `docs/oracle_log.md` 2026-09-17;
+`docs/designs/SEPARATOR_ACCURACY_2026-09-16.md` "Arc 3"): a non-first page whose letterhead band names one of the
+install's OWN known suppliers (human confirms ≥ 3 + frozen template identities) that differs from every known name in
+the current document's first-page band, with a labelled number/date marker, starts a new document. Flip gate = the
+census + e2e in `TESTING/_measure/watch_separate_soak_20260916/RESULT.md`.
+
+> **STILL OPEN — the same-issuer TYPE switch (the Oracle's premise correction).** `bundle_05` page 2 is a Thornbury
+> PURCHASE ORDER after a Thornbury WORKSHEET: the same issuer, so a supplier-name rule is structurally blind to it at
+> any confirm bar (it stays 2/3 by design — do not tell the owner "confirm it twice and it separates"). The lever is a
+> TWO-SIDED trusted-title signal: a page whose TRUSTED title (mig 178's `title_signal`) differs from the current
+> document's TRUSTED title — symmetric on both sides, so asymmetry-safe like the name rule; a one-sided "trusted
+> title on this page" would cut a Sage/Xero continuation (their page 2 repeats the heading). Needs the same census
+> (stacks / controls1-5 / real_34 / e2e) before a DARK build. Also still open from 2026-09-16: (B) slice 2 (supplier-
+> aware identity change), slice 3 (the orphan-shaped 1-page-cut belt), the Rejoin/recovery path, the 150-DPI heading-
+> garble residual (5/95).
+
+## 2026-09-17 — the S4 silent truncation CAUGHT LIVE: a marker-less repeat-letterhead page 2 → page 1 AUTO-FILED as a 1-page document (pre-existing; the arc-3 e2e's wider control set exposed it)
+The three-switch e2e (`TESTING/_measure/watch_separate_soak_20260916/e2e3_result.txt`) imported 72 files through the
+app's own road; four 2-page controls whose page 2 repeats the letterhead with NO page number / "continued" / marker
+(`ctrl3_b2b_thornbury`, `ctrl5_billto_copperfield`, `ctrl5_blur_copperfield`, `ctrl5_supplier_copperfield`) were cut at
+page 2 — identically under base and under migs 177+178 (the census, reason "first-page fingerprint") — and ONE of them,
+a buyer-issued Copperfield PO, AUTO-FILED its page 1 as a complete 1-page document while page 2 sat in Review as an
+orphan: two wrong outcomes, nothing to tell the operator the document was sliced. This is today's shipped behaviour on
+a manual import (the veto of mig 177 needs a printed marker; mig 176 holds only multi-page cuts). **Candidate levers
+(gary → Oracle before a build):** (a) the Oracle's slice 3 belt — a HEURISTIC 1-page cut with NO ref AND NO date AND
+the same supplier as the preceding segment → hold BOTH with the segment-hold sentence; (b) a SUPPRESS-ONLY extension of
+arc 3's machinery in the walk: a page whose known-supplier band name EQUALS the current document's (mig 179's
+`same_supplier` on the first-page SET) AND that carries NO first-page witness is never a first-page-fingerprint cut —
+template-free, fail-safe (a miss = a merged cut the mig-176 belt holds), measured on controls3/5 first (0 lost on the
+stacks / real_34 is the gate: a Print Tracker alert page names the same supplier AND carries its witness, so it must
+still cut). Either way a Rejoin / recovery path stays owed (the original sits in `.sf_separated_originals`).

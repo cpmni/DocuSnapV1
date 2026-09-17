@@ -183,6 +183,132 @@ check("detect_segments suppresses an otherwise-decided boundary on a self-declar
 check("decide_boundary itself is untouched (the veto sits in the walk, not the rule)", "first_signature = matched_id is not None and fp_overlap >= fp_floor" in src)
 print()
 
+# 9. mig 179 segment_known_supplier_change (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C3) — admission, the band read,
+#    same_supplier, the witness. All pure.
+print("known-supplier rule: admission, band, same_supplier, witness")
+check("admit: two content tokens", seg.admit_known_name("Copperfield Electrical") and seg.admit_known_name("Thornbury Fasteners Ltd"))
+check("admit: one token of >= 8 letters; a short single token never", seg.admit_known_name("Copperfield") and not seg.admit_known_name("Acme Ltd"))
+check("admit: 'PT' / 'ME' / 'new' / 'test' / 'wp' / '' never enter", not any(seg.admit_known_name(x) for x in ("PT", "ME", "new", "test", "wp", "", None)))
+check("admit: 'Chris Docs' / 'Sales Invoice' die to the chrome / stop-word / short-token strip",
+      not seg.admit_known_name("Chris Docs") and not seg.admit_known_name("Sales Invoice"))
+check("admit (documented): an 8-letter single token such as 'Finances' IS admitted by the rule — the >= 3 human-confirm bar of the population is what keeps a one-off test name out",
+      seg.admit_known_name("Finances"))
+check("admit: 'Print Tracker Doc' keeps its two content tokens; 'Nordwind Refrigeration Ltd' its two", seg.admit_known_name("Print Tracker Doc") and seg.admit_known_name("Nordwind Refrigeration Ltd"))
+known = seg.prepare_known_suppliers(["Copperfield Electrical", "Thornbury Fasteners Ltd", "PT", "Print Tracker Doc", "copperfield electrical ltd", None, ""])
+check("prepare: admitted only, deduped on the suffix-stripped key, longest names first",
+      [e["name"] for e in known] == ["Print Tracker Doc", "Copperfield Electrical", "Thornbury Fasteners Ltd"])
+P1 = "COPPERFIELD ELECTRICAL LTD\nUnit 7 Riverside Estate\nBristol BS2 0QY\n\nINVOICE\nInvoice To:\nThornbury Fasteners\n12 Trade Park\nInvoice No: INV-3321\nInvoice Date: 12/08/2026\nDescription Qty Unit Amount\nCable clips 12 4.20 50.40\n"
+check("band: the issuer is named; the recipient under 'Invoice To:' is NOT (the ONE band definition cuts before the counterparty block)",
+      seg.known_names_in_band(P1, known) == ["Copperfield Electrical"])
+check("band: the page's legal suffix is tolerated ('… LTD' matches the stripped key)", seg.known_names_in_band("Copperfield Electrical Ltd\nitems", known) == ["Copperfield Electrical"])
+check("band: word boundaries — 'Copperfield Electricals' / 'Thornbury Fastenersx' never match", seg.known_names_in_band("Copperfield Electricals\nThornbury Fastenersx\n", known) == [])
+check("band: a 'c/o <known>' line never counts, nor the line UNDER a bare 'c/o'",
+      seg.known_names_in_band("c/o Thornbury Fasteners\nInvoice No: 1\n", known) == [] and seg.known_names_in_band("c/o\nThornbury Fasteners\n", known) == [])
+check("band: 'Delivered by' / 'via' / 'FAO' / 'Attn:' / 'Collected by' / 'To:' contexts never count",
+      all(seg.known_names_in_band(f"{c} Thornbury Fasteners\n", known) == [] for c in ("Delivered by", "via", "FAO", "Attn:", "Collected by", "To:")))
+check("band: a line carrying a money amount is a line item, never a letterhead", seg.known_names_in_band("Description\nPrint Tracker Doc licence 1 240.00 240.00\n", known) == [])
+check("band: the item-table header ends the band (a known name in an item line below it never counts)",
+      seg.known_names_in_band("Some Header\nDescription Qty Unit Amount\nPrint Tracker Doc\n", known) == [])
+check("band: the position bound (Oracle C2) — the 7th non-empty line never counts, the 6th does",
+      seg.known_names_in_band("a\nb\nc\nd\ne\nf\nCopperfield Electrical\n", known) == [] and seg.known_names_in_band("a\n\nb\nc\nd\ne\nCopperfield Electrical\n", known) == ["Copperfield Electrical"])
+check("band: earliest first when two known names share the band (reading order)",
+      seg.known_names_in_band("Thornbury Fasteners\nCopperfield Electrical\n", known) == ["Thornbury Fasteners Ltd", "Copperfield Electrical"])
+check("band: a 'Supplier: <known>' counterparty line cuts the band (buyer-issued PO shape)", seg.known_names_in_band("Vellum & Crane\nSupplier: Thornbury Fasteners\n", known) == [])
+check("band: empty / None / no known list → []", seg.known_names_in_band("", known) == [] and seg.known_names_in_band(None, known) == [] and seg.known_names_in_band(P1, []) == [])
+check("same_supplier: equality, suffix-blind, prefix either way",
+      seg.same_supplier("Print Tracker", "Print Tracker Ltd") and seg.same_supplier("Copperfield Electrical Services", "Copperfield Electrical")
+      and seg.same_supplier("Copperfield Electrical", "Copperfield Electrical Services") and seg.same_supplier("Acme UK Ltd", "ACME"))
+check("same_supplier: different names differ; empty never same", not seg.same_supplier("Copperfield Electrical", "Thornbury Fasteners") and not seg.same_supplier("", "Thornbury"))
+check("PIN (Oracle Q4): prefix tolerance is SUPPRESS-ONLY — a genuinely different 'Copperfield Electrical Services Ltd' is a documented MISS (today's behaviour), never a false cut",
+      seg.same_supplier("Copperfield Electrical", "Copperfield Electrical Services Ltd"))
+check("witness: a LABELLED number / date marker", seg.has_first_page_witness("Docket No: DN-4471") and seg.has_first_page_witness("x\nInvoice Date: 1/2/26") and seg.has_first_page_witness("Our ref: 55"))
+check("witness: a bare 'No.' / 'Date ' / 'Part No.' / 'Registered No.' is NOT a witness (Oracle C1)",
+      not seg.has_first_page_witness("Part No. 5\nDate 1/2/26 items") and not seg.has_first_page_witness("Registered No. 12345 Date 01/01/2026"))
+check("witness: a trusted title counts only when the title arm read one", seg.has_first_page_witness("WORKSHEET\nitems", True) and not seg.has_first_page_witness("WORKSHEET\nitems", False))
+check("witness third arm (Oracle 2026-09-17): a recipient block AND a real date shape (the marker-poor delivery docket: 'Date 11/11/2026' + 'Deliver To')",
+      seg.has_first_page_witness("Saltmarsh Seafoods\nDate 11/11/2026\nDeliver To\nAldermoor Engineering\nitems") and seg.has_first_page_witness("Bill To: X\n3rd Aug 2026\n"))
+check("witness third arm PIN: a c/o continuation with a bare date but NO recipient block is NOT a witness",
+      not seg.has_first_page_witness("c/o Thornbury Fasteners\nDate 11/11/2026\nitems 12.00"))
+check("witness third arm: a recipient block with no date shape / a partial '12/08' / a bare digit run is NOT a witness",
+      not seg.has_first_page_witness("Deliver To\nX\nitems") and not seg.has_first_page_witness("Deliver To\nRef 12/08\n") and not seg.has_first_page_witness("Deliver To\nAccount 20261111\n"))
+check("witness third arm uses the separator's OWN recipient tuple (one definition)", "any(m in low for m in _RECIPIENT_MARKERS) and _DATE_SHAPE_RE.search(low)" in Path(__file__).parent.parent.joinpath("ocr", "segmentation.py").read_text(encoding="utf-8"))
+check("witness: empty / None → False", not seg.has_first_page_witness("") and not seg.has_first_page_witness(None))
+print()
+
+# 10. walk_boundaries — the PURE walk: OFF byte-identical to the old inline walk; the rule; the two PINS.
+print("walk_boundaries: OFF = today's walk; the rule; the veto beats it; unknown->known never; the first-page SET")
+CP, TF = "Copperfield Electrical", "Thornbury Fasteners"
+def sig(mid=None, ov=0.0, ds=False, sc=False, names=(), wit=False, wide=None):
+    return (mid, ov, ds, sc, list(names), wit, list(names) if wide is None else list(wide))
+legacy = [(4, 0.9, False, False), (4, 0.2, False, False), (5, 0.6, False, False), (None, 0.0, True, False), (4, 0.9, False, True)]
+f, r = seg.walk_boundaries(legacy, 0.5)
+check("OFF: legacy 4-tuple signals walk exactly as before (fingerprint / different template / doc-start / veto) with the same reasons",
+      f == [True, False, True, True, False] and r == ["document start", "continuation", "different template", "document-start header", "self-declared continuation"])
+f2, r2 = seg.walk_boundaries([sig(4, .9, names=[CP], wit=True), sig(None, 0, names=[TF], wit=True)], known_rule=False)
+check("known_rule False: names + witness present but IGNORED (today's walk)", f2 == [True, False] and r2 == ["document start", "continuation"])
+f3, r3 = seg.walk_boundaries([sig(4, .9, names=[CP], wit=True), sig(None, 0, names=[TF], wit=True)], known_rule=True)
+check("ON: a DIFFERENT known name + a witness → 'known supplier change'", f3 == [True, True] and r3[1] == "known supplier change")
+f4, _ = seg.walk_boundaries([sig(names=[CP]), sig(names=[TF], wit=False)], known_rule=True)
+check("ON: no witness → no cut", f4 == [True, False])
+f5, _ = seg.walk_boundaries([sig(names=[CP]), sig(names=[CP + " Ltd"], wit=True)], known_rule=True)
+check("ON: the same supplier (a suffix variant) → no cut", f5 == [True, False])
+f6, r6 = seg.walk_boundaries([sig(names=[CP]), sig(names=[TF], wit=True, sc=True)], known_rule=True)
+check("PIN: the continuation veto beats the rule ('Page 2 of 2' + a different known name → no cut)", f6 == [True, False] and r6[1] == "self-declared continuation")
+f7, r7 = seg.walk_boundaries([sig(names=[]), sig(names=[TF], wit=True)], known_rule=True)
+check("PIN: unknown -> known is NEVER a boundary (the current document named nobody known)", f7 == [True, False] and r7[1] == "continuation")
+f8, _ = seg.walk_boundaries([sig(names=[TF, CP]), sig(names=[CP], wit=True)], known_rule=True)
+check("FIRST-PAGE SET: an unlabelled recipient above the issuer on page 1 — page 2's issuer letterhead is IN the set → no cut", f8 == [True, False])
+f9, _ = seg.walk_boundaries([sig(names=[CP]), sig(names=[TF, CP], wit=True)], known_rule=True)
+check("the cut page's EARLIEST band name is the one tested (a stranger first → cut)", f9 == [True, True])
+f10, _ = seg.walk_boundaries([sig(names=[CP]), sig(names=[CP, TF], wit=True)], known_rule=True)
+check("… the issuer first → no cut even with a stranger later in the band", f10 == [True, False])
+f11, r11 = seg.walk_boundaries([sig(names=[CP]), sig(5, .9, names=[TF], wit=True)], known_rule=True)
+check("a boundary already decided keeps its own reason (the rule only ADDS cuts)", f11 == [True, True] and r11[1] == "different template")
+f12, _ = seg.walk_boundaries([sig(names=[CP]), sig(names=[TF], wit=True), sig(names=[TF], wit=True), sig(names=[CP], wit=True)], known_rule=True)
+check("after a cut the SET resets to the new document's first page (TF → TF no cut → CP cut)", f12 == [True, True, False, True])
+f13, _ = seg.walk_boundaries([sig(names=[CP]), sig(names=[], wit=True), sig(names=[TF], wit=True)], known_rule=True)
+check("a page naming nobody stays attached and does NOT reset the set (the next stranger still cuts)", f13 == [True, False, True])
+f14, _ = seg.walk_boundaries([sig(names=[TF], wide=[TF, CP]), sig(names=[CP], wit=True)], known_rule=True)
+check("the SET is the WIDE read: page 1's strict band names only the recipient, its wide read also the issuer → page 2's issuer letterhead is in the set → no cut", f14 == [True, False])
+f15, _ = seg.walk_boundaries([sig(names=[CP]), sig(5, .9, names=[], wide=[]), sig(names=[TF], wit=True)], known_rule=True)
+check("a base cut into a document naming nobody EMPTIES the set (unknown → known stays dropped one level on: the next stranger is a miss, never a garbled-letterhead false cut)", f15 == [True, True, False])
+f16, _ = seg.walk_boundaries([(None, 0.0, False, False, [CP], True), (None, 0.0, False, False, [TF], True)], known_rule=True)
+check("a 6-tuple signal (no wide read) uses its strict names as the set", f16 == [True, True])
+check("empty signals → ([], [])", seg.walk_boundaries([], 0.5) == ([], []))
+WIDE = "Thornbury Fasteners\n12 Trade Park\nDescription Qty Unit Amount\nCable clips 12 4.20 50.40\n" + "x\n" * 8 + "COPPERFIELD ELECTRICAL\nInvoice No: 1\n"
+check("known_names_on_page: the wide read finds a name beyond the table header + the 6-line bound (the Tesseract right-block order)",
+      seg.known_names_on_page(WIDE, known) == ["Thornbury Fasteners Ltd", "Copperfield Electrical"] and seg.known_names_in_band(WIDE, known) == ["Thornbury Fasteners Ltd"])
+check("known_names_on_page: still cut at a counterparty marker (a labelled 'Bill To' recipient never joins the set); empty / no known → []",
+      seg.known_names_on_page("Copperfield Electrical\nBill To\nThornbury Fasteners\n", known) == ["Copperfield Electrical"]
+      and seg.known_names_on_page("", known) == [] and seg.known_names_on_page(WIDE, []) == [])
+print()
+
+# 11. detect_segments plumbing (source-level, like §8's tail) + segment_docs.py.
+print("detect_segments: the rule is armed by `known` only; names/witness computed only when armed; the walk is the pure one")
+check("names + witness are computed only when `known` is set",
+      "names = known_names_in_band(text, known) if known else []" in src and "witness = has_first_page_witness(text, bool(title and title[1])) if known else False" in src)
+check("the walk is walk_boundaries(known_rule=bool(known))", "flags, reasons = walk_boundaries(signals, fp_floor, known_rule=bool(known))" in src)
+check("the title is read ONCE per page and shared by the cascade + the witness",
+      "title = page_title(text, title_ctx) if title_ctx else None" in src and 'page_match(img, text or "", templates, title_ctx, title)' in src)
+check("the position bound is 6 lines and the walk tests the EARLIEST name against the SET", "KNOWN_NAME_TOP_LINES = 6" in src and "same_supplier(names[0], c) for c in cur_names" in src)
+check("the SET is fed by the WIDE read (set_names) and reset from it on every boundary",
+      "set_names = known_names_on_page(text, known) if known else []" in src and "cur_names = list(set_names or [])" in src and "cur_names = list(s0[6] or [])" in src)
+check("the witness constants are LABELLED markers (no bare 'no.' / 'date ' entries — Oracle C1)",
+      '"no."' not in src.split("_WITNESS_NUMBER_MARKERS")[1].split(")")[0] and '"date "' not in src.split("_WITNESS_DATE_MARKERS")[1].split(")")[0])
+segsrc = Path(__file__).parent.parent.joinpath("segment_docs.py").read_text(encoding="utf-8")
+check("segment_docs.py arms the rule only with --known-supplier-change AND a non-empty names list",
+      '"--known-supplier-change"' in segsrc and "if isinstance(names, list) and names:" in segsrc and "known=known" in segsrc)
+print()
+
+# 12. header_band_lines = the ONE band definition; header_band_text is its join (byte-identical).
+print("header_band_lines: the lines header_band_text joins")
+T = "Copperfield Electrical\n27 Faraday Park\nInvoice To:\nSomeone\n"
+check("header_band_text == ' '.join(header_band_lines)",
+      template_matcher.header_band_text(T) == " ".join(template_matcher.header_band_lines(T)) == "Copperfield Electrical 27 Faraday Park")
+check("empty / None → '' (the raw lines of '' are [''] — the join is what has always been pinned)",
+      " ".join(template_matcher.header_band_lines("")) == "" and template_matcher.header_band_text(None) == "" and template_matcher.header_band_text("") == "")
+print()
+
 if fail:
     print(f"{fail} check(s) failed — segmentation regressed.")
     sys.exit(1)

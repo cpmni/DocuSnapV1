@@ -23,7 +23,8 @@
  * carrying `slip_aborted` is ignored (defence in depth; segment_docs already omits it).
  */
 
-function buildSegmentArgs({ filePath, templatesFile, tesseract, slips, docTypesFile, configFile, titleSlug, continuationVeto }) {
+function buildSegmentArgs({ filePath, templatesFile, tesseract, slips, docTypesFile, configFile, titleSlug, continuationVeto,
+                            knownSuppliersFile, knownSupplierChange }) {
   const args = ['--file', filePath];
   if (templatesFile) args.push('--templates-file', templatesFile);
   if (tesseract) args.push('--tesseract', tesseract);
@@ -37,6 +38,8 @@ function buildSegmentArgs({ filePath, templatesFile, tesseract, slips, docTypesF
     args.push('--title-slug');
   }
   if (continuationVeto) args.push('--continuation-veto');
+  // mig 179 (2026-09-17, Oracle C5): the known-supplier file + flag ride together or not at all (never a null path).
+  if (knownSupplierChange && knownSuppliersFile) args.push('--known-suppliers-file', knownSuppliersFile, '--known-supplier-change');
   return args;
 }
 

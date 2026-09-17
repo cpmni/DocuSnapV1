@@ -2833,15 +2833,32 @@ function register(ctx) {
   // Separation DARK switches (2026-09-16) — read ONCE per pre-pass by the caller and threaded as argv (the pre-pass
   // spawn env is process.env + OMP only; a DB→env bridge would be a dead switch here). Returns the opts object
   // _separateBatchDocuments hands to buildSegmentArgs. `args` = the training args (doc-types + config files).
-  function _separationOpts(db, args) {
+  // `tempFiles` (mig 179, 2026-09-17) = the CALLER's cleanup array: the known-supplier population rides its OWN temp
+  // JSON (never buildTrainingArgs' args — process_docs' strict parse_args would refuse the flag and kill every
+  // worker), pushed here so the caller's existing cleanupFiles removes it. No array → the rule stays OFF (no leak).
+  function _separationOpts(db, args, tempFiles = null) {
     const learn = require('../../../database/modules/learning');
     const idx = (k) => { const i = Array.isArray(args) ? args.indexOf(k) : -1; return i >= 0 ? args[i + 1] : null; };
-    return {
+    const opts = {
       docTypesFile: idx('--doc-types-file'),
       configFile: idx('--config-file'),
       titleSlug: learn.getSetting(db, 'segment_title_slug', 'false') === 'true',
       continuationVeto: learn.getSetting(db, 'segment_continuation_veto', 'false') === 'true',
+      knownSuppliersFile: null,
+      knownSupplierChange: false,
     };
+    if (Array.isArray(tempFiles) && learn.getSetting(db, 'segment_known_supplier_change', 'false') === 'true') {
+      try {
+        const names = learn.getKnownSupplierNames(db, { minConfirms: 3 });
+        if (names.length) {
+          const f = writeTempJson('known_suppliers', names);
+          tempFiles.push(f);
+          opts.knownSuppliersFile = f;
+          opts.knownSupplierChange = true;
+        }
+      } catch { /* fail-safe: the rule stays OFF for this pre-pass (today's walk) */ }
+    }
+    return opts;
   }
 
   async function _separateBatchDocuments(folderPath, templatesFile, log, onPhase, parallelism, slipsOn, trace, onlyFiles = null, opts = {}) {
@@ -2888,7 +2905,8 @@ function register(ctx) {
         const det = await runPyJson(segScript,
           buildSegmentArgs({ filePath, templatesFile, tesseract: tesseractPath(), slips: slipsOn,
             docTypesFile: opts.docTypesFile || null, configFile: opts.configFile || null,
-            titleSlug: !!opts.titleSlug, continuationVeto: !!opts.continuationVeto }), env);
+            titleSlug: !!opts.titleSlug, continuationVeto: !!opts.continuationVeto,
+            knownSuppliersFile: opts.knownSuppliersFile || null, knownSupplierChange: !!opts.knownSupplierChange }), env);
         done += 1;
         onPhase?.(`Preparing ${done}/${pdfs.length}…`);
         if (_cancelRequested) return;
@@ -2984,7 +3002,7 @@ function register(ctx) {
         // phase updates carry meta ({ phase:true, quiet? }) so the watch drain can mirror them to the
         // main window's strip (the plain _log only reaches processing.log) — owner ask 2026-09-04.
         (text, meta) => log?.('log', `[separate] ${text}`, { phase: true, ...(meta || {}) }),
-        sepP, slipsOn, null, new Set(fileList), _separationOpts(db, built && built.args));
+        sepP, slipsOn, null, new Set(fileList), _separationOpts(db, built && built.args, built ? built.tempFiles : null));
     } finally {
       if (built) cleanupFiles(built.tempFiles);
     }
@@ -3322,7 +3340,7 @@ function register(ctx) {
             (text, meta) => mirror(event.sender, 'process-progress', { type: 'log', text, phase: true, ...(meta || {}) }),
             sepP, slipsOn,
             (ev) => mirror(event.sender, 'process-trace', ev),
-            null, _separationOpts(db, trainingArgs));
+            null, _separationOpts(db, trainingArgs, tempFiles));
           const n = (sepRes && sepRes.separated) || 0;   // import re-scans the folder for the segments themselves
           segHold = segmentHoldPages(sepRes && sepRes.rewrites);   // the multi-page heuristic cuts → held for a look
           if (n) logger?.log(`[separation] separated ${n} multi-document PDF(s) before processing${segHold.size ? ` (${segHold.size} multi-page cut(s) will be held for a look)` : ''}`);

@@ -134,6 +134,271 @@ def is_continuation_page(text: str) -> bool:
         return False
 
 
+# ── KNOWN-SUPPLIER-NAME IDENTITY CHANGE (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C9, DARK `segment_known_supplier_change`) ──
+# After migs 177/178, 16/95 stack boundaries were still missed: pages whose supplier has NO template for that type — a
+# whole non-templated 3-doc stack imports WHOLE and auto-files under page 1's identity (the class the mig-176 belt
+# cannot see: a file with no cut has no rewrite to hold). decide_boundary's only template-free leg is
+# is_document_start (a recipient marker AND a number/date marker), which never fired on the corpus. The rule:
+#   a non-first page whose LETTERHEAD BAND names a KNOWN supplier that differs from EVERY known supplier named in the
+#   current document's first-page band, AND that carries a first-page WITNESS (a LABELLED document-number or date
+#   marker, or — only when the title arm is armed — a trusted title) → boundary ("known supplier change").
+# KNOWN = the install's own identities (learning.getKnownSupplierNames: human confirms >= 3 with the machine vias,
+# Learning-Repair-excluded and Quick File rows never counted, plus the frozen template identities), written to a temp
+# JSON per pre-pass and threaded as argv (`--known-suppliers-file` + `--known-supplier-change`; the pre-pass spawn
+# never carries the DB-bridged env). Guards, each measured on its own control (TESTING/_measure/watch_separate_soak_20260916):
+#   • ADMISSION (admit_known_name): >= 2 content tokens, or one token >= 8 letters, after stripping legal suffixes,
+#     STOP_WORDS, document-chrome words and non-alphabetic tokens — "PT", "ME", "Chris Docs" never enter.
+#   • BAND (known_names_in_band): header_band_lines = the ONE letterhead-band definition (cut BEFORE the counterparty
+#     block), cut again at the separator's own recipient markers and at the first ITEM-TABLE header line, and only the
+#     first KNOWN_NAME_TOP_LINES non-empty lines count (Oracle C2 position bound). A line — or the line above it —
+#     carrying a c/o / care-of / delivered-by / collected-by / via / attn / FAO context never counts; a line carrying
+#     a money amount is a line item, never a letterhead. Word-boundary token regex; earliest offset wins, tie → longest.
+#   • SAME-SUPPLIER (same_supplier): suffix-stripped token equality OR a token-prefix either way ("Print Tracker" ≡
+#     "Print Tracker Ltd"). Suppress-only — it can never cause a false cut; its cost is a miss = today's behaviour.
+#   • FIRST-PAGE SET (known_names_on_page): the current document's identity is the SET of every admitted known name in
+#     the first KNOWN_SET_MAX_LINES lines of its first page (cut only at the counterparty markers — NO position bound,
+#     NO table cut, NO context exclusion: the set is SUPPRESS-ONLY, so widening it can only ever prevent a cut), so an
+#     unlabelled recipient printed above the issuer (window-envelope layouts, mutual B2B trading) can never make the
+#     issuer's own letterhead on page 2 look like a stranger — measured: Tesseract emits a right-hand issuer block
+#     AFTER the item table, so the strict band alone lost the issuer and false-cut page 2 (ctrl5_envelope_*). The cut
+#     page's EARLIEST strict-band name is the one tested.
+#   • DROPPED + PINNED: "unknown → known" (the current doc named nobody known, this page names one) — a garbled page-1
+#     letterhead + a clean page 2 cut a real document into two UNHELD 1-page cuts (2/2 on the blurred-letterhead
+#     controls). Only a DIFFERENT admitted name on BOTH sides is asymmetry-safe.
+#   • The continuation veto runs AFTER this rule ("Page 2 of 2" + a different known name → no cut, pinned).
+# OCR failure direction: a garbled name = no name = today's behaviour; a garbled witness = no cut = today's behaviour.
+# Pure (no OCR) except detect_segments' plumbing; pinned in tests/test_segmentation.py §9-§12.
+_LEGAL_SUFFIXES = frozenset({"ltd", "limited", "plc", "llc", "inc", "co", "company", "corp", "corporation", "gmbh",
+                             "uk", "group", "holdings"})
+_DOC_CHROME_WORDS = frozenset({"invoice", "invoices", "order", "orders", "statement", "quote", "quotation", "receipt",
+                               "delivery", "note", "notes", "docket", "worksheet", "credit", "purchase", "sales",
+                               "document", "documents", "docs", "doc", "test", "sample", "demo", "copy"})
+KNOWN_NAME_TOP_LINES = 6
+KNOWN_SET_MAX_LINES = 60
+# A line (or the line above it) with one of these never names the ISSUER — it names who a delivery is for / via.
+_NAME_CONTEXT_RE = re.compile(r"(?<![a-z])(?:c/o|care of|delivered by|collected by|via|attn|f\.a\.o|fao|to:)(?![a-z])")
+# An item-table header line ends the letterhead band (>= 2 distinct hits on one line).
+_TABLE_HEADER_WORDS = frozenset({"description", "qty", "quantity", "unit", "price", "amount", "net", "vat", "total",
+                                 "rate", "hours", "each", "goods"})
+_MONEY_RE = re.compile(r"(?<![0-9])\d{1,3}(?:,\d{3})*\.\d{2}(?![0-9])")
+# The first-page WITNESS: a LABELLED document-number or date marker (Oracle C1 — never a bare "No." / "Date ").
+_WITNESS_NUMBER_MARKERS = _NUMBER_MARKERS + (
+    "reference no", "reference number", "ref no", "ref number", "ref:", "our ref", "your ref", "job no", "job number",
+    "job sheet no", "quote no", "quote number", "quotation no", "quotation number", "credit note no",
+    "credit note number", "delivery note no", "delivery note number", "docket no", "docket number", "ticket no",
+    "ticket number", "note no", "note number", "order ref", "invoice ref")
+_WITNESS_DATE_MARKERS = _DATE_MARKERS + (
+    "date:", "dated", "delivery date", "docket date", "quote date", "job date", "tax point", "date of issue")
+# The witness's THIRD arm (Oracle 2026-09-17, accepted as an OR-arm, never a replacement): a RECIPIENT block (the
+# separator's own _RECIPIENT_MARKERS — one definition) AND a real DATE SHAPE (dd/mm/yyyy, dd-mm-yyyy, dd.mm.yy,
+# d Mon yyyy) — is_document_start's first-page premise with a bare "Date 11/11/2026" (a marker-poor delivery docket:
+# no heading, no number, a bare date, "Deliver To"). It sits behind the different-known-name requirement, and the
+# false-cut classes the witness exists for (a bare c/o continuation, an item-table mention) carry no recipient block.
+_DATE_SHAPE_RE = re.compile(
+    r"(?<![0-9])(?:\d{1,2}[/\-.]\d{1,2}[/\-.](?:\d{4}|\d{2})(?![0-9])"
+    r"|\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?,?\s+(?:\d{4}|\d{2})(?![0-9]))")
+
+
+def _name_tokens(name) -> list:
+    """Normalised tokens of a supplier name with trailing legal suffixes stripped ("Copperfield Electrical Ltd" →
+    ['copperfield', 'electrical']). Pure."""
+    from extraction.text_normalise import normalise_for_tokens
+    toks = [t for t in re.split(r"[^a-z0-9']+", normalise_for_tokens(name)) if t]
+    while toks and toks[-1].strip("'") in _LEGAL_SUFFIXES:
+        toks.pop()
+    return toks
+
+
+def _content_tokens(tokens) -> list:
+    from extraction.template_matcher import STOP_WORDS
+    out = []
+    for t in tokens:
+        letters = re.sub(r"[^a-z]", "", t)
+        if len(letters) >= 2 and letters not in STOP_WORDS and letters not in _DOC_CHROME_WORDS:
+            out.append(letters)
+    return out
+
+
+def admit_known_name(name) -> bool:
+    """Is this confirmed supplier name SPECIFIC enough to identify an issuer on a page? >= 2 content tokens, or one
+    token of >= 8 letters, after the suffix / stop-word / document-chrome / non-alphabetic strip."""
+    try:
+        c = _content_tokens(_name_tokens(name))
+        return len(c) >= 2 or (len(c) == 1 and len(c[0]) >= 8)
+    except Exception:
+        return False
+
+
+def prepare_known_suppliers(names) -> list:
+    """The admitted known-supplier list as match entries [{name, key, tokens, rx}], longest names first, deduped on
+    the suffix-stripped token key. Names that fail admission are dropped. Pure."""
+    out, seen = [], set()
+    for n in names or []:
+        s = str(n or "").strip()
+        if not s or not admit_known_name(s):
+            continue
+        toks = _name_tokens(s)
+        key = " ".join(toks)
+        if not toks or key in seen:
+            continue
+        seen.add(key)
+        rx = re.compile(r"(?<![a-z0-9])" + r"[^a-z0-9]+".join(re.escape(t) for t in toks) + r"(?![a-z0-9])")
+        out.append({"name": s, "key": key, "tokens": toks, "rx": rx})
+    out.sort(key=lambda e: -len(e["tokens"]))
+    return out
+
+
+def same_supplier(a, b) -> bool:
+    """Suffix-stripped token equality OR a token-prefix either way. Suppress-only in the walk (never causes a cut)."""
+    ta, tb = _name_tokens(a), _name_tokens(b)
+    if not ta or not tb:
+        return False
+    n = min(len(ta), len(tb))
+    return ta[:n] == tb[:n]
+
+
+def band_lines(text, top_lines: int = KNOWN_NAME_TOP_LINES) -> list:
+    """The first `top_lines` NON-EMPTY letterhead-band lines: header_band_lines (cut before the counterparty block),
+    cut again at the separator's own recipient markers and at the first item-table header line."""
+    from extraction.template_matcher import header_band_lines
+    out = []
+    for raw in header_band_lines(text or ""):
+        line = raw.strip()
+        if not line:
+            continue
+        low = line.lower()
+        if any(m in low for m in _RECIPIENT_MARKERS):
+            break
+        if len(set(re.findall(r"[a-z]+", low)) & _TABLE_HEADER_WORDS) >= 2:
+            break
+        out.append(line)
+        if len(out) >= top_lines:
+            break
+    return out
+
+
+def known_names_in_band(text, known, top_lines: int = KNOWN_NAME_TOP_LINES) -> list:
+    """Every admitted known supplier NAMED in the page's letterhead band, earliest first (line, then offset, then
+    the longer name). `known` = prepare_known_suppliers(...). [] when nothing is named. Pure."""
+    if not known:
+        return []
+    try:
+        from extraction.text_normalise import normalise_for_tokens
+        lines = band_lines(text, top_lines)
+        found = []
+        for i, line in enumerate(lines):
+            low = normalise_for_tokens(line)
+            prev = normalise_for_tokens(lines[i - 1]) if i else ""
+            if _NAME_CONTEXT_RE.search(low) or _NAME_CONTEXT_RE.search(prev) or _MONEY_RE.search(low):
+                continue
+            for e in known:
+                m = e["rx"].search(low)
+                if m:
+                    found.append((i, m.start(), -len(e["tokens"]), e["key"], e["name"]))
+        found.sort()
+        names, seen = [], set()
+        for _, _, _, key, name in found:
+            if key not in seen:
+                seen.add(key)
+                names.append(name)
+        return names
+    except Exception:
+        return []
+
+
+def known_names_on_page(text, known, max_lines: int = KNOWN_SET_MAX_LINES) -> list:
+    """The WIDE read for the current document's identity SET: every admitted known name anywhere in the first
+    `max_lines` lines cut only at the counterparty markers (header_band_lines) — no position bound, no table cut, no
+    context or money exclusion. SUPPRESS-ONLY by construction (a name in this set can only ever prevent a cut), so
+    every widening is fail-safe; a name it misses = the rule inert for that document = today's behaviour. Pure."""
+    if not known:
+        return []
+    try:
+        from extraction.template_matcher import header_band_lines
+        from extraction.text_normalise import normalise_for_tokens
+        low = normalise_for_tokens(" ".join(header_band_lines(text or "", max_lines)))
+        found = []
+        for e in known:
+            m = e["rx"].search(low)
+            if m:
+                found.append((m.start(), -len(e["tokens"]), e["key"], e["name"]))
+        found.sort()
+        names, seen = [], set()
+        for _, _, key, name in found:
+            if key not in seen:
+                seen.add(key)
+                names.append(name)
+        return names
+    except Exception:
+        return []
+
+
+def has_first_page_witness(text, title_trusted: bool = False) -> bool:
+    """A LABELLED document-number / date marker anywhere on the page, OR a recipient block plus a real date shape,
+    OR (when the title arm is armed and read one) a trusted title. Pure; never raises."""
+    try:
+        low = (text or "").lower()
+        if any(m in low for m in _WITNESS_NUMBER_MARKERS) or any(m in low for m in _WITNESS_DATE_MARKERS):
+            return True
+        if any(m in low for m in _RECIPIENT_MARKERS) and _DATE_SHAPE_RE.search(low):
+            return True
+        return bool(title_trusted)
+    except Exception:
+        return False
+
+
+def _sig(s) -> tuple:
+    """Pad a signal to the 7-tuple (mid, overlap, doc_start, self_cont, names, witness, set_names): a legacy
+    4-tuple gets no names / no witness; a 6-tuple's set_names default to its (strict-band) names."""
+    s = tuple(s)
+    if len(s) >= 7:
+        return s[:7]
+    if len(s) >= 6:
+        return s[:6] + (list(s[4] or []),)
+    s = s + ((None,) * (4 - len(s)))
+    return s[:4] + ([], False, [])
+
+
+def walk_boundaries(signals, fp_floor: float = FIRST_PAGE_FP_FLOOR, known_rule: bool = False) -> tuple:
+    """The page walk, PURE: per-page signals → (flags, reasons). Page 0 always starts document 1. Tracks the CURRENT
+    document's template id (decide_boundary) and, when `known_rule`, the SET of known supplier names on its first
+    page (`set_names`, the wide read). Order per page: decide_boundary → the known-supplier-change rule (only when
+    no boundary yet, the page's earliest strict-band name matches NONE of the current set, the current set is
+    non-empty, and the page carries a first-page witness) → the self-declared-continuation veto (always last).
+    `known_rule` False = today's walk."""
+    if not signals:
+        return [], []
+    flags: list[bool] = [True]
+    reasons: list[str] = ["document start"]
+    s0 = _sig(signals[0])
+    current_id = s0[0]
+    cur_names = list(s0[6] or [])
+    for i in range(1, len(signals)):
+        mid, overlap, ds, self_cont, names, witness, set_names = _sig(signals[i])
+        boundary = decide_boundary(mid, current_id, overlap, ds, fp_floor)
+        if not boundary:
+            reason = "continuation"
+        elif mid is not None and overlap >= fp_floor and mid == current_id:
+            reason = "first-page fingerprint"
+        elif mid is not None and mid != current_id:
+            reason = "different template"
+        else:
+            reason = "document-start header"
+        if (known_rule and not boundary and names and cur_names and witness
+                and not any(same_supplier(names[0], c) for c in cur_names)):
+            boundary = True
+            reason = "known supplier change"
+        if boundary and self_cont:
+            boundary = False                      # the page says it is a continuation — never a cut
+            reason = "self-declared continuation"
+        flags.append(boundary)
+        reasons.append(reason)
+        if boundary:
+            current_id = mid
+            cur_names = list(set_names or [])
+    return flags, reasons
+
+
 def decide_boundary(matched_id, current_id, fp_overlap: float, doc_start: bool,
                     fp_floor: float = FIRST_PAGE_FP_FLOOR) -> bool:
     """Whether a (non-first) page starts a NEW document. True when ANY holds:
@@ -185,16 +450,24 @@ def page_is_first(page_text: str, page_image, templates: list,
 # Measured (4-arm per-page census, probe_4arm_stacks.txt): base 72/95 boundaries → cascade 79/95, 0 lost,
 # 0 over-splits; real_34 34/34 and the singles unchanged. `title_ctx is None` (the switch OFF) → the 3-arg
 # call exactly as before (byte-identical).
-def page_match(page_image, text: str, templates: list, title_ctx=None):
-    from extraction.template_matcher import identify_template
+def page_title(text: str, title_ctx=None) -> tuple:
+    """The page's own (slug, trusted) via keyword.title_signal — (None, False) when the title arm is OFF or on any
+    error. Factored out so detect_segments reads the title ONCE per page (the match cascade + the mig-179 witness)."""
     if not title_ctx:
-        return identify_template(page_image, text or "", templates)
-    slug, trusted = None, False
+        return None, False
     try:
         from extraction.keyword import title_signal
         slug, trusted = title_signal(text or "", title_ctx.get("patterns"), title_ctx.get("doc_types"))
+        return slug, bool(trusted)
     except Exception:
-        slug, trusted = None, False
+        return None, False
+
+
+def page_match(page_image, text: str, templates: list, title_ctx=None, title=None):
+    from extraction.template_matcher import identify_template
+    if not title_ctx:
+        return identify_template(page_image, text or "", templates)
+    slug, trusted = title if title is not None else page_title(text, title_ctx)
     m = None
     if slug and trusted:
         m = identify_template(page_image, text or "", templates, slug, True)
@@ -207,13 +480,15 @@ def page_match(page_image, text: str, templates: list, title_ctx=None):
 
 def detect_segments(pdf_path: str, templates: list, tesseract_path: str | None = None,
                     born_digital: bool = True, fp_floor: float = FIRST_PAGE_FP_FLOOR,
-                    title_ctx: dict | None = None, continuation_veto: bool = False) -> dict:
+                    title_ctx: dict | None = None, continuation_veto: bool = False,
+                    known: list | None = None) -> dict:
     """Render each page of `pdf_path`, decide which pages are independent first pages, and
     return {page_count, segments, first_pages, reasons}. A non-PDF, a single-page PDF, no
     templates, or any error → a single whole-document segment (no split).
     `title_ctx` = {'patterns', 'doc_types'} threads the page's own title into the match (DARK
     segment_title_slug); `continuation_veto` suppresses a boundary on a self-declared continuation
-    page (DARK segment_continuation_veto). Both default OFF → byte-identical."""
+    page (DARK segment_continuation_veto); `known` = prepare_known_suppliers(...) arms the
+    known-supplier-change rule (DARK segment_known_supplier_change). All default OFF → byte-identical."""
     import os
     result_single = {"page_count": 1, "segments": [[0, 0]], "first_pages": [0], "reasons": ["whole document"]}
     if not templates or not str(pdf_path).lower().endswith(".pdf") or not os.path.isfile(pdf_path):
@@ -241,7 +516,8 @@ def detect_segments(pdf_path: str, templates: list, tesseract_path: str | None =
 
     from extraction.template_matcher import extract_keyword_fingerprint
 
-    # Per-page signals: (matched template id | None, fingerprint overlap, doc-start flag, self-declared cont.).
+    # Per-page signals: (matched template id | None, fingerprint overlap, doc-start flag, self-declared cont.,
+    # known supplier names in the band, first-page witness) — the last two only when the mig-179 rule is armed.
     signals: list[tuple] = []
     for i in range(n):
         page = doc[i]
@@ -253,35 +529,22 @@ def detect_segments(pdf_path: str, templates: list, tesseract_path: str | None =
         except Exception:
             img = None
         text = _page_text(page, img, born_digital, tesseract_path)
-        match = page_match(img, text or "", templates, title_ctx)
+        title = page_title(text, title_ctx) if title_ctx else None
+        match = page_match(img, text or "", templates, title_ctx, title)
         tmpl = (match or {}).get("template") or {}
         mid = tmpl.get("id") if match else None
         overlap = fingerprint_overlap(extract_keyword_fingerprint(text or ""),
                                       tmpl.get("keyword_fingerprint")) if match else 0.0
+        names = known_names_in_band(text, known) if known else []
+        witness = has_first_page_witness(text, bool(title and title[1])) if known else False
+        set_names = known_names_on_page(text, known) if known else []
         signals.append((mid, overlap, is_document_start(text),
-                        bool(continuation_veto and i > 0 and is_continuation_page(text))))
+                        bool(continuation_veto and i > 0 and is_continuation_page(text)), names, witness, set_names))
 
-    # Walk the pages, tracking the CURRENT document's identity so a different known type
-    # OR a generic new-document header starts a fresh segment.
-    flags: list[bool] = [True]            # page 0 always starts document 1
-    reasons: list[str] = ["document start"]
-    current_id = signals[0][0]
-    for i in range(1, n):
-        mid, overlap, ds, self_cont = signals[i]
-        boundary = decide_boundary(mid, current_id, overlap, ds, fp_floor)
-        if boundary and self_cont:
-            boundary = False                      # the page says it is a continuation — never a cut
-        flags.append(boundary)
-        if not boundary:
-            reasons.append("self-declared continuation" if self_cont else "continuation")
-        elif mid is not None and overlap >= fp_floor and mid == current_id:
-            reasons.append("first-page fingerprint")
-        elif mid is not None and mid != current_id:
-            reasons.append("different template")
-        else:
-            reasons.append("document-start header")
-        if boundary:
-            current_id = mid
+    # Walk the pages (pure — walk_boundaries), tracking the CURRENT document's identity so a different known
+    # type, a generic new-document header, or (armed) a different known supplier starts a fresh segment; a
+    # self-declared continuation is never a cut: `if boundary and self_cont:` → `boundary = False`.
+    flags, reasons = walk_boundaries(signals, fp_floor, known_rule=bool(known))
 
     segments = segment_pages(flags)
     return {

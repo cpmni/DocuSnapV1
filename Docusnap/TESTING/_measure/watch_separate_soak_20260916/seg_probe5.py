@@ -34,13 +34,20 @@ def named_supplier(text, mode="len"):
             if k.lower() in band: return k
         return None
     lim = 4 if mode == "top4" else TOP
+    excl = _RECIP + (("c/o", "care of", "delivered by", "collected by", "via ", "attn", "f.a.o", "fao ") if mode in ("co", "num") else ())
     for i, l in enumerate(ls[:lim]):
-        if mode == "ctx":
+        if mode in ("ctx", "co", "num"):
             prev = ls[i - 1] if i > 0 else ""
-            if any(m in l for m in _RECIP) or any(m in prev for m in _RECIP): continue
+            if any(m in l for m in excl) or any(m in prev for m in excl): continue
         for k in known:
             if k.lower() in l: return k
     return None
+_NUM = S._NUMBER_MARKERS + ("reference no", "ref no", "ref.", "job no", "job sheet no", "quote no", "quotation no", "credit note no",
+                            "delivery note no", "docket no", "note no", "order confirmation", "no.")
+_DAT = S._DATE_MARKERS + ("date ",)
+def has_doc_marker(text):
+    low = (text or "").lower()
+    return any(m in low for m in _NUM) or any(m in low for m in _DAT)
 title_ctx = {"patterns": patterns, "doc_types": doctypes}
 def signals(img, text):
     m_base = identify_template(img, text, templates); m_casc = S.page_match(img, text, templates, title_ctx)
@@ -48,23 +55,25 @@ def signals(img, text):
         t = (m or {}).get("template") or {}; mid = t.get("id") if (m and t) else None
         return mid, (S.fingerprint_overlap(extract_keyword_fingerprint(text), t.get("keyword_fingerprint")) if mid else 0.0)
     ds = S.is_document_start(text); sc = S.is_continuation_page(text)
-    nm = {m: named_supplier(text, m) for m in ("len", "pos", "top4", "ctx")}
+    nm = {m: named_supplier(text, m) for m in ("len", "pos", "top4", "ctx", "co", "num")}
+    nm["_marker"] = has_doc_marker(text)
     return {a: (*sig(m_base if a == "base" else m_casc), ds, sc, nm) for a in ARMS}
-def walk(sigs, veto, name, mode="len", unknown_rule=True):
+def walk(sigs, veto, name, mode="len", unknown_rule=True, need_marker=False):
     flags = [True]; cur = sigs[0][0]; cur_name = sigs[0][4][mode]
     for i in range(1, len(sigs)):
         mid, ov, ds, sc, nmd = sigs[i]; nm = nmd[mode]
+        if need_marker and not nmd["_marker"]: nm = None              # a page with no number/date marker cannot start a doc by name alone
         b = S.decide_boundary(mid, cur, ov, ds)
         if name and not b and nm and cur_name and nm != cur_name: b = True     # a DIFFERENT known supplier named
         if name and unknown_rule and not b and nm and not cur_name: b = True   # the current doc named nobody known; this page names one
         if b and veto and sc: b = False
         flags.append(b)
-        if b: cur = mid; cur_name = nm
+        if b: cur = mid; cur_name = nm if nm else cur_name
     return [i + 1 for i, f in enumerate(flags) if f]
-# arm: (veto, name, mode, unknown_rule)
-ARMS = {"base": (False, False, "len", False), "both": (True, False, "len", False), "name_len": (True, True, "len", True),
-        "name_pos": (True, True, "pos", True), "name_top4": (True, True, "top4", True), "name_ctx": (True, True, "ctx", True),
-        "name_ctx_strict": (True, True, "ctx", False)}
+# arm: (veto, name, mode, unknown_rule, need_marker)
+ARMS = {"base": (False, False, "len", False, False), "both": (True, False, "len", False, False),
+        "name_ctx": (True, True, "ctx", True, False), "name_co": (True, True, "co", True, False),
+        "name_num": (True, True, "num", True, True), "name_num_strict": (True, True, "num", False, True)}
 T = {a: {"right": 0, "lost": 0, "over": 0} for a in ARMS}; EXP = 0; FILES = 0
 for name in sorted(gt):
     p = os.path.join(bdir, name)

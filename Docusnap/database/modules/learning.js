@@ -240,6 +240,45 @@ function findNearMatchIdentity(db, candidate, { minConfirms = 3, templateId = nu
   return best || { near: false, reason: 'no-near-match' };
 }
 
+// THIRD consumer of Tier A / Tier B (2026-09-17, mig 179 `segment_known_supplier_change`): the batch separator's
+// KNOWN-SUPPLIER population — the SAME two queries as findNearMatchIdentity, verbatim, returned as a plain name list
+// (human confirms >= minConfirms with the machine vias, Learning-Repair-excluded and Quick File rows never counted;
+// every frozen template identity). Written to a temp JSON once per pre-pass by processing/handler._separationOpts
+// and threaded as argv; ADMISSION (a junk "PT" / "ME" / "Chris Docs") is the Python side's job
+// (ocr/segmentation.admit_known_name). Read-only; never blocks; an older DB without a table → the other tier alone.
+function getKnownSupplierNames(db, { minConfirms = 3 } = {}) {
+  let hasVia = true;
+  try { db.prepare('SELECT confirmed_via FROM documents LIMIT 0'); } catch { hasVia = false; }
+  const { MACHINE_VIAS_SQL } = require('./machine_vias');
+  const out = [], seen = new Set();
+  const add = (v) => {
+    const s = String(v == null ? '' : v).trim(); const k = s.toLowerCase();
+    if (s && !seen.has(k)) { seen.add(k); out.push(s); }
+  };
+  try {
+    for (const r of db.prepare(`
+      SELECT TRIM(supplier_name) AS v, COUNT(*) AS n
+      FROM documents
+      WHERE status = 'confirmed' AND supplier_name IS NOT NULL AND TRIM(supplier_name) <> ''${learningExcludedSql(db, '')}
+        ${hasVia ? `AND COALESCE(confirmed_via, '') NOT IN (${MACHINE_VIAS_SQL})` : ''}
+      GROUP BY LOWER(TRIM(supplier_name))
+    `).all()) {
+      if (r.v && r.n >= minConfirms) add(r.v);
+    }
+  } catch { /* an older DB — Tier B alone */ }
+  try {
+    for (const r of db.prepare(`
+      SELECT TRIM(fixed_value) AS v
+      FROM template_fields
+      WHERE field_key = 'supplier_name' AND is_variable = 0
+        AND fixed_value IS NOT NULL AND TRIM(fixed_value) <> ''
+    `).all()) {
+      add(r.v);
+    }
+  } catch { /* older DBs without template_fields */ }
+  return out;
+}
+
 function nameQuality(value) {
   if (!value) return 1.0;
   let good = 0, bad = 0;
@@ -2509,7 +2548,7 @@ module.exports = {
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue, getPrefixModelForScope,
   getSupplierScopeCounts, renameSupplier, findDuplicateSupplierPairs,
   saveCorrections, retractConfirmHints, replantConfirmHints, getHints, getAllHints, isPlausibleSupplierName,
-  BUYER_ISSUED_CONVENTION_KEY, isBuyerIssuedConventionNote, recordBuyerIssuedConvention, retractBuyerIssuedConvention, retractBuyerIssuedConventionForDoc, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, issuerReadLooksImplausible, findNearMatchIdentity, normalizeSupplierName,
+  BUYER_ISSUED_CONVENTION_KEY, isBuyerIssuedConventionNote, recordBuyerIssuedConvention, retractBuyerIssuedConvention, retractBuyerIssuedConventionForDoc, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, issuerReadLooksImplausible, findNearMatchIdentity, getKnownSupplierNames, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   detailCrossPlantCloser: _detailCrossPlantCloser,   // exported for the detail-backfill script's final anti-poison check (2026-07-23)
