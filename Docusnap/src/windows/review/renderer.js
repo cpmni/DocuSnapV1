@@ -3351,7 +3351,12 @@ function renderCleanHoldReason(el, doc) {
         : 'a value was flagged by a formatting check.',
       // Split-segment hold (2026-09-16, Oracle C4): a multi-page cut of a heuristic split may carry a
       // stranger page behind its first page — say that, not "a formatting check", and point at Split.
-      'segment-hold': (v.pages && v.pages.from && v.pages.to)
+      // Segment PAIR hold (2026-09-17, Oracle C7): this 1-page cut and the page next to it may be ONE document —
+      // say so and name the other page; never "use Split" (the wrong tool for a pair); say where the original is.
+      'segment-hold': v.subkind === 'pair'
+        ? `this page came out of a multi-document scan as a document on its own${v.partnerPage ? ` — page <strong>${v.partnerPage}</strong> of that scan may belong to it` : ' — the page next to it may belong to it'}. `
+          + 'Check both, then confirm (the original scan is kept in the folder\'s <code>.sf_separated_originals</code>).'
+        : (v.pages && v.pages.from && v.pages.to)
         ? `pages <strong>${v.pages.from}–${v.pages.to}</strong> were cut from a multi-document scan — check every page `
           + `belongs to this document (if one doesn't, use <strong>Split</strong>), then confirm.`
         : 'these pages were cut from a multi-document scan — check every page belongs to this document '

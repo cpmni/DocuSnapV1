@@ -1,0 +1,8 @@
+real_34.pdf                  exp=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34] walk=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34] weak=[]
+single_01.pdf                exp=[1] walk=[1] weak=[]
+single_02.pdf                exp=[1] walk=[1] weak=[]
+single_03.pdf                exp=[1] walk=[1] weak=[]
+single_04.pdf                exp=[1] walk=[1] weak=[]
+single_05.pdf                exp=[1] walk=[1] weak=[]
+
+TOTAL {"files": 6, "expected": 39, "boundaries": 33, "weak": 0, "weak_expected": 0, "weak_over": 0, "strong_over": 0, "weak_1page_pairs": 0}

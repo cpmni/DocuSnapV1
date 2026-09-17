@@ -1,0 +1,7 @@
+13:35:05 start minId=1548
+"started"
+13:35:06 import started on C:/Users/cmccu/AppData/Local/Temp/claude/c--GIT-Projects-Docusnap/2d87d505-1b3b-4522-b756-384e51badc0d/scratchpad/soak/Manual_E2E5
+13:36:09 import result: "{\"success\":true,\"stopped\":false}"
+13:36:29 checker done: Node.js v24.18.1
+E2E5-DONE
+13:36:29 EXIT status 0 at line 1

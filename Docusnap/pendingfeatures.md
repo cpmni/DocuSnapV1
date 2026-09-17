@@ -5528,3 +5528,13 @@ arc 3's machinery in the walk: a page whose known-supplier band name EQUALS the 
 template-free, fail-safe (a miss = a merged cut the mig-176 belt holds), measured on controls3/5 first (0 lost on the
 stacks / real_34 is the gate: a Print Tracker alert page names the same supplier AND carries its witness, so it must
 still cut). Either way a Rejoin / recovery path stays owed (the original sits in `.sf_separated_originals`).
+
+> **BUILT DARK the same day — mig 180 `segment_pair_hold`** (gary → Oracle SIGN-OFF-W/COND C1-C12;
+> `docs/designs/SEGMENT_PAIR_HOLD_2026-09-17.md`). Neither lever above as written: (a) misses 3/4 (the orphans read the
+> repeated number), (b) rescues 1/4 and would collapse a same-named marker-poor alert stack. Built = a HYBRID: the
+> pre-pass classifies each cut WEAK (template-only, no doc-start) or STRONG (`weak_pages`, unconditional metadata) and the
+> handler compares the two halves of every WEAK cut after both are read (same supplier + no date on the later page + the
+> same/no number → hold BOTH with a durable note; a complete later page releases the earlier one). real_34 is 0 weak by
+> construction (every alert page is an email-header doc-start). **STILL OWED before the flip (Oracle C12):** a one-click
+> "Re-import as one document" / Rejoin-with-previous action on the pair reason — today `.sf_separated_originals` is the
+> only way back; plus the C9 census cells (rasterised real_34, a young-install stack, the email-arm-only class arm).

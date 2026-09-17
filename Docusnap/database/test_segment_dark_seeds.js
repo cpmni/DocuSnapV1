@@ -27,8 +27,11 @@ const get = (db, k) => (db.prepare('SELECT value FROM settings WHERE key = ?').g
 const quiet = (fn) => { const o = console.log; console.log = () => {}; try { return fn(); } finally { console.log = o; } };
 // mig 179 (2026-09-17): segment_known_supplier_change — a page naming a DIFFERENT known supplier (+ a labelled
 // number/date witness) starts a new document; the names ride their OWN temp JSON (`--known-suppliers-file`).
+// mig 180 (2026-09-17): segment_pair_hold — the S4 silent-truncation belt; NO argv (the Python `weak_pages` class is
+// unconditional metadata, the JS consumer is the switched half — read at the stamp site like mig 176's).
 const SEEDS = [{ key: 'segment_continuation_veto', mig: 177, flag: '--continuation-veto' }, { key: 'segment_title_slug', mig: 178, flag: '--title-slug' },
-               { key: 'segment_known_supplier_change', mig: 179, flag: '--known-supplier-change' }];
+               { key: 'segment_known_supplier_change', mig: 179, flag: '--known-supplier-change' },
+               { key: 'segment_pair_hold', mig: 180, flag: null }];
 const src = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
 
 for (const s of SEEDS) {
@@ -64,12 +67,28 @@ console.log('\nargv is the ONLY kill (the pre-pass spawn env carries no DB-bridg
   check('no env bridge for any of the three keys (a DB→env bridge would be a dead switch in the pre-pass)',
     !/SEGMENT_TITLE_SLUG|SEGMENT_CONTINUATION_VETO|SEGMENT_KNOWN_SUPPLIER_CHANGE/.test(hsrc));
   const py = fs.readFileSync(path.join(REPO, 'python_backend', 'segment_docs.py'), 'utf8');
-  for (const s of SEEDS) check(`segment_docs.py takes ${s.flag}`, py.includes(`"${s.flag}"`));
-  check('segment_docs.py reads NO env switch for these', !/SEGMENT_TITLE_SLUG|SEGMENT_CONTINUATION_VETO|SEGMENT_KNOWN_SUPPLIER_CHANGE/.test(py));
+  for (const s of SEEDS) if (s.flag) check(`segment_docs.py takes ${s.flag}`, py.includes(`"${s.flag}"`));
+  check('segment_docs.py reads NO env switch for these', !/SEGMENT_TITLE_SLUG|SEGMENT_CONTINUATION_VETO|SEGMENT_KNOWN_SUPPLIER_CHANGE|SEGMENT_PAIR_HOLD/.test(py));
   check('segment_docs.py arms the rule only with --known-supplier-change AND a non-empty names list',
     py.includes('if isinstance(names, list) and names:') && py.includes('known=known'));
-  const hits = scan({ indexSrc: src, otherFiles: [], pkgJson: {} }).hits.filter(h => /17[789]/.test(String(h.detail)) || /segment_(title_slug|continuation_veto|known_supplier_change)/.test(String(h.detail)));
-  check('the release gate raises NO hit on migrations 177/178/179 (false seeds of listed keys)', hits.length === 0);
+  const hits = scan({ indexSrc: src, otherFiles: [], pkgJson: {} }).hits.filter(h => /1(?:7[789]|80)/.test(String(h.detail)) || /segment_(title_slug|continuation_veto|known_supplier_change|pair_hold)/.test(String(h.detail)));
+  check('the release gate raises NO hit on migrations 177/178/179/180 (false seeds of listed keys)', hits.length === 0);
+}
+
+console.log('\nmig 180 segment_pair_hold — the Python class is unconditional metadata; the JS consumer is the switched half');
+{
+  const seg = fs.readFileSync(path.join(REPO, 'python_backend', 'ocr', 'segmentation.py'), 'utf8');
+  const py = fs.readFileSync(path.join(REPO, 'python_backend', 'segment_docs.py'), 'utf8');
+  check('detect_segments emits `weak_pages` UNCONDITIONALLY (no argv, no env, no setting gates the class)',
+    seg.includes('"weak_pages": weak_pages,') && !/weak_pages.*(?:argv|environ|args\.)/.test(seg) && !/--weak|weak-pages|WEAK_PAGES/.test(py));
+  check('the slips path emits an empty weak_pages (sheet-bounded cuts are never weak)', py.includes('"weak_pages": [],'));
+  const hsrc = fs.readFileSync(path.join(REPO, 'src', 'modules', 'processing', 'handler.js'), 'utf8');
+  check("the handler gates the pair belt on the setting at the landing site (read 'false' default, like mig 176)",
+    /learning\.getSetting\(db, 'segment_pair_hold', 'false'\) === 'true'/.test(hsrc));
+  check('the rewrite carries the weak names (weakSegmentNames over the plan) and BOTH callers build the pair context',
+    hsrc.includes('.weak = weakSegmentNames(plan, made.map(f => path.basename(f)));') && hsrc.includes('pairCtx = buildPairContext(sepRes && sepRes.rewrites);')
+    && fs.readFileSync(path.join(REPO, 'src', 'modules', 'watch', 'handler.js'), 'utf8').includes("pairCtx = require('../processing/split_plan').buildPairContext(sep.rewrites);"));
+  check('no env bridge for segment_pair_hold', !/SEGMENT_PAIR_HOLD/.test(hsrc));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

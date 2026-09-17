@@ -133,6 +133,20 @@ NEW dark keys landed the same day (migs 177/178, the scanned-stack splitting fix
   run also caught a PRE-EXISTING problem in today's shipping code: a 2-page order whose second page repeats the
   letterhead with no page number was cut in two and its page 1 FILED as a complete document (page 2 left in Review).
   That is not this switch; it is the next fix (pendingfeatures.md 2026-09-17)._
+- **segment_pair_hold** (mig 180, 2026-09-17) — the fix for that last case. When the splitter cuts a page off on the
+  strength of the LETTERHEAD ALONE (no address block, no email header, no different company on the page — the app now
+  tags such cuts "weak"), the two halves are compared after both have been read: the same company, no date on the
+  later page, and the same document number (or none) means "probably one document", so BOTH halves wait for one look
+  with a note naming the other page and saying where the original scan is kept. A later page with its own number and
+  date is a document of its own, so the earlier page is released to file as normal. Your Print Tracker alert bundle is
+  never touched (every alert page carries an email header, so none of its cuts are "weak"). Trade accepted: a scan that
+  was fed in twice in a row (same number, same date) now gets one look instead of filing as a -DUPLICATE. _Census with
+  the shipped code (`weak_cut_census2.py`): the 4 exhibit cuts weak, 0 genuine cuts held (the ~22 weak genuine cuts on
+  the stacks all read their own number + date → released), the 34-alert bundle 0 weak. End-to-end run
+  `e2e4_result.txt`: no truncated half filed or unmarked. Flip gate (Oracle C9 + C12): the rasterised-bundle cell, a
+  young-install stack cell, the "email-header-only" class arm, every sibling false cut held under 178+179+belt — AND a
+  one-click "Re-import as one document" / Rejoin action shipped first, because today the only way back is the hidden
+  `.sf_separated_originals` folder. Owner's go._
 
 ## ⚪ PARKED — measured to do nothing on current docs; stays off unless a real case appears (1)
 - **anchor_axis_lock** — reconstruct a free-text value's left edge from the label column. _Censused zero fires; needs a real docket corpus before it's worth flipping._

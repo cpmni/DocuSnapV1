@@ -399,6 +399,82 @@ def walk_boundaries(signals, fp_floor: float = FIRST_PAGE_FP_FLOOR, known_rule: 
     return flags, reasons
 
 
+# ── BOUNDARY CLASS (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C12; consumer = the DARK JS belt `segment_pair_hold`) ─
+# The walk's REASON is assigned by precedence, not exclusivity: "first-page fingerprint" is stamped whenever the same
+# template's fingerprint clears the floor, even when the page ALSO carries a document-start header (every page of the
+# owner's real 34-page Print Tracker bundle is an email-header doc-start labelled "first-page fingerprint"). Downstream
+# nothing could tell a cut made on the strength of a LETTERHEAD ALONE from a cut backed by first-page evidence — and
+# the letterhead-only cut is the S4 silent-truncation class (a headed second sheet with no page marker: page 1
+# auto-files as a complete document on a manual import, page 2 orphans; caught live 2026-09-17, e2e3 #1255).
+# A boundary is WEAK ("template_only") when it was decided by a TEMPLATE leg with NO document-start on the page:
+#   A  the same template's fingerprint (a repeated letterhead);
+#   B  no template → a template (page 1 matched nothing at 150 DPI — a blurred letterhead, a poor scan);
+#   C  a same-SUPPLIER sibling type switch (Oracle C4: identity = template_matcher._template_identity — the dominant
+#      confirmed issuer, else the frozen supplier_name fixed value — NEVER the cosmetic templates.name; '' → strong).
+# STRONG = any document-start hit (the email head / the recipient block + a number/date), any known-supplier change,
+# a CROSS-supplier template switch (two different suppliers' templates on consecutive pages), a vetoed page (no cut).
+# The class is METADATA: the segments are byte-identical; `detect_segments` emits it as the additive `weak_pages` key
+# and the JS belt compares the two halves' 200-DPI reads (same supplier + no date + the same/no number → hold both).
+# Measured (shipped functions, `weak_cut_census2.py`): the 4 exhibit cuts weak; real_34 0/33 weak; stacks ~22 weak,
+# every one reading its own number + date (released by the value check); cross-supplier switches 28 (strong).
+WEAK_REASONS = ("first-page fingerprint", "different template")
+
+
+def template_identity(t) -> str:
+    """The identity a pre-pass template ASSERTS — extraction.template_matcher._template_identity (dominant confirmed
+    issuer → frozen supplier_name fixed value → ''); never `name`. '' on any error (→ the C arm is False → STRONG)."""
+    try:
+        from extraction.template_matcher import _template_identity
+        return str(_template_identity(t) or "")
+    except Exception:
+        return ""
+
+
+def identity_map(templates) -> dict:
+    """{template_id: asserted identity} for the pre-pass templates list ('' = unjudgeable)."""
+    out = {}
+    for t in templates or []:
+        tid = (t or {}).get("id") if isinstance(t, dict) else None
+        if tid is not None:
+            out[tid] = template_identity(t)
+    return out
+
+
+def boundary_class(mid, current_id, overlap: float, doc_start: bool, reason: str,
+                   fp_floor: float = FIRST_PAGE_FP_FLOOR, ident_of=None) -> str:
+    """'weak' | 'strong' for a page the walk made a BOUNDARY (see the block comment). Pure."""
+    if doc_start:
+        return "strong"                       # first-page evidence of its own (the real_34 shape)
+    if reason not in WEAK_REASONS or mid is None:
+        return "strong"                       # known supplier change / document-start header / defensive
+    if current_id is None:
+        return "weak"                         # B: no template → a template
+    if mid == current_id:
+        return "weak" if overlap >= fp_floor else "strong"   # A: the repeated-letterhead fingerprint
+    a = str((ident_of or {}).get(mid, "") or "")
+    b = str((ident_of or {}).get(current_id, "") or "")
+    if a and b and same_supplier(a, b):
+        return "weak"                         # C: a same-supplier sibling type switch
+    return "strong"                           # a cross-supplier switch, or an unjudgeable identity
+
+
+def boundary_classes(signals, flags, reasons, fp_floor: float = FIRST_PAGE_FP_FLOOR, ident_of=None) -> list:
+    """Per-page class: None for page 0 and every non-boundary, else boundary_class(...). Re-tracks the current
+    document's template id exactly as walk_boundaries does (current_id = the boundary page's mid). Pure."""
+    if not signals:
+        return []
+    out = [None]
+    current_id = _sig(signals[0])[0]
+    for i in range(1, len(signals)):
+        mid, overlap, ds = _sig(signals[i])[:3]
+        if i < len(flags) and flags[i]:
+            out.append(boundary_class(mid, current_id, overlap, ds, reasons[i] if i < len(reasons) else "", fp_floor, ident_of))
+            current_id = mid
+        else:
+            out.append(None)
+    return out
+
+
 def decide_boundary(matched_id, current_id, fp_overlap: float, doc_start: bool,
                     fp_floor: float = FIRST_PAGE_FP_FLOOR) -> bool:
     """Whether a (non-first) page starts a NEW document. True when ANY holds:
@@ -546,12 +622,21 @@ def detect_segments(pdf_path: str, templates: list, tesseract_path: str | None =
     # self-declared continuation is never a cut: `if boundary and self_cont:` → `boundary = False`.
     flags, reasons = walk_boundaries(signals, fp_floor, known_rule=bool(known))
 
+    # Boundary CLASS (2026-09-17): which cuts were decided by a template leg ALONE (no document-start on the page) —
+    # additive metadata for the JS pair belt (`segment_pair_hold`); the segments above are untouched by it.
+    try:
+        classes = boundary_classes(signals, flags, reasons, fp_floor, identity_map(templates))
+        weak_pages = [i for i, c in enumerate(classes) if c == "weak"]
+    except Exception:
+        weak_pages = []
+
     segments = segment_pages(flags)
     return {
         "page_count": n,
         "segments": [[s, e] for (s, e) in segments],
         "first_pages": [i for i, f in enumerate(flags) if f],
         "reasons": reasons,
+        "weak_pages": weak_pages,
     }
 
 

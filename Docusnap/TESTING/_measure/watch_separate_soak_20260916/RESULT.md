@@ -206,3 +206,42 @@ The hold is an IMPORT-TIME skip only (`autoFileRun=false`): a held segment carri
 100 %-clean segment nobody opened. Proposed belt: stamp watch-produced segments with a review-required mark that
 `isAutoFileEligible` honours until a human opens the doc (the `put_back_at` shape). Separator accuracy itself
 (the sibling fingerprint floor) is a separate improvement item.
+
+## Pair belt — BUILT DARK 2026-09-17: mig 180 `segment_pair_hold` (gary → Oracle SIGN-OFF-W/COND C1-C12)
+The S4 class above, closed at the value layer: the pre-pass tags each cut WEAK (template-only, no doc-start) or STRONG
+(`weak_pages`, unconditional metadata — `segmentation.boundary_class`), and the handler compares the two halves of every
+WEAK cut once both are read (same supplier + no date on the later page + the same / no number → hold BOTH with a durable
+"— confirm once." sentence naming the other page; a complete later page releases the earlier one). Design
+`docs/designs/SEGMENT_PAIR_HOLD_2026-09-17.md`.
+### Weak-cut census (the SHIPPED functions; `weak_cut_census2.py`, outputs `weak2_*.txt`)
+| set | boundaries | weak | weak genuine | weak over-split |
+|---|---|---|---|---|
+| controls3 + controls5 | 11 | 4 (= the four exhibits: 2 same-template, 2 no-template→template) | 0 | 4 |
+| real_34 + singles | 33 | **0** (every alert page is an EMAIL-header doc-start — `probe_real34_witness.py`) | 0 | 0 |
+| stacks (20 files) | 71 | 50 under "any template cut" → ~22 with cross-supplier switches STRONG | 22 (all read their own number + date) | 0 |
+### e2e4 (`e2e4_tail.sh`; the sandbox app on the new code, 180 + 177/178/179 + 176 armed; the same 72 files as e2e3;
+`soak_e2e_check.js` now FAILS an UNMARKED truncated half)
+189 docs, 178 exact (= e2e3), **truncatedAutoFiled 0** (e2e3: 1 — #1255's shape is now HELD), merged 3/3 marked,
+**pairMarkedExact 0** (the belt held NO genuine document), onePageAuto 81 (e2e3's 82 minus the truncated one), whole 39
+identical. The app's own log: 24 pairs decided — 21 "two documents (own number/date) — released" (bundle_08, bundle_mp_02,
+ctrl2_iv ×2, tb_03/04/05, tb_same_01/02 — every weak genuine cut released within seconds), **3 "read as ONE document —
+both held"** (`ctrl3_b2b_thornbury` via the orphan arm; `ctrl5_billto_copperfield` + `ctrl5_supplier_copperfield` via the
+same-number arm) → 6 truncated halves held + pair-marked. **Gap found:** `ctrl5_blur_copperfield` was RELEASED — page 1's
+number was unreadable (blurred letterhead: supplier + date, no ref) while page 2 read supplier + INV-29597 + no date; the
+same-number arm needs both numbers, the orphan arm needs no number → both halves held only by their own missing fields,
+UNMARKED (truncatedUnmarked 2 → the gate's one red). → the UNREADABLE-PREDECESSOR arm added the same hour (same supplier
+∧ later number but no date ∧ earlier number EMPTY → inconclusive → hold both; no new hold anywhere else on the corpus:
+every weak genuine later page reads a date), pinned both ways, Oracle asked; re-run of the two blur controls =
+`e2e5_run.sh` / `e2e5_result.txt`.
+### Oracle C6b (the same hour) + e2e5
+The Oracle SIGNED OFF the arm and generalised it (C6b): a weak later page is released only on POSITIVE evidence of being
+its own document (own number AND own date, not the same-document shape); any missing piece → inconclusive → hold both; a
+repeated value is never own evidence; the ONE release that must stay = an unread earlier number + a COMPLETE later page.
+`pairHoldDecision` restated as that principle (pinned: (i) no number + the same date → hold; (ii) a different number + no
+date → hold; a complete later page after an unread earlier number → release; two empty numbers + a different later date
+→ release). The e2e4 numbers are unchanged by construction (all 21 released pairs read their own number AND date).
+**e2e5** (the app restarted on the new code, the two blur controls): `ctrl5_blur_copperfield` → "inconclusive — both
+held for one look" → **truncatedHeldMarked 2, truncatedUnmarked 0, pairMarkedExact 0**; `ctrl5_blur_thornbury` whole
+(never cut). **Gate: all four exhibit pairs held + marked, truncatedAutoFiled 0, truncatedUnmarked 0, the belt held no
+genuine document, real_34 0 weak — GREEN for the DARK merge.** Flip gate = the Oracle's C9 cells + C12 (a recovery
+action). The sandbox app is still up on port 9223 (harmless).

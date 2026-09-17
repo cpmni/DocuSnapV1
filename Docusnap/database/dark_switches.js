@@ -276,6 +276,13 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // (Oracle C4-C6): controls1-5 0 over-splits with the shipped functions + stacks >= 91/95 lost 0 + real_34 34/34 +
   // the 179-ON/178-OFF cell + e2e (truncation 0 AND held-wrong-cut 0) + the owner's own multi-page PDFs OFF-vs-ON diff.
   'segment_known_supplier_change',
+  // mig 180 (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C12): the S4 silent-truncation belt — a WEAK (letterhead-only)
+  // 1-page cut whose two halves read as ONE document (same supplier, no date on the later page, the same/no number)
+  // holds BOTH halves with a durable "— confirm once." note; a complete later page releases the earlier one. The pre-pass
+  // `weak_pages` class is unconditional metadata; this key gates the JS consumer only. ⚑ FLIP GATE (Oracle C9 + C12):
+  // real_34 rasterised 0 held · a young-install stack's inconclusive count · the email-arm-only class arm · every sibling
+  // false cut held under 178+179+belt · AND a one-click recovery action ("Re-import as one document" / Rejoin) shipped.
+  'segment_pair_hold',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

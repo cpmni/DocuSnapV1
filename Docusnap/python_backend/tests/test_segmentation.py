@@ -309,6 +309,42 @@ check("empty / None → '' (the raw lines of '' are [''] — the join is what ha
       " ".join(template_matcher.header_band_lines("")) == "" and template_matcher.header_band_text(None) == "" and template_matcher.header_band_text("") == "")
 print()
 
+# 13. boundary_class / boundary_classes — the WEAK (template-only) vs STRONG class the JS pair belt consumes
+#     (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C12). Segments are byte-identical; the class is metadata.
+print("boundary_class: WEAK = a template-only cut with no doc-start; STRONG = doc-start / known change / cross-supplier")
+ID = {4: "Copperfield Electrical", 5: "Copperfield Electrical Ltd", 6: "Thornbury Fasteners", 7: ""}
+bc = seg.boundary_class
+check("A: the same template's fingerprint, no doc-start → weak", bc(4, 4, 0.9, False, "first-page fingerprint", 0.5, ID) == "weak")
+check("PIN (the real_34 shape): the same fingerprint WITH a doc-start (an email header) → STRONG — never weak",
+      bc(4, 4, 1.0, True, "first-page fingerprint", 0.5, ID) == "strong")
+check("B: no template → a template (page 1 unmatched at 150 DPI), no doc-start → weak", bc(4, None, 0.9, False, "different template", 0.5, ID) == "weak")
+check("C: a same-SUPPLIER sibling switch (identity equal after the suffix strip) → weak", bc(5, 4, 0.2, False, "different template", 0.5, ID) == "weak")
+check("PIN: a CROSS-supplier template switch → STRONG", bc(6, 4, 0.9, False, "different template", 0.5, ID) == "strong")
+check("PIN: an unjudgeable identity ('' — no dominant issuer, no frozen name) → C False → STRONG", bc(7, 4, 0.9, False, "different template", 0.5, ID) == "strong")
+check("PIN: no identity map at all (legacy caller) → C False → STRONG", bc(5, 4, 0.9, False, "different template", 0.5, None) == "strong")
+check("a known-supplier change → STRONG; a document-start header → STRONG",
+      bc(None, 4, 0.0, False, "known supplier change", 0.5, ID) == "strong" and bc(None, 4, 0.0, True, "document-start header", 0.5, ID) == "strong")
+check("a doc-start on a 'different template' cut → STRONG (the switch control shape)", bc(6, None, 0.9, True, "different template", 0.5, ID) == "strong")
+check("the identity is template_matcher._template_identity, never `name` (Oracle C4): dominant issuer → frozen supplier_name → ''",
+      seg.template_identity({"name": "Purchase Order Template", "dominant_supplier": "Copperfield Electrical"}) == "Copperfield Electrical"
+      and seg.template_identity({"name": "Invoice Template", "fields": [{"field_key": "supplier_name", "is_variable": 0, "fixed_value": "Thornbury Fasteners"}]}) == "Thornbury Fasteners"
+      and seg.template_identity({"name": "Invoice Template"}) == "" and seg.template_identity(None) == "")
+check("PIN: a cosmetic RENAME does not change the class (two same-issuer templates with different names → weak)",
+      bc(5, 4, 0.2, False, "different template", 0.5, seg.identity_map([{"id": 4, "name": "Invoice Template", "dominant_supplier": "Copperfield Electrical"},
+                                                                          {"id": 5, "name": "Purchase Order Template", "dominant_supplier": "Copperfield Electrical Ltd"}])) == "weak")
+sigs = [sig(4, .9, names=[CP]), sig(4, .9, names=[CP]), sig(4, .9, ds=True, names=[CP]), sig(None, 0, names=[TF], wit=True), sig(6, .8), sig(6, .3), sig(4, .9)]
+fl, rs = seg.walk_boundaries(sigs, 0.5, known_rule=True)
+cls = seg.boundary_classes(sigs, fl, rs, 0.5, ID)
+check("boundary_classes re-tracks the walk: page 0 None; A weak; A + doc-start strong; the known change strong; a template after None → weak (B); a continuation None; TF→CP cross-supplier strong",
+      fl == [True, True, True, True, True, False, True] and cls == [None, "weak", "strong", "strong", "weak", None, "strong"])
+check("empty → []; a legacy 4-tuple walk classifies too (4→5 is a same-supplier sibling switch → weak; the doc-start header → strong; a vetoed page → None)",
+      seg.boundary_classes([], [], []) == []
+      and seg.boundary_classes(legacy, *seg.walk_boundaries(legacy, 0.5), 0.5, ID) == [None, None, "weak", "strong", None])
+check("detect_segments emits `weak_pages` unconditionally (additive metadata; the segments are untouched)",
+      '"weak_pages": weak_pages,' in src and "classes = boundary_classes(signals, flags, reasons, fp_floor, identity_map(templates))" in src)
+check("segment_docs.py's slips path emits weak_pages: [] (sheet-bounded cuts are never weak)", '"weak_pages": [],' in segsrc)
+print()
+
 if fail:
     print(f"{fail} check(s) failed — segmentation regressed.")
     sys.exit(1)

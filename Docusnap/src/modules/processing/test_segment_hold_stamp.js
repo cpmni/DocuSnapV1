@@ -148,13 +148,14 @@ const strip = (rows) => rows.map(r => ({ ...r }));   // plain objects for JSON d
   console.log('\n§7 source contracts (Oracle C10)');
   const W = read(path.join(REPO, 'src', 'modules', 'watch', 'handler.js'));
   check("watch: the pinned import-time hold line is byte-identical", W.includes("const _autoFileRun = !(heldNames && msg.type === 'file_done' && heldNames.has(msg.original_filename));"));
-  check('watch: BOTH handleFileMessage call sites pass { segmentHold: segHold }', (W.match(/handleFileMessage\(db, msg, watchFolder, notifyMainWindow, _ctx\.logger, _autoFileRun, \{ segmentHold: segHold \}\)/g) || []).length === 2);
+  check('watch: BOTH handleFileMessage call sites pass { segmentHold: segHold, segmentPairs: pairCtx }', (W.match(/handleFileMessage\(db, msg, watchFolder, notifyMainWindow, _ctx\.logger, _autoFileRun, \{ segmentHold: segHold, segmentPairs: pairCtx \}\)/g) || []).length === 2);
   check('watch: segHold is built from sep.rewrites via split_plan.segmentHoldPages', W.includes("segHold = require('../processing/split_plan').segmentHoldPages(sep.rewrites);"));
   check('manual: segHold is built from sepRes.rewrites (the "only the count is used" discard is gone)', H_SRC.includes('segHold = segmentHoldPages(sepRes && sepRes.rewrites);') && !H_SRC.includes('so only the count is used'));
-  check('manual: the file_done call passes { segmentHold: segHold }', H_SRC.includes('_handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun, { segmentHold: segHold })'));
+  check('manual: the file_done call passes { segmentHold: segHold, segmentPairs: pairCtx }', H_SRC.includes('_handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun, { segmentHold: segHold, segmentPairs: pairCtx })'));
   check('the rewrite carries `separators` (sheet-bounded exemption source)', H_SRC.includes("rewrites.push({ original: name, segments: made.map(f => path.basename(f)), separators: plan.separators || 0 });"));
   check('the stamp sits in the success branch after insertExtractions and before the chip verdict (Oracle C2)',
-    /learning\.insertExtractions\(db, docId, rows\);\s*\n\s*\}\s*\n\s*\/\/ SPLIT-SEGMENT HOLD[\s\S]{0,1600}?_stampSegmentHold\(db, docId, document_type_id, _segHold\.get\(msg\.original_filename\)\);[\s\S]{0,2500}?msg\.review_hold = null;/.test(H_SRC));
+    // (window widened 2500 → 4500 on 2026-09-17: the segment PAIR hold block sits between the stamp and the chip verdict)
+    /learning\.insertExtractions\(db, docId, rows\);\s*\n\s*\}\s*\n\s*\/\/ SPLIT-SEGMENT HOLD[\s\S]{0,1600}?_stampSegmentHold\(db, docId, document_type_id, _segHold\.get\(msg\.original_filename\)\);[\s\S]{0,4500}?msg\.review_hold = null;/.test(H_SRC));
   const RS = read(path.join(REPO, 'src', 'services', 'reviewService.js'));
   check('a human confirm still clears every note (reviewService)', RS.includes('UPDATE extractions SET validation_note = NULL, corrected_to = NULL WHERE document_id = ?'));
   const ISF = read(path.join(REPO, 'src', 'services', 'issuerSiblingFillService.js'));

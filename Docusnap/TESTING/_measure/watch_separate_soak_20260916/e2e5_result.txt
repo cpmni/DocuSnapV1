@@ -1,0 +1,21 @@
+﻿  truncated half held+marked: #1550 ctrl5_blur_copperfield_split_p2.pdf pages 2,2 of GT 1,2 status=needs_review pair=true
+  truncated half held+marked: #1551 ctrl5_blur_copperfield_split_p1.pdf pages 1,1 of GT 1,2 status=needs_review pair=true
+{
+ "docs": 3,
+ "unmatched": 0,
+ "exact": 1,
+ "wrongCut": 2,
+ "truncatedAutoFiled": 0,
+ "truncatedHeld": 2,
+ "truncatedHeldMarked": 2,
+ "truncatedUnmarked": 0,
+ "merged": 0,
+ "mergedMarked": 0,
+ "mergedUnmarked": 0,
+ "onePageAuto": 0,
+ "onePageAutoIncomplete": 0,
+ "whole": 1,
+ "pairMarked": 2,
+ "pairMarkedExact": 0
+}
+VIOLATIONS 0 — no truncated half auto-filed or unmarked, every merged cut marked, every auto-filed 1-page cut has ref+date+supplier

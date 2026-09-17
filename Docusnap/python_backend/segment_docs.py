@@ -97,6 +97,7 @@ def main():
                     "separator_pages": seps,
                     "separator_payloads": sd.get("separator_payloads", []),
                     "reasons": ["separator sheet"] * len(seps),
+                    "weak_pages": [],   # sheet-bounded cuts are operator-declared — never a weak (template-only) boundary
                 }), flush=True)
                 return
         except Exception as exc:            # fail safe: never let the slip rung kill the pre-pass

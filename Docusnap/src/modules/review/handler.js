@@ -625,13 +625,20 @@ function register(ctx) {
     // SPLIT-SEGMENT HOLD (2026-09-16, Oracle C4): the mark on a noted row means "this multi-page cut of a
     // heuristic split needs one look" — never "flagged by a formatting check" (a false pointer). Report its
     // own kind + the page range so Review says the truthful thing and points at Split. Read-only.
+    // SEGMENT PAIR HOLD (2026-09-17, Oracle C7): the same kind with `subkind: 'pair'` — "this 1-page cut and the
+    // page next to it may be ONE document; check both" — never "use Split" (the wrong tool for a pair). A row carrying
+    // BOTH marks (a weak multi-page successor) reports the merged sentence (its Split copy is the right one).
     if (kind === 'flagged') {
       try {
         const SP = require('../processing/split_plan');
         const held = db.prepare(`SELECT field_key, validation_note FROM extractions
                                   WHERE document_id = ? AND TRIM(COALESCE(validation_note,'')) <> ''`).all(doc.id)
           .find(e => SP.hasSegmentHold(e.validation_note));
-        if (held) { out.kind = 'segment-hold'; out.field = held.field_key; out.pages = SP.segmentHoldRange(held.validation_note); }
+        if (held) {
+          out.kind = 'segment-hold'; out.field = held.field_key; out.pages = SP.segmentHoldRange(held.validation_note);
+          out.subkind = SP.segmentHoldKind(held.validation_note);
+          if (out.subkind === 'pair') out.partnerPage = SP.pairPartnerPage(held.validation_note);
+        }
       } catch { /* advisory — never break the reason panel */ }
     }
     if (kind === 'flagged' && out.kind === 'flagged') {

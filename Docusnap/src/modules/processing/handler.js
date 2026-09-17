@@ -11,7 +11,8 @@ const fs   = require('fs');
 const diaglog = require('../diaglog');
 // D2 / D-C11: viewer-scoped count broadcasts (helper resolves the desktop operator).
 const { broadcastCounts, broadcastReviewCount, broadcastStuckCount } = require('../../lib/countBroadcast');
-const { buildSegmentArgs, buildSplitPlan, segmentHoldPages, carrySegmentHold, hasSegmentHold, segmentHoldNote } = require('./split_plan');
+const { buildSegmentArgs, buildSplitPlan, segmentHoldPages, carrySegmentHold, hasSegmentHold, segmentHoldNote,
+        hasMergedSegmentHold, weakSegmentNames, buildPairContext, pairSentences, pairHoldDecision, clearPairSentence } = require('./split_plan');
 const { clampSlipCount, nextSlipRange, slipPackName, pad4 } = require('./slip_pack');
 
 // SECURITY (Stage 2 — M11): call Windows system binaries by ABSOLUTE path. A bare image name is
@@ -2964,6 +2965,9 @@ function register(ctx) {
         // so split_plan.segmentHoldPages exempts every segment of a rewrite with separators > 0. Additive —
         // watch's applySeparationToTracked reads only original/segments.
         rewrites.push({ original: name, segments: made.map(f => path.basename(f)), separators: plan.separators || 0 });
+        // Segment PAIR hold (2026-09-17): the WEAK (template-only) cuts among the produced segments, from the detector's
+        // `weak_pages` via the plan (made[k] ⇔ segments[k]: pdf_splitter writes its range sets in order). Additive.
+        rewrites[rewrites.length - 1].weak = weakSegmentNames(plan, made.map(f => path.basename(f)));
         if (plan.separators) {
           log?.(`${name} — ${plan.separators} separator sheet(s) found · ${made.length} document(s) imported · sheets removed · original kept safe`);
           trace?.({ ev: 'slip_split', file: name, separators: plan.separators, payloads: plan.payloads, made: made.length });
@@ -3271,7 +3275,7 @@ function register(ctx) {
               // unset → the row link falls back to opening Review at the first doc.
               _recordDevDoc(msg);
               try {
-                const io = _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun, { segmentHold: segHold });
+                const io = _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoFileRun, { segmentHold: segHold, segmentPairs: pairCtx });
                 if (io && typeof io.then === 'function') pendingFileIo.push(io);
               }
               catch (e) { logger?.err?.(`_handleFileMessage failed: ${msg.original_filename || '?'} — ${e && e.message}`); }
@@ -3310,6 +3314,9 @@ function register(ctx) {
     // so a merged cut is stamped for one human look instead of auto-filing (it used to — "only the count
     // is used" discarded the rewrites).
     let segHold = null;
+    // Segment PAIR hold (2026-09-17, Oracle C1-C12): the WEAK 1-page cuts paired with their predecessor + the per-run
+    // `landed` map — ONE context per import (a pair can straddle shards), threaded beside segHold.
+    let pairCtx = null;
     // ── Auto document separation (Stage 1) ── runs BEFORE the worker set is built, so
     // both the single-worker (scans the folder) and multi-worker (enumerates it) paths
     // pick up the per-document segments. Fail-safe: a detector/splitter failure just
@@ -3343,6 +3350,7 @@ function register(ctx) {
             null, _separationOpts(db, trainingArgs, tempFiles));
           const n = (sepRes && sepRes.separated) || 0;   // import re-scans the folder for the segments themselves
           segHold = segmentHoldPages(sepRes && sepRes.rewrites);   // the multi-page heuristic cuts → held for a look
+          pairCtx = buildPairContext(sepRes && sepRes.rewrites);   // the weak 1-page cuts → compared with their predecessor
           if (n) logger?.log(`[separation] separated ${n} multi-document PDF(s) before processing${segHold.size ? ` (${segHold.size} multi-page cut(s) will be held for a look)` : ''}`);
         } catch (e) {
           logger?.warn(`[separation] pre-pass failed (continuing without split): ${e.message}`);
@@ -6527,6 +6535,12 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
     } catch (e) {
       logger?.warn(`Could not record failed document ${msg.original_filename || '?'}: ${e.message}`);
     }
+    // SEGMENT PAIR HOLD (2026-09-17, Oracle C10): record the failure so a partner that lands later decides
+    // 'inconclusive' and holds itself; a partner that landed first keeps its provisional note. Bookkeeping only.
+    try {
+      const _pc = opts && opts.segmentPairs;
+      if (_pc && _pc.landed && typeof _pc.landed.set === 'function') _pc.landed.set(String(msg.original_filename || ''), { error: true });
+    } catch {}
     // Full structured record -> the sensitive, admin-gated diagnostic log (off by default; it
     // already swallows its own errors). The only sink carrying the filename + truncated traceback +
     // page/timeout — never the always-on log. Best-effort.
@@ -6656,6 +6670,20 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       logger?.log?.(`[segment-hold] ${msg.original_filename}: multi-page cut of a heuristic split — held for one look`);
     }
   } catch (e) { try { logger?.warn?.(`[segment-hold] stamp failed for doc ${docId}: ${e && e.message}`); } catch {} }
+  // SEGMENT PAIR HOLD (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C12; DARK mig 180 `segment_pair_hold`). A WEAK
+  // (letterhead-only) 1-page cut is compared with its neighbour once both have landed — see _pairLanded. The first
+  // half to land carries a PROVISIONAL note (never `msg.needs_review` — the release re-run must pass the T1 bail).
+  // `_ioDone` resolves when THIS doc's working copy / rotate tail has run (Oracle C2: a released predecessor files the
+  // rotated working copy, never a mid-drain source). Rows-first placement, before the chip verdict + _maybeAutoFile.
+  const _ioDone = {}; _ioDone.promise = new Promise(r => { _ioDone.resolve = r; });
+  try {
+    const _pc = opts && opts.segmentPairs;
+    if (_pc && _pc.byName && typeof _pc.byName.has === 'function' && _pc.byName.has(msg.original_filename)
+        && learning.getSetting(db, 'segment_pair_hold', 'false') === 'true') {
+      _pairLanded(db, _pc, msg.original_filename, { docId, typeId: document_type_id, msg, autoFileRun: !!autoFileRun, ioDone: _ioDone.promise },
+                  folderPath, notifyMainWindow, logger);
+    }
+  } catch (e) { try { logger?.warn?.(`[segment-pair] ${msg.original_filename}: ${e && e.message}`); } catch {} }
   // BARCODE INVENTORY (2026-08-26, DARK `barcode_inventory`): persist the page decodes the emit
   // carried (tri-state: key absent ⇒ nothing written). Best-effort — a barcode row must never fail
   // an import.
@@ -6752,6 +6780,7 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       // opted out (Teach-wizard single-file import keeps the doc in Review).
       if (autoFileRun) _maybeAutoFile(db, msg, folderPath, notifyMainWindow, logger);
 
+      _ioDone.resolve();   // segment pair hold (Oracle C2): a released partner may now auto-file the rotated working copy
       resolve();
     });
   });
@@ -6771,10 +6800,15 @@ let _autoFileChain = Promise.resolve();
 // supplier_name LAST (issuerSiblingFillService machine-clears supplier_name notes on siblings, so it is
 // the last resort) → a stub row on the ref key. Idempotent (the mark is stamped once). Never files,
 // never edits a value. `range` = {from,to} from split_plan.segmentHoldPages.
-function _stampSegmentHold(db, docId, documentTypeId, range) {
+// `sentence` (2026-09-17, the segment PAIR hold): stamp THIS exact sentence instead of the mig-176 one; idempotence then
+// keys on the exact sentence (Oracle C3 — a middle page of p1|p2|p3 carries two different pair sentences), while the
+// mig-176 stamp keeps keying on its mark. The two families can share a row.
+function _stampSegmentHold(db, docId, documentTypeId, range, sentence = null) {
   const rows = db.prepare('SELECT id, field_key, display_value, validation_note FROM extractions WHERE document_id = ? ORDER BY id').all(docId);
-  if (rows.some(r => hasSegmentHold(r.validation_note))) return { stamped: false, reason: 'already' };
-  const sentence = segmentHoldNote(range ? range.from : 0, range ? range.to : 0);
+  const already = sentence ? rows.some(r => String(r.validation_note || '').includes(sentence))
+                           : rows.some(r => hasMergedSegmentHold(r.validation_note));
+  if (already) return { stamped: false, reason: 'already' };
+  sentence = sentence || segmentHoldNote(range ? range.from : 0, range ? range.to : 0);
   const dt = documentTypeId != null ? (db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(documentTypeId) || {}) : {};
   const typeKeys = documentTypeId != null
     ? new Set(db.prepare('SELECT key FROM fields WHERE document_type_id = ?').all(documentTypeId).map(r => r.key)) : null;
@@ -6795,6 +6829,83 @@ function _stampSegmentHold(db, docId, documentTypeId, range) {
     extraction_method: 'segment_hold', validation_note: sentence, corrected_to: null, anchor_label: null,
     candidates: null, suggested_supplier: null, corroboration: null, charset_flag_meta: null }]);
   return { stamped: true, field_key: key, stub: true };
+}
+
+// ── SEGMENT PAIR HOLD (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C12; DARK mig 180) ─────────────────────────
+// The two halves' STORED reads for the value check: the supplier from the document row, the ref/date from the
+// extractions by THIS doc's own type roles (a missing type / dangling role reads as empty → the orphan arm may
+// over-hold — fail-safe, never a silent file).
+function _pairTriple(db, entry) {
+  const documents = require('../../../database/modules/documents');
+  const doc = (entry && entry.docId != null) ? documents.getById(db, entry.docId) : null;
+  const dt = (entry && entry.typeId != null)
+    ? (db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(entry.typeId) || {}) : {};
+  const val = (k) => {
+    if (!k || !entry || entry.docId == null) return '';
+    const e = db.prepare('SELECT display_value, raw_value FROM extractions WHERE document_id = ? AND field_key = ?').get(entry.docId, k);
+    return String((e && (e.display_value ?? e.raw_value)) ?? '').trim();
+  };
+  return { supplier: String((doc && doc.supplier_name) || '').trim(), ref: val(dt.ref_field_key), date: val(dt.date_field_key) };
+}
+// Remove ONE exact pair sentence from a doc's rows (a machine-clear of a note THIS belt wrote seconds earlier, on the
+// evidence that the partner is a document of its own). Any other sentence on the row survives; a stub row the pair
+// stamp created (no value, method 'segment_hold') is removed once its note is empty. Returns the rows touched.
+function _clearPairSentence(db, docId, sentence) {
+  const rows = db.prepare('SELECT id, display_value, extraction_method, validation_note FROM extractions WHERE document_id = ?').all(docId);
+  let n = 0;
+  for (const r of rows) {
+    const note = String(r.validation_note || '');
+    if (!note.includes(sentence)) continue;
+    const rest = clearPairSentence(note, sentence);
+    if (!rest && r.extraction_method === 'segment_hold' && !String(r.display_value || '').trim()) db.prepare('DELETE FROM extractions WHERE id = ?').run(r.id);
+    else db.prepare('UPDATE extractions SET validation_note = ? WHERE id = ?').run(rest || null, r.id);
+    n++;
+  }
+  return n;
+}
+// One half of a WEAK cut has landed (rows persisted). For every pair it belongs to: partner not landed → stamp THIS
+// doc's PROVISIONAL sentence (its own auto-file is refused by the ONE predicate until the partner is read); partner
+// errored → inconclusive → stamp (hold); both landed → pairHoldDecision over the stored reads: 'release' clears the
+// partner's provisional sentence and — ONLY when the partner's landing was an auto-file run (Oracle C1: never on watch)
+// and after ITS IO tail (Oracle C2) — re-invokes _maybeAutoFile with the partner's ORIGINAL msg (the chain's status guard
+// + atomic claim make a double file impossible); 'hold' / 'inconclusive' stamp both (idempotent on the exact sentence).
+// `ctx.onRelease(partnerName, name, autoFileRun)` is a test seam (pinned by test_segment_pair_stamp.js).
+function _pairLanded(db, ctx, name, entry, folderPath, notifyMainWindow, logger) {
+  ctx.landed.set(name, entry);
+  const log = (t) => { try { logger?.log?.(`[segment-pair] ${t}`); } catch {} };
+  for (const pair of (ctx.byName.get(name) || [])) {
+    const iAmPred = pair.pred === name;
+    const partnerName = iAmPred ? pair.succ : pair.pred;
+    const partner = ctx.landed.get(partnerName);
+    const s = pairSentences(pair);
+    const mine = iAmPred ? s.pred : s.succ, theirs = iAmPred ? s.succ : s.pred;
+    if (!partner) {
+      _stampSegmentHold(db, entry.docId, entry.typeId, null, mine);
+      log(`${name}: provisional hold until ${partnerName} is read`);
+      continue;
+    }
+    if (partner.error) {
+      _stampSegmentHold(db, entry.docId, entry.typeId, null, mine);
+      log(`${name}: ${partnerName} failed to process — held (inconclusive)`);
+      continue;
+    }
+    const predE = iAmPred ? entry : partner, succE = iAmPred ? partner : entry;
+    const decision = pairHoldDecision(_pairTriple(db, predE), _pairTriple(db, succE));
+    if (decision === 'release') {
+      _clearPairSentence(db, partner.docId, theirs);
+      try { if (typeof ctx.onRelease === 'function') ctx.onRelease(partnerName, name, !!partner.autoFileRun); } catch {}
+      if (partner.autoFileRun) {
+        Promise.resolve(partner.ioDone)
+          .then(() => _maybeAutoFile(db, partner.msg, folderPath, notifyMainWindow, logger))
+          .catch((e) => { try { logger?.warn?.(`[segment-pair] release auto-file ${partnerName}: ${e && e.message}`); } catch {} });
+      }
+      log(`${partnerName} + ${name}: two documents (own number/date) — ${partnerName} released`);
+    } else {
+      _stampSegmentHold(db, entry.docId, entry.typeId, null, mine);
+      _stampSegmentHold(db, partner.docId, partner.typeId, null, theirs);
+      log(`${partnerName} + ${name}: ${decision === 'hold' ? 'read as ONE document' : 'inconclusive'} — both held for one look`);
+    }
+  }
 }
 
 // The quiet lane's hold family (S3-C5 + every "— confirm once." note). Shared by mergeReprocessRows.
@@ -7104,6 +7215,7 @@ module.exports = {
   cleanupTempFiles: cleanupFiles,
   handleFileMessage: _handleFileMessage,
   _stampSegmentHold,                 // split-segment hold (2026-09-16) — pinned by test_segment_hold_stamp.js
+  _pairLanded, _pairTriple, _clearPairSentence,   // segment pair hold (2026-09-17) — pinned by test_segment_pair_stamp.js
   formatFileError,
   flushPendingDrains: _flushPendingDrains,
   // Slice 1 (2026-08-21): the human-confirm trigger for the scope-local auto-accept. A no-op until

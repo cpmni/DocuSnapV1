@@ -1,0 +1,30 @@
+  merged cut: #1365 bundle_01_split_p2-3.pdf pages 2,3 spans 2-2,3-3 status=needs_review marked=true
+  merged cut: #1378 bundle_05_split_p1-2.pdf pages 1,2 spans 1-1,2-2 status=needs_review marked=true
+  truncated half held+marked: #1403 ctrl3_b2b_thornbury_split_p1.pdf pages 1,1 of GT 1,2 status=needs_review pair=true
+  merged cut: #1405 bundle_mp_01_split_p3-6.pdf pages 3,6 spans 3-4,5-5,6-6 status=needs_review marked=true
+  truncated half held+marked: #1419 ctrl5_billto_copperfield_split_p1.pdf pages 1,1 of GT 1,2 status=needs_review pair=true
+  truncated half held+marked: #1421 ctrl3_b2b_thornbury_split_p2.pdf pages 2,2 of GT 1,2 status=needs_review pair=true
+  truncated half held+marked: #1424 ctrl5_billto_copperfield_split_p2.pdf pages 2,2 of GT 1,2 status=needs_review pair=true
+  truncated half held+marked: #1447 ctrl5_supplier_copperfield_split_p1.pdf pages 1,1 of GT 1,2 status=needs_review pair=true
+  truncated half held+marked: #1458 ctrl5_supplier_copperfield_split_p2.pdf pages 2,2 of GT 1,2 status=needs_review pair=true
+{
+ "docs": 189,
+ "unmatched": 0,
+ "exact": 178,
+ "wrongCut": 11,
+ "truncatedAutoFiled": 0,
+ "truncatedHeld": 8,
+ "truncatedHeldMarked": 6,
+ "truncatedUnmarked": 2,
+ "merged": 3,
+ "mergedMarked": 3,
+ "mergedUnmarked": 0,
+ "onePageAuto": 81,
+ "onePageAutoIncomplete": 0,
+ "whole": 39,
+ "pairMarked": 6,
+ "pairMarkedExact": 0
+}
+VIOLATIONS 2:
+  #1422 ctrl5_blur_copperfield_split_p2.pdf TRUNCATED (pages 2,2 of GT 1,2 — Copperfield Electrical invoice with a BLURRED letterhead; p2 clean letterhead continuation — must NOT split (unknown->known dropped)) and UNMARKED (status=needs_review)
+  #1428 ctrl5_blur_copperfield_split_p1.pdf TRUNCATED (pages 1,1 of GT 1,2 — Copperfield Electrical invoice with a BLURRED letterhead; p2 clean letterhead continuation — must NOT split (unknown->known dropped)) and UNMARKED (status=needs_review)

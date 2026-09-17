@@ -34,7 +34,7 @@ const REF_ADVISORY_MARKS = Object.freeze([
 ]);
 // The ABSENT mark — its OWN topic, NEVER de-duped (renderer `_neitherOnPage` keys on it).
 const ABSENT_MARK = "doesn't appear on this page as written";   // engine.py _FILING_SANITY_ABSENT_MARK
-const { SEGMENT_HOLD_MARK } = require('./split_plan');           // the split-segment hold — its own topic too
+const { SEGMENT_HOLD_MARK, SEGMENT_PAIR_MARK } = require('./split_plan');   // the split-segment holds — their own topic too
 // Lane-hold family — mirrors handler.js `_isLaneHoldNote` (the hold that must always survive).
 function _isLaneHold(n) {
   return n.includes('Read differently after learning') || n.includes('— confirm once.');
@@ -49,6 +49,8 @@ function _refRank(n) {
   // de-duped — it ends with "— confirm once." so it would otherwise outrank and swallow a genuine ref
   // advisory ("one character differs…"), leaving the user to confirm a possibly-slipped ref unwarned.
   if (n.includes(SEGMENT_HOLD_MARK)) return 0;
+  // The segment PAIR hold (split_plan.SEGMENT_PAIR_MARK, 2026-09-17, the Oracle's C5 twin): same rule — its own topic.
+  if (n.includes(SEGMENT_PAIR_MARK)) return 0;
   if (_isLaneHold(n)) return 2;
   if (_isRefAdvisory(n)) return 1;
   return 0;

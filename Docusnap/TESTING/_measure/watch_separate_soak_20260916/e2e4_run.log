@@ -1,0 +1,32 @@
+12:11:10 start
+12:11:10 folder built: 1 files
+12:11:16 sandbox app stopped:  left
+setting segment_pair_hold = true
+setting segment_continuation_veto = true
+setting segment_title_slug = true
+setting segment_known_supplier_change = true
+setting split_segment_multipage_hold = true
+12:11:17 minId=1356
+12:11:22 login page: {"title": "ScanFinder \u2014 Sign in", "url": "file:///C:/GIT%20Projects/Docusnap/src/windows/login/index.html"} 
+"sent"
+12:11:34 main window: {"title": "ScanFinder", "url": "file:///C:/GIT%20Projects/Docusnap/src/windows/main/index.html"} 
+"started"
+12:11:35 import started on C:/Users/cmccu/AppData/Local/Temp/claude/c--GIT-Projects-Docusnap/2d87d505-1b3b-4522-b756-384e51badc0d/scratchpad/soak/Manual_E2E4
+12:12:06 import result: "{\"success\":true,\"stopped\":false}"
+12:12:31 checker done: VIOLATIONS 0 — no truncated half auto-filed or unmarked, every merged cut marked, every auto-filed 1-page cut has ref+date+supplier
+E2E4-DONE
+12:12:31 EXIT status 0 at line 1
+13:16:27 tail start minId=1359
+13:16:27 folder: 72 files
+"started"
+13:16:29 import started on C:/Users/cmccu/AppData/Local/Temp/claude/c--GIT-Projects-Docusnap/2d87d505-1b3b-4522-b756-384e51badc0d/scratchpad/soak/Manual_E2E4
+13:18:32 still importing… max doc id 1363
+13:20:35 still importing… max doc id 1397
+13:22:38 still importing… max doc id 1429
+13:24:41 still importing… max doc id 1464
+13:26:45 still importing… max doc id 1502
+13:28:48 still importing… max doc id 1538
+13:30:20 import result: "{\"success\":true,\"stopped\":false}"
+13:30:45 checker done:   #1428 ctrl5_blur_copperfield_split_p1.pdf TRUNCATED (pages 1,1 of GT 1,2 — Copperfield Electrical invoice with a BLURRED letterhead; p2 clean letterhead continuation — must NOT split (unknown->k
+E2E4-DONE
+13:30:45 EXIT status 0 at line 1

@@ -1,0 +1,11 @@
+ctrl3_b2b_copperfield.pdf    exp=[1] walk=[1]
+ctrl3_b2b_thornbury.pdf      exp=[1] walk=[1, 2]
+      p2:OVER:WEAK reason='different template' doc_start=False tmpl=Thornbury Fasteners/delivery_note prev_tmpl=None prev=1p this=1p witness=False names=['Thornbury Fasteners']
+ctrl3_b2bmk_copperfield.pdf  exp=[1] walk=[1]
+ctrl3_b2bmk_thornbury.pdf    exp=[1] walk=[1]
+ctrl3_switch_copperfield.pdf exp=[1, 2] walk=[1, 2]
+      p2:EXPECTED:strong reason='different template' doc_start=True tmpl=Thornbury Fasteners/invoice prev_tmpl=None prev=1p this=1p witness=True names=['Thornbury Fasteners']
+ctrl3_switch_thornbury.pdf   exp=[1, 2] walk=[1, 2]
+      p2:EXPECTED:strong reason='different template' doc_start=True tmpl=Copperfield Electrical/invoice prev_tmpl=None prev=1p this=1p witness=True names=['Copperfield Electrical']
+
+TOTAL {"files": 6, "expected": 8, "boundaries": 3, "weak2": 1, "weak2_expected": 0, "weak2_over": 1, "strong_over": 0, "weak2_1page_pairs": 1, "by_reason": {"different template (no doc-start)": {"expected": 0, "over": 1}, "different template": {"expected": 2, "over": 0}}}

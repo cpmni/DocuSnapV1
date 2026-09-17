@@ -3690,6 +3690,29 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 179 (segment_known_supplier_change): ${e.message}`); }
   }
 
+  // ── migration 180: segment_pair_hold seeded OFF (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C12).
+  //    The S4 silent truncation, caught live by the arc-3 e2e: a 2-page document whose page 2 repeats the letterhead
+  //    with no page marker is cut at page 2 on the strength of the letterhead alone; on a MANUAL import page 1
+  //    auto-files as a complete 1-page document and page 2 orphans in Review (the mig-176 belt holds multi-page cuts
+  //    only). When ON, the separator classifies each cut WEAK (a template-only cut with no document-start on the
+  //    page: a repeated-letterhead fingerprint, no template → a template, a same-supplier sibling switch) or STRONG
+  //    (a doc-start header, a known-supplier change, a cross-supplier switch — e.g. every page of a Print Tracker
+  //    alert bundle is an email-header doc-start, so the belt never touches the one-click flow), and for every WEAK
+  //    1-page cut the handler compares the two halves' reads once both have landed: the same supplier, no date on the
+  //    later page, and the same document number (or none) → BOTH halves get a durable "— confirm once." note naming
+  //    the other page + where the original scan is kept; otherwise the earlier page is released to auto-file. The
+  //    first half to land carries a provisional note so a Stop / kill mid-batch can never leave an unmarked page a
+  //    later File-All could file. DARK (not 176's default-ON): it clears what it writes, re-invokes auto-file and
+  //    changes auto-file TIMING on every weak genuine boundary (Oracle C11); the customer flip waits on a one-click
+  //    recovery action (C12) + the census cells (C9). Python's `weak_pages` emit is unconditional metadata.
+  if (!applied.has(180)) {
+    try {
+      const n = db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('segment_pair_hold', 'false')`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (180)').run();
+      console.log(`JS migration 180 applied: segment_pair_hold (hold both halves of a letterhead-only 1-page cut that read as one document) seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 180 (segment_pair_hold): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
