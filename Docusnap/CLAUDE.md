@@ -21,7 +21,33 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-16 DAY (the DARK-SWITCH FLIP CENSUS re-run at HEAD + the FIRST TWO FLIPS shipped):
+## ⏭ LATEST — 2026-09-17 AFTERNOON (the S4 SILENT-TRUNCATION BELT built DARK, mig 180 · the `vinny-video` agent created):
+**READ `HANDOVER_2026-09-17.md` FIRST** (written for a claude-opus-4-8 session: explicit, step-by-step). Branch
+`feat/teach-side-overnight`; **HEAD = the docs commit on `6514f3f` (vinny) on `2e9f72a` (the belt); origin BEHIND — NOT pushed
+(owner's call);** migration **180**; `TEST_SWITCH_KEYS` **50**; `node scripts/run-pins.js` **385/385**. The owner's 7
+`tools/video_tutorials/` edits stay uncommitted (theirs). The sandbox app (live-DB COPY) is still up on DevTools port 9223 — harmless.
+**Built:** the morning's e2e had caught the S4 class live (a 2-page doc whose page 2 repeats the letterhead with no page marker →
+cut at page 2 on the letterhead alone → page 1 AUTO-FILED as a complete 1-page doc, page 2 orphaned). gary → Oracle
+SIGN-OFF-W/COND C1-C12 (+ C6b) → **mig 180 `segment_pair_hold` DARK** (`docs/designs/SEGMENT_PAIR_HOLD_2026-09-17.md`): a HYBRID —
+the pre-pass classifies every cut WEAK (template-only, no doc-start: same-template fingerprint · no template → template · a
+same-SUPPLIER sibling switch via `_template_identity`, never `templates.name`) or STRONG (`segmentation.boundary_class`; the
+additive `weak_pages` key is UNCONDITIONAL metadata) and the handler compares both halves of every WEAK cut once read
+(`split_plan.pairHoldDecision`, the C6b principle: release only on POSITIVE own-document evidence — own number AND own date; any
+missing piece → inconclusive → hold BOTH with a durable per-pair "— confirm once." sentence; `handler._pairLanded`: the first
+half to land carries a PROVISIONAL note, never `msg.needs_review`; release re-invokes auto-file only for an auto-file landing
+(never watch) and after its IO tail). **Key fact:** the walk's reason is assigned by PRECEDENCE — every real_34 alert page is an
+EMAIL-header doc-start labelled "first-page fingerprint" → the class makes real_34 0 weak by construction. Census (shipped
+functions, `weak_cut_census2.py`): exhibits 4/4 weak, real_34 0/33, stacks ~22 weak all genuine (released). e2e4 + e2e5:
+**all 4 exhibit pairs held + marked, truncatedAutoFiled 0, no genuine doc held.** `hasSegmentHold` = EITHER family;
+`carrySegmentHold` carries every mark-bearing sentence; reason panel subkind `pair`. **Flip gate (Oracle): C9 cells (rasterised
+real_34, a young-install stack, the email-arm-only class arm, 178+179+belt over controls3/5) + C12 a one-click "Re-import as one
+document"/Rejoin — build C12 FIRST.** 177/178/179 gates green → flips = owner's call. **Also:** `.claude/agents/vinny-video.md`
+(two-phase tutorial producer; British English, ONE voice per video alternating Ryan/Sonia across videos, 5-min cap). Traps: a
+PowerShell-written JSON carries a BOM; rebuild e2e folders in PowerShell not a bash `$(py -c …)` loop; restart the sandbox app
+after a `split_plan.js` change; PowerShell cannot run heredocs (commit via the Bash tool). **NEXT:** push? · C12 (barry+eric →
+Oracle) · the C9 cells · the 09-15 EVENING queue (VM live-test, Departments D2b/D3/D4, client-Review S0).
+
+## Prior — 2026-09-16 DAY (the DARK-SWITCH FLIP CENSUS re-run at HEAD + the FIRST TWO FLIPS shipped):
 **READ `HANDOVER_2026-09-16_FLIPS.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD = the separator commit + its docs (`git log -3`; flips
 `764b397`/`cb60e3a`/`ad4b79b`, the belt `db04a8f`); origin CURRENT — everything PUSHED 2026-09-16;**
 migration **179** (179 = the 09-17 arc-3 seed, see the end of this block); pins 382/383 at 178 (the 1 red = the
@@ -770,6 +796,11 @@ Same OSS-licence hard rule (free for commercial use, state the licence) on all O
   CONDITIONS / SEND BACK / DO NOTHING / WRONG LAYER. Log: `docs/oracle_log.md`.
 - **iris** / **herald** — perceptual-match & doc-TYPE/heading forensics (read-only, never write the
   live DB). 007 + Phillip run as general-purpose + persona. See the memory index + agent files.
+- **vinny-video** (2026-09-17) — the tutorial-video PRODUCER (EXECUTES, not advisory): topic → PLAN.md +
+  script (Chris/bob lenses applied, hand back for the owner's go) → records with `tools/video_tutorials/`
+  on the sandboxed demo app → narration (British English, ONE voice per video alternating male/female across
+  videos, regular pace, 5-min cap) → frame check → publishes to `Desktop\Tutorials\<slug>\`. Two phases because a subagent cannot ask the owner mid-run:
+  the main session shows the plan, tells the owner to leave the mouse alone, then resumes him with "go".
 
 **Skills** in `.claude/skills/`: Python engineering set (`testing-strategy`, `code-quality`,
 `performance`, `api-design`, `packaging`, `security-audit` — gary's toolkit), `ocr-document-processor`
@@ -971,6 +1002,8 @@ document_routes — document_id(FK cascade), from/to_user_id+username,
   The batch-separation PRE-PASS (`ocr/segmentation.py page_match`, via `segment_docs.py`) is a THIRD caller: it
   threads the SAME title (`keyword.title_signal`) as a CASCADE under DARK `segment_title_slug` (mig 178) — it
   persists no template/type, so its narrower, fallback-guarded signal is not a split-brain; OFF = the 3-arg call.
+  The pre-pass also CLASSIFIES every cut WEAK (template-only, no doc-start) or STRONG (`segmentation.boundary_class`,
+  2026-09-17; the additive `weak_pages` key, unconditional) for the DARK mig-180 pair belt in the JS handler.
   Guarded by `tests/test_template_matcher.py`. Full detail: `docs/extraction-pipeline.md`.
 - **Stage 0.5** `template_mapper.py` — admin-drawn anchor→target zone mappings. Absolute-target-first
   read → inline-harvest / relocate off the located label → registration fallback ("register, then read").
