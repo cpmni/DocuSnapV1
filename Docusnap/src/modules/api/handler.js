@@ -666,6 +666,18 @@ function createRequestListener(ctx) {
         sendJson(res, acc.reason === 'not_found' ? 404 : 403, { error: acc.reason === 'not_found' ? 'not found' : 'forbidden' });
         return false;
       };
+      // _gateMutate — the by-id gate for MUTATION + presence routes (Oracle 2026-09-18 #1, the disaster class).
+      // Like _gateDoc but DENIES with 404 for ANY reason (existence-hiding): a mutation attempt on a department-
+      // restricted doc must look identical to one on a missing doc, never a 403/409 that confirms it exists. The
+      // /v1 mutation twins had NO department gate while their desktop counterparts do (_assertDocAccess) — this
+      // closes that asymmetry. Inert/byte-identical when no departments are configured.
+      const _gateMutate = (session, id) => {
+        if (!accessService.gateEnabled()) return true;
+        const acc = accessService.canAccessDocument(getDb(), session, id);
+        if (acc.allow) return true;
+        sendJson(res, 404, { error: 'not found' });
+        return false;
+      };
 
       // GET /v1/documents/:id/page/:index?scale=  → { page: dataUrl|null }  (one rendered PDF page; lazy preview)
       const pageMatch = pathname.match(new RegExp(`^${API_PREFIX}/documents/(\\d+)/page/(\\d+)$`));
@@ -1199,6 +1211,7 @@ function createRequestListener(ctx) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
         const id = Number(delMatch[1]);
+        if (!_gateMutate(session, id)) return;   // department gate FIRST (Oracle #1) — before the lock message reveals the doc
         // Workflow lock (FYI slice, Oracle C1): this door had NO guard — a remote edit-role user
         // could delete an approval-locked doc the desktop would refuse (authz asymmetry + the
         // stranded-route hole). Same semantics as the desktop door: approval-locked ⇒ 409 for a
@@ -1229,6 +1242,10 @@ function createRequestListener(ctx) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
         const id = Number(restoreMatch[1]);
+        // Restore acts on a DELETED doc — canAccessDocument blocks all deleted-doc access for non-admins, so gate
+        // on the DEPARTMENT decision directly (the desktop _assertDeletedDocAccess twin). 404 = existence-hiding.
+        { const _dd = require('../../../database/modules/departmentVisibility').decision(getDb(), session, { id });
+          if (_dd && _dd.deny) return sendJson(res, 404, { error: 'not found' }); }
         documents.restoreDeleted(getDb(), id);
         try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {}
         audit({ user_id: session.userId, action: 'document_restored', action_category: 'document',
@@ -1513,6 +1530,7 @@ function createRequestListener(ctx) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
         const id = Number(confirmMatch[1]);
+        if (!_gateMutate(session, id)) return;   // department gate FIRST (Oracle #1) — before license/lock; also closes the 409 confirmedBy echo
         // Multi-point licensing enforcement (filing is a high-value write path).
         if (require('../licensing/handler').licenseDenied(getDb())) {
           return sendJson(res, 403, { error: 'A valid license is required to file documents.', code: 'LICENSE' });
@@ -1559,6 +1577,7 @@ function createRequestListener(ctx) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
         const id = Number(deferMatch[1]);
+        if (!_gateMutate(session, id)) return;   // department gate FIRST (Oracle #1)
         const guard = workflowService.editGuard(getDb(), id, session.role);
         if (!guard.ok) return sendJson(res, 409, { error: guard.error, code: guard.code });
         const r = reviewSvc.defer(getDb(), actorOf(session), id);
@@ -1571,6 +1590,7 @@ function createRequestListener(ctx) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
         const id = Number(undeferMatch[1]);
+        if (!_gateMutate(session, id)) return;   // department gate FIRST (Oracle #1)
         const guard = workflowService.editGuard(getDb(), id, session.role);
         if (!guard.ok) return sendJson(res, 409, { error: guard.error, code: guard.code });
         const r = reviewSvc.restore(getDb(), actorOf(session), id);
@@ -1585,6 +1605,9 @@ function createRequestListener(ctx) {
         const session = requireSession(req, res); if (!session) return;
         if (!isWriter(session)) return sendJson(res, 403, { error: 'forbidden' });
         const id = Number(viewingMatch[1]);
+        // Department gate (Oracle #1): viewers(id) returns OTHER reviewers' display-names — an outsider must not
+        // learn a restricted doc's existence or who's on it, nor pollute its presence banner. 404 = existence-hiding.
+        if (!_gateMutate(session, id)) return;
         presence.heartbeat(id, viewerOf(session));
         return sendJson(res, 200, { viewers: presence.viewers(id, viewerKeyOf(session)) });
       }

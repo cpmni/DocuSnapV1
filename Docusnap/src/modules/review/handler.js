@@ -1585,6 +1585,13 @@ function register(ctx) {
     // the shared reviewService does the claim-before-file, filing, learning and cleanup so the
     // desktop and the /v1 client API file documents through ONE race-safe path.
     const sess = requireUnlocked(db, payload.document_id, 'confirm');
+    // DEPARTMENT GATE (Oracle 2026-09-18 #5 — the desktop confirm files a doc by id; the /v1 twin is gated,
+    // this desktop twin was not, and reviewService.confirm does not gate departments internally): an edit user
+    // OUTSIDE the doc's department must not file it. Existence-hiding. Inert/byte-identical when no departments.
+    {
+      const _acc = require('../../services/accessService').canAccessDocument(db, { userId: sess.id, role: sess.role }, payload.document_id);
+      if (!_acc.allow) return { success: false, error: 'Document not found.', code: 'NOT_FOUND' };
+    }
     const r = await reviewService.confirm(db, { userId: sess.id, username: sess.username, role: sess.role }, payload);
     if (!r.ok) {
       return { success: false, error: r.error,

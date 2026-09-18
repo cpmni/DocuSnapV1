@@ -25,7 +25,10 @@ function _hasTables(db) {
   if (!db) return false;
   let v = _tablesCache.get(db);
   if (v === undefined) {
-    try { v = db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name IN ('departments','user_departments')").get().n === 2; }
+    // ALL THREE tables (incl. document_departments, queried by decision() at :62/:66) — Oracle 2026-09-18 §fail-toward-
+    // review: a genuinely-absent join table then short-circuits cleanly to "not configured → shared" (inert), so the
+    // deny-on-catch below fires ONLY for a real query error on a configured install, never for a missing table.
+    try { v = db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name IN ('departments','user_departments','document_departments')").get().n === 3; }
     catch { v = false; }
     _tablesCache.set(db, v);
   }
@@ -59,15 +62,20 @@ function decision(db, user, doc) {
   const uid = _uid(user);
   if (uid != null && _allDepartments(db, uid)) return { deny: false };
   let tagged;
+  // FAIL-CLOSED once configured (Oracle 2026-09-18): configured() has already passed (tables present + >=1
+  // department), and admin/all_departments are exempt above — so a THROW here is a real query error on a
+  // department-enabled install, never a missing table. DENY (a transient error self-corrects on retry; an
+  // admin, exempt above, can always recover a genuinely-broken DB). The old fail-OPEN allowed a restricted
+  // doc through on any DB error — the exact leak the owner called a disaster.
   try { tagged = db.prepare('SELECT 1 FROM document_departments WHERE document_id = ? LIMIT 1').get(docId); }
-  catch { return { deny: false }; }                       // never throw the gate closed on a schema gap
+  catch { return { deny: true }; }
   if (!tagged) return { deny: false };                   // shared (no departments on this doc)
   if (uid == null) return { deny: true };                // a tagged doc + unknown viewer
   try {
     return { deny: !db.prepare(
       `SELECT 1 FROM document_departments dd JOIN user_departments ud ON ud.department_id = dd.department_id
        WHERE dd.document_id = ? AND ud.user_id = ? LIMIT 1`).get(docId, uid) };
-  } catch { return { deny: false }; }
+  } catch { return { deny: true }; }                     // membership query error on a KNOWN-tagged doc → deny
 }
 
 /**

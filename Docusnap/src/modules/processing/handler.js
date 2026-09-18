@@ -2729,7 +2729,12 @@ function register(ctx) {
     try {
       const _acc = require('../../services/accessService').canAccessDocument(db, getCurrentUser(), row.id);
       if (!_acc.allow) { logger?.warn?.(`[security] blocked ${mode}: ${_acc.reason}`); return { success: false, error: 'You don’t have access to this document.' }; }
-    } catch { /* fail-open only on a wiring error — role + containment below still apply */ }
+    } catch {
+      // FAIL-CLOSED on the department dimension (Oracle 2026-09-18 #4): if the gate itself throws on a
+      // department-CONFIGURED install, DENY — do NOT fall through to role+containment (which don't know
+      // departments). Inert/byte-identical when no departments exist (fall through exactly as before).
+      try { if (require('../../../database/modules/departmentVisibility').configured(db)) return { success: false, error: 'You don’t have access to this document.' }; } catch { /* no dept layer → old behaviour */ }
+    }
     if (!row.stored_path || !fs.existsSync(row.stored_path)) return { success: false, error: 'This document has no filed copy on disk.' };
     if (!_isOpenablePath(db, row.stored_path)) {
       logger?.warn?.(`[security] blocked ${mode} for a disallowed resolved path`);
@@ -3832,6 +3837,15 @@ function register(ctx) {
   ipcMain.handle('reprocess-document', async (event, { docId, folderPath, filename, enhanceParams, deskewOnce, forcedTypeSlug }) => {
     const sess    = requireRole('admin', 'edit');
     const db      = getDb();
+    // DEPARTMENT GATE (Oracle 2026-09-18 #1 — the disaster class): reprocess re-OCRs this doc SERVER-SIDE and
+    // streams supplier_name + extractions back to the caller (reprocess-progress) AND mutates it. An edit user
+    // OUTSIDE the doc's department must never reach it. Gate FIRST (before intake/license/busy/lock), existence-
+    // hiding — a generic not-found so a refusal never confirms a restricted doc exists. Inert/byte-identical when
+    // no departments are configured (canAccessDocument returns allow).
+    {
+      const _acc = require('../../services/accessService').canAccessDocument(db, getCurrentUser(), docId);
+      if (!_acc.allow) return { success: false, error: 'Document not found.', code: 'NOT_FOUND' };
+    }
     // Quick File (Q-C2 / Oracle Condition B, 2026-09-15): a typed (intake='direct') doc has no scan to
     // re-read — reprocessing would OCR-overwrite the typed metadata and force the row into Review (a
     // stuck, corrupted state). Refuse BEFORE the busy-check and the success audit below, so a refused
@@ -4672,6 +4686,9 @@ function register(ctx) {
   ipcMain.handle('sweep-inview-file', async (_event, { docId, fingerprint } = {}) => {
     requireRole('admin', 'edit');
     const db = getDb();
+    // DEPARTMENT GATE (Oracle 2026-09-18 #5 — the in-view auto-file path files a doc by id): an edit user
+    // outside the doc's department must not file it. Existence-hiding. Inert/byte-identical when no departments.
+    { const _acc = require('../../services/accessService').canAccessDocument(db, getCurrentUser(), docId); if (!_acc.allow) return { ok: false, reason: 'not-found' }; }
     const learning = require('../../../database/modules/learning');
     const trust = require('../../../database/modules/trust');
     const { extractionsFingerprint } = require('../../services/sweepPredicate');
@@ -4718,6 +4735,9 @@ function register(ctx) {
   ipcMain.handle('sweep-inview-recheck', (_event, { docId } = {}) => {
     requireRole('admin', 'edit');
     const db = getDb();
+    // DEPARTMENT GATE (Oracle 2026-09-18 #5): re-offering the in-view countdown reads a doc by id — an outsider
+    // must not learn a restricted doc's state. Existence-hiding. Inert/byte-identical when no departments.
+    { const _acc = require('../../services/accessService').canAccessDocument(db, getCurrentUser(), docId); if (!_acc.allow) return { offer: false, reason: 'not-found' }; }
     const learning = require('../../../database/modules/learning');
     const documents = require('../../../database/modules/documents');   // per-function require (call-time ReferenceError fix)
     const trust = require('../../../database/modules/trust');
@@ -4743,6 +4763,8 @@ function register(ctx) {
     const db = getDb();
     const id = Number(docId);
     if (!id) return { ok: false, reason: 'bad-args' };
+    // DEPARTMENT GATE (Oracle 2026-09-18 #5): mutating a doc by id (markPutBack). Inert when no departments.
+    { const _acc = require('../../services/accessService').canAccessDocument(db, getCurrentUser(), id); if (!_acc.allow) return { ok: false, reason: 'not-found' }; }
     try { documents.markPutBack(db, id); } catch (e) { return { ok: false, reason: (e && e.message) || 'error' }; }
     try { logAudit(db, { action: 'inview_countdown_stopped', action_category: 'review', outcome: 'success', metadata: { doc_id: id } }); } catch {}
     return { ok: true };
@@ -6120,6 +6142,13 @@ function register(ctx) {
     const row = db.prepare(
       'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
     if (!row) return { success: false, error: 'document not found' };
+    // DEPARTMENT GATE (Oracle 2026-09-18 #1): an edit user OUTSIDE this doc's department must not split it (it
+    // reads the restricted PDF's bytes). Existence-hiding (same 'document not found' as a genuinely missing row).
+    // The OUTPUT leak — children inheriting no departments — is closed below (#2). Inert when no departments exist.
+    {
+      const _acc = require('../../services/accessService').canAccessDocument(db, getCurrentUser(), docId);
+      if (!_acc.allow) return { success: false, error: 'document not found' };
+    }
     const recordedOriginal = (row.folder_path && row.original_filename)
       ? path.join(row.folder_path, row.original_filename) : null;
     // Read source: prefer the app-managed working copy (stable + app-owned); then the filed copy; then
@@ -6161,15 +6190,29 @@ function register(ctx) {
       return { success: false, error: 'Splitter reported success but no output files were found on disk.' };
     }
 
+    // DEPARTMENT INHERITANCE (Oracle 2026-09-18 #2 — the disaster class): the child rows must inherit the
+    // parent's departments, else splitting a RESTRICTED document launders it into SHARED children visible to
+    // everyone — an org-wide leak, independent of who is allowed to split. Read the parent's tags once and copy
+    // them to each child in the SAME transaction as the insert (a child is never visible without its tags).
+    // Byte-identical when the parent is untagged (empty set → no rows written → shared, exactly as before) or
+    // no departments exist (the table is absent → the read yields []).
+    let parentDeptIds = [];
+    try { parentDeptIds = db.prepare('SELECT department_id FROM document_departments WHERE document_id = ?').all(docId).map(r => r.department_id); } catch { parentDeptIds = []; }
+    const _insChildDept = db.prepare('INSERT OR IGNORE INTO document_departments (document_id, department_id) VALUES (?, ?)');
     const docIds = [];
-    for (const outFile of createdFiles) {
-      const info = documents.insert(db, {
-        original_filename: path.basename(outFile),
-        folder_path:       path.dirname(outFile),
-        status:            'needs_review',
-      });
-      docIds.push(info.lastInsertRowid);
-    }
+    const _insertChildren = db.transaction(() => {
+      for (const outFile of createdFiles) {
+        const info = documents.insert(db, {
+          original_filename: path.basename(outFile),
+          folder_path:       path.dirname(outFile),
+          status:            'needs_review',
+        });
+        const childId = info.lastInsertRowid;
+        for (const d of parentDeptIds) _insChildDept.run(childId, d);
+        docIds.push(childId);
+      }
+    });
+    _insertChildren();
 
     // Remove the original from DB + disk — only after outputs are confirmed. The delete target is the
     // doc's RECORDED original location (resolved above), never a renderer-supplied path.

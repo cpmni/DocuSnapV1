@@ -212,6 +212,21 @@ function createWorkflowService(deps = {}) {
   // `matchedRuleSummary` (optional, routing slice): the immutable "why it routed" sentence snapshot.
   function assign(db, actor, { documentId, toUserId, actionRequired, comment, resubmitOf, matchedRuleSummary }) {
     if (!ACTOR_CAN_ASSIGN.includes(actor.role)) return fail('FORBIDDEN', 'Your role cannot route documents.');
+    // SENDER department gate (Oracle 2026-09-18 #3, the disaster class): _validateAssignTarget checks the
+    // RECIPIENT, but the SENDER was never gated — an edit user OUTSIDE a restricted doc's department could
+    // id-walk it, route it to an in-department recipient, and thereby become an OPEN-route party (from_user_id),
+    // which grants them read access via canAccessDocument's route_party branch (a self-grant). The
+    // RECIPIENT_NO_ACCESS-vs-success reply would also let them ENUMERATE department membership. Gate the actor
+    // here — before the recipient is even looked at — and return NOT_FOUND (existence-hiding). admin /
+    // all_departments pass (departmentDecision). assignSystem has NO human sender, so it is untouched. DEPARTMENT
+    // decision only; inert/byte-identical when no departments exist.
+    {
+      const _doc = docs.getById(db, documentId);
+      if (_doc) {
+        const dd = departmentDecision(db, { role: actor.role, userId: actor.userId }, _doc);
+        if (dd && dd.deny) return fail('NOT_FOUND', 'Document not found.');
+      }
+    }
     if (actionRequired !== 'approve' && actionRequired !== 'acknowledge') {
       return fail('INVALID', 'actionRequired must be "approve" or "acknowledge".');
     }
