@@ -4719,6 +4719,7 @@ function register(ctx) {
     requireRole('admin', 'edit');
     const db = getDb();
     const learning = require('../../../database/modules/learning');
+    const documents = require('../../../database/modules/documents');   // per-function require (call-time ReferenceError fix)
     const trust = require('../../../database/modules/trust');
     const { extractionsFingerprint } = require('../../services/sweepPredicate');
     const presence = require('../../services/presenceService').shared();
