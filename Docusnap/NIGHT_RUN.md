@@ -6,6 +6,15 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
+## ⏭ TONIGHT 2026-09-17 — DARK-SWITCH FLIP-CENSUS BATCH → **`docs/designs/NIGHT_RUN_2026-09-17.md`**
+On "going to bed" run that prompt: the Recipe-1 flip-census batch over the reading switches (one arm each,
+baseline OFF vs switch ON, 700-corpus fixture; reuse the `rerun_20260916/` runner). Report per switch M /
+fires / would-file delta / value changes; present passers for a morning batch flip. **Flip = owner's call —
+nothing flipped autonomously.** Near-ready first: `trust_ref_role_shape` (154) + `template_drift_override_guard`
+(157). LOG (don't run blind): `format_class_join` (a LOOK), `confusion_precedence`/`buyer_issued_convention`
+(vacuous, need fixtures), `template_edge_clip_heal` (code precondition), name-grow belts (want `teach_run_ab`),
+99/100 (Recipe 2). Full map = `HANDOVER_2026-09-17_C12_AND_SWITCHES.md` PART B.
+
 ## ✅ DONE 2026-09-15/16 NIGHT — FIVE YOUTUBE TUTORIAL VIDEOS recorded automatically (owner: "use the night run to make useful instructional videos… Goodnight mr claude") — `HANDOVER_2026-09-16_VIDEOS.md`
 Autonomous run. **Deliverable = `Desktop\Tutorials\`**: `first-run-setup` (4:00, licence screen + account + recovery
 code + terms + every wizard choice with its reason) · `teach-a-document` (2:40) · `import-a-folder` (1:35) ·
