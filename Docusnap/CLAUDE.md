@@ -21,7 +21,33 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-17 AFTERNOON (the S4 SILENT-TRUNCATION BELT built DARK, mig 180 · the `vinny-video` agent created):
+## ⏭ LATEST — 2026-09-18 (the DEPARTMENTS feature built end-to-end D4→D7, all Oracle gates green, mig 184; 2 live bug fixes; Template Manager video):
+**READ `HANDOVER_2026-09-18.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `96f356d`; origin CURRENT (all pushed);**
+migration **184**; no running processes. Installers (D7): core `dist\ScanFinder Setup 2.0.0-r20260918-1346-976f42f-TEST.exe`
++ client `client\dist\…-1509-976f42f.exe`. **Built + pushed:** the whole admin-only **Departments** feature (`325a014`
+D4→D7) — a document (and a type default) belongs to a SET of departments; visible if you're in ANY; DARK behind the
+opt-in `departments_enabled` (seeded OFF). **mig 184** replaces the single `documents.department_id` scalar with the
+`document_departments`/`document_type_departments` JOIN (transactional, byte-identical, **go-forward-only**; scalars
+retired-in-place, nulled+pinned-unread). Gate `database/modules/departmentVisibility.js` = shared(no rows) OR member-of-ANY
+(correlated EXISTS). Write rule = Oracle **own-slice / immutable-foreign** (an edit user changes only their own
+departments — no self-lockout). Service `src/services/departmentService.js` (`setDocumentDepartments`,
+`validateCreateDepartments`, `applyTypeDefaultAtConfirm`, `setTypeDefaultDepartments`, `taggedDocCount`). D2b closed the
+intake bypass (`/v1`+Quick File run the create rule); **`INTAKE_GUARDED` = true**. UI: type "Who can see documents of
+this type?" + per-doc "Visible to" multi-select (locked foreign chips + Everyone); Chris Card B fixed (admin rows).
+**All Oracle before-flip gates GREEN**: D2b + denial matrix (multi-tag + MIN oracle) + intake-seam pins + the **perf
+gate PASS** (`TESTING/_measure/dept_perf_20260918/`, 50k docs, worst list 58ms, filter ≤x1.48). Pins: 5
+`test_department_*.js` incl. the load-bearing **`test_department_multi_migration.js`** (upgrade simulator) green; **0
+regressions across 306 pins** (1 red = pre-existing `test_ref_class_fix` flake). Design `docs/designs/DEPARTMENTS_D7_MULTI_2026-09-18.md`;
+Oracle log updated. **Also:** `aefd42a` fix `sweep-inview-recheck` ReferenceError (missing `documents` require, found in
+the live log); the Users-layout `flex-wrap` CSS fix (in `325a014`). The **Template Manager** tutorial video published
+(`Desktop\Tutorials\the-template-manager\`). The dark-switch flip-census **night run is QUEUED not run**
+(`docs/designs/NIGHT_RUN_2026-09-17.md`). Chris 2026-09-18 vet was CUT SHORT (setup screens only) —
+`docs/CHRIS_FULL_APP_REVIEW_2026-09-18.md`, re-run on the clean build. **NEXT:** owner live-test the D7 installers ·
+re-run `/christest` (enforcement test) · the queued night run · C12 (from `HANDOVER_2026-09-17_C12_AND_SWITCHES.md`).
+⚠ **STALE-claim correction:** `documents.department_id` / `document_types.default_department_id` are now **RETIRED**
+(all-NULL, never read by the gate) — read the `document_departments` JOIN, never the scalar.
+
+## Prior — 2026-09-17 AFTERNOON (the S4 SILENT-TRUNCATION BELT built DARK, mig 180 · the `vinny-video` agent created):
 **READ `HANDOVER_2026-09-17.md` FIRST** (written for a claude-opus-4-8 session: explicit, step-by-step), then
 `HANDOVER_2026-09-17_C12_AND_SWITCHES.md` (Part A = the C12 recovery action to design/build; Part B = every remaining
 dark switch grouped by the test it still needs + the suggested order). Branch
