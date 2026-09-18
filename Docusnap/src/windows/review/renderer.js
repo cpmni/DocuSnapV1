@@ -3984,7 +3984,7 @@ function renderFields(doc) {
     // remove). A hidden field that unexpectedly HAS a value is still shown: hiding is a display
     // mask, never a way to lose real data. Inert when nothing is hidden (empty set).
     if (hiddenKeys.has(key) && String(val).trim() === '') continue;
-    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null, ext.suggested_supplier || null, ext.corroboration || null, ext.raw_value || null);
+    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null, ext.suggested_supplier || null, ext.corroboration || null, ext.raw_value || null, ext.verified);
   }
   _prefillGenericScanDate(doc, scroll);
   validateConfirm();
@@ -4385,14 +4385,24 @@ function _refreshTaughtDot(key) {
   dot.title = _taughtDotTitle(taught);
 }
 
-function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method, candidates, suggestedSupplier, corroboration, rawValue) {
+function appendFieldRow(scroll, key, val, conf, note, correctedTo, anchorLabel, method, candidates, suggestedSupplier, corroboration, rawValue, verified) {
   const low      = conf !== null && conf < 70;
-  const confClass = conf === null ? '' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
+  // REF-BADGE VERIFY (ref_badge_verify_state, DARK — Chris 2026-09-18 #1). MAIN attaches verified=false ONLY on
+  // the reference role, ONLY when the switch is on, when the value read confidently but was never cross-checked
+  // (not corroborated, not authoritative, no supported scope history). Show a calm neutral "Read" — honest that
+  // the filename-deciding number wasn't verified — instead of a reassuring green "High". `verified` is undefined
+  // on every other row and whenever the switch is off, so the badge is byte-identical then. Meaningful in BOTH
+  // directions (green now MEANS verified) and scoped to the ONE filename-deciding field, so it never re-creates
+  // the removed positive-only corroboration line. The renderer does NO shape logic — it renders a handed boolean.
+  const unverifiedRefHigh = verified === false && conf !== null && conf >= 70;
+  const confClass = conf === null ? '' : unverifiedRefHigh ? 'read' : conf >= 70 ? 'high' : conf >= 40 ? 'mid' : 'low';
   // Pair the % with a plain word so non-technical users read it at a glance.
-  const confWord = conf === null ? '' : conf >= 70 ? 'High' : conf >= 40 ? 'Check' : 'Low';
+  const confWord = conf === null ? '' : unverifiedRefHigh ? 'Read' : conf >= 70 ? 'High' : conf >= 40 ? 'Check' : 'Low';
   // Demystify the amber/red dot so a CORRECT-but-not-High read doesn't push people to teach an
   // anchor they don't need (which is how a fragile taught position gets created). "Check" ≠ broken.
-  const confTitle = confWord === 'High'
+  const confTitle = confWord === 'Read'
+    ? `Read clearly at ${conf}%, but not cross-checked against a second reading or your history — glance at the reference against the page before filing.`
+    : confWord === 'High'
     ? `High confidence — the app is ${conf}% sure of this reading`
     : confWord === 'Check'
       ? `Read at ${conf}% — worth a glance, but the value may well be right. Only teach this field (⊕) if the value shown is actually WRONG.`

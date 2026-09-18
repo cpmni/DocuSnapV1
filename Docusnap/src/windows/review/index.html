@@ -691,6 +691,10 @@
     .field-row-label.required-missing { color: var(--err); }
     .conf-badge { font-size: 10px; font-family: var(--mono); padding: 1px 6px; border-radius: 10px; }
     .conf-badge.high { background: var(--ok-bg);   color: var(--ok); }
+    /* "Read" — a confident reference the app could NOT cross-check (ref_badge_verify_state, DARK). A calm
+       neutral/info tone: never the green "High" (would over-claim verification), never the amber/red "Check"
+       (would read as an error — the value may well be right, it just wasn't verified). */
+    .conf-badge.read { background: var(--accent-bg); color: var(--accent); }
     .conf-badge.mid  { background: var(--warn-bg);  color: var(--warn); }
     .conf-badge.low  { background: var(--err-bg);   color: var(--err); }
 

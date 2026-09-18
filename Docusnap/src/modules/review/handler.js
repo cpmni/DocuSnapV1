@@ -1022,6 +1022,25 @@ function register(ctx) {
         }
         doc.hidden_fields = _hidden;
       } catch { doc.hidden_fields = []; }
+      // REF-BADGE VERIFY (ref_badge_verify_state, DARK — Chris 2026-09-18 #1; gary → Oracle SIGN-OFF-W/COND).
+      // On the REFERENCE role (the field the filename is built from) the green "High" badge must not CLAIM a
+      // verification the value never got. When ON, attach ext.verified to the ref row so the renderer shows a
+      // calm neutral "Read" for a confident-but-unverified read. Byte-identical OFF (nothing attached);
+      // presentation only — no value / gate / auto-file change. ONE predicate in trust.js (Oracle C1).
+      try {
+        const _trust = require('../../../database/modules/trust');
+        if (_trust.refBadgeVerifyEnabled(db)) {
+          const _dt = doc.document_type_id
+            ? db.prepare('SELECT ref_field_key FROM document_types WHERE id = ?').get(doc.document_type_id) : null;
+          const _refKey = _dt && _dt.ref_field_key;
+          if (_refKey && Array.isArray(doc.extractions)) {
+            const _refExt = doc.extractions.find(e => e && e.field_key === _refKey);
+            if (_refExt && String(_refExt.display_value ?? _refExt.raw_value ?? '').trim()) {
+              _refExt.verified = _trust.refBadgeVerified(db, doc, _refKey, _refExt);
+            }
+          }
+        }
+      } catch { /* fail-safe: leave every badge exactly as today */ }
       logAudit(db, { action: 'document_open', target_type: 'document', target_id: id,
         document_id: id, outcome: 'success', metadata: { type: doc.type_slug || null, status: doc.status || null } });
       // Publish desktop REVIEW presence so clients see "being reviewed by <name>" — only for a

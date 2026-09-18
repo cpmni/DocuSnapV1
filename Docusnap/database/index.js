@@ -3833,6 +3833,19 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 184 (departments D7 multi): ${e.message}`); }
   }
 
+  // ── migration 185: ref_badge_verify_state seeded OFF (DARK; 2026-09-18, gary → Oracle SIGN-OFF-W/COND;
+  //    Chris #1). The Review confidence badge over-claims verification on the REFERENCE role — a confident
+  //    single-glyph misread wears green "High" while the filename-deciding number was never cross-checked.
+  //    When ON, the ref badge shows a calm neutral "Read" for a confident-but-unverified read (presentation
+  //    only; no value/gate/auto-file change). See dark_switches.js + docs/designs/REF_BADGE_VERIFY_2026-09-18.md.
+  if (!applied.has(185)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('ref_badge_verify_state', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (185)').run();
+      console.log('JS migration 185 applied: ref_badge_verify_state (calm "Read" badge for a confident-but-unverified reference) seeded OFF (DARK, 1 row)');
+    } catch (e) { console.warn(`  migration 185 (ref_badge_verify_state seed OFF): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

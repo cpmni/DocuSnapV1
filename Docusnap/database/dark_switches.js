@@ -269,6 +269,27 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // real_34 rasterised 0 held · a young-install stack's inconclusive count · the email-arm-only class arm · every sibling
   // false cut held under 178+179+belt · AND a one-click recovery action ("Re-import as one document" / Rejoin) shipped.
   'segment_pair_hold',
+  // ref_badge_verify_state (mig 185, 2026-09-18, gary → Oracle SIGN-OFF-W/COND C1-C6; Chris 2026-09-18 #1):
+  // the Review confidence badge is a pure function of the READ confidence — a confident single-glyph misread
+  // of a REFERENCE (PO-69837→PO-69637 @93) wears a reassuring green "High" while the field the FILENAME is
+  // built from was never cross-checked. When ON, the ref role's badge shows a calm neutral "Read · N%"
+  // (never green, never the amber "Check") whenever the value read confidently (conf≥70) but was NOT
+  // corroborated (≥2 independent page families), NOT authoritative (manual/template_fixed/keyword_override),
+  // and its supplier+type scope has NO well-supported confirmed history (≥3 confirmed docs). PRESENTATION
+  // ONLY — no value, note, gate or auto-file change (byte-identical OFF; the doc still HELD on the same
+  // fields as today). The `verified` boolean is computed in MAIN via trust.refBadgeVerified (ONE predicate,
+  // shares _corrobLicensed with the corroborated-auto-file licence — pinned) and passed to the renderer; the
+  // renderer does NO shape logic (Oracle C1/C3). history = a SCOPE property (confirmed_count≥3), never the
+  // value's shape (C2/C3) — so a matured scope stays green even on a self-consistent misread (the honest
+  // boundary, C5: this stops OVER-claiming, it does not reduce misreads — that residual is the D2 witness
+  // layer). ref role ONLY; DATE is the known untested sibling, deferred to its own census (C4).
+  // ⚑ FLIP GATE (Oracle C-gate; M=0 trivial — presentation-only; the REAL gate is a BADGE census over the
+  //   605 corpus + Demo Docs): (1) PIN the exhibit renders "Read" not green; (2) INVERSE PIN a corroborated
+  //   ref stays green; (3) SCOPE PIN a non-ref field @93 unverified STILL "High"; (4) ZERO green→"Read" flips
+  //   on ANY history-supported/graduated scope (incl. label-above layouts) = the alarm-fatigue proof; (5)
+  //   every cold-slice flip genuinely single-witness/no-history; (6) PARITY the ONE trust.js predicate (C1).
+  //   docs/designs/REF_BADGE_VERIFY_2026-09-18.md.
+  'ref_badge_verify_state',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

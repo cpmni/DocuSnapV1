@@ -693,6 +693,54 @@ function _corrobLicensedKeyword(record) {
   return fams.has('keyword');
 }
 
+// ── REF-BADGE VERIFY (ref_badge_verify_state, DARK — mig 185, 2026-09-18; Chris #1; gary → Oracle SIGN-OFF-
+//    W/COND C1-C6) ────────────────────────────────────────────────────────────────────────────────────────
+// The Review confidence badge turns a READ confidence into the word "High"/green on the REFERENCE role — the
+// field the filename is built from — with NO input from whether the value was ever cross-checked. A confident
+// single-glyph misread (PO-69837→PO-69637 @93) therefore wears a reassuring green badge while the correct field
+// is the one flagged. `refBadgeVerified` is the ONE predicate (Oracle C1 — computed in MAIN, never forked into
+// the renderer) the transport edge attaches as `ext.verified`, so the renderer can render a calm neutral "Read"
+// instead of green on a confident-but-unverified ref. Verified iff ANY of:
+//   (a) CORROBORATED — the SAME `_corrobLicensed` as the corroborated-auto-file licence (≥2 independent page
+//       families agree). Sharing it is intentional and PINNED (Oracle C6): a future tightening of the licence
+//       moves the badge split too.
+//   (b) AUTHORITATIVE literal — a typed / admin-fixed / override value is verified BY AUTHORITY, never by value
+//       shape (Oracle C3): method ∈ {manual, template_fixed, template_fixed_locked, keyword_override}.
+//   (c) MATURED SCOPE — this supplier+type+field has well-supported confirmed history (confirmed_count ≥ 3, the
+//       same ≥3 support bar the learned-agreement boost reads). A SCOPE property (Oracle C2), NEVER the value's
+//       shape (C3) — so a matured scope stays green EVEN on a self-consistent misread (the honest boundary,
+//       Oracle C5: Slice 1 stops OVER-claiming, it does not reduce misreads; that residual is the engine's D2
+//       second-render witness). SUPPLIER-scoped only — the doc-type-wide ('' supplier) bucket must not green a
+//       FIRST-SEEN supplier off other suppliers' history.
+// Presentation only: reads corroboration / method / confirmed history already available + one format scan. The
+// DATE role is the known untested sibling, deferred to its own census (Oracle C4).
+const _REF_HISTORY_MIN  = 3;
+const _REF_AUTH_METHODS = new Set(['manual', 'template_fixed', 'template_fixed_locked', 'keyword_override']);
+function refBadgeVerifyEnabled(db) {
+  const env = process.env.REF_BADGE_VERIFY_STATE;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return require('./learning').getSetting(db, 'ref_badge_verify_state', 'false') === 'true'; }
+  catch { return false; }
+}
+function refBadgeVerified(db, doc, refFieldKey, ext, opts = {}) {
+  if (!ext) return false;
+  if (_corrobLicensed(ext.corroboration)) return true;                            // (a) corroborated
+  if (_REF_AUTH_METHODS.has(String(ext.extraction_method || ''))) return true;    // (b) authoritative literal
+  const sup  = _norm(doc && doc.supplier_name);                                   // (c) matured supplier-scope
+  const slug = String((doc && (doc.type_slug || doc.document_type)) || '').toLowerCase().trim();
+  if (sup && slug && refFieldKey) {
+    const all = opts.formats || require('./learning').getFieldFormats(db);        // default EXCLUDES provisional
+    for (const g of all) {
+      if (g.field_key !== refFieldKey) continue;
+      if (String(g.document_type || '').toLowerCase().trim() !== slug) continue;
+      if (_norm(g.supplier_name) !== sup) continue;                               // supplier-scoped ONLY, never ''
+      return (g.confirmed_count || 0) >= _REF_HISTORY_MIN;
+    }
+  }
+  return false;
+}
+
 // Every FILENAME-DECIDING role (issuer + ref + date — the same roleKeys set docTrustGate builds)
 // must carry a non-empty value AND a licensed record. Both role keys must exist on the type
 // (a dangling role → route off). Rows come from opts.extractions when supplied (harness /
@@ -1472,4 +1520,5 @@ module.exports = {
   currencyDpConsistent: _currencyDpConsistent, currencyConsistentForField: _currencyConsistentForField, matchesTypePattern: _matchesTypePattern,
   scopeTrust, docTrustGate, isAutoFileEligible, autoFileEligibleIds,
   listGraduatedScopes, setScopeOptOut,
+  refBadgeVerifyEnabled, refBadgeVerified,   // ref-badge verify state (DARK, mig 185) — presentation only
 };
