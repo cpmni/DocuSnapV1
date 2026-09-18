@@ -1,0 +1,23 @@
+corpus: 50000 docs (29883 tagged, 20117 shared), 8 depts, 40 users — built in 806ms
+member viewer u1 in 3 departments
+
+reader                 member(ms)  admin/base(ms)  system(ms)   member/base
+──────────────────────────────────────────────────────────────────────────────
+search(confirmed)          58.07         43.86        44.61         x1.32
+getReviewQueue             24.74         25.36        24.71         x0.98
+getReviewCount              3.82          0.36         0.27        x10.73
+getReviewSplit             25.00         24.97        26.10         x1.00
+getDeferredQueue           13.98         12.94        13.58         x1.08
+getDeferredCount            3.94          0.29         0.26        x13.80
+getStuckQueue               7.73          5.24         5.14         x1.48
+getStuckCount               3.89          0.31         0.28        x12.49
+getDeletedQueue            16.65         17.55        17.35         x0.95
+getByIds(2000)              8.42          8.47         7.88         x0.99
+getConfirmedByIds          10.05          8.15         8.77         x1.23
+
+per-doc canAccessDocument × 2000 (member): 408.8ms total = 204.4µs/call
+
+worst absolute list-reader (member): 58.1ms; worst join-filter ratio on a non-trivial reader: x1.48 (getStuckQueue)
+budget: worstAbs<150ms (58.1), meaningful ratio<3 (x1.48), per-doc<1000µs (204)
+
+PERF PASS

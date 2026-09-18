@@ -226,10 +226,10 @@ stays OUT (documents out of scope). A restored dept has zero members = fail-clos
    (still vacuous for isolation — it only proves the join rewrite didn't couple filtering into extraction/filing).
 
 **Before FLIP (`departments_enabled` opt-in ON in a customer build):**
-6. **Perf gate (Oracle #6, the true blast radius)** — inject N depts × M users into the 700-corpus (≥10k docs),
-   measure all ~13 readers join-model vs scalar-baseline, threshold = no reader regresses beyond a small fixed
-   budget. The corpus M=0 gate CANNOT catch this (no departments in the corpus). Indexes: the PKs cover most; add
-   `document_departments(department_id)` for the reverse join + delete count.
+6. **Perf gate (Oracle #6, the true blast radius) — ✅ PASS 2026-09-18** (`TESTING/_measure/dept_perf_20260918/`).
+   50k-doc departments-loaded corpus (30k tagged, 8 depts, 40 users): worst list reader 58ms, the join filter
+   costs ≤ x1.48 on non-trivial readers, per-doc access 204µs. The `document_departments(department_id)` index +
+   the PKs make the correlated EXISTS near-free. No reader regresses. All of Oracle's before-flip gates now green.
 7. The D4 flip conditions carry forward unchanged (`INTAKE_GUARDED` already true; the master switch stays opt-in).
 
 ---
