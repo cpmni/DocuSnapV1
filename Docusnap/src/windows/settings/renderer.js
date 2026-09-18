@@ -1979,6 +1979,13 @@ function renderDocTypeDetail(type) {
       <button class="btn" id="dt-fix-type" title="Opens Learning Repair for this type — see what it's learned and send a badly-read document back to Review. Nothing changes until you choose there." style="padding:4px 10px; font-size:12px;">Repair learning…</button>
       ${type.built_in ? '' : '<button class="btn-icon" id="dt-hide" title="Hide this type">&#215;</button>'}
     </div>
+    ${allDepts.length ? `
+    <div id="dt-dept-row" style="margin:2px 0 10px;">
+      <div style="font-weight:600; margin-bottom:4px;">Who can see documents of this type?</div>
+      <div id="dt-dept-checks" style="display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center;"></div>
+      <div class="field-label-small" style="color:var(--muted); margin-top:4px;">These become the starting departments for new documents of this type. You can still change any document later.</div>
+      <span id="dt-dept-msg" class="field-label-small" style="color:var(--muted);"></span>
+    </div>` : ''}
     <div id="dt-editor-host"></div>`;
 
   document.getElementById('dt-fix-type')?.addEventListener('click', async () => {
@@ -2009,10 +2016,34 @@ function renderDocTypeDetail(type) {
     });
   }
 
+  wireTypeDeptControl(type);
+
   dtEditor = window.DocTypeEditor.create(
     document.getElementById('dt-editor-host'),
     { mode: 'edit', api, initial: type, onChange: refreshDocTypesList }
   );
+}
+
+// D7: the type's default department SET — "Everyone" OR a checkbox per active department.
+function wireTypeDeptControl(type) {
+  const box = document.getElementById('dt-dept-checks');
+  const msg = document.getElementById('dt-dept-msg');
+  if (!box) return;
+  const cur = new Set((deptTypeDefaults[type.id] || []).map(Number));
+  const active = allDepts.filter(d => d.is_active);
+  const parts = [`<label style="display:inline-flex; align-items:center; gap:5px;"><input type="radio" name="dt-dept-mode" class="dtd-everyone" ${cur.size === 0 ? 'checked' : ''}>Everyone</label>`];
+  for (const d of active) parts.push(`<label style="display:inline-flex; align-items:center; gap:5px;"><input type="checkbox" class="dtd-own" data-id="${d.id}" ${cur.has(d.id) ? 'checked' : ''}>${escHtml(d.name)}</label>`);
+  box.innerHTML = parts.join('');
+  const gather = () => Array.from(box.querySelectorAll('.dtd-own')).filter(c => c.checked).map(c => Number(c.dataset.id));
+  const commit = async (ids) => {
+    const r = await api.dept.setTypeDefault(type.id, ids);
+    if (r && r.error) { if (msg) msg.textContent = 'Could not save.'; return; }
+    deptTypeDefaults[type.id] = ids;
+    if (msg) { msg.textContent = 'Saved.'; setTimeout(() => { if (msg && msg.textContent === 'Saved.') msg.textContent = ''; }, 1200); }
+  };
+  box.querySelectorAll('.dtd-own').forEach(cb => cb.addEventListener('change', () => { const ev = box.querySelector('.dtd-everyone'); if (ev) ev.checked = false; commit(gather()); }));
+  const ev = box.querySelector('.dtd-everyone');
+  if (ev) ev.addEventListener('change', () => { if (ev.checked) { box.querySelectorAll('.dtd-own').forEach(c => { c.checked = false; }); commit([]); } });
 }
 
 // ── New type (inline friendly creator, shared with the Teach wizard) ───────────
@@ -2207,12 +2238,24 @@ const AUDIT_ACTION_LABELS = {
 let allUsers      = [];
 let currentUserId = null;
 
+// ── Departments (D4) — admin-only visibility. State shared with the Users list (membership tick-boxes)
+//    and the Document Types detail (default-department dropdown). Empty/off = the list is inert. ──
+let allDepts = [];                                   // [{id,name,slug,is_active,doc_count}]
+let deptState = { enabled: false, intakeGuarded: false, tagged: 0 };
+let deptMembership = { byUser: {}, allFlags: {} };   // userId -> [deptIds] / userId -> bool
+let deptTypeDefaults = {};                            // typeId -> [deptIds] (D7 type default SET)
+
 async function loadUsers() {
   const me = await api.authGetCurrentUser();
   currentUserId = me ? me.id : null;
 
   const result = await api.authListUsers();
   allUsers = (result && result.users) || [];
+  // Department membership per user (only when departments exist) so the Users rows can draw the tick-boxes.
+  if (allDepts.length) {
+    try { const du = await api.dept?.users(); deptMembership = du || { byUser: {}, allFlags: {} }; }
+    catch { deptMembership = { byUser: {}, allFlags: {} }; }
+  }
   // Merge each user's stamp-permission state (Workflow+Stamping redesign) so the Users list can show a
   // "Can stamp" toggle. Admin-only IPC; on failure the toggle simply shows off.
   try {
@@ -2319,6 +2362,142 @@ function renderUsersList() {
       await loadUsers();
     });
 
+    // Department membership (D4) — one tick per active department + an "All departments" toggle
+    // (sees everything without being an admin). Shown only once departments exist. Admins implicitly
+    // see everything, so their row is informational (ticks disabled).
+    if (allDepts.length) {
+      const isAdmin = (u.role === 'admin');
+      const mem = new Set(deptMembership.byUser[u.id] || []);
+      const allDept = !!deptMembership.allFlags[u.id];
+      const active = allDepts.filter(d => d.is_active);
+      const wrap = document.createElement('div');
+      wrap.className = 'user-dept-row';
+      wrap.style = 'flex-basis:100%; margin-top:8px; padding-top:8px; border-top:1px solid var(--border); display:flex; flex-wrap:wrap; gap:12px; align-items:center;';
+      const dis = allDept ? 'disabled' : '';
+      const fade = allDept ? 'opacity:.5;' : '';
+      if (isAdmin) {
+        // Chris 2026-09-18 Card B: an admin sees every department by role — no tick-boxes to set (they read
+        // as a contradiction of "admins see everything"). Show a plain greyed line instead.
+        wrap.innerHTML = `<span class="field-label-small" style="color:var(--muted);">Admins see every department — nothing to set here.</span>`;
+      } else {
+        wrap.innerHTML = `<span class="field-label-small" style="color:var(--muted);">Departments:</span>`
+          + `<label class="toggle" title="Sees documents in EVERY department, without being an admin"><input type="checkbox" class="user-alldept" data-id="${u.id}" ${allDept ? 'checked' : ''}><span class="toggle-slider"></span><span class="field-label-small" style="margin-left:4px;">All departments</span></label>`
+          + (active.length
+              ? active.map(d => `<label style="display:inline-flex; align-items:center; gap:5px; ${fade}"><input type="checkbox" class="user-dept" data-id="${u.id}" data-dept="${d.id}" ${mem.has(d.id) ? 'checked' : ''} ${dis}>${escHtml(d.name)}</label>`).join('')
+              : `<span class="field-label-small" style="color:var(--muted);">no active departments</span>`);
+      }
+      const allCb = wrap.querySelector('.user-alldept');
+      if (allCb && !isAdmin) allCb.addEventListener('change', async () => {
+        const on = allCb.checked;
+        try { await api.dept.setAll(u.id, on); } catch (e) { alert((e && e.message) || 'Could not change that.'); allCb.checked = !on; return; }
+        await loadUsers();
+      });
+      wrap.querySelectorAll('.user-dept').forEach(cb => cb.addEventListener('change', async () => {
+        const ids = Array.from(wrap.querySelectorAll('.user-dept')).filter(x => x.checked).map(x => Number(x.dataset.dept));
+        try { await api.dept.setMembership(u.id, ids); } catch (e) { alert((e && e.message) || 'Could not change membership.'); await loadUsers(); }
+      }));
+      row.appendChild(wrap);
+    }
+
+    list.appendChild(row);
+  }
+}
+
+// ── Departments management (D4) — list + add/rename/retire/delete + the master switch ──────────────
+let _deptSectionWired = false;
+function initDepartmentsSection() {
+  if (_deptSectionWired) return;
+  const toggle = document.getElementById('dept-enabled-toggle');
+  const nameInput = document.getElementById('new-dept-name');
+  const addBtn = document.getElementById('btn-add-dept');
+  if (!toggle || !nameInput || !addBtn) return;   // the panel isn't in the DOM yet
+  _deptSectionWired = true;
+
+  toggle.addEventListener('change', async () => {
+    const want = toggle.checked;
+    const msg = document.getElementById('dept-enabled-msg');
+    const r = await api.dept.setEnabled(want);
+    if (r && r.error === 'intake_unguarded') {
+      toggle.checked = false;
+      if (msg) msg.innerHTML = '<span style="color:var(--warn);">Not available yet — turning this on is blocked until documents uploaded over the network (the search client and Quick File) can also be limited by department. This is coming in an update.</span>';
+      return;
+    }
+    if (r && r.error) { toggle.checked = !want; if (msg) msg.textContent = 'Could not change that setting.'; return; }
+    if (msg) {
+      if (!want && r && r.warn && r.warn.tagged) msg.innerHTML = `<span style="color:var(--warn);">Departments are off, but ${r.warn.tagged} document${r.warn.tagged === 1 ? '' : 's'} stay tagged and hidden from non-members. Clear their departments to make them visible to everyone.</span>`;
+      else msg.textContent = want ? 'On — documents can now be restricted by department.' : 'Off.';
+    }
+    await loadDepartments();
+  });
+
+  const sync = () => { addBtn.disabled = !nameInput.value.trim(); };
+  nameInput.addEventListener('input', sync);
+  nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && nameInput.value.trim()) addBtn.click(); });
+  addBtn.addEventListener('click', async () => {
+    const nm = nameInput.value.trim();
+    if (!nm) return;
+    const msg = document.getElementById('new-dept-msg');
+    const r = await api.dept.create(nm);
+    if (r && r.error) { if (msg) msg.textContent = r.error === 'duplicate' ? 'A department with that name already exists.' : 'Could not add that department.'; return; }
+    nameInput.value = ''; sync();
+    if (msg) { msg.textContent = 'Added.'; setTimeout(() => { if (msg) msg.textContent = ''; }, 1500); }
+    await loadDepartments();
+  });
+}
+
+async function loadDepartments() {
+  try { deptState = (await api.dept.state()) || deptState; } catch { /* older build without the feature — leave defaults */ }
+  try { allDepts = (await api.dept.list()) || []; } catch { allDepts = []; }
+  try { deptTypeDefaults = (await api.dept.getTypeDefaults()) || {}; } catch { deptTypeDefaults = {}; }
+  renderDepartmentsList();
+  await loadUsers();   // repaint the Users rows with membership tick-boxes now allDepts is known
+}
+
+function renderDepartmentsList() {
+  initDepartmentsSection();
+  const toggle = document.getElementById('dept-enabled-toggle');
+  if (toggle) toggle.checked = !!deptState.enabled;   // programmatic set does NOT fire 'change'
+  const list = document.getElementById('departments-list');
+  if (!list) return;
+  if (!allDepts.length) {
+    list.innerHTML = '<p class="section-desc">No departments yet. Add one below to start restricting who sees what.</p>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const d of allDepts) {
+    const row = document.createElement('div');
+    row.className = 'user-row' + (d.is_active ? '' : ' disabled');
+    row.innerHTML = `
+      <div class="user-identity">
+        <div class="user-display-name">${escHtml(d.name)}${d.is_active ? '' : ' <span class="you-pill">Retired</span>'}</div>
+        <div class="user-meta">${d.doc_count} document${d.doc_count === 1 ? '' : 's'} filed under it</div>
+      </div>
+      <div class="user-actions">
+        <button class="btn dept-rename" style="font-size:11px; padding:5px 10px;">Rename&hellip;</button>
+        ${d.is_active ? '<button class="btn dept-retire" style="font-size:11px; padding:5px 10px;" title="Stop offering it for new documents — it still hides existing ones from non-members">Retire</button>' : ''}
+        <button class="btn dept-delete" style="font-size:11px; padding:5px 10px;">Delete</button>
+      </div>`;
+    row.querySelector('.dept-rename').addEventListener('click', async () => {
+      const nm = prompt(`Rename "${d.name}" to:`, d.name);
+      if (nm == null) return;
+      const r = await api.dept.rename(d.id, nm.trim());
+      if (r && r.error) { alert(r.error === 'bad_request' ? 'Please enter a name.' : 'Could not rename that department.'); return; }
+      await loadDepartments();
+    });
+    const retireBtn = row.querySelector('.dept-retire');
+    if (retireBtn) retireBtn.addEventListener('click', async () => {
+      if (!confirm(`Retire "${d.name}"? It stops being offered for new documents but still hides the documents already filed under it from non-members.`)) return;
+      const r = await api.dept.retire(d.id);
+      if (r && r.error) { alert('Could not retire that department.'); return; }
+      await loadDepartments();
+    });
+    row.querySelector('.dept-delete').addEventListener('click', async () => {
+      if (!confirm(`Delete "${d.name}"? This cannot be undone.`)) return;
+      const r = await api.dept.remove(d.id);
+      if (r && r.error === 'in_use') { alert(`Can't delete "${d.name}" — ${r.detail} document${r.detail === 1 ? ' is' : 's are'} still filed under it. Retire it instead (it stays hidden from non-members), or move those documents first.`); return; }
+      if (r && r.error) { alert('Could not delete that department.'); return; }
+      await loadDepartments();
+    });
     list.appendChild(row);
   }
 }
@@ -6066,7 +6245,8 @@ loadDocTypes().then(() => {
 });
 // A doc type created/changed elsewhere (e.g. the Teach wizard) — reload the list.
 api.onDocTypesChanged?.(() => { loadDocTypes().catch(() => {}); });
-loadUsers();
+api.onDepartmentsChanged?.(() => { loadDepartments().catch(() => {}); });
+loadDepartments();   // fetches departments + state, then repaints the Users list with membership
 initStampCatalog();
 loadAuditLog();
 

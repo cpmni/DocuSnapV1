@@ -45,27 +45,36 @@ function _allDepartments(db, userId) {
 }
 
 /**
- * Per-document decision (used by accessService.canAccessDocument). Fail-closed but inert:
- *   untagged (NULL) / not configured / admin / all_departments / member → { deny:false }; else { deny:true }.
+ * Per-document decision (used by accessService.canAccessDocument). Fail-closed but inert. D7 (2026-09-18):
+ * a doc is SHARED when it has ZERO `document_departments` rows; otherwise visible to admin / all_departments /
+ * a member of ANY of its departments. Takes the doc's `id` (NOT the retired scalar `department_id`). Order per
+ * Oracle #4a: system / not-configured / admin / all_departments BEFORE any join query (inert installs never query).
  */
 function decision(db, user, doc) {
   if (user === SYSTEM_ACTOR) return { deny: false };     // explicit system read
-  const deptId = doc && doc.department_id;
-  if (deptId == null) return { deny: false };            // shared
+  const docId = doc && doc.id;
+  if (docId == null) return { deny: false };             // no id to check → inert (only synthetic/pin docs)
   if (!configured(db)) return { deny: false };           // nothing configured
   if (user && user.role === 'admin') return { deny: false };
   const uid = _uid(user);
-  if (uid == null) return { deny: true };
-  if (_allDepartments(db, uid)) return { deny: false };
-  try { return { deny: !db.prepare('SELECT 1 FROM user_departments WHERE user_id = ? AND department_id = ?').get(uid, deptId) }; }
+  if (uid != null && _allDepartments(db, uid)) return { deny: false };
+  let tagged;
+  try { tagged = db.prepare('SELECT 1 FROM document_departments WHERE document_id = ? LIMIT 1').get(docId); }
   catch { return { deny: false }; }                       // never throw the gate closed on a schema gap
+  if (!tagged) return { deny: false };                   // shared (no departments on this doc)
+  if (uid == null) return { deny: true };                // a tagged doc + unknown viewer
+  try {
+    return { deny: !db.prepare(
+      `SELECT 1 FROM document_departments dd JOIN user_departments ud ON ud.department_id = dd.department_id
+       WHERE dd.document_id = ? AND ud.user_id = ? LIMIT 1`).get(docId, uid) };
+  } catch { return { deny: false }; }
 }
 
 /**
- * SQL fragment (leading ` AND …`) restricting a list/count query to documents the viewer may see:
- * shared (NULL) OR in one of the viewer's departments. '' (byte-identical) when not configured, the
- * viewer is admin, or carries all_departments. The user_id is an integer from the session → embedded as
- * a literal (no param plumbing across the ~12 list readers). An unknown/blank viewer sees SHARED only.
+ * SQL fragment (leading ` AND …`) restricting a list/count query to documents the viewer may see: SHARED (no
+ * `document_departments` rows) OR the viewer is a MEMBER of ANY of the doc's departments. '' (byte-identical)
+ * when not configured / admin / all_departments. The clause references the documents PK (`<alias>.id`), NOT the
+ * retired scalar. uid embedded as a literal (no param plumbing across the ~13 readers). Unknown viewer → SHARED only.
  */
 function visibleDocSql(db, user, alias = 'd') {
   if (user === SYSTEM_ACTOR) return '';                  // explicit system read (unfiltered)
@@ -73,9 +82,12 @@ function visibleDocSql(db, user, alias = 'd') {
   if (user && user.role === 'admin') return '';
   const a = alias ? `${alias}.` : '';
   const uid = _uid(user);
-  if (uid == null || !Number.isInteger(uid)) return ` AND ${a}department_id IS NULL`;   // fail-closed: shared only
+  if (uid == null || !Number.isInteger(uid))
+    return ` AND NOT EXISTS (SELECT 1 FROM document_departments dd0 WHERE dd0.document_id = ${a}id)`;   // fail-closed: shared only
   if (_allDepartments(db, uid)) return '';
-  return ` AND (${a}department_id IS NULL OR ${a}department_id IN (SELECT department_id FROM user_departments WHERE user_id = ${uid}))`;
+  return ` AND (NOT EXISTS (SELECT 1 FROM document_departments dd0 WHERE dd0.document_id = ${a}id)`
+       + ` OR EXISTS (SELECT 1 FROM document_departments dd1 JOIN user_departments ud1 ON ud1.department_id = dd1.department_id`
+       + ` WHERE dd1.document_id = ${a}id AND ud1.user_id = ${uid}))`;
 }
 
 module.exports = { configured, decision, visibleDocSql, SYSTEM_ACTOR };

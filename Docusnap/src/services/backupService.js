@@ -33,6 +33,7 @@ const SUPPORTED_FORMATS = new Set([1]);
 // are fully REPLACED — see applyBackup.
 const TABLES = [
   'settings',
+  'departments',
   'document_types', 'fields',
   'template_groups', 'templates',
   'template_fields', 'template_field_mappings', 'template_landmarks', 'template_logo_hashes',
@@ -51,6 +52,11 @@ const TABLES = [
 function _settingExcluded(key) {
   const s = String(key || '').toLowerCase();
   if (s === 'test_build_armed_rev') return true;
+  // Department folder-default keys hold a RAW department id (machine-local); a backup would carry a
+  // FOREIGN id to another install and mis-tag future filings. They are go-forward config an admin
+  // re-sets locally, so EXCLUDE them (D-C3; Oracle "exclude is the simplest sound option"). Introduced
+  // by the D3/D4 folder-default dropdowns — excluded proactively so that feature can't ship a mis-tag.
+  if (s === 'watch_default_department_id' || s === 'quickfile_folder_department_id') return true;
   try {
     const { TEST_SWITCH_KEYS } = require('../../database/dark_switches');
     if (TEST_SWITCH_KEYS.includes(s)) return true;
@@ -100,10 +106,20 @@ function createBackup(db, password, opts = {}) {
     if (t === 'settings') rows = rows.filter(r => !_settingExcluded(r.key));
     tables[t] = rows;
   }
+  // D7: the type-default department SET, slug-projected (raw ids are machine-local). Documents' per-doc
+  // department join stays OUT of scope (documents are not backed up).
+  let typeDefaultDepartments = [];
+  try {
+    typeDefaultDepartments = db.prepare(`SELECT dt.slug AS type_slug, dp.slug AS dept_slug
+      FROM document_type_departments dtd
+      JOIN document_types dt ON dt.id = dtd.document_type_id
+      JOIN departments dp ON dp.id = dtd.department_id`).all();
+  } catch { /* pre-D7 export (table absent) → nothing to carry */ }
   const payload = {
     format: FORMAT_VERSION,
     app_version: opts.appVersion || '',
     exported_at: new Date().toISOString(),
+    typeDefaultDepartments,
     // Licensing device fingerprint of the machine that made this backup. Used on import
     // to stop a fresh trial on another machine from importing someone else's learned
     // data/settings (see settings/handler device-import gate). It's already a SHA-256
@@ -237,7 +253,19 @@ function applyBackup(db, payload) {
       return map;
     };
 
-    const typeMap  = upsertParent('document_types', 'slug');
+    // Departments (D-C3): a slug-keyed parent restored BEFORE document_types so its default_department_id
+    // can be REMAPPED to the local id below. upsertParent never DELETEs, so an absent/empty departments
+    // array imports nothing and wipes nothing (M5-safe by construction). user_departments / all_departments
+    // / documents.department_id are OUT of backup scope, so a restored department has zero members until an
+    // admin sets them — fail-CLOSED (its docs stay admin-only, never silently shared).
+    const deptMap  = upsertParent('departments', 'slug');
+    const typeMap  = upsertParent('document_types', 'slug', (row) => {
+      // D7: the type default department is a SET in document_type_departments now; the scalar is retired.
+      // Never restore the retired scalar (a pre-D7 backup's value is dropped — the admin re-sets on the new
+      // machine; the current type-default set is restored slug-projected below).
+      if ('default_department_id' in row) row.default_department_id = null;
+      return row;
+    });
     const groupMap = upsertParent('template_groups', 'name');
 
     const docPresent = tableExists('documents') ? db.prepare('SELECT 1 FROM documents WHERE id = ?') : null;
@@ -272,6 +300,24 @@ function applyBackup(db, payload) {
     };
 
     replaceChildren('fields', 'document_type_id', typeMap);
+
+    // D7: rebuild each restored type's DEFAULT department SET from the slug-projected pairs. A member whose
+    // department slug is absent on this machine is DROPPED (never a foreign id); a type absent from the backup
+    // keeps its local set. Only types the backup carries are cleared+rebuilt (upsert-never-deletes semantics).
+    if (tableExists('document_type_departments') && Array.isArray(payload.typeDefaultDepartments)) {
+      const typeBySlug = db.prepare('SELECT id FROM document_types WHERE slug = ?');
+      const deptBySlug = db.prepare('SELECT id FROM departments WHERE slug = ?');
+      const insTDD = db.prepare('INSERT OR IGNORE INTO document_type_departments (document_type_id, department_id) VALUES (?, ?)');
+      const delTDD = db.prepare('DELETE FROM document_type_departments WHERE document_type_id = ?');
+      for (const slug of new Set(payload.typeDefaultDepartments.map(r => r.type_slug))) {
+        const t = typeBySlug.get(String(slug)); if (t) delTDD.run(t.id);
+      }
+      for (const r of payload.typeDefaultDepartments) {
+        const t = typeBySlug.get(String(r.type_slug)), d = deptBySlug.get(String(r.dept_slug));
+        if (t && d) insTDD.run(t.id, d.id);
+      }
+      applied.document_type_departments = payload.typeDefaultDepartments.length;
+    }
     // Structural roles are required by nature (migration 92): a backup taken before that heal carries
     // required=0 on a wizard-made type's identity / ref / date fields — assert the flag on every type
     // after the restore so a restore can never re-plant the "score every field" state. Best-effort:

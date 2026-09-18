@@ -1312,6 +1312,12 @@
           <button class="btn fh-new-type" id="btn-new-doctype" data-help-key="new-doctype" style="display:none;" title="Create a new document type without leaving Review">+ New type</button>
         </div>
         <select id="doctype-select" data-help-key="doctype-select"><option value="">— Select document type —</option></select>
+        <!-- D3/D7 per-document department tagger (multi-select) — hidden unless departments exist. -->
+        <div id="doc-dept-row" style="display:none; margin-top:6px; flex-direction:column; gap:4px;">
+          <span style="font-size:11px; color:var(--muted);">Visible to</span>
+          <div id="doc-dept-checks" style="display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center;"></div>
+          <span id="doc-dept-msg" style="font-size:11px; color:var(--muted); min-height:14px;"></span>
+        </div>
         <button id="generic-chip" style="display:none; margin-top:6px; font-size:11px; padding:4px 10px; border:1px solid var(--border2); border-radius:var(--r-pill); background:transparent; color:var(--accent2); cursor:pointer;"
                 title="File this unrecognised document as a General Document — found later by searching its text; no invoice-style fields required">File as General Document</button>
         <div class="fields-detect-row">

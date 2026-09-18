@@ -424,6 +424,29 @@ contextBridge.exposeInMainWorld('docusnap', {
     grant:        (userId, grant)  => ipcRenderer.invoke('stamp-grant', { userId, grant }),
   },
 
+  // ── Departments (admin-only, lives in Settings → Users & Departments) ────────
+  // Who may see which documents (NULL department = shared = visible to all). The read gate ships in the
+  // core; this surface is the admin management + membership wiring. Every write channel is admin-gated
+  // in main; the renderer only relays and reverts on failure.
+  dept: {
+    list:          ()                 => ipcRenderer.invoke('department-list'),
+    users:         ()                 => ipcRenderer.invoke('department-users'),
+    state:         ()                 => ipcRenderer.invoke('department-get-state'),
+    create:        (name)             => ipcRenderer.invoke('department-create', name),
+    rename:        (id, name)         => ipcRenderer.invoke('department-rename', { id, name }),
+    retire:        (id)               => ipcRenderer.invoke('department-retire', id),
+    remove:        (id)               => ipcRenderer.invoke('department-delete', id),
+    setMembership: (userId, deptIds)  => ipcRenderer.invoke('department-set-membership', { userId, deptIds }),
+    setAll:        (userId, on)       => ipcRenderer.invoke('department-set-all', { userId, on }),
+    setEnabled:    (on)               => ipcRenderer.invoke('department-set-enabled', on),
+    assignable:    ()                 => ipcRenderer.invoke('get-assignable-departments'),   // D3: what THIS user may tag
+    setDocument:   (docId, deptId)    => ipcRenderer.invoke('set-document-department', docId, deptId),   // single shim
+    setDocumentSet:(docId, deptIds)   => ipcRenderer.invoke('set-document-departments', docId, deptIds), // D7 set form
+    getDocument:   (docId)            => ipcRenderer.invoke('get-document-departments', docId),           // the doc's current set
+    setTypeDefault:(typeId, deptIds)  => ipcRenderer.invoke('department-set-type-default', { typeId, deptIds }),
+    getTypeDefaults:()                => ipcRenderer.invoke('department-get-type-defaults'),
+  },
+
   // ── Template Viewer / Anchor Mapping (admin-only, lives in Settings) ────────
   getTemplates:               ()                  => ipcRenderer.invoke('get-templates'),
   getTemplateDetail:          (id)                => ipcRenderer.invoke('get-template-detail', id),
@@ -532,6 +555,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   // ── Events from main → renderer ──────────────────────────────────────────────
   onThemeChanged:        (cb) => ipcRenderer.on('theme-changed',          (_e, t) => cb(t)),
   onDocTypesChanged:     (cb) => ipcRenderer.on('doc-types-changed',      ()      => cb()),
+  onDepartmentsChanged:  (cb) => ipcRenderer.on('departments-changed',    ()      => cb()),
   onDashboardCardsChanged: (cb) => ipcRenderer.on('dashboard-cards-changed', ()   => cb()),
   // Child-window dock (main window only — main-side sender guard enforces it): the list of
   // minimised child windows, so the shell can show a chip to bring each one back.

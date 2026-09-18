@@ -624,6 +624,81 @@ function register(ctx) {
     return true;
   });
 
+  // ── Departments (D4: Settings IPC + UI wiring) ───────────────────────────────
+  // The read gate ships already (D2, departmentVisibility); this wires the ADMIN management surface only.
+  // Every write channel is requireRole('admin') and forwards the returned session as the actor (the
+  // service re-checks _isAdmin). AUDIT ADAPTER (Oracle D4 C2): departmentService calls
+  // deps.logAudit(db, actionString, metaObj) (3-arg) but the app's logAudit is 2-arg with an entry
+  // OBJECT — without this adapter the varying dept metas ({id,name,slug} / {user_id,departments} /
+  // {document_id,from,to}) would land as near-empty rows. Nest the whole meta under `metadata`
+  // (addAuditEntry JSON-stringifies it) and derive target_type/target_id.
+  const departments = require('../../services/departmentService');
+  const _deptAudit = (db, action, meta) => {
+    const m = meta || {};
+    logAudit(db, {
+      action, action_category: 'settings', outcome: 'success',
+      target_type: m.user_id != null ? 'user' : (m.document_id != null ? 'document' : 'department'),
+      target_id: String(m.id != null ? m.id : (m.user_id != null ? m.user_id : (m.document_id != null ? m.document_id : ''))),
+      metadata: m,
+    });
+  };
+  ipcMain.handle('department-list', () => { requireRole('admin'); return departments.listDepartments(getDb(), { includeRetired: true }); });
+  ipcMain.handle('department-users', () => {
+    requireRole('admin');
+    const db = getDb();
+    const rows = db.prepare('SELECT id, all_departments FROM users').all();
+    const byUser = {}, allFlags = {};
+    for (const u of rows) { byUser[u.id] = departments.userDepartmentIds(db, u.id); allFlags[u.id] = !!u.all_departments; }
+    return { byUser, allFlags };
+  });
+  ipcMain.handle('department-create',        (_e, name)              => { const s = requireRole('admin'); return departments.createDepartment(getDb(), s, name, { logAudit: _deptAudit }); });
+  ipcMain.handle('department-rename',        (_e, { id, name })      => { const s = requireRole('admin'); return departments.renameDepartment(getDb(), s, id, name, { logAudit: _deptAudit }); });
+  ipcMain.handle('department-retire',        (_e, id)                => { const s = requireRole('admin'); const r = departments.retireDepartment(getDb(), s, id, { logAudit: _deptAudit }); notifyAllWindows('departments-changed'); return r; });
+  ipcMain.handle('department-delete',        (_e, id)                => { const s = requireRole('admin'); const r = departments.deleteDepartment(getDb(), s, id, { logAudit: _deptAudit }); if (r && r.ok) notifyAllWindows('departments-changed'); return r; });
+  ipcMain.handle('department-set-membership',(_e, { userId, deptIds })=> { const s = requireRole('admin'); return departments.setMembership(getDb(), s, userId, deptIds, { logAudit: _deptAudit }); });
+  ipcMain.handle('department-set-all',       (_e, { userId, on })    => { const s = requireRole('admin'); return departments.setAllDepartments(getDb(), s, userId, on, { logAudit: _deptAudit }); });
+  // Dedicated master-switch writer (NOT generic set-setting): needs the Q9 side-effect (the enabling
+  // admin gets all_departments) + the D-C8 tagged-doc count on disable. FLIP-GATED — refuses to turn ON
+  // while the intake lanes are unguarded (Oracle D4 item 8 SEND BACK; departmentService.INTAKE_GUARDED).
+  ipcMain.handle('department-set-enabled', (_e, on) => {
+    const s = requireRole('admin');
+    const db = getDb();
+    const want = (on === true || String(on) === 'true');
+    if (want && !departments.INTAKE_GUARDED) return { ok: false, error: 'intake_unguarded' };
+    if (want) {
+      learning.setSetting(db, 'departments_enabled', 'true');
+      departments.setAllDepartments(db, s, s.id, true, { logAudit: _deptAudit });   // Q9: the enabler sees everything
+      _deptAudit(db, 'departments_enabled_on', { id: null });
+      notifyAllWindows('departments-changed');
+      return { ok: true, enabled: true };
+    }
+    const tagged = departments.taggedDocCount(db);   // D7: docs carrying ≥1 department (the join)
+    learning.setSetting(db, 'departments_enabled', 'false');   // OFF does NOT un-hide tagged docs (read gate is data-driven)
+    _deptAudit(db, 'departments_enabled_off', { id: null, tagged });
+    notifyAllWindows('departments-changed');
+    return { ok: true, enabled: false, warn: tagged > 0 ? { tagged } : null };
+  });
+  ipcMain.handle('department-get-state', () => {
+    requireRole('admin');
+    const db = getDb();
+    return { enabled: departments._enabled(db), intakeGuarded: departments.INTAKE_GUARDED,
+             tagged: departments.taggedDocCount(db) };
+  });
+  // D7: a document type's DEFAULT department SET (the join replaces the single default_department_id).
+  ipcMain.handle('department-set-type-default', (_e, { typeId, deptIds }) => {
+    const s = requireRole('admin');
+    const r = departments.setTypeDefaultDepartments(getDb(), s, typeId, deptIds || [], { logAudit: _deptAudit });
+    if (r && r.ok) notifyAllWindows('departments-changed');
+    return r;
+  });
+  ipcMain.handle('department-get-type-defaults', () => {
+    requireRole('admin');
+    const db = getDb();
+    const map = {};
+    try { for (const r of db.prepare('SELECT document_type_id, department_id FROM document_type_departments').all()) (map[r.document_type_id] = map[r.document_type_id] || []).push(r.department_id); } catch {}
+    return map;
+  });
+
   // Advanced reading switches unlock (owner decision 2026-08-11): the Processing tab grew ~50
   // kill-switch/experimental toggles a customer should never meet — they now hide behind ONE
   // SFDEV unlock (same password + checked-in-MAIN convention as the dev inspector). Option (b):

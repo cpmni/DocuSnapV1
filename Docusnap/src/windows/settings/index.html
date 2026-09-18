@@ -224,7 +224,7 @@
 
     /* ── Users list ── */
     .user-row {
-      display:flex; align-items:center; gap:12px;
+      display:flex; align-items:center; gap:12px; flex-wrap:wrap;   /* D4: the per-user department row (flex-basis:100%) wraps to its own line */
       padding:10px 12px; border:1px solid var(--border);
       border-radius:7px; margin-bottom:6px; background:var(--surface); transition:opacity .2s;
     }
@@ -440,7 +440,7 @@
     <button class="tab" data-tab="templates" data-help-key="tab-templates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="20"/></svg>Templates</button>
     <button class="tab" data-tab="learning" data-help-key="tab-learning"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1 2.7 2 6 2s6-1 6-2v-5"/></svg>Learning</button>
     <button class="tab" data-tab="repair" data-help-key="tab-repair"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.3 2.3-2.5-.7-.7-2.5z"/></svg>Learning Repair</button>
-    <button class="tab" data-tab="users" data-help-key="tab-users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>Users &amp; activity</button>
+    <button class="tab" data-tab="users" data-help-key="tab-users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>Users &amp; Departments</button>
     <button class="tab" data-tab="workflow" data-help-key="tab-workflow" style="display:none"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="10.7" x2="15.4" y2="6.3"/><line x1="8.6" y1="13.3" x2="15.4" y2="17.7"/></svg>Workflow</button>
     <button class="tab" data-tab="audit" data-help-key="tab-audit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="18" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>Audit</button>
     <button class="tab" data-tab="licensing" data-help-key="tab-licensing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 21 2"/><path d="M16 7l3 3"/><path d="M18 5l3 3"/></svg>Licensing</button>
@@ -2616,6 +2616,29 @@
             <button class="btn primary" id="btn-save-user">Create</button>
             <button class="btn" id="btn-cancel-user">Cancel</button>
           </div>
+        </div>
+      </div>
+
+      <!-- Departments (D4) — admin-only visibility control. Off until departments_enabled is turned on;
+           per-user department tick-boxes are rendered into each Users row by renderUsersList. -->
+      <div class="section" id="departments-section">
+        <div class="section-title">Departments</div>
+        <p class="section-desc">Departments decide who can see which documents. Everything stays visible to everyone until you turn this on.</p>
+        <div class="card" id="dept-master-card" style="padding:14px; margin-bottom:14px; display:flex; gap:12px; align-items:flex-start;">
+          <label class="toggle" style="flex:0 0 auto; margin-top:2px;" title="Turn document-by-department visibility on or off">
+            <input type="checkbox" id="dept-enabled-toggle"><span class="toggle-slider"></span>
+          </label>
+          <div>
+            <div style="font-weight:600;">Restrict documents by department</div>
+            <div class="section-desc" style="max-width:62ch; margin-top:4px;">Admins always see everything. Documents with no department are visible to everyone. Departments restrict what Scan Finder shows — they do not change Windows folder permissions.</div>
+            <div id="dept-enabled-msg" class="section-desc" style="margin-top:6px; min-height:16px;"></div>
+          </div>
+        </div>
+        <div id="departments-list"></div>
+        <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <input type="text" id="new-dept-name" placeholder="New department (e.g. Finance)" maxlength="60" autocomplete="off" style="width:220px;">
+          <button class="btn primary" id="btn-add-dept" disabled>Add department</button>
+          <span class="section-desc" id="new-dept-msg"></span>
         </div>
       </div>
 

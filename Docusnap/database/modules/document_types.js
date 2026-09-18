@@ -385,7 +385,7 @@ function deleteField(db, id) {
 
 function updateType(db, id, changes) {
   const allowed = ['name', 'enabled', 'ref_field_key',
-                   'date_field_key', 'sort_order', 'title_aliases'];
+                   'date_field_key', 'sort_order', 'title_aliases'];   // D7: default department moved to the join (setTypeDefaultDepartments)
   changes = { ...changes };
   // Title aliases: validate against the INCOMING name if renaming in the same call, else
   // the current row's name (so an alias equal to the new/old name is still rejected). Throws
@@ -420,6 +420,8 @@ function updateType(db, id, changes) {
       if (!row || _t === 'list' || (role === 'date_field_key' && _t === 'barcode')) delete changes[role];
     }
   }
+  // D7 (2026-09-18): the doc-type default department is now a SET in document_type_departments, written via
+  // departmentService.setTypeDefaultDepartments — never through updateType (dropped from `allowed` above).
   const sets = Object.keys(changes)
     .filter(k => allowed.includes(k))
     .map(k => `${k} = @${k}`)

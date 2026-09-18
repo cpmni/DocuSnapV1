@@ -1631,6 +1631,60 @@ document.getElementById('generic-chip')?.addEventListener('click', () => {
   document.getElementById('generic-chip').style.display = 'none';
 });
 
+// ── D3 per-document department tagger ────────────────────────────────────────────────────────────
+// Shown only when departments exist. Options = the departments THIS operator may assign (admin /
+// all_departments → all + Shared; edit → own memberships, no Shared while ON). Change → set-document-
+// department (the service enforces the widening rule + belt + access + audit). The change listener is
+// attached ONCE; per-doc calls just repopulate.
+// D7: a MULTI-SELECT — "Everyone" (admins/all-departments only) OR a checkbox per department the operator
+// may assign, plus LOCKED chips for departments the doc is in that this operator isn't a member of (shown so
+// they see the whole picture; the server preserves those untouched). An edit user submits only their OWN
+// picks; the service re-adds the preserved foreign departments (the own-slice rule).
+const _escDept = (t) => String(t || '').replace(/[<&>]/g, '');
+async function renderDocDepartment(doc) {
+  const row = document.getElementById('doc-dept-row');
+  const box = document.getElementById('doc-dept-checks');
+  const msg = document.getElementById('doc-dept-msg');
+  if (!row || !box || !window.docusnap?.dept) return;
+  if (msg) msg.textContent = '';
+  let info, current;
+  try { info = await window.docusnap.dept.assignable(); } catch { info = null; }
+  if (!info || !info.configured) { row.style.display = 'none'; return; }
+  try { current = (await window.docusnap.dept.getDocument(doc.id)) || []; } catch { current = []; }
+  const curSet = new Set(current.map(d => d.id));
+  const assignable = info.departments || [];
+  const assignableIds = new Set(assignable.map(d => d.id));
+  const foreign = current.filter(d => !assignableIds.has(d.id));   // this operator can't change these
+
+  const parts = [];
+  const isShared = curSet.size === 0;
+  parts.push(`<label title="${info.canShare ? 'Anyone can see this document' : 'Only an admin can make a document visible to everyone'}" style="display:inline-flex; align-items:center; gap:5px; ${info.canShare ? '' : 'opacity:.55;'}"><input type="radio" name="doc-dept-mode" class="dd-everyone" ${isShared ? 'checked' : ''} ${info.canShare ? '' : 'disabled'}>Everyone</label>`);
+  for (const d of assignable) parts.push(`<label style="display:inline-flex; align-items:center; gap:5px;"><input type="checkbox" class="dd-own" data-id="${d.id}" ${curSet.has(d.id) ? 'checked' : ''}>${_escDept(d.name)}</label>`);
+  for (const d of foreign) parts.push(`<label title="You're not in ${_escDept(d.name)} — only an admin can change this" style="display:inline-flex; align-items:center; gap:5px; opacity:.55;"><input type="checkbox" checked disabled>${_escDept(d.name)} &#128274;</label>`);
+  box.innerHTML = parts.join('');
+  row.style.display = 'flex';
+
+  const commit = async (deptIds) => {
+    let r; try { r = await window.docusnap.dept.setDocumentSet(doc.id, deptIds); } catch (e) { r = { error: (e && e.message) || 'failed' }; }
+    if (r && r.error) {
+      const m = { widen_admin_only: 'You can only change departments you belong to (and must keep at least one).',
+                  departments_disabled: 'Turn departments on in Settings first.',
+                  locked: 'This document is locked for approval.', no_access: 'You do not have permission.' };
+      if (msg) msg.textContent = m[r.error] || 'Could not change the departments.';
+      renderDocDepartment(doc);   // re-sync the boxes to the server truth
+      return;
+    }
+    if (msg) { msg.textContent = 'Saved.'; setTimeout(() => { if (msg && msg.textContent === 'Saved.') msg.textContent = ''; }, 1200); }
+  };
+  const gatherOwn = () => Array.from(box.querySelectorAll('.dd-own')).filter(c => c.checked).map(c => Number(c.dataset.id));
+  box.querySelectorAll('.dd-own').forEach(cb => cb.addEventListener('change', () => {
+    const ev = box.querySelector('.dd-everyone'); if (ev) ev.checked = false;
+    commit(gatherOwn());
+  }));
+  const ev = box.querySelector('.dd-everyone');
+  if (ev && info.canShare) ev.addEventListener('change', () => { if (ev.checked) { box.querySelectorAll('.dd-own').forEach(c => { c.checked = false; }); commit([]); } });
+}
+
 document.getElementById('doctype-select').addEventListener('change', (e) => {
   if (e.target.value === NEW_TYPE_SENTINEL) {
     e.target.value = selectedTypeSlug || '';   // revert — the sentinel never becomes a chosen type
@@ -2436,6 +2490,7 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   const sel = document.getElementById('doctype-select');
   sel.value = selectedTypeSlug || '';
   _updateSenderFieldsBtn();
+  try { renderDocDepartment(doc); } catch {}   // D3 per-doc department tagger (hidden unless departments exist)
   // Generic Document chip (docs/designs/GENERIC_DOCTYPE_2026-07-18.md §6): a one-click
   // "file it as General" affordance for docs that arrived with NO type — shown only when
   // the fallback feature is on and the General Document type exists (pre-enable backlog

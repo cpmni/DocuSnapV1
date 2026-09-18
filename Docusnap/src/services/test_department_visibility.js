@@ -25,6 +25,8 @@ const dept = require('./departmentService');
 let fails = 0;
 const check = (l, c) => { console.log(`  ${c ? 'OK ' : 'BAD'} ${l}`); if (!c) fails++; };
 const allow = (db, u, id) => access.canAccessDocument(db, u, id).allow;
+// D7: tag a doc into a department via the JOIN (the gate reads document_departments, not the retired scalar).
+function tagInto(db, docId, deptId) { if (deptId != null) db.prepare('INSERT OR IGNORE INTO document_departments (document_id, department_id) VALUES (?,?)').run(docId, deptId); return docId; }
 
 function seed() {
   const db = new Database(':memory:');
@@ -37,7 +39,7 @@ function seed() {
   const editNone = { role: 'edit', id: uid('edit') };
   const acct = { role: 'edit', id: uid('edit', 1) };            // all_departments = the accountant
   const ro = { role: 'readonly', id: uid('readonly') };
-  const mkDoc = (deptId) => db.prepare("INSERT INTO documents (original_filename, folder_path, status, department_id) VALUES ('d.pdf','/in','confirmed',?)").run(deptId).lastInsertRowid;
+  const mkDoc = (deptId) => tagInto(db, db.prepare("INSERT INTO documents (original_filename, folder_path, status) VALUES ('d.pdf','/in','confirmed')").run().lastInsertRowid, deptId);
   return { db, admin, editFin, editNone, acct, ro, mkDoc };
 }
 
@@ -109,6 +111,10 @@ console.log('§5 setDocumentDepartment — the widening rule (edit narrows own; 
   const fin = dept.createDepartment(db, admin, 'Finance').id;
   const hr = dept.createDepartment(db, admin, 'HR').id;
   dept.setMembership(db, admin, editFin.id, [fin]);
+  // The D4 write-side belt refuses a NON-NULL tag while departments_enabled is OFF (a doc tagged while
+  // OFF can't be un-hidden). Turn the switch ON here so §5 exercises the WIDENING rule, not the belt
+  // (the belt has its own pin in test_department_settings.js §B).
+  db.prepare("UPDATE settings SET value = 'true' WHERE key = 'departments_enabled'").run();
   const d1 = mkDoc(null);
   check('edit member tags a shared doc INTO its own department (narrowing)', dept.setDocumentDepartment(db, editFin, d1, fin).ok === true);
   check('  → department_set_by recorded as user', db.prepare('SELECT department_set_by s FROM documents WHERE id=?').get(d1).s === 'user');
@@ -167,7 +173,7 @@ console.log('§9 the list/count reader sweep honours the viewer (+ SYSTEM_ACTOR 
   const { db, admin, editFin, editNone } = seed();
   const documents = require('../../database/modules/documents');
   const dv = require('../../database/modules/departmentVisibility');
-  const mk = (st, d) => db.prepare("INSERT INTO documents (original_filename, folder_path, status, department_id) VALUES ('d.pdf','/in',?,?)").run(st, d).lastInsertRowid;
+  const mk = (st, d) => tagInto(db, db.prepare("INSERT INTO documents (original_filename, folder_path, status) VALUES ('d.pdf','/in',?)").run(st).lastInsertRowid, d);
   const fin = dept.createDepartment(db, admin, 'Finance').id;
   const hr  = dept.createDepartment(db, admin, 'HR').id;
   dept.setMembership(db, admin, editFin.id, [fin]);
@@ -192,7 +198,7 @@ console.log('§10 recycle bin scoped by department DECISION (canAccessDocument s
   const { db, admin, editFin, editNone } = seed();
   const documents = require('../../database/modules/documents');
   const dv = require('../../database/modules/departmentVisibility');
-  const mk = (d) => db.prepare("INSERT INTO documents (original_filename, folder_path, status, department_id) VALUES ('d.pdf','/in','deleted',?)").run(d).lastInsertRowid;
+  const mk = (d) => tagInto(db, db.prepare("INSERT INTO documents (original_filename, folder_path, status) VALUES ('d.pdf','/in','deleted')").run().lastInsertRowid, d);
   const fin = dept.createDepartment(db, admin, 'Finance').id;
   const hr  = dept.createDepartment(db, admin, 'HR').id;
   dept.setMembership(db, admin, editFin.id, [fin]);
@@ -213,7 +219,7 @@ console.log('§11 getReviewSplit(viewer).total === getReviewCount(viewer) — sa
 {
   const { db, admin, editFin, editNone } = seed();
   const documents = require('../../database/modules/documents');
-  const mk = (d) => db.prepare("INSERT INTO documents (original_filename, folder_path, status, department_id) VALUES ('d.pdf','/in','needs_review',?)").run(d).lastInsertRowid;
+  const mk = (d) => tagInto(db, db.prepare("INSERT INTO documents (original_filename, folder_path, status) VALUES ('d.pdf','/in','needs_review')").run().lastInsertRowid, d);
   const fin = dept.createDepartment(db, admin, 'Finance').id;
   dept.setMembership(db, admin, editFin.id, [fin]);
   mk(null); mk(fin); mk(dept.createDepartment(db, admin, 'HR').id);
@@ -255,7 +261,7 @@ console.log('§14 scope-wide learning is DELIBERATELY department-blind (Oracle c
   const invId = db.prepare("INSERT INTO document_types (name, slug, built_in) VALUES ('Invoice','invoice',1)").run().lastInsertRowid;
   const fin = dept.createDepartment(db, admin, 'Finance').id;
   const hr  = dept.createDepartment(db, admin, 'HR').id;
-  const mk = (d) => db.prepare("INSERT INTO documents (original_filename, folder_path, status, supplier_name, document_type_id, department_id) VALUES ('d.pdf','/in','confirmed','Acme',?,?)").run(invId, d).lastInsertRowid;
+  const mk = (d) => tagInto(db, db.prepare("INSERT INTO documents (original_filename, folder_path, status, supplier_name, document_type_id) VALUES ('d.pdf','/in','confirmed','Acme',?)").run(invId).lastInsertRowid, d);
   const a = mk(fin), b = mk(hr), c = mk(null);
   const res = documents.requeueConfirmedDocsForScope(db, { supplier_name: 'Acme', document_type_slug: 'invoice' });
   const st = (id) => db.prepare('SELECT status s FROM documents WHERE id=?').get(id).s;
@@ -267,7 +273,7 @@ console.log('§15 D-C11 — count broadcasts are viewer-scoped + no raw global b
 {
   const { db, admin, editFin, editNone } = seed();
   const cb = require('../lib/countBroadcast');
-  const mk = (d) => db.prepare("INSERT INTO documents (original_filename, folder_path, status, department_id) VALUES ('d.pdf','/in','needs_review',?)").run(d).lastInsertRowid;
+  const mk = (d) => tagInto(db, db.prepare("INSERT INTO documents (original_filename, folder_path, status) VALUES ('d.pdf','/in','needs_review')").run().lastInsertRowid, d);
   const fin = dept.createDepartment(db, admin, 'Finance').id;
   dept.setMembership(db, admin, editFin.id, [fin]);
   mk(null); mk(fin); mk(dept.createDepartment(db, admin, 'HR').id);

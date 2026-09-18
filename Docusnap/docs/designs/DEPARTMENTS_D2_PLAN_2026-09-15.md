@@ -9,6 +9,70 @@ corpus M=0 run before it flips a default.
 The one rule (unchanged): **NULL department = shared = visible to everyone.** Zero backfill; every
 existing row unchanged; byte-identical until a second department exists and docs are tagged.
 
+## ⏭ BUILT 2026-09-17 — D4 (Settings IPC + UI), Oracle-vetted (SIGN OFF W/COND to build; SEND BACK the flip)
+Advisor+Oracle gate cleared (eric IPC/UI · gary tests · Oracle final). Shipped DARK (switch stays OFF/inert):
+- **Service** (`departmentService.js`): `renameDepartment` added (display-name only, slug STABLE = the backup
+  remap key); the **write-side belt** — `setDocumentDepartment` refuses a NON-NULL tag while
+  `departments_enabled` is OFF (OFF can't un-hide; un-tag→NULL always allowed); the **`INTAKE_GUARDED = false`
+  flip gate** (Oracle item 8).
+- **IPC** (`settings/handler.js`): `department-{list,users,create,rename,retire,delete,set-membership,set-all,
+  set-enabled,get-state}`, every write `requireRole('admin')` forwarding the session actor. The **audit adapter**
+  `_deptAudit` nests the whole meta under `metadata` (Oracle C2 — no `[object Object]` rows). `department-set-enabled`
+  is a dedicated writer: Q9 side-effect (enabler gets `all_departments`), D-C8 tagged-count on disable, and it
+  **refuses to turn ON while `INTAKE_GUARDED` is false** (the SEND-BACK enforcement).
+- **Doc types**: `default_department_id` added to `updateType`'s whitelist + validated exists-AND-active (else
+  dropped; Oracle C4).
+- **Backup D-C3** (`backupService.js`): `departments` now a slug-keyed parent (upsertParent never DELETEs → M5-safe
+  by construction); `document_types.default_department_id` remapped by slug (dangling → NULL, never foreign);
+  the future folder-default settings excluded proactively.
+- **UI** (`settings/index.html` + `renderer.js`): tab → "Users & Departments"; a Departments section (master toggle
+  + the D-C7 sentence + list with rename/retire/delete); per-user membership tick-boxes + "All departments" in the
+  Users rows; a "Default department" dropdown in the Document Types detail pane; `onDepartmentsChanged` live refresh.
+- **Pins** (all green): `src/services/test_department_settings.js` (§A rename · §B belt · §C updateType · §D flip
+  gate · §E audit-adapter source-contract), `src/services/test_department_backup_remap.js` (D-C3 round-trip +
+  dangling→NULL + empty-safe), and `test_department_visibility.js` §5 updated for the belt.
+
+### ⏭ BUILT 2026-09-18 — D2b (the intake bypass CLOSED, Oracle gate item 8)
+Both intake lanes now enforce the D-C9 create rule via the new `departmentService.validateCreateDepartment`
+(admin/all_departments or own active department; shared-at-create is admin-only while ON; a non-null tag is
+refused while the switch is OFF — OFF can't un-hide). `directIntakeService.submit()` runs it BEFORE inserting
+the row (no half-created doc on refusal — the no-bypass invariant: a non-admin can only create a doc it can then
+see). `/v1 documents/intake` threads the uploader's `departmentId` under the server session and maps the refusals
+(`widen_admin_only`→403, `departments_disabled`→409, `unknown_department`→400). Pins: `test_department_settings.js`
+§F (the full gate matrix) + §G (source-contract that both lanes call it); `test_v1_intake` still green.
+
+### ⏭ BUILT 2026-09-18 — the denial matrix (Oracle gate item 7) — the FLIP proof
+`src/services/test_department_denial_matrix.js` (green): on a seeded status × department grid, the outsider
+(writer, no department) sees ZERO restricted docs across search / review / deferred / stuck / bin / getByIds,
+with a SYSTEM_ACTOR mutation oracle (real ⊊ unfiltered → the pin goes RED if any reader loses its fragment);
+the route-PARTY carve-out both grants the routed doc AND does not leak the department's other docs (closed route
+→ grant ends); the per-doc gate denies every restricted doc with `department_restricted`; /v1 threads the session
+actor into its readers. Complements `test_department_visibility.js` §1-§15.
+
+**FLIP GATE NOW GREEN** (Oracle items 6-8 all satisfied): D2b (intake) ✓ · denial matrix + mutation pin ✓ ·
+intake-seam negative pins ✓. `INTAKE_GUARDED` can be flipped to `true` (a one-line change) to make the master
+toggle reachable — **owner-approval-class** (it lets an admin turn departments on per install).
+
+### ⏭ BUILT 2026-09-18 — D3 (per-doc tagger + insert-time precedence) + INTAKE_GUARDED FLIPPED
+- **Per-doc tagger**: `set-document-department` + `get-assignable-departments` IPC in review/handler (forwarding
+  the session actor + access/edit-lock/audit deps; the service enforces the D-C9 widening rule + belt). Preload
+  `api.dept.setDocument` / `api.dept.assignable`. UI: a "Department" dropdown in the Review fields header
+  (`#doc-dept-row`), hidden unless departments exist, options scoped to what THIS operator may assign (admin/
+  all_departments → all + Shared; edit → own memberships), friendly refusal messages.
+- **Insert-time precedence (D-C9)**: `departmentService.applyTypeDefaultAtConfirm` (ONE source) — a confirmed doc
+  with no department inherits its type's default as `department_set_by='rule'`; a human `'user'` tag is never
+  overridden; only while ON + an active default. Called from `reviewService.confirm`. Inert/byte-identical when
+  unconfigured (corpus M=0 preserved).
+- **`INTAKE_GUARDED` flipped to `true`** (owner go 2026-09-18): the master toggle is now reachable, so an admin can
+  turn departments ON per install. `departments_enabled` stays seeded OFF (mig 164) — an opt-in, never a customer
+  default. Turning it on is an admin action; the enabling admin gets `all_departments` (Q9).
+- **Pins** (all green): `test_department_settings` §H (precedence) + §I (D3 source-contract) + §D (flip = true);
+  every reviewService/review pin unregressed.
+
+**Departments feature COMPLETE + enable-able.** Remaining optional slices (only if asked): D5 `{department}` folder
+token, D6 bulk re-tag, a Search-row tagger (Review has it), watch/Quick-File folder-default dropdowns (D4-later),
+D7 department×type deny. A Chris sandbox round on the live feature is a good next check before wide rollout.
+
 ## Already BUILT + WIRED (verified at source — do NOT rebuild)
 - **D1 schema (mig 164):** `departments`, `user_departments`, `documents.department_id` + `department_set_by`,
   `document_types.default_department_id`, `users.all_departments`, `doctype_grants.department_id`.

@@ -1176,6 +1176,10 @@ function createRequestListener(ctx) {
             documentTypeId: body.documentTypeId,
             party: body.party, date: body.date, title: body.title || baseName,
             reference: body.reference, notes: body.notes,
+            // D2b/D7: the uploader's requested department(s), validated against the server session's
+            // membership inside submit() (the D-C9 create rule). Omitted → shared, subject to the same gate.
+            departmentIds: Array.isArray(body.departmentIds) ? body.departmentIds : undefined,
+            departmentId: body.departmentId,
           };
           let r; try { r = await svc.submit(db, actorOf(session), input, deps); }
           catch (e) { log('[api] intake submit: ' + (e && e.message)); return finish(500, { error: 'filing failed' }); }
@@ -1184,7 +1188,8 @@ function createRequestListener(ctx) {
                           outcome: 'success', document_id: r.docId, metadata: { via: 'client', ip: clientIp(req), type: body.documentTypeId } }); } catch {}
             return finish(200, { ok: true, docId: r.docId });
           }
-          const map = { disabled: 409, forbidden: 403, unsupported_type: 415, too_large: 413, bad_date: 400, bad_request: 400, unknown_type: 400 };
+          const map = { disabled: 409, forbidden: 403, unsupported_type: 415, too_large: 413, bad_date: 400, bad_request: 400, unknown_type: 400,
+                        widen_admin_only: 403, departments_disabled: 409, unknown_department: 400 };
           return finish(map[r && r.error] || 500, { ok: false, error: (r && r.error) || 'failed' });
         } catch (e) { return finish(500, { error: 'upload failed' }); }
       }

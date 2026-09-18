@@ -3784,6 +3784,55 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 183 (segment_known_supplier_change default ON): ${e.message}`); }
   }
 
+  // ── migration 184: DEPARTMENTS D7 — MULTI-DEPARTMENT docs (2026-09-18; barry/eric/gary → Oracle SIGN OFF
+  //    W/COND; docs/designs/DEPARTMENTS_D7_MULTI_2026-09-18.md). A document (and a type default) may belong to a
+  //    SET of departments; a viewer sees it if it is shared (zero join rows) OR they are in ANY of its
+  //    departments. Replaces the single documents.department_id / document_types.default_department_id scalars
+  //    with join tables. BYTE-IDENTICAL for existing installs (department_id=X → one join row; NULL → zero rows);
+  //    every live install has all-NULL scalars (feature seeded OFF), so the backfill is normally a no-op.
+  //    TRANSACTIONAL (Oracle C1 — a crash mid-migration must not leave a mixed state whose stale scalar RESTRICT
+  //    blocks a department delete). GO-FORWARD-ONLY: a downgrade past this migration with departments enabled
+  //    reads the now-NULL scalar as shared = exposes tagged docs (design's rollback note). document_departments.
+  //    department_id RESTRICT = fail-closed (a dept delete is refused while any doc references it); document_id
+  //    CASCADE; document_type_departments CASCADE both (a type default is convenience, not a boundary). The
+  //    scalars are RETIRED-IN-PLACE (nulled, columns kept — DROP COLUMN on documents is a full-table rewrite;
+  //    a pin greps that nothing outside this migration reads them).
+  if (!applied.has(184)) {
+    try {
+      db.transaction(() => {
+        if (!tableExists(db, 'document_departments')) {
+          db.exec(`CREATE TABLE document_departments (
+            document_id   INTEGER NOT NULL REFERENCES documents(id)   ON DELETE CASCADE,
+            department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE RESTRICT,
+            PRIMARY KEY (document_id, department_id)
+          )`);
+          db.exec(`CREATE INDEX IF NOT EXISTS idx_docdept_dept ON document_departments(department_id)`);
+        }
+        if (!tableExists(db, 'document_type_departments')) {
+          db.exec(`CREATE TABLE document_type_departments (
+            document_type_id INTEGER NOT NULL REFERENCES document_types(id) ON DELETE CASCADE,
+            department_id    INTEGER NOT NULL REFERENCES departments(id)    ON DELETE CASCADE,
+            PRIMARY KEY (document_type_id, department_id)
+          )`);
+        }
+        // Backfill scalar → join (a no-op on a fresh / never-enabled install: all scalars NULL), then NULL the
+        // scalars so the join is the sole FK authority.
+        if (tableExists(db, 'documents') && hasColumn(db, 'documents', 'department_id')) {
+          db.exec(`INSERT OR IGNORE INTO document_departments (document_id, department_id)
+                   SELECT id, department_id FROM documents WHERE department_id IS NOT NULL`);
+          db.exec(`UPDATE documents SET department_id = NULL WHERE department_id IS NOT NULL`);
+        }
+        if (tableExists(db, 'document_types') && hasColumn(db, 'document_types', 'default_department_id')) {
+          db.exec(`INSERT OR IGNORE INTO document_type_departments (document_type_id, department_id)
+                   SELECT id, default_department_id FROM document_types WHERE default_department_id IS NOT NULL`);
+          db.exec(`UPDATE document_types SET default_department_id = NULL WHERE default_department_id IS NOT NULL`);
+        }
+        db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (184)').run();
+      })();
+      console.log('JS migration 184 applied: departments D7 — multi-department join tables (document_departments + document_type_departments), scalars backfilled + retired-in-place (NULL); byte-identical when empty, go-forward-only');
+    } catch (e) { console.warn(`  migration 184 (departments D7 multi): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

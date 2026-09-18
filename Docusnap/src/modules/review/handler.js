@@ -108,6 +108,7 @@ function register(ctx) {
   const previewService = require('../../services/previewService');
   const workflowService = require('../../services/workflowService');
   const accessService = require('../../services/accessService');
+  const departmentService = require('../../services/departmentService');   // D3 per-doc tagger
   const { requireRole, requireLogin, hasRole, logAudit, getCurrentUser } = require('../auth/handler');
   // Per-document read authz (Slice 0). Throws a FORBIDDEN error (crosses IPC as the
   // rejection reason) when the gate is on and the actor may not read this document.
@@ -485,6 +486,50 @@ function register(ctx) {
   ipcMain.handle('get-review-count',  () => { requireRole('admin', 'edit'); return documents.getReviewCount(getDb(), getCurrentUser()); });
   ipcMain.handle('get-review-split',  () => { requireRole('admin', 'edit'); return documents.getReviewSplit(getDb(), getCurrentUser()); });
   ipcMain.handle('get-deferred-count',() => { requireRole('admin', 'edit'); return documents.getDeferredCount(getDb(), getCurrentUser()); });
+
+  // ── D3 per-document department tagger (Review/Search row control) ────────────────────────────────
+  // The departments the CURRENT operator may assign: admin / all_departments → every active department
+  // (and may set Shared); an edit user → only their own active memberships (and may NOT set Shared while
+  // ON — the D-C9 create/widening rule). Inert (enabled:false) when no departments exist.
+  ipcMain.handle('get-assignable-departments', () => {
+    const sess = requireRole('admin', 'edit');
+    const db = getDb();
+    if (!departmentService._anyDepartments(db)) return { enabled: false, configured: false, canShare: false, departments: [] };
+    const uid = sess.userId != null ? sess.userId : sess.id;
+    const priv = sess.role === 'admin' || departmentService._allDepartments(db, uid);
+    const active = departmentService.listDepartments(db, { includeRetired: false });
+    const mine = priv ? null : new Set(departmentService.userDepartmentIds(db, uid));
+    return {
+      enabled: departmentService._enabled(db), configured: true, canShare: priv,
+      departments: priv ? active : active.filter(d => mine.has(d.id)),
+    };
+  });
+  // Tag ONE document. departmentService enforces role + the D-C9 widening rule + the write-side belt
+  // (no non-null tag while OFF) + the per-doc access gate + audit; the handler forwards the session actor
+  // and the injected access/edit-lock/audit deps.
+  const _deptDeps = () => ({
+    canAccessDocument: accessService.canAccessDocument,
+    editGuard: (d, id, actor) => { const g = workflowService.editGuard(d, id, actor && actor.role); return { locked: !!(g && g.ok === false), detail: g }; },
+    logAudit: (d, action, meta) => { try { logAudit(d, { action, action_category: 'document', outcome: 'success', target_type: 'document', target_id: String((meta && meta.document_id) || ''), metadata: meta }); } catch {} },
+  });
+  ipcMain.handle('set-document-department', (_e, docId, deptId) => {   // single shim (back-compat)
+    const sess = requireRole('admin', 'edit');
+    return departmentService.setDocumentDepartment(getDb(), sess, docId, deptId, _deptDeps());
+  });
+  ipcMain.handle('set-document-departments', (_e, docId, deptIds) => {   // D7: the set form
+    const sess = requireRole('admin', 'edit');
+    return departmentService.setDocumentDepartments(getDb(), sess, docId, deptIds || [], _deptDeps());
+  });
+  ipcMain.handle('get-document-departments', (_e, docId) => {   // the doc's current department SET (with names)
+    const sess = requireRole('admin', 'edit');
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    try {
+      return db.prepare(`SELECT dd.department_id AS id, dp.name, dp.is_active
+        FROM document_departments dd JOIN departments dp ON dp.id = dd.department_id
+        WHERE dd.document_id = ? ORDER BY dp.name COLLATE NOCASE`).all(docId);
+    } catch { return []; }
+  });
 
   // Advanced → "View learning history": list the confirmed values learned for a
   // (supplier, doc-type, field) scope, and purge a value that shouldn't exist for the field

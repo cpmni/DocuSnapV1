@@ -462,6 +462,12 @@ function createReviewService(deps = {}) {
       documents.update(db, document_id, { stored_filename: filingResult.filename, stored_path: filingResult.filePath });
     }
 
+    // D3 insert-time precedence (D-C9): a confirmed doc with no department inherits its (now-decided) type's
+    // default (department_set_by='rule'; a human 'user' tag is never overridden). ONE source in
+    // departmentService; inert + byte-identical when unconfigured (the corpus M=0 gate).
+    try { require('./departmentService').applyTypeDefaultAtConfirm(db, document_id, dtInfo && dtInfo.id); }
+    catch (e) { logger?.warn?.('department default (confirm) skipped: ' + (e && e.message)); }
+
     // Chris r19 N5 (Oracle SEND BACK → here): a MACHINE via's audit row must not carry the signed-in
     // user's id — logAudit injects currentSession.id and the Audit screen renders the user join first,
     // so a sweep that filed 14 showed "Chris (admin)" ×14. The explicit null overrides the injection.

@@ -91,6 +91,18 @@ async function submit(db, actor, input, deps = {}) {
   if (!dt) return { ok: false, error: 'unknown_type' };
   const refKey = dt.ref_field_key || 'reference_number';   // Quick File presets carry no ref role
 
+  // D2b: validate the create-time department (Oracle 2026-09-17 item 8). This lane creates the row, so the
+  // D-C9 widening rule is enforced HERE (no docId yet for canAccessDocument): a non-admin may only tag its
+  // OWN active department (or shared, when the switch is off); a foreign/absent id, or shared-while-on for a
+  // non-privileged user, is refused. Closes the LAN/Quick File bypass that let intake land any department.
+  const _svcDept = deps.departmentService || require('./departmentService');
+  const validateDept = deps.validateCreateDepartments || _svcDept.validateCreateDepartments;
+  const reqDepts = Array.isArray(input.departmentIds) ? input.departmentIds
+                 : (input.departmentId != null ? [input.departmentId] : []);
+  const dv = validateDept(db, actor, reqDepts);
+  if (!dv.ok) return { ok: false, error: dv.error };
+  const deptTargets = dv.target || [];   // number[] (D7: a doc may be in several departments)
+
   const party = (input.party || '').trim();
   const title = (input.title || (deps.path ? deps.path.parse(srcPath).name : '') || 'Document').trim();
   const notes = (input.notes || '').trim() || null;
@@ -104,8 +116,8 @@ async function submit(db, actor, input, deps = {}) {
   const insertRow = db.prepare(`INSERT INTO documents
     (original_filename, folder_path, document_type_id, supplier_name, doc_date, reference_number,
      status, overall_confidence, confirmed_at, confirmed_by_username, page_count, ocr_text,
-     intake, intake_notes, department_id, department_set_by)
-    VALUES (@of,@fp,@dt,@sup,@date,@ref,'confirmed',NULL,@ts,@by,@pc,@ocr,'direct',@notes,@dept,@setby)`);
+     intake, intake_notes, department_set_by)
+    VALUES (@of,@fp,@dt,@sup,@date,@ref,'confirmed',NULL,@ts,@by,@pc,@ocr,'direct',@notes,@setby)`);
   const insertEx = db.prepare(`INSERT INTO extractions
     (document_id, field_key, raw_value, display_value, confidence, extraction_method, was_corrected)
     VALUES (?,?,?,?,100,'typed',0)`);
@@ -127,8 +139,13 @@ async function submit(db, actor, input, deps = {}) {
         of: originalFilename, fp: staged, dt: documentTypeId, sup: party || null, date: docDate,
         ref: (input.reference || '').trim() || null, ts, by: actor.username || null,
         pc: input.pageCount || null, ocr: searchText, notes,
-        dept: input.departmentId || null, setby: input.departmentId ? 'user' : null,
+        setby: deptTargets.length ? 'user' : null,
       }).lastInsertRowid;
+      // D7: write the document's department SET into the join (a no-op when shared / departments off).
+      if (deptTargets.length) {
+        const insDD = db.prepare('INSERT OR IGNORE INTO document_departments (document_id, department_id) VALUES (?, ?)');
+        for (const d of deptTargets) insDD.run(docId, d);
+      }
       // Typed extractions (confidence 100, method 'typed'). Role fields keyed off the doc type.
       const add = (k, v) => { if (k && v != null && String(v).trim() !== '') insertEx.run(docId, k, String(v), String(v)); };
       add('supplier_name', party);
@@ -165,7 +182,7 @@ async function submit(db, actor, input, deps = {}) {
     return { ok: false, error: 'file_failed', detail: e.message };
   }
 
-  try { if (deps.logAudit) deps.logAudit(db, 'document_direct_intake', { document_id: docId, type: dt.slug, party, department_id: input.departmentId || null }); } catch {}
+  try { if (deps.logAudit) deps.logAudit(db, 'document_direct_intake', { document_id: docId, type: dt.slug, party, department_ids: deptTargets }); } catch {}
   return { ok: true, docId, storedPath };
 }
 
@@ -263,14 +280,14 @@ async function update(db, actor, docId, patch, deps = {}) {
   try {
     const tx = db.transaction(() => {
       const searchText = ([next.title, next.notes, body].filter(Boolean).join('\n').slice(0, 200000)) || null;
+      // D7: department changes are NOT handled here — the retired scalar is never written; a Quick File
+      // doc's departments are changed through the per-document tagger (setDocumentDepartments), the same
+      // set-form widening rule as any other document. This edit only touches the typed fields + filing.
       db.prepare(`UPDATE documents SET supplier_name=@sup, doc_date=@date, reference_number=@ref,
-        intake_notes=@notes, stored_filename=@sf, stored_path=@sp, ocr_text=@ocr,
-        department_id=@dept, department_set_by=CASE WHEN @deptset THEN 'user' ELSE department_set_by END
+        intake_notes=@notes, stored_filename=@sf, stored_path=@sp, ocr_text=@ocr
         WHERE id=@id`).run({
         sup: next.party || null, date: docDate, ref: next.reference || null, notes: next.notes,
-        sf: storedFilename || null, sp: storedPath || null, ocr: searchText,
-        dept: has('departmentId') ? (p.departmentId || null) : doc.department_id,
-        deptset: has('departmentId') ? 1 : 0, id: docId,
+        sf: storedFilename || null, sp: storedPath || null, ocr: searchText, id: docId,
       });
       const upsert = (k, v) => {
         if (!k) return;
