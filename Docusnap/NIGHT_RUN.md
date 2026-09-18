@@ -15,6 +15,22 @@ nothing flipped autonomously.** Near-ready first: `trust_ref_role_shape` (154) +
 (vacuous, need fixtures), `template_edge_clip_heal` (code precondition), name-grow belts (want `teach_run_ab`),
 99/100 (Recipe 2). Full map = `HANDOVER_2026-09-17_C12_AND_SWITCHES.md` PART B.
 
+## ✅ DONE 2026-09-18 NIGHT — DEPARTMENTS WATERTIGHT HARDENING (security holes found + fixed) + Chris security vet (`HANDOVER_2026-09-18_NIGHT.md`)
+Owner pivoted the night: "Chris to fully test the department work … make sure it is WATER TIGHT … [thoughts on a
+2-ledger check]?" + "run anything useful. Goodnight." **The queued flip-census batch (`docs/designs/NIGHT_RUN_2026-09-17.md`)
+was DEFERRED** (security was the priority + the box OOM'd twice) — still queued, not lost. Result: gary + eric
+(independent) → **Oracle SIGN-OFF-W/COND** found by-id SERVE/MUTATE paths that skipped the department gate
+(`reprocess-document`, `split-pdf` + its untagged-child laundering, desktop `confirm-review`, the `/v1`
+mutation cluster + `viewing`, the workflow-assign SENDER self-grant, `sweep-inview-*`, fail-OPEN catches) —
+the "unauthorised access = disaster" class. **ALL FIXED** (Oracle before-flip minimum #1–#6), byte-identical
+when no departments exist, proven by a 22-check red-team pin + a coverage-lock pin, **0 regressions across 310
+pins**. **Chris** black-box adversarial vet (sandbox 9223) → **ZERO leaks, watertight** (search/counts/bin/export/
+open-by-ID all refused for the wrong user). Owner's 2-ledger idea = unsound as stated; right version = an
+independent egress re-check (fast-follow). Commits LOCAL/UNPUSHED (owner's call). **OWED before the flip:** the
+batch/bulk by-id handler audit (Oracle #5 — list in the handover). Design `docs/designs/DEPARTMENTS_HARDENING_2026-09-18.md`.
+**Repeat only if:** a new by-id serve/mutate endpoint is added (the coverage pin red-bars it) — re-run the two
+department serve pins after any change to the api/processing/review handlers or the department gate.
+
 ## ✅ DONE 2026-09-15/16 NIGHT — FIVE YOUTUBE TUTORIAL VIDEOS recorded automatically (owner: "use the night run to make useful instructional videos… Goodnight mr claude") — `HANDOVER_2026-09-16_VIDEOS.md`
 Autonomous run. **Deliverable = `Desktop\Tutorials\`**: `first-run-setup` (4:00, licence screen + account + recovery
 code + terms + every wizard choice with its reason) · `teach-a-document` (2:40) · `import-a-folder` (1:35) ·

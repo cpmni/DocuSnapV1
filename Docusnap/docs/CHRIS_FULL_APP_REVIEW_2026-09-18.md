@@ -144,3 +144,64 @@ Departments, and a colleague approving/stamping. All for the owner to vet — no
 
 *(Screenshots `step01`–`step31` + `crop-orderno`/`crop-ponum` in the sandbox folder. Left as-is: 5 docs filed,
 3 departments, second user "Sam Rivers", one delivery docket still in Review.)*
+
+---
+
+## Round: 2026-09-18 (NIGHT, sandbox, SECURITY focus = Departments isolation) — VERDICT: WATERTIGHT
+
+Adversarial security vet of the Departments feature (owner: "if any unauthorised user can access docs they
+shouldn't it would be a disaster"). Two departments + two Edit users; docs tagged Finance-only / Ops-only /
+shared; Chris signed in AS each colleague and tried to reach the other department's doc by every surface.
+
+**Verdict: from a customer's seat, department isolation is WATERTIGHT — he did not get through. ZERO leaks.**
+
+### Isolation result (departments ON)
+| Viewer | Finance doc (INV-56357) | Ops doc (INV-13608) | Shared docs |
+|---|---|---|---|
+| Admin | sees ✓ | sees ✓ | sees ✓ |
+| Fiona (Finance) | sees ✓ | HIDDEN ✓ | sees ✓ |
+| Olly (Operations) | HIDDEN ✓ | sees ✓ | sees ✓ |
+
+Every HIDDEN cell probed as the wrong user, all PASS: "all documents" list (absent), search by exact reference
+(`INV-56357` → "No documents found"), search by filename, search by content word (`Northgate`/`Sandpiper`), Home
+"DOCUMENTS FILED" count (3 not 4 — no count leak), recent-activity list, review queue/count, recycle bin (empty
+even after the Finance doc was recycled), **open by its known internal ID** (REFUSED "You do not have permission
+to view this document"), department-by-id (REFUSED), page image/preview-by-id (REFUSED), export (admin-only,
+refused). The block is per-document, not only on lists. Mirror held for Fiona; admin saw all four.
+
+### CRITICAL leaks: NONE.
+
+### Adversarial pokes (behaviour truth-table)
+| Poke | Expected | Actual | |
+|---|---|---|---|
+| Departments OFF again | everything visible | docs STAYED hidden from non-members | ⚠ deviates from copy — SAFE (never more exposed); Card 1 |
+| Departments back ON | restored | consistent | ✓ |
+| Add Finance to Olly | he sees the Finance doc | on next sign-in he saw all 4 | ✓ (deliberate grant) |
+| Recycle the Finance doc | still hidden from Olly | Olly's bin empty; admin's bin shows it | ✓ block follows into the bin |
+| No-department doc | visible to everyone | both saw the shared docs | ✓ |
+
+### Usability cards (no leaks)
+- **Card 1 (TOP, QUESTION):** turning departments OFF does NOT un-hide already-tagged docs (to un-hide you must
+  un-tag or delete the departments). The copy "visible to everyone until you turn this on" reads as if OFF =
+  unrestricted. SAFE direction (never over-exposes), but could cause a "my documents vanished!" panic. Fix = make
+  OFF lift the restriction, OR change the copy ("turning off stops NEW restrictions; already-assigned docs stay
+  restricted until you clear their departments").
+- **Card 2 (PREFERENCE):** new docs default to "Everyone" — if you forget to tick a department it silently goes
+  shared. Consider a one-line "Visible to: Everyone" note at Confirm & File.
+- **Card 3 (PREFERENCE):** the one-time temp-password dialog has no Copy button (the recovery-code screen does).
+
+### What genuinely worked
+The plain-English explanation: "Admins always see everything. Documents with no department are visible to
+everyone. Departments restrict what Scan Finder shows — they do not change Windows folder permissions." Setup of
+two departments + two users took well under his ten-minute patience, no jargon.
+
+### Humility / not tested
+One non-technical user on one machine. Proved isolation for the surfaces a signed-in Edit user can drive
+(including open-by-ID). Did NOT test: the LAN search-client (a second PC over the network), the mailbox/route-to-a-
+person path (no routes existed), the type-default tagging route (tagged per-doc instead), or the raw file-system /
+Windows-permission level. A true multi-user network pen-test + a code-level audit are beyond one seat — but every
+door he could rattle stayed shut. (The code-level audit ran in parallel: gary + eric → Oracle found by-id
+serve/mutate holes reachable only by a crafted request/id-walk, NOT the UI Chris drives; all fixed this session —
+see docs/designs/DEPARTMENTS_HARDENING_2026-09-18.md.)
+
+Evidence: sec02–sec07 PNGs in the sandbox (sec05 = Olly's failed search for the Finance ref is the key proof).
