@@ -42,10 +42,23 @@ NEVER upload `keys/` or the ps1's blank `set-env.php` (the server's real per-hos
 
 ## 🟡 Legal / privacy
 
-- [ ] `LEGAL.txt` is still DRAFT (solicitor items outstanding). When finalising, ensure the
-      Privacy/Terms document the anti-abuse lawful basis for storing the customer's real IP in
-      `audit_events` (retention is bounded by `scripts/prune_audit_events.php`), and make no
-      "we do not log IP addresses" promise (none exists today).
+- [ ] **Privacy notice must disclose IP logging (GDPR transparency) — BEFORE this is customer-facing.**
+      We now store each customer's real connecting IP in `audit_events` and, in the admin console, link
+      it to the customer (fingerprint→seat→entitlement, + the "set up here" activation IP). IP + identity
+      is personal data under UK-GDPR. Required before customers rely on it:
+      - Privacy/Terms (`LEGAL.txt`, still DRAFT — solicitor items outstanding) must state we log the IP the
+        licensed app connects from, the **purpose** (service security / licence-abuse detection / support —
+        NOT curiosity; purpose limitation), and the **retention** (routine `license.validated` rows pruned
+        after 90 days via `scripts/prune_audit_events.php`; activations kept for the licence life).
+      - Keep a short **Legitimate Interests Assessment** note (purpose · necessity · balancing) on file.
+      - Make NO "we do not log IP addresses" promise (none exists today).
+      - Keep the admin IP↔customer view **admin-only** (it is) and the geo lookup **click-through** (it is —
+        no customer IP is sent server-side to any third party).
+      - Get a solicitor to bless the wording (this is not legal advice).
+
+- [ ] **Deploy the admin API-activity update** (commit `b4755a3`): re-upload
+      `public/admin/api_activity.php` (customer-per-IP column + geo click-through link). No DB change.
+      Consider an Oracle vet of the PII join + the unindexed `ip IN (...)` query before the live upload.
 
 ---
 
