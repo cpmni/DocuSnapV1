@@ -713,10 +713,17 @@ const FORCE_MAXIMIZE = new Set(['settings', 'teach', 'review', 'search']);
 
 function applyWindowState(win, name, options) {
   if (options.resizable === false) return;
-  if (FORCE_MAXIMIZE.has(name)) { win.maximize(); return; }   // always open maximized; don't restore a smaller size
+  // NEVER maximize a window whose maximize affordance is disabled. Calling win.maximize() on a
+  // `maximizable:false` window is a Windows flicker loop — the title bar rapidly flashes active/
+  // inactive, the window force-covers the work area, and input sticks (the practice-run window,
+  // the one resizable + non-maximizable child, hit exactly this on a fresh install / VM, 2026-09-19).
+  // A non-maximizable window keeps its default size, just centred.
+  const canMaximize = options.maximizable !== false;
+  if (FORCE_MAXIMIZE.has(name)) { if (canMaximize) win.maximize(); else win.center(); return; }
   const st = loadWinStates()[name];
   if (st && st.userSized && !st.maximized && st.bounds && _boundsVisible(st.bounds)) win.setBounds(st.bounds);
-  else win.maximize();   // no saved size, or it would land off-screen → maximize
+  else if (canMaximize) win.maximize();   // no saved size, or it would land off-screen → maximize
+  else win.center();                      // not maximizable → default size, centred (no flicker)
 
   let ready = false, t;
   win.once('ready-to-show', () => { ready = true; });   // ignore the programmatic default-maximize
