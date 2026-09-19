@@ -52,13 +52,12 @@ NEVER upload `keys/` or the ps1's blank `set-env.php` (the server's real per-hos
         after 90 days via `scripts/prune_audit_events.php`; activations kept for the licence life).
       - Keep a short **Legitimate Interests Assessment** note (purpose · necessity · balancing) on file.
       - Make NO "we do not log IP addresses" promise (none exists today).
-      - Keep the admin IP↔customer view **admin-only** (it is) and the geo lookup **click-through** (it is —
-        no customer IP is sent server-side to any third party).
+      - Keep the admin IP↔customer view **admin-only** (it is). The in-app geo lookup was **removed** by
+        owner decision — no customer IP is sent to any third party; the data does not leave the server.
       - Get a solicitor to bless the wording (this is not legal advice).
 
-- [ ] **Deploy the admin API-activity update** (commit `b4755a3`): re-upload
-      `public/admin/api_activity.php` (customer-per-IP column + geo click-through link). No DB change.
-      Consider an Oracle vet of the PII join + the unindexed `ip IN (...)` query before the live upload.
+- [ ] **Deploy the admin API-activity update**: re-upload `public/admin/api_activity.php` (customer-per-IP
+      column; the geo link was removed). No DB change. Oracle-vetted; conditions applied.
 
 ---
 

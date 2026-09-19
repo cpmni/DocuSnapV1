@@ -10,11 +10,9 @@ require_admin();
 
 $pdo = db();
 
-// External IP geo lookup — a CLICK-THROUGH link only. The SERVER makes no call (no SSRF, no dependency);
-// the lookup happens in the admin's browser when they click. NOTE: that click DOES disclose the IP to
-// ipinfo.io (a third party) — the privacy notice / LIA must cover "admin may look a caller IP up via
-// ipinfo.io". %s = the IP.
-const GEO_LOOKUP_URL = 'https://ipinfo.io/%s';
+// NO in-app geo lookup: we deliberately do NOT link IPs to any external geo service, so no customer IP
+// is ever disclosed to a third party from this page (privacy / trustability). An admin who wants an
+// address's location looks it up themselves, off-system.
 
 // Human labels for the audit action names the /v1 endpoints write.
 $LABELS = [
@@ -169,7 +167,7 @@ admin_chips([
   <tbody>
   <?php foreach ($topIps as $ipr): $cust = $ipCustomers[$ipr['ip']] ?? []; ?>
     <tr>
-      <td class="mono"><a href="<?= h(sprintf(GEO_LOOKUP_URL, rawurlencode($ipr['ip']))) ?>" target="_blank" rel="noopener noreferrer" title="Look up this IP's location (opens in your browser)">&#128269; <?= h($ipr['ip']) ?></a></td>
+      <td class="mono"><?= h($ipr['ip']) ?></td>
       <td class="mono"><?= (int) $ipr['n'] ?></td>
       <td><?php
         if (!$cust) { echo '<span class="muted">&mdash;</span>'; }
@@ -188,7 +186,6 @@ admin_chips([
   </tbody>
 </table>
 <p class="muted" style="font-size:12px; margin-top:6px;">
-  Click an IP to look it up on <span class="mono">ipinfo.io</span> (opens in your browser &mdash; note that shares the IP with ipinfo.io).
   A customer is matched by their app's device fingerprint (on every check-in) or by the IP they set up from
   (<span class="mono">set up here</span>). After a resale or re-activation under a new account, a former owner may also be listed.
   Only real IPs resolve &mdash; real-IP logging began 2026-09-19, so older rows and Cloudflare edges show &ldquo;&mdash;&rdquo;.
