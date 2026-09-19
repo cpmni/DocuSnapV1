@@ -10,8 +10,10 @@ require_admin();
 
 $pdo = db();
 
-// External IP geo lookup — a CLICK-THROUGH link only (opens in the admin's browser). Nothing is sent
-// from the server; no customer IP ever leaves this box, no third-party dependency. %s = the IP.
+// External IP geo lookup — a CLICK-THROUGH link only. The SERVER makes no call (no SSRF, no dependency);
+// the lookup happens in the admin's browser when they click. NOTE: that click DOES disclose the IP to
+// ipinfo.io (a third party) — the privacy notice / LIA must cover "admin may look a caller IP up via
+// ipinfo.io". %s = the IP.
 const GEO_LOOKUP_URL = 'https://ipinfo.io/%s';
 
 // Human labels for the audit action names the /v1 endpoints write.
@@ -79,6 +81,8 @@ if ($topIps) {
            JOIN entitlements e ON e.id = s.entitlement_id
            LEFT JOIN accounts a ON a.id = e.account_id
           WHERE ae.ip IN ($ph) AND ae.fp_hash IS NOT NULL
+            AND ae.created_at >= NOW() - INTERVAL 24 HOUR   -- the top IPs are already a 24h set; rides idx_created (no full scan)
+            AND s.status = 'bound'                          -- released seats NULL their fp anyway; defensive + self-documenting
           GROUP BY ae.ip, e.account_id, label");
     $q1->execute($ips);
     foreach ($q1->fetchAll() as $r) {
@@ -184,10 +188,11 @@ admin_chips([
   </tbody>
 </table>
 <p class="muted" style="font-size:12px; margin-top:6px;">
-  Click an IP to look up its location (opens in your browser &mdash; no data leaves the server).
+  Click an IP to look it up on <span class="mono">ipinfo.io</span> (opens in your browser &mdash; note that shares the IP with ipinfo.io).
   A customer is matched by their app's device fingerprint (on every check-in) or by the IP they set up from
-  (<span class="mono">set up here</span>). Only real IPs resolve &mdash; real-IP logging began 2026-09-19, so older
-  rows and Cloudflare edges show &ldquo;&mdash;&rdquo;. One office behind a shared connection appears as a single IP with many calls, not abuse.
+  (<span class="mono">set up here</span>). After a resale or re-activation under a new account, a former owner may also be listed.
+  Only real IPs resolve &mdash; real-IP logging began 2026-09-19, so older rows and Cloudflare edges show &ldquo;&mdash;&rdquo;.
+  One office behind a shared connection appears as a single IP with many calls, not abuse.
 </p>
 <?php endif; ?>
 
