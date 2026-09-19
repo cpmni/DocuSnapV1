@@ -63,11 +63,115 @@ function bad_request(string $message): void
     ]]);
 }
 
+// ── Real client IP behind Cloudflare (2026-09-19, Oracle SIGN-OFF-W/COND C2/C3) ──
+// This site is proxied by Cloudflare, so $_SERVER['REMOTE_ADDR'] is a CF EDGE, never
+// the customer. client_ip() is the ONE canonical resolver, defined HERE (db.php, the
+// universal chokepoint that also holds audit_event) so BOTH the rate limiter buckets
+// (lib/ratelimit.php) and the audit rows below get the real IP — including the admin /
+// reconcile / prune pages that load db.php WITHOUT ratelimit.php. ratelimit.php keeps a
+// function_exists-guarded fallback (dead in prod, safe for an ordered deploy).
+//
+// SECURITY (C3, load-bearing): CF-Connecting-IP is trusted ONLY when the request truly
+// arrived THROUGH Cloudflare (REMOTE_ADDR is a CF edge). A direct-to-origin request could
+// forge the header, so outside CF ranges we IGNORE it and fall back to REMOTE_ADDR — else
+// an attacker who found the origin IP could mint a fresh client IP per request and evade
+// the per-IP anti-automation brakes.
+
+// Is $cidr's network prefix a match for $ip? Handles IPv4 and IPv6; a family mismatch
+// (v4 IP vs v6 range, or vice-versa) returns false. inet_pton gives 4 or 16 network bytes.
+function ip_in_cidr(string $ip, string $cidr): bool
+{
+    if (strpos($cidr, '/') === false) {
+        return false;
+    }
+    [$net, $bitsRaw] = explode('/', $cidr, 2);
+    $bits   = (int) $bitsRaw;
+    $ipBin  = @inet_pton($ip);
+    $netBin = @inet_pton($net);
+    if ($ipBin === false || $netBin === false) {
+        return false;
+    }
+    if (strlen($ipBin) !== strlen($netBin)) {
+        return false;   // v4 vs v6 — never comparable
+    }
+    $maxBits = strlen($ipBin) * 8;   // 32 or 128
+    if ($bits < 0 || $bits > $maxBits) {
+        return false;
+    }
+    $whole = intdiv($bits, 8);
+    $rem   = $bits % 8;
+    if ($whole > 0 && substr($ipBin, 0, $whole) !== substr($netBin, 0, $whole)) {
+        return false;
+    }
+    if ($rem === 0) {
+        return true;
+    }
+    $mask = 0xff << (8 - $rem) & 0xff;
+    return (ord($ipBin[$whole]) & $mask) === (ord($netBin[$whole]) & $mask);
+}
+
+// Cloudflare's published edge ranges. The env override (set-env.php) lets the owner patch
+// a stale range with NO code deploy. Fail-safe direction (Oracle Q3): a NEW CF range absent
+// from this list ⇒ that edge is treated as non-CF ⇒ CF-Connecting-IP ignored ⇒ client_ip
+// returns REMOTE_ADDR = the CF edge = today's behaviour. Degrades to status quo, never worse.
+function cf_ip_ranges(): array
+{
+    $env = getenv('LICENSING_CF_IPS');
+    if (is_string($env) && trim($env) !== '') {
+        $out = [];
+        foreach (preg_split('/[\s,]+/', trim($env)) as $c) {
+            if ($c !== '') { $out[] = $c; }
+        }
+        if ($out) {
+            return $out;
+        }
+    }
+    // Source: https://www.cloudflare.com/ips-v4 + /ips-v6 — fetched 2026-09-19.
+    // Prune when Cloudflare REMOVES a range (a decommissioned-but-still-listed range
+    // later reassigned would be a small trust hole).
+    return [
+        '173.245.48.0/20', '103.21.244.0/22', '103.22.200.0/22', '103.31.4.0/22',
+        '141.101.64.0/18', '108.162.192.0/18', '190.93.240.0/20', '188.114.96.0/20',
+        '197.234.240.0/22', '198.41.128.0/17', '162.158.0.0/15', '104.16.0.0/13',
+        '104.24.0.0/14', '172.64.0.0/13', '131.0.72.0/22',
+        '2400:cb00::/32', '2606:4700::/32', '2803:f800::/32', '2405:b500::/32',
+        '2405:8100::/32', '2a06:98c0::/29', '2c0f:f248::/32',
+    ];
+}
+
+function remote_is_cloudflare(string $ip): bool
+{
+    if ($ip === '' || filter_var($ip, FILTER_VALIDATE_IP) === false) {
+        return false;
+    }
+    foreach (cf_ip_ranges() as $cidr) {
+        if (ip_in_cidr($ip, $cidr)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The real client IP for rate limiting + audit. REMOTE_ADDR unless the request came THROUGH
+// a Cloudflare edge and carries a syntactically valid CF-Connecting-IP.
+function client_ip(): string
+{
+    $remote = (string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+    if (remote_is_cloudflare($remote)) {
+        $cf = $_SERVER['HTTP_CF_CONNECTING_IP'] ?? '';
+        if (is_string($cf) && filter_var($cf, FILTER_VALIDATE_IP) !== false) {
+            return $cf;
+        }
+    }
+    return $remote;
+}
+
 // Server-side audit (authoritative). Brand-neutral action names; never logs the
-// plaintext account_key. ip is captured for support/investigation.
+// plaintext account_key. ip is captured for support/investigation — the REAL client IP
+// (client_ip() unwraps Cloudflare), not the CF edge.
 function audit_event(PDO $pdo, ?int $accountId, ?string $fpHash, string $action, string $detail): void
 {
-    $ip = $_SERVER['REMOTE_ADDR'] ?? null;
+    $ip = client_ip();
     $pdo->prepare('INSERT INTO audit_events (fp_hash, account_id, action, detail, ip)
                    VALUES (?, ?, ?, ?, ?)')->execute([$fpHash, $accountId, $action, $detail, $ip]);
 }

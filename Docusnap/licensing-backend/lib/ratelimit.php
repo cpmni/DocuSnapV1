@@ -19,11 +19,17 @@
 //   deploy (Configure-WampBackend.ps1 -ImportDatabase creates the table) for F-03 to
 //   take effect, then confirm: SHOW TABLES LIKE 'rate_limits';
 
-function client_ip(): string
-{
-    // REMOTE_ADDR only — do not trust X-Forwarded-* unless a known proxy sets it
-    // (out of scope for phase 1; document for the deploy that fronts this).
-    return (string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+// client_ip() now lives in lib/db.php (the universal chokepoint, so BOTH the limiter and
+// audit_event get the Cloudflare-unwrapped real client IP — 2026-09-19). db.php is required
+// before ratelimit.php by every caller, so in production this guarded fallback never runs.
+// It is kept ONLY so ratelimit.php stays safe if ever loaded alone, and so this file could
+// be deployed BEFORE db.php with no undefined-function fatal (Oracle C1 ordered deploy).
+if (!function_exists('client_ip')) {
+    function client_ip(): string
+    {
+        // Fallback only (db.php not loaded): REMOTE_ADDR, no Cloudflare unwrap.
+        return (string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+    }
 }
 
 /**
