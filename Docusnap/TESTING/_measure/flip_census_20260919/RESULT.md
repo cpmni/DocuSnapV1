@@ -32,3 +32,22 @@ customer_name postcode-drift root fix (#243). 154 is byte-identical on the corpu
 ## Artifacts
 `base_env1.jsonl` / `on154_env1.jsonl` / `on157_env1.jsonl` (400 rows each) + `.log`, `setup.js`, `census_run.sh`,
 `rr_ids_700.txt`, `warm_700_mig.db`.
+
+---
+
+## Batch 2 (2026-09-19, post-187/188) — baseline = the new defaults (154+157 on in every arm)
+
+| Switch | env | M | heals | wouldFile | verdict |
+|---|---|---|---|---|---|
+| **confusion_precedence** (119) | `CONFUSION_PRECEDENCE` | 0 | 0 | 187→187 | byte-identical (0 fires — no correction history) |
+| **note_topic_dedup** (158) | `NOTE_TOPIC_DEDUP` | 0 | 0 | 187→187 | byte-identical (0 fires — no stacked notes) |
+| **reread_hold_corrob_release** (130) | `REREAD_HOLD_CORROB_RELEASE` | 0 | 0 | 187→187 | byte-identical (0 fires — no held-with-corrob docs) |
+
+All three M=0. The synthetic corpus is **exhausted for these** — they only fire on specific real-world shapes the
+corpus lacks, so the census proves SAFETY, not value.
+
+**Decision (owner, 2026-09-19):** FLIP the two low-risk note/hold switches — mig **189** `note_topic_dedup` +
+mig **190** `reread_hold_corrob_release` (UPSERT true, `@DEFAULT_FLIP`, delisted → TEST_SWITCH_KEYS 45, pinned
+`test_default_flip_189_190.js`). **HOLD `confusion_precedence`** — it changes a REFERENCE value (corrects a
+never-seen serial from mined confusion facts), so flipping on zero corpus/live evidence is not warranted; it
+awaits live evidence. Further remaining flips are best driven by the owner's live docs, not more synthetic runs.

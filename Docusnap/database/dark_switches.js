@@ -55,7 +55,9 @@ const TEST_SWITCH_KEYS = Object.freeze([
   'buyer_issued_convention_one_confirm',
   // mig 134 (2026-09-07 afternoon)
   'teach_angle_compose_null_abstain',
-  'reread_hold_corrob_release',
+  // reread_hold_corrob_release (mig 130) — GRADUATED to a customer default by mig 190 (2026-09-19, flip census
+  // batch 2: byte-identical/M=0 on the corpus; low-risk — a re-read that corroborates releases its own hold) and
+  // DELISTED here.
   'template_date_left_clip_grow',
   'template_pad_date_containment_flag',
   'template_clip_commit_left_slack',
@@ -167,9 +169,8 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // runs. When ON, `composeNote` collapses two SAME-ref-recheck-topic notes to the higher-rank one (the lane-hold
   // survives → the hold survives); every other note pair + the ABSENT mark fall through to the current concat.
   // trust.js keys on note PRESENCE + method sentinels (never text) → auto-file byte-identical. Byte-identical OFF.
-  // ⚑ FLIP GATE: unit pins (lane-hold survives both ways; absent+advisory both kept; different-topic not merged;
-  // OFF concat-identical; mark-sync) + realdoc M=0 + the auto-file set-equality corpus gate (ON==OFF).
-  'note_topic_dedup',
+  // note_topic_dedup (mig 158) — GRADUATED to a customer default by mig 189 (2026-09-19, flip census batch 2:
+  // byte-identical/M=0 on the corpus; low-risk — collapses stacked same-topic ref notes into one) and DELISTED here.
   // ref_confusable_flag (mig 159) — GRADUATED to a customer default by mig 173 (2026-09-16, 700-corpus census
   // M=0 + 6 fires + 2 file→hold, twice) and DELISTED here the same commit. Its build notes live on the mig-159
   // block in database/index.js + docs/designs/REF_CONFUSABLE_FLAG_2026-09-11.md.

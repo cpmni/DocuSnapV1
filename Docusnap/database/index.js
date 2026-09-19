@@ -3887,6 +3887,28 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 188 (template_drift_override_guard default ON): ${e.message}`); }
   }
 
+  // ── migrations 189/190: FLIP note_topic_dedup (158) + reread_hold_corrob_release (130) ON by default
+  //    (2026-09-19, owner go). Flip census batch 2 @ HEAD (post-187/188), TESTING/_measure/flip_census_20260919/
+  //    RESULT.md: BOTH byte-identical on the 400-doc corpus (M=0, 0 fires — low-risk note/hold handling, no value
+  //    change; the corpus can't exercise them). UPSERT-forced (each seeded 'false' earlier). Delisted from
+  //    dark_switches.js TEST_SWITCH_KEYS; pinned in test_default_flip_189_190.js.
+  // @DEFAULT_FLIP 189
+  if (!applied.has(189)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('note_topic_dedup', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (189)').run();
+      console.log('JS migration 189 applied: note_topic_dedup ON by default (UPSERT true) — collapse stacked same-topic ref notes; census M=0, graduated');
+    } catch (e) { console.warn(`  migration 189 (note_topic_dedup default ON): ${e.message}`); }
+  }
+  // @DEFAULT_FLIP 190
+  if (!applied.has(190)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('reread_hold_corrob_release', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (190)').run();
+      console.log('JS migration 190 applied: reread_hold_corrob_release ON by default (UPSERT true) — a re-read that corroborates releases its own hold; census M=0, graduated');
+    } catch (e) { console.warn(`  migration 190 (reread_hold_corrob_release default ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
