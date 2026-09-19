@@ -507,6 +507,7 @@ function admin_page_open(string $title, bool $showNav = true): void
         ['subscriptions.php', 'Subscriptions',      '<path d="M21 12a9 9 0 1 1-2.6-6.3M21 4v4h-4"/>'],
         ['products.php',      'Products',           '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>'],
         ['activity.php',      'Activity',           '<path d="M3 12h4l2.5 6 5-13L17 12h4"/>'],
+        ['api_activity.php',  'API activity',       '<path d="M4 4v16h16"/><path d="M7 14l3-4 3 3 4-6"/>'],
         ['diagnostics.php',   'Diagnostics',        '<path d="M4.5 4.5v6a5 5 0 0 0 5 5 3 3 0 0 0 3-3v-1"/><path d="M8.5 4.5v6M20 13.5a2.2 2.2 0 1 1-4.4 0 2.2 2.2 0 0 1 4.4 0z"/>'],
         ['releases.php',      'App releases',       '<path d="M12 3v11M8 10l4 4 4-4M5 20h14"/>'],
     ];

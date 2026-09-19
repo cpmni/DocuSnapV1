@@ -87,8 +87,22 @@ CREATE TABLE IF NOT EXISTS audit_events (
   action     VARCHAR(40) NOT NULL,   -- license.trial_started, license.activated, ...
   detail     TEXT        NULL,       -- include outcome; never the plaintext account_key
   ip         VARCHAR(45) NULL,
-  created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- 2026-09-19: this table grows one row per /v1 call (a row per app launch via license.validated),
+  -- so it must be indexed for the API-activity metrics + the pruning DELETE. Composite (action,
+  -- created_at) serves both "count by endpoint within a window" and the exact-action time-range prune;
+  -- (created_at) serves pure time-range reads. On an EXISTING live DB add these with the ALTER below.
+  KEY idx_action_created (action, created_at),
+  KEY idx_created (created_at)
 );
+-- Live DB (already has the table): add the indexes ONCE, off-peak. FIRST confirm the engine is InnoDB —
+-- an ADD INDEX on MyISAM LOCKS the whole table for the build, which blocks validate's audit INSERTs and
+-- can cause the very pileup this prevents:
+--   SELECT VERSION();  SHOW TABLE STATUS LIKE 'audit_events';   -- expect Engine=InnoDB
+-- Then ONE online ALTER — InnoDB 5.6+/MariaDB 10+ rebuilds without blocking writes; the explicit clause
+-- makes the server ERROR rather than silently table-copy-lock. A killed online ALTER rolls back cleanly:
+--   ALTER TABLE audit_events ADD INDEX idx_action_created (action, created_at), ADD INDEX idx_created (created_at), ALGORITHM=INPLACE, LOCK=NONE;
+-- (Re-running errors "Duplicate key name", harmless.)
 
 -- Fixed-window rate-limit counters (F-03 anti-automation). One row per bucket
 -- (e.g. "trial_ip:1.2.3.4", "trial_new:2026-06-20"); written by lib/ratelimit.php.
