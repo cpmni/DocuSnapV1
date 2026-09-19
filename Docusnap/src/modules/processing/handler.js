@@ -187,6 +187,11 @@ function _reconcileEnv(db) {
     // Reconcile shadow-attribution (gary → Oracle W/COND ×5, 2026-08-12): a corroborated total is
     // no longer capped when the ONLY disagreeing operands are invisible shadow reads.
     if (learning.getSetting(db, 'reconcile_shadow_attribution', 'false') === 'true') env.RECONCILE_SHADOW_ATTRIBUTION = '1';
+    // TAUGHT_REF_DISAGREE_SUPPRESS (mig 186, 2026-09-19, gary → Oracle SIGN-OFF-W/COND; DARK): a taught Stage-0.5
+    // REF winner that matches the scope's learned shape suppresses a DIFFERENT-shape keyword competitor (the
+    // "Job Ref" vs taught "Job Sheet No" hold), so the doc files by the normal graduation route instead of being
+    // held forever. Engine-side filter; one bridge covers batch/reprocess/teach-over-client. OFF ⇒ byte-identical.
+    if (learning.getSetting(db, 'taught_ref_disagree_suppress', 'false') === 'true') env.TAUGHT_REF_DISAGREE_SUPPRESS = '1';
     // VAT rate-annotation segment skip widening ('VAT @ 20% | £77.55' — reggie 2026-08-12).
     if (learning.getSetting(db, 'vat_rate_at_skip', 'false') === 'true') env.VAT_RATE_AT_SKIP = '1';
     // Self-discharging operator pins (gary → Oracle W/COND 2026-08-12): a pin whose value the

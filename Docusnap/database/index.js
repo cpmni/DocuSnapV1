@@ -3846,6 +3846,22 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 185 (ref_badge_verify_state seed OFF): ${e.message}`); }
   }
 
+  // ── migration 186: taught_ref_disagree_suppress seeded OFF (DARK; 2026-09-19, gary → Oracle SIGN-OFF-W/COND;
+  //    the Castellan "Service Worksheet" live blocker). A taught custom REF field ("Job Sheet No" → CJB-1578) is
+  //    permanently HELD because a generic seeded "Ref" caption reads the page's "Job Ref JB-2554" as a competing
+  //    value for the same role, and trust_role_disagreement_refuse refuses auto-file forever. When ON, an
+  //    authoritative Stage-0.5 taught ref winner whose value matches the scope's LEARNED shape suppresses a
+  //    DIFFERENT-shape keyword competitor (moves it to `suppressed_taught_role`), so the doc files by the normal
+  //    graduation route after one confirm — never a laundered corroborated auto-file (trust.js _corrobLicensed
+  //    guard). REF role only (dates excluded). See dark_switches.js + docs/designs/TAUGHT_REF_DISAGREE_SUPPRESS_2026-09-19.md.
+  if (!applied.has(186)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('taught_ref_disagree_suppress', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (186)').run();
+      console.log('JS migration 186 applied: taught_ref_disagree_suppress (a taught ref field wins over a different-shape page competitor) seeded OFF (DARK, 1 row)');
+    } catch (e) { console.warn(`  migration 186 (taught_ref_disagree_suppress seed OFF): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

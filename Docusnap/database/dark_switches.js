@@ -290,6 +290,21 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   every cold-slice flip genuinely single-witness/no-history; (6) PARITY the ONE trust.js predicate (C1).
   //   docs/designs/REF_BADGE_VERIFY_2026-09-18.md.
   'ref_badge_verify_state',
+
+  // taught_ref_disagree_suppress (mig 186, 2026-09-19, gary → Oracle SIGN-OFF-W/COND; the Castellan Service
+  // Worksheet live blocker): a custom REF field taught to a Stage-0.5 box ("Job Sheet No" → CJB-1578) is held
+  // FOREVER because a generic seeded "Ref" caption reads the page's "Job Ref JB-2554" as a competing value for
+  // the same role → trust_role_disagreement_refuse never auto-files, graduation can't clear it, reprocess
+  // regenerates it. When ON, an AUTHORITATIVE Stage-0.5 taught ref winner whose value matches the scope's
+  // LEARNED shape suppresses a DIFFERENT-shape keyword competitor (engine moves it to `suppressed_taught_role`;
+  // _pageFamilyDisagrees stops holding, _corrobLicensed is guarded so it never launders into a corroborated
+  // auto-file). REF role ONLY (dates excluded — Copperfield r19(d)). Off / cold-start / garbled / same-shape
+  // competitor ⇒ byte-identical, doc HOLDS (fail-toward-review). Batch releases after ONE confirm learns the
+  // shape. ⚑ FLIP GATE (Oracle): unit pins (taught-wins-files, garbled-holds, same-shape-holds, date-untouched,
+  //   cold-start-holds, the _corrobLicensed seam pin, the refBadge/fullyCorroborated invariance pin) + realdoc
+  //   M=0 + zero ref-role accuracy drop + wouldFile(ON)⊇wouldFile(OFF) on shape-valid taught winners.
+  //   docs/designs/TAUGHT_REF_DISAGREE_SUPPRESS_2026-09-19.md.
+  'taught_ref_disagree_suppress',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

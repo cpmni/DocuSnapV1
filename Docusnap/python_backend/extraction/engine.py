@@ -1067,6 +1067,39 @@ def _is_stage05_located(method: str | None) -> bool:
                              or method.startswith("template_registration"))
 
 
+def _suppress_taught_ref_disagree_record(rec, winner_taught, winner_shape_ok, off_shape):
+    """Pure record transform for TAUGHT_REF_DISAGREE_SUPPRESS (mig 186, DARK; gary → Oracle
+    SIGN-OFF-W/COND 2026-09-19). Moves a corroboration competitor whose value is OFF the scope's
+    learned shape out of `disagree`/`discounted` into a NEW `suppressed_taught_role` list — but ONLY
+    when the winner is an AUTHORITATIVE taught read that itself MATCHES the learned shape. Off-shape
+    detection is INJECTED as `off_shape(value)->bool` so this stays pure and unit-testable without the
+    engine's format machinery. Mutates `rec` in place; returns the number of entries moved (0 = no-op,
+    byte-identical record). A SAME-shape competitor (off_shape False) is a genuine same-field ambiguity
+    and is LEFT in `disagree` (the doc still holds). Role scoping (ref only, never date) and the winner
+    predicates are the caller's job — this function trusts its flags."""
+    if not isinstance(rec, dict) or not winner_taught or not winner_shape_ok:
+        return 0
+    moved, keep_dis = [], []
+    for e in (rec.get("disagree") or []):
+        if isinstance(e, dict) and off_shape(e.get("value")):
+            moved.append({"family": e.get("family"), "value": e.get("value")})
+        else:
+            keep_dis.append(e)
+    had_disc = isinstance(rec.get("discounted"), list)
+    keep_disc = []
+    for e in (rec.get("discounted") or []):   # a competitor already routed to `discounted` must move too (Oracle C2)
+        if isinstance(e, dict) and off_shape(e.get("value")):
+            moved.append({"family": e.get("family"), "value": e.get("value"), "reason": e.get("reason")})
+        else:
+            keep_disc.append(e)
+    if moved:
+        rec["disagree"] = keep_dis
+        if had_disc:
+            rec["discounted"] = keep_disc
+        rec["suppressed_taught_role"] = (rec.get("suppressed_taught_role") or []) + moved
+    return len(moved)
+
+
 def _identity_key_for_type(field_defs: list[dict]) -> str | None:
     """The single IDENTITY (Document Issuer) field key FOR THIS TYPE — supplier_name when the
     type carries one, else customer_name, else None. Mirrors COMPANY_KEYS precedence
@@ -12513,6 +12546,46 @@ class ExtractionEngine:
                         format_anomaly_checker.check_value(_v, _fe) is None
                         and format_anomaly_checker.shape_match_score(_v, _fe) == 1.0)
             results["_shape_ok"] = _shape_ok
+        except Exception:
+            pass
+
+        # ── TAUGHT_REF_DISAGREE_SUPPRESS (mig 186, DARK; gary → Oracle SIGN-OFF-W/COND 2026-09-19) ──────
+        # A custom REF field is seeded a GENERIC "Ref" caption (keyword._REF_ROLE_CAPTIONS), so a page's
+        # "Job Ref JB-2554" is read as a keyword-family competitor for the SAME role as the operator's taught
+        # "Job Sheet No" box (CJB-1578). The corroboration record then carries disagree:[{keyword, JB-2554}],
+        # trust.js _pageFamilyDisagrees + trust_role_disagreement_refuse HOLD the doc forever (every worksheet
+        # has both numbers), and a held doc never graduates → nothing auto-files. When the taught winner is an
+        # AUTHORITATIVE Stage-0.5 read whose value MATCHES the scope's learned shape (_shape_ok[ref_key]) and the
+        # competitor is OFF that shape (a different field), move the competitor out of disagree/discounted into a
+        # NEW `suppressed_taught_role` key. trust.js _pageFamilyDisagrees does NOT scan that key → the hold lifts;
+        # _corrobLicensed is explicitly guarded to REFUSE the corroborated-auto-file licence on it → the doc files
+        # by the NORMAL graduation/threshold route (after one confirm learns the shape), never a laundered
+        # corroborated auto-file. REF ROLE ONLY (dates excluded — Copperfield r19(d) safety). Off / cold-start
+        # (no learned shape) / garbled taught read / same-shape competitor ⇒ byte-identical, doc HOLDS.
+        # REF ROLE ONLY (ref_field_key) — the date role is deliberately excluded (Copperfield r19(d) safety).
+        try:
+            if os.environ.get("TAUGHT_REF_DISAGREE_SUPPRESS", "0") == "1" and ref_field_key \
+                    and isinstance(_corrob, dict):
+                _rk = ref_field_key
+                _rec = _corrob.get(_rk)
+                _rd = results.get(_rk)
+                _sok = results.get("_shape_ok") or {}
+                # Winner must be an AUTHORITATIVE Stage-0.5 taught read that matches the scope's learned shape.
+                _win_taught = isinstance(_rd, dict) and _is_stage05_located(_rd.get("method"))
+                _win_shape_ok = _sok.get(_rk) is True
+                # Same FINAL scope the _shape_ok block used (never a Stage-0.5-time local) — Oracle C3.
+                _s2 = str((results.get("supplier_name") or {}).get("value") or "").lower().strip() \
+                    if isinstance(results.get("supplier_name"), dict) else ""
+                _dt2 = (document_slug or "").lower().strip()
+                _fe2 = self.format_class_index.get((_s2, _dt2, _rk)) if _s2 else None
+                if isinstance(_rec, dict) and _win_taught and _win_shape_ok and _fe2 and _fe2.get("shapes"):
+                    def _off_learned_shape(v):
+                        v = str(v or "").strip()
+                        if not v:
+                            return False   # an empty read is not a competing value
+                        return not (format_anomaly_checker.check_value(v, _fe2) is None
+                                    and format_anomaly_checker.shape_match_score(v, _fe2) == 1.0)
+                    _suppress_taught_ref_disagree_record(_rec, _win_taught, _win_shape_ok, _off_learned_shape)
         except Exception:
             pass
 

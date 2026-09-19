@@ -675,6 +675,15 @@ function _corrobLicensed(record) {
   if (!rec || typeof rec !== 'object') return false;
   if (rec.independent_agree !== true) return false;
   if (Array.isArray(rec.disagree) && rec.disagree.length) return false;
+  // TAUGHT_REF_DISAGREE_SUPPRESS (mig 186, 2026-09-19; Oracle C1, the ship-blocker). A competitor the engine
+  // moved out of `disagree` into `suppressed_taught_role` (a page read OFF the scope's learned shape, which the
+  // taught winner overrides) must NOT be laundered INTO the corroborated-auto-file licence. It is WEAKER than
+  // the `discounted` set (off-shape, not deterministically type-invalid), so it is not credible enough to grant
+  // the licence: without this line, emptying `disagree` could flip _corrobLicensed false→true on a mapping+crop
+  // common-mode record and silently auto-file at the corroborated floor. The hold still lifts (via
+  // _pageFamilyDisagrees, which does NOT scan this key); filing stays on the normal graduation/threshold route.
+  // Inherited for free by _corrobLicensedKeyword / _docFullyCorroborated / refBadgeVerified / first-fill / rereadHolds.
+  if (Array.isArray(rec.suppressed_taught_role) && rec.suppressed_taught_role.length) return false;
   const fams = new Set([rec.winner_family, ...(Array.isArray(rec.agree) ? rec.agree : [])].filter(Boolean));
   if (fams.size < 2) return false;
   for (const f of fams) if (_CORROB_PAGE_FAMILIES.has(f)) return true;
