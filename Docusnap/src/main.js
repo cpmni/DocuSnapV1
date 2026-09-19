@@ -809,7 +809,21 @@ function createWindow(name, options, htmlFile) {
 
   if (manageShow) {
     let _revealed = false;
-    win.once('ready-to-show', () => { if (!win.isDestroyed()) { _revealed = true; win.show(); } });
+    win.once('ready-to-show', () => {
+      if (win.isDestroyed()) return;
+      _revealed = true;
+      win.show();
+      // KEYBOARD-FOCUS AT REVEAL (2026-09-19, eric): a FORCE_MAXIMIZE window (settings/review/teach/
+      // search) was already made visible by applyWindowState's maximize() above, which "shows but does
+      // NOT focus" — so this win.show() on an already-visible window emits no 'show' event and the global
+      // grabFocus (browser-window-created) never runs at DOM-ready. Result: the renderer has no OS keyboard
+      // focus and a clicked text input shows NO caret / won't type until the window is re-activated (the
+      // owner's "new dept field wouldn't accept text until I clicked away and back"). Issue the same focus
+      // pair here, ONE-SHOT — win.focus() activates the window, webContents.focus() lands the caret. This
+      // is NOT the title-bar-flash storm (that is win.focus() re-issued INSIDE a 'focus' handler); the
+      // global win.on('focus') webContents.focus() at browser-window-created already covers re-activation.
+      try { win.focus(); win.webContents.focus(); } catch {}
+    });
     // Backstop: never leave a window stuck hidden if ready-to-show never fires
     // (e.g. a renderer error) — reveal anyway after a grace period. Kept GENEROUS
     // (12s, was 2s): the 2s window was measured from construction (before loadFile),
@@ -822,7 +836,10 @@ function createWindow(name, options, htmlFile) {
     // Windows, so the old bare `!isVisible()` check popped a just-minimised window back
     // up ~12s after it opened ("windows randomly pop up again after I minimise them").
     setTimeout(() => {
-      if (!_revealed && !win.isDestroyed() && !win.isVisible() && !win.isMinimized()) win.show();
+      if (!_revealed && !win.isDestroyed() && !win.isVisible() && !win.isMinimized()) {
+        win.show();
+        try { win.focus(); win.webContents.focus(); } catch {}   // same reveal-focus as above (wedged-renderer path)
+      }
     }, 12000);
   }
 
