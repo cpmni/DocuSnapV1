@@ -214,6 +214,33 @@ console.log('\n§8 PIN — REPROCESS_SHADOW_STALE_DROP (built 2026-08-12 NIGHT, 
   delete process.env.REPROCESS_SHADOW_STALE_DROP;
 }
 
+console.log('\n§9 PIN — the imageless/Full SPLIT (2026-09-19): Full still BLANKS a taught box empty, Quick KEEPS it:');
+{
+  // Oracle C2. A FULL reprocess renders pixels, so an annotated empty on a template_mapping field IS a
+  // genuine taught-box-drift signal — it must keep blanking + holding to prompt a re-teach. A QUICK
+  // (imageless) run is blind to the box, so the same empty must KEEP the stored value + contest. The
+  // split lives entirely on the _imageless flag; do NOT "fix" Full to preserve too.
+  const exTaught = exRow({ field_key: 'reference_number', display_value: 'CJB-1834', raw_value: 'CJB-1834',
+                           confidence: 90, extraction_method: 'template_mapping', validation_note: '— confirm once.' });
+  const frEmpty = newAnnotatedEmpty({ field_key: 'reference_number' });
+
+  // Full run (imageless unset) → still blanks.
+  const traces = [];
+  const full = merge([exTaught], [frEmpty], null, (f, d) => traces.push(d));
+  const fullRef = full.find(r => r.field_key === 'reference_number');
+  check('FULL: a template_mapping annotated-empty STILL blanks (drift signal preserved)',
+        fullRef.display_value == null && traces.includes('used_new_annotated'));
+
+  // Quick run (imageless) → keeps + contests (the 2026-09-19 fix; lives in test_quick_reprocess_merge.js).
+  const contestedOut = []; const stats = {};
+  const quick = merge([exTaught], [frEmpty], null, null, null, { imageless: true, contestedOut, stats });
+  const quickRef = quick.find(r => r.field_key === 'reference_number');
+  check('QUICK: the same empty KEEPS the stored taught value',
+        quickRef.display_value === 'CJB-1834' && quickRef.validation_note === '— confirm once.');
+  check('QUICK: the doc is contested (held out of auto-file)',
+        contestedOut.length === 1 && contestedOut[0].field === 'reference_number' && stats.imagelessKept === 1);
+}
+
 console.log('');
 if (fails) { console.log(`FAILED: ${fails} check(s)`); process.exit(1); }
 console.log('ALL PASS');

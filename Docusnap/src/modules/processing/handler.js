@@ -1634,6 +1634,35 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hidd
       // byte-identically — that is THE shape this carry-over exists for (PINNED in
       // test_reprocess_annotated_empty.js). NOTE: the realdoc M=0 harness runs FRESH
       // extraction and is structurally blind to this merge — the unit battery is the gate.
+      // IMAGELESS PRESERVE — EMPTY case (Quick Reprocess; 2026-09-19, gary → Oracle SIGN-OFF-W/COND
+      // C1..C5). A --reextract run renders no pixels, so a stored read that came from the page IMAGE
+      // (a taught template_mapping box, an anchor crop, a registration relocation, an ocr_region draw)
+      // cannot be re-derived — the imageless engine returns that field EMPTY-with-note. That empty is
+      // NOT the engine abstaining (used_new_annotated below); it is structural blindness — the exact
+      // blindness the sibling differing-value guard already compensates for at IMAGELESS PRESERVE below.
+      // So the EMPTY case must reach the SAME outcome as the differing case: keep the stored value, keep
+      // its STORED note (never surface the fresh abstain note — the Chris-round-10 false-message class),
+      // and — for a non-taught image-family read — CONTEST the doc so Quick never files what a Full run
+      // (which CAN re-read the box and detect drift) would hold (Oracle C1). A ⊕-taught key abstains
+      // silently (operator-blessed). ONE rule for empty + differing: whatever _imgFam/_taught covers for
+      // a differing fresh value, it covers identically for an empty one. Gated on _imageless ⇒ a FULL
+      // reprocess is byte-identical (used_new_annotated still blanks a drifted taught box, prompting a
+      // re-teach — pinned in test_reprocess_annotated_empty.js). A `keyword` empty-with-note is a genuine
+      // text abstain the imageless run CAN produce, so it still blanks below (the discriminator is the
+      // image-derived predicate, never "all fields").
+      if (_imageless && String(row.validation_note || '').trim()
+          && !String(ex.corrected_to || '').trim()) {
+        const _taughtE = !!(_taughtKeys && _taughtKeys.has(row.field_key));
+        const _imgFamE = _isImageFamilyMethod(ex.extraction_method);
+        if (_taughtE || _imgFamE) {
+          if (_stats) _stats.imagelessKept = (_stats.imagelessKept || 0) + 1;
+          if (!_taughtE && _imgFamE && _contestedOut) _contestedOut.push({ field: row.field_key, old: ex.display_value, new: row.display_value });
+          trace(row.field_key, _taughtE ? 'kept_imageless_taught' : 'kept_imageless_contested', ex.display_value, row.display_value);
+          return { ...row, raw_value: ex.raw_value, display_value: ex.display_value, confidence: ex.confidence,
+                   extraction_method: ex.extraction_method, validation_note: ex.validation_note || null,
+                   corrected_to: ex.corrected_to || null, corroboration: ex.corroboration || null };
+        }
+      }
       if (String(row.validation_note || '').trim()
           && !String(ex.corrected_to || '').trim()
           && process.env.REPROCESS_ANNOTATED_EMPTY_WINS !== '0') {

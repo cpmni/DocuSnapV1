@@ -184,5 +184,70 @@ section('6b. it does NOT over-preserve or mis-fire:');
   delete process.env.QUICK_IMAGELESS_IDENTITY_PRESERVE;
 }
 
+// ── 7. Imageless EMPTY-with-note on a taught/image field is KEPT, never BLANKED ──
+//     (2026-09-19, gary → Oracle SIGN-OFF-W/COND). A --reextract run can't re-read a taught box /
+//     anchor crop / registration / ocr_region, so it returns the field EMPTY-with-note. That empty
+//     must NOT blank the stored image-derived value (the CJB-1834 bug) — it reaches the SAME keep +
+//     contest the differing-value branch already does. TRADE-OFF PINNED: this trades a false-blank
+//     (which used to fail safe by holding the doc) for keeping the stored value + CONTESTING (still
+//     held) — the customer taught CJB-1834 and expects it to stay, not vanish.
+section('7. imageless EMPTY-with-note on an image-family field → stored value KEPT + CONTESTED, never blanked:');
+const _freshNote = 'The reference could not be confirmed on this page.';
+for (const m of ['anchor_crop', 'anchor_crop_relocated', 'anchor_registration', 'template_mapping', 'template_mapping_inline', 'ocr_region']) {
+  const ex = row('reference_number', 'STORED-' + m, { extraction_method: m, confidence: 88, validation_note: '— confirm once.' });
+  const fr = row('reference_number', null, { confidence: 0, validation_note: _freshNote });   // imageless empty-with-note
+  const r = run1(ex, fr, { imageless: true });
+  ok(`[${m}] stored value KEPT (not blanked)`, r.out.display_value === 'STORED-' + m);
+  ok(`[${m}] stored method + confidence preserved`, r.out.extraction_method === m && r.out.confidence === 88);
+  ok(`[${m}] C1: the STORED note is kept, the fresh abstain note is dropped`,
+     r.out.validation_note === '— confirm once.' && r.out.validation_note !== _freshNote);
+  ok(`[${m}] C4: doc is CONTESTED (empty new recorded)`,
+     r.contested.length === 1 && r.contested[0].field === 'reference_number'
+       && r.contested[0].old === 'STORED-' + m && r.contested[0].new == null);
+  ok(`[${m}] imagelessKept counted the keep (drives C4)`, r.stats.imagelessKept === 1);
+  ok(`[${m}] trace names it a contested keep`, r.decision === 'kept_imageless_contested');
+}
+{
+  // ⊕-taught key, empty-with-note → keep SILENTLY (no contest). Operator-blessed.
+  const taughtKeys = new Set(['reference_number']);
+  const ex = row('reference_number', 'CJB-1834', { extraction_method: 'anchor_crop', confidence: 90 });
+  const fr = row('reference_number', null, { confidence: 0, validation_note: _freshNote });
+  const r = run1(ex, fr, { imageless: true, taughtKeys });
+  ok('taught empty keep: stored value KEPT', r.out.display_value === 'CJB-1834');
+  ok('taught empty keep: NOT contested (silent)', r.contested.length === 0);
+  ok('taught empty keep: counts toward imagelessKept', r.stats.imagelessKept === 1);
+  ok('taught empty keep: trace = kept_imageless_taught', r.decision === 'kept_imageless_taught');
+}
+section('7b. the SEAM pin — a genuine text abstain (keyword) empty STILL blanks (REPROCESS_ANNOTATED_EMPTY_WINS untouched):');
+{
+  // A keyword field is text-derivable; an imageless empty-with-note IS a legitimate engine abstain
+  // and must still land. This is the discriminator that stops the guard swallowing real abstains.
+  const ex = row('reference_number', 'OLD-KW', { extraction_method: 'keyword', confidence: 85 });
+  const fr = row('reference_number', null, { confidence: 0, validation_note: _freshNote });
+  const r = run1(ex, fr, { imageless: true });
+  ok('keyword empty-with-note STILL blanks (used_new_annotated fires)', r.out.display_value == null);
+  ok('keyword empty is not contested', r.contested.length === 0);
+  ok('keyword empty is not an imageless keep', !(r.stats.imagelessKept > 0));
+  ok('trace = used_new_annotated', r.decision === 'used_new_annotated');
+}
+section('7c. C3 un-annotated empty on image-family → kept_existing keeps the VALUE (no note, no contest):');
+{
+  const ex = row('reference_number', 'STORED-TM', { extraction_method: 'template_mapping', confidence: 88 });
+  const fr = row('reference_number', null, { confidence: 0, validation_note: null });   // empty, NO note
+  const r = run1(ex, fr, { imageless: true });
+  ok('un-annotated empty: stored VALUE kept', r.out.display_value === 'STORED-TM');
+  ok('un-annotated empty: not contested', r.contested.length === 0);
+  ok('un-annotated empty: kept_existing (not an imageless keep)', r.decision === 'kept_existing');
+}
+section('7d. corrected_to is sacred — a human answer survives an imageless empty-with-note, never contested:');
+{
+  const ex = row('reference_number', 'CJB-1834', { extraction_method: 'template_mapping', confidence: 88, corrected_to: 'CJB-1834' });
+  const fr = row('reference_number', null, { confidence: 0, validation_note: _freshNote });
+  const r = run1(ex, fr, { imageless: true });
+  ok('corrected_to kept: the human value survives', r.out.display_value === 'CJB-1834');
+  ok('corrected_to kept: not contested', r.contested.length === 0);
+  ok('corrected_to kept: kept_existing (human answer wins)', r.decision === 'kept_existing');
+}
+
 console.log(`\n${n - fails}/${n} passed`);
 process.exit(fails ? 1 : 0);
