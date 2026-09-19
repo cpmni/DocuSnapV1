@@ -101,7 +101,7 @@ const _askKey = (sup, slug, rule) =>
 function applyForConfirm(db, opts) {
   const {
     documentId, corrections, supplierName, typeSlug, dtInfo, actorName,
-    learning, audit, presence, logger,
+    learning, audit, presence, logger, viewer,
   } = opts || {};
 
   if (!_enabled(db, learning)) return null;              // OFF ⇒ nothing read, nothing written
@@ -118,11 +118,14 @@ function applyForConfirm(db, opts) {
 
   // Candidate siblings: QUEUED only, same scope, not this document, not workflow-locked, not open
   // in front of somebody else. `document_id <> ?` is on the SELECT and on every write.
-  // D2 (Oracle cond 5): DELIBERATELY department-BLIND. A class fix propagates a ref correction across
-  // the whole (supplier, type) scope regardless of department — this is scope-wide learning, not a
-  // visibility surface (the rows never render to the actor; only their extraction values are healed).
-  // Do NOT add visibleDocSql here: it would make a same-supplier heal depend on the actor's department
-  // (a functional regression), not close a leak. See docs/designs/DEPARTMENTS_D2_PLAN §cond-5.
+  // Departments (2026-09-18, Oracle SEND-BACK → C-A): department-FILTERED. This OVERTURNS the prior
+  // "cond 5 / department-BLIND" ruling, whose premise ("the rows never render to the actor") was FALSE:
+  // the applied/ask summary returned to reviewService.confirm surfaces each sibling's filename + was→now
+  // value in the class-fix bar (review/renderer.js renderClassFixBar), so the propagation IS a visibility
+  // surface AND a cross-department mutation. Filter the candidate scan by the actor's department so a
+  // non-member's heal never touches or discloses a restricted sibling. '' / byte-identical when no
+  // departments configured; viewer = the confirming session; a missing viewer fail-closes to shared-only.
+  const _vis = require('../../database/modules/departmentVisibility').visibleDocSql(db, viewer, 'd');
   let rows;
   try {
     rows = db.prepare(`
@@ -136,7 +139,7 @@ function applyForConfirm(db, opts) {
          AND (@hasPutBack = 0 OR d.put_back_at IS NULL)   -- A3: a put-back sibling waits for its own human confirm
          AND LOWER(TRIM(COALESCE(d.supplier_name, ''))) = LOWER(@sup)
          AND LOWER(TRIM(COALESCE(t.slug, ''))) = LOWER(@slug)
-         AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
+         AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')${_vis}
        ORDER BY d.id`).all({ refKey, docId: documentId, sup: scope.sup, slug: scope.slug,
                               hasPutBack: require('../../database/modules/documents')._hasPutBackAt(db) ? 1 : 0 });
   } catch (e) { logger?.warn?.('class fix: candidate scan failed: ' + (e && e.message)); return null; }

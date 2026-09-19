@@ -707,6 +707,7 @@ function createReviewService(deps = {}) {
           supplierName: (allValues && allValues.supplier_name) || supplier_name || null,
           typeSlug: document_type_slug || (dtInfo && dtInfo.slug) || null,
           dtInfo, actorName, learning, audit,
+          viewer: actor,   // D2/C-A: the confirming session scopes the class-fix candidate filter (departmentVisibility)
           presence: (() => { try { return require('./presenceService').shared(); } catch { return null; } })(),
           logger,
         });

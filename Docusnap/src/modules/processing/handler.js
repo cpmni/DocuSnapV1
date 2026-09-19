@@ -4440,11 +4440,15 @@ function register(ctx) {
     // A blank-supplier doc is excluded EXPLICITLY, not by luck: the per-scope SQL happened to omit
     // it, and `scopeTrust` would refuse it anyway ('no-supplier') — but the queue-wide SELECT must
     // not rely on a coincidence (Oracle).
+    // Departments (2026-09-18, Oracle C-C): the offer discloses restricted docs (supplier + count +
+    // filenames render to the actor), so filter the queue-wide scan by the actor's department. '' /
+    // byte-identical when no departments configured. _sweepAcceptCore re-gates per doc as the filing belt.
+    const _vis = require('../../../database/modules/departmentVisibility').visibleDocSql(db, getCurrentUser(), 'd');
     const rows = db.prepare(`
       SELECT d.* FROM documents d
        WHERE d.status = 'needs_review'
          AND TRIM(COALESCE(d.supplier_name, '')) <> ''
-         AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
+         AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')${_vis}
        ORDER BY d.id LIMIT 500`).all()
       .filter(d => !presence.viewers(d.id).length);          // never sweep a doc someone has open
     if (!rows.length) return { ok: true, scopes: [], evaluated: 0 };
@@ -4626,6 +4630,10 @@ function register(ctx) {
         const docId = Number(a && a.docId);
         const doc = docId ? documents.getById(db, docId) : null;
         if (!doc || doc.status !== 'needs_review') { dropped.push({ docId, reason: 'not-queued' }); continue; }
+        // Departments (2026-09-18, Oracle C-C): the ONE filing choke shared by the manual "File N" and the
+        // silent scope auto-accept — a restricted doc is never filed under a non-member actor. Existence-
+        // hiding via the sweep's benign 'not-offered'. Direct (inert/byte-identical when no departments).
+        if (!require('../../services/accessService').canAccessDocument(db, actor, docId).allow) { dropped.push({ docId, reason: 'not-offered' }); continue; }
         if (['pending', 'claimed'].includes(String(doc.workflow_status || ''))) { dropped.push({ docId, reason: 'workflow-locked' }); continue; }
         if (String(doc.supplier_name || '').trim().toLowerCase() !== sup.toLowerCase()
             || Number(doc.document_type_id) !== Number(dtRow.id)) { dropped.push({ docId, reason: 'scope-mismatch' }); continue; }
@@ -4803,16 +4811,20 @@ function register(ctx) {
   // Scope-local offer: the queue-wide SELECT narrowed to one (supplier, type). Same exclusions
   // (blank supplier impossible here, workflow-locked, being viewed), same ONE formats scan, same
   // cap, same server-recorded offer + audit row (C8/C9 hold for the automatic path too).
-  function _sweepOfferForScope(db, sup, dtRow) {
+  function _sweepOfferForScope(db, sup, dtRow, actor) {
     const trust = require('../../../database/modules/trust');
     const { extractionsFingerprint } = require('../../services/sweepPredicate');
     const presence = require('../../services/presenceService').shared();
+    // Departments (2026-09-18, Oracle C-C): the AUTO-accept offer must not include restricted docs (they
+    // would enter the accept loop + the receipt). Filter by the triggering actor's department; '' /
+    // byte-identical when no departments configured. _sweepAcceptCore is the belt if this is ever bypassed.
+    const _vis = require('../../../database/modules/departmentVisibility').visibleDocSql(db, actor, 'd');
     const rows = db.prepare(`
       SELECT d.* FROM documents d
        WHERE d.status = 'needs_review'
          AND LOWER(TRIM(COALESCE(d.supplier_name, ''))) = ?
          AND d.document_type_id = ?
-         AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
+         AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')${_vis}
        ORDER BY d.id LIMIT 500`).all(sup.toLowerCase(), dtRow.id)
       .filter(d => !presence.viewers(d.id).length);
     if (!rows.length) return [];
@@ -4850,7 +4862,7 @@ function register(ctx) {
     let passes = 0;
     while (passes < AUTO_ACCEPT_MAX_PASSES) {
       if (_anyProcessingBusy()) break;                                                  // a batch started: yield
-      const candidates = _sweepOfferForScope(db, sup, dtRow);
+      const candidates = _sweepOfferForScope(db, sup, dtRow, actor);
       if (!candidates.length) break;
       passes++;
       // r18 A3 (Oracle): the AUTO accept is not a consented File N — stamp a machine name, never the
@@ -5361,6 +5373,24 @@ function register(ctx) {
     }
     if (!Array.isArray(docs) || !docs.length) return { success: true, done: 0, failed: 0 };
 
+    // Departments (2026-09-18, item 9): drop any doc the actor may not access BEFORE staging/OCR — this
+    // path re-OCRs + streams supplier_name/extractions back, and _reprocessStatus.docIds (which feeds the
+    // consume-completion offer + the scope auto-accept) is derived downstream, so the filter must precede
+    // staging. Matches the single-doc reprocess-document sibling: canAccessDocument DIRECT (inert /
+    // byte-identical when no departments are configured). Descriptor id = d.docId; silent drop + count.
+    let deptDropped = 0;
+    {
+      const _sess = getCurrentUser() || {};
+      const _access = require('../../services/accessService');
+      docs = docs.filter(d => {
+        const _id = Number(d && d.docId);
+        if (!_id) return true;
+        if (_access.canAccessDocument(db, _sess, _id).allow) return true;
+        deptDropped++; return false;
+      });
+      if (!docs.length) return { success: true, done: 0, failed: 0, deptDropped };
+    }
+
     const learning2  = require('../../../database/modules/learning');
     const templates2 = require('../../../database/modules/templates');
     const reprMode   = _validMode(learning2.getSetting(db, 'processing_mode', 'smart'));
@@ -5525,7 +5555,7 @@ function register(ctx) {
       cleanupFiles([manifestFile, ...shardFiles, ...tempFiles]);
     }
     // quickCount / fullFallbackCount drive the dialog summary ("N reused cached text, M re-read in full").
-    return { success: true, done, failed, lockedSkipped,
+    return { success: true, done, failed, lockedSkipped, deptDropped,
              quick: quickOn, quickCount: quickNames.length, fullFallbackCount: (quickOn ? fullNames.length : 0) };
   });
 
@@ -5630,6 +5660,10 @@ function register(ctx) {
     for (const docId of offer.docIds) {
       const doc = documents.getById(db, docId);
       if (!doc || doc.status !== 'needs_review') { dropped.push({ docId, reason: 'not-queued' }); continue; }
+      // Departments (2026-09-18, item 10): the offer docIds are server-minted, but the FILE happens under
+      // the current actor — a non-member consuming a member-minted offer must not file a restricted doc.
+      // Existence-hiding via the benign 'not-queued'. Direct (inert/byte-identical when no departments).
+      if (!require('../../services/accessService').canAccessDocument(db, actor, docId).allow) { dropped.push({ docId, reason: 'not-queued' }); continue; }
       if (['pending', 'claimed'].includes(String(doc.workflow_status || ''))) { dropped.push({ docId, reason: 'workflow-locked' }); continue; }
       const rows = db.prepare('SELECT * FROM extractions WHERE document_id = ?').all(docId);
       const elig = trust.isAutoFileEligible(db, doc, { extractions: rows.map(r => ({ ...r, value: r.display_value })) });

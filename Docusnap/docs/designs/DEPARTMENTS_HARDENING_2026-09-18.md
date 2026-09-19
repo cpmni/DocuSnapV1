@@ -55,7 +55,48 @@ these need a per-handler verification before an admin turns departments on:
 - Decouple the department decision from `ACCESS_GATE_ENABLED` on dev builds (production is always-on).
 - The `/v1` LAN search-client + the workflow route-to-a-person path (Chris couldn't test either from one seat).
 
+## AUDIT DEBT RESOLVED — 2026-09-19 (eric + gary → Oracle SEND-BACK → C-A…C-F, then implemented)
+The audit-debt verification was run per-handler at source (eric + gary) and vetted by the Oracle, which **SENT
+IT BACK**: the plan rested on TWO false premises and missed a whole ON-by-default leak class.
+- **False premise (verified at source):** `ref_class_fix_enabled` (mig 76 `@DEFAULT_FLIP`) and `accept_field_chars_enabled`
+  (mig 103 `@DEFAULT_FLIP`) are **ON by default**, not DARK — NOT in `TEST_SWITCH_KEYS`, so mig 137's customer reset
+  never touches them. Their fan-outs run department-blind the instant `departments_enabled` flips → flip-blockers.
+- **The big miss — the scope sweep** (`scope_sweep_enabled` + `scope_sweep_auto_accept`, mig 80 `@DEFAULT_FLIP`, ON):
+  `sweep-queue-candidates` offered restricted docs; `_sweepAcceptCore` filed them via `reviewService.confirm` directly;
+  and with auto-accept ON, one member's confirm **silently auto-filed a different department's restricted docs** and
+  named them in the receipt. The worst path, absent from the first plan.
+- **classFix disclosure rides out in `confirm`,** not `resolve-ask`: the class-fix bar shows each sibling's filename +
+  was→now value, so gating the source doc alone was necessary-but-insufficient — the fan-out SELECT itself needed the
+  filter. This overturned the prior "D2 cond-5 / department-BLIND" comment (its premise was the same false one).
+
+**Implemented (all byte-identical when no departments configured; the flip stays owner-gated):**
+- Single-doc gates (own-idiom: throw `_assertDocAccess` for blind-UPDATE sites, soft-return where one exists):
+  `resolve-issuer`, `acknowledge-review`, `class-fix-resolve-ask` (soft 'gone'), `batch-audit-send-back` (soft
+  'not-in-batch'), `accept-field-chars` (hard-gate the source it READS), `find-issuer-siblings` (soft 'no siblings'),
+  `apply-issuer-ripple` (per-id drop), `reprocess-batch` (per-item filter + `deptDropped` count),
+  `reprocess-autocommit-accept` (per-item drop). `accept-name-value`/`accept-issuer`: soft-skip the per-doc note-clear
+  only — the global allowlist write stays ungated (renderer value, doc-independent).
+- **C-A** `batchAuditService.confirmBatch` gates each doc (injected `access`, fail-closed default) + `classFixService.
+  applyForConfirm` sibling scan `visibleDocSql`-filtered (viewer threaded from `reviewService.confirm` +
+  `class-fix-resolve-ask`).
+- **C-B** `charsetAcceptService.applyCharsetAccept` sibling sweep `visibleDocSql`-filtered (viewer from the handler).
+- **C-C** the scope sweep: `sweep-queue-candidates` + `_sweepOfferForScope` SELECTs `visibleDocSql`-filtered, and the
+  ONE shared filing loop `_sweepAcceptCore` gates each doc (covers manual "File N" AND the silent auto-accept).
+- `find-issuer-siblings`/`supplierSiblings.findSiblings`: **SQL-filter** (not post-loop — the 25-cap would let
+  restricted docs shrink a member's visible set).
+- **C-D** coverage lock extended (every new handler/service/sweep-fn carries a gate token; `GATE` regex now includes
+  `visibleDocSql`; header corrected). **C-E** runtime red-team §8–§12 (confirmBatch never files a restricted doc;
+  findSiblings/classFix/charset never heal/disclose one; reprocess drops one). **C-F** byte-identical §13 + trade-off
+  pins (allowlist keeps writing; findSiblings completeness). SAFE, no change: `get-staged-teach-thumbnail` (docId:null).
+
+**Verification:** `test_department_serve_coverage.js` ALL PASS; `test_department_serve_hardening.js` §1–§13 ALL PASS;
+full battery green — services 45/45, modules 96/96, database 169/169 (0 regressions). **Still owed before the flip:**
+Chris Card 1 (switch-vs-copy), owner live-test, and the belt-and-braces fast-follow below.
+
 ## Files
 `database/modules/departmentVisibility.js`, `src/modules/processing/handler.js`, `src/modules/review/handler.js`,
-`src/modules/api/handler.js`, `src/services/workflowService.js`; pins `src/services/test_department_serve_hardening.js`
-+ `src/services/test_department_serve_coverage.js`. Oracle verdict + gary/eric reports: this session's transcript.
+`src/modules/api/handler.js`, `src/services/workflowService.js`; audit-debt (2026-09-19):
+`src/services/batchAuditService.js`, `src/services/classFixService.js`, `src/services/charsetAcceptService.js`,
+`src/services/reviewService.js`, `database/modules/supplierSiblings.js`; pins
+`src/services/test_department_serve_hardening.js` + `test_department_serve_coverage.js` (+ `test_batch_audit_correct.js`
+gained an injected inert `access`). Oracle verdicts + gary/eric reports: this session's transcript.

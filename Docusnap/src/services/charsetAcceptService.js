@@ -85,7 +85,7 @@ function recomputeOverall(extrByKey, fieldDefs) {
  * Apply an operator char-accept across the review queue.
  * @returns {{ok, accepted:string[], typeKey, clearedDocs:number[], clearedFields:number, error?}}
  */
-function applyCharsetAccept(db, { docId, fieldKey }) {
+function applyCharsetAccept(db, { docId, fieldKey, viewer }) {
   if (!docId || !fieldKey) return { ok: false, error: 'bad-args' };
   const csKeys = _charsetKeys();
 
@@ -108,11 +108,16 @@ function applyCharsetAccept(db, { docId, fieldKey }) {
   const acceptedNow = learning.getAcceptedFieldChars(db);   // full object, post-add
 
   // ── live clear/restore across the queue, then recompute affected docs ─────────────────────────
+  // Departments (2026-09-18, Oracle C-B): the sibling sweep clears notes + restores confidence on
+  // needs_review siblings and returns their ids in clearedDocs — so a non-member must not reach a
+  // restricted sibling's checkpoint. SQL-filter on the documents alias; '' / byte-identical when no
+  // departments configured. viewer = the session; a missing viewer fail-closes to shared-only.
+  const _vis = require('../../database/modules/departmentVisibility').visibleDocSql(db, viewer, 'd');
   const rows = db.prepare(`SELECT e.id, e.document_id, e.field_key, e.confidence, e.validation_note,
                                   e.charset_flag_meta, d.document_type_id
                            FROM extractions e JOIN documents d ON d.id = e.document_id
                            WHERE d.status = 'needs_review'
-                             AND (e.charset_flag_meta IS NOT NULL OR e.validation_note LIKE 'unexpected characters (%')`).all();
+                             AND (e.charset_flag_meta IS NOT NULL OR e.validation_note LIKE 'unexpected characters (%')${_vis}`).all();
   const clearNote = db.prepare('UPDATE extractions SET validation_note = NULL, charset_flag_meta = NULL WHERE id = ?');
   const clearNoteRestore = db.prepare('UPDATE extractions SET validation_note = NULL, charset_flag_meta = NULL, confidence = ? WHERE id = ?');
   const affected = new Map();   // docId -> {restored:bool}

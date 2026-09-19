@@ -86,6 +86,13 @@ function createBatchAuditService(deps) {
   // The canonical date parser the folder builder uses — injected so validateEdit gates on the SAME
   // predicate as filing/reviewService (no fig-leaf loose pattern). Null → validateEdit falls back.
   const normaliseDate = typeof deps.normaliseDate === 'function' ? deps.normaliseDate : null;
+  // Departments (2026-09-18, Oracle C-A). confirmBatch FILES docs by id and cross-checks only the event
+  // ids, not the viewer's visible set — a crafted `edits` payload could file a restricted doc that is in
+  // a known event. Gate each doc through the shared read predicate. Default fail-CLOSED to the real
+  // module so a caller that forgets to inject it still gates (never fail-open); no require cycle
+  // (accessService → documents/workflow/departmentVisibility, none require this service). Inert /
+  // byte-identical when no departments are configured (canAccessDocument returns allow).
+  const access = deps.access || require('./accessService');
 
   // The two field keys the grid must NEVER re-file in place (route to full Review instead).
   const ROUTED_KEYS = new Set(['supplier_name', 'document_type', 'document_type_slug']);
@@ -167,6 +174,9 @@ function createBatchAuditService(deps) {
 
       const doc = documents.getWithExtractions(db, docId);
       if (!doc) { r.reason = 'not-found'; results.push(r); continue; }
+      // Department gate (C-A): a restricted doc is indistinguishable from one not in the batch (the same
+      // reason the event-id cross-check at :166 uses) — existence-hiding, and it blocks the re-file.
+      if (access.gateEnabled() && !access.canAccessDocument(db, actor, docId).allow) { r.reason = 'not-in-batch'; results.push(r); continue; }
       if (doc.status !== 'confirmed') { r.reason = 'not-confirmed'; results.push(r); continue; }   // C6
 
       const { slug, dtInfo } = _resolveDtInfo(db, doc);

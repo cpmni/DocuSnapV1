@@ -46,6 +46,9 @@ function makeDeps(docs, { preserve = true, confirmImpl } = {}) {
   };
   const svc = createBatchAuditService({
     reviewService, documents, doctypes,
+    // Department gate inert here (mock db): this hermetic pin tests the orchestrator's checkpoint logic;
+    // the dept gate is proven with a real DB in test_department_serve_hardening.js §8.
+    access: { gateEnabled: () => false },
     getEvent: () => ({ id: 7, ids: Object.keys(docs).map(Number) }),
     valPatterns: () => ({ date: DATE_PATS }),
     preserveAnchors: () => preserve,

@@ -241,6 +241,7 @@ function register(ctx) {
     && learning.getSetting(getDb(), 'batch_audit_preserve_anchors', 'true') !== 'false';
   const batchAudit = require('../../services/batchAuditService').createBatchAuditService({
     reviewService, documents, doctypes,
+    access: accessService,   // D2/C-A: confirmBatch gates each re-filed doc through the shared read predicate
     getEvent: (db, id) => { try { return require('../processing/handler').getReviewEvent(db, id); } catch { return null; } },
     valPatterns: _loadValPatternsRaw,
     preserveAnchors: _batchAuditPreserveAnchors,
@@ -279,12 +280,14 @@ function register(ctx) {
   ipcMain.handle('batch-audit-send-back', (_e, { eventId, docId } = {}) => {
     const db = getDb();
     if (!_batchAuditEnabled()) return { ok: false, reason: 'disabled' };
-    requireRole('admin', 'edit');
+    const sess = requireRole('admin', 'edit');
     const id = Number(docId);
     if (!id) return { ok: false, error: 'No document.' };
     let ev; try { ev = require('../processing/handler').getReviewEvent(db, eventId); } catch { ev = null; }
     const evIds = new Set(((ev && ev.ids) || []).map(Number));
     if (!evIds.has(id)) return { ok: false, error: 'That document is not in this batch.' };   // C5
+    // Department gate (C-A): a restricted doc is indistinguishable from one not in the batch (existence-hiding).
+    if (accessService.gateEnabled() && !accessService.canAccessDocument(db, sess, id).allow) return { ok: false, error: 'That document is not in this batch.' };
     let r;
     try { r = require('../../services/repairService').sendBackToReview(db, id, { source: 'quick_check' }); }
     catch (e) { return { ok: false, error: 'Send-back failed (nothing was changed): ' + (e.message || e) }; }
@@ -817,15 +820,18 @@ function register(ctx) {
   // name flag on THIS doc's field so it stops nagging immediately. Durable effect is the
   // allowlist (fed to the engine via buildTrainingArgs); the note-clear is live UX.
   ipcMain.handle('accept-name-value', (_e, p) => {
-    requireRole('admin', 'edit');
+    const sess = requireRole('admin', 'edit');
     const db = getDb();
     const value = p && typeof p.value === 'string' ? p.value.trim() : '';
     if (!value) return { ok: false, error: 'empty-value' };
     const list = learning.addAcceptedName(db, value);
     // Clear only a NAME-related flag on the current doc's field (leave e.g. an identity-conflict
     // note intact). The wordness/truncation notes all speak to "reads like a name".
+    // Departments (C-A): the global allowlist above is a doc-independent admin/edit act (the value is
+    // renderer-supplied, never read from the doc) and stays UNGATED; only the per-doc NOTE-CLEAR is
+    // soft-skipped for a restricted doc — it stays flagged for a member (fail-toward-review), cleared:0.
     let cleared = 0;
-    if (p.docId && p.fieldKey) {
+    if (p.docId && p.fieldKey && (!accessService.gateEnabled() || accessService.canAccessDocument(db, sess, p.docId).allow)) {
       const row = db.prepare('SELECT validation_note FROM extractions WHERE document_id = ? AND field_key = ?')
         .get(p.docId, p.fieldKey);
       const note = row && String(row.validation_note || '');
@@ -846,14 +852,16 @@ function register(ctx) {
   // "established after N confirmations" fallback), and clears the identity-conflict note on
   // THIS doc's identity field so it stops nagging immediately.
   ipcMain.handle('accept-issuer', (_e, p) => {
-    requireRole('admin', 'edit');
+    const sess = requireRole('admin', 'edit');
     const db = getDb();
     const value = p && typeof p.value === 'string' ? p.value.trim() : '';
     if (!value) return { ok: false, error: 'empty-value' };
     const list = learning.addAcceptedIssuer(db, value);
     // Clear only the identity-conflict note ("confirm the issuer") on the current doc's field.
+    // Departments (C-A): the global allowlist above stays UNGATED (doc-independent, renderer-supplied);
+    // only the per-doc note-clear is soft-skipped for a restricted doc (cleared:0, fail-toward-review).
     let cleared = 0;
-    if (p.docId && p.fieldKey) {
+    if (p.docId && p.fieldKey && (!accessService.gateEnabled() || accessService.canAccessDocument(db, sess, p.docId).allow)) {
       const row = db.prepare('SELECT validation_note FROM extractions WHERE document_id = ? AND field_key = ?')
         .get(p.docId, p.fieldKey);
       const note = row && String(row.validation_note || '');
@@ -876,12 +884,16 @@ function register(ctx) {
   // C8 offer→accept path, never a bespoke filer). DARK: gated on accept_field_chars_enabled so a stale
   // renderer can't reach it when off (the batch_audit refuse-when-off pattern).
   ipcMain.handle('accept-field-chars', (_e, p) => {
-    requireRole('admin', 'edit');
+    const sess = requireRole('admin', 'edit');
     const db = getDb();
     if (learning.getSetting(db, 'accept_field_chars_enabled', 'false') !== 'true')
       return { ok: false, error: 'disabled' };
     const docId = p && p.docId, fieldKey = p && p.fieldKey;
-    const res = require('../../services/charsetAcceptService').applyCharsetAccept(db, { docId, fieldKey });
+    // Department gate (C-B): the source doc's extraction is READ here to derive the accepted chars, so a
+    // non-member is refused outright (existence-hiding). The queue-wide sibling sweep inside
+    // applyCharsetAccept is department-filtered via the viewer.
+    if (docId) _assertDocAccess(db, sess, docId);
+    const res = require('../../services/charsetAcceptService').applyCharsetAccept(db, { docId, fieldKey, viewer: sess });
     if (res.ok) {
       try {
         logAudit(db, { action: 'field_chars_accepted', action_category: 'learning', outcome: 'success',
@@ -896,11 +908,12 @@ function register(ctx) {
   // to the doc — writes NO logo/hint learning; the pin is cleared on confirm (documents.confirm). The
   // engine keeps a pinned read REVIEW-BOUND (method 'operator_pin' + note). Admin/edit; audited.
   ipcMain.handle('resolve-issuer', (_e, p) => {
-    requireRole('admin', 'edit');
+    const sess = requireRole('admin', 'edit');
     const db = getDb();
     const value = p && typeof p.value === 'string' ? p.value.trim() : '';
     const docId = p && p.docId;
     if (!value || !docId) return { ok: false, error: 'missing-value-or-doc' };
+    _assertDocAccess(db, sess, docId);   // D2/C-A: no supplier_pin write on a restricted doc
     let changed = 0;
     try { changed = db.prepare('UPDATE documents SET supplier_pin = ? WHERE id = ?').run(value, docId).changes; }
     catch (e) { return { ok: false, error: e.message }; }
@@ -918,13 +931,17 @@ function register(ctx) {
   // rail, so everything stays review-bound and plants no learning.
   // Kill switch SUPPLIER_RIPPLE=0 (additive feature; the IPCs simply report nothing).
   ipcMain.handle('find-issuer-siblings', (_e, p) => {
-    requireRole('admin', 'edit');
+    const sess = requireRole('admin', 'edit');
     if (process.env.SUPPLIER_RIPPLE === '0') return { ok: true, siblings: [] };
     const docId = p && p.docId, value = p && p.value;
     if (!docId || !value) return { ok: true, siblings: [] };
+    // Department gate (C-A): a restricted SOURCE doc reads as "no siblings" (existence-hiding, matches
+    // this handler's advisory {ok:true,siblings:[]} idiom); the sibling LIST is dept-filtered in-SQL via
+    // the viewer, so a restricted match is never disclosed to a non-member.
+    if (accessService.gateEnabled() && !accessService.canAccessDocument(getDb(), sess, docId).allow) return { ok: true, siblings: [] };
     try {
       const siblings = require('../../../database/modules/supplierSiblings')
-        .findSiblings(getDb(), docId, value);
+        .findSiblings(getDb(), docId, value, { viewer: sess });
       return { ok: true, siblings };
     } catch (e) {
       logger?.warn?.(`find-issuer-siblings: ${e.message}`);
@@ -932,7 +949,7 @@ function register(ctx) {
     }
   });
   ipcMain.handle('apply-issuer-ripple', (_e, p) => {
-    requireRole('admin', 'edit');
+    const sess = requireRole('admin', 'edit');
     const db = getDb();
     const value = p && typeof p.value === 'string' ? p.value.trim() : '';
     const ids = Array.isArray(p && p.docIds) ? p.docIds.map(Number).filter(Number.isInteger) : [];
@@ -960,6 +977,8 @@ function register(ctx) {
     // cleared on confirm, and the engine keeps a pinned read review-bound ('operator_pin' + note).
     const stmt = db.prepare('UPDATE documents SET supplier_pin = ? WHERE id = ? AND status IN (\'needs_review\',\'deferred\')');
     for (const id of ids.slice(0, 100)) {
+      // D2/C-A: never pin a restricted doc — drop it silently (existence-hiding for a bulk op).
+      if (accessService.gateEnabled() && !accessService.canAccessDocument(db, sess, id).allow) continue;
       try { applied += stmt.run(value, id).changes; } catch { /* skip the row, never abort the ripple */ }
     }
     try {
@@ -1391,8 +1410,9 @@ function register(ctx) {
   // and is set only by a deliberate Mark Reviewed click, never by navigation.
   // Does not change the review count (doc stays in the queue), so no broadcast.
   ipcMain.handle('acknowledge-review', (_e, docId) => {
-    requireRole('admin', 'edit');
+    const sess = requireRole('admin', 'edit');
     const db = getDb();
+    _assertDocAccess(db, sess, docId);   // D2/C-A: don't let a non-member make a restricted doc File-All-eligible
     const at = new Date().toISOString();
     documents.update(db, docId, { review_acknowledged_at: at });
     return at;
@@ -1632,7 +1652,7 @@ function register(ctx) {
   });
 
   ipcMain.handle('class-fix-resolve-ask', (_e, payload) => {
-    requireRole('admin', 'edit');
+    const sess = requireRole('admin', 'edit');
     const db = getDb();
     const p = payload || {};
     // Re-derive against LIVE rows rather than trusting the renderer's list: between the ask and
@@ -1642,6 +1662,9 @@ function register(ctx) {
       'SELECT d.id, d.supplier_name, t.slug FROM documents d '
       + 'LEFT JOIN document_types t ON t.id = d.document_type_id WHERE d.id = ?').get(p.documentId);
     if (!doc) return { ok: false, reason: 'gone' };
+    // Department gate (C-A): a restricted doc reads as 'gone' (existence-hiding, matches the missing-doc
+    // return); the sibling propagation is ALSO dept-filtered via the viewer threaded into resolveAsk below.
+    if (accessService.gateEnabled() && !accessService.canAccessDocument(db, sess, doc.id).allow) return { ok: false, reason: 'gone' };
     const corr = db.prepare(
       'SELECT field_key, original_value, corrected_value FROM corrections '
       + 'WHERE document_id = ? ORDER BY id DESC').all(doc.id);
@@ -1654,6 +1677,7 @@ function register(ctx) {
       documentId: doc.id, corrections: { [refKey]: edit },
       supplierName: doc.supplier_name, typeSlug: doc.slug, dtInfo,
       actorName: getCurrentUser()?.username || null, learning,
+      viewer: sess,   // D2/C-A: scopes the class-fix candidate filter to the actor's departments
       audit: (d, entry) => logAudit(d, entry), presence, logger,
     }) || { ok: true, applied: 0 };
   });

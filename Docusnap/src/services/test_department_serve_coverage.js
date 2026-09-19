@@ -15,14 +15,20 @@
  *    MUST-AUDIT items are owed:
  *      gated-in-service : open-document-file, show-document-in-explorer (via _openResolvedDoc → canAccessDocument);
  *                         set-document-department(s) (via departmentService.setDocumentDepartments → canAccessDocument)
- *      viewer-scoped    : get-stuck-docs, get-autofiled-grid, get-review-event-docs, sweep-scope-candidates,
- *                         sweep-queue-candidates (list readers that thread a viewer / visibleDocSql)
- *      DARK (off)       : reextract-fields-fast, sweep-scope-accept, sweep-scope-undo
+ *      viewer-scoped    : get-stuck-docs, get-autofiled-grid, get-review-event-docs, sweep-scope-candidates
+ *                         (list readers that thread a viewer / visibleDocSql)
+ *      DARK (off)       : reextract-fields-fast, sweep-scope-undo
  *      admin-only       : purge-document, restore-all-deleted (verify the role gate)
- *      MUST-AUDIT ⚠     : reprocess-batch, reprocess-autocommit-accept, batch-audit-correct, batch-audit-send-back,
- *                         accept-name-value, accept-issuer, accept-field-chars, resolve-issuer, find-issuer-siblings,
- *                         class-fix-resolve-ask, acknowledge-review, get-staged-teach-thumbnail
- *    (Full plan: the 2026-09-18 night handover "NEEDS YOUR APPROVAL".)
+ *      SAFE (no doc-by-id): get-staged-teach-thumbnail (docId:null, a tmpdir sf-teach-* file — no doc row)
+ *    RESOLVED 2026-09-18 (Oracle SEND-BACK → C-A/C-B/C-C; locked in §1/§2 below). The earlier "MUST-AUDIT"
+ *    list was gated, AND the SEND-BACK surfaced two false "already safe" premises: sweep-queue-candidates
+ *    was queue-wide UNFILTERED (not viewer-scoped), and the scope sweep + two fan-out features are ON by
+ *    default (migs 76/80/103), not DARK. Now gated: reprocess-batch, reprocess-autocommit-accept,
+ *    batch-audit-correct (service), batch-audit-send-back, accept-name-value, accept-issuer,
+ *    accept-field-chars, resolve-issuer, find-issuer-siblings, apply-issuer-ripple, class-fix-resolve-ask,
+ *    acknowledge-review; the scope sweep — sweep-queue-candidates + _sweepOfferForScope + _sweepAcceptCore
+ *    (sweep-scope-accept files via the last); and the fan-out sibling sweeps (classFix / charset / supplierSiblings).
+ *    (Full plan: the 2026-09-18 night handover + docs/designs/DEPARTMENTS_HARDENING_2026-09-18.md.)
  */
 const fs = require('fs');
 const path = require('path');
@@ -30,7 +36,7 @@ const path = require('path');
 let fails = 0;
 const check = (l, c) => { console.log(`  ${c ? 'OK ' : 'BAD'} ${l}`); if (!c) fails++; };
 
-const GATE = /canAccessDocument|_assertDocAccess|_assertDeletedDocAccess|_gateDoc|_gateMutate|departmentVisibility|\.decision\(/;
+const GATE = /canAccessDocument|_assertDocAccess|_assertDeletedDocAccess|_gateDoc|_gateMutate|departmentVisibility|visibleDocSql|\.decision\(/;
 const read = (rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8');
 
 // Split a handler source into { name -> full block } (block = from one ipcMain.handle( to the next — variable
@@ -58,6 +64,14 @@ console.log('§1 desktop IPC — every known by-id SERVE/MUTATE handler referenc
     'find-in-document': rev, 'get-spreadsheet-grid': rev, 'get-document-departments': rev,
     'defer-document': rev, 'restore-deferred': rev, 'delete-document': rev, 'restore-document': rev,
     'confirm-review': rev,
+    // 2026-09-18 audit-debt gates (Oracle C-A/C-C). Each by-id serve/mutate handler now references a gate
+    // token IN ITS OWN BLOCK (throw _assertDocAccess, soft canAccessDocument, or visibleDocSql). Their
+    // fan-out SIBLING sweeps are locked one level down in §2. batch-audit-correct is NOT here — its gate
+    // lives in the batchAuditService.confirmBatch service (§2).
+    'resolve-issuer': rev, 'acknowledge-review': rev, 'class-fix-resolve-ask': rev,
+    'batch-audit-send-back': rev, 'accept-name-value': rev, 'accept-issuer': rev,
+    'accept-field-chars': rev, 'find-issuer-siblings': rev, 'apply-issuer-ripple': rev,
+    'reprocess-batch': proc, 'reprocess-autocommit-accept': proc, 'sweep-queue-candidates': proc,
   };
   for (const [name, tbl] of Object.entries(MUST_GATE)) {
     const block = tbl[name];
@@ -75,6 +89,32 @@ console.log('§2 gated-one-level-down (helper / service) still carries the token
   // set-document-department(s) route through departmentService.setDocumentDepartments.
   check('departmentService.setDocumentDepartments gates on canAccessDocument',
     /function setDocumentDepartments/.test(dsvc) && GATE.test(dsvc.slice(dsvc.indexOf('function setDocumentDepartments'), dsvc.indexOf('function setDocumentDepartments') + 400)));
+
+  // 2026-09-18 (Oracle C-A/C-B/C-C): the FAN-OUT services + the scope-sweep filing paths reach a SIBLING
+  // SET (or file) by id, so gating the calling handler's SOURCE doc is not enough — the sibling scan/loop
+  // itself must carry a gate token. Lock each at the source of the leak.
+  const bas  = read('./batchAuditService.js');
+  const cfs  = read('./classFixService.js');
+  const cas  = read('./charsetAcceptService.js');
+  const sib  = read('../../database/modules/supplierSiblings.js');
+  // batch-audit-correct's gate lives in confirmBatch (the handler block only calls the service).
+  check('batchAuditService.confirmBatch gates each doc (canAccessDocument)',
+    /function confirmBatch/.test(bas) && GATE.test(bas.slice(bas.indexOf('function confirmBatch'), bas.indexOf('function confirmBatch') + 2200)));
+  // classFixService.applyForConfirm — the candidate sweep discloses filename + was→now in the confirm bar.
+  check('classFixService.applyForConfirm sibling scan is department-filtered (visibleDocSql)',
+    /visibleDocSql/.test(cfs));
+  // charsetAcceptService.applyCharsetAccept — the queue-wide sibling sweep clears notes + returns ids.
+  check('charsetAcceptService.applyCharsetAccept sibling scan is department-filtered (visibleDocSql)',
+    /visibleDocSql/.test(cas));
+  // supplierSiblings.findSiblings — returns other docs (filename/supplier) to the resolve/ripple bar.
+  check('supplierSiblings.findSiblings candidate scan is department-filtered (visibleDocSql)',
+    /visibleDocSql/.test(sib));
+  // The scope sweep (ON by default, mig 80): the queue-wide offer, the auto offer, and the shared filing
+  // loop must each carry a gate token — the auto path silent-files a triggering user's restricted docs.
+  check('_sweepOfferForScope (auto offer) is department-filtered (visibleDocSql)',
+    /function _sweepOfferForScope[\s\S]{0,900}visibleDocSql/.test(proc));
+  check('_sweepAcceptCore (the ONE filing loop) gates each doc (canAccessDocument)',
+    /_sweepAcceptCore[\s\S]{0,2600}canAccessDocument/.test(proc));
 }
 
 console.log('§3 /v1 — every by-id document/review ROUTE references a gate token + the count tripwire');

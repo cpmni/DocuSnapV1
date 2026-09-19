@@ -53,6 +53,13 @@ function findSiblings(db, docId, pinnedValue, opts = {}) {
   if (!srcFp.length) return [];
 
   const target = String(pinnedValue || '').trim().toLowerCase();
+  // Departments (2026-09-18, Oracle C-A): the returned siblings render to the actor (filename +
+  // supplier + status in the resolve/ripple bar), so a non-member must not be shown a restricted
+  // sibling. SQL-filter — NOT a post-loop filter: the scan caps at RIPPLE_CAP, so a post-filter would
+  // let restricted docs eat the cap and shrink a member's visible set. '' / byte-identical when no
+  // departments are configured; opts.viewer = the session ({userId|id, role}); a missing viewer
+  // fail-closes to shared-only. Single-table SELECT → the fragment's bare `id` is unambiguous.
+  const _vis = require('./departmentVisibility').visibleDocSql(db, opts.viewer, '');
   const rows = db.prepare(`
     SELECT id, original_filename, stored_filename, supplier_name, status,
            keyword_fingerprint, ocr_text
@@ -60,7 +67,7 @@ function findSiblings(db, docId, pinnedValue, opts = {}) {
      WHERE id != ?
        AND status IN ('needs_review','deferred')
        AND supplier_pin IS NULL
-       AND (supplier_name IS NULL OR LOWER(TRIM(supplier_name)) != ?)
+       AND (supplier_name IS NULL OR LOWER(TRIM(supplier_name)) != ?)${_vis}
      ORDER BY id DESC`).all(Number(docId), target);
 
   const out = [];
