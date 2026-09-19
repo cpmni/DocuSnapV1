@@ -51,3 +51,15 @@ mig **190** `reread_hold_corrob_release` (UPSERT true, `@DEFAULT_FLIP`, delisted
 `test_default_flip_189_190.js`). **HOLD `confusion_precedence`** — it changes a REFERENCE value (corrects a
 never-seen serial from mined confusion facts), so flipping on zero corpus/live evidence is not warranted; it
 awaits live evidence. Further remaining flips are best driven by the owner's live docs, not more synthetic runs.
+
+---
+
+## Slice 1 (mig 186 `taught_ref_disagree_suppress`) — M=0 safety gate (2026-09-19 night, over the new defaults)
+
+| Switch | env | M | heals | wouldFile | verdict |
+|---|---|---|---|---|---|
+| **taught_ref_disagree_suppress** (186) | `TAUGHT_REF_DISAGREE_SUPPRESS` | 0 | 0 | 187→187 | byte-identical (0 fires — corpus has no custom "Service Worksheet" type) |
+
+M=0 — the SAFETY half of Slice 1's flip gate is met. Efficacy (the Castellan taught-ref-vs-"Job Ref" heal) is
+proven on the LIVE exhibit only; the corpus can't exercise it. Remaining flip prerequisites (owner): the live
+Castellan efficacy check + zero ref-accuracy drop confirmation. Flip = owner's call after the VM verifies it heals.
