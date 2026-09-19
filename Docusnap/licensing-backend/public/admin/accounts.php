@@ -48,6 +48,9 @@ $st = $pdo->prepare($accSql);
 $st->execute($args);
 $accounts = $st->fetchAll();
 
+// Products for the "new account" issue-licence form (2026-09-19).
+$allProducts = $pdo->query('SELECT product_id, name_internal FROM products ORDER BY name_internal')->fetchAll();
+
 admin_page_open('Accounts');
 admin_nav('accounts');
 ?>
@@ -67,6 +70,51 @@ admin_chips([
     ['n' => $acc_trial,  'l' => 'from trial', 'tone' => 'accent'],
 ]);
 ?>
+<!-- New account — issue a licence to a DIRECT customer (one who did not buy via Polar). 2026-09-19. -->
+<details class="card" style="margin-bottom:14px;">
+  <summary style="cursor:pointer;font-weight:600;">+ New account &mdash; issue a licence to a direct customer</summary>
+  <?php if (!$allProducts): ?>
+    <p class="muted" style="margin-top:10px;">Add a product first (Products page), then you can issue a licence here.</p>
+  <?php else: ?>
+  <form method="post" action="accounts.php" class="toolbar" style="margin-top:10px; flex-wrap:wrap; align-items:flex-end;">
+    <?= csrf_field() ?>
+    <input type="hidden" name="action" value="create_account">
+    <input type="hidden" name="back" value="accounts.php">
+    <div class="field">
+      <label for="na-name">Customer / account name</label>
+      <input type="text" id="na-name" name="name" required placeholder="e.g. Acme Ltd">
+    </div>
+    <div class="field">
+      <label for="na-email">Email (optional &mdash; the key is emailed)</label>
+      <input type="email" id="na-email" name="email" placeholder="billing@acme.com">
+    </div>
+    <div class="field">
+      <label for="na-product">Product <span class="muted" style="font-weight:400;">(must match the customer's app)</span></label>
+      <select id="na-product" name="product_id" required>
+        <?php if (count($allProducts) === 1): /* single-product deployment: default it so the licence can't be issued for the wrong product (Oracle C5) */ ?>
+          <option value="<?= h($allProducts[0]['product_id']) ?>" selected><?= h($allProducts[0]['name_internal']) ?></option>
+        <?php else: ?>
+          <option value="">Choose&hellip;</option>
+          <?php foreach ($allProducts as $p): ?>
+            <option value="<?= h($p['product_id']) ?>"><?= h($p['name_internal']) ?></option>
+          <?php endforeach; ?>
+        <?php endif; ?>
+      </select>
+    </div>
+    <div class="field">
+      <label for="na-seats">Core seats</label>
+      <input type="number" id="na-seats" name="seats_total" min="1" max="100000" value="1" required style="width:90px;">
+    </div>
+    <div class="field">
+      <label for="na-exp">Expiry (optional)</label>
+      <input type="date" id="na-exp" name="expires_at">
+    </div>
+    <button class="btn" type="submit">Create account &amp; issue licence</button>
+  </form>
+  <p class="muted" style="font-size:12px; margin-top:8px;">Creates the account, grants the core seats, and shows the licence key <strong>once</strong>. Send the key to the customer &mdash; they enter it in Scan Finder &rarr; Activate. Leave Expiry blank for a perpetual licence.</p>
+  <?php endif; ?>
+</details>
+
 <form method="get" action="accounts.php" class="toolbar">
   <div class="field">
     <label for="aq">Account ID</label>

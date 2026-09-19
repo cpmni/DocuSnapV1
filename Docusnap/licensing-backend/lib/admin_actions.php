@@ -16,7 +16,9 @@ function admin_handle_post(PDO $pdo): void
         return;
     }
     $backAccount = filter_input(INPUT_POST, 'account_id', FILTER_VALIDATE_INT);
-    $back = $backAccount ? ('account.php?account=' . $backAccount) : 'index.php';
+    $backForm    = trim((string) ($_POST['back'] ?? ''));   // an action without account_id (create_account) names its own return page
+    $back = $backAccount ? ('account.php?account=' . $backAccount)
+          : (preg_match('/^[a-z_]+\.php$/', $backForm) ? $backForm : 'index.php');
 
     if (!csrf_check()) {
         flash_set('err', 'Security check failed. Please retry.');
@@ -61,6 +63,79 @@ function admin_handle_post(PDO $pdo): void
             audit_event($pdo, $accountId, null, 'admin.entitlement_created',
                 "entitlement=$newId product=$productId seats=$seats");
             flash_set('ok', "Entitlement #$newId created with $seats seat(s).");
+            header('Location: account.php?account=' . $accountId);
+            exit;
+        }
+
+        if ($action === 'create_account') {
+            // NEW ACCOUNT + ISSUE LICENCE (2026-09-19). Onboard a DIRECT customer (one who did not
+            // buy through Polar): create the account, mint a one-time licence key, and grant a core
+            // entitlement — all in one transaction. Same admin authority + audit as grant/reissue.
+            // The key is NEVER stored plaintext (only its sha256 hash) and is NEVER written to the
+            // audit; it is shown ONCE via $_SESSION['issued_key'] (the reissue pattern) and, if an
+            // email is given, emailed best-effort.
+            $name      = trim((string) ($_POST['name'] ?? ''));
+            $email     = trim((string) ($_POST['email'] ?? ''));
+            $productId = trim((string) ($_POST['product_id'] ?? ''));
+            $seats     = filter_input(INPUT_POST, 'seats_total', FILTER_VALIDATE_INT);
+            $expiresRw = trim((string) ($_POST['expires_at'] ?? ''));
+
+            if ($name === '')     throw new RuntimeException('Enter a customer / account name.');
+            if (mb_strlen($name) > 190) throw new RuntimeException('Name is too long (max 190 characters).');
+            if ($email !== '') {
+                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('That email is not valid (or leave it blank).');
+                if (mb_strlen($email) > 190) throw new RuntimeException('Email is too long (max 190 characters).');
+            }
+            if ($productId === '') throw new RuntimeException('Choose a product.');
+            if ($seats === false || $seats === null || $seats < 1 || $seats > 100000) {
+                throw new RuntimeException('Core seats must be a whole number between 1 and 100000.');
+            }
+            $chk = $pdo->prepare('SELECT 1 FROM products WHERE product_id = ?');
+            $chk->execute([$productId]);
+            if (!$chk->fetchColumn()) throw new RuntimeException('Product not found.');
+
+            $expiresAt = null;
+            if ($expiresRw !== '') {
+                $d = DateTime::createFromFormat('Y-m-d', $expiresRw);
+                if (!($d && $d->format('Y-m-d') === $expiresRw)) {
+                    throw new RuntimeException('Expiry must be YYYY-MM-DD, or left blank.');
+                }
+                // A past expiry silently makes the licence un-activatable (activate.php requires
+                // expires_at > NOW()) — refuse it for a fresh account (Oracle C4).
+                if ($d->format('Y-m-d') < (new DateTime('today'))->format('Y-m-d')) {
+                    throw new RuntimeException('Expiry is in the past — leave it blank for a perpetual licence, or pick a future date.');
+                }
+                $expiresAt = $expiresRw . ' 23:59:59';
+            }
+
+            $emailVal = ($email !== '') ? $email : null;
+            $key = generate_account_key();
+            $pdo->beginTransaction();
+            try {
+                $pdo->prepare('INSERT INTO accounts (account_key_hash, status, polar_customer_id, email, name)
+                               VALUES (?, "active", NULL, ?, ?)')
+                    ->execute([hash('sha256', $key), $emailVal, $name]);
+                $accountId = (int) $pdo->lastInsertId();
+                $pdo->prepare('INSERT INTO entitlements (account_id, product_id, feature, seats_total, expires_at, status)
+                               VALUES (?, ?, "core", ?, ?, "active")')
+                    ->execute([$accountId, $productId, $seats, $expiresAt]);
+                $entId = (int) $pdo->lastInsertId();
+                $pdo->commit();
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                throw $e;   // nothing is half-created; the admin retries (a 1-in-2^80 key collision lands here too)
+            }
+
+            audit_event($pdo, $accountId, null, 'admin.account_created',
+                "account=$accountId entitlement=$entId product=$productId core_seats=$seats expires="
+                . ($expiresAt ? $expiresRw : 'never') . " email_set=" . ($emailVal ? '1' : '0'));
+            $sent = $emailVal ? deliver_account_key($emailVal, $key, "account #$accountId · $seats core seat(s)") : false;
+            $note = $sent ? " · emailed to $emailVal"
+                          : ($emailVal ? " · email failed — copy it below" : " · no email — copy it below");
+            $_SESSION['issued_key'] = ['key' => $key, 'meta' => "account #$accountId · new account, $seats core seat(s)$note"];
+            flash_set('ok', $sent
+                ? "Account #$accountId created and the key emailed to $emailVal."
+                : "Account #$accountId created — copy the key below now, it is shown only once.");
             header('Location: account.php?account=' . $accountId);
             exit;
         }
