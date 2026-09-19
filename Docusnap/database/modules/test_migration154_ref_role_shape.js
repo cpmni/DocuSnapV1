@@ -28,15 +28,20 @@ const applied = new Set(db.prepare('SELECT version FROM migrations').all().map(r
 
 check('migration 154 stamped', applied.has(154));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 154 applied/.test(l) && /seeded OFF/.test(l)));
-check('a fresh (non-TEST) install ends with trust_ref_role_shape === false (DARK)',
-      get('trust_ref_role_shape') === 'false');
-check('trust_ref_role_shape is in TEST_SWITCH_KEYS (armed by the runtime test-build road)',
-      TEST_SWITCH_KEYS.includes('trust_ref_role_shape'));
+// GRADUATED 2026-09-19: mig 187 (@DEFAULT_FLIP) UPSERT-forces it 'true' after the flip census (M=0), and the
+// key LEFT TEST_SWITCH_KEYS the same commit. This pin records BOTH halves: the mig-154 seed is still an
+// INSERT OR IGNORE of 'false' (an old DB upgrading through 154 → 187 must end ON), the key is delisted, a fresh
+// install ends 'true'. Fuller default-on contract: database/test_default_flip_187_188.js.
+check('a fresh install ends with trust_ref_role_shape === true (GRADUATED via mig 187)',
+      get('trust_ref_role_shape') === 'true');
+check('trust_ref_role_shape is DELISTED from TEST_SWITCH_KEYS (graduated)',
+      !TEST_SWITCH_KEYS.includes('trust_ref_role_shape'));
 
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
-check('mig 154 is an INSERT OR IGNORE seed of false',
+check('mig 154 is an INSERT OR IGNORE seed of false (upgrade-path history kept)',
       /INSERT OR IGNORE INTO settings \(key, value\) VALUES \('trust_ref_role_shape', 'false'\)/.test(src));
-check('NO numbered force-ON twin exists', !/VALUES \('trust_ref_role_shape', 'true'\)/.test(src));
+check('mig 187 is a labelled @DEFAULT_FLIP UPSERT of true',
+      /@DEFAULT_FLIP 187[\s\S]{0,200}INSERT INTO settings \(key, value\) VALUES \('trust_ref_role_shape', 'true'\) ON CONFLICT/.test(src));
 check('not in ALL_ON_DEFAULTS_93', !/ALL_ON_DEFAULTS_93 = \[[\s\S]*?'trust_ref_role_shape'[\s\S]*?\];/.test(src));
 
 db.prepare("UPDATE settings SET value = 'true' WHERE key = 'trust_ref_role_shape'").run();

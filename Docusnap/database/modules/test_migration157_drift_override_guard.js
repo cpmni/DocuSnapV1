@@ -21,11 +21,12 @@ const get = (k) => { const r = db.prepare('SELECT value FROM settings WHERE key 
 const applied = new Set(db.prepare('SELECT version FROM migrations').all().map(r => r.version));
 check('migration 157 stamped', applied.has(157));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 157 applied/.test(l) && /seeded OFF/.test(l)));
-check('fresh install: template_drift_override_guard === false', get('template_drift_override_guard') === 'false');
-check('in TEST_SWITCH_KEYS', TEST_SWITCH_KEYS.includes('template_drift_override_guard'));
+// GRADUATED 2026-09-19: mig 188 (@DEFAULT_FLIP) UPSERTs it 'true' after the flip census (M=0) + delisted.
+check('fresh install: template_drift_override_guard === true (GRADUATED via mig 188)', get('template_drift_override_guard') === 'true');
+check('DELISTED from TEST_SWITCH_KEYS (graduated)', !TEST_SWITCH_KEYS.includes('template_drift_override_guard'));
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('INSERT OR IGNORE seed of false', /INSERT OR IGNORE INTO settings \(key, value\) VALUES \('template_drift_override_guard', 'false'\)/.test(src));
-check('NO force-ON twin', !/VALUES \('template_drift_override_guard', 'true'\)/.test(src));
+check('mig 188 is a labelled @DEFAULT_FLIP UPSERT of true', /@DEFAULT_FLIP 188[\s\S]{0,220}INSERT INTO settings \(key, value\) VALUES \('template_drift_override_guard', 'true'\) ON CONFLICT/.test(src));
 check('not in ALL_ON_DEFAULTS_93', !/ALL_ON_DEFAULTS_93 = \[[\s\S]*?'template_drift_override_guard'[\s\S]*?\];/.test(src));
 const hsrc = fs.readFileSync(path.join(ROOT, 'src', 'modules', 'processing', 'handler.js'), 'utf8');
 check('handler maps → env.TEMPLATE_DRIFT_OVERRIDE_GUARD',

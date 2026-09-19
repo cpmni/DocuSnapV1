@@ -20,11 +20,12 @@ const get = (k) => { const r = db.prepare('SELECT value FROM settings WHERE key 
 const applied = new Set(db.prepare('SELECT version FROM migrations').all().map(r => r.version));
 check('migration 158 stamped', applied.has(158));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 158 applied/.test(l) && /seeded OFF/.test(l)));
-check('fresh install: note_topic_dedup === false', get('note_topic_dedup') === 'false');
-check('in TEST_SWITCH_KEYS', TEST_SWITCH_KEYS.includes('note_topic_dedup'));
+// GRADUATED 2026-09-19: mig 189 (@DEFAULT_FLIP) UPSERTs it 'true' after the flip census (M=0) + delisted.
+check('fresh install: note_topic_dedup === true (GRADUATED via mig 189)', get('note_topic_dedup') === 'true');
+check('DELISTED from TEST_SWITCH_KEYS (graduated)', !TEST_SWITCH_KEYS.includes('note_topic_dedup'));
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('INSERT OR IGNORE seed of false', /INSERT OR IGNORE INTO settings \(key, value\) VALUES \('note_topic_dedup', 'false'\)/.test(src));
-check('NO force-ON twin', !/VALUES \('note_topic_dedup', 'true'\)/.test(src));
+check('mig 189 is a labelled @DEFAULT_FLIP UPSERT of true', /@DEFAULT_FLIP 189[\s\S]{0,220}INSERT INTO settings \(key, value\) VALUES \('note_topic_dedup', 'true'\) ON CONFLICT/.test(src));
 check('not in ALL_ON_DEFAULTS_93', !/ALL_ON_DEFAULTS_93 = \[[\s\S]*?'note_topic_dedup'[\s\S]*?\];/.test(src));
 check('composeNote helper exists + reads the setting via getSetting (JS-main, no Python env)',
       fs.existsSync(path.join(ROOT, 'src', 'modules', 'processing', 'composeNote.js'))

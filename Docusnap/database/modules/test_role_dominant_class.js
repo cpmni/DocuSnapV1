@@ -31,7 +31,11 @@ function fixture({ refRole = 'invoice_number' } = {}) {
   for (const [k, l, req] of [['supplier_name', 'Document Issuer', 1], ['invoice_number', 'Invoice Number', 1], ['invoice_date', 'Invoice Date', 1], ['account_code', 'Account Code', 0]])
     db.prepare("INSERT INTO fields (document_type_id, key, label, type, required, built_in) VALUES (1, ?, ?, 'text', ?, 1)").run(k, l, req);
   db.prepare("INSERT INTO templates (id, name, slug, document_type_slug) VALUES (7, 'Acme Invoice', 'acme-invoice', 'invoice')").run();
-  for (const [k, v] of [['auto_file_threshold', '90'], ['graduation_window', '5'], ['learning_exclude_machine_confirms', 'true'], ['autofile_gate_unify', 'true']]) learning.setSetting(db, k, v);
+  for (const [k, v] of [['auto_file_threshold', '90'], ['graduation_window', '5'], ['learning_exclude_machine_confirms', 'true'], ['autofile_gate_unify', 'true'],
+       // Isolate the switch under test: trust_ref_role_shape (154) GRADUATED to default-ON 2026-09-19 (mig 187) and
+       // is a TWIN ref-role verifier — turn it OFF here so these pins measure role_field_dominant_class alone. The
+       // both-on interaction is sanity-checked at the end of §1 (and the 154 flip census already proved M=0 on the corpus).
+       ['trust_ref_role_shape', 'false']]) learning.setSetting(db, k, v);
   let n = 0;
   const mk = (supplier, rows, { status = 'confirmed', conf = 95 } = {}) => {
     const id = Number(documents.insert(db, { original_filename: `d${++n}.pdf`, folder_path: '/in', status, supplier_name: supplier, document_type_id: 1, template_id: 7, overall_confidence: conf }).lastInsertRowid);
@@ -64,6 +68,17 @@ console.log('§1 the exhibit — 11 codes + one confirmed "$" outlier on the ref
   check('OFF: a clean VXS sibling is refused unverifiable-value (the bricked scope — the bug)', elig(db, good, false).reason === 'unverifiable-value:invoice_number');
   const on = elig(db, good, true);
   check('ON: the same sibling VERIFIES against the dominant code shape and is eligible', on.eligible === true && on.reason === 'ok');
+  // BOTH-ON interaction (trust_ref_role_shape (154) GRADUATED to default-ON 2026-09-19): the two twin ref-role
+  // verifiers are ANDed — the '$' outlier makes trust_ref_role_shape's classifyRefShape return 'freetext', so it
+  // refuses the VXS sibling that role_dominant alone would verify. This is MORE conservative (holds for review),
+  // the fail-toward-review direction — never a silent wrong file (the 154 flip census showed would-file unchanged
+  // on the real corpus, so this outlier-scope class isn't live there). LOGGED for the owner: a design question —
+  // should trust_ref_role_shape DEFER to role_dominant's verification on an outlier-collapsed scope, or is holding
+  // correct? Pinned here as the safe outcome so the interaction stays visible.
+  learning.setSetting(db, 'trust_ref_role_shape', 'true');
+  check('BOTH ON: trust_ref_role_shape is stricter — the outlier scope HOLDS for review (safe, no silent file)',
+        elig(db, good, true).eligible === false);
+  learning.setSetting(db, 'trust_ref_role_shape', 'false');
   check('ON: the scope GRADUATES (positive control) — OFF it does not',
         gradOK(db, 'Acme', true).trusted === true && gradOK(db, 'Acme', false).reason === 'unverifiable-required-field');
   const word = held(db, mk, 'Acme', { supplier_name: 'Acme', invoice_number: 'Information', invoice_date: '03-09-2025' });

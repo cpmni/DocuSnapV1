@@ -13,6 +13,7 @@ const fs = require('fs');
 const Database = require('better-sqlite3');
 const ROOT = path.join(__dirname, '..', '..');
 const { runMigrations } = require(path.join(ROOT, 'database', 'index'));
+const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'dark_switches'));
 let fails = 0;
 const check = (label, cond) => { console.log(`  ${cond ? 'OK ' : 'BAD'} ${label}`); if (!cond) fails++; };
 const db = new Database(':memory:');
@@ -25,10 +26,13 @@ check('migration 130 stamped', applied.has(130));
 // mig 134 (TEST-BUILD force-ON, 2026-09-07 owner order) may sit on top: the SEED is pinned by the console line + the
 // source; the final state is 'true' only while that test migration exists (revert list) — else 'false'.
 check("the seed line says seeded OFF (DARK)", logs.some(l => /migration 130 applied/.test(l) && /seeded OFF/.test(l)));
-check("a fresh install ends with reread_hold_corrob_release === " + (applied.has(134) ? "'true' (mig 134 TEST force-ON on top)" : "'false' (DARK)"), get('reread_hold_corrob_release') === (applied.has(134) ? 'true' : 'false'));
+// GRADUATED 2026-09-19: mig 190 (@DEFAULT_FLIP) UPSERTs it 'true' after the flip census (M=0) + delisted from
+// TEST_SWITCH_KEYS. Fresh install now ends 'true' regardless of the historical mig-134 test force-ON.
+check("a fresh install ends with reread_hold_corrob_release === 'true' (GRADUATED via mig 190)", get('reread_hold_corrob_release') === 'true');
+check('reread_hold_corrob_release is DELISTED from TEST_SWITCH_KEYS (graduated)', !TEST_SWITCH_KEYS.includes('reread_hold_corrob_release'));
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
-check('mig 130 is an INSERT OR IGNORE seed of false', /INSERT OR IGNORE INTO settings \(key, value\) VALUES \('reread_hold_corrob_release', 'false'\)/.test(src));
-check('NO force-ON twin exists', !/VALUES \('reread_hold_corrob_release', 'true'\)/.test(src));
+check('mig 130 is an INSERT OR IGNORE seed of false (upgrade-path history kept)', /INSERT OR IGNORE INTO settings \(key, value\) VALUES \('reread_hold_corrob_release', 'false'\)/.test(src));
+check('mig 190 is a labelled @DEFAULT_FLIP UPSERT of true', /@DEFAULT_FLIP 190[\s\S]{0,220}INSERT INTO settings \(key, value\) VALUES \('reread_hold_corrob_release', 'true'\) ON CONFLICT/.test(src));
 check('not in ALL_ON_DEFAULTS_93', !/ALL_ON_DEFAULTS_93 = \[[\s\S]*?'reread_hold_corrob_release'[\s\S]*?\];/.test(src));
 db.prepare("UPDATE settings SET value = 'true' WHERE key = 'reread_hold_corrob_release'").run();
 console.log = () => {}; runMigrations(db); console.log = origLog;
