@@ -2484,10 +2484,17 @@ function renderDepartmentsList() {
         <button class="btn dept-delete" style="font-size:11px; padding:5px 10px;">Delete</button>
       </div>`;
     row.querySelector('.dept-rename').addEventListener('click', async () => {
-      const nm = prompt(`Rename "${d.name}" to:`, d.name);
-      if (nm == null) return;
-      const r = await api.dept.rename(d.id, nm.trim());
-      if (r && r.error) { alert(r.error === 'bad_request' ? 'Please enter a name.' : 'Could not rename that department.'); return; }
+      // Electron has no window.prompt() — use the in-app input dialog.
+      const nm = await showInputDialog({ title: 'Rename department', label: `Rename “${d.name}” to:`,
+                                         value: d.name, confirmLabel: 'Rename', maxlength: 60 });
+      if (nm == null) return;                       // cancelled
+      const trimmed = nm.trim();
+      if (!trimmed) { alert('Please enter a name.'); return; }
+      if (trimmed === d.name) return;               // unchanged
+      const r = await api.dept.rename(d.id, trimmed);
+      if (r && r.error) { alert(r.error === 'duplicate' ? 'A department with that name already exists.'
+                                : r.error === 'bad_request' ? 'Please enter a name.'
+                                : 'Could not rename that department.'); return; }
       await loadDepartments();
     });
     const retireBtn = row.querySelector('.dept-retire');
@@ -2714,6 +2721,57 @@ function showTypedConfirmDialog({ title, warningHtml, requiredText, confirmLabel
     // Give the auto-focused input a live caret. repairModalInputFocus defers past the current
     // event turn + a layout frame (double-rAF) so Chromium commits focus to the input instead
     // of dropping it (the "can't type / no flashing cursor" same-tick-focus symptom).
+    (window.repairModalInputFocus || ((el) => { requestAnimationFrame(() => { el.focus(); el.select(); }); }))(input);
+  });
+}
+
+// ── General single-line input dialog ────────────────────────────────────────
+// Electron does not implement window.prompt() (it returns null and does nothing),
+// so a "type a value" flow (e.g. renaming a department) is a custom overlay, same
+// conventions as showTypedConfirmDialog (data-help-ignore + repairModalInputFocus).
+// Resolves the entered string on confirm (Enter or the button), or null on
+// cancel / backdrop / Escape. The caller trims + validates.
+function showInputDialog({ title, label = '', value = '', placeholder = '', confirmLabel = 'OK', maxlength = 60 }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: fixed; inset: 0; z-index: 9998;
+      background: rgba(0,0,0,.55);
+      display: flex; align-items: center; justify-content: center;
+    `;
+    overlay.innerHTML = `
+      <div style="width:380px; background:var(--surface); border:1px solid var(--border2);
+                  border-radius:10px; padding:18px; display:flex; flex-direction:column; gap:12px;
+                  font-family:var(--sans); color:var(--text);">
+        <div style="font-size:13px; font-weight:500;">${escHtml(title)}</div>
+        ${label ? `<div style="font-size:11px; color:var(--muted); line-height:1.6;">${escHtml(label)}</div>` : ''}
+        <input id="in-input" type="text" spellcheck="false" autocomplete="off" maxlength="${Number(maxlength) || 60}"
+          placeholder="${escHtml(placeholder)}" style="
+          padding:9px; border-radius:6px; border:1px solid var(--border2); background:var(--bg);
+          color:var(--text); font-family:var(--sans); font-size:13px;">
+        <div style="display:flex; gap:8px;">
+          <button id="in-cancel" style="flex:1; padding:9px; border-radius:6px; border:1px solid var(--border2);
+                  background:transparent; color:var(--muted); font-family:inherit; font-size:12px; cursor:pointer;">Cancel</button>
+          <button id="in-confirm" style="flex:1; padding:9px; border-radius:6px; border:none;
+                  background:var(--accent); color:#fff; font-family:inherit; font-size:12px; font-weight:500;
+                  cursor:pointer;">${escHtml(confirmLabel)}</button>
+        </div>
+      </div>
+    `;
+    overlay.setAttribute('data-help-ignore', '1');   // stay usable even if help mode is on
+    document.body.appendChild(overlay);
+
+    const input = overlay.querySelector('#in-input');
+    input.value = value || '';
+    const close  = (result) => { overlay.remove(); document.removeEventListener('keydown', onKey); resolve(result); };
+    const submit = () => close(input.value);
+    const onKey  = (e) => { if (e.key === 'Escape') close(null); else if (e.key === 'Enter') submit(); };
+    overlay.querySelector('#in-cancel').addEventListener('click', () => close(null));
+    overlay.querySelector('#in-confirm').addEventListener('click', submit);
+    overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(null); });
+    // Clicking anywhere on the card (not the backdrop) puts the caret in the field.
+    overlay.addEventListener('click', (e) => { if (e.target !== overlay) input.focus(); });
+    document.addEventListener('keydown', onKey);
     (window.repairModalInputFocus || ((el) => { requestAnimationFrame(() => { el.focus(); el.select(); }); }))(input);
   });
 }
