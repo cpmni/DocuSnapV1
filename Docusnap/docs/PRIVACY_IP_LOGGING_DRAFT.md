@@ -41,9 +41,10 @@ necessary to provide the software you have bought, we also rely on **performance
 (Article 6(1)(b)).
 
 **Who sees it.** This information is available only to authorised administrators at Six Mile Software.
-We do **not** sell it or share it with third parties for their own purposes. When an administrator looks
-up the approximate location of an IP address, they do so in their own web browser using a third-party
-lookup site — we do **not** send your IP address to any third party from our servers.
+We do **not** sell it or use it for marketing. Our servers do not transmit it to third parties. If an
+administrator needs to check the approximate location of an IP address, they may look it up manually in
+their own web browser using a third-party lookup service (currently **ipinfo.io**); doing so discloses
+that single IP address to that service for the lookup.
 
 **How long we keep it.** Routine licence-check records are deleted after **90 days**. Activation records
 are kept for the life of your licence and for a limited period afterwards, for licensing, fraud-prevention
@@ -88,8 +89,9 @@ Yes, and it is minimised:
   connecting IP is a standard, proportionate signal for abuse detection, rate-limiting and support.
 - We collect only the IP, a non-reversible device fingerprint, a timestamp/action, and the account link —
   **not** document content, browsing, or any special-category data.
-- Geo-location is **not stored**; an administrator may look an IP up manually, in their own browser, and
-  no IP is transmitted to a third party from our servers.
+- Geo-location is **not stored** and our servers make no geo call; an administrator may look an IP up
+  manually in their own browser via a third-party service (ipinfo.io), which discloses that one IP to
+  that service. This ad-hoc, admin-initiated disclosure is covered by the same security/support purpose.
 - A less intrusive approach (not logging the IP at all) was considered and rejected: it would remove the
   ability to rate-limit per customer, to detect licence sharing/abuse, and to support connection issues.
 
@@ -122,3 +124,6 @@ notice, retention is bounded, and access is restricted.
   licence. Confirm this is ordinary contractual enforcement rather than Article 22 automated
   decision-making with legal/similarly significant effect (human support is available; no profiling).
 - Confirm the **retention** figures (90-day routine prune; activation kept for licence life + [period]).
+- Confirm the admin **ipinfo.io** lookup wording is adequate (an ad-hoc, admin-initiated disclosure of a
+  single IP to a third-party service — not a systematic transfer; confirm ipinfo.io's own terms/region are
+  acceptable, or swap the lookup provider).
