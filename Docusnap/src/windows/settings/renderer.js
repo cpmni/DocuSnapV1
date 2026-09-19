@@ -2381,7 +2381,13 @@ function renderUsersList() {
         wrap.innerHTML = `<span class="field-label-small" style="color:var(--muted);">Admins see every department — nothing to set here.</span>`;
       } else {
         wrap.innerHTML = `<span class="field-label-small" style="color:var(--muted);">Departments:</span>`
-          + `<label class="toggle" title="Sees documents in EVERY department, without being an admin"><input type="checkbox" class="user-alldept" data-id="${u.id}" ${allDept ? 'checked' : ''}><span class="toggle-slider"></span><span class="field-label-small" style="margin-left:4px;">All departments</span></label>`
+          // The label text must be a SIBLING of the switch, never a child of it: `.toggle` is a fixed
+          // 32×18px box, so a text span placed inside it overflows and wraps to its own line (the
+          // "All departments" orphan bug). Wrap both in an inline-flex label instead.
+          + `<label title="Sees documents in EVERY department, without being an admin" style="display:inline-flex; align-items:center; gap:5px;">`
+              + `<span class="toggle"><input type="checkbox" class="user-alldept" data-id="${u.id}" ${allDept ? 'checked' : ''}><span class="toggle-slider"></span></span>`
+              + `<span class="field-label-small">All departments</span>`
+            + `</label>`
           + (active.length
               ? active.map(d => `<label style="display:inline-flex; align-items:center; gap:5px; ${fade}"><input type="checkbox" class="user-dept" data-id="${u.id}" data-dept="${d.id}" ${mem.has(d.id) ? 'checked' : ''} ${dis}>${escHtml(d.name)}</label>`).join('')
               : `<span class="field-label-small" style="color:var(--muted);">no active departments</span>`);
