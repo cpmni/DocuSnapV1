@@ -3862,6 +3862,31 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 186 (taught_ref_disagree_suppress seed OFF): ${e.message}`); }
   }
 
+  // ── migrations 187/188: FLIP trust_ref_role_shape (154) + template_drift_override_guard (157) ON by default
+  //    (2026-09-19, owner go after the flip census). Census @ HEAD mig 186 over the 400 test docs of the 700
+  //    corpus (TESTING/_measure/flip_census_20260919/RESULT.md): BOTH M=0 (nothing right→wrong). 154 is
+  //    byte-identical on the corpus (its live value = the 20 held Thornbury invoices it was built for). 157
+  //    sends 2/400 credit-notes to review with a "verify the total balances" note (ref+date still correct —
+  //    fail-toward-review, no wrong filing); its live value = the CH1 2HU customer_name postcode-drift root
+  //    fix. UPSERT-forced (an earlier migration seeded each 'false', so INSERT OR IGNORE would no-op). Both
+  //    graduated + delisted from dark_switches.js TEST_SWITCH_KEYS; pinned in test_default_flip_187_188.js.
+  // @DEFAULT_FLIP 187
+  if (!applied.has(187)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('trust_ref_role_shape', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (187)').run();
+      console.log('JS migration 187 applied: trust_ref_role_shape ON by default (UPSERT true) — a REF role verified by learned SHAPE; census M=0, graduated');
+    } catch (e) { console.warn(`  migration 187 (trust_ref_role_shape default ON): ${e.message}`); }
+  }
+  // @DEFAULT_FLIP 188
+  if (!applied.has(188)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('template_drift_override_guard', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (188)').run();
+      console.log('JS migration 188 applied: template_drift_override_guard ON by default (UPSERT true) — a drift-relocate needs a credible label match; census M=0, graduated');
+    } catch (e) { console.warn(`  migration 188 (template_drift_override_guard default ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

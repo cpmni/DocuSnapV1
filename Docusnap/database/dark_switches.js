@@ -140,14 +140,9 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // template_pad_window_code ON. ⚑ FLIP GATE: neighbour-bleed positional guard + adversarial neighbour census
   // (must NOT adopt) + realdoc M=0 → Oracle. docs/designs/TAUGHT_CORROB_ADOPT_2026-09-10.md.
   'template_taught_corrob_adopt',
-  // trust_ref_role_shape (mig 154, 2026-09-10, reggie+gary → Oracle SIGN-OFF-W/COND): verify a REFERENCE
-  // role (ref_field_key) by the SHAPE of its confirmed samples (classifyRefShape), not 'constant' set-
-  // membership — a ref number is high-cardinality by nature, so a ≤2-distinct (duplicate-confirmed) history
-  // classified 'constant' else refuses every genuinely-new value (`unverifiable-value:invoice_number`; 20
-  // clean Thornbury invoices held live). Ref role ONLY (company key keeps identity membership, date role
-  // returns at the 'date' STRICT arm). Mixed ref history → 'freetext' → Review. Byte-identical OFF. ⚑ FLIP
-  // GATE: unit pins + realdoc M=0 AND new would-file ref == GT + live-DB re-judge of the 20 held → Oracle.
-  'trust_ref_role_shape',
+  // trust_ref_role_shape (mig 154) — GRADUATED to a customer default by mig 187 (2026-09-19, flip census @ HEAD
+  // mig 186: M=0, byte-identical on the 400-doc corpus; live value = the 20 held Thornbury invoices) and DELISTED
+  // here the same commit. Build notes live on the mig-154 block in database/index.js.
   // anchor_axis_lock (mig 155, 2026-09-10, 007+reggie+gary → Oracle SIGN-OFF-W/COND): the FREE-TEXT twin of
   // template_code_read_widen. A below/above/right taught anchor stores the value box CENTRE, so a wider teach
   // sample (Brightwater Dental Practice, 27ch) pins the read-box right of a narrower value (Halcyon Leisure
@@ -162,16 +157,10 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // name_role_nonname_flag (mig 156) — GRADUATED to a customer default by mig 172 (2026-09-16, 700-corpus census
   // M=0 + 5 fires + 1 file→hold, twice) and DELISTED here the same commit. Its build notes live on the mig-156
   // block in database/index.js.
-  // template_drift_override_guard (mig 157, 2026-09-10, 007 → Oracle SIGN-OFF-W/COND C1): the Stage-0.5 drift
-  // guard DISCARDS a credible absolute read and relocates off the located label — but _locate_anchor's fuzzy
-  // fallback can match a cross-word stranger (address line "Chester" scores 0.667 vs "Customer") ~2.5 lines
-  // below the taught anchor → a PHANTOM drift onto the postcode line (Vellum & Crane customer_name = CH1 2HU,
-  // the correct "Larch & Hollow Cafe Co" @95 thrown away). When ON, a drift-override that discards the absolute
-  // read requires the taught label (exact/inline) OR match_score ≥ _DRIFT_OVERRIDE_MATCH_FLOOR (0.8, in the
-  // measured 0.667/0.82 gap); a weak match falls through with anchor_stable=False so the registration arbiter
-  // still catches a genuine drift (Oracle C1). Byte-identical OFF. ⚑ FLIP GATE: unit pins incl. the seam pin
-  // (weak match + real page transform → arbiter still fires) + census the floor + realdoc M=0 + live #243.
-  'template_drift_override_guard',
+  // template_drift_override_guard (mig 157) — GRADUATED to a customer default by mig 188 (2026-09-19, flip census
+  // @ HEAD mig 186: M=0; sends 2/400 credit-notes to review with a "verify the total balances" note — ref+date
+  // still correct, fail-toward-review; live value = the CH1 2HU customer_name postcode-drift root fix, #243) and
+  // DELISTED here the same commit. Build notes live on the mig-157 block in database/index.js.
   // note_topic_dedup (mig 158, 2026-09-10 night, gary → Oracle SIGN-OFF-W/COND): a ref field accumulated a WALL
   // of overlapping "check the O/0 confusable ref" notes — the engine self-limits to one note/run, but the JS
   // merge sites (handler.js LANE-HOLD SURVIVAL :1664 + rereadHolds.js S3-C5 :135) blind-append across reprocess
