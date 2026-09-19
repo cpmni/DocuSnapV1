@@ -17,18 +17,23 @@ const renderer = read('renderer.js');
 const repair   = read('..', '..', 'services', 'repairService.js');
 
 console.log('1. IPC — event-cross-checked, admin/edit, reuses sendBackToReview');
-const ipc = handler.slice(handler.indexOf("ipcMain.handle('batch-audit-send-back'"));
+// Slice the WHOLE handler body (from this registration to the next ipcMain.handle), not a magic
+// char-window — an inserted guard (e.g. the 2026-09-18 department gate) otherwise pushes a real,
+// present line past a hardcoded offset and reads as a false failure.
+const _ipcStart = handler.indexOf("ipcMain.handle('batch-audit-send-back'");
+const _ipcNext  = handler.indexOf('ipcMain.handle(', _ipcStart + 1);
+const ipc = handler.slice(_ipcStart, _ipcNext > 0 ? _ipcNext : _ipcStart + 2000);
 check('IPC batch-audit-send-back is registered', ipc.startsWith("ipcMain.handle('batch-audit-send-back'"));
-check("gated on batch_audit_enabled", /_batchAuditEnabled\(\)/.test(ipc.slice(0, 400)));
-check("requires admin/edit", /requireRole\('admin', 'edit'\)/.test(ipc.slice(0, 400)));
+check("gated on batch_audit_enabled", /_batchAuditEnabled\(\)/.test(ipc));
+check("requires admin/edit", /requireRole\('admin', 'edit'\)/.test(ipc));
 check("CROSS-CHECKS the docId against the event ids (C5 trust model, never trusts the renderer)",
-  /getReviewEvent\(db, eventId\)/.test(ipc.slice(0, 700)) && /evIds\.has\(id\)/.test(ipc.slice(0, 700)));
+  /getReviewEvent\(db, eventId\)/.test(ipc) && /evIds\.has\(id\)/.test(ipc));
 check("calls repairService.sendBackToReview with source 'quick_check'",
-  /sendBackToReview\(db, id, \{ source: 'quick_check' \}\)/.test(ipc.slice(0, 900)));
+  /sendBackToReview\(db, id, \{ source: 'quick_check' \}\)/.test(ipc));
 check("audits + refreshes the review count on success",
-  /'quick_check_send_to_review'/.test(ipc.slice(0, 1100)) && /broadcast(?:Review)?Count\(notifyMainWindow, db\)/.test(ipc.slice(0, 1100)));
+  /'quick_check_send_to_review'/.test(ipc) && /broadcast(?:Review)?Count\(notifyMainWindow, db\)/.test(ipc));
 check("no license gate (it UN-files, not files) — no licenseDenied call in the handler body",
-  !/licenseDenied/.test(ipc.slice(0, 1100)));
+  !/licenseDenied/.test(ipc));
 
 console.log('\n2. repairService names the Quick-check door in the send-back note');
 check("source 'quick_check' -> 'Sent back from Quick check' prefix",

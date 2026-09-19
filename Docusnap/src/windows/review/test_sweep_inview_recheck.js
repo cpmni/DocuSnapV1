@@ -20,8 +20,12 @@ const idx      = read('..', '..', '..', 'database', 'index.js');
 const dark     = read('..', '..', '..', 'database', 'dark_switches.js');
 
 console.log('1. IPC sweep-inview-recheck — read-only, double-gated, same predicate as sweep-inview-file');
+// Slice the WHOLE handler body (to the next ipcMain.handle), not a magic char-window — an inserted
+// guard (e.g. the 2026-09-18 department gate) otherwise pushes a real, present line past a hardcoded
+// offset and reads as a false failure.
 const i = handler.indexOf("ipcMain.handle('sweep-inview-recheck'");
-const ipc = i >= 0 ? handler.slice(i, i + 1600) : '';
+const iNext = handler.indexOf('ipcMain.handle(', i + 1);
+const ipc = i >= 0 ? handler.slice(i, iNext > 0 ? iNext : i + 2200) : '';
 check('IPC is registered', i >= 0);
 check('requires admin/edit', /requireRole\('admin', 'edit'\)/.test(ipc));
 check('gated on BOTH sweep_inview_countdown AND sweep_inview_recheck',

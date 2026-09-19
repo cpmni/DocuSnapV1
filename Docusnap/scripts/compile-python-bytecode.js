@@ -110,7 +110,8 @@ function main() {
   const mustBeGone = ['extraction/engine.py', 'extraction/anchor.py', 'extraction/template_matcher.py',
                       'ocr/tesseract.py', 'logo_detail.py', 'logo_hash.py'];
   const SPAWN_ENTRIES = ['process_docs.py', 'render_pages.py', 'ocr_region.py', 'pdf_splitter.py',
-                      'pdf_rotate.py', 'segment_docs.py', 'filing_slips.py', 'template_fingerprint.py',
+                      'pdf_rotate.py', 'pdf_join.py',   // pdf_join.py: C12 Rejoin (2026-09-19), spawned by review/handler
+                      'segment_docs.py', 'filing_slips.py', 'template_fingerprint.py',
                       'test_mapping.py', 'ocr/region.py', 'ocr/region_worker.py', 'ocr/landmarks.py',
                       'ocr/detect_angle.py', 'render/pages.py', 'render/preview_enhance.py',
                       'render/pdf_find.py',   // find-in-document (2026-09-13: spawned by review/handler + the /v1 find)
