@@ -10,6 +10,10 @@ require_admin();
 
 $pdo = db();
 
+// External IP geo lookup — a CLICK-THROUGH link only (opens in the admin's browser). Nothing is sent
+// from the server; no customer IP ever leaves this box, no third-party dependency. %s = the IP.
+const GEO_LOOKUP_URL = 'https://ipinfo.io/%s';
+
 // Human labels for the audit action names the /v1 endpoints write.
 $LABELS = [
     'license.validated'       => 'Validate (app launch / refresh)',
@@ -50,6 +54,50 @@ $topIps = $pdo->query(
       WHERE action LIKE 'license.%' AND created_at >= NOW() - INTERVAL 24 HOUR AND ip IS NOT NULL AND ip <> ''
       GROUP BY ip ORDER BY n DESC LIMIT 10"
 )->fetchAll();
+
+// ── Who is behind each top IP (admin-only, read-only) ────────────────────────────────────────────
+// Two sources, merged per (ip, account):
+//   (1) fp_hash on ANY call -> seats -> entitlements -> account : names the customer behind the
+//       validate traffic (which carries only a device fingerprint, no account_id). Prefers the
+//       human customer_name from the entitlement.
+//   (2) account_id on a `license.activated` row : the IP that customer SET UP from (the owner's ask —
+//       "matches the IP used on setup"). Flagged with a "set up here" tag.
+// Only REAL client IPs resolve — real-IP logging began 2026-09-19 (before that every row held a
+// Cloudflare edge). Scoped to the <=10 top IPs; audit_events.ip is unindexed but this is an admin-only
+// page over a small, pruned table, never the /v1 hot path.
+$ipCustomers = [];   // ip => [ account_id => ['label'=>string, 'setup'=>bool] ]
+if ($topIps) {
+    $ips = array_column($topIps, 'ip');
+    $ph  = implode(',', array_fill(0, count($ips), '?'));
+
+    // (1) device-fingerprint chain (covers validate)
+    $q1 = $pdo->prepare(
+        "SELECT ae.ip AS ip, e.account_id AS aid,
+                COALESCE(NULLIF(e.customer_name,''), a.email, NULLIF(e.customer_email,''), CONCAT('account #', e.account_id)) AS label
+           FROM audit_events ae
+           JOIN seats s        ON s.fp_hash = ae.fp_hash
+           JOIN entitlements e ON e.id = s.entitlement_id
+           LEFT JOIN accounts a ON a.id = e.account_id
+          WHERE ae.ip IN ($ph) AND ae.fp_hash IS NOT NULL
+          GROUP BY ae.ip, e.account_id, label");
+    $q1->execute($ips);
+    foreach ($q1->fetchAll() as $r) {
+        $ipCustomers[$r['ip']][$r['aid']] = ['label' => $r['label'], 'setup' => false];
+    }
+
+    // (2) activation (setup) IPs
+    $q2 = $pdo->prepare(
+        "SELECT ae.ip AS ip, ae.account_id AS aid, COALESCE(a.email, CONCAT('account #', ae.account_id)) AS label
+           FROM audit_events ae
+           JOIN accounts a ON a.id = ae.account_id
+          WHERE ae.ip IN ($ph) AND ae.action = 'license.activated'
+          GROUP BY ae.ip, ae.account_id, label");
+    $q2->execute($ips);
+    foreach ($q2->fetchAll() as $r) {
+        if (isset($ipCustomers[$r['ip']][$r['aid']])) $ipCustomers[$r['ip']][$r['aid']]['setup'] = true;
+        else $ipCustomers[$r['ip']][$r['aid']] = ['label' => $r['label'], 'setup' => true];
+    }
+}
 
 // Growth indicator (drives the pruning prompt). Approximate total from information_schema — a full
 // COUNT(*) would scan the whole (potentially huge) table on EVERY admin page view (Oracle §2); the
@@ -113,14 +161,34 @@ admin_chips([
   <div class="empty">No IP data in the last 24 hours.</div>
 <?php else: ?>
 <table>
-  <thead><tr><th>IP address</th><th style="width:120px;">Calls</th></tr></thead>
+  <thead><tr><th>IP address</th><th style="width:90px;">Calls</th><th>Customer</th></tr></thead>
   <tbody>
-  <?php foreach ($topIps as $ipr): ?>
-    <tr><td class="mono"><?= h($ipr['ip']) ?></td><td class="mono"><?= (int) $ipr['n'] ?></td></tr>
+  <?php foreach ($topIps as $ipr): $cust = $ipCustomers[$ipr['ip']] ?? []; ?>
+    <tr>
+      <td class="mono"><a href="<?= h(sprintf(GEO_LOOKUP_URL, rawurlencode($ipr['ip']))) ?>" target="_blank" rel="noopener noreferrer" title="Look up this IP's location (opens in your browser)">&#128269; <?= h($ipr['ip']) ?></a></td>
+      <td class="mono"><?= (int) $ipr['n'] ?></td>
+      <td><?php
+        if (!$cust) { echo '<span class="muted">&mdash;</span>'; }
+        else {
+            $out = []; $shown = 0;
+            foreach ($cust as $c) {
+                if ($shown++ >= 3) { $out[] = '<span class="muted">+' . (count($cust) - 3) . ' more</span>'; break; }
+                $tag = $c['setup'] ? ' <span class="mono" style="font-size:10px; color:var(--accent2); border:1px solid var(--accent-border); border-radius:8px; padding:0 5px;">set up here</span>' : '';
+                $out[] = h($c['label']) . $tag;
+            }
+            echo implode('<br>', $out);
+        }
+      ?></td>
+    </tr>
   <?php endforeach; ?>
   </tbody>
 </table>
-<p class="muted" style="font-size:12px; margin-top:6px;">A single office behind one NAT shows as one IP with many calls &mdash; not necessarily abuse.</p>
+<p class="muted" style="font-size:12px; margin-top:6px;">
+  Click an IP to look up its location (opens in your browser &mdash; no data leaves the server).
+  A customer is matched by their app's device fingerprint (on every check-in) or by the IP they set up from
+  (<span class="mono">set up here</span>). Only real IPs resolve &mdash; real-IP logging began 2026-09-19, so older
+  rows and Cloudflare edges show &ldquo;&mdash;&rdquo;. One office behind a shared connection appears as a single IP with many calls, not abuse.
+</p>
 <?php endif; ?>
 
 <h3 style="margin:22px 0 8px;">Table growth</h3>
