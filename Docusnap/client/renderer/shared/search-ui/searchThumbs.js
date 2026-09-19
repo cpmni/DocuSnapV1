@@ -58,6 +58,14 @@
   let observer = null;
   function getObserver() {
     if (observer) return observer;
+    // Root the observer on the ACTUAL scroll container (#results-scroll), NOT the viewport. With the
+    // viewport as root, whether a row's thumbnail was ever requested depended on the WINDOW size and on
+    // the flex/overflow container's height being settled at observe time — so in a non-maximised window
+    // (the detached client) rows below the first fold were measured as off-screen and NEVER requested
+    // until a reflow (the owner saw the missing thumbnails appear only after going full-screen). The core
+    // Search window is force-maximised, so it never hit this. Rooting on the list's own scrollport makes
+    // intersection independent of window size and reliable; falls back to the viewport if absent.
+    const root = (typeof document !== 'undefined' && document.getElementById('results-scroll')) || null;
     observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue;
@@ -65,7 +73,7 @@
         observer.unobserve(img);
         load(img);
       }
-    }, { rootMargin: '200px' });   // start rendering just before the row scrolls in
+    }, { root, rootMargin: '200px' });   // start rendering just before the row scrolls into the list
     return observer;
   }
 
