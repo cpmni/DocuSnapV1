@@ -31,6 +31,11 @@ output/
 # auto_prepend_file path to set-env.php and other per-host PHP settings (a
 # REPLACE_ME template from Build-IonosDeploy, or the live host paths). Never committed.
 licensing-backend/**/.user.ini
+# set-env.php holds the live DB credentials — per-host, never committed. It is normally
+# ABSENT from the source tree (dev uses db.php's localhost defaults); this guards against
+# a copy of the production file being dropped here and committed (2026-09-19).
+licensing-backend/set-env.php
+licensing-backend/**/set-env.php
 
 # Claude Code: machine-local settings + transient worktrees (the shared
 # agents/ and skills/ ARE committed). settings.local.json holds per-host config.
