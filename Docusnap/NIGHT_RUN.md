@@ -13,7 +13,37 @@ fires / would-file delta / value changes; present passers for a morning batch fl
 nothing flipped autonomously.** Near-ready first: `trust_ref_role_shape` (154) + `template_drift_override_guard`
 (157). LOG (don't run blind): `format_class_join` (a LOOK), `confusion_precedence`/`buyer_issued_convention`
 (vacuous, need fixtures), `template_edge_clip_heal` (code precondition), name-grow belts (want `teach_run_ab`),
-99/100 (Recipe 2). Full map = `HANDOVER_2026-09-17_C12_AND_SWITCHES.md` PART B.
+99/100 (Recipe 2). Full map = `HANDOVER_2026-09-17_C12_AND_SWITCHES.md` PART B. Census fixtures VERIFIED present
+2026-09-19 (`Desktop\Flip Corpus 700\warm_700.db` + the `rerun_20260916/` runner) — ready to launch once the CPU is free.
+
+## ✅ DONE 2026-09-19 NIGHT — FLIP-CENSUS BATCH (4 switches graduated) + Castellan Slice 1 shipped + Slice 2 SENT BACK
+Owner-driven day rolled into an autonomous night. **Shipped (LOCAL; flips pushed through `39456fe`):**
+(1) **Castellan Slice 1 — mig 186 `taught_ref_disagree_suppress` DARK** (`14581c7`… no — see the day commits): a taught
+ref field that matches its scope's learned shape suppresses a different-shape generic-caption competitor ("Job Ref")
+so the worksheet files by graduation instead of holding forever (gary → Oracle SIGN-OFF-W/COND; the `suppressed_taught_role`
+sink + a `_corrobLicensed` guard; pinned). (2) **FLIP CENSUS** (`TESTING/_measure/flip_census_20260919/RESULT.md`,
+400-doc corpus): **154 `trust_ref_role_shape` + 157 `template_drift_override_guard`** (M=0; live-proven) → **flipped migs
+187/188**; **158 `note_topic_dedup` + 130 `reread_hold_corrob_release`** (byte-identical/M=0, low-risk) → **flipped migs
+189/190**. All delisted (TEST_SWITCH_KEYS → 45), pinned (`test_default_flip_187_188.js` / `_189_190.js`), 4 graduated
+mig-pins updated. `confusion_precedence` HELD (value-changing, zero corpus evidence). Corpus now EXHAUSTED for the
+remaining switches (safety-only). (3) **Castellan Slice 2 (zero-confirm) — gary designed → Oracle SEND BACK**: 2a targets
+the WRONG blocker (at cold-start the no-history `docTrustGate` refusal holds the first doc, not the disagreement 2a
+removes; and 2a would drop a same-shape hold Slice 1 keeps). NOT BUILT. **Owner reframe needed** — the real cold-start
+lever is the no-history/graduation gate (page-wide, approval-class), not caption suppression. Slice 2b (a persisted
+exclusion table) stays deferred. **FINDING for the owner:** `trust_ref_role_shape` (now default-ON) + `role_field_dominant_class`
+together are STRICTER on an outlier-collapsed ref scope (holds for review — safe, would-file unchanged on the corpus);
+design Q: should shape-verify defer to role-dominant there? (pinned in `test_role_dominant_class.js`).
+**Repeat only if:** a census re-runs after an extraction change (M must stay 0). Chris DEFERRED to a morning /christest.
+
+## ✅ DONE 2026-09-19 DAY — DEPARTMENTS AUDIT-DEBT closed + C12 Rejoin shipped + TEST build for the VM
+Committed LOCAL (owner's call to push). **`178d93a`** the Oracle #5 audit-debt: gated every remaining by-id
+serve/mutate handler + the ON-by-default scope sweep + the classFix/charset/supplierSiblings fan-out leaks
+(eric+gary → Oracle SEND-BACK → C-A…C-F; two "off by default" premises were false — the switches were ON). Coverage
++ 13-section red-team pins; byte-identical when departments off; **0 regressions**. **`71e6705`** C12 "Join with page N"
+(barry+eric+gary → Oracle SIGN-OFF-W/COND; `pdf_join.py` + 2 IPCs + the Review button; Shape B; never auto-files) —
+this SATISFIES the mig-180 flip's C12 condition. Full battery green (modules 97/97, services 45/45, database 169/169).
+TEST installers (all switches armed) built for the owner's VM. **STILL OWED before the mig-180 flip:** the C9 census
+cells + the manual e2e, re-run WITH C12 present. Repeat: NO (shipped) — the R1 census batch above is still queued.
 
 ## ✅ DONE 2026-09-18 NIGHT — DEPARTMENTS WATERTIGHT HARDENING (security holes found + fixed) + Chris security vet (`HANDOVER_2026-09-18_NIGHT.md`)
 Owner pivoted the night: "Chris to fully test the department work … make sure it is WATER TIGHT … [thoughts on a
