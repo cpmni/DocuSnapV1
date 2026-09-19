@@ -72,6 +72,8 @@ console.log('§1 desktop IPC — every known by-id SERVE/MUTATE handler referenc
     'batch-audit-send-back': rev, 'accept-name-value': rev, 'accept-issuer': rev,
     'accept-field-chars': rev, 'find-issuer-siblings': rev, 'apply-issuer-ripple': rev,
     'reprocess-batch': proc, 'reprocess-autocommit-accept': proc, 'sweep-queue-candidates': proc,
+    // 2026-09-19 C12 (undo a bad split) — both by-id handlers gate on canAccessDocument (both ids for the mutate).
+    'get-split-undo-info': proc, 'undo-document-split': proc,
   };
   for (const [name, tbl] of Object.entries(MUST_GATE)) {
     const block = tbl[name];

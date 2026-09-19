@@ -257,6 +257,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   clearRecentAutoFiled:        ()        => ipcRenderer.invoke('clear-recent-auto-filed'),
   reprocessAutocommitAccept:   ()        => ipcRenderer.invoke('reprocess-autocommit-accept'),
   getAutoFileReason:           (docId)   => ipcRenderer.invoke('get-auto-file-reason', docId),
+  getSplitUndoInfo:            (docId, partnerPage) => ipcRenderer.invoke('get-split-undo-info', { docId, partnerPage }),
+  undoDocumentSplit:           (docId, mode, partnerPage) => ipcRenderer.invoke('undo-document-split', { docId, mode, partnerPage }),
   getGraduatedSuppliers:       ()        => ipcRenderer.invoke('get-graduated-suppliers'),
   getScopeReadiness:           ()        => ipcRenderer.invoke('get-scope-readiness'),
   getTeachFollowup:            (docId)   => ipcRenderer.invoke('get-teach-followup', { docId }),

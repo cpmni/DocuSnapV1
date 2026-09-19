@@ -155,9 +155,13 @@ console.log('\n§8 source pins — the order contract and the unconditional clas
   check('the provisional stamp never raises msg.needs_review (the T1 bail must pass the release re-run)', !/_pairLanded[\s\S]{0,4000}?msg\.needs_review = true/.test(H.slice(H.indexOf('function _pairLanded'))));
   const RV = read(path.join(__dirname, '..', 'review', 'handler.js'));
   const RR = read(path.join(__dirname, '..', '..', 'windows', 'review', 'renderer.js'));
-  check("the reason panel reports subkind 'pair' + the partner page; Review's copy names the page and never says Split for a pair (C7)",
+  // 2026-09-19 (C12): the pair copy now offers the one-click "Join with page N" recovery INSTEAD of pointing the
+  // user at the raw .sf_separated_originals folder (barry/Oracle C7 — the button replaces the path hint). The panel
+  // still reports subkind 'pair' + the partner page, still names the situation, still never says Split for a pair.
+  check("the reason panel reports subkind 'pair' + the partner page; Review's copy names the page and offers the Join recovery (C7 / C12)",
     RV.includes('out.subkind = SP.segmentHoldKind(held.validation_note)') && RV.includes('out.partnerPage = SP.pairPartnerPage(held.validation_note)')
-    && RR.includes("v.subkind === 'pair'") && RR.includes('came out of a multi-document scan as a document on its own') && RR.includes('.sf_separated_originals'));
+    && RR.includes("v.subkind === 'pair'") && RR.includes('came out of a multi-document scan as a document on its own')
+    && RR.includes('undoDocumentSplit') && RR.includes('Join with page'));
 }
 
 console.log(fails ? `\nFAILED: ${fails}` : '\nALL PASS');

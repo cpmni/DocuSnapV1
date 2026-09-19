@@ -1,5 +1,20 @@
 # Pending Features & Deferred Work
 
+## 2026-09-19 — C12 SHIPPED (Rejoin); two follow-ups deferred (barry+eric+gary → Oracle SIGN-OFF-W/COND)
+**C12 built** (`processing/handler.js` `undo-document-split`/`get-split-undo-info`, `python_backend/pdf_join.py`,
+review renderer "Join with page N"; pins `test_pdf_join.py` + `test_c12_rejoin.js`). SHAPE B only (join the two
+adjacent working copies, hold the result, never auto-file, original untouched). Deferred:
+- **Shape A — "Re-import the whole original as one document"** (from `.sf_separated_originals`). Fragile: the
+  original's location drifts (`folder_path` → `Processed/` under `keep_processed_originals`), and on a 3+-document
+  stack it re-glues the correct cuts (needs a stack-detect + a warn/confirm). Only clean for a genuine 2-segment
+  original. Build only if a real case appears; would need a single-file import seam that bypasses `_separateBatchDocuments`.
+- **General queue-wide "Join" (the true inverse of Split)** on ANY 1-page segment, not just pair-marked docs. Needs a
+  partner-picker + a same-scan guard + page-order logic (else a Frankenstein PDF). A separate feature with real
+  decision budget; the pair-marked Join covers the belt's actual failure class.
+- **Iterative chain join UX:** in a p1|p2|p3 chain, joining (p1,p2) leaves p3's orphaned pair note pointing at a
+  now-merged page; the button then refuses cleanly (`partner_gone`). A nicer "join the rest" flow is possible but
+  not needed for first ship (Oracle accepted the documented limitation).
+
 > Running backlog. When a feature/fix is discussed but NOT implemented right away, add it here with
 > the notes/details agreed + anything pertinent (symptom, code pointers, the fix direction, gates,
 > and any advisor rulings). Newest at top of each section. Remove an item when it ships (note the commit).
@@ -5535,6 +5550,7 @@ still cut). Either way a Rejoin / recovery path stays owed (the original sits in
 > pre-pass classifies each cut WEAK (template-only, no doc-start) or STRONG (`weak_pages`, unconditional metadata) and the
 > handler compares the two halves of every WEAK cut after both are read (same supplier + no date on the later page + the
 > same/no number → hold BOTH with a durable note; a complete later page releases the earlier one). real_34 is 0 weak by
-> construction (every alert page is an email-header doc-start). **STILL OWED before the flip (Oracle C12):** a one-click
-> "Re-import as one document" / Rejoin-with-previous action on the pair reason — today `.sf_separated_originals` is the
-> only way back; plus the C9 census cells (rasterised real_34, a young-install stack, the email-arm-only class arm).
+> construction (every alert page is an email-header doc-start). **C12 SHIPPED 2026-09-19** (Rejoin — see the top entry;
+> the "Join with page N" button on the pair reason replaces the raw-folder hint). **STILL OWED before the mig-180 flip:**
+> the C9 census cells (rasterised real_34, a young-install stack, the email-arm-only class arm) re-run WITH C12 present,
+> and the manual e2e (2-page repeat-letterhead → held pair → Join → one 2-page doc that reads the page-2 total).

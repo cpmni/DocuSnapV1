@@ -3410,7 +3410,7 @@ function renderCleanHoldReason(el, doc) {
       // say so and name the other page; never "use Split" (the wrong tool for a pair); say where the original is.
       'segment-hold': v.subkind === 'pair'
         ? `this page came out of a multi-document scan as a document on its own${v.partnerPage ? ` — page <strong>${v.partnerPage}</strong> of that scan may belong to it` : ' — the page next to it may belong to it'}. `
-          + 'Check both, then confirm (the original scan is kept in the folder\'s <code>.sf_separated_originals</code>).'
+          + 'If they are one document, use the button below to join them back together; otherwise check both and confirm. The original scan is kept safe.'
         : (v.pages && v.pages.from && v.pages.to)
         ? `pages <strong>${v.pages.from}–${v.pages.to}</strong> were cut from a multi-document scan — check every page `
           + `belongs to this document (if one doesn't, use <strong>Split</strong>), then confirm.`
@@ -3453,6 +3453,11 @@ function renderCleanHoldReason(el, doc) {
     el.innerHTML = `<div class="rr-lead">Nothing looks wrong — ${why}</div>`
                  + `<div class="rr-cues"><span class="rr-cue info">${_cue}</span></div>`
                  + `<div class="rr-hint">${_tail}</div>`;
+    // C12: on a pair hold, offer the one-click "Join with page N" (async-gated on a confidently
+    // resolved partner). The panel only renders for admin/edit (get-auto-file-reason is role-gated).
+    if (v.kind === 'segment-hold' && v.subkind === 'pair' && v.partnerPage) {
+      _attachJoinButton(el, doc.id, v.partnerPage);
+    }
     el.hidden = false;
     return;
   }
@@ -3503,6 +3508,99 @@ function renderCleanHoldReason(el, doc) {
                + `<div class="rr-cues"><span class="rr-cue info">${escHtml(cue)}</span></div>`
                + (hint ? `<div class="rr-hint">${escHtml(hint)}</div>` : '');
   el.hidden = false;
+}
+
+// ── C12 — "Join with page N" recovery on a pair-held document (2026-09-19; Oracle C5) ─────────────
+// The pair-hold belt held this page + its neighbour as possibly ONE document. This offers a one-click
+// join: the confirm previews BOTH pages so the user sees what merges; the result lands HELD (never
+// auto-files), the original scan stays safe, and the surviving document is re-read across both pages.
+async function _attachJoinButton(el, docId, partnerPage) {
+  let info;
+  try { info = await window.docusnap.getSplitUndoInfo(docId, partnerPage); } catch { info = null; }
+  if (!info || !info.available) return;   // no confidently-resolved partner → no button (fail-quiet)
+  const wrap = document.createElement('div');
+  wrap.style.marginTop = '10px';
+  const btn = document.createElement('button');
+  btn.className = 'btn';
+  Object.assign(btn.style, { background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--bg)', fontWeight: '500' });
+  btn.textContent = `Join with page ${partnerPage}`;
+  btn.addEventListener('click', () => _confirmAndJoin(docId, partnerPage, info.pages || [], btn));
+  wrap.appendChild(btn);
+  el.appendChild(wrap);
+}
+
+async function _confirmAndJoin(docId, partnerPage, pages, btn) {
+  const ok = await _showJoinConfirm(partnerPage, pages);
+  if (!ok) return;
+  btn.disabled = true; const _label = btn.textContent; btn.textContent = 'Joining…';
+  let r;
+  try { r = await window.docusnap.undoDocumentSplit(docId, 'rejoin', partnerPage); }
+  catch (e) { r = { success: false, error: (e && e.message) || 'Join failed' }; }
+  if (!r || !r.success) {
+    showToast((r && r.error) || 'Could not join these pages.', 'err');
+    btn.disabled = false; btn.textContent = _label;
+    return;
+  }
+  showToast('Joined into one document — check it reads right, then confirm.', 'ok');
+  try { await _refreshQueueFromBroadcast(); } catch {}
+  // Navigate to the surviving document and re-read it (a fresh read across both pages; the "look first"
+  // note is kept across the reprocess). #btn-reprocess reprocesses the CURRENTLY-open document.
+  try {
+    const survivor = (queue || []).find(d => d && d.id === r.newDocId);
+    if (survivor) { await selectDoc(survivor); if (r.reprocess) document.getElementById('btn-reprocess')?.click(); }
+  } catch { /* the join succeeded; a failed navigate is cosmetic */ }
+}
+
+// The confirm — previews BOTH pages so the user sees what will be merged (Oracle C5). Returns a promise
+// resolving true (Join) / false (Cancel or Esc). Modeled on the review window's overlay pattern.
+function _showJoinConfirm(partnerPage, pages) {
+  return new Promise((resolve) => {
+    const ov = document.createElement('div');
+    ov.setAttribute('data-help-ignore', '');   // help-mode must not swallow clicks inside the modal
+    Object.assign(ov.style, { position: 'fixed', inset: '0', background: 'rgba(8,10,15,.72)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '99999', padding: '24px' });
+    const box = document.createElement('div');
+    Object.assign(box.style, { width: 'min(560px,94vw)', maxHeight: '88vh', overflowY: 'auto',
+      background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: '12px',
+      padding: '20px', boxShadow: '0 18px 50px rgba(0,0,0,.5)', color: 'var(--text)' });
+    const title = document.createElement('div');
+    title.textContent = 'Join these into one document?';
+    Object.assign(title.style, { fontSize: '15px', fontWeight: '600', marginBottom: '10px' });
+    const body = document.createElement('div');
+    Object.assign(body.style, { fontSize: '13px', color: 'var(--muted)', marginBottom: '12px', lineHeight: '1.5' });
+    body.textContent = `Page ${partnerPage} will be added to this document, so you'll have one document to `
+      + `check instead of two. Nothing has been filed yet and the original scan is kept safe — if this looks `
+      + `wrong afterwards you can Split it again.`;
+    const strip = document.createElement('div');
+    Object.assign(strip.style, { display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '14px', flexWrap: 'wrap' });
+    for (const p of (pages || [])) {
+      const cell = document.createElement('div'); cell.style.cssText = 'text-align:center;flex:0 0 auto';
+      const cap = document.createElement('div'); cap.textContent = `Page ${p.page}`;
+      cap.style.cssText = 'font-size:11px;color:var(--muted);margin-bottom:4px';
+      const img = document.createElement('img');
+      Object.assign(img.style, { width: '150px', maxHeight: '200px', objectFit: 'contain',
+        border: '1px solid var(--border2)', borderRadius: '6px', background: 'var(--surface2)' });
+      cell.append(cap, img); strip.append(cell);
+      window.docusnap.getDocumentThumbnail(p.id, p.folderPath, p.filename)
+        .then(src => { if (src) img.src = src; }).catch(() => {});
+    }
+    const footer = document.createElement('div');
+    Object.assign(footer.style, { display: 'flex', gap: '8px', justifyContent: 'flex-end' });
+    const cancel = document.createElement('button'); cancel.className = 'btn'; cancel.textContent = 'Cancel';
+    const join = document.createElement('button'); join.className = 'btn'; join.textContent = 'Join';
+    Object.assign(join.style, { background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--bg)', fontWeight: '500' });
+    let done = false;
+    const close = (val) => { if (done) return; done = true; document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(val); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(false); } };
+    cancel.addEventListener('click', () => close(false));
+    join.addEventListener('click', () => close(true));
+    footer.append(cancel, join);
+    box.append(title, body, strip, footer);
+    ov.append(box);
+    ov.addEventListener('click', (e) => { if (e.target === ov) close(false); });
+    document.addEventListener('keydown', onKey, true);
+    document.body.append(ov);
+  });
 }
 
 // "Add '<detected type>'" from the untyped-document notice. Opens the PRESET catalog with that

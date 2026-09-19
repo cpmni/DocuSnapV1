@@ -6259,6 +6259,117 @@ function register(ctx) {
 
     return { success: true, files: createdFiles, docIds };
   });
+
+  // ── C12 — undo a bad automatic split (2026-09-19; barry+eric+gary → Oracle SIGN-OFF-W/COND C1-C6) ──────
+  // The DARK pair-hold belt (segment_pair_hold, mig 180) holds BOTH halves when the splitter cut one real
+  // document in two (page 2 repeats the letterhead, no page marker). This is the one-click way back the Oracle
+  // made a condition of flipping that belt. SHAPE B only: JOIN this segment's WORKING COPY with its adjacent
+  // partner's (rotation rides in /Rotate → join the working copies, never the un-rotated folder segments),
+  // keep the EARLIER row, soft-delete the later, hold the result for one look (never auto-files), leave the
+  // untouched original in .sf_separated_originals as the ultimate anchor. Shape A (re-import the whole
+  // original) + a general queue-wide Join are deferred (pendingfeatures.md): A is fragile (original-location
+  // drift + the 3-segment re-glue trap); B handles the 2-adjacent-page pair the belt actually holds.
+
+  // Read: does this pair-held doc have a recoverable partner? Powers the "Join with page N" button.
+  // (_pairSentenceOf / _resolvePairPartner / _rejoinPairSurgery are module-scope + exported for the pin.)
+  ipcMain.handle('get-split-undo-info', (_e, arg) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    const { docId, partnerPage } = (arg && typeof arg === 'object') ? arg : { docId: arg, partnerPage: null };
+    const access = require('../../services/accessService');
+    if (!access.canAccessDocument(db, getCurrentUser(), Number(docId)).allow) return { available: false };   // existence-hiding
+    const r = _resolvePairPartner(db, docId, partnerPage);
+    if (!r.ok) return { available: false, blocked: r.blocked || null };
+    // Gate BOTH ids (a cross-department partner must not even be named) — the 2026-09-18 audit-debt lesson.
+    if (!access.canAccessDocument(db, getCurrentUser(), r.survivor.id).allow
+        || !access.canAccessDocument(db, getCurrentUser(), r.removed.id).allow) return { available: false };
+    // Both pages, in output order, so the confirm can preview what will be merged (Oracle C5).
+    const pages = [r.survivor, r.removed].sort((a, b) => a.range.from - b.range.from)
+      .map(d => ({ id: d.id, page: d.range.from, folderPath: d.folderPath, filename: d.filename }));
+    return { available: true, mode: 'rejoin', partnerPage: r.partnerPage, pages };
+  });
+
+  ipcMain.handle('undo-document-split', async (_e, { docId, mode, partnerPage } = {}) => {
+    const sess = requireRole('admin', 'edit');
+    const db = getDb();
+    const documents = require('../../../database/modules/documents');
+    const access = require('../../services/accessService');
+    const wf = require('../../services/workflowService');
+    if (mode !== 'rejoin') return { success: false, error: 'Unsupported action.', code: 'BAD_MODE' };
+    const r = _resolvePairPartner(db, docId, partnerPage);
+    if (!r.ok) return { success: false, error: 'Couldn’t confidently find the other page — use Split instead.', code: String(r.blocked || 'NOT_RESOLVABLE').toUpperCase() };
+    const { survivor, removed } = r;
+    // Department gate on BOTH ids (existence-hiding). The workflow edit-lock on BOTH (Oracle C4).
+    for (const id of [survivor.id, removed.id]) {
+      if (!access.canAccessDocument(db, getCurrentUser(), id).allow) return { success: false, error: 'Document not found.', code: 'NOT_FOUND' };
+    }
+    for (const id of [survivor.id, removed.id]) {
+      const g = wf.editGuard(db, id, sess.role);
+      if (!g.ok) return { success: false, error: g.error, code: g.code };
+    }
+    // Never touch a FILED/removed doc (Oracle C4; confirm() nulls working_path — un-filing is a separate op).
+    for (const id of [survivor.id, removed.id]) {
+      const s = db.prepare('SELECT status FROM documents WHERE id = ?').get(id);
+      if (!s || s.status === 'confirmed' || s.status === 'deleted') return { success: false, error: 'One of these documents has already been filed or removed.', code: 'ALREADY_FILED' };
+    }
+    // Both working copies must exist (fail toward Review; join the working copies for rotation).
+    if (!survivor.working_path || !fs.existsSync(survivor.working_path)
+        || !removed.working_path || !fs.existsSync(removed.working_path)) {
+      return { success: false, error: 'The page files are missing — use Split instead.', code: 'WORKING_COPY_MISSING' };
+    }
+    const [firstWc, secondWc] = survivor.range.from <= removed.range.from
+      ? [survivor.working_path, removed.working_path] : [removed.working_path, survivor.working_path];
+    const totalPages = (survivor.range.to - survivor.range.from + 1) + (removed.range.to - removed.range.from + 1);
+
+    // ── Join the two working copies → temp (pypdf; /Rotate preserved) ──────────────────────────────
+    const outTmp = path.join(os.tmpdir(), `ds_join_${Date.now()}_${survivor.id}.pdf`);
+    const joinScript = path.join(path.dirname(backendScript()), 'pdf_join.py');
+    const raw = await new Promise((resolve) => {
+      let stdout = '';
+      const proc = spawn(pythonExe(), pythonArgs(joinScript, '--file', firstWc, '--file', secondWc, '--out', outTmp), { windowsHide: true });
+      proc.stdout.on('data', d => { stdout += d.toString(); });
+      proc.on('close', () => { try { resolve(JSON.parse(stdout.trim())); } catch { resolve({ success: false, error: 'pdf_join returned non-JSON', raw: stdout.trim() }); } });
+      proc.on('error', err => resolve({ success: false, error: err.message }));
+    });
+    if (!raw.success || !fs.existsSync(outTmp)) {
+      try { if (fs.existsSync(outTmp)) fs.unlinkSync(outTmp); } catch {}
+      return { success: false, error: 'Could not join the pages (nothing was changed).', code: 'JOIN_FAILED' };
+    }
+
+    // ── Atomic swap the survivor's working copy, keeping a restorable backup ────────────────────────
+    const bak = survivor.working_path + '.c12bak';
+    try {
+      fs.copyFileSync(survivor.working_path, bak);       // backup first (source stays readable)
+      fs.renameSync(outTmp, survivor.working_path);      // swap the joined PDF in
+    } catch (e) {
+      try { if (fs.existsSync(bak)) { fs.copyFileSync(bak, survivor.working_path); fs.unlinkSync(bak); } } catch {}
+      try { if (fs.existsSync(outTmp)) fs.unlinkSync(outTmp); } catch {}
+      return { success: false, error: 'Could not update the document file (nothing was changed).', code: 'SWAP_FAILED' };
+    }
+
+    // ── ONE txn (Oracle C1, load-bearing): clear BOTH pair sentences, stamp the mig-176 "look first" note
+    //    on the survivor, set its page_count, soft-delete the partner. Stamped BEFORE the renderer's reprocess
+    //    so carrySegmentHold re-attaches the mig-176 note (a held checkpoint), never the stale pair sentence.
+    try {
+      _rejoinPairSurgery(db, survivor, removed, totalPages);
+    } catch (e) {
+      try { if (fs.existsSync(bak)) fs.copyFileSync(bak, survivor.working_path); } catch {}
+      try { if (fs.existsSync(bak)) fs.unlinkSync(bak); } catch {}
+      return { success: false, error: 'Could not update the documents (nothing was changed).', code: 'DB_FAILED' };
+    }
+    try { if (fs.existsSync(bak)) fs.unlinkSync(bak); } catch {}
+    try { wf.createWorkflowService({ audit: (e2) => logAudit(db, e2) }).closeOpenRoutesForDeletedDoc(db, { documentId: removed.id, deletedByName: sess.displayName || sess.username }); } catch {}
+    try {
+      logAudit(db, { action: 'split_undone', action_category: 'document', target_type: 'document',
+        target_id: survivor.id, document_id: survivor.id, outcome: 'success',
+        metadata: { mode: 'rejoin', survivor: survivor.id, removed: removed.id, pages: totalPages } });
+    } catch {}
+    broadcastCounts(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
+    try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {}
+    // The survivor now holds `totalPages` read from page 1 only — the renderer re-reads it (a fresh read
+    // across both pages) and navigates to it. carrySegmentHold keeps the mig-176 note across that reprocess.
+    return { success: true, mode: 'rejoin', newDocId: survivor.id, removedId: removed.id, pages: totalPages, reprocess: true };
+  });
 }
 
 // Move a processed original out of the intake folder into `destDir` (a managed
@@ -6986,6 +7097,84 @@ function _pairLanded(db, ctx, name, entry, folderPath, notifyMainWindow, logger)
   }
 }
 
+// ── C12 — undo a bad automatic split (Rejoin): the reconstruction + the DB surgery, at module scope so
+// the pin drives the SHIPPED code (test_c12_rejoin.js), not a replica. The fs/spawn (pdf_join + the
+// working-copy swap) live in the register() handler; the join primitive is pinned in test_pdf_join.py.
+// ALL pair sentences on a doc (a middle page of a p1|p2|p3 chain carries two — one per adjacent pair).
+function _pairSentencesOf(db, docId) {
+  const SP = require('./split_plan');
+  const out = [];
+  const rows = db.prepare(`SELECT validation_note FROM extractions
+                            WHERE document_id = ? AND TRIM(COALESCE(validation_note,'')) <> ''`).all(docId);
+  for (const r of rows) {
+    for (const part of String(r.validation_note || '').split(/(?<=— confirm once\.)/)) {
+      const s = part.trim();
+      if (s && SP.hasPairSegmentHold(s)) out.push(s);
+    }
+  }
+  return out;
+}
+// The doc's pair sentence naming `wantPartnerPage` (deterministic for a middle page), else the first.
+function _pairSentenceOf(db, docId, wantPartnerPage = null) {
+  const SP = require('./split_plan');
+  const all = _pairSentencesOf(db, docId);
+  if (wantPartnerPage != null) return all.find(s => SP.pairPartnerPage(s) === Number(wantPartnerPage)) || null;
+  return all[0] || null;
+}
+// Resolve the adjacent partner from drift-proof signals ONLY: the splitter filename contract
+// (segmentPageRange — imported, never re-derived, Oracle C6), the doc's own pair note (pairPartnerPage),
+// the SAME import folder, a RECIPROCAL note match (ANY of the candidate's pair sentences names us back), and
+// a contiguous page span. `wantPartnerPage` (from the button the user saw) picks the exact pair on a middle
+// page of a chain — the un-acted partner then refuses cleanly after the first join. Refuse on 0 or >1
+// candidates so a duplicate-<stem> collision across two scans can never cross-bind (Oracle C2). survivor =
+// the earlier page. Returns { ok, survivor, removed, partnerPage } | { ok:false, blocked }.
+function _resolvePairPartner(db, docId, wantPartnerPage = null) {
+  const documents = require('../../../database/modules/documents');
+  const SP = require('./split_plan');
+  const doc = documents.getById(db, Number(docId));
+  if (!doc) return { ok: false, blocked: 'not_found' };
+  const myRange = SP.segmentPageRange(doc.original_filename);
+  if (!myRange) return { ok: false, blocked: 'not_a_split' };
+  const myPair = _pairSentenceOf(db, doc.id, wantPartnerPage);
+  if (!myPair) return { ok: false, blocked: 'not_pair_held' };
+  const partnerPage = SP.pairPartnerPage(myPair);
+  if (partnerPage == null) return { ok: false, blocked: 'no_partner_page' };
+  const stem = String(doc.original_filename).replace(SP.SEGMENT_PAGE_RE, '');
+  const like = stem.replace(/([%_\\])/g, '\\$1') + '\\_split\\_p%';
+  const cands = db.prepare(`SELECT id, original_filename, working_path, page_count, document_type_id
+                              FROM documents
+                             WHERE folder_path IS ? AND id != ? AND status = 'needs_review'
+                               AND original_filename LIKE ? ESCAPE '\\'`).all(doc.folder_path, doc.id, like);
+  const matches = [];
+  for (const c of cands) {
+    const cRange = SP.segmentPageRange(c.original_filename);
+    if (!cRange || cRange.from !== partnerPage) continue;                                  // it is the page we expect
+    const recip = _pairSentencesOf(db, c.id).find(s => SP.pairPartnerPage(s) === myRange.from);
+    if (!recip) continue;                                                                  // RECIPROCAL: names us back
+    if (!((myRange.to + 1 === cRange.from) || (cRange.to + 1 === myRange.from))) continue;  // adjacent
+    matches.push({ id: c.id, range: cRange, pair: recip, working_path: c.working_path, typeId: c.document_type_id, filename: c.original_filename, folderPath: doc.folder_path });
+  }
+  if (matches.length !== 1) return { ok: false, blocked: matches.length ? 'ambiguous' : 'partner_gone' };
+  const me = { id: doc.id, range: myRange, pair: myPair, working_path: doc.working_path, typeId: doc.document_type_id, filename: doc.original_filename, folderPath: doc.folder_path };
+  const other = matches[0];
+  const [survivor, removed] = me.range.from <= other.range.from ? [me, other] : [other, me];
+  return { ok: true, survivor, removed, partnerPage };
+}
+// The DB surgery (Oracle C1, load-bearing): in ONE txn clear BOTH pair sentences, stamp the mig-176 "look
+// first" note on the survivor (so a later reprocess's carrySegmentHold re-attaches THAT, never the stale
+// pair sentence), set the survivor's page_count, soft-delete the partner. No fs — the caller has already
+// swapped the joined working copy in (recoverable from its .c12bak on any failure).
+function _rejoinPairSurgery(db, survivor, removed, totalPages) {
+  const documents = require('../../../database/modules/documents');
+  db.transaction(() => {
+    if (survivor.pair) _clearPairSentence(db, survivor.id, survivor.pair);
+    if (removed.pair)  _clearPairSentence(db, removed.id, removed.pair);
+    _stampSegmentHold(db, survivor.id, survivor.typeId, { from: 1, to: totalPages });   // sentence=null ⇒ mig-176
+    documents.update(db, survivor.id, { page_count: totalPages });
+    documents.softDelete(db, removed.id);
+  })();
+}
+
 // The quiet lane's hold family (S3-C5 + every "— confirm once." note). Shared by mergeReprocessRows.
 function _isLaneHoldNote(note) {
   const n = String(note || '');
@@ -7294,6 +7483,7 @@ module.exports = {
   handleFileMessage: _handleFileMessage,
   _stampSegmentHold,                 // split-segment hold (2026-09-16) — pinned by test_segment_hold_stamp.js
   _pairLanded, _pairTriple, _clearPairSentence,   // segment pair hold (2026-09-17) — pinned by test_segment_pair_stamp.js
+  _pairSentenceOf, _resolvePairPartner, _rejoinPairSurgery,   // C12 rejoin (2026-09-19) — pinned by test_c12_rejoin.js
   formatFileError,
   flushPendingDrains: _flushPendingDrains,
   // Slice 1 (2026-08-21): the human-confirm trigger for the scope-local auto-accept. A no-op until
