@@ -299,7 +299,7 @@ function register(ctx) {
     return {
       cfg,
       fpHash: fingerprintLib.computeFpHash(cfg.product_id), // hashed in main
-      client: createClient({ baseUrl: cfg.base_url, productId: cfg.product_id, transport: ctx.licenseTransport }),
+      client: createClient({ baseUrl: cfg.base_url, productId: cfg.product_id, transport: ctx.licenseTransport, source: 'license-ui' }),
     };
   }
 
@@ -437,7 +437,7 @@ function register(ctx) {
     if (!accountKey)            return { ok: false, code: 'missing_fields', message: 'Activation key is required.' };
     try {
       const fpHash = fingerprintLib.computeFpHash(productId); // hashed in main
-      const client = createClient({ baseUrl, productId, transport: ctx.licenseTransport });
+      const client = createClient({ baseUrl, productId, transport: ctx.licenseTransport, source: 'activation-test' });
       const res = await client.activate(fpHash, accountKey, 'activation-test');
       const status = res && res.status;
       const ok = res && status >= 200 && status < 300 && res.body && res.body.token;
@@ -561,6 +561,22 @@ function register(ctx) {
     };
   });
 
+  // ── DEV licensing-call monitor (2026-09-19) ────────────────────────────────────────────────
+  // Read/clear the in-memory ledger of calls this process made to the licensing website (endpoint,
+  // source, timing, outcome) so the dev app can diagnose call volume / "is the site rate-limiting us?".
+  // DEV-ONLY: inert on a packaged build (returns empty) — never a customer-facing surface, no PII, no
+  // secrets (the ledger records the endpoint + a source label + timing, never the fp_hash or a key).
+  ipcMain.handle('license-calls-get', () => {
+    if (_isPackaged()) return { dev: false, calls: [], summary: { total: 0, byEndpoint: {} } };
+    const client = require('../../lib/license/client');
+    return { dev: true, calls: client.getCallLog(), summary: client.callLogSummary() };
+  });
+  ipcMain.handle('license-calls-clear', () => {
+    if (_isPackaged()) return { ok: false };
+    require('../../lib/license/client').clearCallLog();
+    return { ok: true };
+  });
+
   // Revoke (Phase 4): release THIS device's seat so it can be reactivated
   // elsewhere (reinstall / hardware swap = revoke then activate; no new
   // entitlement). On success the local seat token is dropped, so the gate stops
@@ -680,7 +696,7 @@ async function decideAccess() {
   // failure here is non-fatal (we fall back to the cached token within grace).
   let online = false, onlineSeatGrant = false, returnedToken = false, forceUpdate = false;
   try {
-    const gate = createClient({ baseUrl: cfg.base_url, productId: cfg.product_id, transport: _ctx.licenseTransport, timeoutMs: 2500 });
+    const gate = createClient({ baseUrl: cfg.base_url, productId: cfg.product_id, transport: _ctx.licenseTransport, timeoutMs: 2500, source: 'startup-validate' });
     const res = await gate.validate(fpHash, null);
     online = true;
     if (res && res.body && res.body.token) {

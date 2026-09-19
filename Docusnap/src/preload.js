@@ -108,6 +108,10 @@ contextBridge.exposeInMainWorld('docusnap', {
   // Read-only diagnostic: what the gate sees on this device (enforcement + cached
   // token state + offline decision). No network call, no state change.
   licenseGetDiagnostics: ()   => ipcRenderer.invoke('license-get-diagnostics'),
+  // DEV licensing-call monitor (2026-09-19): read/clear the in-memory ledger of calls to the
+  // licensing website (dev-only; empty on a packaged build). Powers the dev-inspector's Licensing tab.
+  getLicenseCalls:       ()   => ipcRenderer.invoke('license-calls-get'),
+  clearLicenseCalls:     ()   => ipcRenderer.invoke('license-calls-clear'),
   // Advisory update banner (slice 1): resolved "is a newer version available?" + open the
   // backend-supplied update URL (validated main-side against a scheme allowlist).
   getUpdateInfo:         ()   => ipcRenderer.invoke('get-update-info'),

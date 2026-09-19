@@ -359,6 +359,16 @@
         <div class="prog"><div class="bar"><i id="live-bar"></i></div><span class="txt" id="live-prog">0 / 0</span></div>
       </div>
 
+      <!-- Licensing website call monitor (dev-only): every /v1 call this process made — endpoint,
+           what part of the app asked for it, timing, outcome. Diagnoses call volume / rate-limiting. -->
+      <div class="rcard" id="lic-monitor">
+        <div class="rh">Licensing calls
+          <button id="lic-clear" class="tb-btn" style="width:auto;padding:0 9px;font-size:10px;letter-spacing:.06em;text-transform:uppercase">Clear</button>
+        </div>
+        <div id="lic-summary" class="note" style="font-style:normal;color:var(--muted);margin-bottom:8px;line-height:1.5"></div>
+        <div id="lic-list" style="max-height:240px;overflow-y:auto;font-family:var(--mono);font-size:10.5px;line-height:1.5"></div>
+      </div>
+
       <div class="rcard" id="evidence">
         <div class="rh">Page evidence <span class="ev-field" id="ev-field"></span></div>
         <div class="body" id="ev-body">

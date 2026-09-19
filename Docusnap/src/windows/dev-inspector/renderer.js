@@ -682,3 +682,51 @@ window.docusnap.onProcessTrace((ev)     => handleTrace(ev));
 setFollow();
 refreshDocs();
 window.docusnap.devInspectorRunning?.().then((on) => { if (on) setRunning(true); }).catch(() => {});
+
+// ── Licensing website call monitor (dev-only) ────────────────────────────────────────────────────
+// Polls the in-memory ledger the main process keeps of every /v1 call to the licensing website
+// (endpoint, source, timing, outcome) so the "is the site rate-limiting / are we hammering it?"
+// question is visible. Read-only; inert (hidden) on a packaged build where the ledger is empty.
+(function licenseMonitor() {
+  const listEl = document.getElementById('lic-list');
+  const sumEl  = document.getElementById('lic-summary');
+  const cardEl = document.getElementById('lic-monitor');
+  const clearBtn = document.getElementById('lic-clear');
+  if (!listEl || !sumEl || !cardEl || !window.docusnap || !window.docusnap.getLicenseCalls) {
+    if (cardEl) cardEl.style.display = 'none';
+    return;
+  }
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const hhmmss = (ts) => { try { return new Date(ts).toLocaleTimeString(); } catch { return ''; } };
+  clearBtn && clearBtn.addEventListener('click', async () => {
+    try { await window.docusnap.clearLicenseCalls(); } catch {}
+    render({ dev: true, calls: [], summary: { total: 0, byEndpoint: {} } });
+  });
+  function render(r) {
+    if (!r || r.dev === false) { cardEl.style.display = 'none'; return; }
+    const calls = Array.isArray(r.calls) ? r.calls : [];
+    const s = r.summary || { total: 0, byEndpoint: {} };
+    const parts = Object.keys(s.byEndpoint || {}).sort()
+      .map(k => `${esc(k)} ×${s.byEndpoint[k].count}${s.byEndpoint[k].errors ? ` (${s.byEndpoint[k].errors} err)` : ''} · ${s.byEndpoint[k].avgMs}ms avg`);
+    sumEl.innerHTML = calls.length
+      ? `<b style="color:var(--text)">${s.total}</b> call(s) this session — ` + parts.join(' · ')
+      : 'No calls to the licensing website yet this session.';
+    // newest first, cap the rendered rows
+    listEl.innerHTML = calls.slice(-120).reverse().map(c => {
+      const ok = c.ok;
+      const statusTxt = c.error ? `ERR ${esc(c.error)}` : (c.status != null ? `HTTP ${c.status}` : '—');
+      const col = ok ? 'var(--ok)' : (c.error || (c.status >= 500) ? 'var(--err)' : 'var(--warn)');
+      return `<div style="display:flex;gap:8px;align-items:baseline;padding:3px 0;border-bottom:1px dashed var(--border)">`
+        + `<span style="color:var(--muted2);min-width:64px">${esc(hhmmss(c.ts))}</span>`
+        + `<span style="color:var(--accent2);min-width:78px">${esc(c.endpoint)}</span>`
+        + `<span style="color:var(--muted)">${esc(c.source)}</span>`
+        + `<span style="margin-left:auto;color:var(--muted)">${c.durationMs}ms</span>`
+        + `<span style="color:${col};min-width:70px;text-align:right">${statusTxt}</span></div>`;
+    }).join('');
+  }
+  async function poll() {
+    try { render(await window.docusnap.getLicenseCalls()); } catch { /* keep the last render */ }
+  }
+  poll();
+  setInterval(poll, 1500);
+})();
