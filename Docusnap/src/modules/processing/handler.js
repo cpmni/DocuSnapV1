@@ -6190,59 +6190,89 @@ function register(ctx) {
     return { success: true, path: outPath, first, last };
   });
 
-  ipcMain.handle('split-pdf', async (_e, filePath, ranges, outDir, docId, every) => {
-    requireRole('admin', 'edit');
-    // `every` (split every N pages, 1 = every page) is an alternative to an
-    // explicit range string; exactly one is required.
-    const everyN = Number(every) > 0 ? Math.floor(Number(every)) : null;
-    if (docId == null || (!ranges && !everyN)) {
-      return { success: false, error: 'docId and ranges or every are required' };
-    }
+  // ── Split a document into separate documents ─────────────────────────────────────────────────────────
+  // ONE hardened path (`_runSplit`) for BOTH callers — the legacy free-text ranges/every AND the graphical
+  // split popout's marks+removed (2026-09-20; barry+eric+gary+oscar → Oracle SIGN-OFF-W/COND ×2):
+  //   • server-side resolves source / out-dir / delete-target from the doc row (H2 path security)
+  //   • role gate + department access gate + department INHERITANCE to children (Oracle 2026-09-18 #1/#2)
+  //   • strict createdFiles.length === expectedSegments guard (an under-producing splitter leaves the original)
+  //   • the original is MOVED ASIDE to .sf_separated_originals (recoverable), NEVER hard-unlinked
+  //     (Oracle 2026-09-20 C-a) — this is what makes page-removal / a mis-boundaried split safe to undo.
+  const SEPARATED_DIR_SPLIT = '.sf_separated_originals';   // keep in step with isAppManagedFolder / the import path
 
-    // SECURITY (Stage 1 — H2): resolve the source PDF, the output directory, AND the delete target
-    // SERVER-SIDE from the doc row. The renderer-supplied `filePath`/`outDir` are NOT trusted for any
-    // filesystem operation — a compromised/replaced renderer could otherwise write split PDFs to an
-    // arbitrary directory and unlink an arbitrary host file (the read swapped to the working copy while
-    // the delete still hit the caller's path). All three now derive from paths the app itself recorded
-    // for this document.
+  // N is read from the ACTUAL PDF (never documents.page_count — stale/NULL-prone); the single authority for
+  // mark validation AND expectedSegments (Oracle 2026-09-20 C6).
+  async function _pdfPageCountAuthoritative(srcFile) {
+    const info = await runPyJson(ctx.resourcePath('python_backend', 'render', 'pages.py'), ['--file', srcFile, '--count']);
+    const n = info && Number(info.pages);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  }
+
+  // spec = { marks, removed } (popout) | { everyN } | { ranges } (legacy). Returns {success,files,docIds} | {success:false,error}.
+  async function _runSplit(docId, spec) {
+    requireRole('admin', 'edit');
     const db = getDb();
     const documents = require('../../../database/modules/documents');
+    const SP = require('./split_plan');
+    if (docId == null) return { success: false, error: 'docId is required' };
+
     const row = db.prepare(
       'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
     if (!row) return { success: false, error: 'document not found' };
-    // DEPARTMENT GATE (Oracle 2026-09-18 #1): an edit user OUTSIDE this doc's department must not split it (it
-    // reads the restricted PDF's bytes). Existence-hiding (same 'document not found' as a genuinely missing row).
-    // The OUTPUT leak — children inheriting no departments — is closed below (#2). Inert when no departments exist.
+    // DEPARTMENT GATE (Oracle 2026-09-18 #1): existence-hiding — an edit user outside this doc's department can't split it.
     {
       const _acc = require('../../services/accessService').canAccessDocument(db, getCurrentUser(), docId);
       if (!_acc.allow) return { success: false, error: 'document not found' };
     }
     const recordedOriginal = (row.folder_path && row.original_filename)
       ? path.join(row.folder_path, row.original_filename) : null;
-    // Read source: prefer the app-managed working copy (stable + app-owned); then the filed copy; then
-    // the recorded original. `folder_path`/`original_filename` track the CURRENT recorded location — they
-    // are updated to the Processed/ folder when the source is drained after a normal import — so
-    // recordedOriginal stays valid; the working copy is preferred only because it's the reliable
-    // app-owned path that doesn't depend on the user's folder.
     const srcFile = [row.working_path, row.stored_path, recordedOriginal].find(p => p && fs.existsSync(p)) || null;
     if (!srcFile || !fs.existsSync(srcFile)) {
       return { success: false, error: 'Source PDF not found — the original may have been moved into the Processed folder after processing.' };
     }
-    // Write the split pages next to the doc's own RECORDED location (a real user folder the app already
-    // recorded for it), never the hidden inbox where the working copy lives, and never a renderer-chosen
-    // directory.
     const splitOutDir = recordedOriginal ? path.dirname(recordedOriginal)
                       : row.stored_path ? path.dirname(row.stored_path)
                       : path.dirname(srcFile);
 
-    const py             = pythonExe();
-    const splitterScript = path.join(path.dirname(backendScript()), 'pdf_splitter.py');
-    const splitArgs      = everyN ? ['--every', String(everyN)] : ['--ranges', ranges];
-    const args           = pythonArgs(splitterScript, '--file', srcFile, ...splitArgs, '--outdir', splitOutDir);
+    const N = await _pdfPageCountAuthoritative(srcFile);
+    if (!N) return { success: false, error: 'Could not read the document’s page count.' };
+    if (N < 2) return { success: false, error: 'This document is only one page — there’s nothing to split.' };
 
+    // Decide the run + the EXACT expected output-file count, per mode.
+    let splitArgs, expectedSegments, groupsFile = null;
+    if (Array.isArray(spec.marks)) {
+      const plan = SP.marksToGroups(spec.marks, spec.removed || [], N);
+      if (!plan.ok) return { success: false, error: `Invalid page selection (${plan.error}).` };
+      const gate = SP.splitMarksAllowed(plan);
+      if (!gate.ok) {
+        const msg = gate.error === 'all-pages-removed'
+            ? 'Every page is marked for removal — nothing would be left.'
+          : gate.error === 'no-op'
+            ? 'Mark where a new document starts, or select at least one page to remove.'
+            : 'Nothing to split.';
+        return { success: false, error: msg };
+      }
+      groupsFile = path.join(os.tmpdir(), `ds_groups_${docId}_${Date.now()}.json`);
+      fs.writeFileSync(groupsFile, JSON.stringify(plan.groups));
+      splitArgs = ['--groups-file', groupsFile];
+      expectedSegments = plan.expectedSegments;
+    } else if (Number(spec.everyN) > 0) {
+      const everyN = Math.floor(Number(spec.everyN));
+      expectedSegments = Math.ceil(N / everyN);
+      if (expectedSegments < 2) return { success: false, error: 'That would produce a single document — nothing to split.' };
+      splitArgs = ['--every', String(everyN)];
+    } else if (spec.ranges) {
+      expectedSegments = SP.expectedRangeFiles(spec.ranges, N);
+      if (expectedSegments < 2) return { success: false, error: 'Enter at least two page ranges to split into.' };
+      splitArgs = ['--ranges', String(spec.ranges)];
+    } else {
+      return { success: false, error: 'Provide split points, ranges, or a page interval.' };
+    }
+
+    const splitterScript = path.join(path.dirname(backendScript()), 'pdf_splitter.py');
     const raw = await new Promise((resolve) => {
       let stdout = '';
-      const proc = spawn(py, args, { windowsHide: true });
+      const proc = spawn(pythonExe(), pythonArgs(splitterScript, '--file', srcFile, ...splitArgs, '--outdir', splitOutDir), { windowsHide: true });
       proc.stdout.on('data', (d) => { stdout += d.toString(); });
       proc.on('close', () => {
         try { resolve(JSON.parse(stdout.trim())); }
@@ -6250,20 +6280,33 @@ function register(ctx) {
       });
       proc.on('error', (err) => resolve({ success: false, error: err.message }));
     });
-
+    if (groupsFile) { try { fs.unlinkSync(groupsFile); } catch {} }
     if (!raw.success) return raw;
 
     const createdFiles = (raw.files || []).filter(f => fs.existsSync(f));
-    if (createdFiles.length === 0) {
-      return { success: false, error: 'Splitter reported success but no output files were found on disk.' };
+    // STRICT guard (Oracle 2026-09-20 C-a/C2): the splitter must have produced EXACTLY the expected files. A
+    // mismatch (under-production, or a would-be whole-doc "1 file") means DON'T touch the original — clean up + bail.
+    if (createdFiles.length !== expectedSegments || expectedSegments < 1) {
+      for (const f of createdFiles) { try { fs.unlinkSync(f); } catch {} }
+      return { success: false, error: `Split produced ${createdFiles.length} file(s) but ${expectedSegments} were expected — the original was left untouched.` };
     }
 
-    // DEPARTMENT INHERITANCE (Oracle 2026-09-18 #2 — the disaster class): the child rows must inherit the
-    // parent's departments, else splitting a RESTRICTED document launders it into SHARED children visible to
-    // everyone — an org-wide leak, independent of who is allowed to split. Read the parent's tags once and copy
-    // them to each child in the SAME transaction as the insert (a child is never visible without its tags).
-    // Byte-identical when the parent is untagged (empty set → no rows written → shared, exactly as before) or
-    // no departments exist (the table is absent → the read yields []).
+    // C1 — MOVE the original aside (recoverable), never hard-delete. BEFORE inserting children so a failed
+    // move never orphans child rows. Move fails (locked/AV/sync handle) → clean up the parts, leave the original.
+    if (recordedOriginal && fs.existsSync(recordedOriginal)) {
+      try {
+        const keepDir = path.join(path.dirname(recordedOriginal), SEPARATED_DIR_SPLIT);
+        fs.mkdirSync(keepDir, { recursive: true });
+        fs.renameSync(recordedOriginal, path.join(keepDir, path.basename(recordedOriginal)));
+      } catch (e) {
+        for (const f of createdFiles) { try { fs.unlinkSync(f); } catch {} }
+        return { success: false, error: 'Could not set the original aside (it may be open in another program) — nothing was changed.' };
+      }
+    }
+
+    // DEPARTMENT INHERITANCE (Oracle 2026-09-18 #2): children inherit the parent's departments in the SAME
+    // txn as the insert, else splitting a RESTRICTED doc launders it into shared children. Byte-identical when
+    // the parent is untagged (no rows → shared, as before) or no departments exist.
     let parentDeptIds = [];
     try { parentDeptIds = db.prepare('SELECT department_id FROM document_departments WHERE document_id = ?').all(docId).map(r => r.department_id); } catch { parentDeptIds = []; }
     const _insChildDept = db.prepare('INSERT OR IGNORE INTO document_departments (document_id, department_id) VALUES (?, ?)');
@@ -6281,17 +6324,30 @@ function register(ctx) {
       }
     });
     _insertChildren();
-
-    // Remove the original from DB + disk — only after outputs are confirmed. The delete target is the
-    // doc's RECORDED original location (resolved above), never a renderer-supplied path.
-    documents.deleteDoc(db, docId);
-    if (recordedOriginal && fs.existsSync(recordedOriginal)) {
-      try { fs.unlinkSync(recordedOriginal); } catch (e) { logger?.warn('Could not delete original after split:', e.message); }
-    }
+    documents.deleteDoc(db, docId);   // DB row only — the disk original is safe in .sf_separated_originals
 
     broadcastCounts(notifyMainWindow, db);   // D2 / D-C11: viewer-scoped
-
     return { success: true, files: createdFiles, docIds };
+  }
+
+  // LEGACY entry (Review tool-rail flyout): (filePath, ranges, outDir, docId, every). filePath/outDir are
+  // IGNORED (H2) — every path is resolved server-side inside _runSplit.
+  ipcMain.handle('split-pdf', async (_e, filePath, ranges, outDir, docId, every) => {
+    const everyN = Number(every) > 0 ? Math.floor(Number(every)) : null;
+    if (docId == null || (!ranges && !everyN)) {
+      return { success: false, error: 'docId and ranges or every are required' };
+    }
+    return _runSplit(docId, everyN ? { everyN } : { ranges });
+  });
+
+  // GRAPHICAL entry (the split popout): `marks` = the 1-based first page of each sub-document, `removed` =
+  // pages to drop (blank backs). Groups + validation + the delete guard are all main-authoritative in _runSplit.
+  ipcMain.handle('split-pdf-marks', async (_e, arg) => {
+    const a = arg || {};
+    return _runSplit(a.docId, {
+      marks:   Array.isArray(a.marks)   ? a.marks   : [],
+      removed: Array.isArray(a.removed) ? a.removed : [],
+    });
   });
 
   // ── C12 — undo a bad automatic split (2026-09-19; barry+eric+gary → Oracle SIGN-OFF-W/COND C1-C6) ──────

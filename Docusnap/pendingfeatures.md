@@ -1,5 +1,79 @@
 # Pending Features & Deferred Work
 
+## 2026-09-20 — 'Undetected' issuer: don't fabricate a heading from body text; bucket it in Review (owner idea; NOT built — barry + reggie/gary → Oracle)
+Symptom (owner, live): a long Ricoh MANUAL with no teaching/logo/template landed in Review with the Document
+Issuer read as **"shall not be responsible for any damage that may"** — a disclaimer sentence pulled off a page,
+shown as the doc's identity + row title, 15% conf, "Needs a document type". The engine's cold-start issuer
+fallback grabbed a prominent body-text line because it had no letterhead to latch onto. Owner concern: "we end up
+with a ton of spurious headings with no meaning."
+**Two-part fix (agreed shape):**
+- **(A) Don't COMMIT a non-name value as the issuer.** The value-quality machinery already knows a sentence
+  isn't a company name — `python_backend/extraction/value_quality.py` `is_name_like_field` / `name_quality`
+  (JS mirror in `learning.js`), plus the `name_wordness_flag` guard (ON). Today it FLAGS the value but still
+  DISPLAYS it. Change: when the best issuer candidate FAILS name-quality AND there's no logo / template / teaching
+  fallback, mark the issuer **Undetected (blank)** rather than showing the garbage. Removes spurious headings at
+  source. Reuse the existing guard — do NOT reinvent the name/not-name line.
+- **(B) A Review 'Undetected' section** — group the no-issuer / no-type docs into one CALM bucket, separate from
+  the confidently-read queue, so they don't intermix and don't each show a meaningless heading. A bucket, not an
+  alert-per-doc (owner's minimise-alerts rule).
+**Guard against overcorrection:** base "undetected" on the value-quality guard + absence of logo/template/teaching,
+NOT on low confidence alone — else a genuine-but-faint real name gets hidden. Pairs with the opt-in-split design
+(a long untaught manual lands as ONE doc in the Undetected section). Subsumes the earlier "sentence-isn't-a-name"
+quality note. **Next:** barry (the bucket UX + copy) + reggie/gary (the declare-undetected value-quality gate,
+where exactly it fires, byte-identical when a real name IS present) → Oracle; likely DARK-gated + a census (does
+declaring-undetected ever HIDE a doc that today shows a correct issuer?).
+
+## 2026-09-20 — Auto-split-on-import becomes OPT-IN + a page-1 separator-sheet trigger (owner design; NOT built — needs gary + Oracle)
+Owner proposal (refined over several messages). The auto-detect batch-separation pre-pass (letterhead/title
+boundary finding across ALL pages) is EXPENSIVE on long scans (per-page render+OCR, no cap — verified in
+`ocr/segmentation.py`), and a silently-wrong boundary buried in a long doc is hard for the customer to spot.
+Now that the graphical splitter exists (this session), "land whole + let them split" is a cheap, SAFE fallback.
+**Design shape agreed:**
+- **Default = auto-detect split OFF.** A multipage scan lands as ONE document; classify/extract from PAGE 1
+  only (lazily OCR the rest only if/when split — CONFIRM the engine doesn't already OCR every page; that sizes
+  the win). Show a CALM affordance in the Review row — e.g. "Multipage · N pages — may be several documents ·
+  Split" (reuse the `page_count` multipage indicator, mig 37). NEVER a blocking alert (owner's minimise-alerts
+  rule). Stops a bundle being confirmed-as-one by accident.
+- **Auto-detect split runs only when asked, two ways:** (1) a global opt-in setting "Automatically split
+  multi-document scans" (customer accepts longer imports); (2) **a separator sheet placed as PAGE 1** → triggers
+  the full auto-detect split for THAT scan only, then drops the sheet. The page-1-sheet check is an OVERRIDE —
+  it flips the auto-detect pass ON even when the global setting is off (checked BEFORE the opt-in gate).
+- **Separator sheets STAY** (explicit customer intent, not a guess). Between-doc sheets still act as hard
+  boundaries (existing Filing Slips); the NEW semantic is that a sheet in position 1 = "split this bundle."
+  Reuse the existing plain-separator-sheet detection.
+- ONE setting governs BOTH folder-import and watch-folder. Default-OFF is a DEFAULT FLIP for existing users
+  (auto-detect is currently ON via mig 175 / the segment_* switches) → deliberate migration + a one-line note.
+- The pair-hold / continuation-veto / title-slug / known-supplier / split-segment-hold safety switches only run
+  INSIDE the auto-detect pass, so they're inert by default and unchanged when opt-in is ON. Clean.
+**OPEN Q for the design:** does a page-1 sheet mean "auto-detect the boundaries for me" (the reading here) vs
+"I'll also place sheets between each doc"? Design as the auto-detect trigger + honour any additional between-doc
+sheets as hard boundaries (best of both); owner to confirm.
+**Next:** gary (pipeline + page-1-only extraction + the page-1-sheet override) + a barry/eric UX pass (the Review
+multipage affordance) → Oracle; settings/DARK-gated; a small census (does landing-whole-by-default ever regress a
+bundle the current pass splits correctly, and the import-time speed delta on a long scan). Supersedes the earlier
+"first-10-pages probe" idea (that heuristic could mis-guess boundaries / merge long homogeneous bundles).
+
+## 2026-09-20 — Graphical page-splitter + blank-page removal (barry+eric+gary+oscar → Oracle SIGN-OFF-W/COND ×2) — BUILDING; these bits DEFERRED
+The visual split popout (thumbnail grid → click the first page of each sub-document → preview → select/deselect
+pages to remove, with an auto blank-detect flag) is being BUILT this session (scope = the split popout only).
+Deferred out of that build:
+- **Blank-page removal at IMPORT time (duplex scanners).** The owner scoped blank-removal to the split popout for
+  now; the bigger real-world want is dropping blank backs at folder/watch import (double-sided scans). Reuse the same
+  detector (`pages.py --blank-scan`, ink-coverage + spatial-concentration, oscar 2026-09-20). Must stay REVIEWABLE
+  (never silently drop at import) — likely a "we found N blank pages, remove them?" step, not automatic.
+- **Rotate / reorder pages** from the same thumbnail canvas (barry's adjacent ideas). Rotate = a manual override on a
+  visibly-sideways thumbnail; reorder = drag (more office than home). Own slice each; the canvas makes them cheap.
+- **`.sf_separated_originals` archive name-collision (pre-existing hazard, Oracle 2026-09-20).** The recover-original
+  move uses `renameSync` with NO de-dup (`handler.js` ~2994 import path + the new split move-aside inherit it): two
+  docs sharing an original basename can OVERWRITE each other's recovery copy, losing the earlier one's anchor — and
+  **C12 Rejoin depends on that archive**. Not this feature's bug; harden with a collision-safe name (append `-2`, or
+  a docId prefix) in a dedicated slice.
+- **"Every N pages" split has no UI entry** after this build: the Review ✂ button now opens the graphical
+  popout, and the old free-text flyout (which held the ranges box AND the every-N control) is left dormant.
+  The legacy `split-pdf` IPC still accepts `every`, so fold an "these are all N pages each" helper into the
+  popout (auto-marks every Nth page as a boundary) if anyone misses it. Low priority (niche power feature).
+- (Already listed 2026-09-19, still deferred: Shape-A whole-original re-import; general queue-wide Join.)
+
 ## 2026-09-19 — C12 SHIPPED (Rejoin); two follow-ups deferred (barry+eric+gary → Oracle SIGN-OFF-W/COND)
 **C12 built** (`processing/handler.js` `undo-document-split`/`get-split-undo-info`, `python_backend/pdf_join.py`,
 review renderer "Join with page N"; pins `test_pdf_join.py` + `test_c12_rejoin.js`). SHAPE B only (join the two

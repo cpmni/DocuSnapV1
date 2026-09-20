@@ -36,7 +36,7 @@ const path = require('path');
 let fails = 0;
 const check = (l, c) => { console.log(`  ${c ? 'OK ' : 'BAD'} ${l}`); if (!c) fails++; };
 
-const GATE = /canAccessDocument|_assertDocAccess|_assertDeletedDocAccess|_gateDoc|_gateMutate|departmentVisibility|visibleDocSql|\.decision\(/;
+const GATE = /canAccessDocument|_assertDocAccess|_assertDeletedDocAccess|_gateDoc|_gateMutate|departmentVisibility|visibleDocSql|_runSplit|\.decision\(/;
 const read = (rel) => fs.readFileSync(path.join(__dirname, rel), 'utf8');
 
 // Split a handler source into { name -> full block } (block = from one ipcMain.handle( to the next — variable
@@ -56,7 +56,10 @@ console.log('§1 desktop IPC — every known by-id SERVE/MUTATE handler referenc
   const proc = ipcBlocks(read('../modules/processing/handler.js'));
   const rev  = ipcBlocks(read('../modules/review/handler.js'));
   const MUST_GATE = {
-    'reprocess-document': proc, 'split-pdf': proc,
+    // split-pdf + split-pdf-marks (2026-09-20 graphical split) both delegate to the shared _runSplit
+    // runner, which carries the department access gate; the GATE regex accepts the `_runSplit` token and §2
+    // locks _runSplit itself to canAccessDocument (so the delegation target can't lose the gate).
+    'reprocess-document': proc, 'split-pdf': proc, 'split-pdf-marks': proc,
     'sweep-inview-file': proc, 'sweep-inview-recheck': proc, 'sweep-inview-hold': proc,
     'get-document-with-extractions': rev, 'get-document-detail': rev, 'get-document-pages': rev,
     'get-document-page': rev, 'get-document-page-count': rev, 'get-document-page-info': rev,
@@ -88,6 +91,9 @@ console.log('§2 gated-one-level-down (helper / service) still carries the token
   // open-document-file / show-document-in-explorer route through _openResolvedDoc.
   check('_openResolvedDoc (open/show-in-explorer) gates on canAccessDocument',
     /_openResolvedDoc\s*=\s*\([^)]*\)\s*=>/.test(proc) && /canAccessDocument/.test(proc.slice(proc.indexOf('_openResolvedDoc ='), proc.indexOf('_openResolvedDoc =') + 1600)));
+  // split-pdf / split-pdf-marks both run through _runSplit — lock the runner itself to the access gate.
+  check('_runSplit (the shared split runner) gates on canAccessDocument',
+    /_runSplit\b[\s\S]{0,2200}canAccessDocument/.test(proc));
   // set-document-department(s) route through departmentService.setDocumentDepartments.
   check('departmentService.setDocumentDepartments gates on canAccessDocument',
     /function setDocumentDepartments/.test(dsvc) && GATE.test(dsvc.slice(dsvc.indexOf('function setDocumentDepartments'), dsvc.indexOf('function setDocumentDepartments') + 400)));

@@ -113,16 +113,29 @@ const HOSTILE = { file: 'C:\\Windows\\System32\\drivers\\etc\\hosts', dir: '\\\\
     check('confirm on a NONEXISTENT doc → NOT_FOUND (no filing)', r2.ok === false && r2.code === 'NOT_FOUND');
   }
 
-  // ── §B  H2 — split-pdf resolves source / outdir / delete-target from the row ──
-  console.log('\n§B  H2 — split-pdf uses ROW source+outdir+delete, ignores renderer filePath/outDir');
+  // ── §B  H2 — split-pdf resolves source / outdir / MOVE-target from the row (2026-09-20: move-aside, not unlink) ──
+  console.log('\n§B  H2 — split-pdf uses ROW source+outdir, MOVES the original aside, ignores renderer filePath/outDir');
   {
     const db = new Database(':memory:'); runMigrations(db);
     const id = Number(documents.insert(db, { original_filename: 'orig.pdf', folder_path: '/scans', status: 'needs_review' }).lastInsertRowid);
     db.prepare('UPDATE documents SET working_path = ? WHERE id = ?').run('/inbox/1.pdf', id);
     const rowOriginal = path.join('/scans', 'orig.pdf');
-    const outFile     = path.join('/scans', 'orig_1.pdf');
-    const existing = new Set([N('/inbox/1.pdf'), N(rowOriginal), N(outFile)]);
-    const unlinked = [], spawnArgs = [];
+    const out1 = path.join('/scans', 'orig_split_p1.pdf');
+    const out2 = path.join('/scans', 'orig_split_p2.pdf');
+    const existing = new Set([N('/inbox/1.pdf'), N(rowOriginal), N(out1), N(out2)]);
+    const unlinked = [], moved = [], spawnArgs = [];
+    // Count-aware spawn: pages.py --count → {pages:2}; the splitter → 2 files.
+    const spawn = (_cmd, args) => {
+      spawnArgs.push(args);
+      const p = new EventEmitter(); p.stdout = new EventEmitter(); p.stderr = new EventEmitter();
+      const out = args.includes('--count') ? { pages: 2 } : { success: true, files: [out1, out2] };
+      setImmediate(() => { p.stdout.emit('data', Buffer.from(JSON.stringify(out))); p.emit('close', 0); });
+      return p;
+    };
+    const fsStub = Object.assign({}, realFs, {
+      existsSync: (p) => existing.has(N(p)), unlinkSync: (p) => unlinked.push(String(p)),
+      writeFileSync: () => {}, mkdirSync: () => {}, renameSync: (s, d) => moved.push({ s: String(s), d: String(d) }),
+    });
     const H = {};
     require('../modules/processing/handler').register({
       ipcMain: { handle: (n, fn) => { H[n] = fn; }, on: () => {} },
@@ -134,21 +147,22 @@ const HOSTILE = { file: 'C:\\Windows\\System32\\drivers\\etc\\hosts', dir: '\\\\
       notifyMainWindow: () => {}, notifyAllWindows: () => {}, safeSend: () => {},
       notifyDevInspector: () => {}, notifyReview: () => {}, notifyWorkflowEvent: () => {},
       reviewTraceActive: false, devSliceDir: os.tmpdir(), windows: {}, app: null,
-      fs: makeFs(existing, unlinked), logger: { log() {}, warn() {}, err() {} },
-      spawn: makeSpawn(spawnArgs, { success: true, files: [outFile] }), path,
+      fs: fsStub, logger: { log() {}, warn() {}, err() {} }, spawn, path,
     });
     const split = H['split-pdf'];
-    const res = await split({}, HOSTILE.file, '1-1', HOSTILE.dir, id, undefined);
-    const a = spawnArgs[0] || [];
-    const outdir = a[a.indexOf('--outdir') + 1];
-    const file   = a[a.indexOf('--file') + 1];
+    const res = await split({}, HOSTILE.file, '1,2', HOSTILE.dir, id, undefined);
+    const sc = spawnArgs.find(a => a.includes('--outdir')) || [];   // the splitter call (not the --count probe)
+    const outdir = sc[sc.indexOf('--outdir') + 1];
+    const file   = sc[sc.indexOf('--file') + 1];
     check('split succeeded', res && res.success === true);
     check('--outdir is the ROW folder (/scans), NOT the renderer outDir \\\\attacker\\share', N(outdir) === N('/scans'));
     check('--file is the ROW working copy, NOT the renderer filePath C:\\Windows...', N(file) === N('/inbox/1.pdf'));
-    check('delete target is the ROW original, exactly once', unlinked.length === 1 && N(unlinked[0]) === N(rowOriginal));
-    check('the renderer filePath (hosts) was NEVER unlinked', !unlinked.some(p => /hosts/i.test(p)));
+    check('the original is MOVED ASIDE (recoverable), NOT unlinked', unlinked.length === 0 && moved.length === 1 && N(moved[0].s) === N(rowOriginal));
+    check('move target is .sf_separated_originals/orig.pdf under the ROW folder',
+          moved.length === 1 && /\.sf_separated_originals/.test(moved[0].d) && /orig\.pdf$/.test(moved[0].d));
+    check('the renderer filePath (hosts) was NEVER touched', !unlinked.some(p => /hosts/i.test(p)) && !moved.some(m => /hosts/i.test(m.s)));
     spawnArgs.length = 0;
-    const res2 = await split({}, HOSTILE.file, '1-1', HOSTILE.dir, undefined, undefined);
+    const res2 = await split({}, HOSTILE.file, '1,2', HOSTILE.dir, undefined, undefined);
     check('split WITHOUT a docId → refused, no spawn', res2 && res2.success === false && spawnArgs.length === 0);
   }
 

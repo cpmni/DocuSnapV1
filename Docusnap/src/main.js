@@ -225,6 +225,7 @@ let pendingSettingsTemplateId = null;
 let pendingSettingsSection = null;
 // Same pattern for the teaching wizard opened targeted at a just-scanned doc.
 let pendingTeachDocId = null;
+let pendingSplitDocId = null;
 
 const MAIN_WINDOW_OPTIONS    = { width: 1100, height: 750, minWidth: 800, minHeight: 560 };
 const LOGIN_WINDOW_OPTIONS   = { width: 460, height: 660, resizable: false, minimizable: false, maximizable: false };
@@ -598,8 +599,8 @@ function launchStartupWindow() {
 // click its toolbar button to bring it back. Non-modal keeps the main window usable, and
 // createWindow() already restores + focuses the existing window when its button is clicked
 // again. (A future window can still opt INTO modal by being a CHILD_WINDOW not listed here.)
-const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'export', 'dev-inspector', 'welcome', 'tutorial', 'stamped-viewer']);
-const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach', 'export', 'welcome', 'tutorial', 'stamped-viewer']);
+const CHILD_WINDOWS   = new Set(['review', 'settings', 'search', 'teach', 'split', 'export', 'dev-inspector', 'welcome', 'tutorial', 'stamped-viewer']);
+const NON_MODAL_CHILD = new Set(['dev-inspector', 'review', 'settings', 'search', 'teach', 'split', 'export', 'welcome', 'tutorial', 'stamped-viewer']);
 // Top-level "primary" windows that hide to the tray on a user close (the app then
 // fully quits ONLY via tray Exit). Their programmatic transitions destroy them
 // via destroyWindow(). Child windows close normally.
@@ -624,7 +625,7 @@ const PRIMARY_WINDOWS = new Set(['login', 'license', 'onboarding', 'main']);
 // Kill switch: CHILD_DOCK=0 restores the old minimizable:false behaviour exactly.
 const CHILD_DOCK_TITLES = {
   'review': 'Review', 'settings': 'Settings', 'search': 'Search',
-  'teach': 'Teach a document', 'export': 'Export data', 'dev-inspector': 'Dev inspector',
+  'teach': 'Teach a document', 'split': 'Split into documents', 'export': 'Export data', 'dev-inspector': 'Dev inspector',
   'welcome': 'Welcome', 'tutorial': 'Practice run', 'stamped-viewer': 'Stamped copy',
 };
 const dockedChildren = new Set();
@@ -709,7 +710,7 @@ function _boundsVisible(b) {
 // e.g. login/licence/onboarding) are left exactly as defined.
 // Windows that should ALWAYS open maximized ("fullscreen"), ignoring any remembered
 // smaller size — the work surfaces the user asked to default to fullscreen.
-const FORCE_MAXIMIZE = new Set(['settings', 'teach', 'review', 'search']);
+const FORCE_MAXIMIZE = new Set(['settings', 'teach', 'split', 'review', 'search']);
 
 function applyWindowState(win, name, options) {
   if (options.resizable === false) return;
@@ -1104,6 +1105,7 @@ const _SMOKE_WINDOWS = [
   // adapter script would leave every shared module throwing at first use — the class this probe exists for.
   { name: 'search',        globals: ['docusnap', 'SearchTransport', 'SearchTransport.caps', 'SearchState', 'SearchThumbs', 'SearchActions', 'SearchResults', 'SearchPreview', 'SearchQuery', 'SearchUI', 'SearchWorkflow', 'SearchMailbox', 'SearchStamp'] },
   { name: 'teach',         globals: ['docusnap'] },
+  { name: 'split',         globals: ['docusnap'] },
   { name: 'help',          globals: ['docusnap'] },
   { name: 'welcome',       globals: ['docusnap'] },
   { name: 'tutorial',      globals: ['docusnap', 'TUTORIAL_FIXTURES'] },
@@ -2086,6 +2088,25 @@ app.whenReady().then(async () => {
   ipcMain.handle('get-teach-target', () => {
     const id = pendingTeachDocId;
     pendingTeachDocId = null;
+    return id;
+  });
+
+  // Graphical page-split popout (2026-09-20). Same consume-once targeting as teach: the window PULLS its
+  // docId once (get-split-target) so the docId never rides through the renderer's trust boundary. The
+  // actual split runs through the hardened split-pdf-marks IPC (main resolves every path from the row).
+  ipcMain.on('open-split-window-at', (_e, docId) => {
+    if (!authModule.hasRole('admin', 'edit')) return;
+    const alreadyOpen = !!windows['split'];
+    pendingSplitDocId = docId;
+    createWindow('split', { width: 1200, height: 860, minWidth: 980, minHeight: 640 });
+    if (alreadyOpen) {
+      safeSend(windows['split']?.webContents, 'split-load-doc', docId);
+      pendingSplitDocId = null;
+    }
+  });
+  ipcMain.handle('get-split-target', () => {
+    const id = pendingSplitDocId;
+    pendingSplitDocId = null;
     return id;
   });
 

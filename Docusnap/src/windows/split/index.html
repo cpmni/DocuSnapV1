@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; form-action 'none'; base-uri 'none'; object-src 'none'">
+<title>Split into documents — Scan Finder</title>
+<script src="../shared/theme.js"></script>
+<link rel="stylesheet" href="../shared/theme.css" />
+<style>
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--text);
+    font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+  .titlebar { display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .titlebar .ttl { font-weight: 600; }
+  .winbtns button { background: none; border: none; color: var(--muted); font-size: 15px;
+    cursor: pointer; padding: 4px 8px; border-radius: var(--r-sm); }
+  .winbtns button:hover { background: var(--surface2); color: var(--text); }
+  .winbtns button.close:hover { background: var(--err); color: #fff; }
+
+  /* Sticky instruction + action bar */
+  .bar { position: sticky; top: 0; z-index: 5; background: var(--surface);
+    border-bottom: 1px solid var(--border); padding: 12px 18px; display: flex;
+    align-items: center; gap: 16px; flex-wrap: wrap; }
+  .bar .instruct { flex: 1 1 320px; min-width: 260px; }
+  .bar .instruct h2 { margin: 0 0 3px; font-size: 15px; }
+  .bar .instruct p { margin: 0; font-size: 12px; color: var(--muted); }
+  .summary { font-size: 13px; font-weight: 600; color: var(--accent); white-space: nowrap; }
+  .summary small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; max-width: 340px; white-space: normal; }
+  .bar .actions { display: flex; align-items: center; gap: 10px; }
+  .btn { border: 1px solid var(--border2); background: var(--surface2); color: var(--text);
+    border-radius: var(--r-sm); padding: 8px 14px; font-size: 13px; cursor: pointer; }
+  .btn:hover { background: var(--surface3); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent, #fff); font-weight: 600; }
+  .btn.primary:disabled { opacity: .5; cursor: not-allowed; }
+  .blank-stop { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .blank-stop select { font-size: 12px; padding: 3px 6px; background: var(--surface2);
+    border: 1px solid var(--border2); color: var(--text); border-radius: 5px; }
+
+  /* Page grid */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 18px 14px; padding: 22px 18px 60px; align-items: start; }
+  .card { position: relative; border: 2px solid var(--border2); border-radius: var(--r-sm);
+    background: var(--surface); overflow: hidden; cursor: pointer; transition: border-color .1s, box-shadow .1s; }
+  .card:hover { border-color: var(--accent2); }
+  .card .thumb { width: 100%; aspect-ratio: 3 / 4; background: var(--doc-bg);
+    display: flex; align-items: center; justify-content: center; }
+  .card .thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .card .thumb .ph { color: var(--muted); font-size: 11px; }
+  .card .pnum { text-align: center; font-size: 12px; padding: 5px; color: var(--text);
+    background: var(--surface2); border-top: 1px solid var(--border); }
+  /* boundary = starts a new document */
+  .card.boundary { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-bg); }
+  .card .ribbon { display: none; position: absolute; top: 0; left: 0; right: 0;
+    background: var(--accent); color: var(--on-accent, #fff); font-size: 11px; font-weight: 600;
+    text-align: center; padding: 3px 4px; z-index: 2; }
+  .card.boundary .ribbon { display: block; }
+  /* removed page */
+  .card.removed { border-color: var(--err); opacity: .55; }
+  .card.removed .thumb { filter: grayscale(1); }
+  .card.removed .pnum::after { content: ' · will be removed'; color: var(--err); }
+  /* blank flag */
+  .card .blankflag { position: absolute; bottom: 34px; left: 6px; font-size: 10px; padding: 2px 6px;
+    border-radius: var(--r-pill); display: none; z-index: 2; }
+  .card.blank-very .blankflag { display: inline-block; background: var(--warn); color: #fff; }
+  .card.blank-maybe .blankflag { display: inline-block; background: var(--surface3); color: var(--muted); border: 1px solid var(--border2); }
+  /* corner buttons */
+  .card .corner { position: absolute; top: 4px; z-index: 3; width: 26px; height: 26px;
+    border-radius: 50%; border: none; cursor: pointer; font-size: 13px; line-height: 26px;
+    text-align: center; background: rgba(0,0,0,.55); color: #fff; padding: 0; }
+  .card .corner:hover { background: rgba(0,0,0,.8); }
+  .card .btn-remove { right: 4px; }
+  .card .btn-peek { right: 34px; }
+  .card.removed .btn-remove { background: var(--err); }
+
+  /* preview lightbox */
+  .lightbox { display: none; position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.82);
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px; }
+  .lightbox.open { display: flex; }
+  .lightbox img { max-width: 92vw; max-height: 78vh; object-fit: contain; background: #fff; box-shadow: 0 6px 40px rgba(0,0,0,.6); }
+  .lightbox .lb-bar { display: flex; align-items: center; gap: 14px; color: #fff; font-size: 13px; }
+  .lightbox .lb-bar button { background: var(--surface2); color: var(--text); border: 1px solid var(--border2);
+    border-radius: var(--r-sm); padding: 6px 12px; cursor: pointer; }
+  .lightbox .lb-mark { display: flex; gap: 8px; }
+
+  /* generic modal (confirm) */
+  .modal { display: none; position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.5);
+    align-items: center; justify-content: center; }
+  .modal.open { display: flex; }
+  .modal .box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+    padding: 22px 24px; max-width: 460px; }
+  .modal .box h3 { margin: 0 0 10px; }
+  .modal .box p { font-size: 13px; color: var(--text); line-height: 1.45; }
+  .modal .box .row { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+
+  .status { padding: 40px; text-align: center; color: var(--muted); }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 60;
+    background: var(--err); color: #fff; padding: 10px 18px; border-radius: var(--r-sm);
+    font-size: 13px; display: none; max-width: 80vw; }
+  .toast.show { display: block; }
+</style>
+</head>
+<body>
+  <div class="titlebar">
+    <span class="ttl">Split into documents</span>
+    <div class="winbtns">
+      <button id="win-min" title="Minimise">—</button>
+      <button class="close" id="win-close" title="Close">✕</button>
+    </div>
+  </div>
+
+  <div class="bar">
+    <div class="instruct">
+      <h2>Click the first page of each new document</h2>
+      <p>We draw a line where each new document starts. Use the magnifier to look closely, and the ✕ on a page to drop a blank or unwanted page.</p>
+    </div>
+    <div class="summary" id="summary">Loading…</div>
+    <div class="actions">
+      <label class="blank-stop" title="How eagerly to flag blank pages. You always confirm which to remove.">
+        Blank pages:
+        <select id="blank-stop">
+          <option value="conservative" selected>Conservative</option>
+          <option value="standard">Standard</option>
+          <option value="off">Don't flag</option>
+        </select>
+      </label>
+      <button class="btn" id="btn-cancel">Cancel</button>
+      <button class="btn primary" id="btn-create" disabled>Create documents</button>
+    </div>
+  </div>
+
+  <div class="grid" id="grid"><div class="status" id="status">Loading pages…</div></div>
+
+  <!-- preview lightbox -->
+  <div class="lightbox" id="lightbox">
+    <img id="lb-img" alt="Page preview" />
+    <div class="lb-bar">
+      <button id="lb-prev">‹ Previous</button>
+      <span id="lb-label">Page</span>
+      <button id="lb-next">Next ›</button>
+      <span class="lb-mark">
+        <button id="lb-boundary">Start a new document here</button>
+        <button id="lb-remove">Remove this page</button>
+      </span>
+      <button id="lb-close">Close</button>
+    </div>
+  </div>
+
+  <!-- confirm modal -->
+  <div class="modal" id="confirm">
+    <div class="box">
+      <h3 id="confirm-title">Create documents?</h3>
+      <p id="confirm-body"></p>
+      <div class="row">
+        <button class="btn" id="confirm-cancel">Cancel</button>
+        <button class="btn primary" id="confirm-ok">Create documents</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

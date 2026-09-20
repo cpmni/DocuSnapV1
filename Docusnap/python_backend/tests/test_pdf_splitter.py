@@ -21,8 +21,10 @@ import tempfile
 import subprocess
 from pathlib import Path
 
+import random
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from pdf_splitter import parse_ranges, split_pdf, chunk_ranges
+from pdf_splitter import parse_ranges, split_pdf, chunk_ranges, normalise_groups
 
 
 def check(label, condition, detail=''):
@@ -120,6 +122,97 @@ def main():
                 failures += 1
         except Exception as exc:
             failures += 1; print(f'  BAD split_pdf(every=1) raised: {exc}')
+
+    # ── normalise_groups — 1-based lists → 0-based index lists (may be non-contiguous) ──
+    section('normalise_groups — clamp/dedupe/drop-empty, preserve order & non-contiguity')
+    ng_cases = [
+        ([[1, 2, 4], [5, 6, 8]], 8, [[0, 1, 3], [4, 5, 7]]),   # the interior-removal case
+        ([[1, 9, 2]],            8, [[0, 1]]),                  # 9 out of range → dropped, order kept
+        ([[1, 1, 2]],            8, [[0, 1]]),                  # duplicate collapsed
+        ([[1, 2], []],           8, [[0, 1]]),                  # empty group dropped
+        ([[9, 10]],              8, []),                        # all-out-of-range group → gone
+        ([[1, 4, 5]],            5, [[0, 3, 4]]),               # single non-contiguous group
+    ]
+    for grps, total, expected in ng_cases:
+        got = normalise_groups(grps, total)
+        if not check(f'normalise_groups({grps}, {total}) == {expected}', got == expected, f'got {got}'):
+            failures += 1
+
+    # ── split_pdf(groups=…) — ONE file per group, non-contiguous preserved ──────
+    # THE load-bearing assertion: a sub-document with an interior page removed stays ONE
+    # file (file-count == group-count), NOT one file per contiguous run. A page-SET-only
+    # check would pass under the buggy range-gap design too, so assert FILE COUNT and
+    # PER-FILE PAGE COUNTS.
+    section('split_pdf(groups) — interior removal keeps a sub-doc as one file')
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / 'grp.pdf'
+        make_minimal_pdf(src, 8)
+        try:
+            # N=8, split at 1 & 5, blanks 3 & 7 removed → groups {1,2,4},{5,6,8}
+            paths = split_pdf(str(src), None, tmp, groups=[[1, 2, 4], [5, 6, 8]])
+            if not check('2 output files (NOT 4)', len(paths) == 2, f'got {len(paths)}'):
+                failures += 1
+            for i, expected_n in enumerate([3, 3]):
+                if i < len(paths):
+                    got_n = count_pages(paths[i])
+                    if not check(f'group {i+1} is one {expected_n}-page file', got_n == expected_n, f'got {got_n}'):
+                        failures += 1
+        except Exception as exc:
+            failures += 1; print(f'  BAD split_pdf(groups) raised: {exc}')
+
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / 'grp1.pdf'
+        make_minimal_pdf(src, 5)
+        try:
+            paths = split_pdf(str(src), None, tmp, groups=[[1, 4, 5]])
+            if not check('single non-contiguous group -> 1 file', len(paths) == 1, f'got {len(paths)}'):
+                failures += 1
+            if paths and not check('that file has 3 pages', count_pages(paths[0]) == 3, f'got {count_pages(paths[0])}'):
+                failures += 1
+        except Exception as exc:
+            failures += 1; print(f'  BAD split_pdf(single group) raised: {exc}')
+
+    # ── Property test — the split partition invariant under the groups path ─────
+    section('split_pdf(groups) — property: files == non-empty groups, pages preserved')
+    random.seed(20260920)
+    prop_fail = 0
+    for _ in range(40):
+        N = random.randint(2, 20)
+        # random groups of random 1-based pages (may be non-contiguous, out-of-range, dup, empty)
+        n_groups = random.randint(1, 4)
+        groups = [[random.randint(1, N + 2) for _ in range(random.randint(0, N))] for _ in range(n_groups)]
+        expected = normalise_groups(groups, N)
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / 'p.pdf'
+            make_minimal_pdf(src, N)
+            paths = split_pdf(str(src), None, tmp, groups=groups)
+            if len(paths) != len(expected):
+                prop_fail += 1; continue
+            if any(count_pages(p) != len(g) for p, g in zip(paths, expected)):
+                prop_fail += 1
+    if not check('40 random group-splits: file count == non-empty groups & page counts match', prop_fail == 0, f'{prop_fail} failed'):
+        failures += 1
+
+    # ── CLI — --groups-file round-trip ──────────────────────────────────────────
+    section('CLI round-trip — --groups-file')
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / 'gf_source.pdf'
+        make_minimal_pdf(src, 8)
+        gf = Path(tmp) / 'groups.json'
+        gf.write_text(json.dumps([[1, 2, 4], [5, 6, 8]]), encoding='utf-8')
+        script = Path(__file__).parent.parent / 'pdf_splitter.py'
+        result = subprocess.run(
+            [sys.executable, str(script), '--file', str(src), '--groups-file', str(gf), '--outdir', tmp],
+            capture_output=True, text=True,
+        )
+        try:
+            out = json.loads(result.stdout.strip())
+            if not check('--groups-file exits 0', result.returncode == 0, f'code={result.returncode}'):
+                failures += 1
+            if not check('--groups-file -> 2 files', len(out.get('files', [])) == 2, str(out)):
+                failures += 1
+        except json.JSONDecodeError:
+            failures += 1; print(f'  BAD could not parse --groups-file output: {result.stdout!r}')
 
     # ── CLI — --every round-trip ───────────────────────────────────────────────
     section('CLI round-trip — --every 2')

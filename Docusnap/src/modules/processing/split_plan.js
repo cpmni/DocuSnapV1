@@ -290,7 +290,87 @@ function carrySegmentHold(existingRows, mergedRows, roles = {}) {
   return mergedRows;
 }
 
+// ── Graphical page-split: marks + removed → page GROUPS (2026-09-20; barry+eric+gary+oscar → Oracle SIGN-OFF-W/COND ×2) ──
+// The visual splitter: the user clicks the FIRST page of each sub-document (1-based `marks`) and may
+// select pages to REMOVE (blank backs → `removed`). This turns them into explicit page GROUPS for
+// pdf_splitter.py --groups-file — NOT a range STRING, because a range gap FRAGMENTS a sub-document into
+// one file per contiguous run (a duplex scan with interspersed blanks would shatter into single pages).
+// A group may be non-contiguous; the splitter's writer keeps it as ONE file.
+//
+// STRICT on a destructive path: reject any non-integer / out-of-range mark or removed page (never CLAMP —
+// parse_ranges clamps, which would be fail-toward-wrong here). Page 1 is always an implicit boundary.
+// N MUST be the PDF-authoritative page count (read server-side, never the renderer's echo).
+// Returns { ok, error?, groups, expectedSegments, outputPageCount, N }:
+//   groups           = arrays of 1-based page numbers (removal applied; empty groups dropped)
+//   expectedSegments = groups.length — the EXACT file count the splitter must produce (the delete guard)
+//   outputPageCount  = N − |removed ∩ [1..N]| — pages that survive into some output file
+function marksToGroups(marks, removed, N) {
+  N = Number(N);
+  if (!Number.isInteger(N) || N < 1) return { ok: false, error: 'bad-page-count' };
+  const clean = (arr) => {
+    const out = [];
+    for (const v of (Array.isArray(arr) ? arr : [])) {
+      if (!Number.isInteger(v)) return null;      // any non-integer → reject the whole request
+      if (v < 1 || v > N) return null;            // out of range → reject (no clamp)
+      out.push(v);
+    }
+    return out;
+  };
+  const m = clean(marks);   if (m === null) return { ok: false, error: 'bad-mark' };
+  const r = clean(removed); if (r === null) return { ok: false, error: 'bad-removed' };
+  const removedSet = new Set(r);                              // dedupe
+  const boundaries = Array.from(new Set([1, ...m])).sort((a, b) => a - b);  // implicit 1, unique, ascending
+  const groups = [];
+  for (let i = 0; i < boundaries.length; i++) {
+    const lo = boundaries[i];
+    const hi = (i + 1 < boundaries.length) ? boundaries[i + 1] - 1 : N;
+    const pages = [];
+    for (let p = lo; p <= hi; p++) if (!removedSet.has(p)) pages.push(p);
+    if (pages.length) groups.push(pages);                     // drop empty (whole sub-doc / boundary removed)
+  }
+  return { ok: true, groups, expectedSegments: groups.length, outputPageCount: N - removedSet.size, N };
+}
+
+// The PROCEED gate for a marks-split (the ONLY thing that authorises the destructive delete/move-aside):
+//   expectedSegments>=1 AND outputPageCount>=1 AND (expectedSegments>=2 OR outputPageCount<N)
+// The strictly-fewer clause (outputPageCount<N) blocks the identical-re-import hazard (Chris r5 card 7)
+// for the single-file "remove blanks, no split" case; the >=2 clause covers a genuine split. This is SAFE
+// ONLY because the original is preserved recoverably in .sf_separated_originals (the move-aside) — the two
+// are LOAD-BEARING TOGETHER (Oracle 2026-09-20 seam): restoring a hard-delete OR dropping the strictly-fewer
+// clause makes this unsound. Pinned in test_split_removal_guard.js.
+function splitMarksAllowed(plan) {
+  if (!plan || !plan.ok) return { ok: false, error: plan && plan.error || 'bad-plan' };
+  if (plan.outputPageCount < 1) return { ok: false, error: 'all-pages-removed' };
+  if (plan.expectedSegments < 1) return { ok: false, error: 'nothing-to-do' };
+  if (plan.expectedSegments >= 2) return { ok: true };
+  if (plan.outputPageCount < plan.N) return { ok: true };     // no split, but ≥1 page removed → a real clean
+  return { ok: false, error: 'no-op' };                       // one whole-doc output, nothing removed
+}
+
+// JS mirror of pdf_splitter.parse_ranges' NON-EMPTY group count — the expected output-file count for the
+// LEGACY free-text `ranges` path, so its move-aside guard is exact (createdFiles.length === expected). Mirrors
+// the clamp/drop/reversed-skip/empty-skip rules exactly (pin: test_split_removal_guard.js keeps them in step).
+function expectedRangeFiles(rangesStr, N) {
+  N = Number(N);
+  let files = 0;
+  for (let part of String(rangesStr || '').split(',')) {
+    part = part.trim();
+    if (!part) continue;
+    if (part.includes('-')) {
+      const [a, b] = part.split('-', 2);
+      const start = Math.max(1, parseInt(a, 10));
+      const end   = Math.min(N, parseInt(b, 10));
+      if (Number.isFinite(start) && Number.isFinite(end) && start <= end) files++;
+    } else {
+      const p = parseInt(part, 10);
+      if (Number.isInteger(p) && p >= 1 && p <= N) files++;
+    }
+  }
+  return files;
+}
+
 module.exports = { buildSegmentArgs, buildSplitPlan, toRanges,
+  marksToGroups, splitMarksAllowed, expectedRangeFiles,
   MULTI_PAGE_SEGMENT_RE, SEGMENT_HOLD_MARK, segmentHoldNote, hasSegmentHold, segmentHoldRange,
   segmentHoldPages, carrySegmentHold,
   // segment pair hold (2026-09-17)

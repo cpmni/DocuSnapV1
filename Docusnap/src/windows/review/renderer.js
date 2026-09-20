@@ -9805,18 +9805,16 @@ document.getElementById('split-mode').addEventListener('change', () => {
 });
 
 document.getElementById('btn-split-pdf').addEventListener('click', () => {
-  // 1-page guard (Chris r5 card 7): a valid split of a 1-pager "succeeds" — it deletes the
-  // original and re-imports an identical doc behind the "permanently removed" warning.
-  // STRICT === 1: pages array is authoritative when loaded; page_count fallback is
-  // NULL-tolerant (pre-mig-37 unknown must never block).
+  if (!currentDoc) return;
+  // 1-page guard (Chris r5 card 7): a valid split of a 1-pager "succeeds" — it moves the original
+  // aside and re-imports an identical doc. STRICT === 1: pages array is authoritative when loaded;
+  // page_count fallback is NULL-tolerant (pre-mig-37 unknown must never block). The server re-checks too.
   const _pc = (Array.isArray(pageImages) && pageImages.length) ? pageImages.length : currentDoc?.page_count;
   if (_pc === 1) { showToast('This document is only one page — there\'s nothing to split.', 'warn'); return; }
-  const bar = document.getElementById('split-bar');
-  bar.style.display = 'flex';
-  document.getElementById('split-mode').value = 'ranges';
-  document.getElementById('split-ranges-input').value = '';
-  applySplitMode();
-  document.getElementById('split-ranges-input').focus();
+  // Open the GRAPHICAL splitter (2026-09-20): a thumbnail grid where you click the first page of each
+  // document and drop blank pages, instead of typing page ranges. Replaces the old free-text flyout below
+  // (kept dormant for now). The split runs through the hardened split-pdf-marks IPC.
+  window.docusnap.openSplitWindowAt(currentDoc.id);
 });
 
 document.getElementById('btn-split-cancel').addEventListener('click', () => {

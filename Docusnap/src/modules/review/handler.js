@@ -1261,6 +1261,30 @@ function register(ctx) {
     });
   });
 
+  // ── BLANK-SCAN: per-page blankness verdicts for the graphical split popout (2026-09-20, oscar) ──
+  //    {pages, blanks:[{page,coverage_pct,occupied_cells,verdict}]} (1-based page). Same gates + server-side
+  //    resolution. Advisory ONLY — the popout highlights, never auto-removes.
+  ipcMain.handle('blank-scan', async (_e, docId) => {
+    const sess = requireLogin();
+    const db = getDb();
+    _assertDocAccess(db, sess, docId);
+    const row = db.prepare(
+      'SELECT working_path, stored_path, folder_path, original_filename FROM documents WHERE id = ?').get(docId);
+    const pick = row && (row.working_path || row.stored_path
+      || (row.folder_path && row.original_filename ? path.join(row.folder_path, row.original_filename) : null));
+    if (!pick || !fs.existsSync(pick)) return null;
+    const script = ctx.resourcePath('python_backend', 'render', 'pages.py');
+    return await new Promise((resolve) => {
+      let out = '';
+      let proc;
+      try { proc = spawn(pythonExe(), pythonArgs(script, '--file', pick, '--blank-scan'), { windowsHide: true }); }
+      catch { return resolve(null); }
+      proc.stdout.on('data', d => { out += d.toString(); });
+      proc.on('close', () => { try { resolve(JSON.parse(out.trim())); } catch { resolve(null); } });
+      proc.on('error', () => resolve(null));
+    });
+  });
+
   // ── The PDF's OUTLINE (bookmarks / table of contents) for the Search viewer's Contents panel ──
   //    [{title, page, level}], page = 0-based; [] when none. Same server-side resolution; no render.
   ipcMain.handle('get-document-outline', async (_e, docId) => {

@@ -191,6 +191,12 @@ contextBridge.exposeInMainWorld('docusnap', {
   openTeachWindowAt:   (docId)  => ipcRenderer.send('open-teach-window-at', docId),
   getTeachTarget:      ()       => ipcRenderer.invoke('get-teach-target'),
   onTeachLoadDoc:      (cb)     => ipcRenderer.on('teach-load-doc', (_e, id) => cb(id)),
+  // Graphical page-split popout (2026-09-20)
+  openSplitWindowAt:   (docId)  => ipcRenderer.send('open-split-window-at', docId),
+  getSplitTarget:      ()       => ipcRenderer.invoke('get-split-target'),
+  onSplitLoadDoc:      (cb)     => ipcRenderer.on('split-load-doc', (_e, id) => cb(id)),
+  splitPdfMarks:       (payload) => ipcRenderer.invoke('split-pdf-marks', payload),
+  blankScan:           (docId)  => ipcRenderer.invoke('blank-scan', docId),
   getStampedViewerTarget: ()    => ipcRenderer.invoke('get-stamped-viewer-target'),
   onStampedViewerLoad:  (cb)    => ipcRenderer.on('stamped-viewer-load', (_e, id) => cb(id)),
   createDocTypeWithFields: (data) => ipcRenderer.invoke('create-doc-type-with-fields', data),

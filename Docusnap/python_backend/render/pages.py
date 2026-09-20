@@ -60,6 +60,68 @@ def _is_raster_page(page, min_cover=0.5):
         return False
     return False
 
+def _blank_page_measure(page, scale=1.4):
+    """Measure how 'blank' one page is (oscar 2026-09-20). Returns (coverage_pct, occupied_cells).
+
+    Noise-robust, pure numpy — no OpenCV/scipy, no Otsu (which invents ink on a near-blank page). On a
+    grayscale raster (~100 DPI): crop 4% margins (drops scanner shadow/edge banding), estimate paper-white
+    as the 80th percentile, call a pixel 'ink' only if it is >= 45 (of 255) DARKER than paper (this contrast
+    gap rejects duplex bleed-through, which sits ~15-35 below paper), then keep only ink pixels with >= 2 of
+    8 dark neighbours (removes isolated speckle while PRESERVING thin lines — a median filter would erase a
+    faint line, the worst failure). Two numbers: ink COVERAGE and spatial CONCENTRATION (occupied cells on a
+    32x48 grid). Real content (a signature/stamp/line) is low-coverage but CONCENTRATED; bleed/speckle is
+    diffuse. The caller flags blank on coverage AND concentration together."""
+    import numpy as np
+    try:
+        _w, _h = page.get_size()
+        if _w > 0 and _h > 0:
+            scale = min(scale, _MAX_RENDER_DIM / _w, _MAX_RENDER_DIM / _h)
+    except Exception:
+        pass
+    arr = np.asarray(page.render(scale=scale).to_pil().convert('L'))
+    H, W = arr.shape
+    if H < 10 or W < 10:
+        return (100.0, 9999)                       # too small to judge → never call blank
+    my, mx = int(H * 0.04), int(W * 0.04)
+    interior = arr[my:H - my, mx:W - mx]
+    if interior.size == 0:
+        return (100.0, 9999)
+    paper = float(np.percentile(interior, 80))     # per-page paper-white (adapts to cream/grey scans)
+    mask = interior < (paper - 45.0)               # ink = clearly darker than paper (rejects bleed-through)
+    ih, iw = mask.shape
+    m = mask.astype(np.uint8)
+    neigh = np.zeros_like(m)
+    for dy in (-1, 0, 1):
+        for dx in (-1, 0, 1):
+            if dy == 0 and dx == 0:
+                continue
+            neigh[max(0, dy):ih + min(0, dy), max(0, dx):iw + min(0, dx)] += \
+                m[max(0, -dy):ih + min(0, -dy), max(0, -dx):iw + min(0, -dx)]
+    kept = mask & (neigh >= 2)                     # drop lone speckle, keep strokes/lines
+    coverage_pct = 100.0 * float(kept.sum()) / float(kept.size)
+    ys, xs = np.nonzero(kept)
+    if len(xs) == 0:
+        occupied = 0
+    else:
+        gy, gx = 48, 32
+        by = np.clip(ys * gy // ih, 0, gy - 1)
+        bx = np.clip(xs * gx // iw, 0, gx - 1)
+        counts = np.bincount(by * gx + bx, minlength=gy * gx)
+        occupied = int((counts >= 3).sum())        # cells holding >= 3 ink pixels = real content clusters
+    return (round(coverage_pct, 4), occupied)
+
+
+def _blank_verdict(coverage_pct, occupied):
+    """Two conservative tiers (oscar): 'very_likely' is safe to offer for bulk-select; 'possibly' is never
+    pre-selected. Blank needs BOTH low coverage AND low concentration — a concentrated faint mark
+    (signature/stamp/single line) is NOT blank however little ink it carries. Under-flags by design."""
+    if coverage_pct < 0.05 and occupied <= 2:
+        return 'very_likely'
+    if coverage_pct < 0.20 and occupied <= 8:
+        return 'possibly'
+    return 'not_blank'
+
+
 def _render_page(page, scale, fmt='png', quality=90):
     """fmt: 'png' (default, lossless — unchanged behaviour), 'jpeg', or 'auto' (JPEG for a raster/scan
     page, PNG for a vector/text page — see _is_raster_page). The Search viewer asks for 'auto'."""
@@ -131,6 +193,10 @@ def main():
     # size its lazy page array (and show page nav) instantly for a doc whose page_count wasn't recorded
     # (e.g. a Quick File doc), instead of rendering every page just to learn how many there are.
     parser.add_argument('--count', action='store_true', help='print {"pages":N} and exit — no render')
+    # BLANK-SCAN MODE (2026-09-20, oscar): measure every page's ink coverage + concentration in ONE process
+    # and print {"pages":N,"blanks":[{page,coverage_pct,occupied_cells,verdict},…]} (1-based page). Backs the
+    # graphical split popout's "likely blank" flag. Advisory only — the popout never auto-removes.
+    parser.add_argument('--blank-scan', action='store_true', help='print per-page blankness verdicts and exit')
     # OUTLINE MODE: print the PDF's bookmarks (table of contents) as {"outline":[{title,page,level},…]} — no render.
     # Backs the Search viewer's Contents panel (click → jump to the page).
     parser.add_argument('--outline', action='store_true', help='print {"outline":[…]} and exit — no render')
@@ -150,6 +216,20 @@ def main():
 
     if args.count:
         print(json.dumps({"pages": len(doc)}), flush=True)
+        return
+
+    if args.blank_scan:
+        n = len(doc)
+        blanks = []
+        for idx in range(n):
+            try:
+                cov, occ = _blank_page_measure(doc[idx])
+                blanks.append({"page": idx + 1, "coverage_pct": cov, "occupied_cells": occ,
+                               "verdict": _blank_verdict(cov, occ)})
+            except Exception:
+                # A page we can't measure is NEVER flagged blank (fail-toward-keep).
+                blanks.append({"page": idx + 1, "coverage_pct": 100.0, "occupied_cells": 9999, "verdict": "not_blank"})
+        print(json.dumps({"pages": n, "blanks": blanks}), flush=True)
         return
 
     if args.page_info:
