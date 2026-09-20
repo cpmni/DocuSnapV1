@@ -404,6 +404,11 @@ function _reconcileEnv(db) {
     // placement-certified row-bounded wider re-read and adopted REVIEW-BOUND (cap ≤87 + note; never auto-files
     // — Phase 1). Composes with Arc B (A upstream). DARK (mig 161), byte-identical OFF.
     if (learning.getSetting(db, 'template_code_left_grow', 'false') === 'true') env.TEMPLATE_CODE_LEFT_GROW = '1';
+    // ANCHOR_CODE_LEFT_GROW (mig 192, 2026-09-20, 007+gary → Oracle SIGN-OFF-W/COND). The Stage-2 sibling: the
+    // taught-crop crosscheck re-reads a clipped ref box with the mig-161 recovery; on INDEPENDENT convergence
+    // with the full-page read it commits the correct value CLEAN (no needless click) and lets it auto-file at its
+    // own conf. Non-convergence → today's flip+flag (fail-toward-review). DARK, byte-identical OFF.
+    if (learning.getSetting(db, 'anchor_code_left_grow', 'false') === 'true') env.ANCHOR_CODE_LEFT_GROW = '1';
     // INLINE_DISAGREE_CORROB_SOFTEN (2026-09-07, gary → Oracle SIGN-OFF-W/COND G1-G7): class G rewords the
     // box-clip value-doubt note (never clears) when an independent KEYWORD read corroborates the value —
     // review-bound, conf never lifted. DARK (mig 135; mig 136 = TEST force-ON). Env uses the '1' idiom.

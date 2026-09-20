@@ -2458,12 +2458,17 @@ def _gatec_tokens(lines):
 
 
 def _grow_code_left_read(page, target_box, tight_text, field_key, anchor_text,
-                         validation_patterns, format_lookup, ocr_lines_fn, line_cache):
+                         validation_patterns, format_lookup, ocr_lines_fn, line_cache,
+                         env_var='TEMPLATE_CODE_LEFT_GROW'):
     """Return (recovered_surface, conf) to adopt REVIEW-BOUND, else None. All of Oracle B1-C7 required:
     shape-VALID + page-ABSENT tight; recovered code page-PRESENT (raw surface) + single-side 'L' clip +
     row-aligned + exact learned shape + not label-glued + placement-certified by independent words. Never
-    raises. Per-call env read (byte-identical OFF)."""
-    if os.environ.get('TEMPLATE_CODE_LEFT_GROW', '0') != '1':
+    raises. Per-call env read (byte-identical OFF).
+
+    `env_var` (2026-09-20): the Stage-2 anchor crosscheck reuses this recovery under its OWN dark switch
+    `ANCHOR_CODE_LEFT_GROW`; the Stage-0.5 template caller passes nothing → self-gates on the default
+    `TEMPLATE_CODE_LEFT_GROW` exactly as before (byte-identical)."""
+    if os.environ.get(env_var, '0') != '1':
         return None
     try:
         tight = str(tight_text or '').strip()

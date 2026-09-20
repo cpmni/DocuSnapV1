@@ -57,6 +57,7 @@ the truth: 1 ready-but-declined · 5 held · 34 waiting · 1 parked · the Depar
 ## 🔵 HELD — helps you now as a flag/hold; the "auto-file" upgrade is a separate test (5)
 - **template_taught_corrob_adopt** — recovers a two-sided-clipped code when the page text agrees; holds for confirm.
 - **template_code_left_grow** — recovers a code clipped on its left edge; holds for confirm.
+- **anchor_code_left_grow** (mig 192, 2026-09-20) — the Stage-2 twin: on a taught-box ref disagreement it re-reads the clipped box with the same left-slack window; if that independently matches the full-page read it commits the correct value CLEAN (kills the needless "please verify" click AND lets it auto-file at its own confidence). Non-convergence falls to today's flag (fail-toward-review). Refs only. Census-gated: M=0 + false-flag census + a synthetic left-clip injection (incl. an adversarial non-convergence case). Flip = owner's call.
 - **filing_sanity_ref_reinstate** — uses the correct on-page code over a wrong off-page taught one; holds for confirm.
 - **deskew_retry_field_adopt** — the one-off straighten probe on an errored code (previewed on Ridgeway today); holds for confirm.
 - **deskew_false_absent_reflag** — replaces a false "doesn't appear on this page" note with a truthful one; still held.

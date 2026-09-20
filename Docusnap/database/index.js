@@ -3924,6 +3924,18 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 191 (taught_ref_disagree_suppress default ON): ${e.message}`); }
   }
 
+  // mig 192 (2026-09-20, 007+gary → Oracle SIGN-OFF-W/COND): anchor_code_left_grow — the Stage-2 taught-crop
+  // crosscheck re-reads a clipped ref box with the mig-161 left-slack recovery; on INDEPENDENT convergence with
+  // the full-page read it commits the correct value CLEAN (no needless "please verify" click), else today's
+  // flip+flag stands (fail-toward-review). DARK, seeded OFF, byte-identical off. Flip = owner's call after the census.
+  if (!applied.has(192)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('anchor_code_left_grow', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (192)').run();
+      console.log('JS migration 192 applied: anchor_code_left_grow (Stage-2 taught-box left-clip recovery) seeded OFF (DARK, 1 row)');
+    } catch (e) { console.warn(`  migration 192 (anchor_code_left_grow): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

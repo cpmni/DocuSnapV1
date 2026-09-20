@@ -16,11 +16,13 @@ page label harvest) are stubbed; `_filter_anchors` is bypassed to isolate the ru
     py -3.12 python_backend/tests/test_anchor_crop_crosscheck.py
 Exit 0 = fixed, 1 = regressed.
 """
+import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from extraction import anchor  # noqa: E402
+from extraction import template_mapper as _TM  # noqa: E402
 
 FAILS = 0
 
@@ -184,6 +186,59 @@ check("different dates -> disagree", anchor._reads_disagree("29/05/2026", "01/06
 check("unparseable date -> never disagree", anchor._reads_disagree("garbage", "29/05/2026", "date") is False)
 check("ref string differs -> disagree", anchor._reads_disagree("152574", "192074", "alphanumeric") is True)
 check("empty read -> no disagreement", anchor._reads_disagree("", "152574", "alphanumeric") is False)
+
+# ── ANCHOR CODE LEFT-GROW (mig 192, DARK anchor_code_left_grow; 007+gary → Oracle SIGN-OFF-W/COND) ──
+# When a ref crop disagreement is about to flag, re-read the SAME taught box with the mig-161 left-slack
+# recovery; on INDEPENDENT convergence with the full-page read the disagreement is DISSOLVED (commit clean,
+# no flag). Any non-convergence falls to today's flip+flag (fail-toward-review). `_grow_code_left_read` is
+# stubbed here (its own guards are pinned in test_template_code_left_grow.py); this drives the ANCHOR decision.
+def _run_lg(recovery, env_on, *, crop="VS-62315", inline="WS-62315",
+            field_key="invoice_number", validation="alphanumeric", anchor_ov=None):
+    orig = _TM._grow_code_left_read
+    if env_on:
+        os.environ["ANCHOR_CODE_LEFT_GROW"] = "1"
+    else:
+        os.environ.pop("ANCHOR_CODE_LEFT_GROW", None)
+    _TM._grow_code_left_read = lambda *a, **k: recovery
+    try:
+        return _run(_anchor(**(anchor_ov or {})), crop_reads=crop, inline_reads=inline,
+                    field_key=field_key, validation=validation)
+    finally:
+        _TM._grow_code_left_read = orig
+        os.environ.pop("ANCHOR_CODE_LEFT_GROW", None)
+
+
+# 12. CONVERGE: taught box re-read recovers the full-page value -> commit CLEAN, no needless click.
+print("\n12. left-grow CONVERGE (wider re-read == full-page) -> clean anchor_crop, no flag")
+r = _run_lg(("WS-62315", 88), True)
+check("converge: value is the full-page read", r.get("value") == "WS-62315")
+check("converge: method stays anchor_crop (disagreement dissolved)", r.get("method") == "anchor_crop")
+check("converge: NO disagreement note (click cleared)", not r.get("validation_note"))
+check("converge: not capped for review / not minted to a boost", (r.get("confidence") or 0) > 70)
+
+# 13. TRADE-OFF PIN (load-bearing): the wider re-read does NOT equal the full-page read -> today's
+#     flip+flag STANDS. Locks fail-toward-review so nobody degrades this into unconditional suppression.
+print("\n13. left-grow recovery != full-page read -> flip+flag STANDS (fail-toward-review)")
+r = _run_lg(("XS-62315", 88), True)
+check("non-converge: method is the cross-check", r.get("method") == "anchor_crop_crosscheck")
+check("non-converge: disagreement note present", "disagreed" in (r.get("validation_note") or "").lower())
+
+# 14. No recovery at all -> flip+flag stands.
+print("\n14. left-grow no recovery -> flip+flag stands")
+r = _run_lg(None, True)
+check("no recovery: flip+flag stands", r.get("method") == "anchor_crop_crosscheck")
+
+# 15. OFF (switch unset): even a would-converge recovery is IGNORED -> byte-identical flip+flag.
+print("\n15. switch OFF -> recovery ignored, byte-identical flip+flag")
+r = _run_lg(("WS-62315", 88), False)
+check("OFF: flip+flag stands (recovery never consulted)", r.get("method") == "anchor_crop_crosscheck")
+
+# 16. DATE field: the left-grow is REF-ONLY -> a date disagreement still flips+flags with the switch ON.
+print("\n16. DATE field with switch ON -> ref-only, date still flips+flags")
+r = _run_lg(("29/05/2026", 88), True, crop="01/06/2026", inline="29/05/2026",
+            field_key="invoice_date", validation="date",
+            anchor_ov={"field_key": "invoice_date", "anchor_label": "Invoice Date"})
+check("date: left-grow does not apply (ref-only) -> flip+flag", r.get("method") == "anchor_crop_crosscheck")
 
 print(f"\n{'ALL PASS' if FAILS == 0 else str(FAILS) + ' FAILED'}")
 sys.exit(1 if FAILS else 0)

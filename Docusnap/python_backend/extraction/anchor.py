@@ -942,20 +942,53 @@ def _eval_field_group(group_anchors, field_patterns, format_lookup, identity_lab
                             and _reads_disagree(_xc, value, val_type):
                         # Two independent reads DISAGREE (calendar-aware for dates) -> the taught crop
                         # can't win silently: prefer the full-page native read + flag for review.
-                        if on_reject:
-                            on_reject(field_key, "anchor_crop", value, "crop_fullpage_disagree")
-                        if os.environ.get("CROSSCHECK_OUTLIER_RECONCILE", "0") != "0":
-                            # Oracle C1: the fresh full-page locate can ITSELF be the garbler (doc-09:
-                            # correct crop PO-83150 flipped to a lone-outlier PO-83160). Preserve the
-                            # credible pre-flip CROP read so the engine's post-merge reconcile has an
-                            # independent crop-family witness — WITHOUT it the fix only heals mapping-
-                            # backed docs and leaves the ⊕-anchor-only sibling broken (a document fix,
-                            # not a system fix). Gated: the OFF path never adds the key (byte-identical,
-                            # ledger included). Consumed + popped in engine._reconcile_crosscheck_outlier.
-                            _xcheck_preflip = value
-                        value  = _xc.strip()             # prefer the full-page native read
-                        method = "anchor_crop_crosscheck"
-                        ocr_conf, ocr_min = None, None
+                        # ── ANCHOR CODE LEFT-GROW (mig 192, DARK ANCHOR_CODE_LEFT_GROW; 007+gary → Oracle
+                        #    SIGN-OFF-W/COND 2026-09-20) ────────────────────────────────────────────────
+                        # The common cause of a ref disagreement is the RIGID taught box clipping the leading
+                        # glyph ("WS-62315" read "VS-62315") — the crop's fixed +20px pad is glyph-blind, so a
+                        # box drawn a hair right of the first character bisects it. Re-read the SAME taught box
+                        # with the mig-161 left-slack recovery; if that wider re-read INDEPENDENTLY comes back
+                        # equal to the full-page read (_xc), the disagreement is DISSOLVED (not auto-cleared):
+                        # commit the correct value CLEAN — no flag, no reject, same rigid conf. Any non-
+                        # convergence (a genuine minority VS-series doc reads the true VS on the page → no
+                        # recovery; a cross-supplier false-locate reads a different token → no match) falls to
+                        # today's flip+flag, BYTE-IDENTICAL. Refs (code types) only; dates keep their own heal.
+                        _converged = False
+                        if val_type != "date" and os.environ.get("ANCHOR_CODE_LEFT_GROW", "0") == "1":
+                            try:
+                                from extraction import template_mapper as _tmlg
+                                _tlb = {"x_norm": max(0.0, x_norm - (_xw / 2.0)),
+                                        "y_norm": max(0.0, y_norm - (_xh / 2.0)),
+                                        "w_norm": _xw, "h_norm": _xh}
+                                _lg = _tmlg._grow_code_left_read(
+                                    page0, _tlb, value, field_key, anchor.get("anchor_label"),
+                                    validation_patterns, format_lookup, _tmlg._ocr_lines, line_cache,
+                                    env_var="ANCHOR_CODE_LEFT_GROW")
+                                if _lg is not None and _tmlg._code_norm(_lg[0]) == _tmlg._code_norm(_xc):
+                                    # The wider re-read of the taught box independently agrees with the full-page
+                                    # read: the clip is explained, the true value corroborated by placement +
+                                    # learned shape + a second region read. Commit the cleaned surface (_xc),
+                                    # keep method 'anchor_crop' and the rigid conf (NOT boosted); no note/reject.
+                                    value = _xc.strip()
+                                    _converged = True
+                            except Exception:
+                                _converged = False
+                        if not _converged:
+                            # NON-convergence (or OFF): today's flip-to-full-page + flag, BYTE-IDENTICAL.
+                            if on_reject:
+                                on_reject(field_key, "anchor_crop", value, "crop_fullpage_disagree")
+                            if os.environ.get("CROSSCHECK_OUTLIER_RECONCILE", "0") != "0":
+                                # Oracle C1: the fresh full-page locate can ITSELF be the garbler (doc-09:
+                                # correct crop PO-83150 flipped to a lone-outlier PO-83160). Preserve the
+                                # credible pre-flip CROP read so the engine's post-merge reconcile has an
+                                # independent crop-family witness — WITHOUT it the fix only heals mapping-
+                                # backed docs and leaves the ⊕-anchor-only sibling broken (a document fix,
+                                # not a system fix). Gated: the OFF path never adds the key (byte-identical,
+                                # ledger included). Consumed + popped in engine._reconcile_crosscheck_outlier.
+                                _xcheck_preflip = value
+                            value  = _xc.strip()             # prefer the full-page native read
+                            method = "anchor_crop_crosscheck"
+                            ocr_conf, ocr_min = None, None
                 elif _xloc and _xloc.get("label_box") \
                         and (_xloc.get("match_score") or 0) >= 0.9 \
                         and anchor.get("offset_dx_norm") is not None \
