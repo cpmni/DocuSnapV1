@@ -22,6 +22,17 @@ NOT on low confidence alone — else a genuine-but-faint real name gets hidden. 
 quality note. **Next:** barry (the bucket UX + copy) + reggie/gary (the declare-undetected value-quality gate,
 where exactly it fires, byte-identical when a real name IS present) → Oracle; likely DARK-gated + a census (does
 declaring-undetected ever HIDE a doc that today shows a correct issuer?).
+**STATUS 2026-09-20 (night run): UX SHAPED (barry).** Recommended surface = a third Review TAB **"Not recognised"**
+(clone of the Deferred tab — proven pattern), NOT an in-queue group. Row = page-1 THUMBNAIL + the ORIGINAL FILENAME
++ one calm sublabel "Couldn't identify this one"; **NO confidence % badge** (15% on a garbage read is noise). Click
+→ opens in the normal panel, type-picker as the obvious first move + the Teach CTA. Membership = value-quality-fail
++ no logo/template/teaching (NEVER low-confidence — the overcorrection guard). A TYPED-but-no-issuer doc does NOT
+go in the bucket (partially recognised). Bulk = only "Set aside all" (no bulk assign-type). Transition out = the
+moment a real type/issuer lands, badge ticks down, tab disappears at 0 ("Taught — we'll recognise ones like this
+from now on"). Part (A) (don't-commit-a-non-name) is L1/HIGH-value/LOW-effort — build FIRST, kills the spurious
+headings on its own; (B) the tab is L2. Pairs with the opt-in-split (a long untaught manual = one calm row + the
+Split affordance). Owner product calls: tab vs pinned-group · typed-no-issuer in bucket? · bulk-actions. NEXT:
+reggie/gary design the value-quality declare-undetected gate → Oracle, then build.
 
 ## 2026-09-20 — Auto-split-on-import becomes OPT-IN + a page-1 separator-sheet trigger (owner design; NOT built — needs gary + Oracle)
 Owner proposal (refined over several messages). The auto-detect batch-separation pre-pass (letterhead/title
@@ -52,6 +63,14 @@ sheets as hard boundaries (best of both); owner to confirm.
 multipage affordance) → Oracle; settings/DARK-gated; a small census (does landing-whole-by-default ever regress a
 bundle the current pass splits correctly, and the import-time speed delta on a long scan). Supersedes the earlier
 "first-10-pages probe" idea (that heuristic could mis-guess boundaries / merge long homogeneous bundles).
+**STATUS 2026-09-20 (night run): DESIGNED + Oracle-vetted → build-ready. Full plan `docs/designs/OPTIN_SPLIT_2026-09-20.md`.**
+gary design → Oracle **SIGN OFF WITH CONDITIONS**. KEY: the win is the default flip ALONE (skip the pre-pass, no
+new per-page code); **page-1-only extraction REJECTED** (extraction reads fields beyond page 1). SHIP-BLOCKER Oracle
+caught: a graduated supplier would silently AUTO-FILE a merged bundle (never reaches Review → no chip), so a
+**multipage-auto-file HOLD** (scoped to a later-page second-doc-start signal from the already-OCR'd text) is
+MANDATORY. Plus: renderer polarity flip (4th site), retire `watch_separate_enabled` + its dead toggle + re-point 2
+contract pins, the buildSplitPlan mixed-exemption seam, gate G1-G7 (G3 the auto-file-hold pin must FAIL on pre-fix
+code). Awaiting owner go to build.
 
 ## 2026-09-20 — Graphical page-splitter + blank-page removal (barry+eric+gary+oscar → Oracle SIGN-OFF-W/COND ×2) — BUILDING; these bits DEFERRED
 The visual split popout (thumbnail grid → click the first page of each sub-document → preview → select/deselect
