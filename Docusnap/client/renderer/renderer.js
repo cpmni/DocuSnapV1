@@ -260,7 +260,7 @@ function friendlyConnectError(raw) {
   if (/pairing code expired|code has expired|\bexpired\b/i.test(s))
     return 'That one-time code has expired. On the main PC, open Settings → Search client → “Connect a client” and show a new code (or scan the new QR), then try again.';
   if (/pairing code required|PAIRING|code required/i.test(s))
-    return 'This server needs a one-time code. On the main PC: Settings → Search client → “Connect a client” → “Show a one-time code”, then enter it here.';
+    return 'This server needs a one-time code. On the main PC: Settings → Search client → “Connect a client” → “Show a one-time code”, then type it into the “One-time code” box above and press Connect. (Or use “Scan a QR code…”, which carries the code for you.)';
   if (/ETIMEDOUT|ENOTFOUND|ECONNREFUSED|EHOSTUNREACH|ENETUNREACH|EAI_AGAIN|getaddrinfo|cannot reach|timed?\s*out|\bnetwork\b/i.test(s))
     return 'Couldn’t reach that PC. Check the address and port, and that the main PC is switched on with search-client access turned on.';
   return s || 'Could not connect to that server.';
@@ -274,6 +274,8 @@ async function _finishConnect(c) {
     : (m === 'mismatch')
       ? (c.reason || 'The certificate did not match — not connected.')
       : friendlyConnectError(c && c.reason);
+  // If the server asked for a one-time code, put the cursor in the code box so it's obvious where it goes.
+  if (/pairing code required|PAIRING|code required/i.test(String((c && c.reason) || ''))) { try { $('srv-code').focus(); } catch {} }
   return false;
 }
 $('connect-btn').addEventListener('click', (e) => withBusy(e.currentTarget, async () => {
@@ -282,11 +284,16 @@ $('connect-btn').addEventListener('click', (e) => withBusy(e.currentTarget, asyn
   if (!host) { $('connect-err').textContent = 'Enter a server address.'; return; }
   const port = $('srv-port').value.trim() || 8765;
   const tls = $('srv-tls').checked;
+  // One-time pairing code (optional): only needed when the server has one set. Normalise to the server's
+  // exact form — uppercase, strip spaces/hyphens the user may have typed (the alphabet excludes 0/O/1/I/L, so
+  // there are no look-alikes to fold). Empty → undefined (the manual path used to send none, hence the "nowhere
+  // to enter the code" gap this fixes).
+  const code = ($('srv-code').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '') || undefined;
   // Explicit "Choose a certificate file" path OR a plain-HTTP loopback address → the direct set-server path
   // (a deliberate operator choice / no cert). Everything else goes through the verified connect (main fetches +
   // hashes + pins; the CA never enters this renderer).
   if (_caPem || !tls) { return void _finishConnect(await api.setServer({ host, port, tls, caPem: _caPem || null })); }
-  const r = await api.connectVerified({ host, port, tls: true });
+  const r = await api.connectVerified({ host, port, tls: true, code });
   if (r && r.mode === 'confirm') {
     const ok = await certModal({
       title: 'Check the server’s certificate',
@@ -391,7 +398,7 @@ if (api.onCertAlert) api.onCertAlert(async (p) => {
   });
   if (ok) { const c = await api.connectAccept({ host: p.host, port: p.port }); if (c && c.ok) toast('Trusted the new certificate.', 'ok'); }
 });
-for (const id of ['srv-host', 'srv-port']) {
+for (const id of ['srv-host', 'srv-port', 'srv-code']) {
   $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') $('connect-btn').click(); });
 }
 $('login-change-server').addEventListener('click', () => showConnect());

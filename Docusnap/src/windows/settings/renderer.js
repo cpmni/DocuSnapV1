@@ -305,17 +305,30 @@ async function initClientApiSection() {
   async function refreshPairing() {
     const st = await api.clientApiPairingStatus().catch(() => null);
     const codeEl = document.getElementById('cc-pair-code'), sEl = document.getElementById('cc-pair-status'), clearBtn = document.getElementById('cc-pair-clear');
+    const reqEl = document.getElementById('cc-require-code'), area = document.getElementById('cc-code-area'), noNote = document.getElementById('cc-nocode-note');
     _ccStop();
-    if (st && st.active) {
+    const active = !!(st && st.active);
+    const configured = !!(st && st.configured);   // a code is STORED (even if expired) → still requires one
+    const expired = !!(st && st.expired);
+    // The "Require a one-time code" tick box reflects whether a code is CONFIGURED (a stored code = required, even
+    // once it has expired — an expired code still blocks the client). Unticking it CLEARS the code so a client can
+    // connect with just the ID-code check; ticking it shows a fresh one. This is the off switch that was missing.
+    if (reqEl) reqEl.checked = configured;
+    if (area) area.style.display = configured ? '' : 'none';
+    if (noNote) noNote.style.display = configured ? 'none' : '';
+    if (clearBtn) clearBtn.style.display = configured ? '' : 'none';
+    if (active) {
       if (codeEl) { codeEl.textContent = st.code; codeEl.style.display = ''; }
-      if (clearBtn) clearBtn.style.display = '';
       if (sEl) { const tick = () => { const left = Math.max(0, Math.round((st.expires - Date.now()) / 1000));
         sEl.textContent = left > 0 ? `Expires in ${Math.floor(left / 60)}m ${String(left % 60).padStart(2, '0')}s — enter it on the client.` : 'Expired — show a new one.';
         if (left <= 0) { _ccStop(); refreshPairing(); } }; tick(); _ccCountdown = setInterval(tick, 1000); }
+    } else if (expired) {
+      // The load-bearing fix: an expired code is still blocking clients, but there WAS no way to see or clear it.
+      if (codeEl) codeEl.style.display = 'none';
+      if (sEl) sEl.textContent = 'This code has EXPIRED — clients still can’t connect. Show a new code, or untick “Require a one-time code” to stop requiring one.';
     } else {
       if (codeEl) codeEl.style.display = 'none';
-      if (clearBtn) clearBtn.style.display = 'none';
-      if (sEl) sEl.textContent = 'No code set — connecting still works, but a code lets the client verify it reached the right PC.';
+      if (sEl) sEl.textContent = '';
     }
   }
   async function renderConnectCard() {
@@ -453,6 +466,18 @@ async function initClientApiSection() {
   if (ccGen) ccGen.addEventListener('click', async () => { try { await api.clientApiPairingGenerate({ minutes: 10 }); await refreshPairing(); await loadConnectQr(); } catch { /* ignore */ } });
   const ccClear = document.getElementById('cc-pair-clear');
   if (ccClear) ccClear.addEventListener('click', async () => { try { await api.clientApiPairingClear(); await refreshPairing(); await loadConnectQr(); } catch { /* ignore */ } });
+  // The "Require a one-time code" tick box (the master on/off): ticking shows a code, unticking clears it so a
+  // client can connect with just the ID-code check. The security gate itself is unchanged — no code = open,
+  // exactly as before; this only makes the choice explicit instead of the show/clear buttons.
+  const ccReq = document.getElementById('cc-require-code');
+  if (ccReq) ccReq.addEventListener('change', async () => {
+    try {
+      if (ccReq.checked) await api.clientApiPairingGenerate({ minutes: 10 });
+      else await api.clientApiPairingClear();
+    } catch { /* ignore */ }
+    await refreshPairing();
+    await loadConnectQr();
+  });
   saver(cert, 'client_api_tls_cert'); saver(key, 'client_api_tls_key');
 
   const certGenBtn = document.getElementById('client-api-cert-generate');

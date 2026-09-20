@@ -1917,8 +1917,13 @@ function register(ctx) {
     const db = getDb();
     const code = learning.getSetting(db, 'client_api_pairing_code') || '';
     const exp = Number(learning.getSetting(db, 'client_api_pairing_expires') || 0);
-    const active = !!code && (!exp || Date.now() < exp);
-    return { active, code: active ? code : '', expires: active ? exp : 0 };
+    // `configured` = a code is STORED (so it must be managed/clearable even once expired — an expired code still
+    // BLOCKS enrollment in pairingOk, so the UI must let the admin clear or renew it, else it's stuck requiring a
+    // code that can't be entered). `active` = stored AND not expired (the live code). `expired` = stored but lapsed.
+    const configured = !!code;
+    const active = configured && (!exp || Date.now() < exp);
+    const expired = configured && !active;
+    return { configured, active, expired, code: active ? code : '', expires: active ? exp : 0 };
   });
   // The "Connect a client" QR — generated in MAIN (Oracle/eric): a small JSON of {host,port,tls,fingerprint,code}
   // ONLY, NEVER the CA PEM (the profile FILE carries the PEM; the QR carries the verifier). Fingerprint-only keeps

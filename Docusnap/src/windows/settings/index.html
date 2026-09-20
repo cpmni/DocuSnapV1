@@ -2874,16 +2874,25 @@
           <div class="card-head"><div class="section-title">Connect a client</div></div>
           <p class="section-desc">On the search-client PC, enter this PC's address and port, then check the certificate matches. Use the one-time code (or scan the QR) so it verifies automatically.</p>
           <div class="threshold-sub" id="cc-address" style="font-family:var(--mono); font-size:13px;"></div>
-          <div class="row-flex" style="gap:10px; margin-top:12px; align-items:center;">
-            <button class="btn" id="cc-pair-gen">Show a one-time code</button>
-            <button class="btn ghost" id="cc-pair-clear" style="display:none;">Clear code</button>
-            <span class="threshold-sub" id="cc-pair-status" style="flex:1;"></span>
+          <label style="margin-top:12px; display:flex; gap:9px; align-items:flex-start; cursor:pointer;">
+            <input type="checkbox" id="cc-require-code" style="width:auto; margin-top:3px;">
+            <span>Require a one-time code to connect a new client
+              <span class="threshold-sub" style="display:block; margin-top:2px;">Off: a client connects after you confirm the ID code matches — simplest. On: the client must also type a short code you show here — extra protection on a shared network.</span>
+            </span>
+          </label>
+          <div id="cc-code-area" style="display:none;">
+            <div class="row-flex" style="gap:10px; margin-top:12px; align-items:center;">
+              <button class="btn" id="cc-pair-gen">Show a new code</button>
+              <button class="btn ghost" id="cc-pair-clear" style="display:none;">Clear code</button>
+              <span class="threshold-sub" id="cc-pair-status" style="flex:1;"></span>
+            </div>
+            <div id="cc-pair-code" style="font-family:var(--mono); font-size:22px; letter-spacing:3px; margin-top:8px; display:none;"></div>
+            <div id="cc-qr-wrap" style="margin-top:12px; display:none;">
+              <img id="cc-qr" alt="Connection QR code" style="width:200px; height:200px; image-rendering:pixelated; background:#fff; padding:6px; border-radius:8px; border:1px solid var(--border);">
+              <p class="section-desc" style="margin-top:6px; margin-bottom:0;">Photograph or scan this on the client to fill the address and check the certificate automatically. It contains no password.</p>
+            </div>
           </div>
-          <div id="cc-pair-code" style="font-family:var(--mono); font-size:22px; letter-spacing:3px; margin-top:8px; display:none;"></div>
-          <div id="cc-qr-wrap" style="margin-top:12px; display:none;">
-            <img id="cc-qr" alt="Connection QR code" style="width:200px; height:200px; image-rendering:pixelated; background:#fff; padding:6px; border-radius:8px; border:1px solid var(--border);">
-            <p class="section-desc" style="margin-top:6px; margin-bottom:0;">Photograph or scan this on the client to fill the address and check the certificate automatically. It contains no password.</p>
-          </div>
+          <p class="section-desc" id="cc-nocode-note" style="margin-top:8px; display:none;">No code needed — on the client, enter this PC's address and press Connect, then confirm the ID code matches the one under &ldquo;Security certificate &amp; ID code&rdquo; below.</p>
           <p class="section-desc" id="cc-tip" style="margin-top:14px;">💡 <b>Tip:</b> for a reliable connection, give this PC a fixed address &mdash; a router &ldquo;DHCP reservation&rdquo; is easiest &mdash; or have clients connect by this PC&rsquo;s name. A changing address makes clients lose the server. Client PCs need no fixed address of their own.</p>
         </div>
 
