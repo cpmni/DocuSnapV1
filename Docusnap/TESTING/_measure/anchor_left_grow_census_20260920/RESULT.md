@@ -18,9 +18,18 @@ GATE: PASS (M=0, no accuracy drop)
 ## Reading (honest)
 - **Safety = proven:** M=0, zero per-field accuracy drop, byte-identical outcomes — the switch introduces no
   regression.
-- **Efficacy = NOT proven here (vacuous arm):** the synthetic corpus has **0** `crop_fullpage_disagree`
-  flags to begin with, so the arm never fires → 0 changed. This is exactly the vacuous-arm limitation Oracle
-  flagged: the corpus lacks the real taught-box clip shapes. Efficacy must be confirmed on the **live Larkspur
-  worksheet** (the WS-62315 exhibit) — armed in the 2026-09-20 TEST build.
+- **Efficacy = PROVEN via the synthetic injection (2026-09-20 night run):** the corpus census is vacuous (0
+  `crop_fullpage_disagree` flags → 0 fires), so efficacy is proven separately by
+  `python_backend/tests/test_anchor_code_left_grow_efficacy.py` — a REAL rendered page (Courier mono) where the
+  taught box clips the leading glyph, driving the REAL recovery (`_grow_code_left_read`, un-stubbed: real
+  Tesseract + `_read_pad_window_code` + `_full_page_lines`). Results:
+  - CONVERGE: page prints "WS-62315"; the clipped taught box's rigid read is the shape-valid confusable
+    "NS-62315" (the measured result of clipping a mono "WS-62315" ~0.6 char — a leading W reads N/V per font);
+    the padded re-read recovers the true "WS-62315" @90 through every guard (page-present, single-L clip,
+    row-aligned, exact shape, not-label-glued, snap-union placement cert). Recovery FIRES.
+  - ADVERSARIAL (the safety): page really prints the minority "NS-62315" → the tight read is page-PRESENT →
+    recovery ABSTAINS (None) → no convergence → today's flip+flag STANDS. The genuine minority-series doc is
+    protected. OFF byte-identical.
 
-Flip = owner's call after live-exhibit efficacy is seen. DARK meanwhile.
+**Gate met: M=0 safety (corpus) + efficacy FIRES + adversarial ABSTAINS (injection).** Flip = owner's call
+(recommend a look on the live Larkspur worksheet in the armed TEST build first). DARK meanwhile.
