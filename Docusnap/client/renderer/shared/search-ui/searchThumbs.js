@@ -82,8 +82,16 @@
     if (!doc) return;
     fetchThumb(doc, img).then((uri) => {
       if (!img.isConnected) return;          // row removed before render finished
-      if (uri) { img.src = uri; img.classList.add('loaded'); }
-      else     { img.classList.add('failed'); }
+      if (uri) { img.src = uri; img.classList.add('loaded'); return; }
+      // NULL — a transient failure (a burst/warmup error over /v1 at first paint) OR a doc with no renderable
+      // page. The old code marked it "failed" permanently and cached the null, so the FIRST rows painted before
+      // the connection/core warmed up stayed blank all session (the client "some thumbnails never load" bug).
+      // Retry a few times with backoff, clearing the cache each time so the retry actually re-fetches; give up
+      // (placeholder) only after that. A genuinely page-less doc just costs a few cheap extra requests.
+      const n = (img._thumbRetries = (img._thumbRetries || 0) + 1);
+      cache.delete(doc.id);                  // don't inherit the null promise on retry
+      if (n <= 3) setTimeout(() => { if (img.isConnected && !img.classList.contains('loaded')) load(img); }, 500 * n);
+      else img.classList.add('failed');
     });
   }
 
