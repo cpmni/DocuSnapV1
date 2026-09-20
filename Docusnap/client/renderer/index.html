@@ -624,12 +624,15 @@
           Most people can skip this — just press Connect and check the ID code. Only choose a file if the person who set up the main PC gave you one. <span style="opacity:.8">(Advanced: it's the CA certificate that signed the server, e.g. <code>ca.crt</code>; full verification stays on.)</span>
         </small>
       </div>
-      <label class="fieldlbl"><span>One-time code (only if the main PC is showing one)</span>
-        <input id="srv-code" class="mono" inputmode="text" autocomplete="off" spellcheck="false"
-               placeholder="e.g. ZSYP4WYK" style="width:100%; text-transform:uppercase; letter-spacing:2px" /></label>
-      <small style="display:block; margin-top:-4px; margin-bottom:6px; font-size:11px; color:var(--muted); line-height:1.4;">
-        Leave blank unless the main PC shows a code under Settings → Search client → “Connect a client”. It expires after a few minutes.
-      </small>
+      <!-- Hidden until the server actually asks for a one-time code (revealed by the "needs a code" reply). -->
+      <div id="srv-code-row" class="hidden">
+        <label class="fieldlbl"><span>One-time code</span>
+          <input id="srv-code" class="mono" inputmode="text" autocomplete="off" spellcheck="false"
+                 placeholder="e.g. ZSYP4WYK" style="width:100%; text-transform:uppercase; letter-spacing:2px" /></label>
+        <small style="display:block; margin-top:-4px; margin-bottom:6px; font-size:11px; color:var(--muted); line-height:1.4;">
+          This server is asking for a one-time code. On the main PC: Settings → Search client → “Connect a client” → show a code, then enter it here and press Connect. (It expires after a few minutes.)
+        </small>
+      </div>
       <div id="connect-err" class="err"></div>
       <button id="connect-btn" class="btn btn-primary btn-block"><span data-ic="assign"></span>Connect</button>
       <button id="import-profile-btn" class="btn btn-ghost btn-sm btn-block" style="margin-top:8px">Import connection profile…</button>

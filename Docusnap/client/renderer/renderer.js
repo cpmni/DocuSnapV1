@@ -274,8 +274,11 @@ async function _finishConnect(c) {
     : (m === 'mismatch')
       ? (c.reason || 'The certificate did not match — not connected.')
       : friendlyConnectError(c && c.reason);
-  // If the server asked for a one-time code, put the cursor in the code box so it's obvious where it goes.
-  if (/pairing code required|PAIRING|code required/i.test(String((c && c.reason) || ''))) { try { $('srv-code').focus(); } catch {} }
+  // Only when the server actually asks for a one-time code do we REVEAL the code box (otherwise it's hidden,
+  // so a normal connect is just address + Connect — no confusing extra field). Then focus it for entry.
+  if (/pairing code required|PAIRING|code required/i.test(String((c && c.reason) || ''))) {
+    try { $('srv-code-row').classList.remove('hidden'); $('srv-code').focus(); } catch {}
+  }
   return false;
 }
 $('connect-btn').addEventListener('click', (e) => withBusy(e.currentTarget, async () => {
