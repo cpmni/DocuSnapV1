@@ -1940,6 +1940,15 @@ def _corrob_licensed(record) -> bool:
     dis = rec.get("disagree")
     if isinstance(dis, list) and dis:
         return False
+    # TAUGHT_REF_DISAGREE_SUPPRESS (mig 186/191): the JS twin trust.js:686 refuses a record whose competitor
+    # the engine moved out of `disagree` into `suppressed_taught_role` (a page read OFF the scope's learned
+    # shape). MIRRORED here so Python fails closed IDENTICALLY — otherwise the deskew-retry straightened pass
+    # (process_docs._corrob_licensed_keyword) reads a record with `disagree` emptied + this key set and would
+    # grant a corroborated-auto-file licence the JS side refuses (cross-language drift). The suppressed entry is
+    # WEAKER than `discounted` (off-shape, not deterministically type-invalid) — not credible enough to license.
+    sup = rec.get("suppressed_taught_role")
+    if isinstance(sup, list) and sup:
+        return False
     fams = set()
     if rec.get("winner_family"):
         fams.add(rec.get("winner_family"))

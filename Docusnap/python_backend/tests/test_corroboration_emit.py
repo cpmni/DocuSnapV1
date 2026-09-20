@@ -220,6 +220,26 @@ assert _cl({"independent_agree": True, "winner_family": "crop", "agree": []}) is
 assert _cl(None) is False
 ok("engine._corrob_licensed decision mirrors trust.js on the canonical cases")
 
+# ── 13b. CROSS-LANGUAGE: the suppressed_taught_role refusal mirrors trust.js:686 (2026-09-20) ──
+# mig 186/191 taught_ref_disagree_suppress moves a competitor OUT of `disagree` into
+# `suppressed_taught_role`. That entry must NOT launder into the corroborated auto-file licence.
+# trust.js:686 refuses it; the Python twin _corrob_licensed MUST refuse identically or the deskew-retry
+# straightened pass (process_docs._corrob_licensed_keyword) grants a licence the JS side denies
+# (cross-language drift; Oracle 2026-09-20 DO-NOTHING vet, seam #3).
+_supbase = {"independent_agree": True, "winner_family": "crop", "agree": ["mapping"], "disagree": []}
+assert _cl(_supbase) is True                                                       # control: licenses without the key
+assert _cl({**_supbase, "suppressed_taught_role": [{"family": "keyword", "value": "JB-2554"}]}) is False
+assert _cl({**_supbase, "suppressed_taught_role": []}) is True                     # empty key = no effect
+ok("engine._corrob_licensed refuses a non-empty suppressed_taught_role (mirrors trust.js:686)")
+
+# SOURCE PARITY — both sides must carry the refusal so a future dev can't silently drop one:
+assert re.search(r"suppressed_taught_role", _trust_src), "trust.js lost the suppressed_taught_role refusal"
+with open(_eng.__file__, encoding="utf-8") as _f:
+    _eng_src = _f.read()
+assert re.search(r'rec\.get\("suppressed_taught_role"\)', _eng_src), \
+    "engine._corrob_licensed lost the suppressed_taught_role mirror"
+ok("both trust.js and engine._corrob_licensed carry the suppressed_taught_role refusal (source parity)")
+
 # ── 14. BARE-ANCHOR → KEYWORD FAMILY (2026-08-23; gary → Oracle SIGN-OFF-W/COND) ──────────────
 # Bare `anchor` is the full-page TEXT-LINE reader (anchor.py:1309), the keyword family's pixels — not a
 # crop. The shared bucket EXCLUDES it; the RECORD folds it into keyword so a genuine crop/mapping winner's

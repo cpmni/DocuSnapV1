@@ -2890,3 +2890,33 @@ departments. DARK-compatible (byte-identical when no departments); `departments_
 Gate before build: the migration-invariant pin (seed old scalar → fire real mig 184 → backfill exact + byte-identical +
 atomic + no-reader-on-scalar grep), widening pins (fixed rule), extended denial matrix (multi-tag + MIN() mutation oracle),
 backup round-trip. Perf gate + M=0 re-run before flip.
+
+## 2026-09-20 — taught_field_disagree_suppress (generalise mig-186 to ALL fields) — gary design
+VERDICT: DO NOTHING (change not warranted); WRONG LAYER for any real exhibit.
+
+PREMISE FALSE for target fields. The "held forever by a method-family disagreement" hold is
+_pageFamilyDisagrees, gated on ROLE keys only (trust.js:1053, :1073); _docFullyCorroborated is
+roles-only (trust.js:760). Money/name/generic custom fields are NOT held by the corroboration
+disagreement — a non-role field's disagree only denies the positive _corrobLicensed enabler; the
+field files by graduation/threshold regardless. Moving its competitor disagree->suppressed_taught_role
+lifts no hold and _corrobLicensed stays false anyway (trust.js:686). => byte-identical for every field
+the loop would newly touch. The only teeth are on ref (done, mig 186/191) and date (must stay excluded).
+
+DATE: keep EXCLUDED. Date is a role => suppression has teeth; legit format variance (date_forms_wide)
+makes a correctly-read competitor off-skeleton => would file a WRONG taught date (Copperfield r19(d),
+trust.js:634-641). No safe inclusion.
+
+REAL non-ref holds are NOTE-driven (validation_note -> flagged: refusal, trust.js:1064): XCHECK/
+NAME_GUARD disagree notes and the inline box-clip note (engine.py:4721). The transform never touches
+notes => would not release them. Right fix (only if a concrete exhibit exists): a corroborated
+note-SOFTEN lane, review-bound, excluding date/money/name.
+
+SEAM: Python _corrob_licensed (engine.py:1928-1951) does NOT mirror the JS suppressed_taught_role
+refusal (trust.js:686). Latent today (transform runs last, engine.py:12588; DESKEW_CORROB_AUTOFILE is
+DARK) but a false-licence vector on the deskew F3 path (process_docs.py:183/:387/:489) that the
+generalisation widens (incl. total_amount, which gary's exclusion set omits). Close the twin drift
+regardless; pin in test_corroboration_emit.py.
+
+GATE (if built anyway): census must show ZERO doc movement (M=0 AND count-delta=0) on 605 + warm-700
+(the expected/inert result); pins that the transform never fires on date-typed or supplier_name keys;
+existing test_taught_ref_disagree_suppress.js green. Non-zero movement => STOP and trace.
