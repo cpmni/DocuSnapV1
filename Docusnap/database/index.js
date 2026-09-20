@@ -3909,6 +3909,21 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 190 (reread_hold_corrob_release default ON): ${e.message}`); }
   }
 
+  // ── migration 191: FLIP taught_ref_disagree_suppress (186) ON by default (2026-09-20, owner go after the
+  //    live VM verify: the Castellan "Service Worksheet" batch — a taught ref field winning over the page's
+  //    different-shape "Job Ref" competitor now files on confirm instead of holding forever; 4/4 filed on
+  //    confirm). Corpus census M=0 (SAFETY, TESTING/_measure/flip_census_20260919/RESULT.md — the synthetic
+  //    corpus does not exercise it) + live-proven on the owner's VM. Graduation route unchanged (trust.js
+  //    _corrobLicensed guard — never a laundered corroborated auto-file). Leaves dark_switches.js this commit.
+  // @DEFAULT_FLIP 191
+  if (!applied.has(191)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('taught_ref_disagree_suppress', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (191)').run();
+      console.log('JS migration 191 applied: taught_ref_disagree_suppress ON by default (UPSERT true) — a taught ref beats a different-shape page competitor; live-proven, graduated');
+    } catch (e) { console.warn(`  migration 191 (taught_ref_disagree_suppress default ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

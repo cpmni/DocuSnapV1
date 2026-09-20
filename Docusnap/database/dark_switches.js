@@ -21,8 +21,8 @@
  *   - ocr_parallel_import_enabled — promoted to a customer default by mig 139 (its sole writer).
  *   - filing_sanity_confusable_soften (147→148), direct_intake_enabled (165→171), name_role_nonname_flag
  *     (156→172), ref_confusable_flag (159→173), template_pad_date_adopt (143→174), watch_separate_enabled
- *     (mig-137 'false' → 175) — DARK seeds that GRADUATED via a labelled @DEFAULT_FLIP migration and left this
- *     list in that same commit.
+ *     (mig-137 'false' → 175), taught_ref_disagree_suppress (186→191) — DARK seeds that GRADUATED via a labelled
+ *     @DEFAULT_FLIP migration and left this list in that same commit.
  */
 const TEST_SWITCH_KEYS = Object.freeze([
   // mig 106 (2026-09-03)
@@ -281,20 +281,10 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   docs/designs/REF_BADGE_VERIFY_2026-09-18.md.
   'ref_badge_verify_state',
 
-  // taught_ref_disagree_suppress (mig 186, 2026-09-19, gary → Oracle SIGN-OFF-W/COND; the Castellan Service
-  // Worksheet live blocker): a custom REF field taught to a Stage-0.5 box ("Job Sheet No" → CJB-1578) is held
-  // FOREVER because a generic seeded "Ref" caption reads the page's "Job Ref JB-2554" as a competing value for
-  // the same role → trust_role_disagreement_refuse never auto-files, graduation can't clear it, reprocess
-  // regenerates it. When ON, an AUTHORITATIVE Stage-0.5 taught ref winner whose value matches the scope's
-  // LEARNED shape suppresses a DIFFERENT-shape keyword competitor (engine moves it to `suppressed_taught_role`;
-  // _pageFamilyDisagrees stops holding, _corrobLicensed is guarded so it never launders into a corroborated
-  // auto-file). REF role ONLY (dates excluded — Copperfield r19(d)). Off / cold-start / garbled / same-shape
-  // competitor ⇒ byte-identical, doc HOLDS (fail-toward-review). Batch releases after ONE confirm learns the
-  // shape. ⚑ FLIP GATE (Oracle): unit pins (taught-wins-files, garbled-holds, same-shape-holds, date-untouched,
-  //   cold-start-holds, the _corrobLicensed seam pin, the refBadge/fullyCorroborated invariance pin) + realdoc
-  //   M=0 + zero ref-role accuracy drop + wouldFile(ON)⊇wouldFile(OFF) on shape-valid taught winners.
+  // taught_ref_disagree_suppress — GRADUATED to a customer default by mig 191 (2026-09-20: live-proven on the
+  //   owner's VM — the Castellan "Service Worksheet" batch, 4/4 filed on confirm instead of holding forever; corpus
+  //   census M=0, TESTING/_measure/flip_census_20260919/RESULT.md) and DELISTED here in that same commit. See
   //   docs/designs/TAUGHT_REF_DISAGREE_SUPPRESS_2026-09-19.md.
-  'taught_ref_disagree_suppress',
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */
