@@ -2920,3 +2920,17 @@ regardless; pin in test_corroboration_emit.py.
 GATE (if built anyway): census must show ZERO doc movement (M=0 AND count-delta=0) on 605 + warm-700
 (the expected/inert result); pins that the transform never fires on date-typed or supplier_name keys;
 existing test_taught_ref_disagree_suppress.js green. Non-zero movement => STOP and trace.
+
+## 2026-09-20 — Departments release-gate exemption (belt vi feature-master waiver) — SIGN OFF WITH CONDITIONS
+Fork settled: Option B (exempt the one legit writer, keep departments DARK + test-armable). Traced belt vi
+(check-release-migrations.js:91-100), the sole 'true' writer (settings/handler.js:669, admin+INTAKE_GUARDED
+gated), build_arming disarm (build_arming.js:107-109), and index.js seed-OFF (index.js:3375). Only one static
+'true' write exists; belts i–v unaffected; no runtime/DB/behaviour change; DB-hardening path unblocked.
+AND(file+sentinel) fails toward REFUSE on all drift (sentinel gone/moved, file renamed, key delisted).
+Residual seam = a 2nd sentinelled un-gated write in the mapped file (low severity — build-time only, runtime
+gate + data-driven read stand) → require the one-per-file cap (C1). Conditions C1-C4 + pins (a)-(f); merge gate
+= check-release-migrations.js exits 0 with TEST_BUILD unset AND the pin suite green. Seam gary missed: a
+test-armed DB moving to a release build force-disarms departments_enabled OFF (customer installs unaffected) —
+documented (C4, dark_switches.js note + BEFORE_RELEASE.md). IMPLEMENTED 2026-09-20: FEATURE_MASTER_SWITCHES +
+FEATURE_MASTER_SWITCH_WRITERS in dark_switches.js; belt-vi waiver + one-per-file cap; sentinel + C3 comment at
+handler.js; pins (a)-(f) in test_check_release_migrations.js. Gate exits 0; pins 399/399 green.

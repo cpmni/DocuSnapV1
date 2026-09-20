@@ -65,3 +65,21 @@ NEVER upload `keys/` or the ps1's blank `set-env.php` (the server's real per-hos
 - Core/client installers are built per session under `dist\` / `client\dist\` — the latest
   TEST build + its HEAD are in the current `HANDOVER_*.md`. A customer build must be the
   HARDENED `build:release` road, not the plain `build`.
+
+---
+
+## 🟡 Departments release-gate waiver + disarm interaction (2026-09-20, note only — no deploy step)
+
+The Departments admin master-switch (`departments_enabled`) is DARK (seeded OFF, opt-in) but is
+deliberately written `'true'` by the admin "Turn on Departments" toggle. The release gate
+(`check-release-migrations` belt vi) now WAIVES that one write via a `// @FEATURE_MASTER_WRITE
+departments_enabled` sentinel in `src/modules/settings/handler.js` (gary → Oracle SIGN-OFF-W/COND,
+`docs/oracle_log.md` 2026-09-20). A hardened `build:release` now passes; nothing to deploy.
+
+- [ ] **Know this, don't chase it as a bug:** a DB that was armed under a TEST build (arming marker
+      present) and is then opened on a hardened RELEASE build has `departments_enabled` force-disarmed
+      to `'false'` on first release launch (all dark keys are, by `build_arming` release-disarm). So an
+      admin's "Departments ON" choice RESETS OFF when the owner's/a test-customer's TEST DB is upgraded
+      to a hardened release — a CLEAN customer install is unaffected (no marker → noop). SAFE direction
+      for a not-yet-GA feature; the escape hatch if it ever bites in the field is to delist
+      `departments_enabled` (Option A). Re-enable Departments in Settings after such an upgrade.

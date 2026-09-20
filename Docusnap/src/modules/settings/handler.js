@@ -665,7 +665,14 @@ function register(ctx) {
     const db = getDb();
     const want = (on === true || String(on) === 'true');
     if (want && !departments.INTAKE_GUARDED) return { ok: false, error: 'intake_unguarded' };
+    // FEATURE-MASTER waiver (Oracle C3, 2026-09-20): the departments-enable write below carries the
+    // `// @FEATURE_MASTER_WRITE departments_enabled` sentinel on the line directly above it, which waives the
+    // BUILD release-gate (check-release-migrations belt vi) for THIS one write only. It MUST remain inside this
+    // requireRole('admin') (:664) + INTAKE_GUARDED (:667) gate — the release gate is build-time static and
+    // cannot re-check runtime gating. A second or un-gated enable write is a release blocker (waiver capped at
+    // one per file). The sentinel MUST stay within 3 lines of the write or the build refuses (fail-safe).
     if (want) {
+      // @FEATURE_MASTER_WRITE departments_enabled
       learning.setSetting(db, 'departments_enabled', 'true');
       departments.setAllDepartments(db, s, s.id, true, { logAudit: _deptAudit });   // Q9: the enabler sees everything
       _deptAudit(db, 'departments_enabled_on', { id: null });

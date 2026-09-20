@@ -29,7 +29,7 @@
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.join(__dirname, '..');
-const { TEST_SWITCH_KEYS } = require(path.join(ROOT, 'database', 'dark_switches.js'));
+const { TEST_SWITCH_KEYS, FEATURE_MASTER_SWITCH_WRITERS } = require(path.join(ROOT, 'database', 'dark_switches.js'));
 
 const RE = {
   appliedHas: /if\s*\(\s*!applied\.has\((\d+)\)\s*\)/,
@@ -88,14 +88,28 @@ function scan({ indexSrc, otherFiles = [], pkgJson = {} } = {}) {
     }
   }
 
-  // (vi) any other non-test file writing a listed key 'true'.
+  // (vi) any other non-test file writing a listed key 'true' — EXCEPT one waived FEATURE-MASTER write per
+  // (file,key). A write is waived ONLY when the file is FEATURE_MASTER_SWITCH_WRITERS[key] AND its ±3-line
+  // window carries the sentinel `// @FEATURE_MASTER_WRITE <key>` (both conditions AND-combined). The cap
+  // (one waiver per file+key, Oracle C1) means a SECOND such write in the same file still FIRES → the build
+  // refuses. Any drift — sentinel removed / moved out of the window, file renamed, key delisted — also fires.
+  // The waiver is BUILD-TIME only; the write's real safety is its own runtime admin/flip gate (belt vi cannot
+  // re-check that). See database/dark_switches.js FEATURE_MASTER_SWITCHES.
   for (const { file, src } of otherFiles) {
     const ol = String(src).split(/\r?\n/);
+    const waived = new Set();   // `${file}|${k}` — a master-switch write already waived once in this file
     for (let i = 0; i < ol.length; i++) {
       const window = ol.slice(Math.max(0, i - 3), i + 4).join('\n');
       const writes = /setSetting\([^)]*'true'\)|SET value\s*=\s*'true'|INSERT OR REPLACE INTO settings|excluded\.value|run\(\s*\w+\s*,\s*'true'\s*\)|,\s*'true'\s*\)\s*\.run/.test(ol[i]);
       if (!writes) continue;
-      for (const k of quotedKeys(window)) push('vi', file, i + 1, `writes TEST switch '${k}' to 'true'`);
+      for (const k of quotedKeys(window)) {
+        const capKey = `${file}|${k}`;
+        const waivedNow = FEATURE_MASTER_SWITCH_WRITERS[k] === file
+          && new RegExp(`@FEATURE_MASTER_WRITE\\s+${k}\\b`).test(window)
+          && !waived.has(capKey);
+        if (waivedNow) { waived.add(capKey); continue; }
+        push('vi', file, i + 1, `writes TEST switch '${k}' to 'true'`);
+      }
     }
   }
 

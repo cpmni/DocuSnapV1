@@ -290,4 +290,25 @@ const TEST_SWITCH_KEYS = Object.freeze([
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */
 const TEST_BUILD_MIGS = Object.freeze([106, 108, 110, 112, 114, 116, 118, 123, 124, 126, 128, 134, 136]);
 
-module.exports = { TEST_SWITCH_KEYS, TEST_BUILD_MIGS };
+// ── FEATURE-MASTER switches (2026-09-20, gary → Oracle SIGN-OFF-W/COND) ────────────────────────────
+// A key here is in TEST_SWITCH_KEYS (dark, seeded OFF, test-armable, release-disarmed) BUT is a FEATURE
+// master switch that a shipping admin road DELIBERATELY writes 'true' at runtime — so, unlike a reading
+// heuristic, it legitimately violates belt (vi)'s "never written 'true' by shipping code" contract. The
+// release gate (scripts/check-release-migrations.js) waives belt (vi) for exactly one write of such a key,
+// and ONLY when that write is in FEATURE_MASTER_SWITCH_WRITERS[key] AND its ±3-line window carries the
+// inline sentinel `// @FEATURE_MASTER_WRITE <key>`. Both conditions AND-combined; any drift (sentinel gone
+// or >3 lines away, file renamed, key delisted, a SECOND such write in the file) FIRES → the build refuses
+// (fail-safe). The waiver is BUILD-TIME only — it never changes runtime; the write's real safety is its own
+// admin/flip gate at the writer site (which belt vi cannot re-check — an ordinary code-review invariant).
+//   ⚠ RELEASE-DISARM interaction (Oracle C4): departments_enabled stays in TEST_SWITCH_KEYS, so a DB that was
+//   armed under a TEST build (arming marker present) and then opened on a hardened RELEASE build is force-
+//   disarmed to 'false' on first release launch (all dark keys are). This resets an admin's ON choice OFF on
+//   the owner's/test-customer's upgraded TEST DBs — NOT on a clean customer install (no marker → noop). SAFE
+//   direction for a not-yet-GA dark feature; documented so it is not later chased as a bug. Escape hatch if it
+//   ever bites in the field: delist departments_enabled (Option A).
+const FEATURE_MASTER_SWITCHES = Object.freeze(new Set(['departments_enabled']));
+const FEATURE_MASTER_SWITCH_WRITERS = Object.freeze({
+  departments_enabled: 'src/modules/settings/handler.js',
+});
+
+module.exports = { TEST_SWITCH_KEYS, TEST_BUILD_MIGS, FEATURE_MASTER_SWITCHES, FEATURE_MASTER_SWITCH_WRITERS };
