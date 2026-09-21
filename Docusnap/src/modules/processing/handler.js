@@ -135,6 +135,9 @@ function _anchorCropEnv(db) {
     // registration); the field falls to the keyword incumbent or, when it would end EMPTY, to a re-teach
     // note (engine._apply_labelless_withheld_notes). Env wins for arms.
     if (env.ANCHOR_LABELLESS_CURRENCY_REFUSE == null && learning.getSetting(db, 'anchor_labelless_currency_refuse', 'false') === 'true') env.ANCHOR_LABELLESS_CURRENCY_REFUSE = '1';
+    // Declare-issuer-undetected (2026-09-21, DARK): blank an unsupported non-name Document Issuer read
+    // rather than commit a garbage heading. reggie+gary -> Oracle SIGN-OFF-W/COND. Byte-identical off.
+    if (learning.getSetting(db, 'issuer_undetected_blank', 'false') === 'true') env.ISSUER_UNDETECTED_BLANK = '1';
     return env;
   } catch { return {}; }
 }

@@ -1,0 +1,27 @@
+{
+  "_comment": "Shared vectors for the issuer implausibility TWIN — tested by BOTH tests/test_undetected_issuer.py (Python keyword.issuer_read_looks_implausible) AND database/test_migration195_issuer_undetected.js (JS learning.issuerReadLooksImplausible). Keep the two predicates in lockstep (Oracle 2026-09-21 Condition 2). must_blank + accepted_tradeoff_blank => implausible True; must_stay => implausible False.",
+  "must_blank": [
+    "shall not be responsible for any damage that may",
+    "please retain this document for your records",
+    ">alifornia . Ship Mode:",
+    "=state -",
+    "Invoice",
+    "Statement"
+  ],
+  "accepted_tradeoff_blank": [
+    "acme joinery"
+  ],
+  "must_stay": [
+    "",
+    "BP",
+    "IBM",
+    "3M",
+    "H&M",
+    "J S Bloggs",
+    "Northgate Textiles",
+    "MARKS AND SPENCER PLC",
+    "Six Mile Software",
+    "株式会社サンプル",
+    "Акме Лтд"
+  ]
+}

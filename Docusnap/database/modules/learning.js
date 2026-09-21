@@ -140,7 +140,10 @@ function _vqTokenGood(tok) {
 function issuerReadLooksImplausible(value) {
   const t = String(value == null ? '' : value).trim();
   if (!t) return false;                       // empty is the OTHER guard's job, and it has one
-  if (!/[A-Za-z]/.test(t)) return true;
+  // No LATIN letters: implausible ONLY when there are no letters at all (pure digits/symbols). A CJK /
+  // Cyrillic trading name has non-Latin letters and stays plausible (Oracle 2026-09-21 Condition 2 —
+  // the Python twin keyword.issuer_read_looks_implausible carries the SAME carve-out; keep in lockstep).
+  if (!/[A-Za-z]/.test(t)) return !/\p{L}/u.test(t);
   // Leading DEBRIS: a company name does not begin with punctuation. Same signal the crop
   // credibility check already uses for free text ('>alifornia', '. Ship Mode:'), and it is what
   // catches '=state -', whose only substantive token would otherwise leave nothing to score.

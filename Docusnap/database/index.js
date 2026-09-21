@@ -3965,6 +3965,17 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 194 (auto_separate_enabled opt-in): ${e.message}`); }
   }
 
+  // mig 195 (2026-09-21, reggie+gary → Oracle SIGN-OFF-W/COND): issuer_undetected_blank — declare a NON-NAME,
+  // unsupported cold Document-Issuer read UNDETECTED (blank + review note) instead of committing a garbage
+  // heading. DARK, seeded OFF, byte-identical off. Flip = owner's call after the census (see dark_switches.js).
+  if (!applied.has(195)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('issuer_undetected_blank', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (195)').run();
+      console.log('JS migration 195 applied: issuer_undetected_blank (declare non-name unsupported issuer Undetected) seeded OFF (DARK, 1 row)');
+    } catch (e) { console.warn(`  migration 195 (issuer_undetected_blank): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

@@ -2512,6 +2512,36 @@ def _is_plausible_supplier_name(value: str | None) -> bool:
     return True
 
 
+def issuer_read_looks_implausible(value) -> bool:
+    """Python TWIN of database/modules/learning.js `issuerReadLooksImplausible` — KEEP IN LOCKSTEP
+    (pinned on a shared vector set by tests/test_undetected_issuer.py). NARROWER than
+    `_is_plausible_supplier_name` ON PURPOSE: a SINGLE-token value is never judged, so BP/IBM/3M/H&M
+    stay plausible (that predicate over-rejects <=3-char all-caps names; see learning.js:109-138).
+
+    The ONE deliberate difference from a naive port is the NON-LATIN carve-out (Oracle 2026-09-21
+    Condition 2), applied to the JS twin too: a value with no LATIN letters is implausible ONLY when it
+    has no letters AT ALL (pure digits/symbols) — a CJK/Cyrillic trading name stays plausible.
+
+    Rule: empty -> False (the empty-issuer note's job); no letters at all -> True; leading punctuation
+    debris -> True; single token -> True only if it is a document-CHROME word; else drop one-letter
+    tokens and, if >=2 substantive tokens remain, name_quality(kept) < 0.5."""
+    t = str("" if value is None else value).strip()
+    if not t:
+        return False
+    if not re.search(r"[A-Za-z]", t):
+        return not any(ch.isalpha() for ch in t)          # non-Latin carve-out (matches the JS twin)
+    if not re.match(r"[A-Za-z0-9]", t):
+        return True                                        # leading debris ('>alifornia', '=state -')
+    if not re.search(r"\s", t):
+        core = re.sub(r"[^a-z]", "", t.lower())
+        return core in _DOC_CHROME_WORDS                   # single token -> chrome-word only (BP/IBM/3M immune)
+    kept = [w for w in re.split(r"\s+", t) if len(re.sub(r"[^A-Za-z0-9]", "", w)) > 1]
+    if len(kept) < 2:
+        return False
+    from extraction.value_quality import name_quality
+    return name_quality(" ".join(kept)) < 0.5
+
+
 # Leading/trailing noise that OCR commonly prepends to a supplier name read off
 # a letterhead/logo — straight + smart quotes, backticks, and the U+FFFD
 # replacement char left by a decode failure. A single stray "‘" turned

@@ -33,6 +33,17 @@ from now on"). Part (A) (don't-commit-a-non-name) is L1/HIGH-value/LOW-effort �
 headings on its own; (B) the tab is L2. Pairs with the opt-in-split (a long untaught manual = one calm row + the
 Split affordance). Owner product calls: tab vs pinned-group · typed-no-issuer in bucket? · bulk-actions. NEXT:
 reggie/gary design the value-quality declare-undetected gate → Oracle, then build.
+**STATUS 2026-09-21: PART A BUILT (DARK, mig 195 `issuer_undetected_blank`).** reggie+gary → Oracle SIGN-OFF-W/COND.
+Root cause (gary, verified): NOT the letterhead reader — a KEYWORD caption read ("The **Supplier** shall not be
+responsible…" matches the "Supplier" caption in `keyword_patterns.json`); nothing refused the commit. Fix: a final
+refinement `engine._declare_issuer_undetected` (env `ISSUER_UNDETECTED_BLANK`) blanks the field + `_supplier_name` +
+a review note when the value fails the name test (`keyword.issuer_read_looks_implausible` — a pinned twin of the JS
+`issuerReadLooksImplausible`, single-token BP/IBM/3M immunity + a non-Latin carve-out on BOTH sides) AND the method
+is a bare `keyword` read (allow-list, fail-safe) AND no template/logo/hint/teach/accepted. Note ASSIGNED not composed
+(drops suggested_supplier). Pins: `test_undetected_issuer.py` + `test_migration195_issuer_undetected.js` (shared twin
+vectors). **Owed before the FLIP:** the census — realdoc M=0 + report the fire DENOMINATOR + a MULTI-TOKEN synthetic
+FP set (all-lowercase real names like "acme joinery" DO blank — the pinned first-contact trade-off; measure how often
+that fires on real reads). **Part B (the "Not recognised" tab) still pending.**
 
 ## 2026-09-20 — Auto-split-on-import becomes OPT-IN + a page-1 separator-sheet trigger (owner design; NOT built — needs gary + Oracle)
 Owner proposal (refined over several messages). The auto-detect batch-separation pre-pass (letterhead/title

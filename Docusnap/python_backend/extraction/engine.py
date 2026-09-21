@@ -6289,6 +6289,59 @@ class ExtractionEngine:
             results["_supplier_name"] = None
         results["_needs_review"] = True
 
+    def _declare_issuer_undetected(self, results):
+        """DARK (ISSUER_UNDETECTED_BLANK): when the resolved Document Issuer (supplier_name) is a NON-NAME
+        value read COLD off the page with NO backing, declare it Undetected — blank the field + the scope
+        key and hold for review — instead of committing a garbage heading (e.g. a warranty sentence
+        "The Supplier shall not be responsible…" caption-matched to "Supplier:"). Fixes the spurious-heading
+        class at SOURCE (reggie+gary -> Oracle SIGN-OFF-W/COND 2026-09-21). Byte-identical when OFF.
+        Fail-toward-review: only ever blanks + notes, never files.
+          - note is ASSIGNED, not composed (Oracle C1 — replaces any wordness/non-name note) + drops
+            suggested_supplier so no "Use 'X'" button rides a blank value;
+          - the value test is keyword.issuer_read_looks_implausible, a pinned TWIN of the JS predicate
+            (single-token BP/IBM/3M immunity + the non-Latin carve-out) — Oracle C2;
+          - method ALLOW-LIST (a bare `keyword`/`keyword_*` read only); any other/unknown method fails SAFE
+            = keeps the value shown — Oracle C3.
+        Placed as the LAST supplier_name mutation in extract() (after the letterhead/logo/identifier
+        fill-empty suggestion blocks and the ~11933 `_supplier_name` re-bake), so a heal to a real name or a
+        name-shaped prefill is never blanked and both keys blank in lockstep. Do NOT relocate earlier — the
+        re-bake at ~11933 would re-stale `_supplier_name` (the lockstep seam)."""
+        if os.environ.get("ISSUER_UNDETECTED_BLANK", "0") == "0":
+            return
+        fld = results.get("supplier_name")
+        if not isinstance(fld, dict):
+            return
+        value = fld.get("value")
+        if value is None or not str(value).strip():
+            return                                       # value-less abstain/suggest row — never clobber
+        method = str(fld.get("method") or "")
+        # C3 ALLOW-LIST (fail-safe): only a bare page read is blank-eligible; template*/logo/hint*/anchor*/
+        # letterhead*/memory/operator_pin/fixed/*override* and any UNKNOWN method keep the value shown.
+        if not ((method == "keyword" or method.startswith("keyword_")) and "override" not in method):
+            return
+        # A matched template or logo is support even if the field itself came from keyword — skip (belt).
+        if results.get("_template_id") or results.get("_logo_phash"):
+            return
+        # Operator explicitly vouched this exact value is a real name/issuer.
+        norm = self._accept_norm(value)
+        if norm in self.accepted_names or norm in self.accepted_issuers:
+            return
+        from extraction.keyword import issuer_read_looks_implausible
+        if not issuer_read_looks_implausible(value):
+            return                                       # a real name (or a short brand) — leave it shown
+        # FIRE — mutate in place (keep raw_value etc. the persist path reads); ASSIGN the note (C1).
+        fld["value"] = None
+        fld["confidence"] = 0
+        fld["method"] = "issuer_undetected"
+        fld["validation_note"] = ("Couldn't identify who issued this — please set the company, "
+                                  "or teach this document.")
+        fld.pop("suggested_supplier", None)
+        fld.pop("corrected_to", None)
+        fld.pop("candidates", None)
+        results["_supplier_name"] = None                 # blank the FILING/SCOPE key in lockstep
+        results["_needs_review"] = True
+        self.log(f"  Issuer declared UNDETECTED — unsupported non-name read '{value}' blanked (review-bound)")
+
     def _refuse_caption_values(self, results, caption_vocab, field_defs):
         """Withhold a committed value that IS one of the page's printed CAPTIONS.
 
@@ -12258,6 +12311,12 @@ class ExtractionEngine:
                         "Please confirm the correct company (check it's the sender, not the customer).")
                     results["_needs_review"] = True
                     self.log(f"  Letterhead issuer SUGGESTED: '{_lh}' (not assigned)")
+
+        # DECLARE ISSUER UNDETECTED (2026-09-21; DARK `issuer_undetected_blank`) — the LAST supplier_name
+        # refinement: refuse an unsupported non-name cold read rather than commit a garbage heading. Runs
+        # here (after every fill-empty suggestion writer + the _supplier_name re-bake) so the blank is
+        # lockstep-safe. See _declare_issuer_undetected. Byte-identical when the switch is off.
+        self._declare_issuer_undetected(results)
 
         # TYPE-AMBIGUITY guard (Fix A, Oracle 2026-07-13) — the fail-toward-review backstop for the
         # same-letterhead type-flip: a supplier issuing several doc types on ONE logo lets a skew-

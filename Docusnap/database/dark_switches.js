@@ -287,6 +287,18 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   every cold-slice flip genuinely single-witness/no-history; (6) PARITY the ONE trust.js predicate (C1).
   //   docs/designs/REF_BADGE_VERIFY_2026-09-18.md.
   'ref_badge_verify_state',
+  // issuer_undetected_blank (mig 195, 2026-09-21, reggie+gary → Oracle SIGN-OFF-W/COND): when the resolved
+  // Document Issuer is a NON-NAME value read COLD off the page (a bare keyword read, no template/logo/hint/teach,
+  // not operator-accepted) it is declared UNDETECTED — the field + the filing/scope key blank + a review note —
+  // instead of committing a garbage heading (e.g. a warranty sentence caption-matched to "Supplier:"). Fixes the
+  // spurious-heading class at SOURCE. Predicate = keyword.issuer_read_looks_implausible, a pinned TWIN of the JS
+  // issuerReadLooksImplausible (single-token BP/IBM/3M immunity + a non-Latin carve-out on BOTH sides). Method
+  // allow-list is fail-safe (unknown method never blanks). Byte-identical OFF; env ISSUER_UNDETECTED_BLANK.
+  // ⚑ FLIP GATE (Oracle C4/C5): realdoc M=0 + zero supplier_name accuracy drop AND report the fire DENOMINATOR;
+  //   a MULTI-TOKEN synthetic FP set (all-lowercase real names like "acme joinery" must NOT blank — the single-
+  //   token brand hunt is near-vacuous); efficacy proven by the synthetic disclaimer unit test (the corpus can't
+  //   reach a disclaimer-manual layout). docs/designs — pendingfeatures.md 2026-09-20 "Undetected issuer".
+  'issuer_undetected_blank',
 
   // taught_ref_disagree_suppress — GRADUATED to a customer default by mig 191 (2026-09-20: live-proven on the
   //   owner's VM — the Castellan "Service Worksheet" batch, 4/4 filed on confirm instead of holding forever; corpus
