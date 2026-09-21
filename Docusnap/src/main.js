@@ -128,6 +128,7 @@ const tutorialModule       = require('./modules/tutorial/handler');
 const printModule          = require('./modules/print/handler');
 const exportModule         = require('./modules/export/handler');
 const directIntakeModule   = require('./modules/directIntake/handler');   // Quick File (non-OCR intake)
+const lookupModule         = require('./modules/lookup/handler');          // Quick File records lists (auto-fill lookup)
 
 // ── DB ────────────────────────────────────────────────────────────────────────
 let _db = null;
@@ -1761,6 +1762,7 @@ app.whenReady().then(async () => {
   printModule.register(ctx);
   exportModule.register(ctx);
   directIntakeModule.register(ctx);
+  lookupModule.register(ctx);
   tutorialModule.register(ctx);
 
   // Diagnostics lifecycle (all gated on consent INSIDE telemetry → inert until opt-in;

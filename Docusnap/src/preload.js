@@ -87,7 +87,30 @@ contextBridge.exposeInMainWorld('docusnap', {
   // that receives the resolved absolute paths (plain strings) and forwards them to MAIN for validation.
   onQuickFileDrop:       (cb)     => { _qfDropCb = (typeof cb === 'function') ? cb : null; },
   quickFileStagePaths:   (paths)  => ipcRenderer.invoke('direct-intake-stage-paths', paths),
+  quickFilePreview:      (token)  => ipcRenderer.invoke('direct-intake-preview', token),
   onDirectIntakeChanged: (cb)      => ipcRenderer.on('direct-intake-changed', () => cb()),
+
+  // ── Quick File records lists (auto-fill lookup) — DARK behind lookup_lists_enabled ──
+  lookup: {
+    enabled:        ()        => ipcRenderer.invoke('lookup-enabled'),
+    lists:          ()        => ipcRenderer.invoke('lookup-lists'),
+    createList:     (payload) => ipcRenderer.invoke('lookup-create-list', payload),
+    updateList:     (payload) => ipcRenderer.invoke('lookup-update-list', payload),
+    deleteList:     (id)      => ipcRenderer.invoke('lookup-delete-list', id),
+    records:        (payload) => ipcRenderer.invoke('lookup-records', payload),
+    addRecord:      (payload) => ipcRenderer.invoke('lookup-add-record', payload),
+    updateRecord:   (payload) => ipcRenderer.invoke('lookup-update-record', payload),
+    deleteRecord:   (id)      => ipcRenderer.invoke('lookup-delete-record', id),
+    suggest:        (payload) => ipcRenderer.invoke('lookup-suggest', payload),
+    resolve:        (payload) => ipcRenderer.invoke('lookup-resolve', payload),
+    typeBinding:    (docTypeId) => ipcRenderer.invoke('lookup-type-binding', docTypeId),
+    fieldMapsGet:   (docTypeId) => ipcRenderer.invoke('lookup-field-maps-get', docTypeId),
+    fieldMapsSet:   (payload) => ipcRenderer.invoke('lookup-field-maps-set', payload),
+    importPick:     ()        => ipcRenderer.invoke('lookup-import-pick'),
+    importCommit:   (payload) => ipcRenderer.invoke('lookup-import-commit', payload),
+    importCancel:   (token)   => ipcRenderer.invoke('lookup-import-cancel', token),
+    onChanged:      (cb)      => ipcRenderer.on('lookup-lists-changed', () => cb()),
+  },
 
   // ── Licensing ────────────────────────────────────────────────────────────────
   // Phase 1: read-only status + trial-start only. These return STATUS objects
