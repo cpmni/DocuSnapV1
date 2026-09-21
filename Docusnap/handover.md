@@ -5,12 +5,22 @@ Working tree clean. `node scripts/run-pins.js` = **401/401 green** (plus the fli
 Read this first, then `docs/designs/NIGHT_RUN_2026-09-20.md` (the completed night run) + `docs/designs/OPTIN_SPLIT_2026-09-20.md`
 (the top build-ready plan) + `docs/CHRIS_FULL_APP_REVIEW_2026-09-20.md` (Chris's vet + triage).
 
-## Installers (customer-shippable pair, hardened, at HEAD `b435687`)
-Rebuilt this wrap (`build:release` core + client `dist`):
-- Core `dist\ScanFinder Setup 2.0.0-r20260921-0949-b435687.exe` (hardened, `testBuild:false` = dark switches off).
-- Client `client\dist\ScanFinder Search Client Setup 1.0.2-r20260921-0952-b435687.exe`.
-The EARLIER pair (`…-4d0dc09.*`) predates the clip flip + the split pattern dropdown — ship the `b435687` pair.
-Self-signed → SmartScreen "Run anyway" on first launch. (Core verifier result: see `TESTING/_measure/build_20260921_ship_core.log`.)
+## Installers (customer-shippable pair, hardened, at HEAD `d8b9272` — SHIP THIS PAIR)
+Rebuilt 2026-09-21 after the OPT-IN-SPLIT feature (`build:release` core + client `dist`):
+- Core `dist\ScanFinder Setup 2.0.0-r20260921-1118-d8b9272.exe` (hardened, `testBuild:false` = dark switches off;
+  verified: boot smoke exit 0, 15 windows 0 failed, bytecode-only, 5 fuses as declared, signed).
+- Client `client\dist\ScanFinder Search Client Setup 1.0.2-r20260921-1123-d8b9272.exe`.
+The `…-b435687.*` pair (0949/0952) is SUPERSEDED — it predates opt-in-split (auto-split now OFF by default + the
+page-1 separator-sheet override + the multi-document auto-file hold). Ship the `d8b9272` pair.
+Built offline (`AUDIT_OFFLINE_OK=1` — npm registry unreachable; deps UNCHANGED since the b435687 online-audited
+build, so the audit result is identical). Self-signed → SmartScreen "Run anyway" on first launch.
+
+## Opt-in-split shipped 2026-09-21 (`ec17b5c` + `87226d2`, pushed)
+Auto-detect batch separation is now OPT-IN (mig 194, default OFF). A whole-landed multipage scan whose LATER page
+reads as a new document-start (not a continuation) is HELD from auto-file (scoped, fail-toward-review). A **page-1
+separator sheet** splits the whole stack (`compose_segments`). Watch follows the same switches (`watch_separate_enabled`
+retired). Review shows a calm "N pages · Split" chip. 403/403 JS pins green + `test_segmentation.py` green. Owed only
+before promoting auto-split back ON: G1 byte-identical + G2/G6 OFF-path/speed census (`docs/designs/OPTIN_SPLIT_2026-09-20.md`).
 
 ## What shipped this session (2026-09-20 → 21, all pushed)
 1. **Graphical page-splitter + blank removal** (`b3cad58`) — thumbnail-grid popout: click the first page of each
