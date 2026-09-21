@@ -29,12 +29,12 @@ check('btn-delete confirm names currentDoc',
 
 console.log('2. row-level deletes carry the mismatch clause when the row is not the open doc');
 const mismatch = /currentDoc && currentDoc\.id !== doc\.id\)\s*\n\s*\? `\\n\\nNote: this is the document in the row you clicked — NOT "\$\{currentDoc\.original_filename\}"/g;
-check('BOTH row paths (queue deleteFromQueue + deferred qi-delete) carry it',
-      (src.match(mismatch) || []).length === 2);
+check('ALL THREE row paths (queue deleteFromQueue + deferred + not-recognised qi-delete) carry it',
+      (src.match(mismatch) || []).length === 3);
 
 console.log('3. the surfaces are selector-distinguishable (no more shared titles)');
-check("row ×s are titled 'Delete this row's document'",
-      (src.match(/title="Delete this row's document"/g) || []).length === 2);
+check("row ×s are titled 'Delete this row's document' (queue + deferred + not-recognised)",
+      (src.match(/title="Delete this row's document"/g) || []).length === 3);
 check('the action-bar button keeps its own distinct title (index.html)',
       /id="btn-delete"[^>]*title="Delete document"/.test(
         fs.readFileSync(path.join(REPO, 'src', 'windows', 'review', 'index.html'), 'utf8')));

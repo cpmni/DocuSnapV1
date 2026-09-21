@@ -398,6 +398,7 @@ const HELP_TEXTS = {
   'review-tab':    'Documents waiting to be checked and confirmed.',
   'deskew':        'Straighten this document’s pages on screen — a crooked scan often reads better straightened.',
   'deferred-tab':  'Documents you set aside to deal with later.',
+  'undetected-tab': 'Documents Scan Finder couldn’t identify — no sender and no document type. Open one to choose its type or teach it.',
   'nav-prev':      'Go to the previous document in the list.',
   'nav-next':      'Go to the next document in the list.',
   'split':         'Split a multi-page PDF — by page range, every page, or every N pages.',
@@ -2011,19 +2012,31 @@ function showNewTypeNudge(type) {
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
+function _setActiveTabButton(id) {
+  for (const t of ['tab-review', 'tab-deferred', 'tab-undetected']) {
+    const b = document.getElementById(t);
+    if (b) b.classList.toggle('active', t === id);
+  }
+}
+
 document.getElementById('tab-review').addEventListener('click', () => {
   activeTab = 'review';
-  document.getElementById('tab-review').classList.add('active');
-  document.getElementById('tab-deferred').classList.remove('active');
+  _setActiveTabButton('tab-review');
   renderQueueList();
   updateDocNavButtons();
 });
 
 document.getElementById('tab-deferred').addEventListener('click', () => {
   activeTab = 'deferred';
-  document.getElementById('tab-deferred').classList.add('active');
-  document.getElementById('tab-review').classList.remove('active');
+  _setActiveTabButton('tab-deferred');
   renderDeferredList();
+  updateDocNavButtons();
+});
+
+document.getElementById('tab-undetected').addEventListener('click', () => {
+  activeTab = 'undetected';
+  _setActiveTabButton('tab-undetected');
+  renderNotRecognisedList();
   updateDocNavButtons();
 });
 
@@ -2038,10 +2051,25 @@ function updateTabCounts() {
       }).catch(() => {});
     } else {
       _authReviewCount = queue.length;   // normal view: the full queue IS the needs_review set
-      rc.textContent = queue.length;
+      rc.textContent = _reviewTabQueue().length;   // the main tab shows the queue MINUS the not-recognised bucket
     }
   }
   document.getElementById('tab-deferred-count').textContent = deferredQueue.length;
+  // "Not recognised" tab: show only when it has documents; hide (and leave the tab) at 0 so it never
+  // sits as an empty, worrying tab. If the active tab just emptied, fall back to Review.
+  const un = _notRecognisedQueue();
+  const unBtn = document.getElementById('tab-undetected');
+  const unCount = document.getElementById('tab-undetected-count');
+  if (unCount) unCount.textContent = un.length;
+  if (unBtn) {
+    unBtn.style.display = un.length ? '' : 'none';
+    if (!un.length && activeTab === 'undetected') {
+      activeTab = 'review';
+      document.getElementById('tab-review').classList.add('active');
+      unBtn.classList.remove('active');
+      renderQueueList();
+    }
+  }
 }
 
 // Show/hide the list+arrow-rail container (hidden when the active list is empty,
@@ -2059,11 +2087,24 @@ function renderQueueList() {
   const empty = document.getElementById('queue-empty');
   list.innerHTML = '';
 
-  if (queue.length === 0) {
+  if (_reviewTabQueue().length === 0) {
     // 'block', NOT '' — clearing the inline style falls back to the stylesheet's
     // `#queue-empty { display:none }`, so this message NEVER showed (Chris card 2;
     // verified live). The text is re-set per tab because the deferred branch
     // overwrites the shared element (the latent copy-clobber both advisors named).
+    // If the main queue is empty ONLY because everything left is in the "Not recognised"
+    // bucket, point there instead of a bare "All reviewed".
+    const _unN = _notRecognisedQueue().length;
+    if (_unN && !_queueEmptyMsg && !_viewingAutoFiled) {
+      empty.style.display = 'block';
+      empty.textContent = `Nothing left in the main queue — see “Not recognised” (${_unN}) for the documents we couldn’t identify.`;
+      reviewActions.style.display = 'none';
+      const vbN = document.getElementById('queue-view-bar');
+      if (vbN) vbN.style.display = 'none';
+      setQueueWrapVisible(false);
+      if (!currentDoc) clearDocPanel();
+      return;
+    }
     // Cause-aware (Chris r6 card 7, r7 "NOT FIXED as seen"): a Delete All empties the queue without
     // reviewing anything — `_queueEmptyMsg` says so. STICKY, not one-shot: the delete's IPC
     // `review-count-changed` refresh re-renders this branch again AFTER the handler's own render, so a
@@ -2192,10 +2233,30 @@ function _senderReadinessLabel(supplier) {
        + `${label}</span>`;
 }
 
+// ── "Not recognised" bucket (Part B, 2026-09-21; barry's shape) ────────────────────────────────
+// A document with NO issuer value, NO document type AND nothing suggested to offer is truly
+// unidentified — kept OUT of the main Review queue (so it never intermixes with the confidently-read
+// docs) and shown in its own calm "Not recognised" tab. NEVER keyed on confidence (a faint-but-present
+// read is not "unrecognised" — the overcorrection guard); a TYPED-but-no-issuer doc is partially
+// recognised and stays in Review. Uses only columns getReviewQueue already carries — no data change.
+function _notRecognisedDoc(doc) {
+  // ONE source: shared/notRecognised.js (window.NotRecognised), pinned by test_not_recognised.js.
+  if (window.NotRecognised && window.NotRecognised.isNotRecognisedDoc) return window.NotRecognised.isNotRecognisedDoc(doc);
+  if (!doc) return false;   // defensive fallback (the script always loads in Review)
+  return (doc.issuer_blank === 1 || doc.issuer_blank === true) && !doc.document_type_id
+      && !(doc.issuer_suggested && String(doc.issuer_suggested).trim());
+}
+// In the recently-auto-filed view `queue` holds CONFIRMED docs, so the bucket is a needs_review-only
+// concept there — return [] to keep it out of that mode.
+function _notRecognisedQueue() { return _viewingAutoFiled ? [] : queue.filter(_notRecognisedDoc); }
+// The Review tab's population: the queue MINUS the not-recognised bucket (they live in their own tab).
+function _reviewTabQueue() { return _viewingAutoFiled ? queue : queue.filter(d => !_notRecognisedDoc(d)); }
+
 // Catch-up "Review them" filter: when armed, the queue list (grouped AND flat — both paths
 // route through here) shows only the consent bar's candidates; the bar's own button clears it.
 function _sweepVisibleQueue() {
-  return _sweepFilterIds ? queue.filter(d => _sweepFilterIds.has(d.id)) : queue;
+  const base = _reviewTabQueue();
+  return _sweepFilterIds ? base.filter(d => _sweepFilterIds.has(d.id)) : base;
 }
 
 // The review queue's DISPLAY grouping: sender -> its docs, most attention-needing /
@@ -2238,7 +2299,14 @@ function groupTitle(supplier, groupCount) {
 // The flat doc order the queue is actually SHOWN in (grouped or chronological). The nav
 // (cycleDocument / updateDocNavButtons) uses this so ↑/↓ track the visible order.
 function reviewDisplayOrder() {
-  return queueGrouped ? reviewDisplayGroups().flatMap(g => g.docs) : queue;
+  return queueGrouped ? reviewDisplayGroups().flatMap(g => g.docs) : _sweepVisibleQueue();
+}
+// The document list for the CURRENTLY ACTIVE tab, in its shown order — used by the ↑/↓ nav, Skip and
+// the post-action advance so they always track the visible tab (Deferred · Not recognised · Review).
+function _activeListDocs() {
+  return activeTab === 'deferred' ? deferredQueue
+       : activeTab === 'undetected' ? _notRecognisedQueue()
+       : reviewDisplayOrder();
 }
 
 // One queue row (thumbnail · name · sender · badges · blocker · delete). Shared by the
@@ -2416,6 +2484,93 @@ function renderDeferredList() {
       renderDeferredList();
     });
     el.addEventListener('click', () => selectDoc(doc));
+    list.appendChild(el);
+  }
+}
+
+// ── "Not recognised" list (Part B, 2026-09-21) ───────────────────────────────────────────────
+// The calm bucket for documents with no issuer, no type and nothing suggested. A clone of the
+// Deferred tab's rendering: page-1 thumbnail + original filename + one plain sublabel, NO confidence
+// badge (a % on a garbage read is noise). Click opens it in the normal panel (type-picker + Teach CTA
+// are the obvious first moves). The ONE bulk action is "Set aside all" → Deferred (barry: no bulk
+// assign-type — the type is a per-doc decision).
+function renderNotRecognisedList() {
+  document.getElementById('review-actions').style.display = 'none';
+  const vb = document.getElementById('queue-view-bar');
+  if (vb) vb.style.display = 'none';
+  const list   = document.getElementById('queue-list');
+  const empty  = document.getElementById('queue-empty');
+  const footer = document.getElementById('deferred-footer');
+  if (footer) footer.style.display = 'none';
+  list.innerHTML = '';
+
+  const docs = _notRecognisedQueue();
+  if (docs.length === 0) {
+    empty.style.display = 'block';
+    empty.textContent = 'Nothing here — documents Scan Finder couldn’t identify (no sender and no type) would wait here.';
+    setQueueWrapVisible(false);
+    return;
+  }
+  empty.style.display = 'none';
+  setQueueWrapVisible(true);
+
+  // Header + the ONE bulk action.
+  const head = document.createElement('div');
+  head.style.cssText = 'padding:8px 10px; font-size:12px; color:var(--muted); display:flex; align-items:center; gap:10px; justify-content:space-between; border-bottom:1px solid var(--border);';
+  const lbl = document.createElement('span');
+  lbl.style.cssText = 'flex:1; min-width:0;';
+  lbl.textContent = 'Documents we couldn’t identify. Open one to choose its type or teach it.';
+  head.appendChild(lbl);
+  const setAside = document.createElement('button');
+  setAside.className = 'qi-btn';
+  setAside.textContent = 'Set aside all';
+  setAside.title = 'Move all of these to Deferred to deal with later';
+  setAside.style.flexShrink = '0';
+  setAside.addEventListener('click', async () => {
+    setAside.disabled = true;
+    for (const d of docs) { try { await window.docusnap.deferDocument(d.id); } catch {} }
+    queue = await window.docusnap.getReviewQueue();
+    deferredQueue = await window.docusnap.getDeferredQueue();
+    if (currentDoc && docs.some(d => d.id === currentDoc.id)) { currentDoc = null; clearDocPanel(); }
+    updateTabCounts();                                   // hides the tab at 0 (and falls back to Review)
+    if (activeTab === 'undetected') renderNotRecognisedList();
+  });
+  head.appendChild(setAside);
+  list.appendChild(head);
+
+  for (const doc of docs) {
+    const el = document.createElement('div');
+    el.className  = 'queue-item';
+    el.dataset.id = doc.id;
+    if (currentDoc && doc.id === currentDoc.id) el.classList.add('active');
+    el.innerHTML = `
+      <div style="display:flex; align-items:flex-start; gap:8px;">
+        <img class="qi-thumb" alt="">
+        <div class="qi-body" style="flex:1; min-width:0; overflow:hidden;">
+          <span class="qi-name" title="${escHtml(doc.original_filename)}">${escHtml(doc.original_filename)}</span>
+          <div class="qi-meta"><span class="qi-supplier" style="color:var(--muted);">Couldn’t identify this one</span></div>
+        </div>
+        ${canEdit ? `<button class="qi-btn danger qi-delete" title="Delete this row's document" aria-label="Delete this row's document">&#215;</button>` : ''}
+      </div>`;
+    if (window.Thumbs) window.Thumbs.lazy(el.querySelector('.qi-thumb'), doc);
+    el.addEventListener('click', () => { if (bulkFiling) return; selectDoc(doc); });
+    const del = el.querySelector('.qi-delete');
+    if (del) del.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (bulkFiling) return;
+      // Same mismatch-aware copy as the review + deferred row deletes (Chris r8 card 1): a row × deletes
+      // THAT row's document, which need not be the one open on the right.
+      const _other = (currentDoc && currentDoc.id !== doc.id)
+        ? `\n\nNote: this is the document in the row you clicked — NOT "${currentDoc.original_filename}", the document open on the right.`
+        : '';
+      if (!confirm(`Delete "${doc.original_filename}"?${_other}\n\nIt goes to the app's recycle bin — you can restore it from Search.`)) return;
+      const filePath = doc.folder_path ? `${doc.folder_path}\\${doc.original_filename}` : null;
+      await window.docusnap.deleteDocument(doc.id, filePath);
+      queue = await window.docusnap.getReviewQueue();
+      if (currentDoc?.id === doc.id) { currentDoc = null; clearDocPanel(); }
+      updateTabCounts();
+      renderNotRecognisedList();
+    });
     list.appendChild(el);
   }
 }
@@ -7170,7 +7325,7 @@ document.getElementById('btn-confirm').addEventListener('click', async () => {
   // Advance within the VISIBLE (grouped) order, not the raw chronological queue — else
   // confirming "City Office doc 1" jumps to whatever chronological doc lands in this slot
   // instead of "City Office doc 2".
-  const list = activeTab === 'deferred' ? deferredQueue : reviewDisplayOrder();
+  const list = _activeListDocs();
   const idx  = list.findIndex(d => d.id === currentDoc?.id);
   const supplier = (currentDoc?.supplier_name || '').trim();   // finish this sender's docs before moving on
   const _groupKey = reviewGroupKey(currentDoc);                 // slice 3: the VISIBLE pile, not the raw value
@@ -8037,7 +8192,7 @@ document.getElementById('btn-stop-file-all')?.addEventListener('click', () => {
 // so navigation is predictable, and keeps the chosen item scrolled into view.
 // Native list scrolling (wheel / scrollbar) is unaffected.
 function cycleDocument(direction) {
-  const list = activeTab === 'deferred' ? deferredQueue : reviewDisplayOrder();
+  const list = _activeListDocs();
   if (!list.length) return;
   const idx     = currentDoc ? list.findIndex(d => d.id === currentDoc.id) : -1;
   const nextIdx = idx === -1 ? 0 : idx + direction;   // up = -1 (prev), down = +1 (next)
@@ -8056,7 +8211,7 @@ function updateDocNavButtons() {
   const prev = document.getElementById('btn-doc-prev');
   const next = document.getElementById('btn-doc-next');
   if (!prev || !next) return;
-  const list = activeTab === 'deferred' ? deferredQueue : reviewDisplayOrder();
+  const list = _activeListDocs();
   const idx  = currentDoc ? list.findIndex(d => d.id === currentDoc.id) : -1;
   prev.disabled = idx <= 0;
   next.disabled = idx === -1 || idx >= list.length - 1;
@@ -8151,7 +8306,8 @@ document.addEventListener('keydown', (e) => {
 
 // ── Skip ──────────────────────────────────────────────────────────────────────
 document.getElementById('btn-skip').addEventListener('click', () => {
-  const activeList = activeTab === 'deferred' ? deferredQueue : queue;
+  const activeList = _activeListDocs();
+  if (!activeList.length) return;
   const idx  = activeList.findIndex(d => d.id === currentDoc?.id);
   const next = activeList[(idx + 1) % activeList.length];
   if (next && next.id !== currentDoc?.id) selectDoc(next);
@@ -8276,8 +8432,9 @@ async function deleteFromQueue(doc) {
 // the last entry if we filed the bottom one). Defaults to 0 (top) when unknown.
 function advanceAfterAction(removedIdx = 0, preferSupplier = null) {
   const at = Math.max(0, removedIdx);
-  const order = activeTab === 'deferred' ? (renderDeferredList(), deferredQueue)
-                                         : (renderQueueList(), reviewDisplayOrder());
+  const order = activeTab === 'deferred'   ? (renderDeferredList(), deferredQueue)
+              : activeTab === 'undetected' ? (renderNotRecognisedList(), _notRecognisedQueue())
+                                           : (renderQueueList(), reviewDisplayOrder());
   const next = _pickNextDoc(order, at, preferSupplier);
   // Return selectDoc's promise so a caller can AWAIT the doc-open before painting something on the
   // #anchor-readout bar — selectDoc→renderPage calls hideAnchorReadout, which otherwise clobbers a
@@ -10071,6 +10228,7 @@ async function _refreshQueueFromBroadcast() {
   }
   if (activeTab === 'review')   renderQueueList();
   if (activeTab === 'deferred') renderDeferredList();
+  if (activeTab === 'undetected') renderNotRecognisedList();
   refreshAutoCommittedBar();   // tick the auto-committed tally up after the burst (fetches fresh)
   updateReprocessSupplierButton();   // Q4c: "Reprocess N from X" follows the live queue
   if (!prevId && queue.length > 0 && activeTab === 'review') selectDoc(queue[0]);

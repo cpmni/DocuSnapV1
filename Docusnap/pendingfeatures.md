@@ -43,7 +43,15 @@ is a bare `keyword` read (allow-list, fail-safe) AND no template/logo/hint/teach
 (drops suggested_supplier). Pins: `test_undetected_issuer.py` + `test_migration195_issuer_undetected.js` (shared twin
 vectors). **Owed before the FLIP:** the census — realdoc M=0 + report the fire DENOMINATOR + a MULTI-TOKEN synthetic
 FP set (all-lowercase real names like "acme joinery" DO blank — the pinned first-contact trade-off; measure how often
-that fires on real reads). **Part B (the "Not recognised" tab) still pending.**
+that fires on real reads).
+**STATUS 2026-09-21: PART B BUILT — the Review "Not recognised" tab.** A third tab (clone of Deferred) holding docs
+with no issuer + no type + nothing suggested (never keyed on confidence). Membership = the pure `shared/notRecognised.js`
+`isNotRecognisedDoc` (window.NotRecognised), pinned by `test_not_recognised.js`. Those docs are MOVED OUT of the main
+Review queue (threaded through the `_reviewTabQueue`/`_sweepVisibleQueue`/`reviewDisplayOrder`/`_activeListDocs`/count
+choke points), shown as thumbnail + filename + "Couldn't identify this one" (no % badge); click opens the normal panel
+(type-picker + Teach). Bulk = "Set aside all" → Deferred. Tab hidden at 0. Pairs with Part A (feeds it) but also
+buckets genuinely-empty-issuer/untyped docs on its own. Display-only — no data/trust/auto-file change. Feature complete
+(A + B) pending the Part-A flip census.
 
 ## 2026-09-20 — Auto-split-on-import becomes OPT-IN + a page-1 separator-sheet trigger (owner design; NOT built — needs gary + Oracle)
 Owner proposal (refined over several messages). The auto-detect batch-separation pre-pass (letterhead/title

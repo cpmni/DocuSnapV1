@@ -1012,6 +1012,11 @@
         <button class="qtab" id="tab-deferred" data-help-key="deferred-tab">
           Deferred <span class="qtab-count" id="tab-deferred-count">0</span>
         </button>
+        <!-- "Not recognised" (Part B, 2026-09-21): documents with no issuer, no type and nothing to
+             suggest — kept out of the main queue so they don't intermix. Hidden until there is one. -->
+        <button class="qtab" id="tab-undetected" data-help-key="undetected-tab" style="display:none;">
+          Not recognised <span class="qtab-count" id="tab-undetected-count">0</span>
+        </button>
       </div>
       <!-- "N auto-committed — click to review" bar (recently auto-filed docs, re-surfaced for checking). -->
       <div id="auto-committed-bar" style="display:none;"></div>
@@ -1783,6 +1788,7 @@
 <script src="../shared/theme.js"></script>
 <script src="../shared/helpmode.js"></script>
 <script src="../shared/thumbs.js"></script>
+<script src="../shared/notRecognised.js"></script>
 <script src="../shared/doctype-editor.js"></script>
 <script src="../shared/anchorLabel.js"></script>
 <script src="../shared/listCaption.js"></script>
