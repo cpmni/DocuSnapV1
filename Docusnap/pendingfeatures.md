@@ -77,11 +77,13 @@ reads as a doc-start AND not a continuation; `handler.js` stamps `MULTI_DOC_HOLD
 isAutoFileEligible refuses) + watch unified on `auto_separate_enabled || filing_slips_enabled` (`watch_separate_enabled`
 RETIRED, dead toggle removed) + the calm Review "N pages · Split" chip + the settings label. Pins: G3
 `test_multi_doc_hold.js`, G4 `test_migration194_optin_split.js`, G5 re-pointed (`test_watch_separate_default_on.js`
-+ mig137 §56). **STILL DEFERRED = Slice 1b** (the page-1-separator-sheet override / `compose_segments` + the
-buildSplitPlan/segmentHoldPages/buildPairContext MIXED-exemption seam, Oracle §3) — a separate follow-up; when
-auto-split is OFF the graphical splitter in Review is the working split path, so 1b is a convenience add. Owed
-before a `auto_separate_enabled` ON promotion: G1 byte-identical (RR_APP_ENV=1, forced ON) + G2/G6 the OFF-path +
-speed census on the real 34-page bundle.
++ mig137 §56). ****STATUS 2026-09-21: SLICE 1b BUILT** (`87226d2`). Page-1 separator-sheet override → `compose_segments` (sheets
+hard, inter-sheet runs subdivided at heuristic first-pages; weak_pages = the sub-cuts only) + `--auto-split` gates
+the whole-file heuristic + the MIXED-exemption seam fixed in `segmentHoldPages`/`buildPairContext` (composed files
+hold their weak sub-cuts, sheet-bounded segments exempt) + watch runs slips + Separator-Sheets copy states the
+override. Pins G7: test_split_plan §9, test_segmentation compose + contracts, test_segment_pair_hold §2 re-pointed.
+Owed before a `auto_separate_enabled` ON promotion: G1 byte-identical (RR_APP_ENV=1, forced ON) + G2/G6 the OFF-path
++ speed census on the real 34-page bundle.
 
 ## 2026-09-20 — Graphical page-splitter + blank-page removal (barry+eric+gary+oscar → Oracle SIGN-OFF-W/COND ×2) — BUILDING; these bits DEFERRED
 The visual split popout (thumbnail grid → click the first page of each sub-document → preview → select/deselect
