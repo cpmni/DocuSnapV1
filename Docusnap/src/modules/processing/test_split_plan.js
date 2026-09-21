@@ -5,7 +5,7 @@
  *
  * Run: node src/modules/processing/test_split_plan.js
  */
-const { buildSegmentArgs, buildSplitPlan, toRanges } = require('./split_plan');
+const { buildSegmentArgs, buildSplitPlan, toRanges, segmentHoldPages, buildPairContext } = require('./split_plan');
 
 let fails = 0;
 const check = (label, cond, extra) => {
@@ -81,6 +81,31 @@ check("OFF with the file known: today's argv byte-identical", eq(a, ['--file', '
 a = buildSegmentArgs({ filePath: 'f.pdf', templatesFile: 't.json', tesseract: null, slips: false, docTypesFile: 'd.json', configFile: 'c.json', titleSlug: true, continuationVeto: true, knownSuppliersFile: 'k.json', knownSupplierChange: true });
 check('all three ON: title → veto → known, in that order',
   eq(a, ['--file', 'f.pdf', '--templates-file', 't.json', '--doc-types-file', 'd.json', '--config-file', 'c.json', '--title-slug', '--continuation-veto', '--known-suppliers-file', 'k.json', '--known-supplier-change']), JSON.stringify(a));
+
+console.log('\n§9 opt-in split (2026-09-21, mig 194): --auto-split arg + the composed mixed-exemption seam (G7)');
+// buildSegmentArgs: --auto-split rides only when autoSplit is set (whole-file heuristic gated on it).
+a = buildSegmentArgs({ filePath: 'f.pdf', templatesFile: 't.json', tesseract: null, slips: true, autoSplit: true });
+check('autoSplit ON: --auto-split appended after --slips', eq(a, ['--file', 'f.pdf', '--templates-file', 't.json', '--slips', '--auto-split']), JSON.stringify(a));
+a = buildSegmentArgs({ filePath: 'f.pdf', templatesFile: 't.json', tesseract: null, slips: true, autoSplit: false });
+check('autoSplit OFF: no --auto-split (opt-in default; the page-1 sheet composes without it)', eq(a, ['--file', 'f.pdf', '--templates-file', 't.json', '--slips']), JSON.stringify(a));
+// segmentHoldPages — the MIXED case (Oracle §3): a composed rewrite holds ONLY its weak (heuristic) multi-page cuts.
+{
+  // pure-heuristic: EVERY multi-page cut held (mig-176 trade-off).
+  const pureH = segmentHoldPages([{ original: 'h.pdf', segments: ['h_split_p1.pdf', 'h_split_p2-3.pdf', 'h_split_p4-5.pdf'], separators: 0 }]);
+  check('pure-heuristic: every multi-page cut held (no weak filter)', pureH.has('h_split_p2-3.pdf') && pureH.has('h_split_p4-5.pdf') && pureH.size === 2);
+  // pure-sheet: nothing held (operator-declared).
+  const pureS = segmentHoldPages([{ original: 's.pdf', segments: ['s_split_p1-2.pdf', 's_split_p3.pdf'], separators: 1 }]);
+  check('pure-sheet (no weak): exempt', pureS.size === 0);
+  // composed: sheet at page 0 + an internal heuristic MULTI-PAGE sub-cut → hold ONLY that sub-cut; the sheet-bounded
+  // multi-page segment stays exempt.
+  const comp = segmentHoldPages([{ original: 'm.pdf',
+    segments: ['m_split_p1-2.pdf', 'm_split_p3-4.pdf'], separators: 1, weak: ['m_split_p3-4.pdf'] }]);
+  check('composed (G7): the heuristic sub-cut IS held despite separators>0', comp.has('m_split_p3-4.pdf'));
+  check('composed (G7): the sheet-bounded segment is NOT held', !comp.has('m_split_p1-2.pdf') && comp.size === 1);
+  // and buildPairContext pairs the composed 1-page sub-cut (the seam's pair-hold twin).
+  const pc = buildPairContext([{ original: 'm.pdf', segments: ['m_split_p1.pdf', 'm_split_p2.pdf'], separators: 1, weak: ['m_split_p2.pdf'] }]);
+  check('composed (G7): a 1-page heuristic sub-cut is paired despite separators>0', (pc.byName.get('m_split_p2.pdf') || []).length === 1);
+}
 
 console.log(`\n${fails ? 'FAIL' : 'PASS'} — ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);

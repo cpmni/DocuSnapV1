@@ -44,16 +44,20 @@ console.log('\n§2 buildPairContext — the pair population');
 {
   const ctx = SP.buildPairContext([
     { original: 'a.pdf', segments: ['a_split_p1.pdf', 'a_split_p2.pdf', 'a_split_p3.pdf', 'a_split_p4-5.pdf'], separators: 0, weak: ['a_split_p2.pdf', 'a_split_p3.pdf', 'a_split_p4-5.pdf'] },
-    { original: 'b.pdf', segments: ['b_split_p1.pdf', 'b_split_p2.pdf'], separators: 1, weak: ['b_split_p2.pdf'] },     // sheet-bounded → exempt
+    { original: 'b.pdf', segments: ['b_split_p1.pdf', 'b_split_p2.pdf'], separators: 1 },                                 // PURE sheet-bounded (no weak) → exempt
     { original: 'c.pdf', segments: ['c_split_p1.pdf', 'c_split_p2.pdf'], separators: 0, weak: ['c_split_p1.pdf'] },     // k = 0 is never a pair
     { original: 'd.pdf', segments: ['d_split_p1.pdf', 'd_split_p2.pdf'], separators: 0 },                                // no weak key → none
     { original: 'e.pdf', segments: ['e-pages-1.pdf', 'e-pages-2.pdf'], separators: 0, weak: ['e-pages-2.pdf'] },          // non-splitter names → none
+    // COMPOSED rewrite (opt-in-split slice 1b): a page-1 sheet (separators > 0) AND an internal heuristic sub-cut.
+    // The `weak` set names ONLY the heuristic sub-cut, so it IS paired despite the sheet (the mixed-exemption seam).
+    { original: 'f.pdf', segments: ['f_split_p1.pdf', 'f_split_p2.pdf'], separators: 1, weak: ['f_split_p2.pdf'] },
   ]);
-  check('every weak segment k ≥ 1 of a heuristic rewrite pairs with k−1 (incl. a multi-page successor)', ctx.pairs.length === 3
-    && eq(ctx.pairs.map(q => [q.pred, q.succ]), [['a_split_p1.pdf', 'a_split_p2.pdf'], ['a_split_p2.pdf', 'a_split_p3.pdf'], ['a_split_p3.pdf', 'a_split_p4-5.pdf']]), JSON.stringify(ctx.pairs));
+  check('every weak segment k ≥ 1 of a heuristic rewrite pairs with k−1 (incl. a multi-page successor) + the composed sub-cut', ctx.pairs.length === 4
+    && eq(ctx.pairs.map(q => [q.pred, q.succ]), [['a_split_p1.pdf', 'a_split_p2.pdf'], ['a_split_p2.pdf', 'a_split_p3.pdf'], ['a_split_p3.pdf', 'a_split_p4-5.pdf'], ['f_split_p1.pdf', 'f_split_p2.pdf']]), JSON.stringify(ctx.pairs));
   check('page ranges parsed from the splitter names (1-page and multi-page)', eq(ctx.pairs[2].succPages, { from: 4, to: 5 }) && eq(ctx.pairs[0].predPages, { from: 1, to: 1 }));
   check('a MIDDLE segment belongs to two pairs (p2: succ of (1,2) AND pred of (2,3)) — Oracle C3', (ctx.byName.get('a_split_p2.pdf') || []).length === 2 && (ctx.byName.get('a_split_p1.pdf') || []).length === 1);
-  check('sheet-bounded rewrites, k = 0, no weak key, non-splitter names → no pairs', !ctx.byName.has('b_split_p2.pdf') && !ctx.byName.has('c_split_p1.pdf') && !ctx.byName.has('d_split_p2.pdf') && !ctx.byName.has('e-pages-2.pdf'));
+  check('PURE sheet-bounded (no weak), k = 0, no weak key, non-splitter names → no pairs', !ctx.byName.has('b_split_p2.pdf') && !ctx.byName.has('c_split_p1.pdf') && !ctx.byName.has('d_split_p2.pdf') && !ctx.byName.has('e-pages-2.pdf'));
+  check('COMPOSED rewrite (slice 1b): a sheet-bounded file with an internal heuristic sub-cut IS paired (weak selects it)', (ctx.byName.get('f_split_p2.pdf') || []).length === 1);
   check('null / [] / junk → an empty context with a landed map', SP.buildPairContext(null).pairs.length === 0 && SP.buildPairContext([null, {}]).byName.size === 0 && SP.buildPairContext([]).landed instanceof Map);
 }
 

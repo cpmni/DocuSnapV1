@@ -640,6 +640,42 @@ def detect_segments(pdf_path: str, templates: list, tesseract_path: str | None =
     }
 
 
+def compose_segments(page_count, separator_pages, first_pages):
+    """Opt-in-split slice 1b (2026-09-21; gary → Oracle SIGN-OFF-W/COND, docs/designs/OPTIN_SPLIT_2026-09-20.md).
+    Compose a MIXED segmentation: separator sheets are HARD boundaries (their pages excluded); each inter-sheet
+    run is then SUBDIVIDED at the heuristic first-pages that fall strictly inside it. This is the page-1
+    separator-sheet OVERRIDE ("drop a sheet on top of a stack to split it") — the sheet(s) bound the scan and the
+    template/heuristic detector cuts the runs.
+
+    Returns (segments, weak_pages):
+      segments  = [[start, end], ...] 0-based inclusive over the NON-sheet pages, in page order.
+      weak_pages = the start pages of the HEURISTIC-derived sub-cuts ONLY. A run start (a sheet boundary or the
+                   file start) is STRONG (operator-declared) and never weak, so the JS mig-176/180 hold applies
+                   to the heuristic sub-cuts of a composed file but exempts the sheet-bounded segments.
+    Pure; deterministic; tolerant of out-of-range / duplicate inputs. Never raises on ints."""
+    n = int(page_count or 0)
+    seps = set(p for p in (separator_pages or []) if isinstance(p, int) and 0 <= p < n)
+    firsts = set(p for p in (first_pages or []) if isinstance(p, int) and 0 <= p < n)
+    # Contiguous non-sheet runs (each run's own start is a HARD boundary).
+    runs, s = [], None
+    for p in range(n):
+        if p in seps:
+            if s is not None:
+                runs.append((s, p - 1)); s = None
+        elif s is None:
+            s = p
+    if s is not None:
+        runs.append((s, n - 1))
+    segments, weak = [], []
+    for (rs, re) in runs:
+        cuts = sorted(q for q in firsts if rs < q <= re)   # heuristic cuts STRICTLY inside the run
+        start = rs
+        for c in cuts:
+            segments.append([start, c - 1]); weak.append(c); start = c
+        segments.append([start, re])
+    return segments, weak
+
+
 def _page_text(page, img, born_digital: bool, tesseract_path: str | None) -> str:
     """Per-page text for the fingerprint: the embedded text layer when present (cheap,
     exact — the born-digital case like a Print Tracker batch), else a light OCR when a

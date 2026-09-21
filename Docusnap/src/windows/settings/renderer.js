@@ -1560,33 +1560,20 @@ if (autoSeparateToggle) autoSeparateToggle.addEventListener('change', async () =
 // ── Filing Slips ("Separator sheets") ──────────────────────────────────────────
 // Default OFF (backend reads 'filing_slips_enabled' with a 'false' default). The
 // detection gate is INDEPENDENT of the auto-separation toggle above (Oracle C2,
-// docs/designs/FILING_SLIPS_2026-07-18.md). C3: while a watch folder is configured,
-// a persistent warning explains sheets are detected on manual Import only.
+// docs/designs/FILING_SLIPS_2026-07-18.md). (2026-09-21: the old "manual Import only"
+// watch warning is RETIRED — the watch folder now runs separator-sheet detection too.)
 const slipsToggle = document.getElementById('filing-slips-toggle');
-const slipsWatchWarn = document.getElementById('filing-slips-watch-warn');
 const slipsCountInput = document.getElementById('filing-slips-count');
 const slipsPrintBtn = document.getElementById('filing-slips-print');
 const slipsResult = document.getElementById('filing-slips-result');
-async function slipsWatchConfigured() {
-  try {
-    return (await api.getSetting('watch_folder_enabled')) === '1'
-      && !!(await api.getSetting('watch_folder'));
-  } catch { return false; }
-}
-async function refreshSlipsWatchWarn() {
-  if (!slipsWatchWarn) return;
-  slipsWatchWarn.style.display = (slipsToggle?.checked && await slipsWatchConfigured()) ? '' : 'none';
-}
 async function loadFilingSlips() {
   if (!slipsToggle) return;
   slipsToggle.checked = (await api.getSetting('filing_slips_enabled')) === 'true';
-  refreshSlipsWatchWarn();
 }
 loadFilingSlips();
 if (slipsToggle) slipsToggle.addEventListener('change', async () => {
   try { await api.setSetting('filing_slips_enabled', slipsToggle.checked ? 'true' : 'false'); }
   catch { /* non-fatal; reloads on next open */ }
-  refreshSlipsWatchWarn();
 });
 // ── Document printing (Print-Slice 1) ──────────────────────────────────────────
 // Default OFF (backend reads 'printing_enabled' with a 'false' default). Adds the
@@ -1644,12 +1631,7 @@ if (slipsPrintBtn) slipsPrintBtn.addEventListener('click', async () => {
       showBtn.className = 'btn'; showBtn.textContent = 'Show in folder';
       showBtn.addEventListener('click', () => api.showInExplorer(res.path));
       slipsResult.append(openBtn, showBtn);
-      if (await slipsWatchConfigured()) {
-        const w = document.createElement('div');
-        w.style.color = 'var(--warn)';
-        w.textContent = 'Note: sheets are detected on manual Import only — not yet in the auto-import folder.';
-        slipsResult.append(w);
-      }
+      // (2026-09-21) the "manual Import only" note is retired — the watch folder now runs separator-sheet detection.
     } else if (slipsResult) {
       slipsResult.textContent = `Could not create sheets: ${(res && res.error) || 'unknown error'}`;
     }

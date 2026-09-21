@@ -57,6 +57,12 @@ def main():
     parser.add_argument("--tesseract", default=None, help="Tesseract executable (for scanned pages)")
     parser.add_argument("--slips", action="store_true",
                         help="Scan for printed separator sheets (Filing Slips) before template segmentation")
+    # Opt-in split (2026-09-21, mig 194): the whole-file template/heuristic separation runs ONLY when auto-split
+    # is on (--auto-split) OR the page-1 separator-sheet override fires (a sheet at page 0 → compose). Without it,
+    # the fall-through is a single whole document (byte-identical to no-split), so a slips-on install with no
+    # sheets never auto-splits.
+    parser.add_argument("--auto-split", action="store_true",
+                        help="run the whole-file template/heuristic separation (auto_separate_enabled ON)")
     # DARK switches (2026-09-16; both argv-only — the pre-pass spawn never carries the DB-bridged env):
     parser.add_argument("--doc-types-file", default=None, help="JSON list of installed doc types (for --title-slug)")
     parser.add_argument("--config-file", default=None, help="keyword_patterns.json path (for --title-slug)")
@@ -76,32 +82,6 @@ def main():
         sys.exit(1)
 
     templates = load_json_arg(args.templates_file) or []
-
-    # Filing Slips: separator-sheet scan FIRST (template-free by design). Sheets found ⇒
-    # slips-only result, template segmentation skipped. Abort/no-sheets ⇒ fall through.
-    slip_aborted = None
-    if args.slips:
-        try:
-            from ocr.slip_detect import detect_slips, segments_excluding
-            sd = detect_slips(args.file)
-            if sd.get("aborted"):
-                slip_aborted = sd["aborted"]
-            elif sd.get("separator_pages"):
-                seps = sd["separator_pages"]
-                segs = segments_excluding(sd["page_count"], seps)
-                print(json.dumps({
-                    "success": True,
-                    "page_count": sd["page_count"],
-                    "segments": segs,
-                    "first_pages": [s[0] for s in segs],
-                    "separator_pages": seps,
-                    "separator_payloads": sd.get("separator_payloads", []),
-                    "reasons": ["separator sheet"] * len(seps),
-                    "weak_pages": [],   # sheet-bounded cuts are operator-declared — never a weak (template-only) boundary
-                }), flush=True)
-                return
-        except Exception as exc:            # fail safe: never let the slip rung kill the pre-pass
-            slip_aborted = str(exc)
 
     # Title context ONLY when --title-slug AND the doc-types file loads (patterns fall back to the bundled config).
     title_ctx = None
@@ -126,10 +106,75 @@ def main():
             except Exception:
                 known = None
 
-    try:
+    def _run_detect():
         from ocr.segmentation import detect_segments
-        res = detect_segments(args.file, templates, tesseract_path=args.tesseract,
-                              title_ctx=title_ctx, continuation_veto=bool(args.continuation_veto), known=known)
+        return detect_segments(args.file, templates, tesseract_path=args.tesseract,
+                               title_ctx=title_ctx, continuation_veto=bool(args.continuation_veto), known=known)
+
+    # Filing Slips: separator-sheet scan FIRST (template-free by design). Sheets found ⇒
+    # slips result, whole-file template segmentation skipped. Abort/no-sheets ⇒ fall through.
+    slip_aborted = None
+    if args.slips:
+        try:
+            from ocr.slip_detect import detect_slips, segments_excluding
+            sd = detect_slips(args.file)
+            if sd.get("aborted"):
+                slip_aborted = sd["aborted"]
+            elif sd.get("separator_pages"):
+                seps = sd["separator_pages"]
+                payloads = sd.get("separator_payloads", [])
+                # PAGE-1 SEPARATOR-SHEET OVERRIDE (opt-in-split slice 1b, 2026-09-21): a sheet placed at PAGE 0
+                # means "split this whole stack". Every sheet stays a HARD boundary; each inter-sheet run is
+                # subdivided at the heuristic first-pages (compose_segments). weak_pages = the heuristic sub-cuts
+                # only, so the JS mig-176/180 hold applies to them while the sheet-bounded segments stay exempt.
+                # Fires even when auto-split is off (the whole point of the override); needs the templates the
+                # handler now passes on the slips arm too. Empty templates → no sub-cuts (graceful no-op).
+                if 0 in seps:
+                    try:
+                        det = _run_detect()
+                        firsts = det.get("first_pages", []) if isinstance(det, dict) else []
+                    except Exception:
+                        firsts = []
+                    from ocr.segmentation import compose_segments
+                    segs, weak = compose_segments(sd["page_count"], seps, firsts)
+                    weak_set = set(weak)
+                    print(json.dumps({
+                        "success": True,
+                        "page_count": sd["page_count"],
+                        "segments": segs,
+                        "first_pages": [s[0] for s in segs],
+                        "separator_pages": seps,
+                        "separator_payloads": payloads,
+                        "reasons": ["document start" if (s and s[0] in weak_set) else "separator sheet" for s in segs],
+                        "weak_pages": weak,
+                    }), flush=True)
+                    return
+                # Otherwise: today's slips-only result (sheets bound; no heuristic subdivision).
+                segs = segments_excluding(sd["page_count"], seps)
+                print(json.dumps({
+                    "success": True,
+                    "page_count": sd["page_count"],
+                    "segments": segs,
+                    "first_pages": [s[0] for s in segs],
+                    "separator_pages": seps,
+                    "separator_payloads": payloads,
+                    "reasons": ["separator sheet"] * len(seps),
+                    "weak_pages": [],   # sheet-bounded cuts are operator-declared — never a weak (template-only) boundary
+                }), flush=True)
+                return
+        except Exception as exc:            # fail safe: never let the slip rung kill the pre-pass
+            slip_aborted = str(exc)
+
+    # Whole-file template/heuristic separation runs ONLY under --auto-split (auto_separate_enabled ON, mig 194).
+    # Without it (opt-in OFF, no page-1 override), emit a single whole-document result → buildSplitPlan skips,
+    # so the file is left whole (and the expensive per-page pre-pass is never paid).
+    if not args.auto_split:
+        print(json.dumps({"success": True, "page_count": 1, "segments": [[0, 0]],
+                          "first_pages": [0], "reasons": ["auto-split off"], "weak_pages": []}), flush=True)
+        return
+
+    try:
+        res = _run_detect()
         res["success"] = True
         if slip_aborted:
             # Visible in the dev-inspector trace: explains WHY a slip-bearing file fell

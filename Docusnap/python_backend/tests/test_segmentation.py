@@ -345,6 +345,29 @@ check("detect_segments emits `weak_pages` unconditionally (additive metadata; th
 check("segment_docs.py's slips path emits weak_pages: [] (sheet-bounded cuts are never weak)", '"weak_pages": [],' in segsrc)
 print()
 
+# 10. compose_segments — the page-1 separator-sheet override (opt-in-split slice 1b, 2026-09-21).
+print("compose_segments: sheets are HARD boundaries; inter-sheet runs subdivided at heuristic first-pages")
+check("sheet at page 0 + a heuristic cut inside the run -> the sub-cut is weak",
+      seg.compose_segments(5, [0], [0, 2]) == ([[1, 1], [2, 4]], [2]))
+check("multiple sheets partition; each run subdivided independently",
+      seg.compose_segments(6, [0], [0, 2, 4]) == ([[1, 1], [2, 3], [4, 5]], [2, 4]))
+check("a run start (right after a sheet) is STRONG, never weak (its first-page flag is ignored)",
+      seg.compose_segments(6, [0, 3], [1, 4]) == ([[1, 2], [4, 5]], []))
+check("sheet at the END; the run before it subdivides",
+      seg.compose_segments(4, [3], [0, 1]) == ([[0, 0], [1, 2]], [1]))
+check("no heuristic cuts -> one segment per inter-sheet run, no weak (graceful no-op on an untaught install)",
+      seg.compose_segments(4, [0], [0]) == ([[1, 3]], []))
+check("out-of-range / duplicate inputs tolerated",
+      seg.compose_segments(3, [0, 9], [2, 2, -1]) == ([[1, 1], [2, 2]], [2]))
+check("empty page_count -> ([], [])", seg.compose_segments(0, [0], [1]) == ([], []))
+# segment_docs.py contracts: the --auto-split gate + the page-1 override wiring.
+check("segment_docs adds --auto-split", '"--auto-split"' in segsrc and 'action="store_true"' in segsrc)
+check("segment_docs composes on a page-0 sheet (if 0 in seps -> compose_segments)",
+      "if 0 in seps:" in segsrc and "compose_segments(" in segsrc)
+check("segment_docs gates the whole-file split on --auto-split (opt-in OFF -> single whole-document)",
+      "if not args.auto_split:" in segsrc)
+print()
+
 if fail:
     print(f"{fail} check(s) failed — segmentation regressed.")
     sys.exit(1)

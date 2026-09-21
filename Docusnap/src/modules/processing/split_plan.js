@@ -23,12 +23,15 @@
  * carrying `slip_aborted` is ignored (defence in depth; segment_docs already omits it).
  */
 
-function buildSegmentArgs({ filePath, templatesFile, tesseract, slips, docTypesFile, configFile, titleSlug, continuationVeto,
+function buildSegmentArgs({ filePath, templatesFile, tesseract, slips, autoSplit, docTypesFile, configFile, titleSlug, continuationVeto,
                             knownSuppliersFile, knownSupplierChange }) {
   const args = ['--file', filePath];
   if (templatesFile) args.push('--templates-file', templatesFile);
   if (tesseract) args.push('--tesseract', tesseract);
   if (slips) args.push('--slips');
+  // Opt-in split (2026-09-21, mig 194): the whole-file template/heuristic separation runs only when auto-split is ON.
+  // Without it, the pre-pass leaves the file whole UNLESS a page-1 separator sheet fires the compose override.
+  if (autoSplit) args.push('--auto-split');
   // DARK switches (2026-09-16, Oracle (A) C2 / (B) C8): argv is the ONLY kill — the pre-pass spawn never carries the
   // DB-bridged env. Emitted only when ON (OFF argv byte-identical even when the files are known); the title arm
   // needs the doc-types file (never a null in argv — the Oracle C1 class); patterns fall back to the bundled config.
@@ -177,7 +180,12 @@ function clearPairSentence(note, sentence) {
 function buildPairContext(rewrites) {
   const pairs = [], byName = new Map();
   for (const r of (Array.isArray(rewrites) ? rewrites : [])) {
-    if (!r || (r.separators || 0) > 0) continue;
+    // MIXED case (2026-09-21, opt-in-split slice 1b, Oracle §3): the `separators > 0` skip used to exempt the WHOLE
+    // rewrite, but a COMPOSED file (page-1 sheet + heuristic sub-cuts) is sheet-bounded AND internally cut. The
+    // `weak` set already names ONLY the heuristic (template-only) sub-cuts, so pairing on `weak.has(segs[k])` does the
+    // right thing for all three shapes: pure-heuristic (separators 0, weak = its weak cuts — today); composed
+    // (separators > 0, weak = the sub-cuts → paired); pure-sheet (weak empty → no pairs, exempt as before).
+    if (!r) continue;
     const segs = Array.isArray(r.segments) ? r.segments.map(s => String(s || '')) : [];
     const weak = new Set(Array.isArray(r.weak) ? r.weak.map(s => String(s || '')) : []);
     for (let k = 1; k < segs.length; k++) {
@@ -250,8 +258,16 @@ function pairHoldDecision(pred, succ) {
 function segmentHoldPages(rewrites) {
   const out = new Map();
   for (const r of (Array.isArray(rewrites) ? rewrites : [])) {
-    if (!r || (r.separators || 0) > 0) continue;
+    if (!r) continue;
+    // MIXED case (2026-09-21, opt-in-split slice 1b, Oracle §3): a rewrite WITH sheets (separators > 0) used to be
+    // exempt wholesale. A COMPOSED file is sheet-bounded AND heuristic-cut, so hold ONLY its WEAK (heuristic-derived)
+    // multi-page segments and leave the sheet-bounded ones exempt. A pure-heuristic rewrite (no sheets) still holds
+    // EVERY multi-page cut — the mig-176 pinned trade-off (a clean multi-page cut IS held). A pure-sheet rewrite has
+    // no `weak` names → nothing held (exempt, as before).
+    const sheetBounded = (r.separators || 0) > 0;
+    const weak = sheetBounded ? new Set(Array.isArray(r.weak) ? r.weak.map(s => String(s || '')) : []) : null;
     for (const s of (r.segments || [])) {
+      if (weak && !weak.has(String(s))) continue;   // composed file: skip the operator-declared sheet-bounded segments
       const m = MULTI_PAGE_SEGMENT_RE.exec(String(s || ''));
       if (m) out.set(String(s), { from: Number(m[1]), to: Number(m[2]) });
     }

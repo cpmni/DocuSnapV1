@@ -2889,6 +2889,9 @@ function register(ctx) {
       configFile: idx('--config-file'),
       titleSlug: learn.getSetting(db, 'segment_title_slug', 'false') === 'true',
       continuationVeto: learn.getSetting(db, 'segment_continuation_veto', 'false') === 'true',
+      // Opt-in split (2026-09-21, mig 194): the whole-file heuristic runs only when auto-split is ON. When OFF,
+      // segment_docs still runs the slips arm (a page-1 sheet composes) but never the whole-file template split.
+      autoSplit: learn.getSetting(db, 'auto_separate_enabled', 'false') === 'true',
       knownSuppliersFile: null,
       knownSupplierChange: false,
     };
@@ -2948,7 +2951,7 @@ function register(ctx) {
         // the SPLITTING line below is loud (it is the event the operator cares about).
         onPhase?.(`Checking “${name}” for multiple documents… (${i + 1}/${pdfs.length})`, { quiet: true });
         const det = await runPyJson(segScript,
-          buildSegmentArgs({ filePath, templatesFile, tesseract: tesseractPath(), slips: slipsOn,
+          buildSegmentArgs({ filePath, templatesFile, tesseract: tesseractPath(), slips: slipsOn, autoSplit: !!opts.autoSplit,
             docTypesFile: opts.docTypesFile || null, configFile: opts.configFile || null,
             titleSlug: !!opts.titleSlug, continuationVeto: !!opts.continuationVeto,
             knownSuppliersFile: opts.knownSuppliersFile || null, knownSupplierChange: !!opts.knownSupplierChange }), env);
@@ -3041,7 +3044,10 @@ function register(ctx) {
       const i = built.args.indexOf('--templates-file');
       if (i >= 0) templatesFile = built.args[i + 1];
     } catch (e) { logger?.warn?.(`[separate] training-args failed: ${e && e.message}`); }
-    const tf = (autoSep && templatesFile) ? templatesFile : null;   // heuristic arm needs templates; slips arm is template-less
+    // Templates flow when auto-split is ON (the heuristic arm) OR slips is on (so a page-1-sheet compose has
+    // heuristic first-pages to subdivide with — opt-in-split slice 1b). segment_docs gates the WHOLE-file split on
+    // --auto-split, so passing templates on the slips-only arm never re-arms auto-split (it only feeds the compose).
+    const tf = ((autoSep || slipsOn) && templatesFile) ? templatesFile : null;
     if (!tf && !slipsOn) { if (built) cleanupFiles(built.tempFiles); return { separated: 0, rewrites: [], consumed: [] }; }
     const sepP = Math.max(1, Math.min(os.cpus().length || 1, 6, ramConcurrencyCap(os.totalmem(), _resolveOcrDpi(db))));
     try {
@@ -3369,15 +3375,17 @@ function register(ctx) {
     // heuristic needs `auto_separate_enabled` (default OFF since mig 194 — opt-in) AND taught templates; the
     // Filing-Slips separator-sheet scan (`filing_slips_enabled`, default OFF, env
     // FILING_SLIPS=0 hard-kill) is explicit operator intent and must work on a
-    // zero-template install with the heuristic toggle off — it never re-arms template
-    // segmentation (its templates-file stays gated on the heuristic arm).
+    // zero-template install with the heuristic toggle off. Templates now flow on the slips arm too (so a page-1
+    // separator sheet can COMPOSE — subdivide inter-sheet runs at heuristic first-pages, opt-in-split slice 1b);
+    // the WHOLE-file heuristic split stays gated on --auto-split (autoSplit via _separationOpts), so passing
+    // templates on the slips arm never re-arms auto-detect segmentation.
     {
       const tIdx = trainingArgs.indexOf('--templates-file');
       const templatesFileRaw = tIdx >= 0 ? trainingArgs[tIdx + 1] : null;
       const autoSep = learning.getSetting(db, 'auto_separate_enabled', 'false') === 'true';   // opt-in (mig 194, 2026-09-21)
       const slipsOn = process.env.FILING_SLIPS !== '0'
         && learning.getSetting(db, 'filing_slips_enabled', 'false') === 'true';
-      const templatesFile = (autoSep && templatesFileRaw) ? templatesFileRaw : null;
+      const templatesFile = ((autoSep || slipsOn) && templatesFileRaw) ? templatesFileRaw : null;
       if (templatesFile || slipsOn) {
         // Run detection concurrently (each PDF is independent) so the pre-pass doesn't
         // serialise a Python cold-start per document. Cap at the CPU core count (≤6).
