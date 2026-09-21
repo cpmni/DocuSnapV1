@@ -89,6 +89,12 @@
   let _inited = false;
   let staged = [];                 // [{ token, name, titleInput }]
   let typeSelect = null, partyI, dateI, refI, notesI, filesBox, msg, fileBtn, pickBtn, typeRow, receiptBox;
+  let installedTypes = [];         // Slice 0: the installed Quick File types (with their fields) for custom-field render
+  let customBox = null;            // container for the selected type's per-type CUSTOM inputs
+  let customInputs = {};           // fieldKey -> input element, for the current type
+  let multiDocEnabled = false;     // S4a: quickfile_multidoc_enabled (DARK, mig 198) — gates the >1 master-detail path
+  let _qfFocusedIdx = 0;           // focused staged doc in multi-doc mode
+  const _previewCache = new Map(); // token -> {renderable, dataUrl|kind} (immutable per token)
 
   const view = { enabled: false };
 
@@ -107,19 +113,126 @@
   });
 
   function renderTypeRow(installed, presets) {
+    installedTypes = installed || [];
     typeRow.textContent = '';
     typeRow.appendChild(el('label', { className: 'qf-lbl' }, 'File as'));
     const seen = new Set(); const opts = [];
     for (const t of (installed || [])) { opts.push(el('option', { value: String(t.id) }, t.name)); seen.add(t.slug); }
     for (const p of (presets || [])) { if (!seen.has(p.slug)) opts.push(el('option', { value: 'new:' + p.slug }, p.name)); }
     typeSelect = el('select', { className: 'qf-in', style: { appearance: 'auto' } }, opts);
+    typeSelect.addEventListener('change', () => { renderCustomFields(); refreshTypeahead(); });
     typeRow.appendChild(typeSelect);
     if (!opts.length) typeRow.appendChild(el('div', { className: 'muted', style: { fontSize: '12px', color: 'var(--muted)', marginTop: '4px' } }, 'No Quick File types available.'));
+    renderCustomFields();
+  }
+
+  // Slice 0 (Fork A): render the selected type's CUSTOM fields (everything that isn't already one of the
+  // fixed inputs — Company/Person=supplier_name, Date, Reference, per-file Title). A 'new:<slug>' preset has
+  // no created fields yet (and its defaults are all roles), so nothing renders until it's created + refetched.
+  function renderCustomFields() {
+    if (!customBox) return;
+    customBox.textContent = '';
+    customInputs = {};
+    const tv = typeSelect && typeSelect.value;
+    if (!tv || tv.indexOf('new:') === 0) return;
+    const t = installedTypes.find((x) => String(x.id) === String(tv));
+    if (!t || !Array.isArray(t.fields)) return;
+    const roleKeys = new Set(['supplier_name', t.date_field_key, t.ref_field_key || 'reference_number', 'title'].filter(Boolean));
+    const customs = t.fields.filter((f) => f && f.key && !roleKeys.has(f.key));
+    if (!customs.length) return;
+    const grid = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px', marginTop: '14px' } });
+    for (const f of customs) {
+      const ty = String(f.type || 'text');
+      const input = ty === 'date' ? el('input', { className: 'qf-in', type: 'date' })
+        : (ty === 'longtext' || ty === 'textarea' || ty === 'multiline')
+          ? el('textarea', { className: 'qf-in', rows: 2, placeholder: f.required ? '' : 'Optional', style: { resize: 'vertical' } })
+          : el('input', { className: 'qf-in', type: ty === 'number' ? 'number' : 'text', placeholder: f.required ? '' : 'Optional' });
+      customInputs[f.key] = input;
+      grid.appendChild(el('div', {}, [el('label', { className: 'qf-lbl' }, f.label || f.key), input]));
+    }
+    customBox.appendChild(grid);
+  }
+
+  // ── S4b: auto-fill typeahead on the bound Records list's TRIGGER field ────────────────────────────
+  let _typeaheadCleanup = null;
+  const _toInputDate = (v) => {
+    const s = String(v || '').trim();
+    let m = /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/.exec(s);        // DD-MM-YYYY → yyyy-mm-dd for <input type=date>
+    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    return '';
+  };
+  function _detachTypeahead() { if (_typeaheadCleanup) { try { _typeaheadCleanup(); } catch {} _typeaheadCleanup = null; } }
+  function _triggerInputFor(fieldKey, t) {
+    if (!fieldKey) return null;
+    if (fieldKey === 'supplier_name') return partyI;
+    if (t && fieldKey === t.date_field_key) return dateI;
+    if (t && fieldKey === (t.ref_field_key || 'reference_number')) return refI;
+    return customInputs[fieldKey] || null;
+  }
+  function _fillFromRecord(fields, t) {
+    for (const key in fields) {
+      const input = _triggerInputFor(key, t);
+      if (!input) continue;
+      const val = fields[key];
+      input.value = (input.type === 'date') ? _toInputDate(val) : String(val);
+      input.style.transition = 'background .1s'; input.style.background = 'var(--accent-bg)';
+      setTimeout(() => { try { input.style.background = ''; } catch {} }, 900);
+    }
+  }
+  async function refreshTypeahead() {
+    _detachTypeahead();
+    if (!(D.lookup && D.lookup.typeBinding)) return;
+    const tv = typeSelect && typeSelect.value;
+    if (!tv || tv.indexOf('new:') === 0) return;
+    const typeId = Number(tv);
+    let b; try { b = await D.lookup.typeBinding(typeId); } catch { b = null; }
+    if (!b || !b.ok || !b.bound || !b.triggerFieldKey) return;
+    const t = installedTypes.find((x) => String(x.id) === String(typeId));
+    const input = _triggerInputFor(b.triggerFieldKey, t);
+    if (!input || !input.parentNode) return;
+    // A dropdown positioned under the trigger input (its wrapper is made position:relative).
+    input.parentNode.style.position = 'relative';
+    const dd = el('div', { style: { position: 'absolute', left: '0', right: '0', top: '100%', zIndex: '40',
+      background: 'var(--surface)', border: '1px solid var(--border2)', borderRadius: 'var(--r-sm)', marginTop: '2px',
+      maxHeight: '220px', overflowY: 'auto', boxShadow: '0 6px 20px rgba(0,0,0,.12)', display: 'none' } });
+    input.parentNode.appendChild(dd);
+    let timer = null, reqId = 0;
+    const hide = () => { dd.style.display = 'none'; dd.textContent = ''; };
+    const run = async () => {
+      const q = input.value.trim();
+      if (q.length < 3) { hide(); return; }
+      const my = ++reqId;
+      let res; try { res = await D.lookup.suggest({ documentTypeId: typeId, query: q, limit: 8 }); } catch { res = null; }
+      if (my !== reqId) return;                         // drop a late response (monotonic guard)
+      if (!res || !res.ok || !res.rows || !res.rows.length) { hide(); return; }
+      dd.textContent = '';
+      for (const row of res.rows) {
+        const sub = (b.list && b.list.disambiguator_key && row.values && row.values[b.list.disambiguator_key]) ? row.values[b.list.disambiguator_key] : (row.disambiguator || '');
+        const item = el('div', { style: { padding: '7px 11px', cursor: 'pointer', fontSize: '13px', borderTop: '1px solid var(--border)' } },
+          [el('span', {}, row.master_value), sub ? el('span', { style: { color: 'var(--muted)', marginLeft: '8px', fontSize: '12px' } }, '· ' + sub) : null]);
+        item.addEventListener('mousedown', async (ev) => {
+          ev.preventDefault();                          // keep focus / fire before blur
+          hide();
+          let r; try { r = await D.lookup.resolve({ documentTypeId: typeId, recordId: row.id }); } catch { r = null; }
+          if (r && r.ok && r.fields) _fillFromRecord(r.fields, t);
+        });
+        dd.appendChild(item);
+      }
+      if (res.total > res.rows.length) dd.appendChild(el('div', { style: { padding: '6px 11px', fontSize: '12px', color: 'var(--muted)', borderTop: '1px solid var(--border)' } }, `+${res.total - res.rows.length} more — keep typing`));
+      dd.style.display = 'block';
+    };
+    const onInput = () => { clearTimeout(timer); timer = setTimeout(run, 200); };
+    const onBlur = () => setTimeout(hide, 150);          // allow a click to land first
+    input.addEventListener('input', onInput);
+    input.addEventListener('blur', onBlur);
+    _typeaheadCleanup = () => { clearTimeout(timer); input.removeEventListener('input', onInput); input.removeEventListener('blur', onBlur); try { dd.remove(); } catch {} };
   }
 
   function renderFiles() {
     filesBox.textContent = '';
     if (!staged.length) { filesBox.appendChild(el('div', { className: 'muted', style: { fontSize: '13px', color: 'var(--muted)' } }, 'No files chosen yet.')); return; }
+    if (multiDocEnabled && staged.length > 1) { renderMultiDoc(); return; }   // S4a: per-doc entry + preview
     for (const f of staged) {
       const row = el('div', { className: 'qf-filerow' });
       row.appendChild(_svgIco('i-check', 15));
@@ -131,6 +244,95 @@
       row.appendChild(rm);
       filesBox.appendChild(row);
     }
+  }
+
+  // ── S4a: multi-document master-detail (filmstrip + focused preview + per-doc form) ───────────────
+  // Behind quickfile_multidoc_enabled + >1 files (Oracle FLAG1). Single-file/flag-off path is untouched.
+  // Each staged entry OWNS its values; inputs close over the entry (Oracle MC1 — never a mutable index).
+  const _roleKeysOf = (t) => new Set(['supplier_name', t && t.date_field_key, (t && t.ref_field_key) || 'reference_number', 'title'].filter(Boolean));
+  const _customFieldsOf = (t) => { if (!t || !Array.isArray(t.fields)) return []; const rk = _roleKeysOf(t); return t.fields.filter((f) => f && f.key && !rk.has(f.key)); };
+  function _gatherSharedCustom() { const o = {}; for (const k in customInputs) { const v = customInputs[k] && customInputs[k].value; if (v != null && String(v).trim() !== '') o[k] = String(v).trim(); } return o; }
+  function currentShared() { return { party: partyI.value.trim(), date: dateI.value || '', reference: refI.value.trim(), notes: notesI.value.trim(), customFields: _gatherSharedCustom() }; }
+  function _ensureValues() { for (const f of staged) { if (!f.values) f.values = { customFields: {} }; if (!f.values.customFields) f.values.customFields = {}; if (f.values.title == null) f.values.title = stem(f.name); } }
+  function _selectedType() { const tv = typeSelect && typeSelect.value; if (!tv || tv.indexOf('new:') === 0) return null; return installedTypes.find((x) => String(x.id) === String(tv)) || null; }
+
+  async function _loadPreview(f, imgHost) {
+    let pv = _previewCache.get(f.token);
+    if (!pv) { try { pv = await D.quickFilePreview(f.token); } catch { pv = { ok: true, renderable: false }; } if (pv && pv.ok) _previewCache.set(f.token, pv); }
+    if (!staged.includes(f)) return;                       // dropped while we awaited — drop a late render (Oracle lifecycle)
+    imgHost.textContent = '';
+    if (pv && pv.renderable && pv.dataUrl) {
+      imgHost.appendChild(el('img', { src: pv.dataUrl, alt: '', style: { maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '4px' } }));
+    } else {
+      imgHost.appendChild(_svgIco('i-book', 26));
+      imgHost.appendChild(el('div', { style: { fontSize: '11px', color: 'var(--muted)', marginTop: '4px', wordBreak: 'break-all' } }, (pv && pv.kind && pv.kind !== 'expired') ? String(pv.kind).replace('.', '').toUpperCase() : ''));
+    }
+  }
+
+  function renderMultiDoc() {
+    _ensureValues();
+    if (_qfFocusedIdx >= staged.length) _qfFocusedIdx = staged.length - 1;
+    if (_qfFocusedIdx < 0) _qfFocusedIdx = 0;
+    const QF = window.quickfileMeta;
+    const shared = currentShared();
+    const wrap = el('div', { style: { display: 'flex', gap: '14px', alignItems: 'flex-start', marginTop: '4px' } });
+    const strip = el('div', { style: { flex: '0 0 210px', maxHeight: '440px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' } });
+    const focusHost = el('div', { style: { flex: '1', minWidth: '320px' } });
+    wrap.appendChild(strip); wrap.appendChild(focusHost);
+    filesBox.appendChild(wrap);
+
+    staged.forEach((f, i) => {
+      const ready = QF ? QF.isReady(QF.withDefaults(f, shared)) : true;
+      const cell = el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', padding: '6px', cursor: 'pointer',
+        border: i === _qfFocusedIdx ? '2px solid var(--accent)' : '1px solid var(--border)', borderRadius: 'var(--r-sm)', background: 'var(--surface)' } });
+      const thumb = el('div', { style: { flex: '0 0 40px', height: '48px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', overflow: 'hidden' } });
+      cell.appendChild(thumb);
+      cell.appendChild(el('span', { style: { flex: '1', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: f.name }, f.values.title || f.name));
+      cell.appendChild(el('span', { title: ready ? 'Ready to file' : 'Needs a company or person', style: { flex: '0 0 auto', width: '9px', height: '9px', borderRadius: '50%', background: f.filed ? 'var(--muted)' : (ready ? 'var(--ok)' : 'var(--warn)') } }));
+      const rm = el('button', { className: 'btn-mini', type: 'button', title: 'Remove' }, '×');
+      rm.addEventListener('click', (e) => { e.stopPropagation(); staged = staged.filter((x) => x !== f); _previewCache.delete(f.token); renderFiles(); });
+      cell.appendChild(rm);
+      cell.addEventListener('click', () => { _qfFocusedIdx = i; renderFiles(); });
+      strip.appendChild(cell);
+      _loadPreview(f, thumb);
+    });
+
+    _renderFocused(focusHost, staged[_qfFocusedIdx], shared);
+  }
+
+  function _renderFocused(host, f, shared) {
+    if (!f) return;
+    const t = _selectedType();
+    // Big preview.
+    const prev = el('div', { style: { height: '260px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', marginBottom: '12px', overflow: 'hidden' } });
+    host.appendChild(prev);
+    _loadPreview(f, prev);
+    // Per-doc form — inputs close over THIS entry `f` (MC1). Placeholder shows the shared "applies to all".
+    const mk = (labelText, input) => el('div', {}, [el('label', { className: 'qf-lbl' }, labelText), input]);
+    const bind = (input, key) => { input.addEventListener('input', () => { f.values[key] = input.value; }); return input; };
+    const party = bind(el('input', { className: 'qf-in', type: 'text', value: f.values.party || '', placeholder: shared.party ? `${shared.party} (shared)` : 'Company or person' }), 'party');
+    const date = bind(el('input', { className: 'qf-in', type: 'date', value: f.values.date || '' }), 'date');
+    const ref = bind(el('input', { className: 'qf-in', type: 'text', value: f.values.reference || '', placeholder: shared.reference ? `${shared.reference} (shared)` : 'Optional' }), 'reference');
+    const title = bind(el('input', { className: 'qf-in', type: 'text', value: f.values.title || stem(f.name), placeholder: 'Title' }), 'title');
+    const grid = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' } },
+      [mk('Company / Person', party), mk('Date', date), mk('Reference', ref), mk('Title', title)]);
+    host.appendChild(grid);
+    // Per-doc custom fields (bound into f.values.customFields).
+    const customs = _customFieldsOf(t);
+    if (customs.length) {
+      const cg = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', marginTop: '12px' } });
+      for (const cf of customs) {
+        const ty = String(cf.type || 'text');
+        const inp = (ty === 'date') ? el('input', { className: 'qf-in', type: 'date', value: f.values.customFields[cf.key] || '' })
+          : (ty === 'longtext' || ty === 'textarea' || ty === 'multiline') ? el('textarea', { className: 'qf-in', rows: 2, style: { resize: 'vertical' } })
+            : el('input', { className: 'qf-in', type: ty === 'number' ? 'number' : 'text', value: f.values.customFields[cf.key] || '' });
+        if (inp.tagName === 'TEXTAREA') inp.value = f.values.customFields[cf.key] || '';
+        inp.addEventListener('input', () => { f.values.customFields[cf.key] = inp.value; });
+        cg.appendChild(el('div', {}, [el('label', { className: 'qf-lbl' }, cf.label || cf.key), inp]));
+      }
+      host.appendChild(cg);
+    }
+    if (f.error) host.appendChild(el('div', { style: { color: 'var(--warn)', fontSize: '12px', marginTop: '8px' } }, f.error));
   }
 
   // A persistent receipt row for one filed document (Open folder / Find it / Undo). Built with textContent
@@ -172,9 +374,39 @@
         documentTypeId = ar.type.id;
         const fresh = await D.quickFileDocTypes(); renderTypeRow(fresh.installed, fresh.presets);
         for (const o of typeSelect.options) if (Number(o.value) === documentTypeId) typeSelect.value = o.value;
+        renderCustomFields(); refreshTypeahead();
       } catch { msg.style.color = 'var(--warn)'; msg.textContent = 'Could not set up that type.'; reEnable(); return; }
     } else documentTypeId = Number(tv);
-    const shared = { documentTypeId, party: partyI.value.trim(), date: dateI.value || '', reference: refI.value.trim(), notes: notesI.value.trim() };
+    // Slice 0: gather the per-type custom field values (shared across the staged files, like party/date/notes).
+    const customFields = {};
+    for (const k in customInputs) { const v = customInputs[k] && customInputs[k].value; if (v != null && String(v).trim() !== '') customFields[k] = String(v).trim(); }
+    const shared = { documentTypeId, party: partyI.value.trim(), date: dateI.value || '', reference: refI.value.trim(), notes: notesI.value.trim(), customFields };
+
+    // S4a: multi-doc — file each staged doc with ITS OWN values merged under the shared defaults. Each meta
+    // is built by the pinned helper closing over the specific entry (MC1). MC3: keep unfiled docs on screen.
+    if (multiDocEnabled && staged.length > 1) {
+      const QF = window.quickfileMeta;
+      const sharedVals = { party: shared.party, date: shared.date, reference: shared.reference, notes: shared.notes, customFields };
+      let filedN = 0; const remain = []; let firstErr = '';
+      for (const f of staged) {
+        if (!f.values) f.values = { customFields: {} };
+        const merged = QF.withDefaults(f, sharedVals);
+        if (!QF.isReady(merged)) { f.error = 'Needs a company or person'; remain.push(f); if (!firstErr) firstErr = `${f.name}: needs a company or person`; continue; }
+        const meta = QF.buildMeta(documentTypeId, merged);
+        meta.title = (merged.values.title || '').trim() || stem(f.name);
+        try {
+          const r = await D.quickFileSubmit({ token: f.token, meta });
+          if (r && r.ok) { filedN++; f.filed = true; _previewCache.delete(f.token); addReceipt(f.name, meta.title, r); }
+          else { f.error = (r && r.error) || 'failed'; remain.push(f); if (!firstErr) firstErr = `${f.name}: ${f.error}`; }
+        } catch (e) { f.error = e.message; remain.push(f); if (!firstErr) firstErr = `${f.name}: ${e.message}`; }
+      }
+      staged = remain; _qfFocusedIdx = 0; renderFiles();
+      msg.style.color = remain.length ? 'var(--warn)' : 'var(--ok)';
+      msg.textContent = `Filed ${filedN} document(s)${remain.length ? ` · ${remain.length} still need details (${firstErr})` : "; they're searchable now."}`;
+      fileBtn.disabled = false; pickBtn.disabled = false;
+      return;
+    }
+
     let filed = 0; const errors = [];
     for (const f of staged) {
       msg.style.color = 'var(--muted)'; msg.textContent = `Filing ${filed + 1} of ${staged.length}…`;
@@ -250,10 +482,12 @@
     dateI  = el('input', { className: 'qf-in', type: 'date', value: todayIso() });
     refI   = el('input', { className: 'qf-in', type: 'text', placeholder: 'Optional' });
     notesI = el('textarea', { className: 'qf-in', rows: 3, placeholder: 'Optional — searchable', style: { resize: 'vertical' } });
+    customBox = el('div', {});   // Slice 0: per-type custom fields render here on type-select
     const details = el('div', { className: 'qf-card', style: { flex: '1', minWidth: '320px' } }, [
       typeRow,
       el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' } },
         [mkField('Company / Person', partyI), mkField('Date', dateI), mkField('Reference', refI), mkField('Notes', notesI)]),
+      customBox,
     ]);
     // Drop card + details share a row and stretch to equal height.
     root.appendChild(el('div', { style: { display: 'flex', gap: '18px', alignItems: 'stretch', flexWrap: 'wrap' } }, [dropZone, details]));
@@ -294,7 +528,9 @@
   // enter(): build once (idempotent), refresh the type list on each entry, focus the company field.
   async function enter() {
     if (!_inited) { build(); _inited = true; }
+    try { multiDocEnabled = String(await D.getSetting('quickfile_multidoc_enabled')) === 'true'; } catch { multiDocEnabled = false; }
     await refreshTypes();
+    refreshTypeahead();
     setTimeout(() => { try { partyI && partyI.focus(); } catch {} }, 30);
   }
 

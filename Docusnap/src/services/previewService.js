@@ -369,12 +369,15 @@ function getDocumentPageInfo(db, { docId, folderPath, filename, page, also, scal
  * @param {object} deps { fs, path, spawn, pythonExe, pythonArgs, renderScript, log? }
  * @returns {Promise<string|null>}
  */
-function getThumbnail(db, { docId, folderPath, filename }, deps) {
+function getThumbnail(db, { docId, folderPath, filename, exact }, deps) {
   const { fs, path, spawn, pythonExe, pythonArgs, renderScript } = deps;
   const log = deps.log || console.log;
 
   if (!folderPath || !filename) return Promise.resolve(null);
-  const filePath = _resolveDocFile(db, { docId, folderPath, filename }, deps);
+  // `exact` (Oracle EXACT1, Quick File staged preview): forward to _resolveDocFile so a docId-less staged
+  // file resolves by its exact path only — non-exact SIBLING RECOVERY could otherwise render a DIFFERENT
+  // filed doc sharing the base name. Existing thumbnail callers pass no `exact` → byte-identical.
+  const filePath = _resolveDocFile(db, { docId, folderPath, filename, exact }, deps);
   if (!filePath) return Promise.resolve(null);
 
   const ext = path.extname(filePath).toLowerCase();

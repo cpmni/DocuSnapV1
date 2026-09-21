@@ -51,5 +51,31 @@ console.log('3. pane script — reveal gate, the unchanged IPCs, the receipt, CS
   check('the drag-drop target id exists for the later slice (boundary untouched now)', /id: 'qf-dropzone'/.test(qf));
 }
 
+console.log('4. multi-doc pane (S4a) + typeahead (S4b) wiring — Oracle conditions');
+{
+  const html = read('src/windows/main/index.html');
+  const qf = read('src/windows/main/quickfileView.js');
+  const preload = read('src/preload.js');
+  const prev = read('src/services/previewService.js');
+  const di = read('src/modules/directIntake/handler.js');
+  // CSP1 — main window gains img-src 'self' data: (keeps 'self'); previews are data-URL png/jpeg.
+  check("CSP1: main index.html adds img-src 'self' data:", /img-src 'self' data:/.test(html));
+  // REG1 — single-file path intact: the multi-doc render is GUARDED by flag+>1, the plain loop still exists.
+  check('REG1: multi-doc guarded by quickfile_multidoc_enabled && staged.length > 1', /multiDocEnabled && staged\.length > 1/.test(qf));
+  check('REG1: single-file/shared render loop still present', /for \(const f of staged\) \{[\s\S]{0,200}qf-filerow/.test(qf));
+  check('REG1: no innerHTML in the pane (still)', !/\.innerHTML/.test(qf));
+  // IPC1 — preview by token, gated, exact:true, non-renderable → icon.
+  check('IPC1: preload exposes quickFilePreview', /quickFilePreview:\s*\(token\)\s*=>\s*ipcRenderer\.invoke\('direct-intake-preview', token\)/.test(preload));
+  check('IPC1: direct-intake-preview handler is role+enabled gated', /ipcMain\.handle\('direct-intake-preview'[\s\S]{0,220}requireRole\('admin', 'edit'\)[\s\S]{0,120}if \(!enabled\(db\)\)/.test(di));
+  check('IPC1: preview uses getThumbnail with exact:true + isRenderable gate', /isRenderable\(s\.ext\)/.test(di) && /exact: true/.test(di));
+  // EXACT1 — getThumbnail forwards exact.
+  check('EXACT1: getThumbnail destructures + forwards exact', /function getThumbnail\(db, \{ docId, folderPath, filename, exact \}/.test(prev) && /_resolveDocFile\(db, \{ docId, folderPath, filename, exact \}/.test(prev));
+  // MC2 — the pane uses the shared pinned meta helper (window.quickfileMeta), loaded before the pane.
+  check('MC2: quickfileMeta.js loaded before quickfileView.js', /quickfileMeta\.js"><\/script>[\s\S]{0,120}quickfileView\.js/.test(html));
+  check('MC2: doFile builds per-doc meta via window.quickfileMeta (buildMeta/withDefaults)', /window\.quickfileMeta[\s\S]{0,400}QF\.withDefaults\(f, sharedVals\)[\s\S]{0,200}QF\.buildMeta\(documentTypeId, merged\)/.test(qf));
+  // S4b — typeahead on the bound list's trigger field.
+  check('S4b: typeahead calls lookup.suggest + lookup.resolve', /D\.lookup\.suggest\(/.test(qf) && /D\.lookup\.resolve\(/.test(qf));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

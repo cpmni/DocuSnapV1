@@ -81,7 +81,7 @@ function register(ctx) {
       const v = svc.validateIntakePath(String(p || ''), opts);
       if (!v.ok) { out.push({ name, ext: v.ext || fileKinds.normExt(p), refused: v.refused }); continue; }
       const token = _mint();
-      _staged.set(token, { path: v.path, ext: v.ext, size: v.size, expires: Date.now() + TTL_MS });
+      _staged.set(token, { path: v.path, ext: v.ext, size: v.size, minted: Date.now(), expires: Date.now() + TTL_MS });
       out.push({ token, name, ext: v.ext, size: v.size });
     }
     return out;
@@ -120,8 +120,11 @@ function register(ctx) {
     requireRole('admin', 'edit');
     const db = getDb();
     const installed = docTypes.getAllWithFieldsAll(db)
-      .filter(t => String(t.reading_mode || 'read') === 'none')
-      .map(t => ({ id: t.id, name: t.name, slug: t.slug }));
+      .filter(t => docTypes.isQuickFileType(t))   // Slice 1 crossover: quick_file=1 OR reading_mode='none' (Oracle C1 parity)
+      .map(t => ({ id: t.id, name: t.name, slug: t.slug,
+        date_field_key: t.date_field_key || null, ref_field_key: t.ref_field_key || null,
+        // Slice 0: the type's fields so the pane can render per-type CUSTOM inputs (it excludes the role keys).
+        fields: (t.fields || []).map(f => ({ key: f.key, label: f.label, type: f.type, required: !!f.required })) }));
     const presets = (docTypes.getPresetCatalog(db) || [])
       .filter(p => p.quick_file)
       .map(p => ({ name: p.name, slug: p.slug, already_present: p.already_present }));
@@ -152,6 +155,7 @@ function register(ctx) {
       documentTypeId: meta && meta.documentTypeId,
       party: meta && meta.party, date: meta && meta.date, title: meta && meta.title,
       reference: meta && meta.reference, notes: meta && meta.notes,
+      customFields: meta && meta.customFields,   // Slice 0: {fieldKey: value} typed on the per-type custom inputs
     };
     const deps = {
       fs, path, outputRoot: learning.getSetting(db, 'output_folder', null),
@@ -190,6 +194,31 @@ function register(ctx) {
     catch (e) { logger && logger.error && logger.error(`[quickfile] update: ${e.message}`); return { ok: false, error: 'failed', detail: e.message }; }
     if (r && r.ok) { try { ctx.notifyAllWindows && ctx.notifyAllWindows('direct-intake-changed'); } catch {} }
     return r;
+  });
+
+  // Preview a STAGED (not-yet-filed) file by token (Oracle IPC1) — for the multi-doc pane's filmstrip +
+  // focused preview. Renders page-1 by TOKEN (staged files have no docId); the path stays in MAIN. Non-
+  // renderable (office/email/text) or a gone file → {renderable:false} so the renderer draws an icon card
+  // (never a broken image). getThumbnail(exact:true) resolves ONLY the exact staged path — no sibling
+  // recovery to a stranger's filed doc (Oracle EXACT1). TTL renews on preview (TTL1) capped at mint+2h so a
+  // careful multi-doc entry doesn't expire, without letting a token live forever.
+  const PREVIEW_TTL_CAP_MS = 2 * 60 * 60 * 1000;
+  ipcMain.handle('direct-intake-preview', async (_e, token) => {
+    requireRole('admin', 'edit');
+    const db = getDb();
+    if (!enabled(db)) return { ok: false, error: 'disabled' };
+    _sweep();
+    const s = token && _staged.get(token);
+    if (!s || s.expires < Date.now()) { if (token) _staged.delete(token); return { ok: true, renderable: false, kind: 'expired' }; }
+    s.expires = Math.min(Date.now() + TTL_MS, (s.minted || Date.now()) + PREVIEW_TTL_CAP_MS);   // renew, capped
+    if (!fileKinds.isRenderable(s.ext)) return { ok: true, renderable: false, kind: s.ext };
+    const previewService = require('../../services/previewService');
+    const renderScript = path.join(path.dirname(ctx.backendScript()), 'render', 'pages.py');
+    const deps = { fs, path, spawn: require('child_process').spawn, pythonExe: ctx.pythonExe, pythonArgs: ctx.pythonArgs, renderScript, log: () => {} };
+    let dataUrl = null;
+    try { dataUrl = await previewService.getThumbnail(db, { docId: null, folderPath: path.dirname(s.path), filename: path.basename(s.path), exact: true }, deps); }
+    catch { dataUrl = null; }
+    return dataUrl ? { ok: true, renderable: true, dataUrl } : { ok: true, renderable: false, kind: s.ext };
   });
 
   // Test/introspection seam - never touches the DB.
