@@ -77,5 +77,18 @@ console.log('4. multi-doc pane (S4a) + typeahead (S4b) wiring — Oracle conditi
   check('S4b: typeahead calls lookup.suggest + lookup.resolve', /D\.lookup\.suggest\(/.test(qf) && /D\.lookup\.resolve\(/.test(qf));
 }
 
+console.log('5. F1 (2026-09-21 Chris vet) — el() skips null kids; twin parity with lookupAdmin.js');
+{
+  // A no-disambiguator (or blank-disambiguator) Records list makes the typeahead row pass a `null` second
+  // kid; the unguarded el() did appendChild(null) → the dropdown never rendered (crash every keystroke).
+  const qf = read('src/windows/main/quickfileView.js');
+  const la = read('src/windows/settings/lookupAdmin.js');
+  const guard = /for \(const c of \[\]\.concat\(kids\)\) if \(c != null\) n\.appendChild/;
+  check('quickfileView.js el() guards null kids (a `? x : null` kid must be a no-op, not appendChild(null))', guard.test(qf));
+  check('lookupAdmin.js el() has the SAME guard — the twins must not diverge again (this WAS the root cause)', guard.test(la));
+  check('the crash callsite is intact: the row still passes a null 2nd kid when there is no disambiguator',
+        /\[el\('span', \{\}, row\.master_value\), sub \? el\('span'/.test(qf));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -18,7 +18,7 @@
   const el = (tag, props = {}, kids = []) => {
     const n = document.createElement(tag);
     for (const k in props) { if (k === 'style') Object.assign(n.style, props[k]); else if (k in n) n[k] = props[k]; else n.setAttribute(k, props[k]); }
-    for (const c of [].concat(kids)) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    for (const c of [].concat(kids)) if (c != null) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);   // skip null kids (parity with lookupAdmin.js el) — a `? x : null` kid must be a no-op, not appendChild(null)
     return n;
   };
   const stem = (name) => String(name || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() || 'Document';
