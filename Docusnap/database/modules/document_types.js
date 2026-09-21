@@ -385,7 +385,8 @@ function deleteField(db, id) {
 
 function updateType(db, id, changes) {
   const allowed = ['name', 'enabled', 'ref_field_key',
-                   'date_field_key', 'sort_order', 'title_aliases'];   // D7: default department moved to the join (setTypeDefaultDepartments)
+                   'date_field_key', 'sort_order', 'title_aliases',
+                   'reading_mode', 'quick_file'];   // Slice 1 crossover: lanes editable. D7: default dept via setTypeDefaultDepartments
   changes = { ...changes };
   // Title aliases: validate against the INCOMING name if renaming in the same call, else
   // the current row's name (so an alias equal to the new/old name is still rejected). Throws
@@ -419,6 +420,20 @@ function updateType(db, id, changes) {
       // never the DATE role — Chris r6 card 4 set one and got a queue row saying "Needs: Barcode".
       if (!row || _t === 'list' || (role === 'date_field_key' && _t === 'barcode')) delete changes[role];
     }
+  }
+  // Lane fields (Slice 1 crossover): reading_mode (the OCR detection gate) + quick_file (offered in the
+  // Quick File picker) are editable. Oracle C2 invariant — a no-OCR type must stay reachable somewhere:
+  // reading_mode='none' ⇒ quick_file=1, enforced on BOTH writes. Guard on the column so a pre-mig fixture
+  // is unaffected; an unknown reading_mode falls back to 'read'.
+  const _hasQF = (() => { try { return db.prepare('PRAGMA table_info(document_types)').all().some(c => c.name === 'quick_file'); } catch { return false; } })();
+  if ('quick_file' in changes && !_hasQF) delete changes.quick_file;
+  if (_hasQF && (('reading_mode' in changes) || ('quick_file' in changes))) {
+    const cur = db.prepare('SELECT reading_mode, quick_file FROM document_types WHERE id = ?').get(id) || {};
+    let rm = ('reading_mode' in changes) ? String(changes.reading_mode || 'read') : String(cur.reading_mode || 'read');
+    if (rm !== 'read' && rm !== 'none') rm = 'read';
+    let qf = ('quick_file' in changes) ? (changes.quick_file ? 1 : 0) : (cur.quick_file ? 1 : 0);
+    if (rm === 'none') qf = 1;                              // C2: a no-OCR type is always Quick-Fileable
+    changes.reading_mode = rm; changes.quick_file = qf;
   }
   // D7 (2026-09-18): the doc-type default department is now a SET in document_type_departments, written via
   // departmentService.setTypeDefaultDepartments — never through updateType (dropped from `allowed` above).
@@ -812,6 +827,16 @@ function presetSlug(name) {
   return safeSlug(name, { fallback: 'type' });
 }
 
+// Shared predicate (Slice 1 crossover): is this doc type offered in the Quick File picker? Both the
+// desktop picker (directIntake/handler) and the /v1 client picker (api/handler) MUST use this ONE rule
+// (Oracle C1 parity) — a crossover read+quick_file=1 type appears in both; the fallback tolerates a
+// pre-mig fixture with no quick_file column. quick_file NEVER feeds OCR detection (reading_mode does).
+function isQuickFileType(t) {
+  if (!t) return false;
+  if (t.quick_file === 1 || t.quick_file === true) return true;
+  return String(t.reading_mode || 'read') === 'none';
+}
+
 // The catalog for the Settings tick-list: each entry + its derived slug + whether
 // it is already present in this install (so the UI shows it ticked/disabled).
 function getPresetCatalog(db) {
@@ -865,6 +890,11 @@ function addPresetTypes(db, slugs) {
         // Quick File presets are typed-metadata forms (no OCR/Review/learning, never detected — Q-C8).
         if (preset.reading_mode === 'none') {
           try { db.prepare("UPDATE document_types SET reading_mode = 'none' WHERE id = ?").run(typeId); } catch {}
+        }
+        // Crossover (mig 196): a no-OCR / Quick File preset is offered in the Quick File picker (quick_file=1).
+        // try/catch tolerates a pre-migration fixture without the column.
+        if (preset.reading_mode === 'none' || preset.quick_file) {
+          try { db.prepare('UPDATE document_types SET quick_file = 1 WHERE id = ?').run(typeId); } catch {}
         }
         const realSlug = db.prepare('SELECT slug FROM document_types WHERE id = ?').get(typeId).slug;
         let labelsSeeded = 0;
@@ -966,7 +996,7 @@ module.exports = {
   addType, updateType, addField, updateField, deleteField, ensureStructuralRoles,
   assertStructuralRequired,
   reshapeCustomerIdentityTypes, cleanupStaleCustomerLearning,
-  COMPANY_KEYS, isStructuralKey, normaliseTitleAliases,
+  COMPANY_KEYS, isStructuralKey, normaliseTitleAliases, isQuickFileType,
   PRESET_CATALOG, presetSlug, getPresetCatalog, addPresetTypes, createTypeWithFields,
   GENERIC_SLUG, getGenericType,
 };

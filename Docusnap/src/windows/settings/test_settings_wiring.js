@@ -54,6 +54,9 @@ const addressed = new Set([
 //    OWNER FOLLOW-UP (queued): delete the dead stamp-placement code + its leftover CSS from settings.
 const KNOWN_ABSENT = new Set([
   'dbenc-print-sheet',
+  // dt-lane-filter: the Document Types Scanned/Quick File segmented filter, created dynamically in
+  // ensureLaneFilter() (Slice 1 crossover) — getElementById-then-createElement, like dbenc-print-sheet.
+  'dt-lane-filter',
   'stamp-section', 'stamp-preview-box', 'stamp-preview', 'stamp-msg',
   'stamp-size', 'stamp-size-val', 'stamp-save', 'stamp-reset',
 ]);

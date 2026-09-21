@@ -3976,6 +3976,77 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 195 (issuer_undetected_blank): ${e.message}`); }
   }
 
+  // mig 196 (2026-09-21): OCR / Quick-File lane CROSSOVER. document_types.quick_file decouples "offered in
+  // the Quick File picker" from reading_mode — which stays the SOLE OCR-detection gate (quick_file NEVER
+  // feeds detection). Backfill quick_file=1 for existing reading_mode='none' types so the picker set is
+  // byte-identical post-migration; the OCR importer is byte-identical (detection reads only reading_mode).
+  // Additive, go-forward-only. Design: docs/designs/QUICKFILE_LOOKUP_LISTS_2026-09-21.md (Oracle SIGN-OFF-W/COND).
+  if (!applied.has(196)) {
+    try {
+      const hasCol = db.prepare('PRAGMA table_info(document_types)').all().some(c => c.name === 'quick_file');
+      if (!hasCol) db.prepare('ALTER TABLE document_types ADD COLUMN quick_file INTEGER NOT NULL DEFAULT 0').run();
+      db.prepare("UPDATE document_types SET quick_file = 1 WHERE reading_mode = 'none'").run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (196)').run();
+      console.log('JS migration 196 applied: document_types.quick_file (OCR/Quick-File lane crossover) added + backfilled from reading_mode');
+    } catch (e) { console.warn(`  migration 196 (quick_file column): ${e.message}`); }
+  }
+
+  // mig 197 (2026-09-21): Quick File RECORDS LISTS (auto-fill lookup) — a reference dataset keyed by a master
+  // field that PRE-FILLS a Quick File form's fields. DARK behind lookup_lists_enabled (seeded OFF, opt-in like
+  // direct_intake_enabled/departments — NOT a dark TEST switch, so it never arms/disarms with build_arming).
+  // Empty tables = byte-identical to absent; go-forward-only. These tables NEVER touch the learning stores —
+  // a prefilled value lands on an intake='direct' row already excluded from every learning reader (Q-C1).
+  // Design: docs/designs/QUICKFILE_LOOKUP_LISTS_2026-09-21.md (Oracle SIGN-OFF-W/COND). Surrogate record id so
+  // two same-named subjects (two "John Doe") never merge (Oracle/reggie). One list per type enforced in JS (C6).
+  if (!applied.has(197)) {
+    try {
+      db.prepare(`CREATE TABLE IF NOT EXISTS lookup_lists (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        master_key TEXT NOT NULL,
+        columns_json TEXT NOT NULL DEFAULT '[]',
+        upsert_key_json TEXT,
+        disambiguator_key TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`).run();
+      db.prepare(`CREATE TABLE IF NOT EXISTS lookup_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        list_id INTEGER NOT NULL REFERENCES lookup_lists(id) ON DELETE CASCADE,
+        master_value TEXT NOT NULL,
+        values_json TEXT NOT NULL DEFAULT '{}',
+        disambiguator TEXT,
+        source TEXT,
+        updated_at TEXT DEFAULT (datetime('now'))
+      )`).run();
+      db.prepare(`CREATE TABLE IF NOT EXISTS lookup_field_maps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_type_id INTEGER NOT NULL REFERENCES document_types(id) ON DELETE CASCADE,
+        list_id INTEGER NOT NULL REFERENCES lookup_lists(id) ON DELETE CASCADE,
+        field_key TEXT NOT NULL,
+        column_key TEXT NOT NULL,
+        is_trigger INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(document_type_id, field_key)
+      )`).run();
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_lookup_records_master ON lookup_records(list_id, master_value COLLATE NOCASE)').run();
+      db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('lookup_lists_enabled', 'false')").run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (197)').run();
+      console.log('JS migration 197 applied: Quick File records lists (lookup_lists/lookup_records/lookup_field_maps) + lookup_lists_enabled OFF (DARK)');
+    } catch (e) { console.warn(`  migration 197 (lookup lists): ${e.message}`); }
+  }
+
+  // mig 198 (2026-09-21): quickfile_multidoc_enabled — the multi-document Quick File pane (per-doc entry +
+  // preview). DARK/opt-in (seeded OFF). Single-file filing is byte-identical regardless; this flag ONLY gates
+  // the >1-file master-detail render path (Oracle FLAG1 — Quick File is GA, so the new path ships OFF until
+  // the owner verifies the multi-doc round-trip on the VM). NOT a dark TEST switch.
+  if (!applied.has(198)) {
+    try {
+      db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('quickfile_multidoc_enabled', 'false')").run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (198)').run();
+      console.log('JS migration 198 applied: quickfile_multidoc_enabled OFF (DARK) — multi-doc Quick File pane opt-in');
+    } catch (e) { console.warn(`  migration 198 (quickfile_multidoc): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

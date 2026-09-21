@@ -1647,6 +1647,10 @@ async function renderDocDepartment(doc) {
   const box = document.getElementById('doc-dept-checks');
   const msg = document.getElementById('doc-dept-msg');
   if (!row || !box || !window.docusnap?.dept) return;
+  // Owner 2026-09-21: regular (non-admin) users don't need to SEE a document's visibility — only an admin
+  // sets it. Hide the "Visible to" row entirely for edit/readonly; the server access gate still enforces
+  // visibility regardless of the UI. (Admin keeps full control below.)
+  if (!isAdmin) { row.style.display = 'none'; return; }
   if (msg) msg.textContent = '';
   let info, current;
   try { info = await window.docusnap.dept.assignable(); } catch { info = null; }

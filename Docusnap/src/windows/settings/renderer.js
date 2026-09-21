@@ -1860,11 +1860,47 @@ async function loadDocTypes() {
 let selectedDocTypeId = null;
 let dtEditor = null;            // active DocTypeEditor controller; destroy before re-mount
 
+// Slice 1 crossover: a type's lane. reading_mode='none' → Quick File only; else quick_file → 'both'; else Scanned.
+function _laneOf(dt) {
+  if (String((dt && dt.reading_mode) || 'read') === 'none') return 'quick';
+  return (dt && dt.quick_file) ? 'both' : 'scanned';
+}
+let docTypeLaneFilter = 'all';   // 'all' | 'scanned' | 'quick'
+const _laneBadge = { scanned: 'Scanned', quick: 'Quick File', both: 'Both' };
+
+// A once-built segmented filter above the list. Built via JS (not index.html) so the settings
+// div-balance / tab-panel-pairing guards are untouched; a crossover ('both') type shows in BOTH views.
+function ensureLaneFilter() {
+  const list = document.getElementById('doctypes-list');
+  if (!list || !list.parentNode || document.getElementById('dt-lane-filter')) return;
+  const bar = document.createElement('div');
+  bar.id = 'dt-lane-filter';
+  bar.style.cssText = 'display:flex; gap:6px; margin-bottom:8px;';
+  for (const [val, label] of [['all', 'All'], ['scanned', 'Scanned'], ['quick', 'Quick File']]) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'btn'; b.dataset.lane = val; b.textContent = label;
+    b.style.cssText = 'padding:3px 10px; font-size:12px;';
+    b.addEventListener('click', () => { docTypeLaneFilter = val; renderDocTypesList(); });
+    bar.appendChild(b);
+  }
+  list.parentNode.insertBefore(bar, list);
+}
+
 function renderDocTypesList() {
+  ensureLaneFilter();
+  const filterBar = document.getElementById('dt-lane-filter');
+  if (filterBar) for (const b of filterBar.children) b.classList.toggle('active', b.dataset.lane === docTypeLaneFilter);
   const list = document.getElementById('doctypes-list');
   list.innerHTML = '';
 
+  const inLane = (dt) => {
+    if (docTypeLaneFilter === 'all') return true;
+    const lane = _laneOf(dt);
+    if (lane === 'both') return true;                 // a crossover type belongs to both views
+    return lane === docTypeLaneFilter;
+  };
   for (const dt of allTypesWithFields) {
+    if (!inLane(dt)) continue;
     const row = document.createElement('div');
     row.className = 'doctype-row'
       + (dt.enabled ? '' : ' disabled')
@@ -1877,6 +1913,7 @@ function renderDocTypesList() {
       <div class="doctype-name">
         <span class="doctype-nametext" title="${escHtml(dt.name)}">${escHtml(dt.name)}</span>
         <span class="${dt.built_in ? 'badge-builtin' : 'badge-custom'}">${dt.built_in ? 'built-in' : 'custom'}</span>
+        <span class="badge-lane" title="How this type is filed">${_laneBadge[_laneOf(dt)]}</span>
       </div>
       <span class="doctype-count" title="${fieldCount} field${fieldCount === 1 ? '' : 's'}">${fieldCount}</span>
     `;
@@ -1999,7 +2036,17 @@ function renderDocTypeDetail(type) {
       <div class="field-label-small" style="color:var(--muted); margin-top:4px;">These become the starting departments for new documents of this type. You can still change any document later.</div>
       <span id="dt-dept-msg" class="field-label-small" style="color:var(--muted);"></span>
     </div>` : ''}
-    <div id="dt-editor-host"></div>`;
+    <div id="dt-lane-row" style="margin:2px 0 12px;">
+      <label class="field-label-small" for="dt-lane" style="display:block; margin-bottom:4px; font-weight:600;">How is this type filed?</label>
+      <select id="dt-lane" class="input" style="max-width:300px;">
+        <option value="scanned">Scanned &mdash; the software reads it (OCR)</option>
+        <option value="quick">Quick File &mdash; you type the details, no scanning</option>
+        <option value="both">Both</option>
+      </select>
+      <div class="field-label-small" style="color:var(--muted); margin-top:4px;">Quick File types are never auto-read and appear in the Quick File screen. &ldquo;Both&rdquo; lets a type be scanned <em>and</em> quick-filed.</div>
+    </div>
+    <div id="dt-editor-host"></div>
+    <div id="dt-lookup-host"></div>`;
 
   document.getElementById('dt-fix-type')?.addEventListener('click', async () => {
     const repairTab = document.querySelector('.tab[data-tab="repair"]');
@@ -2031,10 +2078,34 @@ function renderDocTypeDetail(type) {
 
   wireTypeDeptControl(type);
 
+  // Lane control (Slice 1 crossover): map the friendly choice to (reading_mode, quick_file). The service
+  // enforces the C2 invariant (a no-OCR type is always Quick-Fileable), so 'quick' can never orphan a type.
+  const laneSel = document.getElementById('dt-lane');
+  if (laneSel) {
+    laneSel.value = _laneOf(type);
+    laneSel.addEventListener('change', async () => {
+      const map = { scanned: { reading_mode: 'read', quick_file: 0 },
+                    quick:   { reading_mode: 'none', quick_file: 1 },
+                    both:    { reading_mode: 'read', quick_file: 1 } };
+      const ch = map[laneSel.value] || map.scanned;
+      const r = await api.updateDocumentType(type.id, ch);
+      if (r && r.error) { alert(r.error); }
+      await refreshDocTypesList();
+      selectDocType(type.id);
+    });
+  }
+
   dtEditor = window.DocTypeEditor.create(
     document.getElementById('dt-editor-host'),
     { mode: 'edit', api, initial: type, onChange: refreshDocTypesList }
   );
+
+  // Records-lists auto-fill (Quick File lane only). Rendered by the self-contained LookupAdmin module; it
+  // handles its own enable toggle + list binding + records + import. Scanned-only types don't show it.
+  const lookupHost = document.getElementById('dt-lookup-host');
+  if (lookupHost && window.LookupAdmin && _laneOf(type) !== 'scanned') {
+    try { window.LookupAdmin.render(type); } catch (e) { /* non-fatal */ }
+  }
 }
 
 // D7: the type's default department SET — "Everyone" OR a checkbox per active department.

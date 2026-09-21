@@ -1100,8 +1100,10 @@ function createRequestListener(ctx) {
         const db = getDb();
         const svc = require('../../services/directIntakeService');
         const installed = doctypes.getAllWithFieldsAll(db)
-          .filter(t => String(t.reading_mode || 'read') === 'none')
-          .map(t => ({ id: t.id, name: t.name, slug: t.slug }));
+          .filter(t => doctypes.isQuickFileType(t))   // Slice 1 crossover: same rule as the desktop picker (Oracle C1 parity)
+          .map(t => ({ id: t.id, name: t.name, slug: t.slug,
+            date_field_key: t.date_field_key || null, ref_field_key: t.ref_field_key || null,
+            fields: (t.fields || []).map(f => ({ key: f.key, label: f.label, type: f.type, required: !!f.required })) }));
         const presets = (doctypes.getPresetCatalog(db) || [])
           .filter(p => p.quick_file)
           .map(p => ({ name: p.name, slug: p.slug, already_present: p.already_present }));
