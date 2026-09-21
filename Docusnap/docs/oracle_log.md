@@ -2934,3 +2934,55 @@ test-armed DB moving to a release build force-disarms departments_enabled OFF (c
 documented (C4, dark_switches.js note + BEFORE_RELEASE.md). IMPLEMENTED 2026-09-20: FEATURE_MASTER_SWITCHES +
 FEATURE_MASTER_SWITCH_WRITERS in dark_switches.js; belt-vi waiver + one-per-file cap; sentinel + C3 comment at
 handler.js; pins (a)-(f) in test_check_release_migrations.js. Gate exits 0; pins 399/399 green.
+
+## 2026-09-21 — Quick File Records Lists (auto-fill lookup) + OCR/Quick lane crossover — SIGN OFF WITH CONDITIONS
+Design: docs/designs/QUICKFILE_LOOKUP_LISTS_2026-09-21.md. General-business feature (records keyed by a master
+field: customers/tenants/vehicles/staff/patients/assets/… childcare = one example), Fork A (structured custom
+fields), split-in-Document-Types. Assembled from barry+gary+reggie+eric.
+Premise verified at the mechanism level: detection gate is reading_mode-only at BOTH process_docs.py:1140-1141
+AND keyword.py:906 (a 2nd consumer the plan didn't cite); learning-exclusion is structural+coverage-locked
+(machine_vias.js:89, test_learning_excluded_readers.js:54-71) — arbitrary typed custom field_keys cannot poison
+learning because reads filter intake='direct' and the write side (reviewService.confirm/isAutoFileEligible)
+never runs on the Quick File lane. quick_file is greenfield (JS catalog prop only today; api/handler.js:1106,
+directIntake/handler.js:126). Fork-A-via-extractions confirmed inert. Fail-toward inherently satisfied (Quick
+File never auto-files).
+CONDITIONS C1-C8 (folded into the design): C1 flip api/handler.js:1103 to quick_file=1 in S1 + parity assert
+(NOT a hypothesis — it's a known location); C2 enforce reading_mode='none'⇒quick_file=1 on BOTH updateType
+writes (orphan pin); C3 DROP gary's master_value LIKE fallback (silently degrades token-prefix→first-word-only,
+contradicts PIN 3) — back token-prefix with a token column/FTS or cap to the in-memory path; C4 commit-path
+XLSX reader is real work (parseSheet not exported, caps are module consts) — refactor ooxmlGrid w/ injectable
+caps or a separate bounded parser; C5 read workbookPr@date1904 + 1900 leap bug, non-skippable interpreted-date
+preview; C6 one-list-per-type in JS not UNIQUE(document_type_id); C7 PIN 1 source-contract that prefill is
+unreachable from reviewService.confirm/the Review confirm door; C8 S0 submit/update dedupe custom fields vs the
+4 role keys. Doc errors caught: dark_switches.js at database/ not database/modules/; release-disarm note.
+Flip gate (S5): realdoc byte-identical (migs 196/197, flag OFF) + PIN1/2/3 (PIN2 asserts Python keyword.py:906
+too) + desktop↔/v1 parity + import adversarial fail-toward suite + manual CSV/xlsx round-trip + VISIBLE_ALLOWLIST
++ PII pre-flip checklist (warn on records-CSV-export, document encryption recommendation).
+STAGING: S0 custom fields end-to-end (prerequisite) · S1 mig196 quick_file + lanes-editable + picker/api filter
++ DocTypes split + PIN2 · S2 mig197 lookup tables + lookup_lists_enabled OFF + CRUD/field-map + PIN1 · S3 CSV+XLSX
+import · S4 typeahead+fill+PIN3 · S5 owner flip.
+
+## 2026-09-21 — Multi-document Quick File pane (per-doc entry + preview) — SIGN OFF WITH CONDITIONS
+Addendum in QUICKFILE_LOOKUP_LISTS_2026-09-21.md. barry+eric consensus = master-detail (single-file unchanged;
+>1 = filmstrip + focused preview + per-doc form with shared "applies to all" defaults). All 3 Electron facts
+trace TRUE: main/index.html:6 has NO img-src (data: blocked; 9 other windows already carry img-src 'self' data:);
+getThumbnail lacks exact today (necessary + one-line, byte-identical to existing callers); backend genuinely
+unchanged (submit is already one-token-per-call). exact:true is a REAL guard (non-exact _resolveDocFile sibling
+recovery could render a STRANGER's filed doc on a staged-file TOCTOU). Master-detail correctly weighted (preview
+= human-error aid, not polish).
+SHIP-BLOCKING: MC1 per-doc input handlers CLOSE OVER the entry object/token (keep the f.titleInput model), never
+read a mutable focusedIdx at event-fire (else an in-flight blur writes doc-B's value onto doc-A = silent wrong
+file); MC2 no phantom pin — extract per-doc meta assembly into a pure requirable helper + pin it, OR honest
+manual-only (don't claim a green pin the IIFE can't deliver); MC3 partial-batch clears ONLY filed entries, keeps
+incomplete ones staged with values + a reason (don't `staged=[]`); CSP1 add `img-src 'self' data:` (KEEP 'self');
+IPC1 direct-intake-preview role+enabled+sweep gated, token→path in MAIN, getThumbnail exact:true, renderable:false
+for non-renderable/gone; EXACT1 getThumbnail forwards exact (existing callers pass none → byte-identical); REG1
+single-file byte-identical + no-innerHTML pin green + positive assertion for the preview IPC.
+RECOMMENDED: FLAG1 gate the >1 master-detail path behind a small dark flag (Quick File is GA/live, mig 171) so it
+flips after the manual round-trip; TTL1 cap total token lifetime under renew-on-preview; STAGE1 keep S4a-A(preview)
+and S4a-B(per-doc form) independently revertable.
+GATE: REG1 pins + CSP1/IPC1/EXACT1 pins + MC2 resolved + manual round-trip (3 docs 3 parties each filed with own
+values [MC1]; incomplete doc stays staged [MC3]; PDF→thumb/office→icon; single-file unchanged; deleted-staged →
+icon not stranger's doc; expired token clean).
+Doc-accuracy: _staged value comment says mtime but code stores none (cosmetic); "NO change to directIntakeService.js"
+is correct + load-bearing.

@@ -124,6 +124,47 @@ console.log('§4 update — edit details, re-file only when a filing token chang
   check('disabled refused', (await svc.update(d3, EDIT, 1, { notes: 'x' }, depsU())).error === 'disabled');
 }
 
+console.log('§5 Slice 0 (Fork A) — per-type CUSTOM fields persist as typed extractions, deduped vs role keys (C8), searchable');
+{
+  const { db, inv } = freshDb(true);
+  // customFields carries two genuine custom fields + four that COLLIDE with role keys (the C8 attack).
+  const r = await svc.submit(db, EDIT, baseInput(inv, {
+    customFields: { child_dob: '01-01-2020', address: '12 High St', supplier_name: 'HACK', title: 'HACK', doc_date: '2020', reference_number: 'HACK' },
+  }), deps());
+  check('submit ok with custom fields', r.ok === true);
+  const ex = db.prepare('SELECT field_key, display_value, confidence, extraction_method FROM extractions WHERE document_id=?').all(r.docId);
+  const byKey = {}; const counts = {};
+  for (const e of ex) { byKey[e.field_key] = e; counts[e.field_key] = (counts[e.field_key] || 0) + 1; }
+  check('custom non-role fields persisted (child_dob, address), method=typed conf 100',
+    byKey.child_dob && byKey.child_dob.display_value === '01-01-2020' && byKey.child_dob.extraction_method === 'typed' && byKey.child_dob.confidence === 100 &&
+    byKey.address && byKey.address.display_value === '12 High St');
+  check('C8 — a custom field keyed like a role never writes a 2nd row (one row per role key)',
+    counts.supplier_name === 1 && counts.title === 1 && counts.doc_date === 1 && counts.reference_number === 1);
+  check('C8 — the ROLE value wins over a same-keyed custom value (no clobber)',
+    byKey.supplier_name.display_value === 'Acme Ltd' && byKey.title.display_value === 'Office lease 2026' &&
+    byKey.doc_date.display_value === '12-09-2026' && byKey.reference_number.display_value === 'OL-2026');
+  const oc = db.prepare('SELECT ocr_text FROM documents WHERE id=?').get(r.docId).ocr_text;
+  check('custom values are searchable (in ocr_text)', /12 High St/.test(oc) && /01-01-2020/.test(oc));
+
+  // update: change a custom field + add a new one; an untouched custom field stays searchable.
+  const u = await svc.update(db, EDIT, r.docId, { customFields: { address: '99 New Rd', guardian: 'Jane Doe' } }, deps());
+  check('update ok with custom fields', u.ok === true);
+  const ex2 = {}; for (const e of db.prepare('SELECT field_key, display_value FROM extractions WHERE document_id=?').all(r.docId)) ex2[e.field_key] = e.display_value;
+  check('custom field updated + new custom field added', ex2.address === '99 New Rd' && ex2.guardian === 'Jane Doe');
+  check('untouched custom field (child_dob) preserved', ex2.child_dob === '01-01-2020');
+  const oc2 = db.prepare('SELECT ocr_text FROM documents WHERE id=?').get(r.docId).ocr_text;
+  check('search text refreshed: new address in, old out, untouched dob still in',
+    /99 New Rd/.test(oc2) && !/12 High St/.test(oc2) && /01-01-2020/.test(oc2));
+}
+
+console.log('§6 no customFields → byte-identical (only the four role rows; C8 path is inert)');
+{
+  const { db, inv } = freshDb(true);
+  const r = await svc.submit(db, EDIT, baseInput(inv), deps());
+  const n = db.prepare('SELECT COUNT(*) n FROM extractions WHERE document_id=?').get(r.docId).n;
+  check('exactly the four role extractions when no custom fields given', r.ok && n === 4);
+}
+
 console.log(`\n${fails ? 'FAIL' : 'PASS'} — ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);
 })();

@@ -106,6 +106,14 @@ async function submit(db, actor, input, deps = {}) {
   const party = (input.party || '').trim();
   const title = (input.title || (deps.path ? deps.path.parse(srcPath).name : '') || 'Document').trim();
   const notes = (input.notes || '').trim() || null;
+  // Slice 0 (Fork A): per-type CUSTOM fields typed on the Quick File form, persisted as ordinary typed
+  // extractions alongside the four role fields. Oracle C8: DE-DUPLICATE against the role keys so a custom
+  // field keyed like a role (supplier_name / the date / ref key / title) can't write a second row.
+  const ROLE_KEYS = new Set(['supplier_name', dt.date_field_key, refKey, 'title'].filter(Boolean));
+  const customFields = (input.customFields && typeof input.customFields === 'object') ? input.customFields : {};
+  const customText = Object.keys(customFields)
+    .filter((k) => k && !ROLE_KEYS.has(k) && customFields[k] != null && String(customFields[k]).trim() !== '')
+    .map((k) => String(customFields[k])).join('\n');
   // Date through the every-door normaliser (invalid dates never file — the every-door rule).
   let docDate = null;
   if (input.date) {
@@ -134,7 +142,7 @@ async function submit(db, actor, input, deps = {}) {
   try {
     const tx = db.transaction(() => {
       const ts = now();
-      const searchText = ([title, notes, body].filter(Boolean).join('\n').slice(0, 200000)) || null;
+      const searchText = ([title, notes, body, customText].filter(Boolean).join('\n').slice(0, 200000)) || null;
       docId = insertRow.run({
         of: originalFilename, fp: staged, dt: documentTypeId, sup: party || null, date: docDate,
         ref: (input.reference || '').trim() || null, ts, by: actor.username || null,
@@ -152,6 +160,8 @@ async function submit(db, actor, input, deps = {}) {
       add(dt.date_field_key, docDate);
       add(refKey, (input.reference || '').trim());   // Quick File presets have ref_field_key null → 'reference_number'
       add('title', title);
+      // Custom (non-role) fields — deduped against ROLE_KEYS (Oracle C8).
+      for (const k of Object.keys(customFields)) { if (k && !ROLE_KEYS.has(k)) add(k, customFields[k]); }
     });
     tx();
   } catch (e) { return { ok: false, error: 'db_error', detail: e.message }; }
@@ -217,6 +227,15 @@ async function update(db, actor, docId, patch, deps = {}) {
   if (!dt) return { ok: false, error: 'unknown_type' };
   const refKey = dt.ref_field_key || 'reference_number';
   const curTitleRow = db.prepare("SELECT display_value FROM extractions WHERE document_id=? AND field_key='title'").get(docId);
+  // Slice 0 (Fork A): custom-field edits. Oracle C8 — dedupe against the role keys. Only the keys present
+  // in patch.customFields change; existing custom values are merged for search text so an edit never drops
+  // a field from search.
+  const ROLE_KEYS = new Set(['supplier_name', dt.date_field_key, refKey, 'title'].filter(Boolean));
+  const customPatch = (patch && patch.customFields && typeof patch.customFields === 'object') ? patch.customFields : {};
+  const existingCustom = {};
+  for (const e of db.prepare('SELECT field_key, display_value FROM extractions WHERE document_id=?').all(docId)) {
+    if (e.field_key && !ROLE_KEYS.has(e.field_key)) existingCustom[e.field_key] = e.display_value;
+  }
 
   const p = patch || {};
   const has = (k) => Object.prototype.hasOwnProperty.call(p, k);
@@ -279,7 +298,11 @@ async function update(db, actor, docId, patch, deps = {}) {
   // Persist the new values + refreshed search text in one transaction.
   try {
     const tx = db.transaction(() => {
-      const searchText = ([next.title, next.notes, body].filter(Boolean).join('\n').slice(0, 200000)) || null;
+      const mergedCustom = { ...existingCustom, ...customPatch };
+      const customText = Object.keys(mergedCustom)
+        .filter((k) => k && !ROLE_KEYS.has(k) && mergedCustom[k] != null && String(mergedCustom[k]).trim() !== '')
+        .map((k) => String(mergedCustom[k])).join('\n');
+      const searchText = ([next.title, next.notes, body, customText].filter(Boolean).join('\n').slice(0, 200000)) || null;
       // D7: department changes are NOT handled here — the retired scalar is never written; a Quick File
       // doc's departments are changed through the per-document tagger (setDocumentDepartments), the same
       // set-form widening rule as any other document. This edit only touches the typed fields + filing.
@@ -301,6 +324,8 @@ async function update(db, actor, docId, patch, deps = {}) {
       upsert(dt.date_field_key, docDate);
       upsert(refKey, next.reference);
       upsert('title', next.title);
+      // Only the provided custom keys change (deduped vs role keys — Oracle C8); '' deletes the row.
+      for (const k of Object.keys(customPatch)) { if (k && !ROLE_KEYS.has(k)) upsert(k, customPatch[k]); }
     });
     tx();
   } catch (e) { return { ok: false, error: 'db_error', detail: e.message }; }
