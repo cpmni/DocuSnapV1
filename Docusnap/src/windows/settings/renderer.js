@@ -1868,18 +1868,31 @@ function _laneOf(dt) {
 let docTypeLaneFilter = 'all';   // 'all' | 'scanned' | 'quick'
 const _laneBadge = { scanned: 'Scanned', quick: 'Quick File', both: 'Both' };
 
-// A once-built segmented filter above the list. Built via JS (not index.html) so the settings
-// div-balance / tab-panel-pairing guards are untouched; a crossover ('both') type shows in BOTH views.
+// A once-built TAB bar above the list (owner: plain buttons weren't clear enough — read as tabs/views).
+// Built via JS (not index.html) so the settings div-balance / tab-panel-pairing guards are untouched;
+// a crossover ('both') type shows in BOTH the Scanned and Quick File views.
+// Graphical folder-tabs (owner ask): raised, rounded-top; the active tab connects to the panel below by
+// masking the tablist's bottom border with its own background. Inactive tabs sit recessed above the line.
+function _styleLaneTab(b, active) {
+  b.style.cssText = 'padding:9px 20px; font-size:13px; font-weight:600; cursor:pointer;'
+    + 'border:1px solid var(--border); border-top-left-radius:var(--r-sm); border-top-right-radius:var(--r-sm);'
+    + 'margin-bottom:-1px; position:relative;'
+    + (active
+        ? 'background:var(--surface); color:var(--accent); border-bottom-color:var(--surface); z-index:1;'
+        : 'background:var(--surface2); color:var(--muted); border-bottom-color:var(--border);');
+}
 function ensureLaneFilter() {
   const list = document.getElementById('doctypes-list');
   if (!list || !list.parentNode || document.getElementById('dt-lane-filter')) return;
   const bar = document.createElement('div');
   bar.id = 'dt-lane-filter';
-  bar.style.cssText = 'display:flex; gap:6px; margin-bottom:8px;';
-  for (const [val, label] of [['all', 'All'], ['scanned', 'Scanned'], ['quick', 'Quick File']]) {
+  bar.setAttribute('role', 'tablist');
+  bar.style.cssText = 'display:flex; gap:4px; margin-bottom:12px; padding-left:2px; border-bottom:1px solid var(--border);';
+  for (const [val, label] of [['all', 'All types'], ['scanned', 'Scanned (OCR)'], ['quick', 'Quick File']]) {
     const b = document.createElement('button');
-    b.type = 'button'; b.className = 'btn'; b.dataset.lane = val; b.textContent = label;
-    b.style.cssText = 'padding:3px 10px; font-size:12px;';
+    b.type = 'button'; b.dataset.lane = val; b.textContent = label;
+    b.setAttribute('role', 'tab');
+    _styleLaneTab(b, val === docTypeLaneFilter);
     b.addEventListener('click', () => { docTypeLaneFilter = val; renderDocTypesList(); });
     bar.appendChild(b);
   }
@@ -1889,7 +1902,7 @@ function ensureLaneFilter() {
 function renderDocTypesList() {
   ensureLaneFilter();
   const filterBar = document.getElementById('dt-lane-filter');
-  if (filterBar) for (const b of filterBar.children) b.classList.toggle('active', b.dataset.lane === docTypeLaneFilter);
+  if (filterBar) for (const b of filterBar.children) { b.setAttribute('aria-selected', b.dataset.lane === docTypeLaneFilter ? 'true' : 'false'); _styleLaneTab(b, b.dataset.lane === docTypeLaneFilter); }
   const list = document.getElementById('doctypes-list');
   list.innerHTML = '';
 
