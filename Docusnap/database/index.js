@@ -3949,6 +3949,22 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 193 (anchor_code_left_grow default ON): ${e.message}`); }
   }
 
+  // mig 194 (2026-09-21, opt-in-split; gary → Oracle SIGN-OFF-W/COND): auto-detect batch separation is now OPT-IN.
+  // The pre-pass (ocr/segmentation.py detect_segments) renders+reads EVERY page (150 DPI, uncapped) — expensive on
+  // long scans, and a silently-wrong boundary is hard to spot; the graphical splitter (b3cad58) makes "land whole +
+  // let them split" a safe, cheap recovery. So default auto_separate_enabled OFF. This is a DE-ESCALATION, so
+  // INSERT OR IGNORE (NOT a UPSERT, NO @DEFAULT_FLIP): an untouched install goes OFF; a user who EXPLICITLY set
+  // 'true'/'false' (the Settings toggle) keeps their choice. ⚠ Turns bundle-splitting OFF for existing upgraders
+  // who were relying on the mig-175 default — intended, defensible given the splitter recovery + the Q2 auto-file
+  // hold (a whole-landed multipage scan with a later doc-start is held from auto-file, never silently filed).
+  if (!applied.has(194)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_separate_enabled', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (194)').run();
+      console.log('JS migration 194 applied: auto_separate_enabled OPT-IN — seeded OFF for untouched installs (INSERT OR IGNORE; explicit choices preserved)');
+    } catch (e) { console.warn(`  migration 194 (auto_separate_enabled opt-in): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

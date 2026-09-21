@@ -942,13 +942,6 @@
             </div>
             <div class="threshold-row">
               <div>
-                <div class="threshold-label">Split multi-document PDFs dropped into the watch folder (same as a manual import)</div>
-                <div class="threshold-sub">The watch folder normally imports a dropped PDF whole; a manual import splits a PDF that holds several documents into one file each. When this is on, the watch folder does the same &mdash; splitting only files that have finished being written, in the watch folder itself. Freshly-split documents are held for review rather than filed automatically, since nobody is watching a background import. Off by default until you&rsquo;ve tried it on your own scans.</div>
-              </div>
-              <label class="toggle"><input type="checkbox" id="watch-separate-toggle"><span class="toggle-slider"></span></label>
-            </div>
-            <div class="threshold-row">
-              <div>
                 <div class="threshold-label">Offer a Quick re-read (reuse each page&rsquo;s stored text) at &ldquo;Reprocess all&rdquo;</div>
                 <div class="threshold-sub">When on, &ldquo;Reprocess all&rdquo; asks whether to do a Quick re-read &mdash; reusing the text already read from each page and skipping the slower re-scan of the images &mdash; or a full re-read. Fields taught by drawing a box keep their current values on a Quick re-read; any document whose scan settings changed since it was read is re-read in full for you, and any document where a re-used reading disagrees with a taught/stamped field is held for you to check rather than filed. A Quick re-read does not re-check the things that need a fresh look at the page image (straightening a tilted scan, recovering faint text, a newly taught field) &mdash; choose a full re-read for those. Off by default until you&rsquo;ve tried it on your own documents.</div>
               </div>
@@ -1740,8 +1733,8 @@
             <div class="section-title">Document separation</div>
             <div class="threshold-row">
               <div>
-                <div class="threshold-label">Split multi-document PDFs automatically</div>
-                <div class="threshold-sub">When a single PDF contains several separate documents (e.g. a batch of one-page alerts), Scan Finder files each as its own document. Conservative — a normal multi-page invoice is never split, and each part goes to Review before filing.</div>
+                <div class="threshold-label">Automatically split multi-document scans</div>
+                <div class="threshold-sub">Off (recommended): each scan is filed as one document — if a scan holds several documents, open it in Review and use <strong>Split</strong> to separate them, page by page. On: when a single PDF contains several documents (e.g. a batch of one-page alerts), Scan Finder tries to split it for you — conservative, a normal multi-page invoice is never split, and each part goes to Review before filing.</div>
               </div>
               <label class="toggle">
                 <input type="checkbox" id="auto-separate-toggle">

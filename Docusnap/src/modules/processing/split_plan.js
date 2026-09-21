@@ -107,6 +107,12 @@ const SEGMENT_HOLD_MARK = 'were cut from a multi-document scan';
 function segmentHoldNote(from, to) {
   return `Pages ${from}–${to} ${SEGMENT_HOLD_MARK}; check every page belongs to this document (if one doesn't, use Split) — confirm once.`;
 }
+// MULTI-DOCUMENT SCAN HOLD note (2026-09-21, opt-in-split Q2; gary → Oracle SIGN-OFF-W/COND). A PLAIN review note
+// (deliberately NOT the lane-hold "— confirm once." family: a normal confirm clears it, and Python re-derives it on
+// reprocess, so no carry/one-confirm-once machinery is wanted) whose sole job is to block AUTO-FILE — isAutoFileEligible
+// refuses any doc carrying a validation_note. Stamped by the handler when a whole-landed multipage scan has a LATER
+// page that reads as a new document-start (Python `multi_doc_suspect`) AND auto-split is OFF (the opt-in default).
+const MULTI_DOC_HOLD_NOTE = 'This scan has several pages, and a later page looks like the start of another document — please check every page belongs together, and use Split if it is more than one document.';
 // ── Segment PAIR hold (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C12; DARK mig 180 `segment_pair_hold`) ──────
 // The S4 silent truncation: a 2-page document whose page 2 repeats the letterhead with no page marker is cut at
 // page 2 on the strength of the LETTERHEAD ALONE (the fingerprint IS the letterhead words), and on a manual import
@@ -371,7 +377,7 @@ function expectedRangeFiles(rangesStr, N) {
 
 module.exports = { buildSegmentArgs, buildSplitPlan, toRanges,
   marksToGroups, splitMarksAllowed, expectedRangeFiles,
-  MULTI_PAGE_SEGMENT_RE, SEGMENT_HOLD_MARK, segmentHoldNote, hasSegmentHold, segmentHoldRange,
+  MULTI_PAGE_SEGMENT_RE, SEGMENT_HOLD_MARK, segmentHoldNote, MULTI_DOC_HOLD_NOTE, hasSegmentHold, segmentHoldRange,
   segmentHoldPages, carrySegmentHold,
   // segment pair hold (2026-09-17)
   SEGMENT_PAIR_MARK, SEGMENT_PAGE_RE, weakPagesOf, weakSegmentIdx, weakSegmentNames, segmentPageRange, pairSentences,

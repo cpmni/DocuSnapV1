@@ -338,17 +338,21 @@ async function _drainQueue(db) {
 
   let files = _queue.splice(0, _queue.length);   // take the whole current queue
 
-  // ── Separation parity (watch_separate_enabled, 2026-09-01; DEFAULT ON since mig 175, 2026-09-16 soak PASS) ──
-  // Split multi-document PDFs IN THE WATCH FOLDER over the EXPLICIT stable set, before sharding — the
-  // same pre-pass manual import runs. `_separating` blocks the poll (and drain re-entry) for the whole
-  // span, so a segment written mid-pass can never be re-detected between the split and the pre-mark.
-  // Segments land in the watch folder (working-copy + drain resolve); the split original moves to
-  // .sf_separated_originals/ (a subfolder the non-recursive poll ignores). Fresh segments are HELD for
+  // ── Separation parity (2026-09-21: watch follows the SAME switches as manual import) ──
+  // RETIRED `watch_separate_enabled` (2026-09-01/mig 175) — watch no longer has its own separation switch. It now
+  // enters the pre-pass whenever manual import would: auto-detect split ON (`auto_separate_enabled`, opt-in since
+  // mig 194) OR separator sheets ON (`filing_slips_enabled`). `separateFiles` itself picks the right arm(s). Splits
+  // multi-document PDFs IN THE WATCH FOLDER over the EXPLICIT stable set, before sharding. `_separating` blocks the
+  // poll (and drain re-entry) for the whole span, so a segment written mid-pass can never be re-detected between the
+  // split and the pre-mark. Segments land in the watch folder (working-copy + drain resolve); the split original
+  // moves to .sf_separated_originals/ (a subfolder the non-recursive poll ignores). Fresh segments are HELD for
   // review on this unattended path (a wrong-but-clean boundary must not auto-file with nobody watching).
   let heldNames = null;
   let segHold = null;   // split-segment hold (2026-09-16): the multi-page heuristic cuts → a durable note, not just the import-time skip
   let pairCtx = null;   // segment pair hold (2026-09-17): the weak 1-page cuts + their predecessors — one context per drain
-  if (files.length && learning.getSetting(db, 'watch_separate_enabled', 'false') === 'true') {
+  const _watchSepEnabled = learning.getSetting(db, 'auto_separate_enabled', 'false') === 'true'
+    || (process.env.FILING_SLIPS !== '0' && learning.getSetting(db, 'filing_slips_enabled', 'false') === 'true');
+  if (files.length && _watchSepEnabled) {
     _separating = true;
     try {
       // Mirror the pre-pass's "checking / splitting" phase lines to the main window's strip (owner ask

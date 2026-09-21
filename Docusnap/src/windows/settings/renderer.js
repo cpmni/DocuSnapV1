@@ -911,9 +911,8 @@ for (const [id, key] of [['frag-clean-toggle', 'template_code_frag_clean'],
                          ['quiet-reread-silent-toggle', 'quiet_reread_silent'],
                          ['sweep-inview-countdown-toggle', 'sweep_inview_countdown'],
                          ['accept-field-chars-toggle', 'accept_field_chars_enabled'],
-                         // Watch folder splits multi-doc PDFs the same as manual import (DARK; owner
-                         // flips after a soak — the wrong-boundary auto-file risk is unmeasured).
-                         ['watch-separate-toggle', 'watch_separate_enabled'],
+                         // (2026-09-21) `watch-separate-toggle`/`watch_separate_enabled` RETIRED — watch now
+                         // follows the same switches as manual import (auto_separate_enabled || filing_slips).
                          // Quick Reprocess: reuse each page's stored OCR text at "Reprocess all" (DARK,
                          // 2026-09-01; owner flips after the warmed-copy parity gate).
                          ['quick-reprocess-toggle', 'quick_reprocess_enabled'],
@@ -1226,7 +1225,6 @@ const DEV_SWITCH_IDS = [
   'quiet-reread-silent-toggle',      // 2026-09-01 rollout feature — default ON (mig 103), dev escape hatch
   'sweep-inview-countdown-toggle',   // 2026-09-01 rollout feature — default ON (mig 103), dev escape hatch
   'accept-field-chars-toggle',       // 2026-09-01 rollout feature — default ON (mig 103), dev escape hatch
-  'watch-separate-toggle',           // 2026-09-01 watch separation parity — DARK until an owner soak
   'quick-reprocess-toggle',          // 2026-09-01 Quick Reprocess — DARK until the warmed-copy parity gate
   // 2026-09-01 toggle-audit round 2 (owner: "some user-side toggles are unnecessary"): eight technical
   // reading-internal flags gated behind SFDEV — customer-invisible, values unchanged. Barcodes and the
@@ -1545,12 +1543,13 @@ if (numberFormatSelect) numberFormatSelect.addEventListener('change', async () =
 
 
 // ── Auto document separation (split multi-document PDFs) ───────────────────────
-// Defaults ON (the backend reads 'auto_separate_enabled' with a 'true' default), so an
-// unset install behaves as separation-on; this only persists an explicit choice.
+// Defaults OFF since mig 194 (opt-in — the backend reads 'auto_separate_enabled' with a
+// 'false' default and mig 194 seeds the row 'false'). Polarity mirrors the backend: only an
+// explicit 'true' shows the toggle ON, so it never reads ON while the backend does nothing.
 const autoSeparateToggle = document.getElementById('auto-separate-toggle');
 async function loadAutoSeparate() {
   if (!autoSeparateToggle) return;
-  autoSeparateToggle.checked = (await api.getSetting('auto_separate_enabled')) !== 'false';
+  autoSeparateToggle.checked = (await api.getSetting('auto_separate_enabled')) === 'true';
 }
 loadAutoSeparate();
 if (autoSeparateToggle) autoSeparateToggle.addEventListener('change', async () => {

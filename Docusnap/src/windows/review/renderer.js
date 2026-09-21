@@ -2322,7 +2322,7 @@ function buildQueueItem(doc) {
         <div class="qi-meta" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; row-gap:2px;">
           <span class="qi-supplier" style="flex:1; min-width:0;">${escHtml(doc.supplier_name || 'Sender not identified')}${reviewGroupChip(doc)}</span>
           ${putBackChip}
-          ${doc.page_count > 1 ? `<span class="qi-multipage" title="Multi-page document (${doc.page_count} pages)" style="flex-shrink:0;display:inline-flex;color:var(--muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg></span>` : ''}
+          ${doc.page_count > 1 ? `<button class="qi-multipage" data-splitfor="${doc.id}" title="This scan has ${doc.page_count} pages. If it is more than one document, click to split it." style="flex-shrink:0;display:inline-flex;align-items:center;gap:3px;color:var(--muted);background:none;border:none;padding:1px 4px;border-radius:var(--r-pill);cursor:pointer;font-size:11px"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg>${doc.page_count} pages · Split</button>` : ''}
           ${confBadge}
         </div>
         ${blockerLine}
@@ -2337,6 +2337,13 @@ function buildQueueItem(doc) {
   el.addEventListener('click', () => { if (bulkFiling) return; selectDoc(doc); });
   const delBtn = el.querySelector('.qi-delete');
   if (delBtn) delBtn.addEventListener('click', (e) => { e.stopPropagation(); if (bulkFiling) return; deleteFromQueue(doc); });
+  // Multipage "· Split" chip (2026-09-21, opt-in-split): the primary, calm recovery surface — one click opens the
+  // graphical splitter for this doc. Never blocks; a normal row click still selects the doc.
+  const splitChip = el.querySelector('[data-splitfor]');
+  if (splitChip) splitChip.addEventListener('click', (e) => {
+    e.stopPropagation(); if (bulkFiling) return;
+    try { window.docusnap.openSplitWindowAt(doc.id); } catch {}
+  });
   return el;
 }
 

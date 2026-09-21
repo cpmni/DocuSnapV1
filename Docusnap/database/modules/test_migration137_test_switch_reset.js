@@ -53,7 +53,10 @@ quiet(() => runMigrations(db));
 check("a deliberate direct_intake_enabled='false' survives a relaunch (mig 171 one-shot, not a sweep)", get(db, 'direct_intake_enabled') === 'false');
 // Flip-census graduates (migs 172/173/174 @DEFAULT_FLIP, 2026-09-16): ON by default + delisted (full contract in
 // database/test_default_flip_156_159.js).
-for (const k of ['name_role_nonname_flag', 'ref_confusable_flag', 'template_pad_date_adopt', 'watch_separate_enabled']) {
+// (2026-09-21) `watch_separate_enabled` REMOVED from this list — RETIRED by the opt-in-split feature. mig 175 still
+// stamps the (now unused) row; watch separation follows auto_separate_enabled || filing_slips_enabled. See
+// test_watch_separate_default_on.js (the retirement pin) + test_migration194_optin_split.js (the direction pin).
+for (const k of ['name_role_nonname_flag', 'ref_confusable_flag', 'template_pad_date_adopt']) {
   check(`${k} defaulted 'true' on a fresh install (graduated 2026-09-16)`, get(db, k) === 'true');
   check(`${k} is DELISTED from TEST_SWITCH_KEYS`, !TEST_SWITCH_KEYS.includes(k));
 }

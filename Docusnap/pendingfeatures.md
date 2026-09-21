@@ -71,6 +71,17 @@ caught: a graduated supplier would silently AUTO-FILE a merged bundle (never rea
 MANDATORY. Plus: renderer polarity flip (4th site), retire `watch_separate_enabled` + its dead toggle + re-point 2
 contract pins, the buildSplitPlan mixed-exemption seam, gate G1-G7 (G3 the auto-file-hold pin must FAIL on pre-fix
 code). Awaiting owner go to build.
+**STATUS 2026-09-21: SLICE 1 BUILT.** mig 194 (INSERT-OR-IGNORE, opt-in OFF) + both backend read defaults +
+renderer polarity + the MANDATORY scoped Q2 auto-file HOLD (`process_docs.py` `multi_doc_suspect` = a later page
+reads as a doc-start AND not a continuation; `handler.js` stamps `MULTI_DOC_HOLD_NOTE` when auto-split OFF →
+isAutoFileEligible refuses) + watch unified on `auto_separate_enabled || filing_slips_enabled` (`watch_separate_enabled`
+RETIRED, dead toggle removed) + the calm Review "N pages · Split" chip + the settings label. Pins: G3
+`test_multi_doc_hold.js`, G4 `test_migration194_optin_split.js`, G5 re-pointed (`test_watch_separate_default_on.js`
++ mig137 §56). **STILL DEFERRED = Slice 1b** (the page-1-separator-sheet override / `compose_segments` + the
+buildSplitPlan/segmentHoldPages/buildPairContext MIXED-exemption seam, Oracle §3) — a separate follow-up; when
+auto-split is OFF the graphical splitter in Review is the working split path, so 1b is a convenience add. Owed
+before a `auto_separate_enabled` ON promotion: G1 byte-identical (RR_APP_ENV=1, forced ON) + G2/G6 the OFF-path +
+speed census on the real 34-page bundle.
 
 ## 2026-09-20 — Graphical page-splitter + blank-page removal (barry+eric+gary+oscar → Oracle SIGN-OFF-W/COND ×2) — BUILDING; these bits DEFERRED
 The visual split popout (thumbnail grid → click the first page of each sub-document → preview → select/deselect

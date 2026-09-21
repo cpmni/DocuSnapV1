@@ -12,7 +12,7 @@ const diaglog = require('../diaglog');
 // D2 / D-C11: viewer-scoped count broadcasts (helper resolves the desktop operator).
 const { broadcastCounts, broadcastReviewCount, broadcastStuckCount } = require('../../lib/countBroadcast');
 const { buildSegmentArgs, buildSplitPlan, segmentHoldPages, carrySegmentHold, hasSegmentHold, segmentHoldNote,
-        hasMergedSegmentHold, weakSegmentNames, buildPairContext, pairSentences, pairHoldDecision, clearPairSentence } = require('./split_plan');
+        MULTI_DOC_HOLD_NOTE, hasMergedSegmentHold, weakSegmentNames, buildPairContext, pairSentences, pairHoldDecision, clearPairSentence } = require('./split_plan');
 const { clampSlipCount, nextSlipRange, slipPackName, pad4 } = require('./slip_pack');
 
 // SECURITY (Stage 2 — M11): call Windows system binaries by ABSOLUTE path. A bare image name is
@@ -3031,7 +3031,7 @@ function register(ctx) {
   // consumed}; the caller updates its tracked set from rewrites/consumed. Bound to _separateFilesImpl.
   async function separateFiles(db, folder, fileList, log) {
     const learn = require('../../../database/modules/learning');
-    const autoSep = learn.getSetting(db, 'auto_separate_enabled', 'true') === 'true';
+    const autoSep = learn.getSetting(db, 'auto_separate_enabled', 'false') === 'true';   // opt-in (mig 194, 2026-09-21)
     const slipsOn = process.env.FILING_SLIPS !== '0'
       && learn.getSetting(db, 'filing_slips_enabled', 'false') === 'true';
     if (!autoSep && !slipsOn) return { separated: 0, rewrites: [], consumed: [] };
@@ -3366,7 +3366,7 @@ function register(ctx) {
     // pick up the per-document segments. Fail-safe: a detector/splitter failure just
     // leaves the folder unchanged. See _separateBatchDocuments. TWO independent arms
     // (Oracle C2, docs/designs/FILING_SLIPS_2026-07-18.md): the template-signature
-    // heuristic needs `auto_separate_enabled` (default on) AND taught templates; the
+    // heuristic needs `auto_separate_enabled` (default OFF since mig 194 — opt-in) AND taught templates; the
     // Filing-Slips separator-sheet scan (`filing_slips_enabled`, default OFF, env
     // FILING_SLIPS=0 hard-kill) is explicit operator intent and must work on a
     // zero-template install with the heuristic toggle off — it never re-arms template
@@ -3374,7 +3374,7 @@ function register(ctx) {
     {
       const tIdx = trainingArgs.indexOf('--templates-file');
       const templatesFileRaw = tIdx >= 0 ? trainingArgs[tIdx + 1] : null;
-      const autoSep = learning.getSetting(db, 'auto_separate_enabled', 'true') === 'true';
+      const autoSep = learning.getSetting(db, 'auto_separate_enabled', 'false') === 'true';   // opt-in (mig 194, 2026-09-21)
       const slipsOn = process.env.FILING_SLIPS !== '0'
         && learning.getSetting(db, 'filing_slips_enabled', 'false') === 'true';
       const templatesFile = (autoSep && templatesFileRaw) ? templatesFileRaw : null;
@@ -6954,6 +6954,20 @@ function _handleFileMessage(db, msg, folderPath, notifyMainWindow, logger, autoF
       logger?.log?.(`[segment-hold] ${msg.original_filename}: multi-page cut of a heuristic split — held for one look`);
     }
   } catch (e) { try { logger?.warn?.(`[segment-hold] stamp failed for doc ${docId}: ${e && e.message}`); } catch {} }
+  // MULTI-DOCUMENT SCAN HOLD (2026-09-21, opt-in-split Q2; gary → Oracle SIGN-OFF-W/COND). When auto-split is OFF
+  // (the opt-in default), a whole-landed multipage scan whose LATER page begins a new document (Python
+  // `multi_doc_suspect`, from is_document_start on the already-OCR'd page text) is likely SEVERAL documents. Hold it
+  // from AUTO-FILE (the note → isAutoFileEligible refuses) so a graduated supplier can't silently file a merged
+  // bundle as ONE — the user confirms or uses Split. A genuine single multipage invoice (no later doc-start) never
+  // fires. Gated OFF when auto-split is ON (the pre-pass already splits bundles there → byte-identical, Oracle G1).
+  try {
+    if (msg.multi_doc_suspect && Number(msg.page_count) > 1
+        && learning.getSetting(db, 'auto_separate_enabled', 'false') !== 'true') {
+      _stampSegmentHold(db, docId, document_type_id, null, MULTI_DOC_HOLD_NOTE);
+      msg.needs_review = true;
+      logger?.log?.(`[multi-doc] ${msg.original_filename}: a later page starts a new document — held (may be several documents)`);
+    }
+  } catch (e) { try { logger?.warn?.(`[multi-doc] stamp failed for doc ${docId}: ${e && e.message}`); } catch {} }
   // SEGMENT PAIR HOLD (2026-09-17; gary → Oracle SIGN-OFF-W/COND C1-C12; DARK mig 180 `segment_pair_hold`). A WEAK
   // (letterhead-only) 1-page cut is compared with its neighbour once both have landed — see _pairLanded. The first
   // half to land carries a PROVISIONAL note (never `msg.needs_review` — the release re-run must pass the T1 bail).

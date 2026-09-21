@@ -1778,9 +1778,28 @@ def main():
                 log(f"  ocr_recipe: skipped ({_re})", "warn")
                 _recipe_kv = {}
 
+            # MULTI-DOCUMENT SCAN signal (2026-09-21, opt-in-split Q2 hold; gary → Oracle SIGN-OFF-W/COND).
+            # When a LATER page begins a new generic business document, the whole file is likely SEVERAL
+            # documents scanned together. Reuses the page text already OCR'd (split on the PAGE BREAK marker
+            # extract_text_and_images joins with) — zero extra render/OCR. The handler holds such a whole-landed
+            # multipage doc from AUTO-FILE (fail-toward-review), so a graduated supplier can't silently file a
+            # merged bundle as one document when auto-split is off. Additive: absent (byte-identical) unless it fires.
+            _multi_doc_suspect = False
+            try:
+                _pages_txt = str(ocr_text or "").split("\n\n--- PAGE BREAK ---\n\n")
+                if len(_pages_txt) > 1:
+                    from ocr.segmentation import is_document_start as _is_doc_start, is_continuation_page as _is_cont
+                    # A LATER page begins a new document only if it reads as a doc-start AND does not DECLARE itself a
+                    # continuation ("Page 2 of 2", "continued", "b/f") — the mig-177 veto, applied here so a genuine
+                    # multi-page invoice that repeats its letterhead + bill-to on page 2 is not a false suspect.
+                    _multi_doc_suspect = any(_is_doc_start(_pt) and not _is_cont(_pt) for _pt in _pages_txt[1:])
+            except Exception:
+                _multi_doc_suspect = False
+
             emit({
                 "type":               "file_done",
                 **_recipe_kv,
+                **({"multi_doc_suspect": True} if _multi_doc_suspect else {}),
                 "success":            True,
                 "status":             status,
                 "page_rotations":     _rotations,   # per-page clockwise° for the caller to rotate the filed PDF
