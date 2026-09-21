@@ -1,93 +1,86 @@
-# HANDOVER — 2026-09-21
+# HANDOVER — 2026-09-21 (later)
 
-**Branch** `feat/teach-side-overnight`. **HEAD `b435687`.** **Origin CURRENT (all pushed).** Migration **193**.
-Working tree clean. `node scripts/run-pins.js` = **401/401 green** (plus the flip pins updated this session).
-Read this first, then `docs/designs/NIGHT_RUN_2026-09-20.md` (the completed night run) + `docs/designs/OPTIN_SPLIT_2026-09-20.md`
-(the top build-ready plan) + `docs/CHRIS_FULL_APP_REVIEW_2026-09-20.md` (Chris's vet + triage).
+**Branch** `feat/teach-side-overnight`. **HEAD `b002cca`.** **Origin CURRENT (all pushed).** Migration **195**.
+Working tree clean of feature work (only pre-existing untracked scratch/db-wal files remain — do NOT commit them).
+`node scripts/run-pins.js` = **405/405 green** (the `test_ref_class_fix` timing flake happened to pass; it is the
+one known-flaky pin — a red there is pre-existing, not yours).
+Read this first, then `docs/designs/OPTIN_SPLIT_2026-09-20.md` + `docs/CHRIS_FULL_APP_REVIEW_2026-09-20.md` +
+`pendingfeatures.md` (the 2026-09-20 "Undetected issuer" + "opt-in split" entries carry the STATUS blocks).
 
-## Installers (customer-shippable pair, hardened, at HEAD `52344d3` — SHIP THIS PAIR)
-Rebuilt 2026-09-21 after OPT-IN-SPLIT + the Chris-vet UX fixes (`build:release` core + client `dist`):
-- Core `dist\ScanFinder Setup 2.0.0-r20260921-1144-52344d3.exe` (hardened, `testBuild:false` = dark switches off;
-  verified: boot smoke exit 0, 15 windows 0 failed, bytecode-only, 5 fuses as declared, signed).
+## Installers (customer-shippable pair, hardened — see the ⚠ below before shipping)
+Last built at HEAD `52344d3` (`build:release` core + client `dist`; hardened, verified):
+- Core `dist\ScanFinder Setup 2.0.0-r20260921-1144-52344d3.exe` (testBuild:false, boot smoke 0, 15 windows, fuses OK, signed).
 - Client `client\dist\ScanFinder Search Client Setup 1.0.2-r20260921-1147-52344d3.exe`.
-Supersedes the `d8b9272` pair (pre-Chris-fixes) and the `b435687` pair (pre-opt-in-split). Ship the `52344d3`
-pair — it carries opt-in-split (auto-split OFF by default + page-1 sheet override + the multi-document auto-file
-hold) AND all 6 Chris 2026-09-20 UX fixes (confidence wording, split copy, LAN copy, certificate-ID rename, live note).
-Built offline (`AUDIT_OFFLINE_OK=1` — npm registry unreachable; deps UNCHANGED since the b435687 online-audited
-build, so the audit result is identical). Self-signed → SmartScreen "Run anyway" on first launch.
+- Built offline (`AUDIT_OFFLINE_OK=1` — the npm registry is unreachable on this box; github IS reachable, so pushes
+  work; deps UNCHANGED, so the audit result is identical). Self-signed → SmartScreen "Run anyway" on first launch.
+⚠ **This pair PREDATES the undetected-issuer gate + the "Not recognised" tab (`4195209`, `b002cca`).** Part A is DARK
+(off, no effect), but **Part B (the tab) is a live UI addition NOT in this build.** Rebuild at HEAD to ship Part B.
 
-## Opt-in-split shipped 2026-09-21 (`ec17b5c` + `87226d2`, pushed)
-Auto-detect batch separation is now OPT-IN (mig 194, default OFF). A whole-landed multipage scan whose LATER page
-reads as a new document-start (not a continuation) is HELD from auto-file (scoped, fail-toward-review). A **page-1
-separator sheet** splits the whole stack (`compose_segments`). Watch follows the same switches (`watch_separate_enabled`
-retired). Review shows a calm "N pages · Split" chip. 403/403 JS pins green + `test_segmentation.py` green. Owed only
-before promoting auto-split back ON: G1 byte-identical + G2/G6 OFF-path/speed census (`docs/designs/OPTIN_SPLIT_2026-09-20.md`).
-
-## What shipped this session (2026-09-20 → 21, all pushed)
-1. **Graphical page-splitter + blank removal** (`b3cad58`) — thumbnail-grid popout: click the first page of each
-   sub-document, drop blank pages (conservative auto-flag, reviewable), preview lightbox. The original is MOVED to
-   `.sf_separated_originals` (recoverable), never hard-deleted (Oracle C-a). One hardened `_runSplit` (role+dept
-   gates, strict guard). **Pattern dropdown** added (`b435687`): Custom · Every page · Every N pages — seeds the
-   marks + highlights the grid (restores the retired free-text every/each options). Chris rated it "safe +
-   understandable, could split without fear."
-2. **Clip fix `anchor_code_left_grow`** — mig 192 DARK (`701eba0`) → efficacy injection (`8787693`) → **FLIPPED ON
-   mig 193** (`6150d9b`). A taught-box crop that clips a ref's leading glyph (WS-62315→VS-62315) is re-read with the
-   mig-161 left-slack window; on independent convergence with the full-page read it commits CLEAN (no needless
-   "please verify" click), else flips+flags (fail-toward-review). Gate met: census M=0 + the synthetic injection
-   FIRES on a real clipped raster + adversarial ABSTAINS.
-3. **LAN connect fixes** (`8bc5f13`, `443e426`) — the client's one-time-code field (hidden until the server asks),
-   a core "Require a one-time code" checkbox, and expired-code recovery (an expired code stopped blocking with no
-   off switch — status now distinguishes configured/active/expired). `pairingOk` security gate UNCHANGED.
-4. **Thumbnail retry fix** (`4d0dc09`) — a failed thumbnail is retried with backoff instead of a permanent blank
-   (the client "some thumbnails never load" bug). Shared search-ui + synced client copy.
-5. **Night run** (`cba3303`, `b65149f`): opt-in-split DESIGN (Oracle SIGN-OFF-W/COND), undetected-bucket UX shape
-   (barry), Castellan Slice 2 = DO-NOTHING, Chris full-app vet (YES, 6 findings), 401/401 pins.
+## What shipped this session (2026-09-21, 8 commits, all pushed)
+1. **Opt-in auto-split** (`ec17b5c` slice 1 + `87226d2` slice 1b). Auto-detect batch separation is now OPT-IN
+   (**mig 194**, default OFF; INSERT-OR-IGNORE de-escalation — explicit choices survive). A whole-landed multipage
+   scan whose LATER page reads as a new document-start (not a continuation) is HELD from auto-file (scoped, fail-
+   toward-review — `process_docs.py multi_doc_suspect` + `handler.js` `MULTI_DOC_HOLD_NOTE`). A **page-1 separator
+   sheet** splits the whole stack (`ocr/segmentation.py compose_segments` + `--auto-split` gates the whole-file
+   heuristic; the `segmentHoldPages`/`buildPairContext` mixed-exemption seam fixed). Watch follows the same switches
+   (`watch_separate_enabled` RETIRED). Review shows a calm "N pages · Split" chip.
+2. **Chris 2026-09-20 vet — all 6 findings** (`52344d3`): F1 confirmed docs show "Checked by you" not "N% confidence"
+   (Search preview, shared→client); F2 the Review hold banner NAMES the field + its % and is reworded "below the level
+   needed to file on its own" (reconciles with the green "High" badge); F3 the splitter names where the original goes
+   (`.sf_separated_originals`); F4 plain-English LAN copy; F5 "ID code" → "certificate ID"; F6 the teach-over-client
+   note refreshes live when access toggles (the real bug).
+3. **Undetected-issuer feature (A + B)** — reggie+gary → Oracle SIGN-OFF-W/COND.
+   - **Part A** (`4195209`, **mig 195** DARK `issuer_undetected_blank`): a NON-NAME, unsupported cold issuer read
+     (the "shall not be responsible…" disclaimer caption-matched to "Supplier:") is declared Undetected (blank +
+     `_supplier_name`=None + review note) instead of committed. `engine._declare_issuer_undetected`; predicate
+     `keyword.issuer_read_looks_implausible` (a pinned TWIN of the JS `issuerReadLooksImplausible`, single-token
+     BP/IBM/3M immunity + a non-Latin carve-out on BOTH sides); method allow-list (fail-safe). Byte-identical off.
+   - **Part B** (`b002cca`): the Review **"Not recognised" tab** — docs with no issuer + no type + nothing suggested,
+     moved OUT of the main queue into a calm bucket (clone of Deferred). Membership = pure `shared/notRecognised.js`
+     (pinned, never keyed on confidence). Display-only, no switch.
 
 ## NEXT BATCH — prioritised
 
-### A. Build-ready (owner go to build)
-1. **Opt-in auto-split on import + page-1 separator-sheet trigger** — plan `docs/designs/OPTIN_SPLIT_2026-09-20.md`,
-   Oracle SIGN-OFF-W/COND. Default-flip `auto_separate_enabled` OFF (INSERT-OR-IGNORE, mig 194) — the win is the
-   default flip alone (skip the expensive pre-pass; page-1-only extraction REJECTED as unsafe). **MANDATORY (the
-   ship-blocker Oracle caught): a multipage-auto-file HOLD** (else a graduated supplier silently files a merged
-   bundle that never reaches Review). Plus: renderer polarity flip (4th site), retire `watch_separate_enabled` + its
-   dead toggle + re-point 2 contract pins, the buildSplitPlan mixed-exemption seam, gate G1-G7 (G3 the auto-file-hold
-   pin MUST fail on pre-fix code). Slice 1b (page-1-sheet override) in the filing-slips path.
-2. **Undetected-issuer bucket** — pendingfeatures.md 2026-09-20 + barry's shape. **Part A first** (don't COMMIT a
-   non-name value as the issuer — `value_quality.is_name_like_field`/`name_quality`; L1/HIGH/LOW-effort, kills the
-   spurious "shall not be responsible…" headings at source). Then Part B (a "Not recognised" Review tab — clone the
-   Deferred tab; membership = value-quality-fail + no logo/template/teach, NEVER low-confidence). NEXT design step =
-   reggie/gary the declare-undetected gate → Oracle, then build.
+### A. Finish / ship
+1. **Rebuild the customer pair at HEAD** (`build:release` core + client `dist`, `AUDIT_OFFLINE_OK=1`) so the shipped
+   build carries Part B (the "Not recognised" tab) + the Chris fixes. Kill every Electron first (EBUSY). Then update
+   this installer block.
+2. **The undetected-issuer FLIP census** (before turning `issuer_undetected_blank` ON): `realdoc_regression.js`
+   RR_APP_ENV=1, M=0 + zero supplier_name accuracy drop, **report the fire DENOMINATOR**, + a **multi-token synthetic
+   FP set** (all-lowercase real names like "acme joinery" DO blank — the pinned first-contact trade-off; measure how
+   often that fires on real reads). The single-token brand hunt is near-vacuous (Oracle C4). Efficacy is unit-proven
+   only (the corpus can't reach a disclaimer-manual layout).
+3. **The opt-in-split ON-promotion gates** (only if the owner ever wants auto-split back ON as a default): G1
+   byte-identical forced-ON + G2/G6 OFF-path/speed census on the real 34-page bundle. The shipped OFF default is safe.
 
-### B. Chris's findings to vet/fix (`docs/CHRIS_FULL_APP_REVIEW_2026-09-20.md` — all copy/UX, no data loss)
-3. **Top: the "63% confidence" on already-CONFIRMED docs** (a doubt-number on signed-off work) + the "1 field low
-   confidence" banner that points at no visible field (reconcile the whole-doc % with the visible field scores /
-   point at the low field). Search preview + Review.
-4. **The splitter's "original can be recovered" promise has NO visible recover button** (the file IS in
-   `.sf_separated_originals`; add a "Recover the original" action, or reword). Pairs with the deferred Shape-A.
-5. Smaller: client-api stale "connections OFF" note (refresh live); LAN-client summary copy leans technical;
-   "ID code" vs "one-time code" both read as "code" — rename one.
+### B. Chris follow-ups
+4. **Split "recover the original" button** (Chris F3, deferred Shape-A): the original IS in `.sf_separated_originals`
+   (F3 reworded to say so), but there's no visible recover action. Add one (split result, or Search → recycle).
+   Pairs with C12 Rejoin.
 
-### C. Standing DEV backlog (pre-dates this session)
-6. **Deploy the 3 licensing-server changes** (`BEFORE_RELEASE.md`, manual IONOS: CF real-IP fix ordered upload,
-   New-account admin, API-activity page) + the IP-logging privacy notice. Deploy traps in `BEFORE_RELEASE.md`.
-7. **DB-at-rest encryption decision** (2a whole-DB vs 2b TOTP-only) — approval-class, owner call.
-8. **VM live-verify** the shipped pair (Castellan clip fix now files clean; client one-time-code + thumbnails).
+### C. Standing DEV backlog (owner-gated — pre-dates this session)
+5. **Deploy the 3 licensing-server changes** (`BEFORE_RELEASE.md`, manual IONOS upload — needs the owner's login):
+   CF real-IP fix, New-account admin, API-activity page + the IP-logging privacy notice. Deploy traps in that file.
+6. **DB-at-rest encryption decision** — 2a whole-DB (recovery-code / data-loss trade) vs 2b TOTP-secret-only (lighter).
+   Owner call; blocks the "fully hardened" story.
+7. **VM live-verify** the shipped pair (opt-in-split off by default → scans land whole + the "N pages · Split" chip;
+   the client one-time-code / certificate-ID rename; thumbnails).
 
 ### D. Later (pendingfeatures.md)
-Rotate/reorder pages in the splitter · a general queue-wide Join · `.sf_separated_originals` name-collision
-hardening (a shared-basename original can overwrite an earlier recovery copy — C12 depends on that archive) ·
-import-time/duplex blank removal.
+Rotate/reorder pages in the splitter · a general queue-wide Join · `.sf_separated_originals` name-collision hardening
+· import-time/duplex blank removal.
 
 ## Key facts / gotchas
-- **The clip fix is now ON by default (mig 193).** The `b435687` build ships it live; watch it on the Larkspur/
-  Castellan worksheets (the WS-62315 "please verify" click should clear automatically).
-- `anchor_code_left_grow` DELISTED from TEST_SWITCH_KEYS (customer default); count pins now 44; release gate green.
-- Marks→groups→split is the ONE split path (`split_plan.js marksToGroups`, pinned). The pattern dropdown just seeds
-  boundaries; every-N = the old `--every` behaviour.
-- Console `→`/unicode in a Python test's print string crashes on Windows cp1252 — use `->` in test labels.
-- A heredoc that opens a file for WRITE before the READ arg evaluates TRUNCATES it (`io.open(p,'w').write(io.open(p).read())`)
-  — read into a var first. (Bit twice this session.)
-- Chris sandbox is via `/christest` (rebuilds a fresh sandboxed instance each time; the last one has exited).
-- Memory saved: this session's durable facts are in the committed design docs + CHRIS review; no new `memory/` file
-  written (the docs are the record).
+- **DARK switches this session:** `issuer_undetected_blank` (mig 195, IN TEST_SWITCH_KEYS → count **45**). `auto_separate_enabled`
+  (mig 194) is a customer FEATURE default flip (opt-in OFF), NOT in TEST_SWITCH_KEYS.
+- **Advisor + Oracle gate:** the undetected-issuer gate went reggie+gary → Oracle (SIGN-OFF-W/COND, 6 conditions, all
+  honoured — see the commit body + `pendingfeatures.md`). Opt-in-split was pre-vetted in `OPTIN_SPLIT_2026-09-20.md`.
+- **The issuer predicate is a JS↔Python TWIN** — `learning.js issuerReadLooksImplausible` ⇔ `keyword.issuer_read_looks_implausible`,
+  pinned on the SHARED vectors `python_backend/tests/issuer_implausible_vectors.json`. Change BOTH or the pin goes red.
+- **Part B membership** lives ONLY in `src/windows/shared/notRecognised.js` (window.NotRecognised) — the renderer uses it,
+  `test_not_recognised.js` pins it. It moves docs OUT of the Review tab, so the Review-tab count < Home's total needs_review
+  (same shape as Deferred; intended).
+- Console `→`/unicode in a Python test's print string crashes on Windows cp1252 — use `->`; run Python tests with
+  `PYTHONIOENCODING=utf-8`. `open()` a source file with `encoding='utf-8'` (a stray non-ASCII byte breaks a cp1252 read).
+- The npm registry is unreachable on this box (offline). `AUDIT_OFFLINE_OK=1 npm run build:release` for a build; github push works.
+- Chris sandbox is via `/christest` (fresh sandbox each run).
