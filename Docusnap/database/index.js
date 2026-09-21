@@ -3936,6 +3936,19 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 192 (anchor_code_left_grow): ${e.message}`); }
   }
 
+  // @DEFAULT_FLIP 193
+  // mig 193 (2026-09-21): anchor_code_left_grow ON by default (UPSERT true). Gate met — safety census M=0 + no
+  // accuracy drop (RR_APP_ENV=1, mig-186/191 held ON in both arms) AND the efficacy injection FIRES on a real
+  // clipped raster + the adversarial minority-form doc ABSTAINS (test_anchor_code_left_grow_efficacy.py). Owner go
+  // 2026-09-21. Non-convergence still flips+flags (fail-toward-review); byte-identical to OFF except the converge case.
+  if (!applied.has(193)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('anchor_code_left_grow', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (193)').run();
+      console.log('JS migration 193 applied: anchor_code_left_grow ON by default (UPSERT true) — taught-box left-clip recovery; census M=0 + efficacy injection green, graduated');
+    } catch (e) { console.warn(`  migration 193 (anchor_code_left_grow default ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

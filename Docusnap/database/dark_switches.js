@@ -191,15 +191,13 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // requires an independent family, per Oracle C5). Composes with Arc B (mig 160): A upstream → value
   // on-page → Gate C passes → B never fires. Byte-identical OFF. docs/designs/CODE_LEFT_GROW_2026-09-11.md.
   'template_code_left_grow',
-  // anchor_code_left_grow (mig 192, 2026-09-20, 007+gary → Oracle SIGN-OFF-W/COND). The Stage-2 SIBLING of the
-  // above: the taught-crop `anchor_crop_crosscheck` re-reads a clipped ref box with the SAME mig-161 left-slack
-  // recovery (env-parameterised _grow_code_left_read). On INDEPENDENT convergence with the full-page read (_xc)
-  // it commits the correct value CLEAN — kills the needless "please verify" click AND lets the value auto-file at
-  // its own conf (NOT boosted). Any non-convergence (a genuine minority VS-series doc; a cross-supplier
-  // false-locate) falls to today's flip+flag, byte-identical (fail-toward-review). Refs only; dates keep their
-  // own heal. Census-gated: M=0 + false-flag census + a synthetic left-clip injection (incl. an adversarial
-  // non-convergence case). Byte-identical OFF.
-  'anchor_code_left_grow',
+  // anchor_code_left_grow (mig 192) — GRADUATED to a customer default by mig 193 (2026-09-21, owner go): the
+  // Stage-2 taught-crop crosscheck re-reads a clipped ref box with the mig-161 left-slack recovery and, on
+  // INDEPENDENT convergence with the full-page read, commits the correct value CLEAN (kills the needless "please
+  // verify" click + lets it auto-file at its own conf; non-convergence still flips+flags = fail-toward-review).
+  // DELISTED from here so build_arming never disarms it in a release build (it's now ON by default). Gate met:
+  // safety census M=0 + no accuracy drop (RR_APP_ENV=1, mig-186/191 on both arms) AND the efficacy injection FIRES
+  // on a real clipped raster + the adversarial minority-form doc ABSTAINS (test_anchor_code_left_grow_efficacy.py).
   // deskew_retry_field_adopt (mig 162, 2026-09-12, gary → Oracle SIGN-OFF-W/COND C1-C11; Ridgeway #358 1.7° skew):
   // the review-bound straighten retry's DOOR keys on the engine `_needs_review` (FALSE for a role-note-only hold)
   // and its WHOLE-DOC adopt refuses when a confident garble @95 inflates raw overall over the correct review-bound
