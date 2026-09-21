@@ -5,13 +5,14 @@ Working tree clean. `node scripts/run-pins.js` = **401/401 green** (plus the fli
 Read this first, then `docs/designs/NIGHT_RUN_2026-09-20.md` (the completed night run) + `docs/designs/OPTIN_SPLIT_2026-09-20.md`
 (the top build-ready plan) + `docs/CHRIS_FULL_APP_REVIEW_2026-09-20.md` (Chris's vet + triage).
 
-## Installers (customer-shippable pair, hardened, at HEAD `d8b9272` — SHIP THIS PAIR)
-Rebuilt 2026-09-21 after the OPT-IN-SPLIT feature (`build:release` core + client `dist`):
-- Core `dist\ScanFinder Setup 2.0.0-r20260921-1118-d8b9272.exe` (hardened, `testBuild:false` = dark switches off;
+## Installers (customer-shippable pair, hardened, at HEAD `52344d3` — SHIP THIS PAIR)
+Rebuilt 2026-09-21 after OPT-IN-SPLIT + the Chris-vet UX fixes (`build:release` core + client `dist`):
+- Core `dist\ScanFinder Setup 2.0.0-r20260921-1144-52344d3.exe` (hardened, `testBuild:false` = dark switches off;
   verified: boot smoke exit 0, 15 windows 0 failed, bytecode-only, 5 fuses as declared, signed).
-- Client `client\dist\ScanFinder Search Client Setup 1.0.2-r20260921-1123-d8b9272.exe`.
-The `…-b435687.*` pair (0949/0952) is SUPERSEDED — it predates opt-in-split (auto-split now OFF by default + the
-page-1 separator-sheet override + the multi-document auto-file hold). Ship the `d8b9272` pair.
+- Client `client\dist\ScanFinder Search Client Setup 1.0.2-r20260921-1147-52344d3.exe`.
+Supersedes the `d8b9272` pair (pre-Chris-fixes) and the `b435687` pair (pre-opt-in-split). Ship the `52344d3`
+pair — it carries opt-in-split (auto-split OFF by default + page-1 sheet override + the multi-document auto-file
+hold) AND all 6 Chris 2026-09-20 UX fixes (confidence wording, split copy, LAN copy, certificate-ID rename, live note).
 Built offline (`AUDIT_OFFLINE_OK=1` — npm registry unreachable; deps UNCHANGED since the b435687 online-audited
 build, so the audit result is identical). Self-signed → SmartScreen "Run anyway" on first launch.
 
