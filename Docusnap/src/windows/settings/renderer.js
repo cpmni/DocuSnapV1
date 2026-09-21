@@ -225,6 +225,10 @@ async function initClientApiSection() {
   const tgl = document.getElementById('client-api-toggle');
   const statusEl = document.getElementById('client-api-status');
   if (!tgl || !statusEl) return;
+  // Chris 2026-09-20 Finding 6: the teach-over-client note reads the access toggle, but only refreshed on its OWN
+  // change — so it kept saying "connections above are OFF" after access was switched ON. Function-scope hook the
+  // access-toggle handler calls so the two stay consistent live. Assigned once the teach block builds `paint`.
+  let refreshTeachNote = () => {};
   const host = document.getElementById('client-api-host');
   const port = document.getElementById('client-api-port');
   const cert = document.getElementById('client-api-tls-cert');
@@ -260,6 +264,7 @@ async function initClientApiSection() {
         ? 'On — but search-client connections above are OFF, so no client can reach this PC yet. Turn those on too.'
         : 'On — an admin on the search client can teach documents in this PC\'s review queue.';
     };
+    refreshTeachNote = paint;   // let the access toggle refresh this note live (Finding 6)
     try { teachTgl.checked = String(await api.getSetting('teach_over_client_enabled')) === 'true'; } catch {}
     paint();
     teachTgl.onchange = async () => {
@@ -286,9 +291,10 @@ async function initClientApiSection() {
     certStatusEl.textContent = cs.valid
       ? `Active · covers ${cs.sans.join(', ')} · expires ${exp}`
       : `Needs re-issue · ${cs.expired ? 'near/after expiry' : 'missing ' + (cs.missingSans || []).join(', ')} · expires ${exp}`;
-    // Chris round-A card: the client's certificate check asks the user to match an "ID code"; name it
-    // the same here (it is the CA fingerprint) so a non-technical person can recognise it, not translate.
-    if (certFpEl) certFpEl.textContent = cs.caFingerprint ? ('ID code  ' + cs.caFingerprint) : '';
+    // The client's certificate check asks the user to match a "certificate ID"; name it the same here (it is
+    // the CA fingerprint) so a non-technical person can recognise it, not translate. Deliberately distinct from
+    // the "one-time code" on the same screen (Chris 2026-09-20 Finding 5 — two "code"s read as the same thing).
+    if (certFpEl) certFpEl.textContent = cs.caFingerprint ? ('Certificate ID  ' + cs.caFingerprint) : '';
   };
   try { renderCert(await api.clientApiCertStatus()); } catch { /* ignore */ }
 
@@ -434,8 +440,9 @@ async function initClientApiSection() {
         try { await api.clientApiSetConfig({ host: (host.value || '').trim(), port: (port.value || '').trim() }); } catch {}
       }
       render(await api.clientApiSetEnabled(tgl.checked));
+      refreshTeachNote();   // keep the teach-over-client note consistent with the access state (Finding 6)
       // The listener binds asynchronously, so re-poll shortly to flip "starting…" → "Running".
-      setTimeout(async () => { try { render(await api.clientApiGetStatus()); renderCert(await api.clientApiCertStatus()); await renderConnectCard(); } catch { /* ignore */ } }, 900);
+      setTimeout(async () => { try { render(await api.clientApiGetStatus()); renderCert(await api.clientApiCertStatus()); await renderConnectCard(); refreshTeachNote(); } catch { /* ignore */ } }, 900);
     } catch (e) { statusEl.textContent = 'Error: ' + (e && e.message); tgl.checked = !tgl.checked; }
   });
   // Persist host/port on edit; if the server is already running, restart it so the new address/port

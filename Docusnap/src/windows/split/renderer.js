@@ -210,7 +210,8 @@ function askCreate() {
   $('confirm-body').innerHTML =
     `This makes <b>${groups.length}</b> document${groups.length > 1 ? 's' : ''} from these ${N} pages` +
     (rem ? `, removing <b>${rem}</b> page${rem > 1 ? 's' : ''}` : '') + `.<br><br>` +
-    `Your original combined file is kept safely (it can be recovered) and the new documents go to Review to be checked.`;
+    `Nothing is deleted: your original combined scan is moved into a <b>.sf_separated_originals</b> folder ` +
+    `beside where it came from, and the new documents go to Review to be checked.`;
   $('confirm').classList.add('open');
 }
 async function doCreate() {

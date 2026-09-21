@@ -3769,12 +3769,25 @@ function renderReviewReason(doc) {
     return;
   }
 
+  // Chris 2026-09-20 Finding 2: "1 field low confidence" while every VISIBLE field badges green "High · 90%+"
+  // sent the user hunting. Two reconciliations: (a) NAME the actual field(s) — the below-threshold count is the
+  // fields under the auto-file threshold set in Settings, so the lowN lowest-confidence current-type fields ARE
+  // them; show each with its own %. (b) WORD it as "below the level needed to file on its own", not "low
+  // confidence" — a field can read a healthy "High · 82%" yet still sit under a 90% auto-file bar, so "low" read
+  // as a contradiction of the green badge. `_relevant` is already this-type-only (no phantom foreign field).
+  const lowNamed = _relevant
+    .filter(e => e.confidence != null)
+    .sort((a, b) => Number(a.confidence) - Number(b.confidence))
+    .slice(0, lowN)
+    .map(e => `${labelFor(e.field_key)} (${Math.round(Number(e.confidence))}%)`);
+  const lowTail = lowNamed.length ? ` — check ${lowNamed.slice(0, 3).join(', ')}${lowNamed.length > 3 ? ', …' : ''}` : '';
+
   const parts = [];
-  if (lowN)       parts.push(`${lowN} field${lowN === 1 ? ' was' : 's were'} read with low confidence`);
+  if (lowN)       parts.push(`${lowN} field${lowN === 1 ? ' was' : 's were'} read below the level needed to file on its own${lowTail}`);
   if (otherFlagN) parts.push(`${otherFlagN} field${otherFlagN === 1 ? ' was' : 's were'} flagged by a formatting check`);
 
   const cues = [];
-  if (lowN)       cues.push(`<span class="rr-cue low" title="These fields scored below the confidence threshold set in Settings. Compare the value with the document.">Low confidence · ${lowN}</span>`);
+  if (lowN)       cues.push(`<span class="rr-cue low" title="These fields read below the confidence needed to file automatically (the threshold in Settings). They may still be right — just compare each with the document and confirm.">Below file level · ${lowN}</span>`);
   if (otherFlagN) cues.push(`<span class="rr-cue flag" title="A formatting check found these values look different from what's usual for this field. They may still be correct — just confirm them.">Format check · ${otherFlagN}</span>`);
 
   const notes = _relevant

@@ -301,7 +301,7 @@ $('connect-btn').addEventListener('click', (e) => withBusy(e.currentTarget, asyn
     const ok = await certModal({
       title: 'Check the server’s certificate',
       lines: [
-        { text: 'Confirm this ID code matches the one shown on the main PC (Settings → Search client). If it doesn’t match, someone may be impersonating your server.' },
+        { text: 'Confirm this certificate ID matches the one shown on the main PC (Settings → Search client). If it doesn’t match, someone may be impersonating your server.' },
         { text: r.fingerprint, mono: true },
       ],
       acceptLabel: 'It matches — connect',

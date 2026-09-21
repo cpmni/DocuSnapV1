@@ -2837,7 +2837,7 @@
 
       <div class="section">
         <div class="card-head"><div class="section-title">Search client access</div><span class="chip" id="client-api-chip" style="display:none;"></span></div>
-        <p class="section-desc">Let the separate Scan Finder Search client connect over your network. Off by default. A loopback address stays plain HTTP; a LAN address gets an automatic TLS certificate — no manual cert files.</p>
+        <p class="section-desc">Let the separate Scan Finder Search client connect over your network. Off by default. This-PC-only stays simple; sharing across your office network is secured automatically — nothing for you to set up. (The step-by-step guide below has the technical detail if you want it.)</p>
         <div class="threshold-row">
           <div>
             <div class="threshold-label">Allow search-client connections</div>
@@ -2869,7 +2869,7 @@
           <label style="margin-top:12px; display:flex; gap:9px; align-items:flex-start; cursor:pointer;">
             <input type="checkbox" id="cc-require-code" style="width:auto; margin-top:3px;">
             <span>Require a one-time code to connect a new client
-              <span class="threshold-sub" style="display:block; margin-top:2px;">Off: a client connects after you confirm the ID code matches — simplest. On: the client must also type a short code you show here — extra protection on a shared network.</span>
+              <span class="threshold-sub" style="display:block; margin-top:2px;">Off: a client connects after you confirm the certificate ID matches — simplest. On: the client must also type a short one-time code you show here — extra protection on a shared network.</span>
             </span>
           </label>
           <div id="cc-code-area" style="display:none;">
@@ -2884,12 +2884,12 @@
               <p class="section-desc" style="margin-top:6px; margin-bottom:0;">Photograph or scan this on the client to fill the address and check the certificate automatically. It contains no password.</p>
             </div>
           </div>
-          <p class="section-desc" id="cc-nocode-note" style="margin-top:8px; display:none;">No code needed — on the client, enter this PC's address and press Connect, then confirm the ID code matches the one under &ldquo;Security certificate &amp; ID code&rdquo; below.</p>
+          <p class="section-desc" id="cc-nocode-note" style="margin-top:8px; display:none;">No one-time code needed — on the client, enter this PC's address and press Connect, then confirm the certificate ID matches the one under &ldquo;Security certificate &amp; ID&rdquo; below.</p>
           <p class="section-desc" id="cc-tip" style="margin-top:14px;">💡 <b>Tip:</b> for a reliable connection, give this PC a fixed address &mdash; a router &ldquo;DHCP reservation&rdquo; is easiest &mdash; or have clients connect by this PC&rsquo;s name. A changing address makes clients lose the server. Client PCs need no fixed address of their own.</p>
         </div>
 
         <details id="cert-details" style="margin-top:12px;">
-        <summary class="disclose">Security certificate &amp; ID code</summary>
+        <summary class="disclose">Security certificate &amp; ID</summary>
         <div id="client-api-cert" style="margin-top:8px; padding:12px 14px; border:1px solid var(--border); border-radius:9px; background:var(--surface2);">
           <div class="threshold-sub" id="client-api-cert-status">—</div>
           <div id="client-api-cert-fp" style="font-family:var(--mono); font-size:11px; color:var(--muted); margin-top:6px; word-break:break-all;"></div>

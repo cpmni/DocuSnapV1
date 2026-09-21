@@ -32,7 +32,15 @@ function renderActions(doc) {
   const bar = document.createElement('div');
   bar.className = 'ap-status-bar';
   bar.appendChild(_statusChip(doc.status));
-  if (doc.overall_confidence != null) {
+  // Confidence is the ORIGINAL machine-read score. On a document a person has CONFIRMED it is a doubt-number on
+  // signed-off work (Chris 2026-09-20, Finding 1) — so on confirmed docs say "Checked by you" instead; keep the %
+  // only while the document is still being read/reviewed.
+  if (doc.status === 'confirmed') {
+    const chk = document.createElement('span');
+    chk.className   = 'ap-confidence';
+    chk.textContent = 'Checked by you';
+    bar.appendChild(chk);
+  } else if (doc.overall_confidence != null) {
     const conf = document.createElement('span');
     conf.className   = 'ap-confidence';
     conf.textContent = `${doc.overall_confidence}% confidence`;

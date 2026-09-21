@@ -32,6 +32,23 @@ loss, no false warning). Ranked for the owner:
   note: Finding 3 (recover path) reinforces the undetected/opt-in-split "recover original" theme.
 All approval-class → for the owner's morning; implemented nothing.
 
+## Resolution — all 6 fixed 2026-09-21 (owner go)
+- **F1** Search preview status bar: a CONFIRMED doc now shows "Checked by you" instead of "N% confidence"
+  (`searchActions.js`, shared → synced to the client). The doubt-number stays only while a doc is still in Review.
+- **F2** Review hold banner now NAMES the field(s) with their % ("… read below the level needed to file on its
+  own — check Invoice Total (82%)") and is reworded from "low confidence" to "below the level needed to file on
+  its own" — a field can badge a healthy "High · 82%" yet sit under a 90% auto-file bar, so "low" read as a
+  contradiction of the green badge. Cue relabelled "Below file level · N" (`review/renderer.js`).
+- **F3** Splitter Create dialog reworded: "Nothing is deleted: your original combined scan is moved into a
+  .sf_separated_originals folder beside where it came from …" (`split/renderer.js`). (A visible recover button
+  stays the deferred Shape-A follow-up.)
+- **F4** Search-client access summary reworded to plain English ("This-PC-only stays simple; sharing across your
+  office network is secured automatically — nothing to set up"); technical detail stays in the step-by-step guide.
+- **F5** "ID code" → "certificate ID" everywhere (core Settings + client connect), distinct from the "one-time
+  code", so the two never read as the same word.
+- **F6** (real bug) the teach-over-client note now refreshes live when the access toggle changes — no more "connections
+  are OFF" while access shows On · Running (`settings/renderer.js`).
+
 ---
 
 ## Chris's report (verbatim)
