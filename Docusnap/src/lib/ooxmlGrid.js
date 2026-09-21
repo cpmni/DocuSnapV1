@@ -18,15 +18,19 @@ const MAX_COLS      = 40;      // per sheet
 const MAX_CELL_LEN  = 300;     // per cell (chars)
 const MAX_TOTAL_CELLS = 20000; // across all sheets (payload guard)
 
+// The default caps = PREVIEW tuning (unchanged, so extractGrid(buf) stays byte-identical + its pin green).
+// A caller (e.g. the Records-list import COMMIT path, Oracle C4) may pass wider caps for a full-table read.
+const DEFAULT_CAPS = { maxSheets: MAX_SHEETS, maxRows: MAX_ROWS, maxCols: MAX_COLS, maxCellLen: MAX_CELL_LEN, maxTotalCells: MAX_TOTAL_CELLS };
+
 // "A" → 0, "Z" → 25, "AA" → 26 …
 function colToIdx(letters) {
   let n = 0;
   for (let i = 0; i < letters.length; i++) n = n * 26 + (letters.charCodeAt(i) - 64);
   return n - 1;
 }
-function clipCell(s) {
+function clipCell(s, maxLen = MAX_CELL_LEN) {
   s = String(s == null ? '' : s);
-  return s.length > MAX_CELL_LEN ? s.slice(0, MAX_CELL_LEN) + '…' : s;
+  return s.length > maxLen ? s.slice(0, maxLen) + '…' : s;
 }
 
 // xl/sharedStrings.xml → array of plain strings (rich-text runs concatenated).
@@ -73,13 +77,13 @@ function sheetOrder(names, workbookXml, relsXml) {
 }
 
 // One worksheet XML → { rows:[[cell,…]], truncated } (sparse cells filled, capped).
-function parseSheet(xml, shared, budget) {
+function parseSheet(xml, shared, budget, caps = DEFAULT_CAPS) {
   const grid = [];
   let maxCol = -1, truncated = false;
   const rowRe = /<row\b([^>]*)>([\s\S]*?)<\/row>/g;
   let rm;
   while ((rm = rowRe.exec(xml))) {
-    if (grid.length >= MAX_ROWS) { truncated = true; break; }
+    if (grid.length >= caps.maxRows) { truncated = true; break; }
     const rowCells = [];
     const cRe = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
     let cm;
@@ -88,7 +92,7 @@ function parseSheet(xml, shared, budget) {
       const inner = cm[2] || '';
       const ref = /\br="([A-Z]+)\d+"/.exec(attrs);
       const col = ref ? colToIdx(ref[1]) : rowCells.length;
-      if (col >= MAX_COLS) { truncated = true; continue; }
+      if (col >= caps.maxCols) { truncated = true; continue; }
       const t = (/\bt="([^"]+)"/.exec(attrs) || [])[1];
       let val = '';
       if (t === 'inlineStr') {
@@ -101,7 +105,7 @@ function parseSheet(xml, shared, budget) {
         else if (t === 'b') val = raw === '1' ? 'TRUE' : (raw === '0' ? 'FALSE' : raw);
         else val = raw;
       }
-      rowCells[col] = clipCell(val);
+      rowCells[col] = clipCell(val, caps.maxCellLen);
       if (col > maxCol) maxCol = col;
       if (--budget.cells <= 0) { truncated = true; break; }
     }
@@ -109,7 +113,7 @@ function parseSheet(xml, shared, budget) {
     if (budget.cells <= 0) { truncated = true; break; }
   }
   // Normalise every row to the same width (fill sparse gaps with '').
-  const width = Math.min(maxCol + 1, MAX_COLS);
+  const width = Math.min(maxCol + 1, caps.maxCols);
   const rows = grid.map((r) => { const o = []; for (let i = 0; i < width; i++) o.push(r[i] || ''); return o; });
   return { rows, truncated };
 }
@@ -120,7 +124,8 @@ function parseSheet(xml, shared, budget) {
  * @returns {{sheets:Array<{name:string, rows:string[][]}>, truncated:boolean}|null}
  *          null when the buffer is not a readable OOXML spreadsheet.
  */
-function extractGrid(buf) {
+function extractGrid(buf, opts = {}) {
+  const caps = { ...DEFAULT_CAPS, ...opts };
   try {
     const z = openZip(buf);
     if (!z) return null;
@@ -132,22 +137,25 @@ function extractGrid(buf) {
 
     const wbBuf   = readZipEntry(z, 'xl/workbook.xml');
     const relsBuf = readZipEntry(z, 'xl/_rels/workbook.xml.rels');
-    const order = sheetOrder(names, wbBuf && wbBuf.toString('utf8'), relsBuf && relsBuf.toString('utf8'));
+    const wbXml = wbBuf && wbBuf.toString('utf8');
+    // C5: the Mac/1904 date system shifts every serial by ~4 years — the importer must know which epoch.
+    const date1904 = !!(wbXml && /<workbookPr[^>]*\bdate1904="(1|true)"/i.test(wbXml));
+    const order = sheetOrder(names, wbXml, relsBuf && relsBuf.toString('utf8'));
 
-    const budget = { cells: MAX_TOTAL_CELLS };
-    let truncated = order.length > MAX_SHEETS;
+    const budget = { cells: caps.maxTotalCells };
+    let truncated = order.length > caps.maxSheets;
     const sheets = [];
-    for (const { name, part } of order.slice(0, MAX_SHEETS)) {
+    for (const { name, part } of order.slice(0, caps.maxSheets)) {
       const b = readZipEntry(z, part);
       if (!b) continue;
-      const { rows, truncated: t } = parseSheet(b.toString('utf8'), shared, budget);
+      const { rows, truncated: t } = parseSheet(b.toString('utf8'), shared, budget, caps);
       sheets.push({ name, rows });
       if (t) truncated = true;
       if (budget.cells <= 0) { truncated = true; break; }
     }
     if (!sheets.length) return null;
-    return { sheets, truncated };
+    return { sheets, truncated, date1904 };
   } catch { return null; }
 }
 
-module.exports = { extractGrid, colToIdx, parseSharedStrings, MAX_ROWS, MAX_COLS, MAX_SHEETS };
+module.exports = { extractGrid, parseSheet, parseSharedStrings, colToIdx, MAX_ROWS, MAX_COLS, MAX_SHEETS, DEFAULT_CAPS };
