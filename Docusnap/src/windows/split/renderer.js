@@ -152,10 +152,31 @@ function buildGrid() {
 function toggleBoundary(p) {
   if (p === 1) { toast('Page 1 always starts the first document.'); return; }
   if (boundaries.has(p)) boundaries.delete(p); else boundaries.add(p);
+  const sel = $('split-pattern'); if (sel) sel.value = 'custom';   // a hand-adjust is no longer a pure pattern
   recompute();
 }
 function toggleRemove(p) {
   if (removed.has(p)) removed.delete(p); else removed.add(p);
+  recompute();
+}
+
+// ── split-pattern presets (restores the old "every page / every N pages" options) ──────────────────
+// A preset just SEEDS the boundary marks (page 1 is always the first document); the grid then highlights
+// where each new document starts, exactly as if the user had clicked those first pages. They can tweak by
+// clicking (which flips the dropdown back to Custom). Everything still flows through the marks→groups→split
+// path — no separate backend mode.
+function applyPattern() {
+  const mode = $('split-pattern').value;
+  const nBox = $('every-n');
+  if (nBox) nBox.style.display = mode === 'everyn' ? '' : 'none';
+  if (mode === 'custom') { recompute(); return; }   // manual — leave the current marks alone
+  boundaries.clear();
+  if (mode === 'each') {
+    for (let p = 2; p <= N; p++) boundaries.add(p);   // every page starts its own document
+  } else if (mode === 'everyn') {
+    const n = Math.max(2, parseInt(nBox && nBox.value, 10) || 2);
+    for (let p = 1 + n; p <= N; p += n) boundaries.add(p);   // groups of n: boundaries at 1, 1+n, 1+2n…
+  }
   recompute();
 }
 
@@ -206,6 +227,7 @@ async function doCreate() {
 // ── init ─────────────────────────────────────────────────────────────────────────
 async function init() {
   boundaries.clear(); removed.clear(); loaded.clear(); requested.clear(); blanks = {};
+  { const sp = $('split-pattern'); if (sp) sp.value = 'custom'; const en = $('every-n'); if (en) en.style.display = 'none'; }
   docId = await D.getSplitTarget();
   if (docId == null) { $('status').textContent = 'No document to split.'; return; }
   N = await D.getDocumentPageCount(docId);
@@ -231,6 +253,8 @@ window.addEventListener('DOMContentLoaded', () => {
   $('confirm-cancel').addEventListener('click', () => $('confirm').classList.remove('open'));
   $('confirm-ok').addEventListener('click', doCreate);
   $('blank-stop').addEventListener('change', applyBlankFlags);
+  $('split-pattern').addEventListener('change', applyPattern);
+  $('every-n').addEventListener('input', () => { if ($('split-pattern').value === 'everyn') applyPattern(); });
   $('lb-close').addEventListener('click', closePreview);
   $('lb-prev').addEventListener('click', async () => { if (previewPage > 1) { previewPage--; await paintPreview(); } });
   $('lb-next').addEventListener('click', async () => { if (previewPage < N) { previewPage++; await paintPreview(); } });

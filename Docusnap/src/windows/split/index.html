@@ -115,6 +115,16 @@
     </div>
     <div class="summary" id="summary">Loading…</div>
     <div class="actions">
+      <label class="blank-stop" title="Quickly mark the splits by a pattern, then fine-tune by clicking pages. The grid highlights where each new document starts.">
+        Pattern:
+        <select id="split-pattern">
+          <option value="custom" selected>Custom (click pages)</option>
+          <option value="each">Every page</option>
+          <option value="everyn">Every N pages…</option>
+        </select>
+        <input id="every-n" type="number" min="2" step="1" value="2" title="Pages per document"
+               style="width:52px; display:none; font-size:12px; padding:3px 6px; background:var(--surface2); border:1px solid var(--border2); color:var(--text); border-radius:5px;" />
+      </label>
       <label class="blank-stop" title="How eagerly to flag blank pages. You always confirm which to remove.">
         Blank pages:
         <select id="blank-stop">
