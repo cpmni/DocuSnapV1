@@ -44,6 +44,15 @@ stays off pending further testing (owner's decision). **47 keys are dark.** The 
 `HANDOVER_2026-09-17_C12_AND_SWITCHES.md` Part B (the section counts in the headings below are stale — the bullets are
 the truth: 1 ready-but-declined · 5 held · 34 waiting · 1 parked · the Departments feature master · today's pair belt).
 
+**2026-09-19 UPDATE — flip-census batch (4 more flipped) + Castellan Slice 1.** A 400-doc census at HEAD flipped four:
+**trust_ref_role_shape (mig 187)**, **template_drift_override_guard (mig 188)** (both M=0, live-proven earlier),
+**note_topic_dedup (mig 189)** and **reread_hold_corrob_release (mig 190)** (byte-identical / M=0, low-risk). All four
+delisted. `confusion_precedence` was HELD (value-changing, zero corpus evidence). New dark seed that day: Castellan
+Slice 1 **taught_ref_disagree_suppress (mig 186)**. **2026-09-20:** taught_ref_disagree_suppress **FLIPPED ON (mig 191)**
+after live proof on the owner's VM (the Castellan worksheet batch, 4/4 filed) + corpus M=0. **2026-09-21:**
+**anchor_code_left_grow FLIPPED ON (mig 193)** (see HELD group). **45 keys are dark.** A fresh batch census ran
+2026-09-21 night at HEAD (mig 198) over the same 700-corpus copy — result in `TESTING/_measure/flip_census_20260921/RESULT.md`.
+
 ---
 
 ## 🟢 READY — safety test passed, awaiting your go (2)
@@ -66,10 +75,10 @@ the truth: 1 ready-but-declined · 5 held · 34 waiting · 1 parked · the Depar
 **Reference/code reading (skew, clipping, drift, confusables):**
 - **template_code_read_widen** — re-read a taught code wider when a wider page clipped it.
 - **template_edge_clip_heal** — recover a code with a single edge glyph cut off.
-- **template_drift_override_guard** — don't relocate a value onto a look-alike label (the "CH1 2HU" root cause; live-confirmed).
-- **trust_ref_role_shape** — verify a reference by its learned *shape*, not a fixed list (unblocks 20 held Thornbury invoices).
+- ~~**template_drift_override_guard**~~ — **✅ FLIPPED ON 2026-09-19 (mig 188)** — don't relocate a value onto a look-alike label (the "CH1 2HU" root cause; live-confirmed). See DONE below.
+- ~~**trust_ref_role_shape**~~ — **✅ FLIPPED ON 2026-09-19 (mig 187)** — verify a reference by its learned *shape*, not a fixed list (unblocked 20 held Thornbury invoices). See DONE below.
 - ~~**name_role_nonname_flag**~~ — **✅ FLIPPED ON 2026-09-16 (mig 172)** — see DONE below.
-- **note_topic_dedup** — collapse a wall of duplicate "check this code" notes into one.
+- ~~**note_topic_dedup**~~ — **✅ FLIPPED ON 2026-09-19 (mig 189)** — collapse a wall of duplicate "check this code" notes into one. See DONE below.
 - ~~**ref_confusable_flag**~~ — **✅ FLIPPED ON 2026-09-16 (mig 173)** — see DONE below.
 
 **Dates:**
@@ -85,7 +94,7 @@ the truth: 1 ready-but-declined · 5 held · 34 waiting · 1 parked · the Depar
 - **corrob_autofile_band88** — auto-file a fully-corroborated doc in the 88–95 confidence band.
 - **filing_sanity_confusable_prefix_autofile** — when history resolves a confusable prefix, let it file.
 - **buyer_issued_convention_one_confirm** — one human answer teaches "file under this company" for the batch.
-- **reread_hold_corrob_release** — release a hold once a re-read corroborates the value.
+- ~~**reread_hold_corrob_release**~~ — **✅ FLIPPED ON 2026-09-19 (mig 190)** — release a hold once a re-read corroborates the value. See DONE below.
 
 **Reference softening/validation family (Sep 3–4):**
 - **format_variance_relax**, **format_variance_relax_ref**, **format_variance_relax_ref_inline** — don't shape-warn a reference that a trusted family agrees on.
@@ -186,7 +195,14 @@ the splitter reads each page's printed title first, so a supplier's less-common 
 (72 → 79 of 95 stack boundaries, none lost, none over-split); **segment_known_supplier_change** (mig 183, 2026-09-17) — a
 page naming a different one of your well-known suppliers, with a number or date label, starts a new document even with
 no taught layout for that paper (79 → 91 of 95, none lost, none over-split, your own PDFs unchanged apart from the
-wrongly merged cuts, end-to-end truncation 0). All seven still switchable off. Earlier: **filing_sanity_confusable_soften** (reclassify a
+wrongly merged cuts, end-to-end truncation 0). **2026-09-19 (migs 187–190) — flip-census batch:** **trust_ref_role_shape** (verify a reference by its learned shape,
+not a fixed list — unblocked 20 held Thornbury invoices), **template_drift_override_guard** (don't relocate a value onto
+a look-alike label — the "CH1 2HU" root cause), **note_topic_dedup** (collapse a wall of duplicate "check this code"
+notes into one), **reread_hold_corrob_release** (release a hold once a re-read corroborates the value). All M=0 on the
+400-doc census, delisted. **2026-09-20 (mig 191): taught_ref_disagree_suppress** — a taught reference field that matches
+its scope's learned shape suppresses a different-shape generic-caption competitor so the worksheet files by graduation
+instead of holding forever (Castellan batch, live-proven 4/4). **2026-09-21 (mig 193): anchor_code_left_grow** (see HELD).
+All still switchable off. Earlier: **filing_sanity_confusable_soften** (reclassify a
 one-glyph confusable — census passed, shipped), **ocr_parallel_import_enabled** (faster imports), **money_sign_capture**
 (read `CR` / parentheses as a credit sign). The pad-window reads that make clipped crops read correctly
 (**template_pad_window_read/code**) and the projection-variance straightener are also on by default. So the pipeline

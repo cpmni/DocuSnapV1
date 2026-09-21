@@ -1,3 +1,50 @@
+# ☀ MORNING REPORT — 2026-09-21 NIGHT RUN (autonomous; nothing pushed)
+
+Ran `docs/designs/NIGHT_RUN_2026-09-21.md` on auto. **All work committed LOCAL, NOT pushed** (owner pushes after
+review). Branch `feat/teach-side-overnight`. **Final pins: `node scripts/run-pins.js` = 409/409 green.**
+
+**Commits this run (4, local):**
+- `436af88` polish(settings): graphical folder tabs for the Document-Types lane views (Task 0 — the owner's uncommitted UI tweak, isolated).
+- `124e5a2` fix(quickfile): typeahead no longer crashes on a Records list with no disambiguator (Chris F1 — a REAL bug).
+- (docs) DARK_SWITCH_LEDGER refresh + oracle_log F1 verdict + NIGHT_RUN ledger + this report + the census RESULT.md + Chris's vet doc.
+
+## Task A — dark-switch batch census (`TESTING/_measure/flip_census_20260921/RESULT.md`)
+Migrated a 700-corpus copy to HEAD (mig 198, 400 test docs); `RR_APP_ENV=1` baseline; shell-env lever. Two UNION
+arms + per-switch isolation of the two that fired.
+- **HEAL union (37 still-dark reading/ref/date/geometry switches): M=0** — 6 GT-correct ref/date heals (clipped
+  codes/dates recovered), 0 file→hold, 1 correct new auto-file (#434, ref+date right). No wrong change.
+- **FRICTION union (3 auto-file looseners): M=0** — 7 held→filed, **all 7 ref+date correct (0 wrong auto-files)**.
+- **Isolated:** `template_code_read_widen` (mig 141) M=0 / 4 heals; `template_edge_clip_heal` (mig 151) M=0 / 1 heal.
+- **0 FLIPS tonight.** The synthetic census clears the plan's batch bar, but each firing switch's OWN named flip gate
+  requires the **605 REAL corpus + a pixel-adjudicated adversarial fire census** (Oracle C1-C7 for mig 151; mig 141
+  has no Oracle *flip* sign-off). Auto-flipping would skip that gate (approval-class), so they are **logged as
+  flip-ready-candidates**. The code-widen/edge-clip family (141+151) is the strongest — recommend running its named
+  605/Oracle gate then flipping. The whole 37-switch dark batch is SAFE at HEAD (union M=0).
+- Refreshed `docs/DARK_SWITCH_LEDGER.md` for the missing 09-19→21 flips (migs 187-191, 193).
+
+## Task B — Chris daycare Quick File vet (`docs/CHRIS_QUICKFILE_VET_2026-09-21.md`)
+Fresh `/christest` sandbox (port 9223), flags flipped ON in the sandbox, seeded a "Child Record" Quick File type +
+a "Children" records list (5 kids, incl. two Avas) + 4 daycare inbox docs. Verdict: filing/search are excellent,
+but "not yet for children's records — fix auto-fill". 7 findings; Oracle-vetted the fixes:
+- **F1 🔴 FIXED (`124e5a2`, Oracle SIGN-OFF-W/COND):** the auto-fill typeahead crashed on every keystroke
+  (`appendChild(null)`) for any Records list with no/blank disambiguator — `quickfileView.js` `el()` lacked the
+  null-kid guard its twin `lookupAdmin.js` has. One-line guard + a twin-parity pin so they can't diverge again.
+- **F2** = a SEED ARTIFACT (my test list used bare-string columns; the product's own UI always writes
+  `{key,label,type}` objects) → no code change.
+- **DEFERRED to you (design/policy, Oracle agreed):** F3 (the required "Document Issuer/Company/Person" role
+  becomes the folder name on a child record while child name is optional — structural-role model), F4 (typed Quick
+  File fields display "100%" — cosmetic, no wrong-file), F5 (a no-disambiguator list now shows a name-only dropdown
+  — the F1 fix ACTIVATES this; add a second-column fallback), **F6 (multi-doc "apply-to-all" lights a green "ready"
+  dot on a doc that merely inherited the shared party — a wrong-child footgun; it is a FLIP-BLOCKER: do NOT flip
+  `quickfile_multidoc_enabled` until "ready" distinguishes own-subject from inherited-default).**
+
+## Owed in the morning
+Push · run the 605/Oracle flip gate for mig 141+151 before flipping (strongest candidate) · the F1 live in-app
+re-drive (needs the sandbox login Chris created) · decide F3/F4/F5/F6 · the standing backlog below (unchanged).
+Sandbox app may still be up on port 9223 (harmless); the census sandbox artifacts are in `TESTING/_measure/flip_census_20260921/`.
+
+---
+
 # HANDOVER — 2026-09-21 (Quick File Records-lists + crossover + multi-doc pane)
 
 **Branch** `feat/teach-side-overnight`. **HEAD `9de80c4`.** **Origin CURRENT (all pushed).** Migration **198**.

@@ -6,15 +6,24 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
-## ⏭ TONIGHT 2026-09-17 — DARK-SWITCH FLIP-CENSUS BATCH → **`docs/designs/NIGHT_RUN_2026-09-17.md`**
-On "going to bed" run that prompt: the Recipe-1 flip-census batch over the reading switches (one arm each,
-baseline OFF vs switch ON, 700-corpus fixture; reuse the `rerun_20260916/` runner). Report per switch M /
-fires / would-file delta / value changes; present passers for a morning batch flip. **Flip = owner's call —
-nothing flipped autonomously.** Near-ready first: `trust_ref_role_shape` (154) + `template_drift_override_guard`
-(157). LOG (don't run blind): `format_class_join` (a LOOK), `confusion_precedence`/`buyer_issued_convention`
-(vacuous, need fixtures), `template_edge_clip_heal` (code precondition), name-grow belts (want `teach_run_ab`),
-99/100 (Recipe 2). Full map = `HANDOVER_2026-09-17_C12_AND_SWITCHES.md` PART B. Census fixtures VERIFIED present
-2026-09-19 (`Desktop\Flip Corpus 700\warm_700.db` + the `rerun_20260916/` runner) — ready to launch once the CPU is free.
+## ✅ DONE 2026-09-21 NIGHT — DARK-SWITCH BATCH CENSUS (0 flips, batch M=0) + CHRIS QUICK FILE DAYCARE VET (F1 bug fixed) — `handover.md` + `TESTING/_measure/flip_census_20260921/RESULT.md`
+Autonomous run (owner "going to bed, you are on auto"). **Committed LOCAL, NOT pushed.** Final pins **409/409 green**.
+**TASK 0:** committed the graphical folder-tabs (`436af88`). **TASK A — batch census** at HEAD (mig 198), migrated
+700-corpus copy (400 test docs, `RR_APP_ENV=1`, shell-env lever): two UNION arms (37-switch HEAL, 3-switch FRICTION) +
+per-switch isolation of the two firing switches. **Batch M=0** (HEAL 6 GT-correct ref/date heals + 1 correct new
+auto-file; FRICTION 7 held→filed all ref+date correct, 0 wrong). Isolated `template_code_read_widen` (mig 141)
+M=0/4 heals + `template_edge_clip_heal` (mig 151) M=0/1 heal. **0 FLIPS** — each firing switch's OWN named flip gate
+needs the **605 REAL corpus + a pixel-adjudicated adversarial fire census** (Oracle C1-C7 for mig 151; mig 141 has no
+Oracle *flip* sign-off), which a synthetic 400-doc M=0 does not discharge → logged as flip-ready-candidates (auto-
+flipping would skip the advisor/Oracle gate = approval-class; mirrors the 09-12 "logged for morning" precedent). Ledger
+`docs/DARK_SWITCH_LEDGER.md` refreshed (09-19→21 flips, migs 187-191/193). **TASK B — Chris daycare Quick File vet**
+(`/christest` sandbox 9223) → `docs/CHRIS_QUICKFILE_VET_2026-09-21.md`. **F1 🔴 = a REAL bug FIXED** (`124e5a2`): the
+auto-fill typeahead crashed on every keystroke (`appendChild(null)`) for any Records list with no/blank disambiguator
+— `quickfileView.js` `el()` lacked the null-kid guard its twin `lookupAdmin.js` has (Oracle SIGN-OFF-W/COND; twin-parity
+pin). F2 = seed artifact (LOG). F3/F4/F5/F6 deferred to owner (F6 the multi-doc green "ready" dot is a **flip-blocker**
+for `quickfile_multidoc_enabled`; F1 activates F5). **Repeat only if:** a census re-runs after an extraction change
+(M must stay 0). **Owed (morning):** push · the 605/Oracle gate for mig 141+151 before any flip · the F1 live in-app
+re-drive (needs the sandbox login) · F3/F4/F5/F6 owner decisions.
 
 ## ✅ DONE 2026-09-19 NIGHT — FLIP-CENSUS BATCH (4 switches graduated) + Castellan Slice 1 shipped + Slice 2 SENT BACK
 Owner-driven day rolled into an autonomous night. **Shipped (LOCAL; flips pushed through `39456fe`):**

@@ -2986,3 +2986,28 @@ values [MC1]; incomplete doc stays staged [MC3]; PDF→thumb/office→icon; sing
 icon not stranger's doc; expired token clean).
 Doc-accuracy: _staged value comment says mtime but code stores none (cosmetic); "NO change to directIntakeService.js"
 is correct + load-bearing.
+
+## 2026-09-21 NIGHT — Quick File typeahead null-kid crash (Chris daycare vet F1) — SIGN OFF WITH CONDITIONS
+2026-09-21 F1 quickfile typeahead — SIGN OFF WITH CONDITIONS (fix correct, right layer, byte-identical when no
+kid is null). Root cause CONFIRMED at the mechanism: `src/windows/main/quickfileView.js:21` `el()` appended every
+kid unguarded; the typeahead row builder (:212-213) passes a `null` 2nd kid when a record has no disambiguator
+(`sub` empty) → `appendChild(null)` throws BEFORE `dd.style.display='block'` (:223) → the run() loop aborts, the
+dropdown never renders — Chris's exact symptom, on every keystroke. BROADENED: not only a no-disambiguator LIST —
+any list whose record has a BLANK disambiguator value crashes on that row (whole "records lacking the second
+detail" class). Twin `settings/lookupAdmin.js:18` already had `if (c != null)`; the two diverged. FIX = restore
+the guard (skip null kids). Seam clean: the only null kid in the file is the explicit `: null`; `c != null` skips
+only null/undefined, not ''/0/false, matching the twin — byte-identical when no kid is null. Blast radius: double
+-DARK pane (direct_intake_enabled + the quickfile view gate). Not OCR/auto-file — Quick File is intake='direct',
+learning-excluded, so no silent wrong-VALUE file. CONDITIONS: (A) prefer a TWIN-PARITY grep pin (both el() helpers
+carry the guard) over a jsdom functional test — there is no jsdom Home-renderer harness (test_quickfile_pane.js:6);
+confirm jsdom before adding a dep. (B) run-pins green + a manual/Chris no-disambiguator re-test IS the functional
+gate. TRIAGE of Chris's other findings: F2 (undefined admin labels) = SEED ARTIFACT (bare-string columns; no
+shipped UI path writes them — createListFromType + CSV import always build {key,label,type} objects) → LOG only.
+F3 (structural role = folder, child name optional) + F4 (typed fields show 100%) = DEFER to owner (structural-role
+model / shared badge; F4 cosmetic — no silent wrong-file). F5 (no-disambiguator → name-only ambiguous dropdown) =
+DEFER, BUT the F1 fix ACTIVATES it (the crash was suppressing the ambiguity); recommend a cheap second-column
+fallback in the dropdown `sub`. F6 (multi-doc "apply-to-all" defaults the party onto every doc + a green "ready"
+dot on a doc that merely inherited it — renderMultiDoc:285 `ready = isReady(withDefaults(f, shared))`) = DEFER
+tonight (DARK) but it is a FLIP-BLOCKER: do NOT flip `quickfile_multidoc_enabled` until "ready" distinguishes
+own-subject from inherited-default. IMPLEMENTED: the F1 guard (commit 124e5a2) + the twin-parity pin
+(test_quickfile_pane.js §5). GATE: run-pins green; live no-disambiguator re-drive owner-owed (sandbox login).
