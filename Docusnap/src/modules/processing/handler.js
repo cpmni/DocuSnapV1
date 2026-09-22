@@ -410,6 +410,13 @@ function _reconcileEnv(db) {
     // the nag but caps ≤69 (still HELD — one confirm attests the string, not this page's pixels). DARK (mig 204),
     // byte-identical OFF; HARD dep ref_confusable_flag ON.
     if (learning.getSetting(db, 'ref_confusable_confirmed_literal_disarm', 'false') === 'true') env.REF_CONFUSABLE_CONFIRMED_LITERAL_DISARM = '1';
+    // GLYPH_FALLBACK_ENABLED (mig 207, 2026-09-22, oscar+Oracle SIGN-OFF-W/COND re-rule on the live Print Tracker
+    // exhibit `1G25802868`): a second, architecturally-independent recognizer (PP-OCR rec via onnxruntime,
+    // ocr/glyph_reader.py) re-reads the ref-role crop; DISAGREEMENT with the committed Tesseract read HOLDS the doc
+    // for review with a neutral note (the p7 `RFH0738865` O→0 conf-76 silent-serial-misfile class). Never auto-files,
+    // never overwrites, never a corroboration candidate. DARK (mig 207), byte-identical OFF; needs onnxruntime + the
+    // vendored en rec model present (absent → read_crop returns None → Tesseract-only).
+    if (learning.getSetting(db, 'glyph_fallback_enabled', 'false') === 'true') env.GLYPH_FALLBACK_ENABLED = '1';
     // FILING_SANITY_REF_REINSTATE (2026-09-11, 007+reggie+gary → Oracle B1-B5; Ridgeway VS-72672 vs page
     // WS-73673): after Gate C flags a Stage-0.5 located ref winner as page-ABSENT, reinstate a retained
     // on-page, dominant-prefix, exact-shape keyword candidate over it — review-bound (cap ≤69 + note, no

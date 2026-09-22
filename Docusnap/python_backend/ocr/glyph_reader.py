@@ -181,6 +181,27 @@ def _ctc_decode(preds: np.ndarray, chars: list) -> tuple[str, float]:
     return text, conf
 
 
+def prep_crop(img):
+    """The FROZEN preprocessing the fallback feeds the model (oscar C7): greyscale →
+    upscale so the text cap-height lands near 48px (LANCZOS) → a light, fixed unsharp mask
+    (sharpens the serif the model reads). Measured best on the study slices; do NOT add
+    binarise / CLAHE / JPEG (all measured to HURT a CNN recognizer). Returns a PIL 'L'
+    image. Any failure returns the plain greyscale (never raises)."""
+    try:
+        from PIL import ImageFilter
+        g = img.convert("L") if isinstance(img, Image.Image) else Image.fromarray(np.asarray(img)).convert("L")
+        w, h = g.size
+        scale = max(1.0, min(8.0, 48.0 / max(1.0, h / 1.6)))
+        if scale > 1.01:
+            g = g.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        return g.filter(ImageFilter.UnsharpMask(radius=1.5, percent=110, threshold=3))
+    except Exception:
+        try:
+            return img.convert("L")
+        except Exception:
+            return img
+
+
 def available() -> bool:
     """True iff the engine can actually run (onnxruntime present AND a model resolvable)."""
     sess, _ = _load()

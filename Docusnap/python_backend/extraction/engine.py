@@ -6813,6 +6813,82 @@ class ExtractionEngine:
         except Exception:
             pass   # advisory guard — must never break extraction
 
+    def _glyph_disagreement_hold(self, results, ref_field_key, page_provenance):
+        """PP-OCR DISAGREEMENT HOLD (S1; Oracle SIGN-OFF-W/COND 2026-09-22, re-rule on the live Print
+        Tracker exhibit `1G25802868`). A second, architecturally-independent recognizer (ocr.glyph_reader,
+        PP-OCR rec via onnxruntime) re-reads the ref-role crop; if it DISAGREES with the committed
+        Tesseract read, HOLD the doc for review with a neutral note — the only signal on a heterogeneous
+        UNIQUE serial that neither confirmed-literal nor a format flag can catch (the p7 `RFH0738865` O→0
+        conf-76 silent-misfile class).
+
+        Oracle conditions honoured:
+          C1  PP is NEVER a corroboration candidate — it writes NO `_field_candidates` entry, so it can
+              never satisfy `_corrob_licensed`. It only sets a note + caps confidence.
+          trigger = DISAGREEMENT (not the blind format flag): AGREE → do nothing (byte-identical, every
+              current correct auto-file preserved); DISAGREE → force hold (cap≤69 + note + the ref-role
+              note blocks auto-file). NEVER auto-files, NEVER overwrites-and-files (the displayed value
+              stays the Tesseract read; PP's read rides the note as a neutral suggestion).
+          neutral note = names BOTH readings, asks the human to read the glyph off the page (no assertion
+              of PP's value → no rubber-stamp of a common-mode-wrong PP read).
+          no corrected_to / no corrections-learning / conf never mapped to a trust number / never lifts a
+              hold. C4 bbox: only fires when a located crop box + its page image are in hand (a pure
+              keyword full-page read with no geometry → PP abstains).
+
+        DARK env GLYPH_FALLBACK_ENABLED; OFF byte-identical. Best-effort — never raises into extraction."""
+        if os.environ.get('GLYPH_FALLBACK_ENABLED', '0') != '1' or not ref_field_key:
+            return
+        try:
+            data = results.get(ref_field_key)
+            if not isinstance(data, dict):
+                return
+            committed = str(data.get('value') or '').strip()
+            if not committed:
+                return
+            method = str(data.get('method') or '')
+            if any(m in method for m in ('override', 'manual', 'template_fixed')):
+                return                                   # human-set literal, not an OCR read
+            if str(data.get('validation_note') or '').strip() or data.get('corrected_to'):
+                return                                   # one-note-per-field; a prior arm spoke
+            # scanned only — a born-digital text-layer read is not an OCR misread to second-guess
+            if not (page_provenance and all(p == 'ocr' for p in page_provenance)):
+                return
+            # C4 — locate the crop: taught read geometry (norm box) + its Stage-0.5 page. No box → abstain.
+            geom = (getattr(self, '_s05_read_geom', None) or {}).get(ref_field_key)
+            pages = getattr(self, '_s05_pages', None)
+            mappings = getattr(self, '_s05_mappings', None) or []
+            if not (geom and len(geom) == 4 and pages):
+                return
+            mapping = next((m for m in mappings if m.get('field_key') == ref_field_key), None)
+            page_idx = int((mapping or {}).get('page_number') or 0)
+            if not (0 <= page_idx < len(pages)) or pages[page_idx] is None:
+                return
+            box = {'x_norm': geom[0], 'y_norm': geom[1], 'w_norm': geom[2], 'h_norm': geom[3]}
+            from extraction import reslice as _rs
+            from ocr import glyph_reader as _gr
+            if not _gr.available():
+                return                                   # onnxruntime/model absent → Tesseract-only
+            crop, _band = _rs._crop_padded(pages[page_idx], box, 0.3, 0.15)   # quiet-zone pad (oscar C7)
+            if crop is None:
+                return
+            pp = _gr.read_crop(_gr.prep_crop(crop))
+            if not pp:
+                return
+            pp_text = ''.join(str(pp[0]).split())
+            if not pp_text or pp_text == ''.join(committed.split()):
+                return                                   # AGREE (or PP empty) → do nothing
+            # DISAGREE → hold, review-bound, neutral note (never overwrite, never auto-file)
+            data['confidence'] = min(int(data.get('confidence') or 0), 69)
+            data['validation_note'] = (
+                f"Two text readers disagree on this reference: the scan reads '{committed}', a second "
+                f"reader reads '{pp[0]}'. Please check it against the page before filing.")
+            self.log(f"  Glyph disagreement hold: {ref_field_key} tesseract '{committed}' vs "
+                     f"PP-OCR '{pp[0]}' — held for review")
+            if self._trace:
+                self._t('glyph_disagreement', field=ref_field_key, committed=committed,
+                        pp_read=pp[0], pp_conf=round(float(pp[1]), 3))
+        except Exception:
+            pass   # advisory guard — must never break extraction
+
     def _reinstate_page_absent_ref(self, results, ref_field_key, ocr_text, supplier_name, document_slug):
         """REF-ARBITER REINSTATEMENT (Chris/owner Ridgeway exhibit; reggie+gary+007 → Oracle SIGN-OFF-W/COND
         B1-B5, 2026-09-11). The merge protects a Stage-0.5 located winner by AUTHORITY, so a wrong OFF-PAGE
@@ -11938,6 +12014,11 @@ class ExtractionEngine:
         # fields, so the ≤69 cap can never be re-lifted). Flag-only; the ref-role note blocks auto-file.
         self._flag_ref_confusable_ambiguous(results, field_defs, supplier_name, document_slug,
                                             ref_field_key, page_provenance)
+        # ── PP-OCR DISAGREEMENT HOLD (DARK GLYPH_FALLBACK_ENABLED; Oracle re-rule 2026-09-22) ── a second
+        # independent recognizer re-reads the ref crop; DISAGREEMENT forces a review hold (the p7-class
+        # silent-serial-misfile catch). AFTER the flag (a prior note makes it skip) and BEFORE the boost
+        # (skips noted fields, so the ≤69 cap can never be re-lifted). OFF byte-identical.
+        self._glyph_disagreement_hold(results, ref_field_key, page_provenance)
 
         # ── LEARNED-AGREEMENT CONFIDENCE BOOST ────────────────────────────────
         # A value that is CONSISTENT with a well-supported learned format for its scope is

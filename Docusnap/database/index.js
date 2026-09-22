@@ -4194,6 +4194,21 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 206 (ref-confusable disarm flip): ${e.message}`); }
   }
 
+  // mig 207 (2026-09-22, oscar+Oracle SIGN-OFF-W/COND re-rule on the live Print Tracker exhibit `1G25802868`):
+  // glyph_fallback_enabled — a second, architecturally-independent recognizer (PP-OCR rec via onnxruntime,
+  // ocr/glyph_reader.py) re-reads the ref-role crop; on DISAGREEMENT with the committed Tesseract read the doc is
+  // HELD for review with a neutral note (the p7 `RFH0738865` O→0 conf-76 silent-serial-misfile class that neither
+  // confirmed-literal nor a format flag can catch). DARK, seeded OFF, byte-identical off. Never auto-files, never
+  // overwrites, never a corroboration candidate (Oracle C1). Flip = owner's call after the census (see
+  // dark_switches.js). Single-key seed (no array literal — keeps the loose seed-pin regex honest).
+  if (!applied.has(207)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('glyph_fallback_enabled', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (207)').run();
+      console.log('JS migration 207 applied: glyph_fallback_enabled (PP-OCR disagreement hold) seeded OFF (DARK, 1 row)');
+    } catch (e) { console.warn(`  migration 207 (glyph_fallback_enabled): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

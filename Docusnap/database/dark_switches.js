@@ -110,6 +110,16 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   (Oracle C4/C5): realdoc M=0 + zero supplier_name accuracy drop + the fire DENOMINATOR + a MULTI-TOKEN
   //   synthetic FP set (all-lowercase real names like "acme joinery" must NOT blank). Not yet run.
   'issuer_undetected_blank',
+  // glyph_fallback_enabled (mig 207, 2026-09-22, oscar+Oracle SIGN-OFF-W/COND re-rule on the live Print Tracker
+  //   exhibit `1G25802868`): a second, architecturally-independent recognizer (PP-OCR rec via onnxruntime,
+  //   ocr/glyph_reader.py) re-reads the ref-role crop; DISAGREEMENT with the committed Tesseract read HOLDS the doc
+  //   for review with a neutral note (the p7 `RFH0738865` O→0 conf-76 silent-serial-misfile class no cheaper lever
+  //   catches). Fail-toward-review (worst case a HELD doc a test customer SEES) — but it needs a NEW ~55MB
+  //   dependency (onnxruntime + the vendored en rec model) AND its own census before a default. ⚑ FLIP GATE
+  //   (Oracle 2026-09-22): 605+Demo+PrintTracker ON-vs-OFF, wouldFile(ON)⊆wouldFile(OFF) provable, catch-set>0
+  //   incl. p7+p11, false-hold rate published, agree-but-wrong≈0 sampled, the C1 corrob pin (must fail on a naive
+  //   design), determinism two-run byte-identical release-gated on vendor/python, trade-lock pins.
+  'glyph_fallback_enabled',
   // ref_confusable_confirmed_literal_disarm (mig 204) was FLIPPED ON by default at mig 206 (2026-09-22, owner
   //   "flip mig 204"): census M=0 / inert on the 700 corpus (TESTING/_measure/ref_disarm_census_20260922/), owner
   //   accepted the narrow ≥2-confirm supplier-strict auto-file lift. No longer dark — delisted here.

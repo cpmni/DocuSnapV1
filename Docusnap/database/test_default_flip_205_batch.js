@@ -48,16 +48,18 @@ const HELD = [
   'deskew_corrob_autofile', 'optional_soft_flag_autofile', 'corrob_autofile_band88',
   'filing_sanity_confusable_prefix_autofile', 'confusion_precedence', 'buyer_issued_convention_one_confirm',
   'format_class_join', 'departments_enabled', 'segment_pair_hold', 'issuer_undetected_blank',
+  // added AFTER the mig-205 batch (not part of it): a new DARK key, seeded OFF by its own migration.
+  'glyph_fallback_enabled',   // mig 207, 2026-09-22 — PP-OCR disagreement hold
 ];
 
 console.log('== mig 205 BATCH graduation (34 fail-toward-review switches) ==');
 
 console.log(`0. the batch is exactly ${FLIP.length} keys and the two sets are disjoint + cover the list`);
 check('FLIP is 34 distinct keys', new Set(FLIP).size === 34);
-check('HELD is 10 distinct keys', new Set(HELD).size === 10);
+check('HELD is 11 distinct keys', new Set(HELD).size === 11);
 check('FLIP ∩ HELD = ∅', FLIP.every(k => !HELD.includes(k)));
 check('TEST_SWITCH_KEYS == HELD (every flipped key delisted, every held key kept)',
-  TEST_SWITCH_KEYS.length === 10 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
+  TEST_SWITCH_KEYS.length === 11 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
 
 console.log('1. a fresh install has every flipped key ON, every held key OFF');
 {
