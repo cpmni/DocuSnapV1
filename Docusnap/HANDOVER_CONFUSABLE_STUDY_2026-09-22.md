@@ -1,8 +1,10 @@
-# BUILD HANDOVER — confusable-glyph reading fixes (written for a Fable 5.5 session)
+# BUILD HANDOVER — confusable-glyph reading fixes (for a fresh session; owner runs Opus 5.5)
 
 You are picking up a DESIGNED-BUT-NOT-BUILT programme. Read this whole file first, then the two design docs it
-points to. Work in SMALL steps. After each numbered STEP, STOP and report to the owner in plain English before
-starting the next. Do NOT flip any switch on by default without re-running the advisor + Oracle gate.
+points to. Work in incremental steps. After each numbered STEP, STOP and report to the owner in plain English
+before starting the next. Do NOT flip any switch on by default without re-running the advisor + Oracle gate.
+(The explicit file:line detail below is for continuity, not because the work needs hand-holding — an Opus-tier
+session will move through it quickly.)
 
 ---
 
