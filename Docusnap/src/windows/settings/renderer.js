@@ -1899,14 +1899,16 @@ function ensureLaneFilter() {
   list.parentNode.insertBefore(bar, list);
 }
 
-// Auto-assigned per-type colour (owner 2026-09-22, option A): a stable, theme-safe hue from a curated
-// palette (Tableau-10 — distinct + pleasant, reads as a small dot on both light and dark surfaces). Keyed
-// on the type id so a type keeps its colour across sessions; zero config. Used as a colour-code swatch in
-// the Document Types list (and re-usable elsewhere later).
-const DOCTYPE_PALETTE = ['#4e79a7', '#59a14f', '#e15759', '#f28e2b', '#af7aa1', '#76b7b2', '#edc948', '#ff9da7', '#9c755f', '#bab0ac'];
-function typeColor(dt) {
-  const id = dt && dt.id != null ? Number(dt.id) : 0;
-  return DOCTYPE_PALETTE[((id % DOCTYPE_PALETTE.length) + DOCTYPE_PALETTE.length) % DOCTYPE_PALETTE.length];
+// Colour-code the Document Types list by LANE (owner 2026-09-22): Scanned / Quick File / Both each get a
+// distinct, theme-safe colour, painted as the ROW's own tint + a solid left accent bar (not a per-type dot).
+// So at a glance you see how each type is filed. The lane badge text stays as the label.
+const LANE_COLOR = { scanned: '#4e79a7', quick: '#59a14f', both: '#7c6bbf' };   // blue / green / purple — readable on light + dark
+function laneColor(dt) { return LANE_COLOR[_laneOf(dt)] || 'var(--border2)'; }
+function _hexToRgba(hex, a) {
+  const s = String(hex || '').replace('#', '');
+  if (s.length !== 6) return hex;                         // a CSS var etc. → return as-is (used only for the bar)
+  const n = parseInt(s, 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
 function renderDocTypesList() {
@@ -1928,16 +1930,20 @@ function renderDocTypesList() {
     row.className = 'doctype-row'
       + (dt.enabled ? '' : ' disabled')
       + (dt.id === selectedDocTypeId ? ' active' : '');
+    // Lane colour on the box: a left accent bar (always) + a tint (stronger when selected, so the .active
+    // highlight still reads through the lane colour rather than fighting it).
+    const _lc = laneColor(dt);
+    row.style.borderLeft = `5px solid ${_lc}`;
+    row.style.background = _hexToRgba(_lc, dt.id === selectedDocTypeId ? 0.26 : 0.11);
     row.dataset.tid = dt.id;
     row.draggable = true;
     const fieldCount = (dt.fields || []).length;
     row.innerHTML = `
       <span class="doctype-handle" title="Drag to reorder this type" aria-hidden="true">&#10303;</span>
-      <span class="doctype-swatch" aria-hidden="true" style="display:inline-block; width:11px; height:11px; border-radius:50%; flex:0 0 auto; margin-right:8px; background:${typeColor(dt)}; box-shadow:0 0 0 1px rgba(0,0,0,.12) inset;"></span>
       <div class="doctype-name">
         <span class="doctype-nametext" title="${escHtml(dt.name)}">${escHtml(dt.name)}</span>
         <span class="${dt.built_in ? 'badge-builtin' : 'badge-custom'}">${dt.built_in ? 'built-in' : 'custom'}</span>
-        <span class="badge-lane" title="How this type is filed">${_laneBadge[_laneOf(dt)]}</span>
+        <span class="badge-lane" title="How this type is filed" style="background:${_hexToRgba(_lc, 0.18)}; color:${_lc}; border:1px solid ${_hexToRgba(_lc, 0.35)};">${_laneBadge[_laneOf(dt)]}</span>
       </div>
       <span class="doctype-count" title="${fieldCount} field${fieldCount === 1 ? '' : 's'}">${fieldCount}</span>
     `;
