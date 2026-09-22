@@ -4091,6 +4091,19 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 201 (ref_confusable_history_disarm): ${e.message}`); }
   }
 
+  // mig 202 (2026-09-22): ref_confusable_history_disarm ON by default (owner go — "minimise messages"). The
+  // S/5-type ref nag now disarms on the sender's confirmed HEAD convention (gary+reggie → Oracle SIGN-OFF-W/COND;
+  // 7 targeted pins incl. the poison guard; 700-corpus safety census byte-identical, M=0). A rival-head or
+  // both-forms scope, or a never-seen value, still gets the one check. Delisted from dark_switches.js.
+  // @DEFAULT_FLIP 202
+  if (!applied.has(202)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('ref_confusable_history_disarm', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (202)').run();
+      console.log('JS migration 202 applied: ref_confusable_history_disarm ON by default (UPSERT true) — established-head references stop nagging + file; graduated');
+    } catch (e) { console.warn(`  migration 202 (ref_confusable_history_disarm default ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
