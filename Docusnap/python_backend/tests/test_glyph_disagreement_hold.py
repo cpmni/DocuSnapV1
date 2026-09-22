@@ -124,6 +124,16 @@ def test_empty_pp_read_is_noop():
     assert d["confidence"] == 90 and "validation_note" not in d
 
 
+def test_c1_pp_not_a_corroboration_family():
+    """Oracle C1 (ship-blocker), belt: PP must NEVER be a corroboration page family — else a same-pixel
+    {crop-Tesseract, ppocr} pair would satisfy _corrob_licensed and license a wrong auto-file. The engine
+    method already writes no _field_candidates entry (test_disagree_holds_with_neutral_note); this locks
+    the constant so a future dev can't add a glyph/pp key to the family set."""
+    from extraction.engine import _CORROB_PAGE_FAMILIES
+    bad = [f for f in _CORROB_PAGE_FAMILIES if any(t in f.lower() for t in ("glyph", "ppocr", "pp_", "onnx"))]
+    assert not bad, f"a PP recognizer read must not be a corroboration family: {bad}"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

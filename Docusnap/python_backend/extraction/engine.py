@@ -6873,10 +6873,27 @@ class ExtractionEngine:
             pp = _gr.read_crop(_gr.prep_crop(crop))
             if not pp:
                 return
-            pp_text = ''.join(str(pp[0]).split())
-            if not pp_text or pp_text == ''.join(committed.split()):
-                return                                   # AGREE (or PP empty) → do nothing
-            # DISAGREE → hold, review-bound, neutral note (never overwrite, never auto-file)
+            # Compare on ALPHANUMERIC CONTENT ONLY (strip separators/punctuation/whitespace) and hold ONLY
+            # on a SAME-LENGTH substitution-class disagreement — the p7 `O`↔`0` / p11 `G`↔`6` shape. The
+            # 700-corpus census (glyph_fallback_census_20260922) showed the raw compare false-holds ~14% on
+            # clean docs: a spurious `#`/`~` from crop framing, a `-` vs no-separator, or a dropped char. A
+            # length or punctuation-only difference is framing/segmentation noise, NOT a glyph confusion, so
+            # abstain (oracle C2's same-length discipline, applied to the hold — strictly tighter, never looser).
+            import re as _re
+            def _alnum(s):
+                return _re.sub(r'[^A-Za-z0-9]', '', str(s))
+            c_norm, p_norm = _alnum(committed), _alnum(pp[0])
+            if not p_norm or c_norm == p_norm:
+                return                                   # AGREE on alnum content → do nothing
+            if len(c_norm) != len(p_norm):
+                return                                   # length differs → framing/dropped-char noise → abstain
+            # EXACTLY ONE differing position (oracle C2 shape): the p7 `O`↔`0` / p11 `G`↔`6` single-glyph
+            # substitution. A multi-position same-length difference is a SHIFTED crop artifact (a stray `F`/`t`
+            # prefix that pushes every char along, still nets same length) — the census's residual false-hold
+            # class after same-length alone. Abstain on it; hold ONLY a clean single-glyph swap.
+            if sum(a != b for a, b in zip(c_norm, p_norm)) != 1:
+                return
+            # SAME-LENGTH single-glyph disagreement → hold, review-bound, neutral note (never overwrite/auto-file)
             data['confidence'] = min(int(data.get('confidence') or 0), 69)
             data['validation_note'] = (
                 f"Two text readers disagree on this reference: the scan reads '{committed}', a second "
