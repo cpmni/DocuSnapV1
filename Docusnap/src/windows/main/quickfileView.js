@@ -191,6 +191,13 @@
     const t = installedTypes.find((x) => String(x.id) === String(typeId));
     const input = _triggerInputFor(b.triggerFieldKey, t);
     if (!input || !input.parentNode) return;
+    _typeaheadCleanup = _wireSuggest(input, typeId, b, (r) => _fillFromRecord(r.fields, t));
+  }
+
+  // Shared Records-list suggest wiring: a token-prefix dropdown under `input`; on pick it resolves the record
+  // and hands the result to onPick(r). Used by BOTH the shared form (refreshTypeahead) and the multi-doc per-doc
+  // form (Chris follow-up 2026-09-22). Returns a cleanup fn.
+  function _wireSuggest(input, typeId, b, onPick) {
     // A dropdown positioned under the trigger input (its wrapper is made position:relative).
     input.parentNode.style.position = 'relative';
     const dd = el('div', { style: { position: 'absolute', left: '0', right: '0', top: '100%', zIndex: '40',
@@ -224,7 +231,7 @@
           ev.preventDefault();                          // keep focus / fire before blur
           hide();
           let r; try { r = await D.lookup.resolve({ documentTypeId: typeId, recordId: row.id }); } catch { r = null; }
-          if (r && r.ok && r.fields) _fillFromRecord(r.fields, t);
+          if (r && r.ok && r.fields) onPick(r);
         });
         dd.appendChild(item);
       }
@@ -235,7 +242,21 @@
     const onBlur = () => setTimeout(hide, 150);          // allow a click to land first
     input.addEventListener('input', onInput);
     input.addEventListener('blur', onBlur);
-    _typeaheadCleanup = () => { clearTimeout(timer); input.removeEventListener('input', onInput); input.removeEventListener('blur', onBlur); try { dd.remove(); } catch {} };
+    return () => { clearTimeout(timer); input.removeEventListener('input', onInput); input.removeEventListener('blur', onBlur); try { dd.remove(); } catch {} };
+  }
+
+  // Fill a resolved record's fields into a STAGED entry's own values (multi-doc per-doc form). Mirrors
+  // _fillFromRecord but writes f.values (party/date/reference/customFields) instead of the shared inputs.
+  function _fillRecordIntoValues(fields, f, t) {
+    if (!f.values) f.values = { customFields: {} };
+    if (!f.values.customFields) f.values.customFields = {};
+    for (const key in fields) {
+      const val = fields[key];
+      if (key === 'supplier_name') f.values.party = String(val);
+      else if (t && key === t.date_field_key) f.values.date = _toInputDate(val);
+      else if (t && key === ((t.ref_field_key) || 'reference_number')) f.values.reference = String(val);
+      else f.values.customFields[key] = String(val);
+    }
   }
 
   function renderFiles() {
@@ -409,6 +430,10 @@
     const date = bind(el('input', { className: 'qf-in', type: 'date', value: f.values.date || '' }), 'date');
     const ref = bind(el('input', { className: 'qf-in', type: 'text', value: f.values.reference || '', placeholder: shared.reference ? `${shared.reference} (shared)` : 'Optional' }), 'reference');
     const title = bind(el('input', { className: 'qf-in', type: 'text', value: f.values.title || stem(f.name), placeholder: 'Title' }), 'title');
+    // Map role/custom field keys → the per-doc input, so the Records-list typeahead can find THIS doc's trigger.
+    const _trigMap = { supplier_name: party };
+    if (t && t.date_field_key) _trigMap[t.date_field_key] = date;
+    _trigMap[(t && t.ref_field_key) || 'reference_number'] = ref;
     host.appendChild(mk('Company / Person', party));
     host.appendChild(mk('Date', date));
     host.appendChild(mk('Reference', ref));
@@ -424,11 +449,23 @@
             : el('input', { className: 'qf-in', type: ty === 'number' ? 'number' : 'text', value: f.values.customFields[cf.key] || '' });
         if (inp.tagName === 'TEXTAREA') inp.value = f.values.customFields[cf.key] || '';
         inp.addEventListener('input', () => { f.values.customFields[cf.key] = inp.value; });
+        _trigMap[cf.key] = inp;
         cg.appendChild(el('div', {}, [el('label', { className: 'qf-lbl' }, cf.label || cf.key), inp]));
       }
       host.appendChild(cg);
     }
     if (f.error) host.appendChild(el('div', { style: { color: 'var(--warn)', fontSize: '12px', marginTop: '8px' } }, f.error));
+    // S4b per-doc typeahead (Chris follow-up 2026-09-22): the multi-doc per-doc form gets the same Records-list
+    // auto-fill the shared form has — wired onto THIS doc's trigger input, filling f.values then repainting.
+    if (D.lookup && D.lookup.typeBinding && t) {
+      (async () => {
+        let b; try { b = await D.lookup.typeBinding(t.id); } catch { b = null; }
+        if (!b || !b.ok || !b.bound || !b.triggerFieldKey) return;
+        const trig = _trigMap[b.triggerFieldKey];
+        if (!trig || !trig.parentNode || !host.isConnected) return;   // doc switched while we awaited → drop
+        _wireSuggest(trig, t.id, b, (r) => { _fillRecordIntoValues(r.fields, f, t); renderFiles(); });
+      })();
+    }
   }
 
   // A persistent receipt row for one filed document (Open folder / Find it / Undo). Built with textContent

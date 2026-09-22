@@ -292,6 +292,8 @@ contextBridge.exposeInMainWorld('docusnap', {
   getAutoFileReason:           (docId)   => ipcRenderer.invoke('get-auto-file-reason', docId),
   getSplitUndoInfo:            (docId, partnerPage) => ipcRenderer.invoke('get-split-undo-info', { docId, partnerPage }),
   undoDocumentSplit:           (docId, mode, partnerPage) => ipcRenderer.invoke('undo-document-split', { docId, mode, partnerPage }),
+  getSeparatedOriginalInfo:    (docId)   => ipcRenderer.invoke('get-separated-original-info', { docId }),
+  revealSeparatedOriginal:     (docId)   => ipcRenderer.invoke('reveal-separated-original', { docId }),
   getGraduatedSuppliers:       ()        => ipcRenderer.invoke('get-graduated-suppliers'),
   getScopeReadiness:           ()        => ipcRenderer.invoke('get-scope-readiness'),
   getTeachFollowup:            (docId)   => ipcRenderer.invoke('get-teach-followup', { docId }),

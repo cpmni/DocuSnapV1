@@ -3635,6 +3635,7 @@ function renderCleanHoldReason(el, doc) {
     if (v.kind === 'segment-hold' && v.subkind === 'pair' && v.partnerPage) {
       _attachJoinButton(el, doc.id, v.partnerPage);
     }
+    _attachRecoverOriginalButton(el, doc.id);
     el.hidden = false;
     return;
   }
@@ -3684,6 +3685,7 @@ function renderCleanHoldReason(el, doc) {
   el.innerHTML = `<div class="rr-lead">${escHtml(lead)}</div>`
                + `<div class="rr-cues"><span class="rr-cue info">${escHtml(cue)}</span></div>`
                + (hint ? `<div class="rr-hint">${escHtml(hint)}</div>` : '');
+  _attachRecoverOriginalButton(el, doc.id);
   el.hidden = false;
 }
 
@@ -3702,6 +3704,32 @@ async function _attachJoinButton(el, docId, partnerPage) {
   Object.assign(btn.style, { background: 'var(--accent)', borderColor: 'var(--accent)', color: 'var(--bg)', fontWeight: '500' });
   btn.textContent = `Join with page ${partnerPage}`;
   btn.addEventListener('click', () => _confirmAndJoin(docId, partnerPage, info.pages || [], btn));
+  wrap.appendChild(btn);
+  el.appendChild(wrap);
+}
+
+// ── Recover the original scan of a split document (Chris F3/C6) ────────────────────────────────────
+// When a batch was split, the untouched original is kept in `.sf_separated_originals`. This offers a
+// one-click way back to it — REVEAL-ONLY (opens the file in Explorer; never re-imports). Fail-quiet: no
+// preserved original in this folder (not a split child, or already filed away) → no button.
+async function _attachRecoverOriginalButton(el, docId) {
+  let info;
+  try { info = await window.docusnap.getSeparatedOriginalInfo(docId); } catch { info = null; }
+  if (!info || !info.available) return;
+  const wrap = document.createElement('div');
+  wrap.style.marginTop = '8px';
+  const btn = document.createElement('button');
+  btn.className = 'btn';
+  btn.textContent = info.count > 1 ? 'Show the original scans' : 'Recover the original scan';
+  btn.title = 'This document came from a split. Open the folder that holds the untouched original scan.';
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    let r;
+    try { r = await window.docusnap.revealSeparatedOriginal(docId); }
+    catch (e) { r = { success: false, error: (e && e.message) || 'Could not open the original.' }; }
+    btn.disabled = false;
+    if (!r || !r.success) showToast((r && r.error) || 'Could not open the original.', 'err');
+  });
   wrap.appendChild(btn);
   el.appendChild(wrap);
 }

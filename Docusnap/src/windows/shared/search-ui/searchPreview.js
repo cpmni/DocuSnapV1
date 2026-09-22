@@ -37,10 +37,14 @@ function renderPreviewFields(doc) {
     // Skip keys surfaced as core fields above; show all others with a value.
     const coreKeys = new Set(['supplier_name', 'invoice_number', 'invoice_date',
                                'po_number', 'po_date', 'sales_order_number', 'order_date']);
+    // Per-field detection % is meaningful only for an UNCOMMITTED doc — a confirmed doc is checked/committed
+    // (and a TYPED Quick File field never had a detection to score, so "100%" misled: Chris F4 2026-09-21).
+    // Same principle as the reading-confidence band above.
+    const showConf = doc.status !== 'confirmed';
     const extras = doc.extractions
       .filter(ex => !coreKeys.has(ex.field_key) && ex.display_value)
       .sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
-    for (const ex of extras) _field(fields, _keyLabel(ex.field_key), ex.display_value, ex.confidence, ex.validation_note);
+    for (const ex of extras) _field(fields, _keyLabel(ex.field_key), ex.display_value, showConf ? ex.confidence : null, ex.validation_note);
   }
   scroll.appendChild(fields);
 }
