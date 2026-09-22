@@ -1899,6 +1899,16 @@ function ensureLaneFilter() {
   list.parentNode.insertBefore(bar, list);
 }
 
+// Auto-assigned per-type colour (owner 2026-09-22, option A): a stable, theme-safe hue from a curated
+// palette (Tableau-10 — distinct + pleasant, reads as a small dot on both light and dark surfaces). Keyed
+// on the type id so a type keeps its colour across sessions; zero config. Used as a colour-code swatch in
+// the Document Types list (and re-usable elsewhere later).
+const DOCTYPE_PALETTE = ['#4e79a7', '#59a14f', '#e15759', '#f28e2b', '#af7aa1', '#76b7b2', '#edc948', '#ff9da7', '#9c755f', '#bab0ac'];
+function typeColor(dt) {
+  const id = dt && dt.id != null ? Number(dt.id) : 0;
+  return DOCTYPE_PALETTE[((id % DOCTYPE_PALETTE.length) + DOCTYPE_PALETTE.length) % DOCTYPE_PALETTE.length];
+}
+
 function renderDocTypesList() {
   ensureLaneFilter();
   const filterBar = document.getElementById('dt-lane-filter');
@@ -1923,6 +1933,7 @@ function renderDocTypesList() {
     const fieldCount = (dt.fields || []).length;
     row.innerHTML = `
       <span class="doctype-handle" title="Drag to reorder this type" aria-hidden="true">&#10303;</span>
+      <span class="doctype-swatch" aria-hidden="true" style="display:inline-block; width:11px; height:11px; border-radius:50%; flex:0 0 auto; margin-right:8px; background:${typeColor(dt)}; box-shadow:0 0 0 1px rgba(0,0,0,.12) inset;"></span>
       <div class="doctype-name">
         <span class="doctype-nametext" title="${escHtml(dt.name)}">${escHtml(dt.name)}</span>
         <span class="${dt.built_in ? 'badge-builtin' : 'badge-custom'}">${dt.built_in ? 'built-in' : 'custom'}</span>
