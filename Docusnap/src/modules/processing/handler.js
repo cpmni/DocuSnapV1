@@ -6489,46 +6489,6 @@ function register(ctx) {
     // across both pages) and navigates to it. carrySegmentHold keeps the mig-176 note across that reprocess.
     return { success: true, mode: 'rejoin', newDocId: survivor.id, removedId: removed.id, pages: totalPages, reprocess: true };
   });
-
-  // ── Recover the original scan of a SPLIT document (Chris F3/C6 2026-09-21) ─────────────────────────────
-  // When a batch is split, the untouched original is moved ASIDE to `<folder>/.sf_separated_originals` (C1
-  // above), NEVER deleted. There was no visible way back to it. This exposes a REVEAL-ONLY recovery: it
-  // resolves the folder from the doc row server-side (H2 — never trusts a renderer path), dept+role gates it,
-  // and opens the original in Explorer. It deliberately does NOT re-import / re-glue (Shape A, deferred as
-  // fragile in the C12 block) — the user retrieves the file themselves, which is safe on any split shape.
-  function _separatedOriginalsFor(db, docId) {
-    if (!hasRole('admin', 'edit')) return { blocked: 'ROLE' };
-    const acc = require('../../services/accessService').canAccessDocument(db, getCurrentUser(), docId);
-    if (!acc.allow) return { blocked: 'NOT_FOUND' };
-    const row = db.prepare('SELECT folder_path FROM documents WHERE id = ?').get(docId);
-    if (!row || !row.folder_path) return { dir: null, files: [] };
-    const dir = path.join(row.folder_path, SEPARATED_DIR_SPLIT);
-    let files = [];
-    try { if (fs.existsSync(dir)) files = fs.readdirSync(dir).filter(f => f && !f.startsWith('.')); } catch { files = []; }
-    return { dir, files };
-  }
-
-  ipcMain.handle('get-separated-original-info', (_e, { docId } = {}) => {
-    const r = _separatedOriginalsFor(getDb(), docId);
-    if (r.blocked) return { available: false };
-    return { available: (r.files || []).length > 0, count: (r.files || []).length };
-  });
-
-  ipcMain.handle('reveal-separated-original', (_e, { docId } = {}) => {
-    const db = getDb();
-    const r = _separatedOriginalsFor(db, docId);
-    if (r.blocked === 'ROLE') return { success: false, error: 'Not permitted.' };
-    if (r.blocked) return { success: false, error: 'Document not found.' };
-    const files = r.files || [];
-    if (!r.dir || !files.length) return { success: false, error: 'The original scan is no longer in this folder.' };
-    const target = files.length === 1 ? path.join(r.dir, files[0]) : r.dir;
-    try {
-      logAudit(db, { action: 'separated_original_revealed', action_category: 'document', target_type: 'file',
-        target_id: docId, document_id: docId, outcome: 'success', metadata: { count: files.length } });
-    } catch { /* audit best-effort */ }
-    try { shell.showItemInFolder(target); } catch { /* shell best-effort */ }
-    return { success: true, count: files.length };
-  });
 }
 
 // Move a processed original out of the intake folder into `destDir` (a managed
