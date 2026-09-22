@@ -633,11 +633,14 @@
     notesI = el('textarea', { className: 'qf-in', rows: 3, placeholder: 'Optional — searchable', style: { resize: 'vertical' } });
     customBox = el('div', {});   // Slice 0: per-type custom fields render here on type-select
     const details = el('div', { className: 'qf-card', style: { flex: '1', minWidth: '320px' } }, [
-      typeRow,
       el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 16px' } },
         [mkField('Company / Person', partyI), mkField('Date', dateI), mkField('Reference', refI), mkField('Notes', notesI)]),
       customBox,
     ]);
+    // The doc-type picker ("File as") sits ABOVE the single/multi area so it stays visible in BOTH modes — the
+    // whole batch shares one type, and the multi-doc pane hides _singleArea, so the type must live OUTSIDE it
+    // (Chris 2026-09-22: multi-file had no way to choose the doc type).
+    root.appendChild(typeRow);
     // Drop card + details share a row and stretch to equal height. In the multi-doc pane this whole area is
     // hidden and the file list / preview / per-doc fields take over (renderFiles), so the shared form never
     // sits cramped above a squeezed preview (owner 2026-09-22).
