@@ -393,7 +393,22 @@
   async function doFile() {
     if (!typeSelect || !typeSelect.value) { msg.style.color = 'var(--warn)'; msg.textContent = 'Pick a type first.'; return; }
     if (!staged.length) { msg.style.color = 'var(--warn)'; msg.textContent = 'Choose at least one file.'; return; }
-    if (!partyI.value.trim()) { msg.style.color = 'var(--warn)'; msg.textContent = 'Enter the company or person.'; partyI.focus(); return; }
+    // Require the RESOLVED folder key field, not always "Company / Person" (Chris re-verify card 1; the F6
+    // principle for the single/shared path): a record type keyed on a custom field (e.g. Child name) must NOT be
+    // blocked by an empty company box — the folder keys on the child's name. supplier_name-keyed types unchanged.
+    // Multi-doc validates per-doc in its own loop (MC3), so skip this shared gate there.
+    if (!(multiDocEnabled && staged.length > 1)) {
+      const QF = window.quickfileMeta;
+      const keyLabel = (_recordKey && _recordKey.label) || 'a company or person';
+      const entryLike = { values: { party: partyI.value.trim(), date: dateI.value || '', reference: refI.value.trim(), title: '', customFields: _gatherSharedCustom() } };
+      const keyOk = QF ? !!QF.resolvedKeyValue(entryLike, _recordKey || undefined) : !!partyI.value.trim();
+      if (!keyOk) {
+        msg.style.color = 'var(--warn)'; msg.textContent = `Enter the ${keyLabel}.`;
+        const ki = (_recordKey && _triggerInputFor(_recordKey.keyField, _selectedType())) || partyI;
+        try { ki.focus(); } catch {}
+        return;
+      }
+    }
     fileBtn.disabled = true; pickBtn.disabled = true;
     const reEnable = () => { fileBtn.disabled = false; pickBtn.disabled = false; };
     // Resolve the type — a "new:<slug>" option is a catalog preset added on first use.

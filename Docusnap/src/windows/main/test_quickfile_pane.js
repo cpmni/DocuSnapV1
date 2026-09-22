@@ -81,6 +81,9 @@ console.log('4. multi-doc pane (S4a) + typeahead (S4b) wiring — Oracle conditi
   check('F6: _resolveRecordKey precedence folder_key_field → list-master trigger → supplier_name',
         /keyField = \(t\.folder_key_field[\s\S]{0,240}triggerFieldKey[\s\S]{0,120}keyField \|\| 'supplier_name'/.test(qf));
   check('F6: direct-intake-doctypes exposes folder_key_field for the resolver', /folder_key_field: t\.folder_key_field/.test(di));
+  // Chris re-verify card 1: the single-file required-gate keys on the RESOLVED field, not always party.
+  check('card1: single-file gate uses resolvedKeyValue (record types not blocked by an empty company box)',
+        /if \(!\(multiDocEnabled && staged\.length > 1\)\)[\s\S]{0,600}QF\.resolvedKeyValue\(entryLike, _recordKey \|\| undefined\)/.test(qf));
 }
 
 console.log('5. F1 (2026-09-21 Chris vet) — el() skips null kids; twin parity with lookupAdmin.js');
