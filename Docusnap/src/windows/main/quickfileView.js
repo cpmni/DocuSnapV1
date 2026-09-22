@@ -208,7 +208,16 @@
       if (!res || !res.ok || !res.rows || !res.rows.length) { hide(); return; }
       dd.textContent = '';
       for (const row of res.rows) {
-        const sub = (b.list && b.list.disambiguator_key && row.values && row.values[b.list.disambiguator_key]) ? row.values[b.list.disambiguator_key] : (row.disambiguator || '');
+        // F5 (Chris 2026-09-21): a distinguishing detail beside the name. Prefer the list's disambiguator; else
+        // the record's own disambiguator; else FALL BACK to the record's first other non-empty field (generic —
+        // any record type) so two same-named subjects (two "Ava") are still tellable apart.
+        const sub = (b.list && b.list.disambiguator_key && row.values && row.values[b.list.disambiguator_key])
+          ? row.values[b.list.disambiguator_key]
+          : (row.disambiguator || (() => {
+              const mk = b.list && b.list.master_key;
+              for (const k in (row.values || {})) { if (k === mk) continue; const v = row.values[k]; if (v != null && String(v).trim() !== '') return String(v); }
+              return '';
+            })());
         const item = el('div', { style: { padding: '7px 11px', cursor: 'pointer', fontSize: '13px', borderTop: '1px solid var(--border)' } },
           [el('span', {}, row.master_value), sub ? el('span', { style: { color: 'var(--muted)', marginLeft: '8px', fontSize: '12px' } }, '· ' + sub) : null]);
         item.addEventListener('mousedown', async (ev) => {

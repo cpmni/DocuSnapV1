@@ -88,6 +88,10 @@ console.log('5. F1 (2026-09-21 Chris vet) — el() skips null kids; twin parity 
   check('lookupAdmin.js el() has the SAME guard — the twins must not diverge again (this WAS the root cause)', guard.test(la));
   check('the crash callsite is intact: the row still passes a null 2nd kid when there is no disambiguator',
         /\[el\('span', \{\}, row\.master_value\), sub \? el\('span'/.test(qf));
+  // F5 (Chris 2026-09-21): when a list has no disambiguator, the dropdown falls back to the record's first
+  // other non-empty field (generic — any record type) so same-named subjects are distinguishable.
+  check('F5: dropdown sub falls back to the first other non-empty record value (not name-only)',
+        /if \(k === mk\) continue; const v = row\.values\[k\]; if \(v != null && String\(v\)\.trim\(\) !== ''\) return String\(v\)/.test(qf));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
