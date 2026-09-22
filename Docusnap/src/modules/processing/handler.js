@@ -397,6 +397,12 @@ function _reconcileEnv(db) {
     // fallback, glyph-attestation disarm, born-digital skipped. Seeded OFF by mig 159; DEFAULT ON since mig 173
     // (2026-09-16, 700-corpus census PASS ×2). A deliberate 'false' still turns it off. Byte-identical OFF.
     if (learning.getSetting(db, 'ref_confusable_flag', 'false') === 'true') env.REF_CONFUSABLE_FLAG = '1';
+    // REF_CONFUSABLE_HISTORY_DISARM (2026-09-22, gary+reggie → Oracle SIGN-OFF-W/COND; owner: stop the S/5-type
+    // nag on an established sender). A Rule-A PREFIX glyph (a stable letter in a mixed head with a pure-digit
+    // body, e.g. the 'S' of 'W2S8745899') disarms on the sender's confirmed HEAD convention (length-agnostic),
+    // UNLESS a rival digit-head is also confirmed (poison guard). Fixes the length-EXACT Rule-A attestation gap
+    // for a variable-length numeric body. DARK (mig 201), byte-identical OFF; HARD dep ref_confusable_flag ON.
+    if (learning.getSetting(db, 'ref_confusable_history_disarm', 'false') === 'true') env.REF_CONFUSABLE_HISTORY_DISARM = '1';
     // FILING_SANITY_REF_REINSTATE (2026-09-11, 007+reggie+gary → Oracle B1-B5; Ridgeway VS-72672 vs page
     // WS-73673): after Gate C flags a Stage-0.5 located ref winner as page-ABSENT, reinstate a retained
     // on-page, dominant-prefix, exact-shape keyword candidate over it — review-bound (cap ≤69 + note, no

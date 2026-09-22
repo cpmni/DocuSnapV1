@@ -1012,6 +1012,46 @@ def ref_confusable_class_outlier(value, prefix_set=None):
     return None
 
 
+def ref_confusable_prefix_disarm(value, hit):
+    """D1 (REF_CONFUSABLE_HISTORY_DISARM, 2026-09-22; gary+reggie -> Oracle SIGN-OFF-W/COND). A Rule-A hit is
+    really a PREFIX glyph when it is a LETTER (with a digit form) sitting inside a mixed alpha/digit head with
+    a PURE-DIGIT body after it in its own token (e.g. the 'S' of 'W2S8745899', head 'W2S', body '8745899').
+    Such a stable-position glyph should disarm on the sender's confirmed HEAD convention (length-agnostic),
+    which Rule A's length-EXACT attestation can't reach for a variable-length numeric body. Returns
+    (head, rival_heads): head = the hit TOKEN's leading run through+including the glyph ('W2S'); rival_heads =
+    the same head with the glyph replaced by each DIGIT it is confusable with ('W25') — the gate disarms on
+    head-share UNLESS any rival head is also confirmed (poison guard). Token-relative so a multi-token value
+    never builds a cross-token head. Returns None when D1 does not apply. Never raises."""
+    try:
+        if not hit or hit.get('rule') != 'A':
+            return None
+        c = hit.get('from')
+        pos = hit.get('pos')
+        if not (isinstance(pos, int) and c and c.isalpha() and _ref_outlier_letter_has_digit_form(c)):
+            return None
+        v = value or ''
+        if not (0 <= pos < len(v)) or v[pos] != c:
+            return None
+        ts = pos
+        while ts > 0 and v[ts - 1] not in _REF_OUTLIER_SEPS:
+            ts -= 1
+        te = pos
+        while te < len(v) and v[te] not in _REF_OUTLIER_SEPS:
+            te += 1
+        tok = v[ts:te]
+        k = pos - ts                             # glyph index within its own token
+        suffix = tok[k + 1:]
+        if not suffix or not suffix.isdigit():   # body after the glyph must be a pure, non-empty digit run
+            return None
+        head = tok[:k + 1]                        # 'W2S'
+        rivals = [head[:k] + d for d in _REF_OUTLIER_DIGITS if _is_letter_digit_confusable(c, d)]
+        if not rivals:
+            return None
+        return (head, rivals)
+    except Exception:
+        return None
+
+
 # ── Digits-only OCR cleanup + correction proposal (Stage 2) ──────────────────
 
 # Reuse the extractor's existing OCR confusable map (l/I→1, O→0, S→5, …) rather

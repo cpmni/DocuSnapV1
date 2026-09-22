@@ -4079,6 +4079,18 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 200 (repair_dismissed_at): ${e.message}`); }
   }
 
+  // mig 201 (2026-09-22): ref_confusable_history_disarm — the S/5-type ref nag softener (gary+reggie → Oracle
+  // SIGN-OFF-W/COND). DARK, seeded OFF. A Rule-A prefix glyph disarms the ref-confusable flag on the sender's
+  // confirmed HEAD convention (length-agnostic), with the required rival-head poison guard. HARD dep
+  // ref_confusable_flag ON. Byte-identical OFF; flip is census-gated (see database/dark_switches.js).
+  if (!applied.has(201)) {
+    try {
+      const n = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('ref_confusable_history_disarm', 'false')").run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (201)').run();
+      console.log(`JS migration 201 applied: ref_confusable_history_disarm seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 201 (ref_confusable_history_disarm): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

@@ -299,6 +299,16 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   token brand hunt is near-vacuous); efficacy proven by the synthetic disclaimer unit test (the corpus can't
   //   reach a disclaimer-manual layout). docs/designs — pendingfeatures.md 2026-09-20 "Undetected issuer".
   'issuer_undetected_blank',
+  // ref_confusable_history_disarm (mig 201, 2026-09-22, gary+reggie → Oracle SIGN-OFF-W/COND; owner: stop the
+  // S/5-type "check this reference" nag on an established sender). A Rule-A PREFIX glyph — a stable letter in a
+  // mixed alpha/digit head with a pure-DIGIT body, e.g. the 'S' of 'W2S8745899' — disarms the ref-confusable
+  // flag on the sender's CONFIRMED HEAD convention (length-agnostic `any_confirmed_shares_head`), which the
+  // length-EXACT Rule-A attestation can't reach for a variable-length numeric body. REQUIRED poison guard
+  // (Oracle): stays flagged if a rival digit-head (`W25…`) is ALSO confirmed. HARD dep ref_confusable_flag ON.
+  // Byte-identical OFF; ORs into the flag's own disarm (only ever suppresses more). ⚑ FLIP GATE: the harness-
+  // unreachable Python pins (varying-length head → disarm; interior/rival/poison → still fires) ARE the efficacy
+  // proof + a JS test_scope_trust pin + realdoc M=0 (pixel-adjudicated) + the live Print Tracker re-run.
+  'ref_confusable_history_disarm',
 
   // taught_ref_disagree_suppress — GRADUATED to a customer default by mig 191 (2026-09-20: live-proven on the
   //   owner's VM — the Castellan "Service Worksheet" batch, 4/4 filed on confirm instead of holding forever; corpus

@@ -6731,6 +6731,24 @@ class ExtractionEngine:
                 if ocr_corrector.any_confirmed_shares_head(vc, hit['head']):
                     return                               # established digit-prefix convention -> no flag
             else:
+                # D1 (REF_CONFUSABLE_HISTORY_DISARM, 2026-09-22; gary+reggie -> Oracle SIGN-OFF-W/COND): a Rule-A
+                # PREFIX glyph (a stable letter in a mixed head with a pure-digit body, e.g. 'S' of 'W2S8745899')
+                # disarms on the sender's confirmed HEAD convention (length-agnostic — the length-EXACT
+                # attestation below can't reach a variable-length numeric body), UNLESS a rival DIGIT head is
+                # ALSO confirmed (genuinely ambiguous -> stay flagged, the required poison guard). ORs into the
+                # existing disarm (only ever suppresses MORE); byte-identical when the env is off.
+                if os.environ.get('REF_CONFUSABLE_HISTORY_DISARM', '0') == '1':
+                    pd = format_anomaly_checker.ref_confusable_prefix_disarm(str(val), hit)
+                    if pd:
+                        head, rivals = pd
+                        if ocr_corrector.any_confirmed_shares_head(vc, head) and \
+                           not any(ocr_corrector.any_confirmed_shares_head(vc, rh) for rh in rivals):
+                            self.log(f"  Ref-confusable DISARM (history): {ref_field_key} '{val}' head "
+                                     f"'{head}' confirmed, rival {rivals} not — no flag")
+                            if self._trace:
+                                self._t('ref_confusable_disarm', field=ref_field_key, value=val,
+                                        head=head, rivals=rivals)
+                            return
                 lits = format_anomaly_checker._confusion_refusal_literals(fe) if fe else set()
                 if format_anomaly_checker._confusion_from_attested(len(str(val)), hit['pos'], hit['from'], lits):
                     return
