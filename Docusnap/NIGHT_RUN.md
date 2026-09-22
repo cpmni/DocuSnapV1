@@ -6,6 +6,24 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
+## ✅ DONE 2026-09-22 NIGHT — PP-OCR CONFUSABLE FALLBACK built S0→S2 (DARK, mig 207) + FULL SECURITY REVIEW + CHRIS full vet — `TESTING/_measure/glyph_fallback_census_20260922/RESULT.md` + `docs/SECURITY_REVIEW_2026-09-22.md`
+Autonomous (owner "going to bed, you are on auto"). **Pushed** through `bcbd7be`; pins **413/413 green**.
+**THE FEATURE (owner's `1G25802868` misread → "Tesseract is the bottleneck"):** measured PP-OCR (en_PP-OCRv3 rec, ONNX)
+beats Tesseract on the exact confusable slices (86%→95%); gary/oscar→Oracle **SEND BACK→RE-RULE SIGN-OFF-W/COND** on
+the corrected live Print Tracker exhibit (the flag door is blind to a leading/interior letter-for-digit; p7 `RFH0738865`
+O→0 conf-76 is a SILENT misfile no cheaper lever catches). Built DARK **glyph_fallback_enabled (mig 207)**: S0 the
+deterministic rec-only engine `ocr/glyph_reader.py` (222/222 parity, two-process byte-identical, runs under vendor/python,
+vendored 8.97MB model `ocr/models/rec.onnx` Apache-2.0) → S1 the PP-vs-Tesseract DISAGREEMENT hold in engine.py (review-
+bound, neutral note, C1 never a corrob candidate) → S2 census: refined the trigger to **single-glyph swaps** (alnum +
+same-length + one-position) after the raw census showed 14% false-holds; final **safety PASS** (wouldFile(ON)⊆wouldFile(OFF),
+0 value changes, false-hold **0.2%**) + **efficacy 2/2** on the owner's real doc (p7+p11), 0 false-holds. Pins:
+`test_glyph_reader.py` + `test_glyph_disagreement_hold.py`. **FLIP = owner's call** (gate met; needs the owner's go +
+onnxruntime vendored into the shipped build). **SECURITY REVIEW** (owner ask): no new Crit/High code vulns; top = admin
+2FA optional (H1) + unsigned installer (H2) + backend MySQL unencrypted PII (M1) + desktop SQLite plaintext OCR text (M2);
+full report `docs/SECURITY_REVIEW_2026-09-22.md`. **CHRIS** full-app vet running in sandbox 9223 at wrap (report appended
++ triaged on return). **Repeat only if:** the flip census must be re-run on a warm DB carrying the owner's REAL Print
+Tracker template before any customer default.
+
 ## ✅ DONE 2026-09-21 NIGHT — DARK-SWITCH BATCH CENSUS (0 flips, batch M=0) + CHRIS QUICK FILE DAYCARE VET (F1 bug fixed) — `handover.md` + `TESTING/_measure/flip_census_20260921/RESULT.md`
 Autonomous run (owner "going to bed, you are on auto"). **Committed LOCAL, NOT pushed.** Final pins **409/409 green**.
 **TASK 0:** committed the graphical folder-tabs (`436af88`). **TASK A — batch census** at HEAD (mig 198), migrated
