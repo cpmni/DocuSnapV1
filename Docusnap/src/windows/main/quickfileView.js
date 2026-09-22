@@ -332,13 +332,48 @@
     _renderFocused(focusHost, staged[_qfFocusedIdx], shared);
   }
 
+  // Zoom/pan document viewer for the focused staged file (owner 2026-09-22). Scroll = zoom, right-drag = pan
+  // (the Review/Search model). Listeners live on the viewer element so a re-render (renderFiles) GCs them —
+  // no window-level leak. Non-renderable (office/email/gone) → an icon card.
+  async function _mountPreviewViewer(viewer, f) {
+    viewer.replaceChildren();
+    let pv = _previewCache.get(f.token);
+    if (!pv) { try { pv = await D.quickFilePreview(f.token); } catch { pv = { ok: true, renderable: false }; } if (pv && pv.ok) _previewCache.set(f.token, pv); }
+    if (!pv || !pv.renderable || !pv.dataUrl) {
+      viewer.style.cursor = 'default';
+      const card = el('div', { style: { position: 'absolute', inset: '0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' } });
+      card.appendChild(_svgIco('i-book', 30));
+      card.appendChild(el('div', { style: { fontSize: '12px', marginTop: '6px', wordBreak: 'break-all' } }, (pv && pv.kind && pv.kind !== 'expired') ? String(pv.kind).replace('.', '').toUpperCase() : 'No preview'));
+      viewer.appendChild(card);
+      return;
+    }
+    let zoom = 1;
+    const img = el('img', { src: pv.dataUrl, alt: '', style: { display: 'block', width: '100%', maxWidth: 'none', userSelect: 'none', pointerEvents: 'none' } });
+    viewer.appendChild(img);
+    viewer.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const before = zoom;
+      zoom = Math.min(6, Math.max(0.4, zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+      if (zoom !== before) img.style.width = (zoom * 100) + '%';
+    }, { passive: false });
+    let panning = false, sx = 0, sy = 0, sl = 0, st = 0;
+    viewer.addEventListener('contextmenu', (e) => e.preventDefault());
+    viewer.addEventListener('mousedown', (e) => { if (e.button !== 2) return; e.preventDefault(); panning = true; sx = e.clientX; sy = e.clientY; sl = viewer.scrollLeft; st = viewer.scrollTop; viewer.style.cursor = 'grabbing'; });
+    viewer.addEventListener('mousemove', (e) => { if (!panning) return; viewer.scrollLeft = sl - (e.clientX - sx); viewer.scrollTop = st - (e.clientY - sy); });
+    const endPan = () => { if (panning) { panning = false; viewer.style.cursor = 'grab'; } };
+    viewer.addEventListener('mouseup', endPan);
+    viewer.addEventListener('mouseleave', endPan);
+  }
+
   function _renderFocused(host, f, shared) {
     if (!f) return;
     const t = _selectedType();
-    // Big preview.
-    const prev = el('div', { style: { height: '260px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', marginBottom: '12px', overflow: 'hidden' } });
+    // Big preview — a proper zoom/pan viewer (owner 2026-09-22): scroll to zoom, right-click-drag to pan,
+    // matching the Review/Search document viewers.
+    const prev = el('div', { style: { position: 'relative', height: '380px', overflow: 'auto', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', cursor: 'grab' } });
     host.appendChild(prev);
-    _loadPreview(f, prev);
+    host.appendChild(el('div', { style: { fontSize: '11px', color: 'var(--muted)', margin: '4px 0 12px' } }, 'Scroll to zoom · right-click and drag to pan'));
+    _mountPreviewViewer(prev, f);
     // Per-doc form — inputs close over THIS entry `f` (MC1). Placeholder shows the shared "applies to all".
     const mk = (labelText, input) => el('div', {}, [el('label', { className: 'qf-lbl' }, labelText), input]);
     const bind = (input, key) => { input.addEventListener('input', () => { f.values[key] = input.value; }); return input; };

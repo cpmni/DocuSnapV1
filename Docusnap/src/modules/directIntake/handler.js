@@ -204,7 +204,7 @@ function register(ctx) {
   // recovery to a stranger's filed doc (Oracle EXACT1). TTL renews on preview (TTL1) capped at mint+2h so a
   // careful multi-doc entry doesn't expire, without letting a token live forever.
   const PREVIEW_TTL_CAP_MS = 2 * 60 * 60 * 1000;
-  ipcMain.handle('direct-intake-preview', async (_e, token) => {
+  ipcMain.handle('direct-intake-preview', async (_e, token, opts) => {
     requireRole('admin', 'edit');
     const db = getDb();
     if (!enabled(db)) return { ok: false, error: 'disabled' };
@@ -216,9 +216,20 @@ function register(ctx) {
     const previewService = require('../../services/previewService');
     const renderScript = path.join(path.dirname(ctx.backendScript()), 'render', 'pages.py');
     const deps = { fs, path, spawn: require('child_process').spawn, pythonExe: ctx.pythonExe, pythonArgs: ctx.pythonArgs, renderScript, log: () => {} };
+    const folderPath = path.dirname(s.path), filename = path.basename(s.path);
+    const scale = (opts && opts.scale > 0) ? Math.min(6, opts.scale) : 3;   // ~216 DPI — crisp to ~2x zoom (search-viewer default)
+    const page = (opts && Number.isInteger(opts.page)) ? Math.max(0, opts.page) : 0;
     let dataUrl = null;
-    try { dataUrl = await previewService.getThumbnail(db, { docId: null, folderPath: path.dirname(s.path), filename: path.basename(s.path), exact: true }, deps); }
-    catch { dataUrl = null; }
+    // PDFs render at scale so the zoom/pan viewer stays sharp; a specific page can be requested for multi-page nav.
+    if (/\.pdf$/i.test(s.ext)) {
+      try { dataUrl = await previewService.getDocumentPage(db, { docId: null, folderPath, filename, index: page, scale, format: 'auto' }, deps); }
+      catch { dataUrl = null; }
+    }
+    // Images (and any PDF render miss) fall back to the thumbnail — exact:true = the staged path only (EXACT1).
+    if (!dataUrl) {
+      try { dataUrl = await previewService.getThumbnail(db, { docId: null, folderPath, filename, exact: true }, deps); }
+      catch { dataUrl = null; }
+    }
     return dataUrl ? { ok: true, renderable: true, dataUrl } : { ok: true, renderable: false, kind: s.ext };
   });
 
