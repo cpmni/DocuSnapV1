@@ -3032,3 +3032,35 @@ own-subject from inherited-default. IMPLEMENTED: the F1 guard (commit 124e5a2) +
   IMPLEMENTED (DARK, env-gated, byte-identical OFF): engine._corrob_values_agree wide branch + the _WIDE unit
   pins (test_corrob_date_fold.py, all green). GATE: 605 safety census running; injected efficacy census + the
   flip machinery (mig/mirror/TEST_SWITCH_KEYS) owed before any flip (owner's call).
+
+- 2026-09-22 (history-free ref confusable COERCION `I625802868`→`1625802868` on a cold scope; oscar+007 consensus):
+  SIGN OFF WITH CONDITIONS (blind map primary, NOT the digit-whitelist re-read; SUGGESTION-ONLY — corrected_to +
+  note + cap≤69, NEVER overwrite the value, because the composition gate can't tell a misread `I625…` from a real
+  `SO12345`/`GB…` on a cold scope; separate ref-role cold-scope leg; DARK; self-disarm on graduation; G2 false-
+  coercion census + G3 positive pin). ⚠ **NOT BUILT — SUPERSEDED**: the owner pivoted away from GUESSING to fixing
+  the READING (an OCR slice-preprocessing exploration — gather real misread slices + sweep image-manipulation
+  recipes; oscar+007 commissioned 2026-09-22). See memory feedback_fix_reading_not_guess_ocr. Bonus finding worth
+  keeping: `_flag_ref_confusable_ambiguous`'s `ref_confusable_class_outlier` tests INTERIOR positions only (Rule A
+  `range(1,len-1)`) and Rule B only digit-for-letter, so a PURE leading/trailing letter-for-digit confusable is
+  caught by NEITHER — a real pos-0/last blind spot (a pure-leading-confusable ref could auto-file silently).
+
+- 2026-09-22 (confusable-settle programme — glyph gallery [F1] + born-digital text-layer trip-wire [F2]; 007+oscar+gary consensus):
+  F1 **SIGN OFF WITH CONDITIONS** (C1 ship-blocker); F2 **SIGN OFF WITH CONDITIONS, census-FIRST, may collapse to DO-NOTHING**.
+  BUILD ORDER RULING: OCR_SLICE_STUDY (reading-layer preprocessing, docs/designs/OCR_SLICE_STUDY_2026-09-22.md) FIRST
+  (highest leverage, may make F1 redundant) → F2 census → F1 gallery LAST. Full design: docs/designs/
+  GLYPH_GALLERY_AND_BD_CORROBORATION_2026-09-22.md. F1: gallery is a GENUINELY independent axis (sender's own confirmed
+  ink from OTHER docs — escapes the pendingfeatures.md:2943 same-pixel 5:1 ruling); scope (supplier_name,document_slug)
+  NOT template_id; blob crops not vectors; N_min=3, cap8, evict-lowest-conf+outlier-quarantine. Capture human-confirm-ONLY
+  (reviewService.js:441 if(!_via)), async, page 'ocr' only, box_count==len AND per-char width/spacing sanity (C5 gap fix),
+  structured single-token only. COMPOSITION (C2): gallery is a required-CONCURRING witness, NOT a voter in
+  reslice.positional_consensus; positional_consensus is a VETO-only pixel axis; ADOPT only when ink-axis AND pixel-axis
+  concur; else/abstain/cold → today's flag. C1 (BLOCKING, the seam): ADOPT corrects the DISPLAYED value + KEEPS the
+  confirm-once note (roleKeys blocks auto-file, boost engine.py:11957 skips noted fields) and writes NO corrected_to / NO
+  corrections row (else self-reinforcing poison). C3: hold-LIFT/auto-file = deferred slice S4, NEVER in the resolver or
+  trust.js. Gate: realdoc M=0 (pixel-adjudicated — corpus GT rubber-stamps wrong glyphs), BROKE=0 on a control set,
+  poison-injection cell, pin wrong-ADOPT is HELD at any threshold. F2: page_images ARE populated for born-digital
+  (tesseract.py:1052/1098 unconditional — no new render plumbing, VERIFIED). PREMISE FIX (C1): catch set = broken-CMap /
+  gross layer-vs-print mismatch, NOT confusable-only (INV-0O123 is outside the feature); trip-wire only (value UNCHANGED,
+  FLAG only), role fields only, credibility gate + confusable-tolerant compare = the false-alarm control. Gate: S0 census
+  FIRST decides ship vs DO-NOTHING (catches non-empty AND clean-digital false-hold ≈0 AND wall-clock OK). Both DARK,
+  TEST_SWITCH_KEYS, byte-identical OFF. NOT BUILT — design vet only.
