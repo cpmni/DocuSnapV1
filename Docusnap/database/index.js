@@ -4120,6 +4120,65 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 203 (quick_reprocess_enabled default ON): ${e.message}`); }
   }
 
+  // mig 204 (2026-09-22): ref_confusable_confirmed_literal_disarm seeded OFF (DARK). The ref-confusable flag can't
+  // see a 1-confirmed sender's exact literal (the format index needs ≥3 distinct values before it holds a scope),
+  // so a Print Tracker ref that EXACTLY matches a previously-confirmed value still nagged. When ON, a read equal to
+  // a scope-confirmed literal disarms — ≥2 confirms fully; a SINGLE confirm drops the nag but caps ≤69 (still HELD:
+  // one confirm attests the STRING, not this page's pixels). gary+reggie → Oracle SIGN-OFF-W/COND (count-gated).
+  // Its own census (a 1-confirm graduated scope + a cross-supplier adversarial) is owed before it graduates — it
+  // is NOT in the 205 batch. HARD dep ref_confusable_flag ON. Byte-identical OFF.
+  if (!applied.has(204)) {
+    try {
+      const n = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('ref_confusable_confirmed_literal_disarm', 'false')").run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (204)').run();
+      console.log(`JS migration 204 applied: ref_confusable_confirmed_literal_disarm seeded OFF (DARK, ${n} row)`);
+    } catch (e) { console.warn(`  migration 204 (ref_confusable_confirmed_literal_disarm): ${e.message}`); }
+  }
+
+  // mig 205 (2026-09-22): BATCH graduation — 34 fail-toward-review DARK switches ON by default (owner go: "flip
+  //   any that are deemed safe or currently inert … the software is only with test clients … they can report any
+  //   issues"). Every key here RECOVERS-into-review / FLAGS / HOLDS-MORE / softens on EVIDENCE (corroboration or
+  //   confirmed history) / is presentation-only / refuses / abstains — NONE can cause a NEW *silent* wrong file
+  //   (worst case a doc HELD for review, which a test customer SEES and reports; that is the whole point of a
+  //   test-client rollout). All 34 are a subset of the 37-key HEAL union already censused M=0 on the 605 corpus
+  //   at RR_APP_ENV=1 (TESTING/_measure/flip_census_20260921/). HELD OUT (deliberately still DARK, a mistake there
+  //   is an INVISIBLE misfile a test customer can't report, or it needs its own gate): the auto-file LOOSENERS
+  //   optional_soft_flag_autofile / corrob_autofile_band88 / filing_sanity_confusable_prefix_autofile /
+  //   deskew_corrob_autofile; the value-CHANGERS with no corpus evidence confusion_precedence /
+  //   buyer_issued_convention_one_confirm; format_class_join (blast radius); departments_enabled (a whole
+  //   feature); segment_pair_hold (needs the live C9 cells + e2e + the C12 Rejoin verified live);
+  //   issuer_undetected_blank (its multi-token-FP census not yet run); ref_confusable_confirmed_literal_disarm
+  //   (mig 204, its own census owed). All 34 DELISTED from database/dark_switches.js this same commit; pinned by
+  //   database/test_default_flip_205_batch.js. Kill: a deliberate 'false' after this survives (stamped once).
+  // @DEFAULT_FLIP 205
+  if (!applied.has(205)) {
+    try {
+      // NB: iterated as `for (const k of [ … ])` — an inline array closed with a bracket-then-paren, NOT a
+      // `const x = [ … ]` statement. Many older seed pins test "key not in ALL_ON_DEFAULTS_93" with a LOOSE
+      // regex that scans from the ALL_ON array open to the next array-close-plus-semicolon token; a plain
+      // array literal here would give that regex a token to latch onto and false-positive. The paren close
+      // introduces none, so those pins stay honest. (This very comment must contain no such token either.)
+      const up = db.prepare(`INSERT INTO settings (key, value) VALUES (?, 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`);
+      let nf = 0;
+      for (const k of [
+        'format_variance_relax', 'template_fragment_containment_yield', 'template_locate_role_qualifier',
+        'format_variance_relax_ref', 'format_variance_relax_ref_inline', 'filing_sanity_ref_corrob_soften',
+        'resolve_ref_near_miss', 'resolve_ref_positional', 'filing_sanity_ref_history_soften',
+        'anchor_bare_label_fuzzy', 'anchor_labelless_currency_refuse', 'type_uninstalled_heading_fold',
+        'teach_angle_compose_null_abstain', 'template_date_left_clip_grow', 'template_pad_date_containment_flag',
+        'template_clip_commit_left_slack', 'inline_disagree_corrob_soften', 'template_name_grow_band_pick',
+        'template_name_cut_defer_cap', 'keyword_superstring_name_note', 'template_code_read_widen',
+        'type_split_teach_scope_suppress', 'sweep_inview_recheck', 'template_edge_clip_heal',
+        'role_disagree_refuse_at100', 'template_taught_corrob_adopt', 'anchor_axis_lock',
+        'filing_sanity_ref_reinstate', 'template_code_left_grow', 'deskew_retry_field_adopt',
+        'deskew_false_absent_reflag', 'template_date_invalid_yield_lowconf', 'date_forms_wide',
+        'ref_badge_verify_state',
+      ]) nf += up.run(k).changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (205)').run();
+      console.log(`JS migration 205 applied: 34 fail-toward-review switches ON by default (batch graduation, ${nf} row writes)`);
+    } catch (e) { console.warn(`  migration 205 (batch flip): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

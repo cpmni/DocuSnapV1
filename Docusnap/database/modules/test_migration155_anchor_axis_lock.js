@@ -28,16 +28,19 @@ const applied = new Set(db.prepare('SELECT version FROM migrations').all().map(r
 
 check('migration 155 stamped', applied.has(155));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 155 applied/.test(l) && /seeded OFF/.test(l)));
-check('a fresh (non-TEST) install ends with anchor_axis_lock === false (DARK)',
-      get('anchor_axis_lock') === 'false');
-check('anchor_axis_lock is in TEST_SWITCH_KEYS (armed by the runtime test-build road)',
-      TEST_SWITCH_KEYS.includes('anchor_axis_lock'));
+// GRADUATED 2026-09-22 by the mig-205 BATCH (owner "flip any safe/inert"): anchor_axis_lock is review-bound
+// (≤87 cap, always-note, censused 0 fires = inert) → ON by default + DELISTED. The mig-155 seed ('false')
+// is unchanged; mig 205 UPSERTs it 'true' afterwards.
+check('a fresh install ends with anchor_axis_lock === true (graduated by mig 205)',
+      get('anchor_axis_lock') === 'true');
+check('anchor_axis_lock is DELISTED from TEST_SWITCH_KEYS (graduated)',
+      !TEST_SWITCH_KEYS.includes('anchor_axis_lock'));
 
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('mig 155 is an INSERT OR IGNORE seed of false',
       /INSERT OR IGNORE INTO settings \(key, value\) VALUES \('anchor_axis_lock', 'false'\)/.test(src));
-check('NO numbered force-ON twin exists', !/VALUES \('anchor_axis_lock', 'true'\)/.test(src));
-check('not in ALL_ON_DEFAULTS_93', !/ALL_ON_DEFAULTS_93 = \[[\s\S]*?'anchor_axis_lock'[\s\S]*?\];/.test(src));
+check('graduated inside the @DEFAULT_FLIP 205 batch block',
+      /@DEFAULT_FLIP 205[\s\S]*?'anchor_axis_lock'[\s\S]*?VALUES \(205\)/.test(src));
 
 // The handler maps the setting to the Python env the engine reads.
 const hsrc = fs.readFileSync(path.join(ROOT, 'src', 'modules', 'processing', 'handler.js'), 'utf8');

@@ -87,8 +87,12 @@ console.log('\nname suffix-snap gate (clean-row + self-feed)');
   const weak = clean.map(e => e.field_key === 'supplier_name'
     ? { ...e, extraction_method: 'anchor', corrected_to: SUP, validation_note: 'Suggested name correction: ' + SUP } : e);
 
-  const rClean = trust.isAutoFileEligible(db, doc, { extractions: clean });
-  const rWeak  = trust.isAutoFileEligible(db, doc, { extractions: weak });
+  // roleDisagreeAt100:false isolates the NAME-SNAP row-shape concern from the (separately-pinned) mig-152
+  // role-disagree-at-100 belt, now default ON (mig-205 batch). That belt takes the 100% path through
+  // docTrustGate, which refuses this SYNTHETIC doc for having no `documents` row ('no-doc'). A real 100% doc
+  // always has a row, so the belt returns 'role-disagree-only' ok for a clean read — only the fixture needs this.
+  const rClean = trust.isAutoFileEligible(db, doc, { extractions: clean, roleDisagreeAt100: false });
+  const rWeak  = trust.isAutoFileEligible(db, doc, { extractions: weak,  roleDisagreeAt100: false });
   check('clean-row: the +name_snap row does NOT trip the flagged gate', rClean.reason !== 'flagged');
   check('clean-row: it auto-files (eligible)', rClean.eligible === true);
   check('WEAK shape: corrected_to + note DOES trip the flagged gate', rWeak.reason === 'flagged');

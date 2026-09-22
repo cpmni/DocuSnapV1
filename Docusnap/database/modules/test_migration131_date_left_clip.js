@@ -25,7 +25,7 @@ check('migration 131 stamped', applied.has(131));
 // mig 134 (TEST-BUILD force-ON, 2026-09-07 owner order) may sit on top: the SEED is pinned by the console line + the
 // source; the final state is 'true' only while that test migration exists (revert list) — else 'false'.
 check("the seed line says seeded OFF (DARK)", logs.some(l => /migration 131 applied/.test(l) && /seeded OFF/.test(l)));
-check("a fresh install ends with template_date_left_clip_grow === " + (applied.has(134) ? "'true' (mig 134 TEST force-ON on top)" : "'false' (DARK)"), get('template_date_left_clip_grow') === (applied.has(134) ? 'true' : 'false'));
+check("a fresh install ends with template_date_left_clip_grow === 'true' (graduated by the mig-205 batch, 2026-09-22)", get('template_date_left_clip_grow') === 'true');
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('mig 131 is an INSERT OR IGNORE seed of false', /INSERT OR IGNORE INTO settings \(key, value\) VALUES \('template_date_left_clip_grow', 'false'\)/.test(src));
 check('NO force-ON twin exists', !/VALUES \('template_date_left_clip_grow', 'true'\)/.test(src));

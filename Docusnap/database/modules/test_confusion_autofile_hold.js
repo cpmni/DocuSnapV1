@@ -72,6 +72,10 @@ console.log('2. GATE 2 — strip the note: the <=70 cap alone still refuses via 
 console.log('3. PAYLOAD — OFF: no format group carries confusions / confusion_literals');
 {
   const db = freshDb();
+  // resolve_ref_near_miss GRADUATED to default-ON (mig-205 batch, 2026-09-22) and is the OTHER consumer of the
+  // confusion_literals union (handler.js: attached when `_cpOn || _nmOn`). Turn it OFF here so this block isolates
+  // the confusion_precedence payload it actually pins — otherwise the OFF read legitimately carries the literals.
+  db.prepare("UPDATE settings SET value = 'false' WHERE key = 'resolve_ref_near_miss'").run();
   // three confirmed docs + a correction each so a supplier group exists AND a fact exists
   for (let i = 0; i < 3; i++) {
     const id = Number(db.prepare(`INSERT INTO documents (document_type_id, original_filename, folder_path, status, supplier_name, overall_confidence, confirmed_at)

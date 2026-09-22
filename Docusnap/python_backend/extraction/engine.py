@@ -5933,6 +5933,23 @@ class ExtractionEngine:
                 nk = _cmp_norm(v)
                 if nk:
                     bucket[nk] = bucket.get(nk, 0) + int(n or 0)
+        # Confirmed-LITERAL counts INCLUDING provisional (sub-≥3) scopes — built from the FULL formats_data (not
+        # `_solid`), so a 1-confirmed sender's exact literal is visible. The ONLY reader is the ref-confusable
+        # confirmed-literal disarm (ref_confusable_confirmed_literal_disarm, mig 204; gary+reggie → Oracle
+        # SIGN-OFF-W/COND). Keyed by _cmp_norm, so an exact match is exact on the confusable glyph (S/5 not folded).
+        self.confirmed_literal_index = {}
+        for e in (formats_data or []):
+            fk = e.get('field_key', '')
+            counts = e.get('value_counts') or {}
+            if not fk or not counts:
+                continue
+            sk = ((e.get('supplier_name') or '').lower().strip(),
+                  (e.get('document_type') or '').lower().strip(), fk)
+            bucket = self.confirmed_literal_index.setdefault(sk, {})
+            for v, cnt in counts.items():
+                nk = _cmp_norm(v)
+                if nk:
+                    bucket[nk] = bucket.get(nk, 0) + int(cnt or 0)
         n = len([k for k in self.format_index if k != '_fallback'])
         m = len(self.noise_profile_index)
         p = len(self.format_class_index)
@@ -6724,6 +6741,28 @@ class ExtractionEngine:
             # C1 — attestation disarm: does this sender legitimately use the read glyph/head?
             s_lower = (supplier_name or '').lower().strip()
             dt_lower = (document_slug or '').lower().strip()
+            # (b) CONFIRMED-LITERAL DISARM (mig 204; gary+reggie → Oracle SIGN-OFF-W/COND). The read EXACTLY equals a
+            # value this scope has human-confirmed — a signal the ≥3-distinct format index can't hold, so neither the
+            # length-exact attestation nor D1 see it. SUPPLIER-STRICT (no '' bleed when a supplier is known). Oracle
+            # C3 count-gate: ≥2 confirms of the exact string ⇒ full disarm; a SINGLE confirm ⇒ drop the NAG but KEEP
+            # the auto-file block (cap ≤69, no note) — one confirm attests the STRING for the scope, not that THIS
+            # page's pixels say it (a wrong silent auto-file on a graduated near-constant-ref scope is the residual,
+            # NOT saved by -DUPLICATE: a different doc's own date ⇒ a unique wrong filename). Runs before the rule
+            # split so it covers Rule A + B. DARK env REF_CONFUSABLE_CONFIRMED_LITERAL_DISARM; byte-identical OFF.
+            if os.environ.get('REF_CONFUSABLE_CONFIRMED_LITERAL_DISARM', '0') == '1':
+                _cl_scope = (s_lower, dt_lower, ref_field_key) if s_lower else ('', dt_lower, ref_field_key)
+                _cl_cnt = int((getattr(self, 'confirmed_literal_index', {}).get(_cl_scope) or {}).get(_cmp_norm(str(val)), 0) or 0)
+                if _cl_cnt >= 2:
+                    self.log(f"  Ref-confusable DISARM (confirmed literal ×{_cl_cnt}): {ref_field_key} '{val}' — no flag")
+                    if self._trace:
+                        self._t('ref_confusable_disarm_confirmed_literal', field=ref_field_key, value=val, count=_cl_cnt)
+                    return
+                if _cl_cnt == 1:
+                    data['confidence'] = min(int(data.get('confidence') or 0), 69)
+                    self.log(f"  Ref-confusable SOFT-HOLD (confirmed once): {ref_field_key} '{val}' — nag dropped, held for review")
+                    if self._trace:
+                        self._t('ref_confusable_softhold_confirmed_literal', field=ref_field_key, value=val)
+                    return
             fe = (self.format_class_index.get((s_lower, dt_lower, ref_field_key)) if s_lower else None) \
                  or self.format_class_index.get(('', dt_lower, ref_field_key))
             vc = (fe or {}).get('value_counts') or {}

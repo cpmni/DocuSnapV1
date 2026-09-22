@@ -56,7 +56,7 @@ check('doc-guarded (skips if the view moved on, or already counting this doc)',
 console.log('\n4. DARK seed OFF + TEST_SWITCH_KEYS');
 check("migration 150 seeds sweep_inview_recheck = 'false' (DARK)",
   /VALUES \('sweep_inview_recheck', 'false'\)/.test(idx) && /VALUES \(150\)/.test(idx));
-check('dark_switches.js lists the key in TEST_SWITCH_KEYS', /'sweep_inview_recheck'/.test(dark));
+check('dark_switches.js NO LONGER lists sweep_inview_recheck (graduated by the mig-205 batch, 2026-09-22)', !/'sweep_inview_recheck'/.test(dark));
 
 console.log('\n' + (F === 0 ? 'ALL PASS' : F + ' FAILED') + `  (${P} ok)`);
 process.exit(F ? 1 : 0);

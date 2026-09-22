@@ -31,13 +31,18 @@ const logs = [];
 { const o = console.log; console.log = (m) => logs.push(String(m)); runMigrations(db, { identity: REL }); console.log = o; }
 check('migration 140 stamped', new Set(db.prepare('SELECT version FROM migrations').all().map(r => r.version)).has(140));
 check('the 140 console line says seeded OFF (DARK)', logs.some(l => /migration 140 applied/.test(l) && /seeded OFF/.test(l)));
-for (const [k] of KEYS) check(`fresh install: ${k} = 'false'`, get(db, k) === 'false');
-for (const [k] of KEYS) check(`${k} is a listed DARK test switch (runtime-armed on a test build)`, TEST_SWITCH_KEYS.includes(k));
+// GRADUATED by the mig-205 batch (2026-09-22): the three name-grow belts are review-bound (in-band row pick /
+// proven-cut defer-cap for review / a zero-OCR keyword-superstring note) — fail-toward-review, censused M=0 —
+// so ON by default + DELISTED. The mig-140 seeds ('false') are unchanged; mig 205 UPSERTs them 'true' after.
+for (const [k] of KEYS) check(`fresh install: ${k} = 'true' (graduated by mig 205)`, get(db, k) === 'true');
+for (const [k] of KEYS) check(`${k} is DELISTED from TEST_SWITCH_KEYS (graduated)`, !TEST_SWITCH_KEYS.includes(k));
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 for (const [k] of KEYS) check(`NO force-ON twin of ${k} in the source`, !new RegExp(`VALUES \\('${k}', 'true'\\)`).test(src));
 check('mig 140 carries its ⚑ FLIP GATE line', /migration 140:[\s\S]{0,1600}FLIP GATE/.test(src));
 check('the release gate scan of index.js is still 0 hits', scan({ indexSrc: src }).hits.length === 0);
-// The bridge: env var iff 'true'.
+// The bridge: env var iff 'true'. The keys default ON since the mig-205 batch, so force them OFF to test the
+// bridge's OFF direction (a deliberate 'false' — the operator's explicit choice).
+for (const [k] of KEYS) db.prepare("UPDATE settings SET value = 'false' WHERE key = ?").run(k);
 const envOff = H._reconcileEnv(db);
 check('bridge OFF: none of the three env vars is set', KEYS.every(([, e]) => !(e in envOff)));
 for (const [k] of KEYS) db.prepare("UPDATE settings SET value = 'true' WHERE key = ?").run(k);

@@ -29,8 +29,11 @@ const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 for (const [ver, key] of [[144, 'type_split_teach_scope_suppress'], [145, 'corrob_autofile_band88']]) {
   check(`migration ${ver} stamped`, applied.has(ver));
   check(`mig ${ver} seed line says seeded OFF (DARK)`, logs.some(l => new RegExp(`migration ${ver} applied`).test(l) && /seeded OFF/.test(l)));
-  check(`a fresh (non-TEST) install ends with ${key} === false (DARK)`, get(key) === 'false');
-  check(`${key} is in TEST_SWITCH_KEYS (armed by the runtime test-build road, not a numbered force-ON)`, TEST_SWITCH_KEYS.includes(key));
+  // type_split_teach_scope_suppress GRADUATED via the mig-205 batch (2026-09-22): ask-suppression, read-only,
+  // NOT in the auto-file path. corrob_autofile_band88 stays DARK — an auto-file loosener, held out of the batch.
+  const grad205 = key === 'type_split_teach_scope_suppress';
+  check(`a fresh install ends with ${key} === ${grad205 ? "'true' (graduated by mig 205)" : "'false' (DARK)"}`, get(key) === (grad205 ? 'true' : 'false'));
+  check(`${key} is ${grad205 ? 'DELISTED from' : 'in'} TEST_SWITCH_KEYS`, TEST_SWITCH_KEYS.includes(key) === !grad205);
   check(`mig ${ver} is an INSERT OR IGNORE seed of false`,
         new RegExp(`INSERT OR IGNORE INTO settings \\(key, value\\) VALUES \\('${key}', 'false'\\)`).test(src));
   check(`NO numbered force-ON twin for ${key}`, !new RegExp(`VALUES \\('${key}', 'true'\\)`).test(src));

@@ -40,13 +40,16 @@ const get = (d, k) => { const r = d.prepare('SELECT value FROM settings WHERE ke
 const applied = new Set(db.prepare('SELECT version FROM migrations').all().map(r => r.version));
 check('migration 163 stamped', applied.has(163));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 163 applied/.test(l) && /seeded OFF/.test(l)));
-check(`a fresh (non-TEST) install ends with ${KEY} === 'false' (DARK)`, get(db, KEY) === 'false');
-check(`${KEY} is in TEST_SWITCH_KEYS`, TEST_SWITCH_KEYS.includes(KEY));
-check('TEST_SWITCH_KEYS is now 44 (quick_reprocess_enabled mig 104->203 GRADUATED 2026-09-22 + delisted; ref_confusable_history_disarm mig 201->202 GRADUATED 2026-09-22 + delisted; +issuer_undetected_blank mig 195 2026-09-21; anchor_code_left_grow 192→193 GRADUATED 2026-09-21 census M=0 + efficacy injection + delisted; taught_ref_disagree_suppress 186→191 GRADUATED via the live VM verify 2026-09-20 + delisted; note_topic_dedup 158→189 + reread_hold_corrob_release 130→190 GRADUATED via flip census batch 2 2026-09-19 + delisted; (trust_ref_role_shape 154→187 + template_drift_override_guard 157→188 GRADUATED via the flip census 2026-09-19 + delisted; +taught_ref_disagree_suppress mig 186 2026-09-19; +ref_badge_verify_state mig 185 2026-09-18; mig 163 + departments_enabled + mig 166 date-yield + mig 167 date_forms_wide; direct_intake_enabled graduated via mig 171 2026-09-15; name_role_nonname_flag + ref_confusable_flag + template_pad_date_adopt + watch_separate_enabled graduated via migs 172-175 2026-09-16, all delisted; +segment_pair_hold (180) 2026-09-17; segment_continuation_veto (177→181) + segment_title_slug (178→182) + segment_known_supplier_change (179→183) GRADUATED 2026-09-17 + delisted)', TEST_SWITCH_KEYS.length === 44);
+// GRADUATED 2026-09-22 by the mig-205 BATCH: the HOLD leg removes NO filer (still held; only the false page-
+// absent note is REPLACED by a truthful "— confirm once.") → fail-toward-review + census M=0 → ON by default
+// + DELISTED. The mig-163 seed ('false') is unchanged; mig 205 UPSERTs it 'true' afterwards.
+check(`a fresh install ends with ${KEY} === 'true' (graduated by mig 205)`, get(db, KEY) === 'true');
+check(`${KEY} is DELISTED from TEST_SWITCH_KEYS (graduated)`, !TEST_SWITCH_KEYS.includes(KEY));
+check('TEST_SWITCH_KEYS is now 11 (mig 205 BATCH graduation 2026-09-22 flipped 34 fail-toward-review switches ON + delisted, owner "flip any safe/inert" for the test clients; ref_confusable_confirmed_literal_disarm mig 204 seeded OFF is the 11th DARK key. Before: quick_reprocess_enabled mig 104->203 GRADUATED 2026-09-22 + delisted; ref_confusable_history_disarm mig 201->202 GRADUATED 2026-09-22 + delisted; +issuer_undetected_blank mig 195 2026-09-21; anchor_code_left_grow 192→193 GRADUATED 2026-09-21 census M=0 + efficacy injection + delisted; taught_ref_disagree_suppress 186→191 GRADUATED via the live VM verify 2026-09-20 + delisted; note_topic_dedup 158→189 + reread_hold_corrob_release 130→190 GRADUATED via flip census batch 2 2026-09-19 + delisted; (trust_ref_role_shape 154→187 + template_drift_override_guard 157→188 GRADUATED via the flip census 2026-09-19 + delisted; +taught_ref_disagree_suppress mig 186 2026-09-19; +ref_badge_verify_state mig 185 2026-09-18; mig 163 + departments_enabled + mig 166 date-yield + mig 167 date_forms_wide; direct_intake_enabled graduated via mig 171 2026-09-15; name_role_nonname_flag + ref_confusable_flag + template_pad_date_adopt + watch_separate_enabled graduated via migs 172-175 2026-09-16, all delisted; +segment_pair_hold (180) 2026-09-17; segment_continuation_veto (177→181) + segment_title_slug (178→182) + segment_known_supplier_change (179→183) GRADUATED 2026-09-17 + delisted)', TEST_SWITCH_KEYS.length === 11);
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('mig 163 is an INSERT OR IGNORE seed of false', new RegExp(`INSERT OR IGNORE INTO settings \\(key, value\\) VALUES \\('${KEY}', 'false'\\)`).test(src));
 check('NO numbered force-ON twin exists', !new RegExp(`VALUES \\('${KEY}', 'true'\\)`).test(src));
-check('not in ALL_ON_DEFAULTS_93', !new RegExp(`ALL_ON_DEFAULTS_93 = \\[[\\s\\S]*?'${KEY}'[\\s\\S]*?\\];`).test(src));
+check('graduated inside the @DEFAULT_FLIP 205 batch block', new RegExp(`@DEFAULT_FLIP 205[\\s\\S]*?'${KEY}'[\\s\\S]*?VALUES \\(205\\)`).test(src));
 
 // ── 2. the nested bridge ─────────────────────────────────────────────────────────────────────────────
 console.log('\n2. _reconcileEnv nesting (child never outlives the parent)');
@@ -77,9 +80,11 @@ check('the note does NOT contain the Gate-C absent mark (it replaces it)', !VN.i
 
 // ── 4. the RELEASE (auto-file) leg is SEND BACK + its conditions recorded ──────────────────────────────
 console.log('\n4. the release leg stays unbuilt; the send-back conditions are on the record');
-const ds = fs.readFileSync(path.join(ROOT, 'database', 'dark_switches.js'), 'utf8');
-check('dark_switches records the release leg as SEND BACK with H1 + the required-field value-parity (C-Q2)',
-      /deskew_false_absent_reflag[\s\S]{0,1400}SEND BACK/.test(ds) && /deskew_false_absent_reflag[\s\S]{0,1400}value-parity/.test(ds));
+// deskew_false_absent_reflag GRADUATED (mig 205, HOLD leg only) so its note left dark_switches; the RELEASE
+// (note-DROP → auto-file) leg stays SEND BACK — its conditions live in the design doc.
+const design = fs.readFileSync(path.join(ROOT, 'docs', 'designs', 'DESKEW_FALSE_ABSENT_REFLAG_2026-09-12.md'), 'utf8');
+check('the design doc records the release leg as SEND BACK with the required-field cross-raster parity (C-Q2)',
+      /SEND BACK/.test(design) && /C-Q2/.test(design));
 check('the reflag call site REPLACES the note only — it never DROPS the note nor writes _overall_confidence',
       /_deskew_retry_false_absent_reflag/.test(pd)
       && /d0\["validation_note"\] = _DESKEW_VERIFIED_NOTE\.format\(val=now\)/.test(pd)

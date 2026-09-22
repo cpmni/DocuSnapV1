@@ -70,9 +70,10 @@ db.prepare("INSERT INTO document_types (id, name, slug, built_in) VALUES (9, 'In
 check('BASELINE: 24 quotes, confirm Invoice, no taught template → split:true (the ask fires)',
       checkTypeSplit(db, 'Teach Test Co', 'invoice').split === true);
 teachTemplate('Teach Test Co', 'invoice', 501);              // the human TAUGHT Invoice for this supplier
-check('OFF (arc off) is byte-identical — a taught template does NOT suppress unless the arc is on',
-      checkTypeSplit(db, 'Teach Test Co', 'invoice').split === true
-      && checkTypeSplit(db, 'Teach Test Co', 'invoice', { teachScopeSuppress: false }).split === true);
+// The arc GRADUATED (mig 205, 2026-09-22) so the no-opts call now reads the ON default; the OFF proof is the
+// EXPLICIT teachScopeSuppress:false path (byte-identical to the pre-graduation default behaviour).
+check('arc explicitly OFF (teachScopeSuppress:false) — a taught template does NOT suppress the ask',
+      checkTypeSplit(db, 'Teach Test Co', 'invoice', { teachScopeSuppress: false }).split === true);
 check('SCENARIO A (taught → silent): arc ON + a teach-origin Invoice template → split:false reason taught',
       (() => { const x = checkTypeSplit(db, 'Teach Test Co', 'invoice', { teachScopeSuppress: true }); return x.split === false && x.reason === 'taught'; })());
 check('SCENARIO B (cold, never-taught): arc ON but confirming purchase_order (no taught PO template) → STILL asks',

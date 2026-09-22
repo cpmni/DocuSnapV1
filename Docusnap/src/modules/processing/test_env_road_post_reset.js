@@ -43,7 +43,10 @@ for (const k of TEST_SWITCH_KEYS) {
   set(k, 'false');
 }
 const mapped = Object.entries(mapping).filter(([, vars]) => vars.length);
-check(`at least 10 keys map to a spawn env var (non-vacuous; ${mapped.length} do)`, mapped.length >= 10, mapped.map(([k, v]) => `${k}→${v.join('/')}`).join(', '));
+// The mig-205 batch (2026-09-22) graduated 34 fail-toward-review switches, so TEST_SWITCH_KEYS shrank to 11
+// (7 of which map to a spawn env var; the other 4 are JS-side auto-file/feature gates). Threshold lowered from
+// 10 to 7 — still proves the reset→env road is non-vacuous.
+check(`at least 7 keys map to a spawn env var (non-vacuous; ${mapped.length} do)`, mapped.length >= 7, mapped.map(([k, v]) => `${k}→${v.join('/')}`).join(', '));
 const learnedVars = new Set(mapped.flatMap(([, v]) => v));
 
 // 2. post-137: none present

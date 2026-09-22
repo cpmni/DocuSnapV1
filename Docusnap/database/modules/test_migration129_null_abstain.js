@@ -25,7 +25,7 @@ check('migration 129 stamped', applied.has(129));
 // mig 134 (TEST-BUILD force-ON, 2026-09-07 owner order) may sit on top: the SEED is pinned by the console line + the
 // source; the final state is 'true' only while that test migration exists (revert list) — else 'false'.
 check("the seed line says seeded OFF (DARK)", logs.some(l => /migration 129 applied/.test(l) && /seeded OFF/.test(l)));
-check("a fresh install ends with teach_angle_compose_null_abstain === " + (applied.has(134) ? "'true' (mig 134 TEST force-ON on top)" : "'false' (DARK)"), get('teach_angle_compose_null_abstain') === (applied.has(134) ? 'true' : 'false'));
+check("a fresh install ends with teach_angle_compose_null_abstain === 'true' (graduated by the mig-205 batch, 2026-09-22)", get('teach_angle_compose_null_abstain') === 'true');
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('mig 129 is an INSERT OR IGNORE seed of false', /INSERT OR IGNORE INTO settings \(key, value\) VALUES \('teach_angle_compose_null_abstain', 'false'\)/.test(src));
 check('NO force-ON twin exists', !/VALUES \('teach_angle_compose_null_abstain', 'true'\)/.test(src));

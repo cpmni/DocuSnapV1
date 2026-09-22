@@ -27,10 +27,12 @@ const applied = new Set(db.prepare('SELECT version FROM migrations').all().map(r
 check('migration 141 stamped', applied.has(141));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 141 applied/.test(l) && /seeded OFF/.test(l)));
 // No numbered force-ON twin (mig 134 predates this key); a fresh, non-TEST install ends DARK.
-check('a fresh (non-TEST) install ends with template_code_read_widen === false (DARK)',
-      get('template_code_read_widen') === 'false');
-check('template_code_read_widen is in TEST_SWITCH_KEYS (armed by the runtime test-build road, not a numbered force-ON)',
-      TEST_SWITCH_KEYS.includes('template_code_read_widen'));
+// GRADUATED by the mig-205 batch (2026-09-22): the wider row-bounded re-read replaces a shape-INVALID tight
+// read and holds — fail-toward-review, censused M=0 — so ON by default + DELISTED. Seed unchanged; mig 205 flips.
+check('a fresh install ends with template_code_read_widen === true (graduated by mig 205)',
+      get('template_code_read_widen') === 'true');
+check('template_code_read_widen is DELISTED from TEST_SWITCH_KEYS (graduated)',
+      !TEST_SWITCH_KEYS.includes('template_code_read_widen'));
 
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('mig 141 is an INSERT OR IGNORE seed of false',

@@ -403,6 +403,13 @@ function _reconcileEnv(db) {
     // UNLESS a rival digit-head is also confirmed (poison guard). Fixes the length-EXACT Rule-A attestation gap
     // for a variable-length numeric body. DARK (mig 201), byte-identical OFF; HARD dep ref_confusable_flag ON.
     if (learning.getSetting(db, 'ref_confusable_history_disarm', 'false') === 'true') env.REF_CONFUSABLE_HISTORY_DISARM = '1';
+    // REF_CONFUSABLE_CONFIRMED_LITERAL_DISARM (2026-09-22, gary+reggie → Oracle SIGN-OFF-W/COND; owner: a Print
+    // Tracker ref that EXACTLY matches a previously-confirmed value still nagged). The <3-distinct format index
+    // can't hold a 1-confirm sender's literal, so neither the length-exact attestation nor the history disarm see
+    // it. When ON: a read that equals a scope-confirmed literal disarms — ≥2 confirms fully; a SINGLE confirm drops
+    // the nag but caps ≤69 (still HELD — one confirm attests the string, not this page's pixels). DARK (mig 204),
+    // byte-identical OFF; HARD dep ref_confusable_flag ON.
+    if (learning.getSetting(db, 'ref_confusable_confirmed_literal_disarm', 'false') === 'true') env.REF_CONFUSABLE_CONFIRMED_LITERAL_DISARM = '1';
     // FILING_SANITY_REF_REINSTATE (2026-09-11, 007+reggie+gary → Oracle B1-B5; Ridgeway VS-72672 vs page
     // WS-73673): after Gate C flags a Stage-0.5 located ref winner as page-ABSENT, reinstate a retained
     // on-page, dominant-prefix, exact-shape keyword candidate over it — review-bound (cap ≤69 + note, no

@@ -41,17 +41,23 @@ const get = (d, k) => { const r = d.prepare('SELECT value FROM settings WHERE ke
 const applied = new Set(db.prepare('SELECT version FROM migrations').all().map(r => r.version));
 check('migration 162 stamped', applied.has(162));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 162 applied/.test(l) && /seeded OFF/.test(l)));
-check(`a fresh (non-TEST) install ends with ${KEY} === 'false' (DARK)`, get(db, KEY) === 'false');
-check(`${KEY} is in TEST_SWITCH_KEYS (armed by the runtime test-build road)`, TEST_SWITCH_KEYS.includes(KEY));
+// GRADUATED 2026-09-22 by the mig-205 BATCH: the field-scoped adopt is always HELD (role note, lane-hold
+// appended, no put-back of a page-absent raw; overall = min) → fail-toward-review + census M=0 → ON by default
+// + DELISTED. The mig-162 seed ('false') is unchanged; mig 205 UPSERTs it 'true' afterwards.
+check(`a fresh install ends with ${KEY} === 'true' (graduated by mig 205)`, get(db, KEY) === 'true');
+check(`${KEY} is DELISTED from TEST_SWITCH_KEYS (graduated)`, !TEST_SWITCH_KEYS.includes(KEY));
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('mig 162 is an INSERT OR IGNORE seed of false', new RegExp(`INSERT OR IGNORE INTO settings \\(key, value\\) VALUES \\('${KEY}', 'false'\\)`).test(src));
-check('NO numbered force-ON twin exists', !new RegExp(`VALUES \\('${KEY}', 'true'\\)`).test(src));
-check('not in ALL_ON_DEFAULTS_93', !new RegExp(`ALL_ON_DEFAULTS_93 = \\[[\\s\\S]*?'${KEY}'[\\s\\S]*?\\];`).test(src));
+check('no LITERAL force-ON twin (mig 205 flips via a loop over VALUES (?, true))', !new RegExp(`VALUES \\('${KEY}', 'true'\\)`).test(src));
+check('graduated inside the @DEFAULT_FLIP 205 batch block', new RegExp(`@DEFAULT_FLIP 205[\\s\\S]*?'${KEY}'[\\s\\S]*?VALUES \\(205\\)`).test(src));
 check('mig 162 carries its ⚑ FLIP GATE line + the HARD dep (mig 153 + template_pad_window_code)',
       /migration 162:[\s\S]{0,2400}FLIP GATE/.test(src) && /migration 162:[\s\S]{0,2400}template_taught_corrob_adopt/.test(src));
+// deskew_retry_field_adopt GRADUATED (mig 205) so its note left dark_switches; the HARD dep stays pinned on
+// the mig-162 seed block above, and the C10 mig-142 precondition now rides the still-dark
+// optional_soft_flag_autofile note (_isLaneHoldNote must be never-soft before any mig-142 flip).
 const ds = fs.readFileSync(path.join(ROOT, 'database', 'dark_switches.js'), 'utf8');
-check('dark_switches names the HARD dep + the C10 mig-142 flip precondition',
-      /deskew_retry_field_adopt[\s\S]{0,1600}template_taught_corrob_adopt/.test(ds) && /NAMED FLIP PRECONDITION[\s\S]{0,600}_isLaneHoldNote/.test(ds));
+check('dark_switches still records the C10 mig-142 precondition (_isLaneHoldNote never soft)',
+      /NAMED PRECONDITION[\s\S]{0,600}_isLaneHoldNote/.test(ds));
 
 // ── 2. the nested bridge ─────────────────────────────────────────────────────────────────────────────
 console.log('\n2. _reconcileEnv nesting (child never outlives the parent)');
