@@ -1647,6 +1647,13 @@ async function renderDocDepartment(doc) {
   const box = document.getElementById('doc-dept-checks');
   const msg = document.getElementById('doc-dept-msg');
   if (!row || !box || !window.docusnap?.dept) return;
+  // Owner 2026-09-22: the visibility ("Visible to") section is removed from Review — it clutters the review of
+  // an individual document. A document's departments come from the type default at confirm; the server access
+  // gate still enforces visibility regardless of the UI. Hide the row for everyone here. (Code kept below for a
+  // quick restore / future relocation to a document-detail screen if per-doc changes are wanted again.)
+  row.style.display = 'none';
+  return;
+  // eslint-disable-next-line no-unreachable
   // Owner 2026-09-21: regular (non-admin) users don't need to SEE a document's visibility — only an admin
   // sets it. Hide the "Visible to" row entirely for edit/readonly; the server access gate still enforces
   // visibility regardless of the UI. (Admin keeps full control below.)
@@ -3218,6 +3225,10 @@ function renderExtractionStatus(doc) {
   if (!el) return;
   el.innerHTML = '';
   if (!doc) return;
+  // Owner 2026-09-22 (teach-first direction): the "Recognised by" / "Fields read by" cards are developer
+  // detail the average user doesn't need. Show them ONLY when the hidden SFDEV console is unlocked (it sets
+  // body[data-sfdev]); a normal user sees a clean review with no extraction-method chips.
+  if (document.body.dataset.sfdev !== '1') return;
 
   // ── Identification ─────────────────────────────────────────────────────────
   const hasTemplate = !!doc.template_id;
@@ -11606,6 +11617,8 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     const ok = await openPasswordModal();
     if (!ok) return;
     active = true;
+    document.body.dataset.sfdev = '1';                     // reveal the SFDEV-only cards (Recognised by / Fields read by)
+    try { if (currentDoc) renderExtractionStatus(currentDoc); } catch {}
     panel.hidden = false;
     elDoc.textContent = currentDoc ? currentDoc.original_filename : '(no document selected)';
     // Load the shared validation_patterns so rxBadge() can score values against
@@ -11618,6 +11631,8 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
   async function close() {
     if (!active) return;
     active = false;
+    delete document.body.dataset.sfdev;                   // hide the dev-only cards again
+    try { if (currentDoc) renderExtractionStatus(currentDoc); } catch {}
     panel.hidden = true;
     try { await window.docusnap.reviewTraceSet(false); } catch {}
   }
