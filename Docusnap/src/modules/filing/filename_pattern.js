@@ -272,6 +272,26 @@ function buildFolderSegments(pattern, values) {
     .filter(Boolean);
 }
 
+// F3 (2026-09-22, owner): the folder scheme for Quick File / RECORD-type documents —
+// `<Record Type name> / <KEY field value>` then (option b) the customer's {year}/{month}
+// tail. Each level runs through the SAME Windows-safety pass as a filename stem (illegal
+// chars stripped, reserved device names defused, separator edges trimmed) — Oracle C5. Unlike
+// buildFolderSegments, the two identity levels are NEVER silently dropped: an empty type →
+// 'Records', an empty key value → 'Unfiled' (a visible, searchable fail-safe, mirroring the
+// 'Unknown Company' design — the doc lands in one obvious folder to fix, never a blank/unsafe
+// level and never silently under the supplier tree). `values` supplies {year}/{month} for the
+// tail. GENERIC: typeName + keyValue are whatever the record type / its key field resolve to —
+// no hard-coded field. Pure; the caller still enforces output-root containment on the join.
+const RECORD_UNFILED = 'Unfiled';
+function buildRecordFolderSegments(typeName, keyValue, values, opts = {}) {
+  const withDate = opts.withDate !== false;   // option (b) default: keep {year}/{month} under Type/Key
+  const type = buildFilenameStem(String(typeName == null ? '' : typeName), {}) || 'Records';
+  const key  = buildFilenameStem(String(keyValue == null ? '' : keyValue), {}) || RECORD_UNFILED;
+  const segs = [type, key];
+  if (withDate) segs.push(...buildFolderSegments('{year}/{month}', values || {}));
+  return segs;
+}
+
 module.exports = {
   DEFAULT_PATTERN,
   DEFAULT_FOLDER_PATTERN,
@@ -283,6 +303,8 @@ module.exports = {
   buildFilenameStem,
   buildFilename,
   buildFolderSegments,
+  buildRecordFolderSegments,
+  RECORD_UNFILED,
   resolveDuplicateFilename,
   resolveDuplicate,
   previewDuplicateName,

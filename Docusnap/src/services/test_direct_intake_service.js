@@ -165,6 +165,20 @@ console.log('§6 no customFields → byte-identical (only the four role rows; C8
   check('exactly the four role extractions when no custom fields given', r.ok && n === 4);
 }
 
+console.log('§7 F3 — record-folder scheme: submit passes recordScheme + merges the key field into allValues');
+{
+  const { db, inv } = freshDb(true);
+  let captured = null;
+  const capDeps = () => ({ ...deps(), commitDocument: async (args) => { captured = args; return { success: true, filename: 'F.docx', filePath: '/out/Child Record/Ava/2026/September/F.docx' }; } });
+  const r = await svc.submit(db, EDIT, baseInput(inv, { customFields: { child_name: 'Ava Thompson', address: '1 Elm', reference_number: 'SHOULD_NOT_LEAK' } }), capDeps());
+  check('submit ok', r.ok === true);
+  check('recordScheme:true passed to commitDocument (direct lane)', !!captured && captured.recordScheme === true);
+  check('the key custom field is merged into allValues (so the folder can key on it)', !!captured && captured.allValues && captured.allValues.child_name === 'Ava Thompson');
+  check('other non-role custom fields merged too', !!captured && captured.allValues.address === '1 Elm');
+  check('role keys still present + win', !!captured && captured.allValues.supplier_name === 'Acme Ltd');
+  check('C4: a custom field named reference_number does NOT leak into the {ref} token', !!captured && captured.allValues.reference_number === 'OL-2026');
+}
+
 console.log(`\n${fails ? 'FAIL' : 'PASS'} — ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);
 })();

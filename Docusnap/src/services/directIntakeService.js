@@ -171,12 +171,22 @@ async function submit(db, actor, input, deps = {}) {
     const workingPath = deps.ensureWorkingCopy
       ? deps.ensureWorkingCopy(deps.fs, deps.path, deps.inboxDir, srcPath, docId, originalFilename)
       : srcPath;
-    const allValues = { supplier_name: party, title,
+    // F3: the record folder KEY may be a custom field (e.g. child_name), which was dropped from
+    // allValues before commit — merge the non-role custom fields in so commitDocument can key the
+    // folder on it. Custom first, ROLE keys OVERLAY (role wins); EXCLUDE the ref/date fallback keys
+    // (reference_number/invoice_date) commitDocument reads as fallbacks (Oracle C4) so a custom field
+    // named like them can't leak into the {ref}/{date} filename tokens.
+    const FOLDER_MERGE_EXCLUDE = new Set([...ROLE_KEYS, 'reference_number', 'invoice_date']);
+    const recordCustom = {};
+    for (const k of Object.keys(customFields)) {
+      if (k && !FOLDER_MERGE_EXCLUDE.has(k) && customFields[k] != null && String(customFields[k]).trim() !== '') recordCustom[k] = String(customFields[k]);
+    }
+    const allValues = { ...recordCustom, supplier_name: party, title,
                         [dt.date_field_key]: docDate, [refKey]: (input.reference || '').trim() };
     const filed = await deps.commitDocument({
       db, fs: deps.fs, path: deps.path, outputRoot: deps.outputRoot, folderPath: staged,
       originalFilename, workingPath, existingFiledPath: null, allValues,
-      documentType: dt.name, dtInfo: dt, logger: deps.logger || (() => {}),
+      documentType: dt.name, dtInfo: dt, recordScheme: true, logger: deps.logger || (() => {}),
     });
     if (!filed || filed.success === false) throw new Error((filed && filed.error) || 'commit failed');
     storedPath = filed.filePath;             // commitDocument returns { success, filename, filePath }
@@ -275,12 +285,21 @@ async function update(db, actor, docId, patch, deps = {}) {
   let storedPath = doc.stored_path, storedFilename = doc.stored_filename, refiled = false;
   if (filingChanged && doc.stored_path) {
     try {
-      const allValues = { supplier_name: next.party, title: next.title, [dt.date_field_key]: docDate, [refKey]: next.reference };
+      // F3 (Oracle Condition 1): merge the non-role custom fields into allValues HERE too, so the record
+      // folder key (a custom field) is present on re-file — else an edit relocates the doc to <Type>/Unfiled/.
+      // Custom first, role keys overlay; exclude the ref/date fallback keys (Oracle C4).
+      const FOLDER_MERGE_EXCLUDE = new Set([...ROLE_KEYS, 'reference_number', 'invoice_date']);
+      const mergedForFolder = { ...existingCustom, ...customPatch };
+      const recordCustom = {};
+      for (const k of Object.keys(mergedForFolder)) {
+        if (k && !FOLDER_MERGE_EXCLUDE.has(k) && mergedForFolder[k] != null && String(mergedForFolder[k]).trim() !== '') recordCustom[k] = String(mergedForFolder[k]);
+      }
+      const allValues = { ...recordCustom, supplier_name: next.party, title: next.title, [dt.date_field_key]: docDate, [refKey]: next.reference };
       const filed = await deps.commitDocument({
         db, fs: deps.fs, path: deps.path, outputRoot: deps.outputRoot,
         folderPath: deps.path ? deps.path.dirname(doc.stored_path) : '', originalFilename: doc.original_filename,
         workingPath: doc.stored_path, existingFiledPath: doc.stored_path, allValues,
-        documentType: dt.name, dtInfo: dt, logger: deps.logger || (() => {}),
+        documentType: dt.name, dtInfo: dt, recordScheme: true, logger: deps.logger || (() => {}),
       });
       if (!filed || filed.success === false) throw new Error((filed && filed.error) || 'commit failed');
       const newPath = filed.filePath;

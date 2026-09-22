@@ -386,7 +386,8 @@ function deleteField(db, id) {
 function updateType(db, id, changes) {
   const allowed = ['name', 'enabled', 'ref_field_key',
                    'date_field_key', 'sort_order', 'title_aliases',
-                   'reading_mode', 'quick_file'];   // Slice 1 crossover: lanes editable. D7: default dept via setTypeDefaultDepartments
+                   'reading_mode', 'quick_file',       // Slice 1 crossover: lanes editable. D7: default dept via setTypeDefaultDepartments
+                   'folder_key_field'];                // F3 (mig 199): the Quick File folder key field (which field the doc files under)
   changes = { ...changes };
   // Title aliases: validate against the INCOMING name if renaming in the same call, else
   // the current row's name (so an alias equal to the new/old name is still rejected). Throws
@@ -425,8 +426,15 @@ function updateType(db, id, changes) {
   // Quick File picker) are editable. Oracle C2 invariant — a no-OCR type must stay reachable somewhere:
   // reading_mode='none' ⇒ quick_file=1, enforced on BOTH writes. Guard on the column so a pre-mig fixture
   // is unaffected; an unknown reading_mode falls back to 'read'.
-  const _hasQF = (() => { try { return db.prepare('PRAGMA table_info(document_types)').all().some(c => c.name === 'quick_file'); } catch { return false; } })();
+  const _cols = (() => { try { return new Set(db.prepare('PRAGMA table_info(document_types)').all().map(c => c.name)); } catch { return new Set(); } })();
+  const _hasQF = _cols.has('quick_file');
   if ('quick_file' in changes && !_hasQF) delete changes.quick_file;
+  // F3 (mig 199): normalise + guard the folder key field. Empty string → NULL (fall back to list-master →
+  // supplier_name). Dropped on a pre-mig fixture without the column.
+  if ('folder_key_field' in changes) {
+    if (!_cols.has('folder_key_field')) delete changes.folder_key_field;
+    else { const v = String(changes.folder_key_field || '').trim(); changes.folder_key_field = v === '' ? null : v; }
+  }
   if (_hasQF && (('reading_mode' in changes) || ('quick_file' in changes))) {
     const cur = db.prepare('SELECT reading_mode, quick_file FROM document_types WHERE id = ?').get(id) || {};
     let rm = ('reading_mode' in changes) ? String(changes.reading_mode || 'read') : String(cur.reading_mode || 'read');

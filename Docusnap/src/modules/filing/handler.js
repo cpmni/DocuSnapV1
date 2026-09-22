@@ -20,8 +20,30 @@ const MONTH_NAMES = [
 const {
   DEFAULT_PATTERN, DEFAULT_FOLDER_PATTERN, SUPPORTED_TOKENS, FIELD_TOKENS,
   buildFilename, buildFolderSegments, buildFilenameStem, resolveDuplicateFilename,
-  resolveDuplicate, previewDuplicateName,
+  resolveDuplicate, previewDuplicateName, buildRecordFolderSegments,
 } = require('./filename_pattern');
+
+// F3 (2026-09-22): which doc-type field a Quick File / record-type document files UNDER (its
+// second folder level, the "key field"). Precedence (gary → Oracle SIGN-OFF-W/COND): (a) an
+// explicit `folder_key_field` the admin chose (mig 199) → (b) the field mapped to the bound
+// Records list's master column → (c) 'supplier_name' (today's identity, the safe default). Never
+// hard-codes a field — GENERIC across any custom record type. Read-only.
+function resolveRecordFolderKey(db, dtInfo) {
+  if (!dtInfo) return 'supplier_name';
+  if (dtInfo.folder_key_field) return String(dtInfo.folder_key_field);
+  try {
+    const lookup = require('../../../database/modules/lookup');
+    const listId = lookup.getListForType(db, dtInfo.id);
+    if (listId != null) {
+      const list = lookup.getList(db, listId);
+      if (list && list.master_key) {
+        const m = lookup.getFieldMaps(db, dtInfo.id).find(x => x.column_key === list.master_key && x.list_id === listId);
+        if (m && m.field_key) return String(m.field_key);
+      }
+    }
+  } catch { /* lookup unavailable → default */ }
+  return 'supplier_name';
+}
 
 // ── Register IPC ──────────────────────────────────────────────────────────────
 // commitDocument itself is called internally by review/handler.js — the only
@@ -97,6 +119,7 @@ async function commitDocument({
   allValues,
   documentType,
   dtInfo,
+  recordScheme,        // F3: set ONLY by the direct-intake lane (directIntakeService) — never the OCR road
   logger,
 }) {
   // ── 1. Determine filename components ────────────────────────────────────────
@@ -162,7 +185,22 @@ async function commitDocument({
     year:     tokenValues.year  || 'Unknown Year',
     month:    tokenValues.month || 'Unknown Month',
   };
-  const segments = buildFolderSegments(folderPattern, folderValues);
+  // F3 (owner 2026-09-22; gary → Oracle SIGN-OFF-W/COND): a Quick File / record-type document
+  // files under <Record Type> / <key field value> / {year}/{month} (option b), instead of the
+  // supplier-keyed folder pattern. GATED ON THE DIRECT-INTAKE LANE (recordScheme, set only by
+  // directIntakeService) — NOT the type flag — so a crossover type's OCR docs (review/processing
+  // road, no flag) stay byte-identical (the crossover PIN locks this). Kill switch
+  // quickfile_record_folders (seeded on by mig 199). An empty key value → a visible <Type>/Unfiled/
+  // level (fail-toward-visible, never the supplier tree).
+  const docTypesMod = require('../../../database/modules/document_types');
+  const recordFoldersOn = learning.getSetting(db, 'quickfile_record_folders', 'true') !== 'false';
+  let segments;
+  if (recordScheme && recordFoldersOn && docTypesMod.isQuickFileType(dtInfo || {})) {
+    const keyField = resolveRecordFolderKey(db, dtInfo);
+    segments = buildRecordFolderSegments(documentType || (dtInfo && dtInfo.name), allValues[keyField], folderValues, { withDate: true });
+  } else {
+    segments = buildFolderSegments(folderPattern, folderValues);
+  }
 
   const targetDir = path.join(outputRoot, ...segments);
   // SECURITY (F-08): defence in depth — even after sanitisation, never let the

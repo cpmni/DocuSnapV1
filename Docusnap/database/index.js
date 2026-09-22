@@ -4047,6 +4047,24 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 198 (quickfile_multidoc): ${e.message}`); }
   }
 
+  // mig 199 (2026-09-22): F3 — the Quick File / record-type FOLDER scheme (owner; gary → Oracle SIGN-OFF-W/COND).
+  // A Quick File doc files under <Record Type> / <key field> / {year}/{month} instead of the supplier-keyed
+  // folder pattern (option b), gated on the direct-intake lane (recordScheme) so OCR filing is byte-identical.
+  //  - document_types.folder_key_field (nullable) = the admin's explicit choice of which field is the folder key
+  //    for a Quick File type WITHOUT a bound Records list (list-bound types derive it from the list master). NULL
+  //    = resolve list-master → 'supplier_name' default. Additive; byte-identical when NULL.
+  //  - quickfile_record_folders = the kill switch, seeded ON (this IS the F3 fix and OCR filing is untouched;
+  //    an admin can set it 'false' to keep the old supplier-tree layout for typed docs).
+  if (!applied.has(199)) {
+    try {
+      const hasCol = db.prepare("PRAGMA table_info(document_types)").all().some(c => c.name === 'folder_key_field');
+      if (!hasCol) db.prepare('ALTER TABLE document_types ADD COLUMN folder_key_field TEXT').run();
+      db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('quickfile_record_folders', 'true')").run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (199)').run();
+      console.log('JS migration 199 applied: document_types.folder_key_field + quickfile_record_folders ON (F3 record-folder scheme)');
+    } catch (e) { console.warn(`  migration 199 (quickfile_record_folders): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

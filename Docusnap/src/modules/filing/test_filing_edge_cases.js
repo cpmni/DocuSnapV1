@@ -118,6 +118,73 @@ const underRoot = (p) => { const r = path.resolve(OUTPUT), t = path.resolve(p); 
     check("'number' → bare -N counter, no word", /-\d+\.pdf$/.test(path.basename(numR.filePath)) && !/DUPLICATE|COPY/i.test(path.basename(numR.filePath)), path.basename(numR.filePath));
     setSetting(db, 'duplicate_suffix', 'DUPLICATE');      // restore default before the root sweep
   }
+  // 13. F3 (2026-09-22) — Quick File / RECORD-type folder scheme: <Type>/<Key>/{year}/{month}, gated on the
+  //     direct-intake LANE (recordScheme), NOT the type flag. OCR filing byte-identical (Oracle SIGN-OFF-W/COND).
+  const relSegs = (r) => r.filePath.replace(OUTPUT + path.sep, '').split(path.sep);
+  async function fileRec(allValues, dtInfo, { recordScheme = true, existingFiledPath = null } = {}) {
+    return filing.commitDocument({
+      db, fs, path, outputRoot: OUTPUT, folderPath: WORK, originalFilename: 'scan.pdf',
+      workingPath: workingCopy(), existingFiledPath, allValues, documentType: dtInfo.name, dtInfo, recordScheme, logger: null,
+    });
+  }
+  {
+    // 13a — explicit folder_key_field (a custom field) → <Type>/<Key>/<Year>/<Month>.
+    const dt = { id: 90001, name: 'Child Record', date_field_key: 'invoice_date', quick_file: 1, folder_key_field: 'child_name' };
+    const r = await fileRec({ child_name: 'Ava Thompson', supplier_name: 'IGNORED', invoice_date: '10-10-2024' }, dt);
+    const s = relSegs(r);
+    check('13a record scheme files under <Type>/<Key>/<Year>/<Month>',
+      r.success && s[0] === 'Child Record' && s[1] === 'Ava Thompson' && s[2] === '2024' && s[3] === 'October' && underRoot(r.filePath), s.slice(0,4).join('/'));
+    check('13a the key is the custom field, NOT supplier_name', !s.includes('IGNORED'));
+  }
+  {
+    // 13b — empty key value → visible <Type>/Unfiled/ (never silently the supplier tree, never a dropped level).
+    const dt = { id: 90002, name: 'Child Record', date_field_key: 'invoice_date', quick_file: 1, folder_key_field: 'child_name' };
+    const r = await fileRec({ child_name: '   ', supplier_name: 'Acme', invoice_date: '11-11-2024' }, dt);
+    const s = relSegs(r);
+    check('13b empty key → <Type>/Unfiled/', r.success && s[0] === 'Child Record' && s[1] === 'Unfiled', s.slice(0,2).join('/'));
+  }
+  {
+    // 13c — CROSSOVER SEAM (the load-bearing pin): a quick_file type filed via the OCR road (recordScheme
+    // ABSENT) MUST stay on the supplier scheme, byte-identical. This is what a caller-gate buys over a type-gate.
+    const dt = { id: 90003, name: 'Child Record', ref_field_key: 'invoice_number', date_field_key: 'invoice_date', quick_file: 1 };
+    const r = await fileRec({ supplier_name: 'Acme Ltd', invoice_number: 'INV-9', invoice_date: '12-12-2024' }, dt, { recordScheme: false });
+    const s = relSegs(r);
+    // supplier scheme substitutes the {supplier} token → spaces become dashes ("Acme-Ltd"); the record
+    // scheme would have produced "Child Record/…". The point: the OCR road NEVER enters the record branch.
+    check('13c crossover type via OCR road (no recordScheme) → supplier scheme, NOT <Type>/<Key>',
+      r.success && s[0] === 'Acme-Ltd' && s[0] !== 'Child Record' && s[1] === '2024', s.slice(0,3).join('/'));
+  }
+  {
+    // 13d — kill switch off → even the direct lane uses the supplier scheme.
+    const { setSetting } = require('../../../database/modules/learning');
+    setSetting(db, 'quickfile_record_folders', 'false');
+    const dt = { id: 90004, name: 'Child Record', date_field_key: 'invoice_date', quick_file: 1, folder_key_field: 'child_name' };
+    const r = await fileRec({ child_name: 'Ava Thompson', supplier_name: 'Acme', invoice_date: '01-01-2025' }, dt);
+    const s = relSegs(r);
+    check('13d quickfile_record_folders off → supplier scheme (record scheme disabled)', r.success && s[0] === 'Acme' && s[0] !== 'Child Record');
+    setSetting(db, 'quickfile_record_folders', 'true');
+  }
+  {
+    // 13e — resolver default (c): a Quick File type with no folder_key_field + no bound list keys on supplier_name.
+    const dt = { id: 90005, name: 'Receipt', date_field_key: 'invoice_date', quick_file: 1 };
+    const r = await fileRec({ supplier_name: 'Corner Shop', invoice_date: '02-02-2025' }, dt);
+    const s = relSegs(r);
+    check('13e no key field + no list → keys on supplier_name under the type', r.success && s[0] === 'Receipt' && s[1] === 'Corner Shop', s.slice(0,2).join('/'));
+  }
+  {
+    // 13f — resolver branch (b): key derived from a BOUND Records list's master mapping (no folder_key_field).
+    const docTypes = require('../../../database/modules/document_types');
+    const lookup = require('../../../database/modules/lookup');
+    const created = docTypes.createTypeWithFields(db, { name: 'Tenant', fields: [{ key: 'tenant_name', label: 'Tenant name' }] });
+    docTypes.updateType(db, created.id, { reading_mode: 'none', quick_file: 1 });
+    const list = lookup.createList(db, { name: 'Tenants', master_key: 'tenant_name', columns: [{ key: 'tenant_name', label: 'Tenant name' }] });
+    lookup.setFieldMaps(db, created.id, list.id, [{ field_key: 'tenant_name', column_key: 'tenant_name', is_trigger: 1 }]);
+    const dtRow = db.prepare('SELECT * FROM document_types WHERE id=?').get(created.id);
+    const r = await fileRec({ tenant_name: 'John Smith', supplier_name: 'IGNORED', invoice_date: '03-03-2025' }, dtRow);
+    const s = relSegs(r);
+    check('13f list-bound type keys on the list-master field (tenant_name), not supplier', r.success && s[0] === 'Tenant' && s[1] === 'John Smith', s.slice(0,2).join('/'));
+  }
+
   // 12. EVERY produced path in this run is contained (defence-in-depth sweep already asserted per-case).
   check('no filing escaped the output root (root sweep)', fs.readdirSync(ROOT).length >= 1);
 
