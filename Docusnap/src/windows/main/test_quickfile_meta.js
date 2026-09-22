@@ -32,5 +32,24 @@ check('title is NOT inherited (per-doc always)', filled.values.title === 'Mine')
 const inheritCustom = m.withDefaults({ values: { customFields: {} } }, shared);
 check('blank custom inherits the shared custom default', inheritCustom.values.customFields.room === 'Blue');
 
+console.log('§4 F6 — isReady keys on the RESOLVED folder key field (green ⟺ files to a real <Type>/<Key>)');
+{
+  // Back-compat: no key → the party check (supplier-keyed types unchanged).
+  check('no key opts → party check (back-compat)', m.isReady(e1) === true && m.isReady({ values: { party: '' } }) === false);
+  // Custom key field: ready ONLY when THAT field has a value — a set party does NOT make it ready.
+  const key = { keyField: 'child_name', dateKey: 'dob', refKey: 'reference_number' };
+  check('custom keyField set → ready', m.isReady({ values: { party: '', customFields: { child_name: 'Ava Thompson' } } }, key) === true);
+  check('custom keyField blank but party set → NOT ready (the F6 footgun: would file to Unfiled)',
+        m.isReady({ values: { party: 'Sunnydays', customFields: { child_name: '' } } }, key) === false);
+  // The full seam: an entry that INHERITED a shared party but has no own key value stays amber after withDefaults.
+  const shared2 = { party: 'Sunnydays Nursery', date: '', reference: '', notes: '', customFields: {} };
+  const inherited = m.withDefaults({ values: { party: '', customFields: {} } }, shared2);
+  check('inherited shared party + empty key field → still NOT ready (dot stays amber)', m.isReady(inherited, key) === false);
+  // resolvedKeyValue maps each role correctly.
+  check('resolvedKeyValue: supplier_name→party', m.resolvedKeyValue({ values: { party: 'P' } }, { keyField: 'supplier_name' }) === 'P');
+  check('resolvedKeyValue: date role→date', m.resolvedKeyValue({ values: { date: '2026-01-01' } }, { keyField: 'dob', dateKey: 'dob' }) === '2026-01-01');
+  check('resolvedKeyValue: ref role→reference', m.resolvedKeyValue({ values: { reference: 'R9' } }, { keyField: 'reference_number', refKey: 'reference_number' }) === 'R9');
+}
+
 console.log(`\n${fails ? 'FAIL' : 'PASS'} — ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);

@@ -123,6 +123,7 @@ function register(ctx) {
       .filter(t => docTypes.isQuickFileType(t))   // Slice 1 crossover: quick_file=1 OR reading_mode='none' (Oracle C1 parity)
       .map(t => ({ id: t.id, name: t.name, slug: t.slug,
         date_field_key: t.date_field_key || null, ref_field_key: t.ref_field_key || null,
+        folder_key_field: t.folder_key_field || null,   // F3: which field the record folder keys on (for the F6 ready-dot)
         // Slice 0: the type's fields so the pane can render per-type CUSTOM inputs (it excludes the role keys).
         fields: (t.fields || []).map(f => ({ key: f.key, label: f.label, type: f.type, required: !!f.required })) }));
     const presets = (docTypes.getPresetCatalog(db) || [])

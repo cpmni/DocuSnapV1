@@ -2058,6 +2058,11 @@ function renderDocTypeDetail(type) {
       </select>
       <div class="field-label-small" style="color:var(--muted); margin-top:4px;">Quick File types are never auto-read and appear in the Quick File screen. &ldquo;Both&rdquo; lets a type be scanned <em>and</em> quick-filed.</div>
     </div>
+    <div id="dt-folderkey-row" style="margin:2px 0 12px; display:none;">
+      <label class="field-label-small" for="dt-folderkey" style="display:block; margin-bottom:4px; font-weight:600;">File these under (folder key)</label>
+      <select id="dt-folderkey" class="input" style="max-width:320px;"></select>
+      <div class="field-label-small" style="color:var(--muted); margin-top:4px;">Quick File documents of this type file under <em>Type&nbsp;/&nbsp;this field&nbsp;/&nbsp;year&nbsp;/&nbsp;month</em>. Leave it on the default and a bound Records-list&rsquo;s main field is used automatically.</div>
+    </div>
     <div id="dt-editor-host"></div>
     <div id="dt-lookup-host"></div>`;
 
@@ -2106,6 +2111,30 @@ function renderDocTypeDetail(type) {
       await refreshDocTypesList();
       selectDocType(type.id);
     });
+  }
+
+  // F3 (mig 199): the folder KEY field for a Quick File type without a bound Records list (list-bound types
+  // derive it from the list master). Shown only for Quick File lanes. '' = default (list-master → supplier_name).
+  const fkRow = document.getElementById('dt-folderkey-row');
+  const fkSel = document.getElementById('dt-folderkey');
+  if (fkRow && fkSel) {
+    const isQuick = _laneOf(type) !== 'scanned';
+    fkRow.style.display = isQuick ? '' : 'none';
+    if (isQuick) {
+      fkSel.innerHTML = '';
+      const def = document.createElement('option');
+      def.value = ''; def.textContent = 'Default (Company / Person, or the Records-list main field)';
+      fkSel.appendChild(def);
+      for (const f of (type.fields || [])) {
+        if (!f || !f.key) continue;
+        const o = document.createElement('option'); o.value = f.key; o.textContent = f.label || f.key; fkSel.appendChild(o);
+      }
+      fkSel.value = type.folder_key_field || '';
+      fkSel.addEventListener('change', async () => {
+        const r = await api.updateDocumentType(type.id, { folder_key_field: fkSel.value || null });
+        if (r && r.error) alert(r.error);
+      });
+    }
   }
 
   dtEditor = window.DocTypeEditor.create(

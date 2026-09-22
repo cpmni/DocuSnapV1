@@ -72,9 +72,15 @@ console.log('4. multi-doc pane (S4a) + typeahead (S4b) wiring — Oracle conditi
   check('EXACT1: getThumbnail destructures + forwards exact', /function getThumbnail\(db, \{ docId, folderPath, filename, exact \}/.test(prev) && /_resolveDocFile\(db, \{ docId, folderPath, filename, exact \}/.test(prev));
   // MC2 — the pane uses the shared pinned meta helper (window.quickfileMeta), loaded before the pane.
   check('MC2: quickfileMeta.js loaded before quickfileView.js', /quickfileMeta\.js"><\/script>[\s\S]{0,120}quickfileView\.js/.test(html));
-  check('MC2: doFile builds per-doc meta via window.quickfileMeta (buildMeta/withDefaults)', /window\.quickfileMeta[\s\S]{0,400}QF\.withDefaults\(f, sharedVals\)[\s\S]{0,200}QF\.buildMeta\(documentTypeId, merged\)/.test(qf));
+  check('MC2: doFile builds per-doc meta via window.quickfileMeta (buildMeta/withDefaults)', /window\.quickfileMeta[\s\S]{0,400}QF\.withDefaults\(f, sharedVals\)[\s\S]{0,400}QF\.buildMeta\(documentTypeId, merged\)/.test(qf));
   // S4b — typeahead on the bound list's trigger field.
   check('S4b: typeahead calls lookup.suggest + lookup.resolve', /D\.lookup\.suggest\(/.test(qf) && /D\.lookup\.resolve\(/.test(qf));
+  // F6 (2026-09-22): the multi-doc "ready" dot keys on the RESOLVED folder key field, not just party.
+  check('F6: renderMultiDoc ready dot uses isReady(..., _recordKey)', /QF\.isReady\(QF\.withDefaults\(f, shared\), _recordKey \|\| undefined\)/.test(qf));
+  check('F6: doFile loop also gates on the resolved key (isReady(merged, _recordKey))', /QF\.isReady\(merged, _recordKey \|\| undefined\)/.test(qf));
+  check('F6: _resolveRecordKey precedence folder_key_field → list-master trigger → supplier_name',
+        /keyField = \(t\.folder_key_field[\s\S]{0,240}triggerFieldKey[\s\S]{0,120}keyField \|\| 'supplier_name'/.test(qf));
+  check('F6: direct-intake-doctypes exposes folder_key_field for the resolver', /folder_key_field: t\.folder_key_field/.test(di));
 }
 
 console.log('5. F1 (2026-09-21 Chris vet) — el() skips null kids; twin parity with lookupAdmin.js');

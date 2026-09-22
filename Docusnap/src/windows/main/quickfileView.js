@@ -120,7 +120,7 @@
     for (const t of (installed || [])) { opts.push(el('option', { value: String(t.id) }, t.name)); seen.add(t.slug); }
     for (const p of (presets || [])) { if (!seen.has(p.slug)) opts.push(el('option', { value: 'new:' + p.slug }, p.name)); }
     typeSelect = el('select', { className: 'qf-in', style: { appearance: 'auto' } }, opts);
-    typeSelect.addEventListener('change', () => { renderCustomFields(); refreshTypeahead(); });
+    typeSelect.addEventListener('change', () => { renderCustomFields(); refreshTypeahead(); _resolveRecordKey(); });
     typeRow.appendChild(typeSelect);
     if (!opts.length) typeRow.appendChild(el('div', { className: 'muted', style: { fontSize: '12px', color: 'var(--muted)', marginTop: '4px' } }, 'No Quick File types available.'));
     renderCustomFields();
@@ -265,6 +265,28 @@
   function _ensureValues() { for (const f of staged) { if (!f.values) f.values = { customFields: {} }; if (!f.values.customFields) f.values.customFields = {}; if (f.values.title == null) f.values.title = stem(f.name); } }
   function _selectedType() { const tv = typeSelect && typeSelect.value; if (!tv || tv.indexOf('new:') === 0) return null; return installedTypes.find((x) => String(x.id) === String(tv)) || null; }
 
+  // F6 (2026-09-22): the record FOLDER KEY for the selected type — resolved exactly as the backend
+  // resolveRecordFolderKey does (folder_key_field → bound-list master mapping → 'supplier_name'), so the
+  // multi-doc "ready" dot lights green ⟺ the doc files to a real <Type>/<Key>/ folder (amber ⟺ Unfiled).
+  let _recordKey = null;   // { keyField, dateKey, refKey, label }
+  function _labelForKey(t, key) {
+    if (!key || key === 'supplier_name') return 'a company or person';
+    const f = (t && Array.isArray(t.fields)) ? t.fields.find((x) => x && x.key === key) : null;
+    return (f && (f.label || f.key)) || key;
+  }
+  async function _resolveRecordKey() {
+    _recordKey = null;
+    const t = _selectedType();
+    if (!t) return;
+    let keyField = (t.folder_key_field && String(t.folder_key_field)) || null;
+    if (!keyField && D.lookup && D.lookup.typeBinding) {
+      try { const b = await D.lookup.typeBinding(t.id); if (b && b.ok && b.bound && b.triggerFieldKey) keyField = b.triggerFieldKey; } catch {}
+    }
+    keyField = keyField || 'supplier_name';
+    _recordKey = { keyField, dateKey: t.date_field_key || null, refKey: t.ref_field_key || 'reference_number', label: _labelForKey(t, keyField) };
+    if (multiDocEnabled && staged.length > 1) renderFiles();   // repaint the dots with the resolved key
+  }
+
   async function _loadPreview(f, imgHost) {
     let pv = _previewCache.get(f.token);
     if (!pv) { try { pv = await D.quickFilePreview(f.token); } catch { pv = { ok: true, renderable: false }; } if (pv && pv.ok) _previewCache.set(f.token, pv); }
@@ -291,13 +313,14 @@
     filesBox.appendChild(wrap);
 
     staged.forEach((f, i) => {
-      const ready = QF ? QF.isReady(QF.withDefaults(f, shared)) : true;
+      const ready = QF ? QF.isReady(QF.withDefaults(f, shared), _recordKey || undefined) : true;
+      const needLabel = (_recordKey && _recordKey.label) || 'a company or person';
       const cell = el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', padding: '6px', cursor: 'pointer',
         border: i === _qfFocusedIdx ? '2px solid var(--accent)' : '1px solid var(--border)', borderRadius: 'var(--r-sm)', background: 'var(--surface)' } });
       const thumb = el('div', { style: { flex: '0 0 40px', height: '48px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', overflow: 'hidden' } });
       cell.appendChild(thumb);
       cell.appendChild(el('span', { style: { flex: '1', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: f.name }, f.values.title || f.name));
-      cell.appendChild(el('span', { title: ready ? 'Ready to file' : 'Needs a company or person', style: { flex: '0 0 auto', width: '9px', height: '9px', borderRadius: '50%', background: f.filed ? 'var(--muted)' : (ready ? 'var(--ok)' : 'var(--warn)') } }));
+      cell.appendChild(el('span', { title: ready ? 'Ready to file' : `Needs ${needLabel} — files under “Unfiled” until set`, style: { flex: '0 0 auto', width: '9px', height: '9px', borderRadius: '50%', background: f.filed ? 'var(--muted)' : (ready ? 'var(--ok)' : 'var(--warn)') } }));
       const rm = el('button', { className: 'btn-mini', type: 'button', title: 'Remove' }, '×');
       rm.addEventListener('click', (e) => { e.stopPropagation(); staged = staged.filter((x) => x !== f); _previewCache.delete(f.token); renderFiles(); });
       cell.appendChild(rm);
@@ -383,7 +406,7 @@
         documentTypeId = ar.type.id;
         const fresh = await D.quickFileDocTypes(); renderTypeRow(fresh.installed, fresh.presets);
         for (const o of typeSelect.options) if (Number(o.value) === documentTypeId) typeSelect.value = o.value;
-        renderCustomFields(); refreshTypeahead();
+        renderCustomFields(); refreshTypeahead(); _resolveRecordKey();
       } catch { msg.style.color = 'var(--warn)'; msg.textContent = 'Could not set up that type.'; reEnable(); return; }
     } else documentTypeId = Number(tv);
     // Slice 0: gather the per-type custom field values (shared across the staged files, like party/date/notes).
@@ -400,7 +423,8 @@
       for (const f of staged) {
         if (!f.values) f.values = { customFields: {} };
         const merged = QF.withDefaults(f, sharedVals);
-        if (!QF.isReady(merged)) { f.error = 'Needs a company or person'; remain.push(f); if (!firstErr) firstErr = `${f.name}: needs a company or person`; continue; }
+        const needLabel = (_recordKey && _recordKey.label) || 'a company or person';
+        if (!QF.isReady(merged, _recordKey || undefined)) { f.error = `Needs ${needLabel}`; remain.push(f); if (!firstErr) firstErr = `${f.name}: needs ${needLabel}`; continue; }
         const meta = QF.buildMeta(documentTypeId, merged);
         meta.title = (merged.values.title || '').trim() || stem(f.name);
         try {
@@ -540,6 +564,7 @@
     try { multiDocEnabled = String(await D.getSetting('quickfile_multidoc_enabled')) === 'true'; } catch { multiDocEnabled = false; }
     await refreshTypes();
     refreshTypeahead();
+    _resolveRecordKey();
     setTimeout(() => { try { partyI && partyI.focus(); } catch {} }, 30);
   }
 
