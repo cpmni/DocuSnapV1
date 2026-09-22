@@ -335,34 +335,46 @@
   // Zoom/pan document viewer for the focused staged file (owner 2026-09-22). Scroll = zoom, right-drag = pan
   // (the Review/Search model). Listeners live on the viewer element so a re-render (renderFiles) GCs them —
   // no window-level leak. Non-renderable (office/email/gone) → an icon card.
-  async function _mountPreviewViewer(viewer, f) {
-    viewer.replaceChildren();
+  async function _mountPreviewViewer(wrap, f) {
+    wrap.replaceChildren();
     let pv = _previewCache.get(f.token);
     if (!pv) { try { pv = await D.quickFilePreview(f.token); } catch { pv = { ok: true, renderable: false }; } if (pv && pv.ok) _previewCache.set(f.token, pv); }
     if (!pv || !pv.renderable || !pv.dataUrl) {
-      viewer.style.cursor = 'default';
       const card = el('div', { style: { position: 'absolute', inset: '0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' } });
-      card.appendChild(_svgIco('i-book', 30));
+      card.appendChild(_svgIco('i-book', 32));
       card.appendChild(el('div', { style: { fontSize: '12px', marginTop: '6px', wordBreak: 'break-all' } }, (pv && pv.kind && pv.kind !== 'expired') ? String(pv.kind).replace('.', '').toUpperCase() : 'No preview'));
-      viewer.appendChild(card);
+      wrap.appendChild(card);
       return;
     }
-    let zoom = 1;
+    // A scroll pane (fills the wrapper) holds the image; the zoom controls sit ABOVE it, pinned top-right, so
+    // they don't scroll with the page (matches the Review/Search viewers).
+    const scroll = el('div', { style: { position: 'absolute', inset: '0', overflow: 'auto', cursor: 'grab' } });
     const img = el('img', { src: pv.dataUrl, alt: '', style: { display: 'block', width: '100%', maxWidth: 'none', userSelect: 'none', pointerEvents: 'none' } });
-    viewer.appendChild(img);
-    viewer.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const before = zoom;
-      zoom = Math.min(6, Math.max(0.4, zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
-      if (zoom !== before) img.style.width = (zoom * 100) + '%';
-    }, { passive: false });
+    scroll.appendChild(img);
+    wrap.appendChild(scroll);
+
+    let zoom = 1;
+    const setZoom = (z) => { zoom = Math.min(6, Math.max(0.4, z)); img.style.width = (zoom * 100) + '%'; };
+    const zbtn = (label, title, fn) => {
+      const b = el('button', { className: 'btn', type: 'button', title, style: { padding: '2px 0', width: '30px', fontSize: '16px', lineHeight: '1.1' } }, label);
+      b.addEventListener('click', (e) => { e.preventDefault(); fn(); });
+      return b;
+    };
+    const controls = el('div', { style: { position: 'absolute', top: '8px', right: '8px', zIndex: '5', display: 'flex', gap: '4px',
+      background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', padding: '3px', boxShadow: '0 2px 8px rgba(0,0,0,.14)' } });
+    controls.appendChild(zbtn('−', 'Zoom out', () => setZoom(zoom / 1.25)));
+    controls.appendChild(zbtn('⤢', 'Fit', () => { setZoom(1); scroll.scrollTop = 0; scroll.scrollLeft = 0; }));
+    controls.appendChild(zbtn('+', 'Zoom in', () => setZoom(zoom * 1.25)));
+    wrap.appendChild(controls);
+
+    scroll.addEventListener('wheel', (e) => { e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15)); }, { passive: false });
     let panning = false, sx = 0, sy = 0, sl = 0, st = 0;
-    viewer.addEventListener('contextmenu', (e) => e.preventDefault());
-    viewer.addEventListener('mousedown', (e) => { if (e.button !== 2) return; e.preventDefault(); panning = true; sx = e.clientX; sy = e.clientY; sl = viewer.scrollLeft; st = viewer.scrollTop; viewer.style.cursor = 'grabbing'; });
-    viewer.addEventListener('mousemove', (e) => { if (!panning) return; viewer.scrollLeft = sl - (e.clientX - sx); viewer.scrollTop = st - (e.clientY - sy); });
-    const endPan = () => { if (panning) { panning = false; viewer.style.cursor = 'grab'; } };
-    viewer.addEventListener('mouseup', endPan);
-    viewer.addEventListener('mouseleave', endPan);
+    scroll.addEventListener('contextmenu', (e) => e.preventDefault());
+    scroll.addEventListener('mousedown', (e) => { if (e.button !== 2) return; e.preventDefault(); panning = true; sx = e.clientX; sy = e.clientY; sl = scroll.scrollLeft; st = scroll.scrollTop; scroll.style.cursor = 'grabbing'; });
+    scroll.addEventListener('mousemove', (e) => { if (!panning) return; scroll.scrollLeft = sl - (e.clientX - sx); scroll.scrollTop = st - (e.clientY - sy); });
+    const endPan = () => { if (panning) { panning = false; scroll.style.cursor = 'grab'; } };
+    scroll.addEventListener('mouseup', endPan);
+    scroll.addEventListener('mouseleave', endPan);
   }
 
   function _renderFocused(host, f, shared) {
@@ -370,9 +382,9 @@
     const t = _selectedType();
     // Big preview — a proper zoom/pan viewer (owner 2026-09-22): scroll to zoom, right-click-drag to pan,
     // matching the Review/Search document viewers.
-    const prev = el('div', { style: { position: 'relative', height: '380px', overflow: 'auto', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)', cursor: 'grab' } });
+    const prev = el('div', { style: { position: 'relative', height: '560px', overflow: 'hidden', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)' } });
     host.appendChild(prev);
-    host.appendChild(el('div', { style: { fontSize: '11px', color: 'var(--muted)', margin: '4px 0 12px' } }, 'Scroll to zoom · right-click and drag to pan'));
+    host.appendChild(el('div', { style: { fontSize: '11px', color: 'var(--muted)', margin: '4px 0 12px' } }, 'Scroll to zoom · right-drag to pan · or use the buttons'));
     _mountPreviewViewer(prev, f);
     // Per-doc form — inputs close over THIS entry `f` (MC1). Placeholder shows the shared "applies to all".
     const mk = (labelText, input) => el('div', {}, [el('label', { className: 'qf-lbl' }, labelText), input]);
