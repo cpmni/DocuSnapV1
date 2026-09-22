@@ -32,7 +32,10 @@ const TEST_SWITCH_KEYS = Object.freeze([
   // ⚑ FLIP GATE (no seed migration — mig 106 was its only writer): the corroborated straighten auto-file's census
   //   was MET 2026-09-01 on the owner's DB, but DO NOT FLIP without a COLD census (M=7 there was poisoned GT) — owner's call.
   'deskew_corrob_autofile',
-  'quick_reprocess_enabled',
+  // quick_reprocess_enabled (mig 104) — GRADUATED to a customer default by mig 203 (2026-09-22, owner go): the
+  //   Reprocess-All dialog OFFERS the imageless Quick option (opt-in per batch). Vet: both unit pins green
+  //   (cache invalidators + the C1 contested-keep — Quick can never file what Full would hold, fail-safe).
+  //   DELISTED here in the same commit. Pinned by database/test_default_flip_203.js.
   // watch_separate_enabled — GRADUATED to a customer default by mig 175 (2026-09-16: the soak gate of
   //   docs/designs/WATCH_SEPARATE_SOAK_GATE_2026-09-02.md was RUN in a sandbox — analyzer PASS, real bundle 34/34,
   //   0 over-split, every segment held; TESTING/_measure/watch_separate_soak_20260916/) and DELISTED here the

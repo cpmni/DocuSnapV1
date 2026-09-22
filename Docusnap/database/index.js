@@ -4104,6 +4104,22 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 202 (ref_confusable_history_disarm default ON): ${e.message}`); }
   }
 
+  // mig 203 (2026-09-22): quick_reprocess_enabled ON by default (owner go). The "Reprocess all from X" dialog
+  // now OFFERS the faster imageless Quick option (opt-in per batch; Full stays the default choice). Vet:
+  // both unit pins green (test_ocr_cache_usable 23/23 all cache invalidators + the JS↔Python rev mirror;
+  // test_quick_reprocess_merge 125/125 — the C1 contested-keep is proven, so Quick can NEVER file what Full
+  // would HOLD: fail-safe, worst case it holds MORE). The empirical C5 Quick-vs-Full parity is best confirmed
+  // on real documents (the synthetic corpus can't earn realistic ocr_recipe stamps). Delisted from
+  // dark_switches.js. Kill: a deliberate 'false' survives (stamped once).
+  // @DEFAULT_FLIP 203
+  if (!applied.has(203)) {
+    try {
+      db.prepare(`INSERT INTO settings (key, value) VALUES ('quick_reprocess_enabled', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (203)').run();
+      console.log('JS migration 203 applied: quick_reprocess_enabled ON by default (UPSERT true) — the Reprocess-All dialog offers Quick; graduated');
+    } catch (e) { console.warn(`  migration 203 (quick_reprocess_enabled default ON): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
