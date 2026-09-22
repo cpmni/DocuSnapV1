@@ -57,6 +57,10 @@ const KNOWN_ABSENT = new Set([
   // dt-lane-filter: the Document Types Scanned/Quick File segmented filter, created dynamically in
   // ensureLaneFilter() (Slice 1 crossover) — getElementById-then-createElement, like dbenc-print-sheet.
   'dt-lane-filter',
+  // chip-*: the collapsed-card summary chips minted by renderDocTypeDetail's card() helper (2026-09-22
+  // card redesign) — `id="${chipId}"` is templated, so the literal id isn't in the static markup, but the
+  // card body still creates it before setChip/getElementById addresses it.
+  'chip-filing', 'chip-details', 'chip-folder', 'chip-autofill', 'chip-access',
   'stamp-section', 'stamp-preview-box', 'stamp-preview', 'stamp-msg',
   'stamp-size', 'stamp-size-val', 'stamp-save', 'stamp-reset',
 ]);

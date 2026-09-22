@@ -2042,12 +2042,55 @@ function selectDocType(id) {
   renderDocTypeDetail(type);
 }
 
+// A card's collapsed summary chip label for the folder key.
+function _folderKeyLabel(type) {
+  const k = type && type.folder_key_field;
+  if (!k) return 'Default';
+  const f = (type.fields || []).find(x => x && x.key === k);
+  return (f && (f.label || f.key)) || k;
+}
+
 function renderDocTypeDetail(type) {
   if (dtEditor) { dtEditor.destroy(); dtEditor = null; }
   document.getElementById('dt-detail-empty').style.display = 'none';
   const detail = document.getElementById('dt-detail');
+  const isQuick = _laneOf(type) !== 'scanned';
+  const _lc = laneColor(type);
+
+  // Slice 1+2 (owner 2026-09-22; barry + eric): the detail is a stack of COLLAPSIBLE cards with question
+  // headers + an at-a-glance summary chip each, so an existing type reads as a calm overview you expand to
+  // edit (Details open by default; the rest collapsed to their chip). eric's rules honoured: the existing
+  // host ids (dt-editor-host / dt-lookup-host) + control ids are kept verbatim inside the card bodies, and
+  // collapse is CSS-hide (never destroy) so the mounted editor / records list keep their state.
+  const chip = (id) => `<span id="${id}" class="dt-card-chip" style="margin-left:auto; font-size:12px; color:var(--muted); background:var(--surface2); border:1px solid var(--border); border-radius:var(--r-pill); padding:2px 10px; white-space:nowrap; max-width:45%; overflow:hidden; text-overflow:ellipsis;"></span>`;
+  const card = (key, question, chipId, bodyHtml, collapsed) => `
+    <div class="dt-card" data-card="${key}" style="border:1px solid var(--border); border-radius:var(--r); margin-bottom:10px; background:var(--surface);">
+      <div class="dt-card-head" data-toggle="${key}" role="button" tabindex="0" aria-expanded="${collapsed ? 'false' : 'true'}" style="display:flex; align-items:center; gap:10px; padding:11px 14px; cursor:pointer;">
+        <span style="font-weight:600;">${question}</span>
+        ${chip(chipId)}
+        <span class="dt-card-chev" aria-hidden="true" style="flex:0 0 auto; color:var(--muted); transition:transform .15s; ${collapsed ? '' : 'transform:rotate(180deg);'}">&#9662;</span>
+      </div>
+      <div class="dt-card-body" style="padding:2px 14px 14px; ${collapsed ? 'display:none;' : ''}">${bodyHtml}</div>
+    </div>`;
+
+  const laneBody = `
+    <select id="dt-lane" class="input" style="max-width:340px;">
+      <option value="scanned">Scanned &mdash; the software reads it (OCR)</option>
+      <option value="quick">Quick File &mdash; you type the details, no scanning</option>
+      <option value="both">Both</option>
+    </select>
+    <div class="field-label-small" style="color:var(--muted); margin-top:6px;">Quick File types are never auto-read and appear in the Quick File screen. &ldquo;Both&rdquo; lets a type be scanned <em>and</em> quick-filed.</div>`;
+  const folderBody = `
+    <select id="dt-folderkey" class="input" style="max-width:340px;"></select>
+    <div class="field-label-small" style="color:var(--muted); margin-top:6px;">Files under <em>Type&nbsp;/&nbsp;this field&nbsp;/&nbsp;year&nbsp;/&nbsp;month</em>. Leave it on the default and a bound Records-list&rsquo;s main field is used automatically.</div>`;
+  const accessBody = `
+    <div id="dt-dept-checks" style="display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center;"></div>
+    <div class="field-label-small" style="color:var(--muted); margin-top:6px;">These become the starting departments for new documents of this type. You can still change any document later.</div>
+    <span id="dt-dept-msg" class="field-label-small" style="color:var(--muted);"></span>`;
+
   detail.innerHTML = `
     <div class="dt-detail-header">
+      <span aria-hidden="true" title="How this type is filed" style="display:inline-block; width:12px; height:12px; border-radius:50%; background:${_lc}; box-shadow:0 0 0 1px rgba(0,0,0,.14) inset; flex:0 0 auto;"></span>
       <h3>${escHtml(type.name)}</h3>
       <span class="${type.built_in ? 'badge-builtin' : 'badge-custom'}">${type.built_in ? 'built-in' : 'custom'}</span>
       <span style="flex:1"></span>
@@ -2059,29 +2102,39 @@ function renderDocTypeDetail(type) {
       <button class="btn" id="dt-fix-type" title="Opens Learning Repair for this type — see what it's learned and send a badly-read document back to Review. Nothing changes until you choose there." style="padding:4px 10px; font-size:12px;">Repair learning…</button>
       ${type.built_in ? '' : '<button class="btn-icon" id="dt-hide" title="Hide this type">&#215;</button>'}
     </div>
-    ${allDepts.length ? `
-    <div id="dt-dept-row" style="margin:2px 0 10px;">
-      <div style="font-weight:600; margin-bottom:4px;">Who can see documents of this type?</div>
-      <div id="dt-dept-checks" style="display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center;"></div>
-      <div class="field-label-small" style="color:var(--muted); margin-top:4px;">These become the starting departments for new documents of this type. You can still change any document later.</div>
-      <span id="dt-dept-msg" class="field-label-small" style="color:var(--muted);"></span>
-    </div>` : ''}
-    <div id="dt-lane-row" style="margin:2px 0 12px;">
-      <label class="field-label-small" for="dt-lane" style="display:block; margin-bottom:4px; font-weight:600;">How is this type filed?</label>
-      <select id="dt-lane" class="input" style="max-width:300px;">
-        <option value="scanned">Scanned &mdash; the software reads it (OCR)</option>
-        <option value="quick">Quick File &mdash; you type the details, no scanning</option>
-        <option value="both">Both</option>
-      </select>
-      <div class="field-label-small" style="color:var(--muted); margin-top:4px;">Quick File types are never auto-read and appear in the Quick File screen. &ldquo;Both&rdquo; lets a type be scanned <em>and</em> quick-filed.</div>
-    </div>
-    <div id="dt-folderkey-row" style="margin:2px 0 12px; display:none;">
-      <label class="field-label-small" for="dt-folderkey" style="display:block; margin-bottom:4px; font-weight:600;">File these under (folder key)</label>
-      <select id="dt-folderkey" class="input" style="max-width:320px;"></select>
-      <div class="field-label-small" style="color:var(--muted); margin-top:4px;">Quick File documents of this type file under <em>Type&nbsp;/&nbsp;this field&nbsp;/&nbsp;year&nbsp;/&nbsp;month</em>. Leave it on the default and a bound Records-list&rsquo;s main field is used automatically.</div>
-    </div>
-    <div id="dt-editor-host"></div>
-    <div id="dt-lookup-host"></div>`;
+    ${card('filing', 'How is this type filed?', 'chip-filing', laneBody, true)}
+    ${card('details', 'What details do you capture?', 'chip-details', '<div id="dt-editor-host"></div>', false)}
+    ${isQuick ? card('folder', 'Where should these documents file?', 'chip-folder', folderBody, true) : ''}
+    ${isQuick ? card('autofill', 'Auto-fill from a saved list?', 'chip-autofill', '<div id="dt-lookup-host"></div>', true) : ''}
+    ${allDepts.length ? card('access', 'Who can see these documents?', 'chip-access', accessBody, true) : ''}`;
+
+  // Accordion: a card head toggles its own body (CSS-hide, never destroy). Clicks on a control inside the
+  // head are ignored; Enter/Space toggle for keyboard.
+  detail.querySelectorAll('.dt-card-head').forEach((head) => {
+    const toggle = () => {
+      const body = head.parentElement.querySelector('.dt-card-body');
+      const opening = body.style.display === 'none';
+      body.style.display = opening ? '' : 'none';
+      head.setAttribute('aria-expanded', opening ? 'true' : 'false');
+      const chev = head.querySelector('.dt-card-chev'); if (chev) chev.style.transform = opening ? 'rotate(180deg)' : '';
+    };
+    head.addEventListener('click', (e) => { if (e.target.closest('input,select,button,label')) return; toggle(); });
+    head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+  });
+
+  // Summary chips (Slice 2).
+  const setChip = (id, txt) => { const c = document.getElementById(id); if (c) c.textContent = txt; };
+  const fchip = document.getElementById('chip-filing');
+  if (fchip) { fchip.textContent = _laneBadge[_laneOf(type)]; fchip.style.background = _hexToRgba(_lc, 0.18); fchip.style.color = _lc; fchip.style.borderColor = _hexToRgba(_lc, 0.35); }
+  const updateDetailsChip = () => { const t2 = allTypesWithFields.find(x => x.id === type.id) || type; const n = (t2.fields || []).length; setChip('chip-details', `${n} field${n === 1 ? '' : 's'}`); };
+  updateDetailsChip();
+  if (isQuick) setChip('chip-folder', _folderKeyLabel(type));
+  if (allDepts.length) { const ids = (deptTypeDefaults[type.id] || []); setChip('chip-access', ids.length ? `${ids.length} department${ids.length === 1 ? '' : 's'}` : 'Everyone'); }
+  if (isQuick) {
+    setChip('chip-autofill', '…');
+    try { window.docusnap?.lookup?.fieldMapsGet?.(type.id).then((r) => setChip('chip-autofill', (r && r.ok && r.listId != null) ? 'On' : 'Off')).catch(() => setChip('chip-autofill', 'Off')); }
+    catch { setChip('chip-autofill', 'Off'); }
+  }
 
   document.getElementById('dt-fix-type')?.addEventListener('click', async () => {
     const repairTab = document.querySelector('.tab[data-tab="repair"]');
@@ -2130,33 +2183,29 @@ function renderDocTypeDetail(type) {
     });
   }
 
-  // F3 (mig 199): the folder KEY field for a Quick File type without a bound Records list (list-bound types
-  // derive it from the list master). Shown only for Quick File lanes. '' = default (list-master → supplier_name).
-  const fkRow = document.getElementById('dt-folderkey-row');
+  // F3 (mig 199): the folder KEY field for a Quick File type (the 'Where should these documents file?' card,
+  // rendered only for Quick File lanes). '' = default (list-master → supplier_name).
   const fkSel = document.getElementById('dt-folderkey');
-  if (fkRow && fkSel) {
-    const isQuick = _laneOf(type) !== 'scanned';
-    fkRow.style.display = isQuick ? '' : 'none';
-    if (isQuick) {
-      fkSel.innerHTML = '';
-      const def = document.createElement('option');
-      def.value = ''; def.textContent = 'Default (Company / Person, or the Records-list main field)';
-      fkSel.appendChild(def);
-      for (const f of (type.fields || [])) {
-        if (!f || !f.key) continue;
-        const o = document.createElement('option'); o.value = f.key; o.textContent = f.label || f.key; fkSel.appendChild(o);
-      }
-      fkSel.value = type.folder_key_field || '';
-      fkSel.addEventListener('change', async () => {
-        const r = await api.updateDocumentType(type.id, { folder_key_field: fkSel.value || null });
-        if (r && r.error) alert(r.error);
-      });
+  if (fkSel) {
+    fkSel.innerHTML = '';
+    const def = document.createElement('option');
+    def.value = ''; def.textContent = 'Default (Company / Person, or the Records-list main field)';
+    fkSel.appendChild(def);
+    for (const f of (type.fields || [])) {
+      if (!f || !f.key) continue;
+      const o = document.createElement('option'); o.value = f.key; o.textContent = f.label || f.key; fkSel.appendChild(o);
     }
+    fkSel.value = type.folder_key_field || '';
+    fkSel.addEventListener('change', async () => {
+      const r = await api.updateDocumentType(type.id, { folder_key_field: fkSel.value || null });
+      if (r && r.error) alert(r.error);
+      setChip('chip-folder', _folderKeyLabel({ folder_key_field: fkSel.value || null, fields: type.fields }));
+    });
   }
 
   dtEditor = window.DocTypeEditor.create(
     document.getElementById('dt-editor-host'),
-    { mode: 'edit', api, initial: type, onChange: refreshDocTypesList }
+    { mode: 'edit', api, initial: type, onChange: () => { refreshDocTypesList(); updateDetailsChip(); } }   // Slice 2: keep the "N fields" chip fresh after a field add
   );
 
   // Records-lists auto-fill (Quick File lane only). Rendered by the self-contained LookupAdmin module; it
