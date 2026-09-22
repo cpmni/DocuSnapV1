@@ -3011,3 +3011,24 @@ dot on a doc that merely inherited it — renderMultiDoc:285 `ready = isReady(wi
 tonight (DARK) but it is a FLIP-BLOCKER: do NOT flip `quickfile_multidoc_enabled` until "ready" distinguishes
 own-subject from inherited-default. IMPLEMENTED: the F1 guard (commit 124e5a2) + the twin-parity pin
 (test_quickfile_pane.js §5). GATE: run-pins green; live no-disambiguator re-drive owner-owed (sandbox login).
+
+- 2026-09-22 (Print-Tracker date `disagreeing-read` perpetual hold — gary's `CORROB_DATE_FOLD_WIDE` fix vet):
+  SIGN OFF WITH CONDITIONS. Verified both legs: (a) _pick_fuller_code is the wrong layer — inline-reconcile
+  gates on val_type in _CODE_CROSSCHECK_TYPES={'alphanumeric','reference_code'} (template_mapper.py:135,:2067,
+  :3086); date excluded, so its inline-disagree flag cannot fire. (b) the hold is _corrob_values_agree's
+  numeric-only _DATE_SHAPE_RE gate (engine.py:1189-1206) → 'November 2, 2026' fails → disagree at the emit
+  (engine.py:5488) → trust.js _pageFamilyDisagrees(:659) → disagreeing-read:date refusal (:1055/:1073) under
+  trust_role_disagreement_refuse (mig 93 ON). Confirmed disagreeing-read is a rendered gate REASON
+  (review/renderer.js:3605-3607), not a stored validation_note, so emptying disagree fully lifts the hold
+  (complete). Fold is sound: wide branch fires only when the numeric shape gate fails, which always means a
+  month-name (unambiguous) side; folds only on exact parse_date datetime equality → cannot fold two different
+  real dates (02-11 vs 11-02 correctly disagrees), self-scopes to real dates. CATCH: _corrob_values_agree has
+  THREE callers (emit + note-softeners engine.py:4661/:4795), so the auto-file re-arm seam is broader than the
+  _corrobLicensed emit path gary named. Ruled the re-arm ACCEPTABLE not review-bound (agreeing family is
+  page-text keyword; _docFullyCorroborated still needs all roles corroborated + no flags + 88 floors + master
+  switch). Conditions: fail-closed on parse None; extend test_corrob_date_fold.py with _WIDE cases; gate = 605
+  realdoc M=0 at RR_APP_ENV=1 ON-vs-OFF (heal-only) + an injected month-name-vs-numeric census over BOTH the
+  hold-lift and note-clear paths (no WRONG file); default-OFF/unarmed until the flip gate passes.
+  IMPLEMENTED (DARK, env-gated, byte-identical OFF): engine._corrob_values_agree wide branch + the _WIDE unit
+  pins (test_corrob_date_fold.py, all green). GATE: 605 safety census running; injected efficacy census + the
+  flip machinery (mig/mirror/TEST_SWITCH_KEYS) owed before any flip (owner's call).

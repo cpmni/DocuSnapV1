@@ -40,6 +40,28 @@ os.environ['FIELD_CORROBORATION_DATE_FOLD'] = '0'
 check("kill switch: '17/12/2026' vs '17-12-2026' disagree again (the old compare)", not E._corrob_values_agree('17/12/2026', '17-12-2026'))
 del os.environ['FIELD_CORROBORATION_DATE_FOLD']
 
+# CORROB_DATE_FOLD_WIDE (2026-09-22; gary → Oracle SIGN-OFF-W/COND): a worded / month-name date form
+# ('November 2, 2026') fails the numeric shape gate, so the SAME calendar date read two ways was logged as a
+# page-family DISAGREEMENT → held forever (`disagreeing-read`) + never corroborated (the Print Tracker flood).
+# ON => fall through to the SAME strict parse_date fold; OFF => byte-identical.
+print("\n_corrob_values_agree — CORROB_DATE_FOLD_WIDE (worded / month-name dates):")
+check("OFF (default): 'November 2, 2026' vs '02-11-2026' DISAGREE (byte-identical to before)",
+      not E._corrob_values_agree('November 2, 2026', '02-11-2026'))
+os.environ['CORROB_DATE_FOLD_WIDE'] = '1'
+check("ON: 'November 2, 2026' vs '02-11-2026' AGREE (same calendar date, different format — the heal)",
+      E._corrob_values_agree('November 2, 2026', '02-11-2026'))
+check("ON: 'Nov 2, 2026' vs '02-11-2026' AGREE (abbreviated month form)",
+      E._corrob_values_agree('Nov 2, 2026', '02-11-2026'))
+check("ON: 'March 4, 2026' vs '02-11-2026' DISAGREE (different day — PIN the trade-off)",
+      not E._corrob_values_agree('March 4, 2026', '02-11-2026'))
+check("ON: '11-02-2026' vs 'November 2, 2026' DISAGREE (dmy polarity 11 Feb != 2 Nov — PIN)",
+      not E._corrob_values_agree('11-02-2026', 'November 2, 2026'))
+check("ON: fail-closed — 'Novaber 2, 2026' (typo) vs '02-11-2026' DISAGREE (unparseable side)",
+      not E._corrob_values_agree('Novaber 2, 2026', '02-11-2026'))
+check("ON: a CODE pair is unaffected — 'DN-93159' vs 'N-93159' DISAGREE (parse_date None → self-scoped out)",
+      not E._corrob_values_agree('DN-93159', 'N-93159'))
+del os.environ['CORROB_DATE_FOLD_WIDE']
+
 print("\n_build_corroboration_emit:")
 
 

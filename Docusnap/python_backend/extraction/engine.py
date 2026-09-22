@@ -1197,7 +1197,17 @@ def _corrob_values_agree(a, b) -> bool:
         return False
     sa, sb = str(a or ''), str(b or '')
     if not (_DATE_SHAPE_RE.match(sa) and _DATE_SHAPE_RE.match(sb)):
-        return False
+        # CORROB_DATE_FOLD_WIDE (DARK, 2026-09-22; gary → Oracle SIGN-OFF-W/COND): a worded / month-name date
+        # ('November 2, 2026') fails the numeric shape gate, so the SAME calendar date read two ways was logged
+        # as a page-family DISAGREEMENT — held forever as `disagreeing-read` AND never corroborated (the flood
+        # the owner hit on Print Tracker's ever-changing depletion date). ON => fall through to the SAME strict
+        # parse_date fold below (self-scoping: parse_date returns None for a ref/name/amount, so only two real
+        # calendar dates can fold, and only when they are the SAME day). OFF => byte-identical to before (only
+        # two numeric-shaped dates ever reach the fold). NOTE (Oracle): _corrob_values_agree has THREE callers
+        # (the emit + the two note-softeners) — widening it also lets a month-name witness clear a date note,
+        # and, on the emit, re-arms the corroborated-auto-file licence on the date role (accepted, not cosmetic).
+        if os.environ.get('CORROB_DATE_FOLD_WIDE', '0') == '0':
+            return False
     try:
         from extraction import validator as _v
         da, db_ = _v.parse_date(sa), _v.parse_date(sb)
