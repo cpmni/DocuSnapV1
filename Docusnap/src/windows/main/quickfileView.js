@@ -88,7 +88,7 @@
 
   let _inited = false;
   let staged = [];                 // [{ token, name, titleInput }]
-  let typeSelect = null, partyI, dateI, refI, notesI, filesBox, msg, fileBtn, pickBtn, typeRow, receiptBox;
+  let typeSelect = null, partyI, dateI, refI, notesI, filesBox, msg, fileBtn, pickBtn, typeRow, receiptBox, _singleArea;
   let installedTypes = [];         // Slice 0: the installed Quick File types (with their fields) for custom-field render
   let customBox = null;            // container for the selected type's per-type CUSTOM inputs
   let customInputs = {};           // fieldKey -> input element, for the current type
@@ -240,8 +240,14 @@
 
   function renderFiles() {
     filesBox.textContent = '';
+    const multi = multiDocEnabled && staged.length > 1;
+    // Multi-doc takes over the whole pane (Review-style: files left · preview centre · fields right), so the
+    // default drop card + shared form step aside (owner 2026-09-22).
+    if (_singleArea) _singleArea.style.display = multi ? 'none' : '';
+    filesBox.style.maxHeight = multi ? '' : '200px';
+    filesBox.style.overflowY = multi ? '' : 'auto';
     if (!staged.length) { filesBox.appendChild(el('div', { className: 'muted', style: { fontSize: '13px', color: 'var(--muted)' } }, 'No files chosen yet.')); return; }
-    if (multiDocEnabled && staged.length > 1) { renderMultiDoc(); return; }   // S4a: per-doc entry + preview
+    if (multi) { renderMultiDoc(); return; }   // S4a: per-doc entry + preview
     for (const f of staged) {
       const row = el('div', { className: 'qf-filerow' });
       row.appendChild(_svgIco('i-check', 15));
@@ -306,16 +312,20 @@
     if (_qfFocusedIdx < 0) _qfFocusedIdx = 0;
     const QF = window.quickfileMeta;
     const shared = currentShared();
-    const wrap = el('div', { style: { display: 'flex', gap: '14px', alignItems: 'flex-start', marginTop: '4px' } });
-    const strip = el('div', { style: { flex: '0 0 210px', maxHeight: '440px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' } });
-    const focusHost = el('div', { style: { flex: '1', minWidth: '320px' } });
-    wrap.appendChild(strip); wrap.appendChild(focusHost);
+    // Review-style 3-column master/detail (owner 2026-09-22): file list · preview · per-doc fields, filling the
+    // pane — the default drop card + shared form are hidden by renderFiles.
+    const COLH = 'min(72vh, 660px)';
+    const wrap = el('div', { style: { display: 'flex', gap: '14px', alignItems: 'stretch', marginTop: '4px' } });
+    const strip = el('div', { style: { flex: '0 0 220px', height: COLH, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' } });
+    const centre = el('div', { style: { flex: '1', minWidth: '260px', display: 'flex', flexDirection: 'column' } });
+    const right = el('div', { style: { flex: '0 0 360px', height: COLH, overflowY: 'auto', paddingRight: '2px' } });
+    wrap.appendChild(strip); wrap.appendChild(centre); wrap.appendChild(right);
     filesBox.appendChild(wrap);
 
     staged.forEach((f, i) => {
       const ready = QF ? QF.isReady(QF.withDefaults(f, shared), _recordKey || undefined) : true;
       const needLabel = (_recordKey && _recordKey.label) || 'a company or person';
-      const cell = el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', padding: '6px', cursor: 'pointer',
+      const cell = el('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', padding: '6px', cursor: 'pointer', flex: '0 0 auto',
         border: i === _qfFocusedIdx ? '2px solid var(--accent)' : '1px solid var(--border)', borderRadius: 'var(--r-sm)', background: 'var(--surface)' } });
       const thumb = el('div', { style: { flex: '0 0 40px', height: '48px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', overflow: 'hidden' } });
       cell.appendChild(thumb);
@@ -328,8 +338,18 @@
       strip.appendChild(cell);
       _loadPreview(f, thumb);
     });
+    const addBtn = el('button', { className: 'btn', type: 'button', style: { flex: '0 0 auto', marginTop: '2px', fontSize: '12px' } }, '+ Add files');
+    addBtn.addEventListener('click', () => doPick());
+    strip.appendChild(addBtn);
 
-    _renderFocused(focusHost, staged[_qfFocusedIdx], shared);
+    // CENTRE — the zoom/pan preview fills the column.
+    const prev = el('div', { style: { position: 'relative', flex: '1', minHeight: '320px', overflow: 'hidden', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)' } });
+    centre.appendChild(prev);
+    centre.appendChild(el('div', { style: { fontSize: '11px', color: 'var(--muted)', margin: '6px 0 0' } }, 'Scroll to zoom · right-drag to pan · or use the buttons'));
+    _mountPreviewViewer(prev, staged[_qfFocusedIdx]);
+
+    // RIGHT — the focused document's own fields.
+    _renderFocusedForm(right, staged[_qfFocusedIdx], shared);
   }
 
   // Zoom/pan document viewer for the focused staged file (owner 2026-09-22). Scroll = zoom, right-drag = pan
@@ -377,29 +397,26 @@
     scroll.addEventListener('mouseleave', endPan);
   }
 
-  function _renderFocused(host, f, shared) {
+  // The focused document's per-doc fields (the RIGHT column of the multi-doc pane). Inputs close over THIS
+  // entry `f` (MC1). Single-column stack to suit a narrow side column. Placeholder shows the shared default.
+  function _renderFocusedForm(host, f, shared) {
     if (!f) return;
     const t = _selectedType();
-    // Big preview — a proper zoom/pan viewer (owner 2026-09-22): scroll to zoom, right-click-drag to pan,
-    // matching the Review/Search document viewers.
-    const prev = el('div', { style: { position: 'relative', height: '560px', overflow: 'hidden', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--r-sm)' } });
-    host.appendChild(prev);
-    host.appendChild(el('div', { style: { fontSize: '11px', color: 'var(--muted)', margin: '4px 0 12px' } }, 'Scroll to zoom · right-drag to pan · or use the buttons'));
-    _mountPreviewViewer(prev, f);
-    // Per-doc form — inputs close over THIS entry `f` (MC1). Placeholder shows the shared "applies to all".
-    const mk = (labelText, input) => el('div', {}, [el('label', { className: 'qf-lbl' }, labelText), input]);
+    host.appendChild(el('div', { style: { fontWeight: '600', marginBottom: '10px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: f.name }, f.values.title || f.name));
+    const mk = (labelText, input) => el('div', { style: { marginBottom: '12px' } }, [el('label', { className: 'qf-lbl' }, labelText), input]);
     const bind = (input, key) => { input.addEventListener('input', () => { f.values[key] = input.value; }); return input; };
     const party = bind(el('input', { className: 'qf-in', type: 'text', value: f.values.party || '', placeholder: shared.party ? `${shared.party} (shared)` : 'Company or person' }), 'party');
     const date = bind(el('input', { className: 'qf-in', type: 'date', value: f.values.date || '' }), 'date');
     const ref = bind(el('input', { className: 'qf-in', type: 'text', value: f.values.reference || '', placeholder: shared.reference ? `${shared.reference} (shared)` : 'Optional' }), 'reference');
     const title = bind(el('input', { className: 'qf-in', type: 'text', value: f.values.title || stem(f.name), placeholder: 'Title' }), 'title');
-    const grid = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' } },
-      [mk('Company / Person', party), mk('Date', date), mk('Reference', ref), mk('Title', title)]);
-    host.appendChild(grid);
+    host.appendChild(mk('Company / Person', party));
+    host.appendChild(mk('Date', date));
+    host.appendChild(mk('Reference', ref));
+    host.appendChild(mk('Title', title));
     // Per-doc custom fields (bound into f.values.customFields).
     const customs = _customFieldsOf(t);
     if (customs.length) {
-      const cg = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px', marginTop: '12px' } });
+      const cg = el('div', { style: { display: 'grid', gridTemplateColumns: '1fr', gap: '12px', marginTop: '4px' } });
       for (const cf of customs) {
         const ty = String(cf.type || 'text');
         const inp = (ty === 'date') ? el('input', { className: 'qf-in', type: 'date', value: f.values.customFields[cf.key] || '' })
@@ -584,11 +601,14 @@
         [mkField('Company / Person', partyI), mkField('Date', dateI), mkField('Reference', refI), mkField('Notes', notesI)]),
       customBox,
     ]);
-    // Drop card + details share a row and stretch to equal height.
-    root.appendChild(el('div', { style: { display: 'flex', gap: '18px', alignItems: 'stretch', flexWrap: 'wrap' } }, [dropZone, details]));
+    // Drop card + details share a row and stretch to equal height. In the multi-doc pane this whole area is
+    // hidden and the file list / preview / per-doc fields take over (renderFiles), so the shared form never
+    // sits cramped above a squeezed preview (owner 2026-09-22).
+    _singleArea = el('div', { style: { display: 'flex', gap: '18px', alignItems: 'stretch', flexWrap: 'wrap' } }, [dropZone, details]);
+    root.appendChild(_singleArea);
 
-    // Staged files.
-    filesBox = el('div', { style: { margin: '12px 0', maxHeight: '200px', overflowY: 'auto' } });
+    // Staged files (single-file rows) OR the multi-doc master/detail — renderFiles decides + sizes filesBox.
+    filesBox = el('div', { style: { margin: '12px 0' } });
     root.appendChild(filesBox);
     renderFiles();
 
