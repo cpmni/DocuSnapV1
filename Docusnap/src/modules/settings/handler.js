@@ -499,6 +499,9 @@ function register(ctx) {
     const db = getDb();
     const documents = require('../../../database/modules/documents');
     const docId = Number(id);
+    // Sending a doc back for correction clears any "looks right" dismissal, so once it's re-confirmed the
+    // suspect detectors judge it afresh (mig 200). Best-effort; never blocks the send-back.
+    try { db.prepare('UPDATE documents SET repair_dismissed_at = NULL WHERE id = ?').run(docId); } catch {}
     try {
       const guard = require('../../services/workflowService').editGuard(db, docId, 'admin');
       if (guard && guard.ok === false) return { ok: false, error: guard.error || 'This document is locked by an approval route.', code: guard.code };
@@ -565,6 +568,23 @@ function register(ctx) {
       try { ctx.notifyBinChanged && ctx.notifyBinChanged(); } catch {}   // repair-delete lands in the bin
     }
     return { ok: r.changes > 0 };
+  });
+  // "This looks right" — the admin checked a suspect doc and it's FINE (owner report: the missing third
+  // action beside Send-back / Delete). Stamps documents.repair_dismissed_at so computeSuspects stops flagging
+  // it. Advisory ONLY: changes no value, status, learning or auto-file. Fully reversible ('un-dismiss' via the
+  // same IPC with clear:true). Send-back clears it (below) so a corrected + re-confirmed doc is re-evaluated.
+  ipcMain.handle('repair-dismiss', (_e, id, opts) => {
+    requireRole('admin');
+    const db = getDb();
+    const docId = Number(id);
+    if (!Number.isFinite(docId)) return { ok: false, error: 'bad_request' };
+    const clear = !!(opts && opts.clear);
+    try {
+      const r = db.prepare('UPDATE documents SET repair_dismissed_at = ? WHERE id = ? AND status = \'confirmed\'')
+        .run(clear ? null : new Date().toISOString(), docId);
+      if (r.changes) { try { logAudit(db, { action: clear ? 'repair_dismiss_clear' : 'repair_dismiss', action_category: 'document', target_type: 'document', target_id: docId, outcome: 'success' }); } catch {} }
+      return { ok: r.changes > 0 };
+    } catch (e) { return { ok: false, error: 'Could not update: ' + (e.message || e) }; }
   });
 
   // ── App settings (key-value) ─────────────────────────────────────────────────

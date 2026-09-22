@@ -425,6 +425,14 @@ function computeSuspects(db, { document_type_slug, supplier_name } = {}) {
   // a higher-precision existing reason keeps the field slot via the one-reason-per-field dedupe.
   for (const s of detectRefPrefixOutliers(valRowsFull)) add(s.id, { kind: 'data', field: s.field, value: s.value, example: s.example || null, text: s.text }, s.severity || 3);
 
+  // "This looks right" dismissals (mig 200): the admin checked these and judged them fine — drop them from the
+  // suspect list. Guarded so a pre-mig fixture (no column) is unaffected.
+  try {
+    const dismissed = db.prepare(`SELECT id FROM documents WHERE repair_dismissed_at IS NOT NULL
+      AND document_type_id = (SELECT id FROM document_types WHERE slug = @dt)`).all({ dt });
+    for (const r of dismissed) delete byId[r.id];
+  } catch { /* column absent on a hand-rolled schema */ }
+
   return { byId, count: Object.keys(byId).length };
 }
 

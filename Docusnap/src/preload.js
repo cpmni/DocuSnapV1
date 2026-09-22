@@ -570,6 +570,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   repairDocFields:     (id)      => ipcRenderer.invoke('repair-doc-fields', id),
   repairDeconfirm:     (id, opts) => ipcRenderer.invoke('repair-deconfirm', id, opts),
   repairDelete:        (id)      => ipcRenderer.invoke('repair-delete', id),
+  repairDismiss:       (id, opts) => ipcRenderer.invoke('repair-dismiss', id, opts),
   // Learning Repair v2 (2026-08-26): the scope selector + console + "start fresh" (DARK)
   learningScopes:        (opts)   => ipcRenderer.invoke('learning-scopes', opts),
   learningRepairDryRun:  (scope)  => ipcRenderer.invoke('learning-repair-dry-run', scope),

@@ -4065,6 +4065,20 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 199 (quickfile_record_folders): ${e.message}`); }
   }
 
+  // mig 200 (2026-09-22): Learning Repair — a "This looks right" dismissal. A suspect (Might-not-belong /
+  // Data-looks-off) doc that the admin has checked and judged FINE gets stamped here so the suspect detector
+  // stops flagging it — the missing third action beside Send-back / Delete (owner report). Advisory only: it
+  // changes NO value, status, learning or auto-file — it only removes the doc from the Repair suspect list.
+  // Cleared on send-back (repair-deconfirm) so a corrected + re-confirmed doc is re-evaluated. Additive/nullable.
+  if (!applied.has(200)) {
+    try {
+      const hasCol = db.prepare("PRAGMA table_info(documents)").all().some(c => c.name === 'repair_dismissed_at');
+      if (!hasCol) db.prepare('ALTER TABLE documents ADD COLUMN repair_dismissed_at TEXT').run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (200)').run();
+      console.log('JS migration 200 applied: documents.repair_dismissed_at (Learning Repair "looks right" dismissal)');
+    } catch (e) { console.warn(`  migration 200 (repair_dismissed_at): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

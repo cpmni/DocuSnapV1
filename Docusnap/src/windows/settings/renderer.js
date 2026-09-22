@@ -5964,7 +5964,9 @@ async function rpSelect(id) {
   document.getElementById('rp-preview-empty').style.display = 'none';
   document.getElementById('rp-preview').style.display = '';
   document.getElementById('rp-action-msg').textContent = '';
-  document.getElementById('rp-fine').style.display = rpSuspectKinds(id).size ? '' : 'none';
+  // "Looks fine" is available on ANY document you're inspecting here (owner report: it was hidden when a doc
+  // had no computed suspect kind, so a flagged doc could show no way to clear it). It persists (mig 200).
+  document.getElementById('rp-fine').style.display = '';
   rpRenderFields(id);
   document.getElementById('rp-img-loading').style.display = ''; document.getElementById('rp-img-loading').textContent = 'Loading…';
   document.getElementById('rp-img').style.display = 'none';
@@ -6065,12 +6067,18 @@ async function rpDelete() {
   rpRemoveCurrent('Moved to the recycle bin.');
 }
 
-function rpDismiss() {
+async function rpDismiss() {
   if (!_rpSel) return;
-  _rpDismissed.add(_rpSel);
+  const id = _rpSel;
+  let r; try { r = await api.repairDismiss(id); } catch (e) { r = { ok: false, error: e.message || e }; }
+  if (!r || !r.ok) {
+    document.getElementById('rp-action-msg').textContent = 'Could not mark it as fine' + (r && r.error ? ': ' + r.error : '') + '.';
+    return;
+  }
+  _rpDismissed.add(id);                                   // hide immediately; the backend now excludes it for good
   document.getElementById('rp-fine').style.display = 'none';
-  document.getElementById('rp-action-msg').textContent = 'Dismissed — this one won’t be flagged again for now.';
-  rpRenderFields(_rpSel); rpRenderSuspectStrip(); rpRenderList();
+  document.getElementById('rp-action-msg').textContent = 'Marked as fine — it won’t be flagged again unless you send it back and re-confirm it.';
+  rpRenderFields(id); rpRenderSuspectStrip(); rpRenderList();
 }
 
 async function rpForget() {

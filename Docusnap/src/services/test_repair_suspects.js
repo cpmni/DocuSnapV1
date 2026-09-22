@@ -174,5 +174,30 @@ if (process.env.REPAIR_PREFIX_MISMATCH === '0') {
   check('B4 thin pool (<8) → no flags', R.detectRefPrefixOutliers(p4t).length === 0);
 }
 
+// ── computeSuspects + the "This looks right" dismissal (mig 200) ─────────────
+console.log('computeSuspects — the "looks right" dismissal excludes a doc');
+{
+  const Database = require('better-sqlite3');
+  const { runMigrations } = require('../../database/index');
+  const db = new Database(':memory:'); runMigrations(db);
+  const tid = db.prepare("INSERT INTO document_types (name, slug, built_in) VALUES ('Invoice','invoice',1)").run().lastInsertRowid;
+  db.prepare("INSERT INTO fields (document_type_id, key, label, type) VALUES (?,?,?,?)").run(tid, 'reference_number', 'Reference', 'alphanumeric');
+  const insDoc = db.prepare("INSERT INTO documents (document_type_id, status, original_filename, folder_path, overall_confidence) VALUES (?,'confirmed',?,'/x',95)");
+  const insEx = db.prepare("INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method) VALUES (?,?,?,?,95,'keyword')");
+  let outlierId = null;
+  for (let i = 1; i <= 5; i++) { const id = insDoc.run(tid, `d${i}.pdf`).lastInsertRowid; insEx.run(id, 'reference_number', `ABC-100${i}`, `ABC-100${i}`); }
+  outlierId = insDoc.run(tid, 'odd.pdf').lastInsertRowid; insEx.run(outlierId, 'reference_number', '9999999', '9999999');   // off-shape singleton
+  const before = R.computeSuspects(db, { document_type_slug: 'invoice' });
+  check('the off-shape doc is flagged as a suspect', !!before.byId[outlierId]);
+  // "This looks right" → stamp the dismissal (what the repair-dismiss IPC does).
+  db.prepare("UPDATE documents SET repair_dismissed_at = ? WHERE id = ?").run(new Date().toISOString(), outlierId);
+  const after = R.computeSuspects(db, { document_type_slug: 'invoice' });
+  check('after "looks right", the dismissed doc is NO LONGER a suspect', !after.byId[outlierId]);
+  // Send-back clears it (the IPC does this) → suspect again.
+  db.prepare("UPDATE documents SET repair_dismissed_at = NULL WHERE id = ?").run(outlierId);
+  check('clearing the dismissal re-flags it (send-back + re-confirm path)', !!R.computeSuspects(db, { document_type_slug: 'invoice' }).byId[outlierId]);
+  db.close();
+}
+
 console.log(`\n${fail ? fail + ' FAILED' : 'All repairSuspects detector checks passed.'}`);
 process.exit(fail ? 1 : 0);
