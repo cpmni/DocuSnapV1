@@ -10,7 +10,7 @@
  * Pins, for EVERY flipped key: fresh install ON · an existing 'false' is UPSERT-flipped ON on upgrade · a
  * deliberate 'false' AFTER the flip survives (kill durable, mig 205 one-shot) · the key LEFT TEST_SWITCH_KEYS.
  * Plus: the @DEFAULT_FLIP 205 block shape the release gate accepts, and the gate raises 0 hits. And the
- * INVARIANT that the 10 held-out keys (+ the mig-204 dark seed) STAY dark (listed + default OFF).
+ * INVARIANT that the 10 held-out keys STAY dark (listed + default OFF). (mig-204's disarm was flipped ON at mig 206.)
  *
  * Run: ELECTRON_RUN_AS_NODE=1 ./node_modules/electron/dist/electron.exe database/test_default_flip_205_batch.js
  */
@@ -43,21 +43,21 @@ const FLIP = [
 ];
 // Held out of the batch (still DARK): the auto-file looseners, value-changers, the feature master,
 // segmentation, and the two ungated arcs. Every one of these MUST stay listed + default OFF.
+// (ref_confusable_confirmed_literal_disarm left HELD when it was flipped ON at mig 206, 2026-09-22.)
 const HELD = [
   'deskew_corrob_autofile', 'optional_soft_flag_autofile', 'corrob_autofile_band88',
   'filing_sanity_confusable_prefix_autofile', 'confusion_precedence', 'buyer_issued_convention_one_confirm',
   'format_class_join', 'departments_enabled', 'segment_pair_hold', 'issuer_undetected_blank',
-  'ref_confusable_confirmed_literal_disarm',
 ];
 
 console.log('== mig 205 BATCH graduation (34 fail-toward-review switches) ==');
 
 console.log(`0. the batch is exactly ${FLIP.length} keys and the two sets are disjoint + cover the list`);
 check('FLIP is 34 distinct keys', new Set(FLIP).size === 34);
-check('HELD is 11 distinct keys', new Set(HELD).size === 11);
+check('HELD is 10 distinct keys', new Set(HELD).size === 10);
 check('FLIP ∩ HELD = ∅', FLIP.every(k => !HELD.includes(k)));
 check('TEST_SWITCH_KEYS == HELD (every flipped key delisted, every held key kept)',
-  TEST_SWITCH_KEYS.length === 11 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
+  TEST_SWITCH_KEYS.length === 10 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
 
 console.log('1. a fresh install has every flipped key ON, every held key OFF');
 {
@@ -67,7 +67,7 @@ console.log('1. a fresh install has every flipped key ON, every held key OFF');
   const notOn = FLIP.filter(k => get(db, k) !== 'true');
   check(`all 34 flipped keys are 'true' on a fresh install${notOn.length ? ' — ' + notOn.join(',') : ''}`, notOn.length === 0);
   const notOff = HELD.filter(k => get(db, k) !== 'false');
-  check(`all 11 held keys are 'false' on a fresh install${notOff.length ? ' — ' + notOff.join(',') : ''}`, notOff.length === 0);
+  check(`all 10 held keys are 'false' on a fresh install${notOff.length ? ' — ' + notOff.join(',') : ''}`, notOff.length === 0);
   db.close();
 }
 

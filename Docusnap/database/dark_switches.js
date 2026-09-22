@@ -110,12 +110,9 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   (Oracle C4/C5): realdoc M=0 + zero supplier_name accuracy drop + the fire DENOMINATOR + a MULTI-TOKEN
   //   synthetic FP set (all-lowercase real names like "acme joinery" must NOT blank). Not yet run.
   'issuer_undetected_blank',
-  // ref_confusable_confirmed_literal_disarm (mig 204, 2026-09-22): the read EXACTLY equals a scope-confirmed
-  //   literal the <3-distinct format index can't hold → disarm (≥2 confirms fully; a SINGLE confirm drops the
-  //   nag but caps ≤69, still held). gary+reggie → Oracle SIGN-OFF-W/COND (count-gated). ⚑ FLIP GATE: its own
-  //   census — a 1-confirm graduated scope + a cross-supplier adversarial (a DIFFERENT doc that misreads INTO
-  //   the confirmed literal must still hold) + realdoc M=0. HARD dep ref_confusable_flag ON. Byte-identical OFF.
-  'ref_confusable_confirmed_literal_disarm',
+  // ref_confusable_confirmed_literal_disarm (mig 204) was FLIPPED ON by default at mig 206 (2026-09-22, owner
+  //   "flip mig 204"): census M=0 / inert on the 700 corpus (TESTING/_measure/ref_disarm_census_20260922/), owner
+  //   accepted the narrow ≥2-confirm supplier-strict auto-file lift. No longer dark — delisted here.
 ]);
 
 /** The numbered TEST-BUILD force-ON migrations (historical; each is deleted by the mig-137 slice). */

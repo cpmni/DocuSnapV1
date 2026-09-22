@@ -4179,6 +4179,21 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 205 (batch flip): ${e.message}`); }
   }
 
+  // mig 206 (2026-09-22): ref_confusable_confirmed_literal_disarm ON by default (owner go — "flip mig 204"). The
+  // census (TESTING/_measure/ref_disarm_census_20260922/RESULT.md) was M=0 / byte-identical-inert on the 700
+  // corpus; the owner accepted the narrow >=2-confirm supplier-strict auto-file LIFT path. HARD dep
+  // ref_confusable_flag (already ON). One-shot UPSERT (a deliberate 'false' after this survives). Delisted from
+  // dark_switches.js the same commit so the mig-137 customer-reset can never un-promote it. Pinned by
+  // database/test_default_flip_206.js. Single-key UPSERT (no array literal — keeps the loose seed-pin regex honest).
+  // @DEFAULT_FLIP 206
+  if (!applied.has(206)) {
+    try {
+      const nf = db.prepare(`INSERT INTO settings (key, value) VALUES ('ref_confusable_confirmed_literal_disarm', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (206)').run();
+      console.log(`JS migration 206 applied: ref_confusable_confirmed_literal_disarm ON by default (${nf} row write)`);
+    } catch (e) { console.warn(`  migration 206 (ref-confusable disarm flip): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next
