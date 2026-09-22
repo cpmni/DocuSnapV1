@@ -1,0 +1,198 @@
+﻿START 2026-08-26T23:23:40
+JS FAIL [1] database\modules\test_authoritative_anchor.js
+
+  OK  coords overwritten outright (no blend toward the stale 0.1985)
+  OK  last_authoritative_at stamped
+  BAD cross-supplier stale anchor is swept by an authoritative teach (single row)
+  BAD surviving row is the taught one (yÔëê0.206)
+  OK  same-label authoritative re-teach stays ONE row
+  OK  re-teach snaps to the latest drawn coords (0.210, no averaging)
+  OK  usage_count incremented (history not discarded)
+  OK  component-wise tolerance treats a one-line vertical move as a correction (snaps to 0.225)
+  OK  small jitter still usage-weight-blends (anchor stays stable)
+
+2 FAILED
+
+JS FAIL [1] database\modules\test_document_types_aliases.js
+ap\database\index.js:61:3)
+    at Object.<anonymous> (C:\GIT Projects\Docusnap\database\modules\test_document_types_aliases.js:123:3)
+    at Module._compile (node:internal/modules/cjs/loader:1484:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1564:10)
+    at Module.load (node:internal/modules/cjs/loader:1295:32)
+    at Module._load (node:internal/modules/cjs/loader:1111:12)
+    at c._load (node:electron/js2c/node_init:2:16955)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:189:12) {
+  code: 'SQLITE_ERROR'
+}
+
+Node.js v20.18.0
+
+JS FAIL [1] src\modules\api\test_v1_contract.js
+\cmccu\AppData\Local\Temp\claude\c--GIT-Projects-Docusnap\18994421-2524-48d2-a00f-9f1a01116677\scratchpad\fu
+ll_suite.ps1:14 char:8
++   $o = & .\node_modules\.bin\electron.cmd $f.FullName 2>&1 | Out-Stri ...
++        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (TypeError: Cann...d (reading '0'):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+    at main (C:\GIT Projects\Docusnap\src\modules\api\test_v1_contract.js:160:41)
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+JS FAIL [1] src\modules\processing\test_quiet_lane_ready_templated.js
+r learning ÔÇö confirm once."
+  OK  ÔÇªand NOT the layout arm's "new box" wording
+  OK  audit carries first_fill_ids
+  OK  F2 (positive control): a page-corroborated first-fill stands with no note
+┬º5 source contract
+  OK  the handler wires readyArm.enabled off _readyTemplatedEnabled and floor off trust.scopeTrust
+  OK  env 0 ÔåÆ off
+  OK  env 1 ÔåÆ on
+  OK  default (no setting) ÔåÆ OFF (DARK)
+  OK  Settings surfaces the toggle and binds it to the setting
+  BAD the ready arm fires only inside a job whose reasons carry ready, and the C3.3 hold covers via layout OR ready
+
+FAILED: 1
+
+JS FAIL [1] src\windows\shared\test_doctype_surface_parity.js
+has an "Add from catalog" button
+  OK  Teach has an "Edit this type" button
+  OK  Teach mounts the shared editor in CREATE mode
+  OK  Teach mounts the shared editor in EDIT mode
+  OK  Settings mounts the same two modes
+
+4. The wizard stays usable after a type changes underneath it
+  OK  adding from the catalog re-renders the type list
+  OK  editing a type refreshes the fields the operator is about to teach
+  BAD the edit button is hidden while creating a new type
+
+5. The modal opts out of help-mode (the dead-dialog class)
+  OK  the shared overlay sets data-help-ignore
+
+1 FAILED
+
+JS FAIL [1] src\windows\teach\test_teach_multipage.js
+K  the straightened render is banked against its own page
+
+THE CONSEQUENCES THAT KEEP IT HONEST
+  OK  a half-drawn box is dropped when the page changes (it means nothing on another page)
+  OK  a stored box is only drawn on the page it belongs to
+  OK  selecting a field taught on another page follows it there
+  OK  an UNCONFIRMED read-back is dropped when the page changes
+  OK  the panel is reset via renderFieldPrompt (not promptField, which would flip back)
+
+BACKWARD COMPATIBILITY
+  OK  a result with no page (an in-flight wizard across an update) still commits as page 0
+
+1 FAILED
+
+JS: 274 files, 6 failed
+PY FAIL [1] test_anchor_crop_crosscheck.py
+lagged (scoped to cross-supplier)
+  OK  same-supplier not flagged
+
+9. value-below-label low label match (0.7) -> suppressed (no spurious flag)
+  OK  low-match not flagged
+
+10. value-below-label AGREE -> byte-identical (no flag)
+  OK  agreement -> no flag
+  OK  agreement -> value kept at clean confidence
+
+11. _reads_disagree: calendar-aware for dates, string compare otherwise
+  OK  same date, different separator -> agree
+  OK  different dates -> disagree
+  OK  unparseable date -> never disagree
+  OK  ref string differs -> disagree
+  OK  empty read -> no disagreement
+
+3 FAILED
+
+PY FAIL [1] test_engine_detail_thread.py
+  OK  identify_template WAS called (templates present)
+  OK  a computable detail hash IS threaded as query_detail_hash
+  BAD no page image -> query_detail_hash threaded as None (value flows from the computed hash)
+
+1 FAILED
+
+PY FAIL [1] test_gate_reread_clean.py
+ON-date field gets the same calendar bar:
+OK  text field, '1/12/2026' vs '11/2/2026' -> False
+OK  text field, '20/05/2026' vs '20-05-2026' -> True
+
+Wiring (source) ÔÇö kill switch, clean return shape, call-site skip:
+OK  clean branch is gated on GATE_REREAD_CLEAN_ACCEPT (OFF => review-bound legacy, byte-identical)
+OK  clean return carries reread_clean and NO cap/was_corrected/corrected_to/validation_note
+OK  call site pops reread_clean and continues BEFORE the n_flagged/format_anomaly bump
+BAD the review-bound path is INTACT (cap + note still emitted for 1-2-edit repairs)
+
+1 FAILED
+
+PY FAIL [1] test_label_overrides.py
+rride displaces template_fixed incumbent
+  BAD plain keyword does NOT displace template_fixed (autodetect stays fallback)
+8. engine: auto-learned anchor yields to override; authoritative anchor wins
+  OK  auto-learned anchor does NOT override the admin label override
+  OK  authoritative (re-taught) anchor still overrides the override (tier 1)
+9. engine: drawn mapping beats auto-learned anchor; authoritative anchor wins outright
+  BAD auto-learned anchor does NOT override the hand-drawn mapping
+  OK  authoritative anchor wins over a mapping even at lower confidence (Tier A)
+
+2 FAILED
+
+PY FAIL [1] test_network_field_authority.py
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\GIT Projects\Docusnap\python_backend\tests\test_network_field_authority.py", line 54, in _run
+    return eng.extract(ocr_text="stub", page_images=[], filename="t.pdf",
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\GIT Projects\Docusnap\python_backend\extraction\engine.py", line 9109, in extract
+    results = validator.validate_and_adjust(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: _run.<locals>.<lambda>() got an unexpected keyword argument 'trace'
+
+PY FAIL [1] test_reprocess_manifest.py
+-a00f-9f1a01116677\scratchpad\fu
+ll_suite.ps1:29 char:8
++   $o = & py -3.12 $f.FullName 2>&1 | Out-String
++        ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "C:\GIT Projects\Docusnap\python_backend\tests\test_reprocess_manifest.py", line 33, in <module>
+    e, k, s, ct, _ = doc_overrides({}, "a.pdf", enhance={"x": 1}, known_template_id=5, known_doc_slug="invoice")
+    ^^^^^^^^^^^^^^
+ValueError: too many values to unpack (expected 5)
+
+PY FAIL [1] test_template_rescue.py
+OK  drifted-logo PO RESCUED to the Meridian PO template (id 25)
+OK    -> method 'keywords+slug_rescue'
+OK    -> confidence 60 (layout signal, not a full logo identity)
+OK  wrong-supplier PO (branding overlap < 0.80) NOT rescued -> None
+BAD only invoice sibling + trusted PO title -> None (no wrong-type rescue)
+OK  untrusted title -> rescue does NOT fire (id 25 not force-picked)
+OK  close logo still matched via the logo path (method logo*, not rescue)
+
+1 FAILED
+
+PY script-style: 264 files, 7 failed
+PYTEST: uld return None, but tests/test_text_enhance.py::test_sauvola_binary returned <class 'int'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_text_enhance.py::test_enhance_runs_and_upscales
+  C:\Users\cmccu\AppData\Local\Programs\Python\Python312\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_text_enhance.py::test_enhance_runs_and_upscales returned <class 'int'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+tests/test_text_enhance.py::test_degrades_gracefully
+  C:\Users\cmccu\AppData\Local\Programs\Python\Python312\Lib\site-packages\_pytest\python.py:170: PytestReturnNotNoneWarning: Test functions should return None, but tests/test_text_enhance.py::test_degrades_gracefully returned <class 'int'>.
+  Did you mean to use `assert` instead of `return`?
+  See https://docs.pytest.org/en/stable/how-to/assert.html#return-not-none for more information.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_identity_fusion.py::test_verdict_conflict_agree_abstain - A...
+1 failed, 307 passed, 104 warnings in 3.54s
+
+END 2026-08-26T23:27:57

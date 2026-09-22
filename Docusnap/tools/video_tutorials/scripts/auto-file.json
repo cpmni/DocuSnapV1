@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "title": "Let ScanFinder auto-file the easy ones",
+  "description": "Turn on auto-filing so clean documents skip Review, set the confidence threshold, and explain per-sender graduation (a new sender proves itself with a few clean confirmations before its documents file themselves). Settings -> Processing.",
+  "target_length_sec": 120,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "ScanFinder can file the documents it's sure about by itself, and only ask you about the rest. Here's how to switch that on.",
+      "caption": "Auto-file the easy ones",
+      "duration_sec": 11.5
+    },
+    {
+      "id": "open_settings",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-settings",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Settings from the side bar.",
+      "caption": "1. Open Settings",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "open_tab",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": ".tab[data-tab=\"processing\"]",
+        "timeout": 15
+      },
+      "target": {
+        "selector": ".tab[data-tab=\"processing\"]",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Then open the Processing tab.",
+      "caption": "2. Processing tab",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "toggle_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#auto-file-toggle + .toggle-slider",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#auto-file-toggle + .toggle-slider",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "This switch lets ScanFinder file a document without showing it to you — but only when it read perfectly cleanly.",
+      "caption": "The auto-file switch",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "toggle_on",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#auto-file-toggle + .toggle-slider",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Turn it on.",
+      "caption": "3. Turn on auto-file",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "threshold_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#auto-file-threshold",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "This slider is how sure it has to be. At a hundred percent only flawless reads file themselves; lower it and it'll file a few more.",
+      "caption": "How sure it must be",
+      "duration_sec": 13.0
+    },
+    {
+      "id": "threshold_set",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#auto-file-threshold",
+        "window": "Scan Finder — Settings",
+        "at": [0.5, 0.5]
+      },
+      "narration": "Drag it down to somewhere you trust — say, around ninety.",
+      "caption": "4. Set the threshold",
+      "duration_sec": 6.0
+    },
+    {
+      "id": "threshold_val",
+      "action": "move_to",
+      "target": {
+        "selector": "#auto-file-threshold-val",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "The number here always shows the level you've chosen, at a glance.",
+      "caption": "The level, at a glance",
+      "duration_sec": 6.5
+    },
+    {
+      "id": "graduation_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#graduation-window-row",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "And it's careful with new senders. A sender you've never confirmed won't auto-file at all until you've confirmed a few of its documents cleanly — so it earns your trust first.",
+      "caption": "New senders earn trust first",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "Set it once, and your quiet days get a lot quieter. Next: Learning Repair.",
+      "caption": "Next: Learning Repair",
+      "duration_sec": 7.5
+    }
+  ]
+}

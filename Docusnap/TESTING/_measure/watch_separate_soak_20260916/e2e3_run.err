@@ -1,0 +1,2 @@
+C:\GIT Projects\Docusnap\TESTING\_measure\watch_separate_soak_20260916\e2e3_run.sh: line 30: syntax error near unexpected token `}'
+C:\GIT Projects\Docusnap\TESTING\_measure\watch_separate_soak_20260916\e2e3_run.sh: line 30: `ogin = 'ERR ' + e; }); 'sent'" >> "$LOG" 2>&1'

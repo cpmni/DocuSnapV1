@@ -1,0 +1,165 @@
+{
+  "version": 1,
+  "title": "Welcome to ScanFinder — the 2-minute tour",
+  "description": "The orientation video for a brand-new user: what ScanFinder does, that it runs entirely on your own PC, and where every action lives. Tours the left navigation rail, the Local-only shield, the dashboard cards, and the account menu (practice run + User Guide). No windows are opened — the rail items are pointed at, not clicked.",
+  "target_length_sec": 90,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "Welcome to ScanFinder. In the next couple of minutes you'll see what it does and where everything lives. In short: it reads your scanned documents, works out what each one is and who sent it, files it away tidily, and lets you find any of them later in seconds.",
+      "caption": "Welcome to ScanFinder",
+      "duration_sec": 17.0
+    },
+    {
+      "id": "rail_home",
+      "action": "move_to",
+      "target": {
+        "selector": "#btn-home",
+        "window": "ScanFinder"
+      },
+      "narration": "Everything you do sits on this bar down the left. Home is the dashboard you're looking at now — your at-a-glance view of what's going on.",
+      "caption": "The navigation bar, on the left",
+      "duration_sec": 9.5
+    },
+    {
+      "id": "rail_import_review",
+      "action": "move_to",
+      "target": {
+        "selector": "#btn-review",
+        "window": "ScanFinder"
+      },
+      "narration": "Import brings a folder of scans in. Review is where you check anything ScanFinder wasn't completely sure about — the small number that need a human eye.",
+      "caption": "Import brings scans in · Review is your check",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "rail_search_teach",
+      "action": "move_to",
+      "target": {
+        "selector": "#btn-teach",
+        "window": "ScanFinder"
+      },
+      "narration": "Search finds any filed document. Teach shows ScanFinder where the details sit on a new supplier's documents, so it reads them correctly from then on.",
+      "caption": "Search finds anything · Teach adds a supplier",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "rail_rest",
+      "action": "move_to",
+      "target": {
+        "selector": "#btn-settings",
+        "window": "ScanFinder"
+      },
+      "narration": "Export sends your records to a spreadsheet, and Settings and Help are here whenever you need them.",
+      "caption": "Export · Settings · Help",
+      "duration_sec": 8.0
+    },
+    {
+      "id": "local_only",
+      "action": "move_to",
+      "target": {
+        "selector": "[data-help-key=\"local-only\"]",
+        "window": "ScanFinder"
+      },
+      "narration": "This shield down here is worth pausing on. ScanFinder runs entirely on your own computer. Your documents are never uploaded anywhere — everything stays local and private, and it works with no internet at all.",
+      "caption": "Local only — nothing leaves your PC",
+      "duration_sec": 14.5
+    },
+    {
+      "id": "attention_card",
+      "action": "move_to",
+      "target": {
+        "selector": "#dash-attention",
+        "window": "ScanFinder"
+      },
+      "narration": "Back to the dashboard. This card tells you at a glance how many documents are waiting for a quick check in Review, so you always know if anything needs you.",
+      "caption": "Needs attention — what's waiting for you",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "learning_card",
+      "action": "move_to",
+      "target": {
+        "selector": "#dash-learning",
+        "window": "ScanFinder"
+      },
+      "narration": "And this one tracks how ScanFinder is getting smarter. As you teach a supplier and confirm a few of its documents, it begins filing that supplier on its own — so over time it does more and more of the work, and asks you less and less.",
+      "caption": "Getting smarter — it files more on its own",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "account_open",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#user-chip",
+        "window": "ScanFinder"
+      },
+      "narration": "Up in the top corner is your account menu.",
+      "caption": "1. Open the account menu",
+      "duration_sec": 5.0
+    },
+    {
+      "id": "practice_hover",
+      "action": "move_to",
+      "wait_for": {
+        "window": "ScanFinder",
+        "selector": "#menu-tutorial",
+        "timeout": 10
+      },
+      "target": {
+        "selector": "#menu-tutorial",
+        "window": "ScanFinder"
+      },
+      "narration": "If you're brand new, the practice run is a safe walk-through of teaching, importing and confirming on sample documents — nothing there touches your real files.",
+      "caption": "Try a practice run — safe sample documents",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "guide_hover",
+      "action": "move_to",
+      "target": {
+        "selector": "#menu-user-guide",
+        "window": "ScanFinder"
+      },
+      "narration": "And the full User Guide is always a click away.",
+      "caption": "The User Guide is always here",
+      "duration_sec": 5.5
+    },
+    {
+      "id": "close_menu",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-home",
+        "window": "ScanFinder"
+      },
+      "narration": "That's the layout.",
+      "caption": "2. Back to Home",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "So that's the whole idea: bring your documents in, give the odd one a quick check, and then find any of them forever. The next videos walk through each step, starting with your first import.",
+      "caption": "Bring in · check · find forever",
+      "duration_sec": 12.5
+    }
+  ]
+}

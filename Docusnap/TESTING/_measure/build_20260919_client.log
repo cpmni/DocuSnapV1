@@ -1,0 +1,26 @@
+
+> scanfinder-client@1.0.2 predist
+> node ../scripts/sync-client-search.js
+
+[sync-client-search] 0 written, 0 removed → client/renderer/shared/
+
+> scanfinder-client@1.0.2 dist
+> node -e "const c=require('child_process');process.env.BUILD_REV=require('../scripts/build-rev').buildRev();c.execSync('electron-builder --win --x64 --config.extraMetadata.buildRev=' + process.env.BUILD_REV,{stdio:'inherit',env:process.env})"
+
+  • electron-builder  version=26.15.3 os=10.0.26200
+  • loaded configuration  file=package.json ("build" field)
+  • executing @electron/rebuild  electronVersion=44.0.0 arch=x64 buildFromSource=false workspaceRoot=C:\GIT Projects\Docusnap\client projectDir=./ appDir=./
+  • installing native dependencies  arch=x64
+  • completed installing native dependencies
+  • packaging       platform=win32 arch=x64 electron=44.0.0 appOutDir=dist\win-unpacked
+  • downloaded      label=electron progress=100%
+  • downloaded electron zip extracted successfully  output=C:\GIT Projects\Docusnap\client\dist\win-unpacked
+  • searching for node modules  pm=npm searchDir=C:\GIT Projects\Docusnap\client
+  • updating asar integrity executable resource  executablePath=dist\win-unpacked\ScanFinder Search Client.exe
+  • executing @electron/fuses  electronPath=dist\win-unpacked\ScanFinder Search Client.exe
+  • signing with signtool.exe  path=dist\win-unpacked\ScanFinder Search Client.exe
+  • building        target=nsis file=dist\ScanFinder Search Client Setup 1.0.2-r20260919-1240-71e6705.exe archs=x64 oneClick=false perMachine=true
+  • signing with signtool.exe  path=dist\win-unpacked\resources\elevate.exe
+  • signing with signtool.exe  path=dist\ScanFinder Search Client Setup 1.0.2-r20260919-1240-71e6705.__uninstaller.exe
+  • signing with signtool.exe  path=dist\ScanFinder Search Client Setup 1.0.2-r20260919-1240-71e6705.exe
+  • building block map  blockMapFile=dist\ScanFinder Search Client Setup 1.0.2-r20260919-1240-71e6705.exe.blockmap

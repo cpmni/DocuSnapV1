@@ -1,0 +1,5 @@
+=== arm off start 19:00:36 ===
+exit=127 19:32:55 rows=147
+census outcomes:
+   {'entered': 215, 'nocut': 159, 'healed_flagged': 17, 'declined_edges': 22, 'declined': 9, 'noop': 8}
+=== arm mapper start 19:32:56 ===

@@ -1,0 +1,16 @@
+=== ARM off start 11:07:58 ===
+off | before: [('Bramblewood Joinery Ltd', 'purchase_order', 'Bramblewood Joinery Ltd', 10)] | after: [('Veltrix Automotive Parts', 'sales_order', 'customer_name', 'Bramblewood Joinery Ltd', 8), ('Silverbeck Cleaning Supplies', 'sales_order', 'customer_name', 'Bramblewood Joinery Ltd', 8), ('Harrowgate Timber Supplies', 'sales_order', 'customer_name', 'Bramblewood Joinery Ltd', 5), ('Oakhaven Electrical Wholesale', 'delivery_note', 'customer_name', 'Bramblewood Joinery Ltd', 5), ('__global__', 'delivery_note', 'customer_name', 'Bramblewood Joinery Ltd', 2), ('Bramblewood Joinery Ltd', 'purchase_order', 'supplier_name', 'Bramblewood Joinery Ltd', 1)] | settings: [('buyer_issued_convention_note', 'true'), ('buyer_issued_convention_one_confirm', 'false')]
+exit=0
+| buyer_large | 20 | 100% | 60% | 100% | 100% | - | 0 | 0 | 0 | 0 | 0/0 |
+=== ARM off end 11:12:04 ===
+=== ARM on start 11:12:04 ===
+on | before: [('Bramblewood Joinery Ltd', 'purchase_order', 'Bramblewood Joinery Ltd', 10)] | after: [('Bramblewood Joinery Ltd', 'purchase_order', 'buyer_issued_convention', 'Bramblewood Joinery Ltd', 1), ('Veltrix Automotive Parts', 'sales_order', 'customer_name', 'Bramblewood Joinery Ltd', 8), ('Silverbeck Cleaning Supplies', 'sales_order', 'customer_name', 'Bramblewood Joinery Ltd', 8), ('Harrowgate Timber Supplies', 'sales_order', 'customer_name', 'Bramblewood Joinery Ltd', 5), ('Oakhaven Electrical Wholesale', 'delivery_note', 'customer_name', 'Bramblewood Joinery Ltd', 5), ('__global__', 'delivery_note', 'customer_name', 'Bramblewood Joinery Ltd', 2), ('Bramblewood Joinery Ltd', 'purchase_order', 'supplier_name', 'Bramblewood Joinery Ltd', 1)] | settings: [('buyer_issued_convention_note', 'true'), ('buyer_issued_convention_one_confirm', 'true')]
+exit=0
+| buyer_large | 20 | 100% | 60% | 100% | 100% | - | 0 | 7 | 4 | 4 | 0/0 |
+=== ARM on end 11:16:07 ===
+=== ARM ctrl start 11:16:07 ===
+ctrl | before: [('Bramblewood Joinery Ltd', 'purchase_order', 'Bramblewood Joinery Ltd', 10)] | after: [('Veltrix Automotive Parts', 'sales_order', 'customer_name', 'Bramblewood Joinery Ltd', 8), ('Silverbeck Cleaning Supplies', 'sales_order', 'customer_name', 'Bramblewood Joinery Ltd', 8), ('Harrowgate Timber Supplies', 'sales_order', 'customer_name', 'Bramblewood Joinery Ltd', 5), ('Oakhaven Electrical Wholesale', 'delivery_note', 'customer_name', 'Bramblewood Joinery Ltd', 5), ('__global__', 'delivery_note', 'customer_name', 'Bramblewood Joinery Ltd', 2), ('Bramblewood Joinery Ltd', 'purchase_order', 'supplier_name', 'Bramblewood Joinery Ltd', 1)] | settings: [('buyer_issued_convention_note', 'true'), ('buyer_issued_convention_one_confirm', 'true')]
+exit=0
+| buyer_large | 20 | 100% | 60% | 100% | 100% | - | 0 | 0 | 0 | 0 | 0/0 |
+=== ARM ctrl end 11:20:05 ===
+ALL CONVENTION ARMS DONE 11:20:05

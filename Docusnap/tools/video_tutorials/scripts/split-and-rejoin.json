@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "title": "Split a stack — or rejoin split pages",
+  "description": "The Review tools for fixing page grouping by hand: the Split tool (by page range, one file per page, or every N pages) when one scan holds several documents, and the reverse — the 'Join with page N' button that stitches a wrongly-cut document back together. The Split flyout and its options record live on any open document; committing a real split needs a multi-page stack, and the Join button only appears on a document ScanFinder pair-held — see the report for what needs a real multi-page / pair-held doc.",
+  "target_length_sec": 80,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "Sometimes one scan holds several documents, or the reverse: a single document ends up split across pages. Review lets you fix both by hand.",
+      "caption": "Fix how pages are grouped",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "open_review",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-review",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Review from the side bar.",
+      "caption": "Open Review",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "open_group",
+      "action": "move_to",
+      "wait_for": {
+        "window": "ScanFinder — Review",
+        "selector": "#queue-list .queue-group-head",
+        "timeout": 30
+      },
+      "target": {
+        "selector": "#queue-list .queue-group-head",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "Everything's grouped by sender — open one,",
+      "caption": "1. A sender's documents",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "open_doc",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "ScanFinder — Review",
+        "selector": "#queue-list .qi-name",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#queue-list .qi-name",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "and open one of its documents.",
+      "caption": "2. Open a document",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "open_split",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "ScanFinder — Review",
+        "selector": "#btn-split-pdf",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#btn-split-pdf",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "The scissors button opens the Split tool for this document.",
+      "caption": "3. Open the Split tool",
+      "duration_sec": 6.0
+    },
+    {
+      "id": "split_modes",
+      "action": "move_to",
+      "wait_for": {
+        "window": "ScanFinder — Review",
+        "selector": "#split-mode",
+        "timeout": 10
+      },
+      "target": {
+        "selector": "#split-mode",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "There are three ways to split: by page range, one file for every page, or every N pages.",
+      "caption": "By range, per page, or every N",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "split_ranges",
+      "action": "move_to",
+      "target": {
+        "selector": "#split-ranges-input",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "For ranges you'd type something like 1-2, 3 — pages one and two become one document, page three another.",
+      "caption": "e.g. 1-2, 3",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "split_confirm",
+      "action": "move_to",
+      "target": {
+        "selector": "#btn-split-confirm",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "Click Split and each part becomes its own document in Review. The original scan is replaced, so do this on a real multi-page stack.",
+      "caption": "4. Split into separate documents",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "rejoin",
+      "action": "wait",
+      "narration": "The reverse is just as easy. If a document was cut in the wrong place, its held-back page offers a Join with page N button. One click puts it back together.",
+      "caption": "Rejoin: Join with page N",
+      "duration_sec": 14.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "Split when a scan holds several documents; rejoin when one got separated.",
+      "caption": "Split or rejoin — both by hand",
+      "duration_sec": 6.0
+    }
+  ]
+}

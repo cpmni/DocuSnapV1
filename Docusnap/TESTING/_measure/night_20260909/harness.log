@@ -1,0 +1,86 @@
+    [op] operating point: test_build_armed_rev="20260909-1607-cad6c2c-TEST"; 32/34 TEST_SWITCH_KEYS ON; RR_APP_ENV=ON(default)
+    [env] RR_APP_ENV — mirroring 137 app spawn vars (NOT the historical baseline)
+[ 11%] 13/123 done · 0 disagreeing with their confirmed values
+[ 21%] 26/123 done · 0 disagreeing with their confirmed values
+[ 32%] 39/123 done · 0 disagreeing with their confirmed values
+[ 42%] 52/123 done · 1 disagreeing with their confirmed values
+    #26 doc26.pdf — date '07-12-2026'->'17-12-2026'
+[ 53%] 65/123 done · 1 disagreeing with their confirmed values
+[ 63%] 78/123 done · 2 disagreeing with their confirmed values
+    #77 doc77.pdf — date '19-03-2026'->'09-03-2026'
+[ 74%] 91/123 done · 3 disagreeing with their confirmed values
+    #78 doc78.pdf — date '11-10-2026'->'01-10-2026'
+[ 85%] 104/123 done · 3 disagreeing with their confirmed values
+[ 95%] 117/123 done · 3 disagreeing with their confirmed values
+[100%] 123/123 done · 3 disagreeing with their confirmed values
+# Real-doc regression — 123 confirmed docs reprocessed vs their confirmed values
+(0 confirmed docs had no resolvable file and were skipped.)
+⚠ #82: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='SO-34294' file='CopperfieldElectrical_sales_order_19.pdf')
+⚠ #81: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='SO-93226' file='CopperfieldElectrical_sales_order_09.pdf')
+⚠ #88: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='WS-65838' file='CopperfieldElectrical_worksheet_07.pdf')
+⚠ #89: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='WS-74522' file='CopperfieldElectrical_worksheet_04.pdf')
+⚠ #90: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='WS-80213' file='CopperfieldElectrical_worksheet_05.pdf')
+⚠ #92: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='WS-30026' file='CopperfieldElectrical_worksheet_03.pdf')
+⚠ #118: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='INV-32871' file='IronbridgeFabrication_invoice_09.pdf')
+
+## Early-warning disagreements: 3
+type/supplier/ref/date compared against the confirmed values as each document landed.
+A SUPERSET of the gate: a disagreement that was correctly flagged for review is not a
+failure. The gate numbers are the SILENT wrong values and wrong auto-files below.
+```
+  #26 doc26.pdf — date '07-12-2026'->'17-12-2026'
+  #77 doc77.pdf — date '19-03-2026'->'09-03-2026'
+  #78 doc78.pdf — date '11-10-2026'->'01-10-2026'
+```
+
+| Field | correct | scored | accuracy |
+|---|---|---|---|
+| type | 123 | 123 | 100.0% |
+| supplier | 123 | 123 | 100.0% |
+| ref | 123 | 123 | 100.0% |
+| date | 120 | 123 | 97.6% |
+| total | 0 | 0 | - |
+| subtotal | 0 | 0 | - |
+
+**Regressions (a confirmed value the pipeline no longer reproduces): 3** — of which 2 SILENT (wrong + no review flag).
+- #26 invoice date: want '07-12-2026' got '17-12-2026' [flagged]
+- #77 sales_order date: want '19-03-2026' got '09-03-2026' [SILENT]
+- #78 sales_order date: want '11-10-2026' got '01-10-2026' [SILENT]
+
+## Per-field fill rate (non-empty), by document type
+A withholding change must not drop any of these. supplier_name is called out separately:
+it is the learning-scope key AND the filing folder, so a drop there is the worst kind.
+- delivery_note · customer_name: 19/19 (100.0%)
+- delivery_note · delivery_date: 19/19 (100.0%)
+- delivery_note · delivery_number: 19/19 (100.0%)
+- invoice · invoice_date: 41/41 (100.0%)
+- invoice · invoice_number: 41/41 (100.0%)
+- purchase_order · po_date: 21/21 (100.0%)
+- purchase_order · po_number: 21/21 (100.0%)
+- sales_order · customer_name: 21/21 (100.0%)
+- sales_order · order_date: 21/21 (100.0%)
+- sales_order · sales_order_number: 21/21 (100.0%)
+- worksheet · date: 21/21 (100.0%)
+- worksheet · reference_number: 21/21 (100.0%)
+
+**ISSUER FILL RATE (supplier_name) — watch this one first:**
+- delivery_note · supplier_name: 19/19 (100.0%)
+- invoice · supplier_name: 41/41 (100.0%)
+- purchase_order · supplier_name: 21/21 (100.0%)
+- sales_order · supplier_name: 21/21 (100.0%)
+- worksheet · supplier_name: 21/21 (100.0%)
+
+**Auto-file soundness (#6): 110/123 reprocessed docs would auto-file; 2 would auto-file a WRONG value (must be 0).**
+- #77 sales_order would-auto-file but WRONG on: date
+- #78 sales_order would-auto-file but WRONG on: date
+
+**Wrong-TYPE auto-file (M_type, Oracle C3): 0 (must be 0 — would auto-file under the WRONG document type; a subset of M above, tracked + gated separately).**
+
+**Banner heading re-reads adopted (BANNER_HEADING_REREAD): 3 (red-channel recovery FIRED + adopted a trusted type; 0 = never fired on this corpus, NOT proof of safety).**
+- #55 purchase_order -> Purchase Order
+- #59 purchase_order -> Purchase Order
+- #88 worksheet -> Worksheet
+
+**Gate-failure re-reads adopted (GATE_REREAD): 0 (review-bound — can't auto-file; 0 = the feature never fired, not "safe").**
+
+**c2 taught-field ownership caps (TAUGHT_FIELD_OWNERSHIP): 0 (HOLD-only — value untouched, review-bound; this is the review-VOLUME delta, not an accuracy change).**

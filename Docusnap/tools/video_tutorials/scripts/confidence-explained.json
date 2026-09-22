@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "title": "Why it files some and asks about others",
+  "description": "The trust model for a new user: ScanFinder auto-files the documents it's confident about and only holds the uncertain ones for Review. Explains the coloured confidence edge on queue rows, the plain-language 'why this needs review' summary, the green/amber/red field badges, and why clean documents from a trusted sender never appear here. Assumes documents are waiting in Review after the import video (Ironbridge, an untaught sender).",
+  "target_length_sec": 110,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "ScanFinder files the documents it's confident about by itself, and only asks you about the ones it's unsure of. Here's how to tell the difference at a glance.",
+      "caption": "Why it files some and asks about others",
+      "duration_sec": 13.0
+    },
+    {
+      "id": "open_review",
+      "action": "move_and_click",
+      "target": { "selector": "#btn-review", "window": "ScanFinder" },
+      "narration": "Open Review.",
+      "caption": "1. Open Review",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "queue_colours",
+      "action": "move_to",
+      "wait_for": { "window": "ScanFinder — Review", "selector": "#queue-list .queue-group-head", "timeout": 30 },
+      "target": { "selector": "#queue-list", "window": "ScanFinder — Review" },
+      "narration": "Everything waiting for a look sits here. The coloured edge on a document is how sure ScanFinder is: a calm edge means it's nearly there, amber means please double-check, and red means it really needs your eyes.",
+      "caption": "The coloured edge = how sure it is",
+      "duration_sec": 18.0
+    },
+    {
+      "id": "open_group",
+      "action": "move_and_click",
+      "target": { "selector": "#queue-list .queue-group-head", "window": "ScanFinder — Review" },
+      "narration": "Open a sender,",
+      "caption": "2. Open a sender",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "open_doc",
+      "action": "move_and_click",
+      "wait_for": { "window": "ScanFinder — Review", "selector": "#queue-list .qi-name", "timeout": 15 },
+      "target": { "selector": "#queue-list .qi-name", "window": "ScanFinder — Review" },
+      "narration": "and open one it flagged.",
+      "caption": "3. Open a flagged document",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "reason",
+      "action": "move_to",
+      "wait_for": { "window": "ScanFinder — Review", "selector": "#review-reason", "timeout": 15 },
+      "target": { "selector": "#review-reason", "window": "ScanFinder — Review" },
+      "narration": "At the top it tells you, in plain words, why it stopped. No jargon — just the one thing it wants you to check before it files.",
+      "caption": "It tells you WHY, in plain words",
+      "duration_sec": 13.0
+    },
+    {
+      "id": "badges",
+      "action": "move_to",
+      "target": { "selector": "#fields-panel", "window": "ScanFinder — Review" },
+      "narration": "Each detail carries a little badge. Green means it's confident, amber means give it a glance, and red means check it against the page. You only ever need to look where it's actually asking.",
+      "caption": "Green confident · amber glance · red check",
+      "duration_sec": 15.5
+    },
+    {
+      "id": "contrast",
+      "action": "wait",
+      "narration": "So what about the documents that didn't land here? Those read cleanly from a sender ScanFinder already trusts, so it filed them for you without asking. The more you confirm a sender, the more it quietly handles on its own.",
+      "caption": "Clean read + trusted sender = filed for you",
+      "duration_sec": 17.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "So the colour tells you how sure it is, and only the uncertain ones ever need you. Next, let's see exactly where a filed document ends up.",
+      "caption": "Next: where your documents go",
+      "duration_sec": 12.0
+    }
+  ]
+}

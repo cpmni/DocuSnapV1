@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "title": "Fix the learning — Learning Repair",
+  "description": "Un-teach a bad value: open Learning Repair, which lists every sender-and-type ScanFinder has learned from; open one, see the documents behind its reading, spot the one flagged 'Data looks off', and Send back to Review (non-destructive — it returns to the Review list to fix and confirm). Settings -> Learning Repair. REWRITTEN for the current UI: the old #rp-doctype select + #rp-load 'Open' button are gone; the panel is now a scope list (#rp-scope-search + .rp-scope-row[data-sup][data-slug] + filter pills). Clicking a scope row opens the detail, which still has #rp-doclist / .rp-row / #rp-suspects-strip / #rp-send. Needs a warm dataset with a poisoned learned value: the demo has 8 confirmed invoices (3 Copperfield, 5 Ironbridge), with one Copperfield invoice_number garbled to 'lNV-295g7' so the suspect detector (B1 shape-miss) flags it.",
+  "target_length_sec": 100,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "When ScanFinder learns a wrong value from a document, it can keep reading that sender wrong. Learning Repair lets you find the culprit and put it right.",
+      "caption": "Fix what it learned wrong",
+      "duration_sec": 13.5
+    },
+    {
+      "id": "open_settings",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-settings",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Settings from the side bar.",
+      "caption": "1. Open Settings",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "open_tab",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": ".tab[data-tab=\"repair\"]",
+        "timeout": 15
+      },
+      "target": {
+        "selector": ".tab[data-tab=\"repair\"]",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Open the Learning Repair tab.",
+      "caption": "2. Learning Repair tab",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "scope_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#rp-scope-search",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#rp-scope-search",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Nothing here is destructive. This lists every sender and type ScanFinder has learned from, and the filters up top jump straight to anything worth a look.",
+      "caption": "3. Everything it has learned",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "open_scope",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": ".rp-scope-row[data-sup=\"Copperfield Electrical\"]",
+        "timeout": 15
+      },
+      "target": {
+        "selector": ".rp-scope-row[data-sup=\"Copperfield Electrical\"]",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Open the one you want to check.",
+      "caption": "4. Open a sender's learning",
+      "duration_sec": 5.5
+    },
+    {
+      "id": "suspects_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#rp-suspects-strip",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#rp-suspects-strip",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Straight away, ScanFinder points out the ones worth a look — here, a document whose value reads oddly against the rest.",
+      "caption": "It flags the odd one",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "list_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#rp-doclist",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#rp-doclist",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Below are all the documents teaching this type's reading. If one was filed with a bad value, that's what's teaching the mistake.",
+      "caption": "The documents it learned from",
+      "duration_sec": 10.5
+    },
+    {
+      "id": "select_doc",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#rp-doclist .rp-row[data-id=\"1\"]",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Open the flagged one, and there's the odd value — and exactly why it stands out.",
+      "caption": "5. Open the flagged document",
+      "duration_sec": 6.5
+    },
+    {
+      "id": "sendback_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#rp-send",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#rp-send",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Found the bad one? Send back to Review. It doesn't delete anything — it just lands back in your Review list, ready to fix and confirm again.",
+      "caption": "6. Send back to Review",
+      "duration_sec": 13.5
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "Fix it once, confirm it right, and that sender reads correctly from then on.",
+      "caption": "One fix, right from then on",
+      "duration_sec": 7.5
+    }
+  ]
+}

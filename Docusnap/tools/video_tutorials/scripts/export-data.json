@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "title": "Hand your accountant a list — export to Excel/CSV",
+  "description": "Export a filtered list of your filed documents to CSV, Excel or JSON: choose document types, senders and columns, optionally a date range, pick a format, then export. Opened from the side-bar Export button (window 'Export data — Scan Finder'). The final save is a native save dialog — narrated and flagged, not filmed.",
+  "target_length_sec": 78,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "Need to hand your accountant a list of everything you've filed? Export turns your documents into a table for Excel, CSV or JSON.",
+      "caption": "Export your filing as a table",
+      "duration_sec": 10.5
+    },
+    {
+      "id": "open_export",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-export",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Export from the side bar.",
+      "caption": "1. Open Export",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "export_ensure",
+      "action": "eval_js",
+      "window": "ScanFinder",
+      "js": "window.docusnap.openExportWindow(); 'opened'",
+      "wait_for": {
+        "window": "Export data — Scan Finder",
+        "selector": "#type-list",
+        "timeout": 15
+      },
+      "narration": "",
+      "caption": "1. Open Export",
+      "duration_sec": 2.0
+    },
+    {
+      "id": "types",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#type-list input[data-type=\"invoice\"]",
+        "window": "Export data — Scan Finder"
+      },
+      "narration": "Choose which document types to include — here, invoices; or tick everything.",
+      "caption": "Pick document types",
+      "duration_sec": 7.0
+    },
+    {
+      "id": "senders",
+      "action": "move_to",
+      "target": {
+        "selector": "#sup-list",
+        "window": "Export data — Scan Finder"
+      },
+      "narration": "Narrow it to particular senders if you want,",
+      "caption": "…and which senders",
+      "duration_sec": 6.0
+    },
+    {
+      "id": "columns",
+      "action": "move_to",
+      "target": {
+        "selector": "#col-list",
+        "window": "Export data — Scan Finder"
+      },
+      "narration": "and tick exactly the columns you need — sender, date, reference, total, and so on.",
+      "caption": "Choose the columns",
+      "duration_sec": 8.0
+    },
+    {
+      "id": "dates",
+      "action": "move_to",
+      "target": {
+        "selector": "#opt-doc-from",
+        "window": "Export data — Scan Finder"
+      },
+      "narration": "Add a date range to pull, say, just last quarter.",
+      "caption": "Optional: a date range",
+      "duration_sec": 6.5
+    },
+    {
+      "id": "format",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#fmt-pills input[value='xlsx']",
+        "window": "Export data — Scan Finder"
+      },
+      "narration": "Then pick a format. Excel is safest: it keeps long reference and account numbers exactly as written, where CSV can mangle them.",
+      "caption": "Save as CSV, Excel or JSON",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "count",
+      "action": "move_to",
+      "target": {
+        "selector": "#count-line",
+        "window": "Export data — Scan Finder"
+      },
+      "narration": "The count along the bottom tells you how many documents you're about to export.",
+      "caption": "Live count of matching docs",
+      "duration_sec": 7.0
+    },
+    {
+      "id": "export_btn",
+      "action": "move_to",
+      "target": {
+        "selector": "#btn-run",
+        "window": "Export data — Scan Finder"
+      },
+      "narration": "Click Export and choose where to save it — Scan Finder writes the file, ready to open or email.",
+      "caption": "2. Export — then choose where to save",
+      "duration_sec": 9.5
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "That's Export — your filing as a spreadsheet, whenever someone needs one.",
+      "caption": "Your filing as a spreadsheet",
+      "duration_sec": 6.5
+    }
+  ]
+}

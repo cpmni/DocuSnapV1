@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "title": "Check and correct a field — and it learns",
+  "description": "Shows a new user how to clear a flagged field in Review and why it pays off. A brand-new sender (Ironbridge Fabrication) arrives with its details flagged for a check because ScanFinder hasn't filed from it before — the company name reads at lower confidence. The viewer sees the honest mechanic: read the value against the page, click the field, type it exactly as printed, and confirm; confirming files it AND teaches the sender, so future documents read more confidently and eventually file themselves. Reframed from the original (no demo document actually mis-reads its issuer — every read is correct but low-confidence — so the narration no longer claims a wrong value; it teaches checking + the same click-and-type fix action). The group is auto-expanded on load and the first doc auto-selects, so the sender group is pointed at (not clicked, which would collapse it) and a document row is opened directly.",
+  "target_length_sec": 82,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "When a document arrives from a sender ScanFinder hasn't filed before, it flags the details for you to check first. Clearing them takes seconds — and it's never wasted, because every check teaches it.",
+      "caption": "Check it once, and it learns",
+      "duration_sec": 13.0
+    },
+    {
+      "id": "open_review",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-review",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Review.",
+      "caption": "1. Open Review",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "point_group",
+      "action": "move_to",
+      "wait_for": {
+        "window": "ScanFinder — Review",
+        "selector": "#queue-list .queue-group-head",
+        "timeout": 30
+      },
+      "target": {
+        "selector": "#queue-list .queue-group-head",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "Everything waiting is grouped by sender. Here's a brand-new supplier, with three invoices flagged for a look — ScanFinder isn't sure of them yet because it's the first time it has seen this letterhead.",
+      "caption": "New sender · flagged for a check",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "open_doc",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "ScanFinder — Review",
+        "selector": "#queue-list .qi-name",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#queue-list .qi-name",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "Open one of them.",
+      "caption": "2. Open a document",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "spot_field",
+      "action": "move_to",
+      "wait_for": {
+        "window": "ScanFinder — Review",
+        "selector": "#fields-panel .field-input",
+        "timeout": 20
+      },
+      "target": {
+        "selector": "#fields-panel",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "Read each detail on the left against the page on the right. The company name is the one to watch on a new sender — it's a free-text read, so it comes in with lower confidence. This one has actually read correctly.",
+      "caption": "Check each detail against the page",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "correct",
+      "action": "type_text",
+      "target": {
+        "selector": "#fields-panel .field-input[data-key=\"supplier_name\"]",
+        "window": "ScanFinder — Review"
+      },
+      "clear": true,
+      "text": "Ironbridge Fabrication",
+      "interval": 0.05,
+      "narration": "Whether a detail's spot-on or a letter's out of place, you set it right the same way: click the field, and type it exactly as it's printed on the page.",
+      "caption": "3. Type it exactly as printed",
+      "duration_sec": 10.5
+    },
+    {
+      "id": "confirm",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-confirm",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "Now confirm. It's filed — and here's the part that matters: ScanFinder has learned this sender, so its next invoices read more confidently, and after a few clean confirms it files them without asking at all.",
+      "caption": "4. Confirm — and it remembers",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "That's the rhythm of the first week or two: a quick check here and there, each one teaching it, until the filing quietly takes care of itself.",
+      "caption": "Early checks = less to do later",
+      "duration_sec": 11.0
+    }
+  ]
+}

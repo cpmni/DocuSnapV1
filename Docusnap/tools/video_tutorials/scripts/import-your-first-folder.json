@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "title": "Import your first folder of scans",
+  "description": "Turn a folder of PDFs into read, sorted documents in one click. The folder is chosen over DevTools (eval_js) instead of the native picker so the presenter's own folders never appear on camera. Eight demo invoices from two suppliers.",
+  "target_length_sec": 100,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "Importing is the everyday job. You point ScanFinder at the folder your scanner saves into, and it reads every document, works out what each one is, and files the ones it's sure about — all in one go.",
+      "caption": "Import a folder of scans",
+      "duration_sec": 13.0
+    },
+    {
+      "id": "open_import",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-import",
+        "window": "ScanFinder"
+      },
+      "narration": "Click Import in the side bar.",
+      "caption": "1. Click Import",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "folder_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#folder-box",
+        "window": "ScanFinder"
+      },
+      "narration": "Click this box to choose your folder. The normal Windows folder picker opens — you simply pick wherever your scans land. ScanFinder handles PDFs and image files, and it never deletes your originals: each one is tucked into a Processed folder alongside once it's been brought in.",
+      "caption": "2. Choose your scans folder",
+      "duration_sec": 18.0
+    },
+    {
+      "id": "set_folder",
+      "action": "eval_js",
+      "window": "ScanFinder",
+      "js": "(async () => { const folder = \"{{SCANS_BATCH_JS}}\"; selectedFolder = folder; const parts = folder.replace(/\\\\/g, '/').split('/'); folderDisplay.textContent = parts.length > 3 ? '…/' + parts.slice(-2).join('/') : folder; folderDisplay.title = folder; folderDisplay.classList.add('set'); folderBox.classList.remove('cue'); btnRun.disabled = false; const d = document.getElementById('dash-folder'); if (d) { d.textContent = folder; d.classList.add('set'); } await showFolderPreview(folder); return folder; })()",
+      "narration": "We've chosen a folder of eight invoices — three from a supplier ScanFinder has met before, and five from one it hasn't. It lists what it found first, so you can be sure it's the right folder before anything happens.",
+      "caption": "It lists the documents it found",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "process",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-run",
+        "window": "ScanFinder"
+      },
+      "narration": "When it looks right, click Process Documents.",
+      "caption": "3. Click Process Documents",
+      "duration_sec": 5.0
+    },
+    {
+      "id": "processing_1",
+      "action": "wait",
+      "narration": "Now it works through them, one page at a time — straightening the scan, reading every word, and picking out who sent it, the date, and the reference number.",
+      "caption": "Reading each page…",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "processing_2",
+      "action": "wait",
+      "narration": "Anything it's confident about is filed straight into your output folder, sorted by sender, year and month. Anything it's less sure of — a brand-new supplier, or a faint date — is set aside for a quick check in Review, rather than filed wrongly.",
+      "caption": "Sure → filed · unsure → Review",
+      "duration_sec": 15.5
+    },
+    {
+      "id": "processing_3",
+      "action": "wait",
+      "narration": "A small batch like this takes about a minute. A big one keeps running in the background, so you don't have to sit and watch it.",
+      "caption": "Bigger batches run in the background",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "finished",
+      "action": "move_to",
+      "wait_for": {
+        "window": "ScanFinder",
+        "selector": "#btn-review-docs",
+        "timeout": 600
+      },
+      "target": {
+        "selector": "#btn-review-docs",
+        "window": "ScanFinder"
+      },
+      "narration": "When it finishes, the counters tell you how many were filed automatically and how many are waiting for you. This green button takes you straight to the ones that need a look.",
+      "caption": "Filed vs waiting → Review your documents",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "That's importing — one folder, one click. Next, we'll clear anything it set aside, over in Review.",
+      "caption": "Next: Review",
+      "duration_sec": 8.5
+    }
+  ]
+}

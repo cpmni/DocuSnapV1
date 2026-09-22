@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "title": "File documents that don't need scanning — Quick File",
+  "description": "Quick File puts already-digital documents (PDF, Word, Excel, email) straight into your folders with no OCR and no teaching — just a few typed details. The Quick File side-bar item is HIDDEN unless direct_intake_enabled is on (it is, default-on since mig 171). A pane-tour: the file drop and the Choose files picker are a drag / native dialog and are narrated, not filmed, so no document is actually filed and the receipt is described (not shown). The sidebar item is clicked for the visual, then window.showView('quickfile') builds+shows the pane reliably (the click alone does not always build a never-opened pane). The type dropdown offers the quick-file presets (Contract/Agreement, Correspondence, Spreadsheet/Report, Filed Document) — the narration matches those, not Invoice/Receipt.",
+  "target_length_sec": 75,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "Some documents are already digital: a PDF from your email, a spreadsheet, a Word file. They don't need scanning, so Quick File files them straight away.",
+      "caption": "Quick File: no scanning needed",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "open_quickfile",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#nav-quickfile",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Quick File from the side bar.",
+      "caption": "1. Open Quick File",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "qf_open",
+      "action": "eval_js",
+      "window": "ScanFinder",
+      "js": "window.showView('quickfile'); 'opened'",
+      "wait_for": {
+        "window": "ScanFinder",
+        "selector": "#qf-dropzone",
+        "timeout": 10
+      },
+      "narration": "",
+      "caption": "1. Open Quick File",
+      "duration_sec": 2.0
+    },
+    {
+      "id": "dropzone",
+      "action": "move_to",
+      "target": {
+        "selector": "#qf-dropzone",
+        "window": "ScanFinder"
+      },
+      "narration": "Drag your documents straight onto this panel — one file, or a whole batch at once.",
+      "caption": "Drag documents in",
+      "duration_sec": 7.5
+    },
+    {
+      "id": "choose_files",
+      "action": "move_to",
+      "target": {
+        "selector": "#qf-dropzone .btn",
+        "window": "ScanFinder"
+      },
+      "narration": "Prefer to browse? Choose files opens a normal file picker instead.",
+      "caption": "…or choose files",
+      "duration_sec": 6.0
+    },
+    {
+      "id": "fill_company",
+      "action": "type_text",
+      "target": {
+        "selector": "#qf-root input[placeholder='Company or person']",
+        "window": "ScanFinder"
+      },
+      "text": "Northwind Traders",
+      "narration": "Then add a few quick details — start with who the document is from.",
+      "caption": "2. Add the details",
+      "duration_sec": 7.5
+    },
+    {
+      "id": "type_row",
+      "action": "move_to",
+      "target": {
+        "selector": "#qf-root select",
+        "window": "ScanFinder"
+      },
+      "narration": "Choose which type to file it as — a contract, a report, correspondence, whatever fits.",
+      "caption": "Pick the type",
+      "duration_sec": 7.0
+    },
+    {
+      "id": "file_btn",
+      "action": "move_to",
+      "target": {
+        "selector": "#qf-root button.btn-run",
+        "window": "ScanFinder"
+      },
+      "narration": "Then click File documents. Each file drops straight into the right company, year and month folder, with no OCR and no teaching, and it's searchable a moment later.",
+      "caption": "3. File — straight into your folders",
+      "duration_sec": 13.0
+    },
+    {
+      "id": "receipt_note",
+      "action": "wait",
+      "narration": "Once you file, each document gives you a receipt, with quick links to open its folder, find it in Search, or undo it if it went in by mistake.",
+      "caption": "A receipt: open, find, or undo",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "That's Quick File — for the documents that arrive already digital.",
+      "caption": "Digital docs, filed fast",
+      "duration_sec": 6.5
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{'date_left_capped': 5, 'declined': 9, 'healed_flagged': 17, 'noop': 8, 'declined_edges': 22, 'date_left_healed': 5, 'date_left_nofire': 1}
+   {'field': 'invoice_date', 'edges': 'L', 'outcome': 'date_left_capped', 'old': '9/03/2026', 'new': '25/03/2026'}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'declined', 'old': 'Aldarmonr Enaing-', 'new': None}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'healed_flagged', 'old': 'Corvus Security Servi', 'new': 'Corvus Security Services'}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'noop', 'old': 'Halcyon Leisure Group', 'new': None}
+   {'field': 'supplier_name', 'edges': 'L', 'outcome': 'declined_edges', 'old': 'arkspur Interiors', 'new': None}
+   {'field': 'supplier_name', 'edges': 'L', 'outcome': 'declined_edges', 'old': 'arkspur Interiors', 'new': None}
+   {'field': 'supplier_name', 'edges': 'L', 'outcome': 'declined_edges', 'old': 'arkspur Interiors', 'new': None}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'healed_flagged', 'old': 'Fernbank Veterinary Clin', 'new': 'Fernbank Veterinary Clinic'}
+   {'field': 'invoice_date', 'edges': 'L', 'outcome': 'date_left_healed', 'old': '9/10/2026', 'new': '19/10/2026'}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'declined', 'old': 'Halcyon Leisure Gr', 'new': None}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'healed_flagged', 'old': 'Kingfisher Print St.', 'new': 'Kingfisher Print Studio'}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'declined', 'old': 'COFVUS Security Service', 'new': None}
+   {'field': 'invoice_date', 'edges': 'L', 'outcome': 'date_left_capped', 'old': '1/10/2026', 'new': '24/10/2026'}
+   {'field': 'supplier_name', 'edges': 'L', 'outcome': 'declined_edges', 'old': 'arkspur Interiors', 'new': None}
+   {'field': 'supplier_name', 'edges': 'L', 'outcome': 'declined_edges', 'old': 'ronbridge Fabrication', 'new': None}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'healed_flagged', 'old': 'Kinafisher Print Sti', 'new': 'Kinafisher Print Studio'}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'healed_flagged', 'old': 'Halcyon Leisure G', 'new': 'Halcyon Leisure Group'}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'noop', 'old': 'Halcyon Leisure Group', 'new': None}
+   {'field': 'supplier_name', 'edges': 'R', 'outcome': 'noop', 'old': 'Larkspur Interiors', 'new': None}
+   {'field': 'supplier_name', 'edges': 'L', 'outcome': 'declined_edges', 'old': 'arkspur Interiors ©', 'new': None}
+   {'field': 'invoice_date', 'edges': 'L', 'outcome': 'date_left_healed', 'old': '6/06/2026', 'new': '06/06/2026'}
+   {'field': 'invoice_date', 'edges': 'L', 'outcome': 'date_left_healed', 'old': '0/10/2026', 'new': '10/10/2026'}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'healed_flagged', 'old': 'Willowbrook Nurse', 'new': 'Willowbrook Nurseries'}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'healed_flagged', 'old': 'Brightwater Dental Pri', 'new': 'Brightwater Dental Practice'}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'declined', 'old': 'Corvus Security Servi', 'new': None}
+   {'field': 'supplier_name', 'edges': 'L', 'outcome': 'declined_edges', 'old': 'arkspur Interiors', 'new': None}
+   {'field': 'invoice_date', 'edges': 'L', 'outcome': 'date_left_capped', 'old': '1/10/2026', 'new': '15/10/2026'}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'healed_flagged', 'old': 'Stonegate Property Mgn', 'new': 'Stonegate Property Mgmt'}
+   {'field': 'invoice_date', 'edges': 'L', 'outcome': 'date_left_healed', 'old': '6/06/2026', 'new': '26/06/2026'}
+   {'field': 'supplier_name', 'edges': 'L', 'outcome': 'declined_edges', 'old': 'ronbridge Fabrication', 'new': None}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'healed_flagged', 'old': 'Willowbrook Nurse', 'new': 'Willowbrook Nurseries'}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'declined', 'old': 'Stonegate Property M', 'new': None}
+   {'field': 'supplier_name', 'edges': 'R', 'outcome': 'noop', 'old': 'Larkspur Interiors', 'new': None}
+   {'field': 'supplier_name', 'edges': 'R', 'outcome': 'noop', 'old': 'Larkspur Interiors', 'new': None}
+   {'field': 'supplier_name', 'edges': 'L', 'outcome': 'declined_edges', 'old': 'arkspur Interiors', 'new': None}
+   {'field': 'supplier_name', 'edges': 'L', 'outcome': 'declined_edges', 'old': 'arkspur Interiors', 'new': None}
+   {'field': 'supplier_name', 'edges': 'L', 'outcome': 'declined_edges', 'old': 'arkspur Interiors', 'new': None}
+   {'field': 'customer_name', 'edges': 'R', 'outcome': 'declined', 'old': 'Fernbank Unis Cli', 'new': None}
+   {'field': 'supplier_name', 'edges': 'L', 'outcome': 'declined_edges', 'old': 'ronbridge Fabrication', 'new': None}
+   {'field': 'invoice_date', 'edges': 'L', 'outcome': 'date_left_capped', 'old': '3/01/2026', 'new': '28/01/2026'}

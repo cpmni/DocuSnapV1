@@ -1,0 +1,38 @@
+doc columns: id,document_type_id,original_filename,stored_filename,stored_path,folder_path,status,overall_confidence,supplier_name,doc_date,reference_number,processed_at,confirmed_at,error_message,template_id,logo_phash,keyword_fingerprint,ocr_text,working_path,review_acknowledged_at,page_count,deleted_at,confirmed_by_username,logo_detail_hash,supplier_pin,detected_type_name,learning_retracted_at,confirmed_via,drained_at,put_back_at,refile_declined_at,putback_refiled_at,learning_excluded_at,workflow_status
+"ERR no such column: created_at"
+
+--- doc 2 full text (664 chars):
+Castellan Security Systems
+Keep House, 14 Bastion Way · Fortbridge, FB1 9AA · VAT Reg GB 651 0027 84
+SERVICE WORKSHEET
+JOB SHEET NO CJB-9791 DATE 06-05-2026 Job Ref JB-4791
+BILL TO    SHIP TO
+Bramblewood Joinery Ltd    Bramblewood Joinery Ltd
+Unit 4, Sawpit Lane    Unit 4, Sawpit Lane
+Draymarket, DM2 6QF    Draymarket, DM2 6QF
+Description    Qty
+8-Channel NVR 2TB    1
+Serial No: CT-8051702
+IP Dome Camera 4MP    1
+Serial No: CT-8813265
+Work carried out:
+Installation commissioned and handed over.
+Engineer signature: ______________________ Customer signature: ______________________
+Castellan Security Systems · Registered in England · VAT Reg No GB 651 0027 84
+
+--- doc 217 full text (524 chars):
+cs
+Castellan    Security    Systems
+Keep House, 14 Bastion Way - Fortbridge, FBl1 9AA    -    VAT Reg GB 651 0027 84
+SERVICE    WORKSHEET
+JOB SHEET NO CJB-9791    DATE 06-05-2026    Job Ref JB-4791
+BILL TO    SHIP TO
+Bramblewood Joinery Ltd    Bramblewood Joinery Ltd
+Unit 4, Sawpit Lane    Unit 4, Sawpit Lane
+Draymarket, DM2 60F    Draymarket, DM2 60F
+Description    Qty
+8-Channel NVR 2TB    i
+IP Dome Camera 4MP    cd
+Work carried out:
+Installation commissioned and handed over.
+Engineer signature:    Customer signature:

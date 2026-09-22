@@ -1,0 +1,25 @@
+[Learning] 54 hints, 4 anchors, 4 logos, 2 templates, 14 format templates loaded
+  OCR corrector: 6 format templates, 0 learned noise profile(s) loaded
+  Format checker: 14 format class rule(s) loaded
+  Keyword label overrides: 20 loaded
+  OCR: IronbridgeFabrication_delivery_docket_01.pdf
+  Barcodes: 0 decoded on 1 page(s) (194 ms)
+  Document type: Delivery Note (93%)
+  Template matched: Ironbridge Fabrication (100% via logo+slug)
+  Stage 0: 1/4 fields from template
+  Stage 0.5: 4 anchor→target mapping(s)…
+  Stage 0.5: kept curated supplier 'Ironbridge Fabrication' — declined mapping read 'Ironbridge Fabrication' (agreement)
+  Stage 0.5: 3 field(s) refined via anchor/target mapping
+  Stage 1: keyword extraction…
+  Stage 1: 4/4 fields found
+  Stage 2: anchor extraction…
+  Stage 2: page registered (3/5 landmarks, residual 0.0075)
+  Stage 2: +0 fields from anchors
+  Stage 4: validating…
+  Format consistency: document confidence +9
+  FOUND   supplier_name: 'Ironbridge Fabrication' (95% via template_fixed)
+  FOUND   customer_name: 'Corvus Security Services' (89% via anchor_crop)
+  FOUND   delivery_date: '18-12-2026' (98% via anchor_inline)
+  FOUND   delivery_number: 'DN-34443' (89% via anchor_inline)
+
+STDERR:

@@ -1,0 +1,5 @@
+D1 CENSUS STARTED Tue Sep 22 12:14:13 GMTST 2026
+=== d1_on start 12:14:13
+   -> 400 rows, end 12:23:00
+=== compare base_env1 vs d1_on ===
+D1 CENSUS DONE 12:23:00

@@ -1,0 +1,355 @@
+{
+  "version": 1,
+  "title": "Teach ScanFinder a new document",
+  "description": "Teach one example so a supplier's documents read correctly from then on: open Teach, pick a Copperfield invoice, choose the type, draw a box around the issuer / date / number with live read-backs, and commit. The example is selected via eval_js (the Copperfield card) so the verified box fractions always match, since the doc-picker search box only appears for queues over eight documents.",
+  "target_length_sec": 220,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "Teaching is how ScanFinder learns a supplier you deal with often. You point out where the key details sit on one example, and from then on it reads every document from that sender the same way — without you lifting a finger.",
+      "caption": "Teach one document — file every one after it",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "open_teach",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-teach",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Teach from the side bar.",
+      "caption": "1. Click Teach",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "wizard_welcome",
+      "action": "wait",
+      "wait_for": {
+        "window": "Teach a new document — Scan Finder",
+        "selector": "#btn-next",
+        "timeout": 20
+      },
+      "narration": "The wizard keeps it simple: you draw a box around each value, and ScanFinder works out the label next to it. Nothing is saved until the very end, so you can always step back.",
+      "caption": "Draw a box · it finds the label",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "next_0",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-next",
+        "window": "Teach a new document — Scan Finder"
+      },
+      "narration": "Let's begin.",
+      "caption": "2. Get started",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "pick_copperfield",
+      "action": "eval_js",
+      "window": "Teach a new document — Scan Finder",
+      "wait_for": {
+        "window": "Teach a new document — Scan Finder",
+        "selector": "#doc-picker .card",
+        "timeout": 20
+      },
+      "js": "(() => { const cards=[...document.querySelectorAll('#doc-picker .card')]; const c=cards.find(el=>/copperfield/i.test(el.textContent)); if(c){ c.scrollIntoView({block:'center'}); c.click(); return c.textContent.replace(/\\s+/g,' ').slice(0,60); } return 'NO_COPPERFIELD_CARD'; })()",
+      "narration": "These are the documents waiting in Review. Choose a clean, ordinary example — I'll pick a Copperfield Electrical invoice, because a typical one teaches the layout best.",
+      "caption": "3. Pick a clean, typical example",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "pick_hover",
+      "action": "move_to",
+      "target": {
+        "selector": "#doc-picker .card.sel",
+        "window": "Teach a new document — Scan Finder"
+      },
+      "narration": "That's the one.",
+      "caption": "Chosen",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "next_1",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-next",
+        "window": "Teach a new document — Scan Finder"
+      },
+      "narration": "Continue.",
+      "caption": "4. Continue",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "pick_type",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Teach a new document — Scan Finder",
+        "selector": "#type-grid .card[data-slug=\"invoice\"]",
+        "timeout": 20
+      },
+      "target": {
+        "selector": "#type-grid .card[data-slug=\"invoice\"]",
+        "window": "Teach a new document — Scan Finder"
+      },
+      "narration": "Now tell it what kind of document this is. The type decides which details it looks for and where the file ends up. This is an invoice. If you needed a type you don't have yet, you could create one here, or add a ready-made one from the catalog.",
+      "caption": "5. Choose the document type",
+      "duration_sec": 16.5
+    },
+    {
+      "id": "next_2",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-next",
+        "window": "Teach a new document — Scan Finder"
+      },
+      "narration": "Continue.",
+      "caption": "6. Continue",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "page_top",
+      "action": "eval_js",
+      "window": "Teach a new document — Scan Finder",
+      "wait_for": {
+        "window": "Teach a new document — Scan Finder",
+        "selector": "#pageCanvas",
+        "timeout": 30
+      },
+      "js": "(() => { const w = document.querySelector('#pageCanvas').parentElement; w.scrollTop = 0; return w.scrollTop; })()",
+      "narration": "The page opens fitted to the width. You can zoom with plus and minus, and drag with the right mouse button to move around. We'll work from the top.",
+      "caption": "Right-drag to pan · + / − to zoom",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "field1_explain",
+      "action": "wait",
+      "narration": "First detail: who sent it. Draw a box around the company name — the letterhead is perfect.",
+      "caption": "Field 1 — who sent it",
+      "duration_sec": 8.0
+    },
+    {
+      "id": "draw_issuer",
+      "action": "drag",
+      "from": {
+        "selector": "#pageCanvas",
+        "at": [
+          0.16,
+          0.036
+        ],
+        "window": "Teach a new document — Scan Finder"
+      },
+      "to": {
+        "selector": "#pageCanvas",
+        "at": [
+          0.51,
+          0.07
+        ],
+        "window": "Teach a new document — Scan Finder"
+      },
+      "narration": "",
+      "caption": "7. Drag a box around the company name",
+      "duration_sec": 5.0
+    },
+    {
+      "id": "readback1",
+      "action": "wait",
+      "wait_for": {
+        "window": "Teach a new document — Scan Finder",
+        "selector": "#rb-yes",
+        "timeout": 30
+      },
+      "narration": "ScanFinder reads the box straight back to you. Check it matches what's printed — if it didn't, you'd simply redraw it or type it in.",
+      "caption": "Check the read-back matches the page",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "yes1",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#rb-yes",
+        "window": "Teach a new document — Scan Finder"
+      },
+      "narration": "That's right.",
+      "caption": "8. Looks right",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "field2_explain",
+      "action": "wait",
+      "narration": "Next, the invoice date. Draw around the value itself, not the label. ScanFinder finds the label beside it on its own, and uses it to locate the date on future invoices even when the layout shifts a little.",
+      "caption": "Field 2 — the date: box the VALUE",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "draw_date",
+      "action": "drag",
+      "from": {
+        "selector": "#pageCanvas",
+        "at": [
+          0.79,
+          0.157
+        ],
+        "window": "Teach a new document — Scan Finder"
+      },
+      "to": {
+        "selector": "#pageCanvas",
+        "at": [
+          0.915,
+          0.182
+        ],
+        "window": "Teach a new document — Scan Finder"
+      },
+      "narration": "",
+      "caption": "9. Drag a box around the date",
+      "duration_sec": 5.0
+    },
+    {
+      "id": "readback2",
+      "action": "wait",
+      "wait_for": {
+        "window": "Teach a new document — Scan Finder",
+        "selector": "#rb-yes",
+        "timeout": 30
+      },
+      "narration": "There's the date — and it spotted the Invoice Date label just to the left. That's exactly what it'll look for next time.",
+      "caption": "Value + the label it found",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "yes2",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#rb-yes",
+        "window": "Teach a new document — Scan Finder"
+      },
+      "narration": "Right again.",
+      "caption": "10. Looks right",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "field3_explain",
+      "action": "wait",
+      "narration": "Last one: the invoice number — the reference that goes into the file name. And if a field it asks for simply isn't on your document, you can tell it that and move on.",
+      "caption": "Field 3 — the invoice number",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "draw_number",
+      "action": "drag",
+      "from": {
+        "selector": "#pageCanvas",
+        "at": [
+          0.79,
+          0.135
+        ],
+        "window": "Teach a new document — Scan Finder"
+      },
+      "to": {
+        "selector": "#pageCanvas",
+        "at": [
+          0.915,
+          0.16
+        ],
+        "window": "Teach a new document — Scan Finder"
+      },
+      "narration": "",
+      "caption": "11. Drag a box around the number",
+      "duration_sec": 5.0
+    },
+    {
+      "id": "readback3",
+      "action": "wait",
+      "wait_for": {
+        "window": "Teach a new document — Scan Finder",
+        "selector": "#rb-yes",
+        "timeout": 30
+      },
+      "narration": "Same quick check.",
+      "caption": "Check the read-back",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "yes3",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#rb-yes",
+        "window": "Teach a new document — Scan Finder"
+      },
+      "narration": "That's right.",
+      "caption": "12. Looks right",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "review_btn",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-next",
+        "window": "Teach a new document — Scan Finder"
+      },
+      "narration": "That's all three. Click Review to see everything it's about to learn.",
+      "caption": "13. Review",
+      "duration_sec": 6.5
+    },
+    {
+      "id": "summary",
+      "action": "wait",
+      "wait_for": {
+        "window": "Teach a new document — Scan Finder",
+        "selector": "#commit-summary",
+        "timeout": 30
+      },
+      "narration": "Here's the summary: the type, and where each detail was found. If anything were off, you'd step back and redraw it.",
+      "caption": "Everything it learned — check it",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "commit",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-next",
+        "window": "Teach a new document — Scan Finder"
+      },
+      "narration": "Otherwise, continue — this files the document and saves the lesson.",
+      "caption": "14. Continue to save",
+      "duration_sec": 6.5
+    },
+    {
+      "id": "done",
+      "action": "wait",
+      "wait_for": {
+        "window": "Teach a new document — Scan Finder",
+        "selector": "#btn-teach-another",
+        "timeout": 60
+      },
+      "narration": "Done. ScanFinder now knows how to read Copperfield invoices. The next few may still pass through Review so you can confirm them, and each confirmation makes it more certain — until it files them entirely on its own.",
+      "caption": "Done — a few confirms, then hands-off",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "Do this once for each of your regular suppliers, and the filing quietly takes care of itself. Next: finding any document later.",
+      "caption": "Next: find any document",
+      "duration_sec": 9.5
+    }
+  ]
+}

@@ -108,6 +108,61 @@ def run_ffmpeg(ffmpeg: str, args: list[str]) -> None:
         raise SystemExit(f"ffmpeg failed: {res.stderr.strip()[-600:]}")
 
 
+# ---- retime: widen a SCRIPT's step durations to fit the spoken lines (run BEFORE recording) -------------------------
+def synth_line(text: str, cache: str, sid: str, opts: argparse.Namespace, voice: str, tts) -> str:
+    """Generate (or reuse) the clip for one line; returns the mp3 path."""
+    key = hashlib.sha1(f"{opts.provider}|{voice}|{opts.rate}|{opts.model}|{opts.instructions}|{text}".encode()).hexdigest()[:12]
+    raw = os.path.join(cache, f"{sid}_{key}.mp3")
+    if not os.path.isfile(raw) or os.path.getsize(raw) == 0:
+        for attempt in range(1, 5):   # edge-tts occasionally returns "No audio was received" — transient
+            try:
+                tts(text, raw, voice=voice, rate=opts.rate, model=opts.model, instructions=opts.instructions)
+                if os.path.getsize(raw) > 0:
+                    break
+            except SystemExit:
+                raise
+            except Exception as e:  # noqa: BLE001
+                if attempt == 4:
+                    raise
+                log(f"  {sid}: TTS attempt {attempt} failed ({type(e).__name__}) — retrying")
+                import time
+                time.sleep(2 * attempt)
+    return raw
+
+
+def retime_script(script_json: str, opts: argparse.Namespace) -> None:
+    """For every step with narration: speech length + pad → duration_sec = max(current, that). Edits the script in
+    place so the recording holds each step long enough for its line at a natural pace (no stretching later)."""
+    ffmpeg = find_ffmpeg(opts.ffmpeg)
+    with open(script_json, encoding="utf-8") as fh:
+        script = json.load(fh)
+    name = os.path.splitext(os.path.basename(script_json))[0]
+    cache = os.path.join(opts.cache, name)
+    os.makedirs(cache, exist_ok=True)
+    voice = opts.voice or DEFAULT_VOICE[opts.provider]
+    tts = PROVIDERS[opts.provider]
+    log(f"\nretime {name}: {opts.provider} {voice} rate {opts.rate}, pad {opts.pad}s")
+    before = after = 0.0
+    for st in script["steps"]:
+        cur = float(st.get("duration_sec", 0))
+        before += cur
+        text = (st.get("narration") or "").strip()
+        if text:
+            raw = synth_line(text, cache, st["id"], opts, voice, tts)
+            need = duration(ffmpeg, raw) + opts.pad + (0.8 if st.get("action") in ("move_and_click", "click", "type_text", "drag") else 0.0)
+            new = max(cur, round(need * 2) / 2)   # never shorten; half-second steps
+            if new > cur:
+                log(f"  {st['id']:<22} {cur:5.1f}s → {new:5.1f}s  (speech {duration(ffmpeg, raw):.1f}s)")
+            st["duration_sec"] = new
+            after += new
+        else:
+            after += cur
+    with open(script_json, "w", encoding="utf-8") as fh:
+        json.dump(script, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    log(f"  total {before:.1f}s → {after:.1f}s  (written in place)")
+
+
 # ---- main per-video job ----------------------------------------------------------------------------------------------
 def voice_video(narration_json: str, opts: argparse.Namespace) -> str:
     ffmpeg = find_ffmpeg(opts.ffmpeg)
@@ -131,22 +186,8 @@ def voice_video(narration_json: str, opts: argparse.Namespace) -> str:
         text = (ln.get("text") or "").strip()
         if not text:
             continue
-        key = hashlib.sha1(f"{opts.provider}|{voice}|{opts.rate}|{opts.model}|{opts.instructions}|{text}".encode()).hexdigest()[:12]
-        raw = os.path.join(cache, f"{ln['id']}_{key}.mp3")
-        if not os.path.isfile(raw) or os.path.getsize(raw) == 0:
-            for attempt in range(1, 5):   # edge-tts occasionally returns "No audio was received" — transient
-                try:
-                    tts(text, raw, voice=voice, rate=opts.rate, model=opts.model, instructions=opts.instructions)
-                    if os.path.getsize(raw) > 0:
-                        break
-                except SystemExit:
-                    raise
-                except Exception as e:  # noqa: BLE001
-                    if attempt == 4:
-                        raise
-                    log(f"  {ln['id']}: TTS attempt {attempt} failed ({type(e).__name__}) — retrying")
-                    import time
-                    time.sleep(2 * attempt)
+        raw = synth_line(text, cache, ln["id"], opts, voice, tts)
+        key = os.path.basename(raw).rsplit("_", 1)[-1][:-4]
         dur = duration(ffmpeg, raw)
         window = max(float(ln["end"]) - float(ln["start"]), 0.5)
         clip = raw
@@ -188,10 +229,13 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Generate the voice-over for a tutorial from its narration.json and mux it.")
     ap.add_argument("narration", nargs="?", help="path to <name>.narration.json")
     ap.add_argument("--all", metavar="DIR", help="process every *.narration.json in DIR")
+    ap.add_argument("--retime", metavar="SCRIPT", nargs="+",
+                    help="BEFORE recording: widen these scripts' duration_sec so each line fits at this voice/rate (in place)")
+    ap.add_argument("--pad", type=float, default=0.7, help="retime: silence after each line (seconds)")
     ap.add_argument("--provider", choices=sorted(PROVIDERS), default="edge")
     ap.add_argument("--voice", default=None, help="voice name/id (edge default en-GB-RyanNeural)")
-    ap.add_argument("--rate", default="+10%", help="edge only: speaking rate (default +10%% — the lines were sized at ~2.5 words/s, "
-                                                  "Ryan's natural pace is a little slower); e.g. +0%% or +15%%")
+    ap.add_argument("--rate", default="+0%", help="edge only: speaking rate, e.g. -5%% (calmer) or +10%%. Keep the same "
+                                                 "value for --retime and the later voice pass.")
     ap.add_argument("--tolerance", type=float, default=0.12,
                     help="a line may overrun its window by this fraction before being sped up (default 0.12); the next "
                          "line simply starts a little later")
@@ -204,6 +248,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--cache", default=os.path.join(HERE, "out", "voice"), help="clip cache folder")
     ap.add_argument("--ffmpeg", default=None)
     opts = ap.parse_args(argv)
+    if opts.retime:
+        for s in opts.retime:
+            retime_script(s, opts)
+        return 0
     if not opts.narration and not opts.all:
         ap.error("give a narration.json or --all DIR")
     files = sorted(glob.glob(os.path.join(opts.all, "*.narration.json"))) if opts.all else [opts.narration]

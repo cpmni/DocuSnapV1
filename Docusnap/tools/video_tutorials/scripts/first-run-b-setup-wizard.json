@@ -4,109 +4,318 @@
   "description": "Segment B of the first-run video: accept the Terms of Use, then make every setup-wizard choice with the reason behind it, skip the tour, land on Home. Starts at the Terms window (the app has just been signed in after licensing). Record the whole video with: python record.py scripts\\first-run-b-setup-wizard.json --as-is --licence-intro scripts\\first-run-a-account-licence.json  ({{OUTPUT}} is substituted by record.py).",
   "lead_in_sec": 1.0,
   "lead_out_sec": 1.5,
-  "app": { "window_title": "Scan Finder — Terms of Use", "cdp_port": 9222, "maximize": false },
-  "record": { "mode": "screen", "fps": 30, "backdrop": "#1f2430" },
-  "captions": { "position": "bottom", "font_size": 28, "margin": 90 },
+  "app": {
+    "window_title": "Scan Finder — Terms of Use",
+    "cdp_port": 9222,
+    "maximize": false
+  },
+  "record": {
+    "mode": "screen",
+    "fps": 30,
+    "backdrop": "#1f2430"
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28,
+    "margin": 90
+  },
   "steps": [
-    { "id": "terms", "action": "wait",
-      "wait_for": { "window": "Scan Finder — Terms of Use", "selector": "#accept-cb", "timeout": 60 },
+    {
+      "id": "terms",
+      "action": "wait",
+      "wait_for": {
+        "window": "Scan Finder — Terms of Use",
+        "selector": "#accept-cb",
+        "timeout": 60
+      },
       "narration": "The Terms of Use come next. Read them, tick to accept,",
-      "caption": "Terms of Use — read, then accept", "duration_sec": 5 },
-    { "id": "terms_tick", "action": "move_and_click",
-      "target": { "selector": "#accept-cb", "window": "Scan Finder — Terms of Use" },
-      "narration": "", "caption": "10. Accept", "duration_sec": 3 },
-    { "id": "terms_continue", "action": "move_and_click",
-      "target": { "selector": "#continue", "window": "Scan Finder — Terms of Use" },
-      "narration": "and Continue.", "caption": "11. Continue", "duration_sec": 3 },
-
-    { "id": "wizard_intro", "action": "wait",
-      "wait_for": { "window": "Welcome to Scan Finder", "selector": "#nextBtn", "timeout": 20 },
+      "caption": "Terms of Use — read, then accept",
+      "duration_sec": 6.0
+    },
+    {
+      "id": "terms_tick",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#accept-cb",
+        "window": "Scan Finder — Terms of Use"
+      },
+      "narration": "",
+      "caption": "10. Accept",
+      "duration_sec": 3
+    },
+    {
+      "id": "terms_continue",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#continue",
+        "window": "Scan Finder — Terms of Use"
+      },
+      "narration": "and Continue.",
+      "caption": "11. Continue",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "wizard_intro",
+      "action": "wait",
+      "wait_for": {
+        "window": "Welcome to Scan Finder",
+        "selector": "#nextBtn",
+        "timeout": 20
+      },
       "narration": "A short setup wizard follows. Everything here can be changed later in Settings.",
-      "caption": "Setup wizard — everything changeable later", "duration_sec": 6 },
-    { "id": "next_0", "action": "move_and_click",
-      "target": { "selector": "#nextBtn", "window": "Welcome to Scan Finder" },
-      "narration": "Click Next.", "caption": "12. Next", "duration_sec": 2.5 },
-
-    { "id": "output_explain", "action": "move_to",
-      "target": { "selector": "#outPath", "window": "Welcome to Scan Finder" },
+      "caption": "Setup wizard — everything changeable later",
+      "duration_sec": 6.5
+    },
+    {
+      "id": "next_0",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#nextBtn",
+        "window": "Welcome to Scan Finder"
+      },
+      "narration": "Click Next.",
+      "caption": "12. Next",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "output_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#outPath",
+        "window": "Welcome to Scan Finder"
+      },
       "narration": "ScanFinder needs one thing: an output folder, where the filed copies of your documents go, organised by company, year and month. A sensible location is already suggested.",
-      "caption": "Output folder — where filed copies go", "duration_sec": 10 },
-    { "id": "browse_explain", "action": "move_to",
-      "target": { "selector": "#browseBtn", "window": "Welcome to Scan Finder" },
+      "caption": "Output folder — where filed copies go",
+      "duration_sec": 13.0
+    },
+    {
+      "id": "browse_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#browseBtn",
+        "window": "Welcome to Scan Finder"
+      },
       "narration": "If you'd rather file somewhere else — a shared drive, say — click Browse and pick that folder. We'll keep the suggestion.",
-      "caption": "13. Browse — only if you want a different folder", "duration_sec": 7 },
-    { "id": "originals_explain", "action": "move_to",
-      "target": { "selector": "[data-copy=\"no\"]", "window": "Welcome to Scan Finder" },
+      "caption": "13. Browse — only if you want a different folder",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "originals_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "[data-copy=\"no\"]",
+        "window": "Welcome to Scan Finder"
+      },
       "narration": "Below, choose where original scans go after import. Default moves each into a Processed folder beside your scans; Choose a folder sends them to an archive of your choosing. Nothing is ever deleted.",
-      "caption": "Originals: moved to Processed, never deleted", "duration_sec": 11 },
-    { "id": "originals_default", "action": "move_and_click",
-      "target": { "selector": "[data-copy=\"no\"]", "window": "Welcome to Scan Finder" },
-      "narration": "Default is right for most people.", "caption": "14. Keep Default", "duration_sec": 3.5 },
-    { "id": "next_1", "action": "move_and_click",
-      "target": { "selector": "#nextBtn", "window": "Welcome to Scan Finder" },
-      "narration": "Next.", "caption": "15. Next", "duration_sec": 2.5 },
-
-    { "id": "organise_explain", "action": "move_to",
-      "target": { "selector": "#ob-folder-pattern", "window": "Welcome to Scan Finder" },
+      "caption": "Originals: moved to Processed, never deleted",
+      "duration_sec": 14.5
+    },
+    {
+      "id": "originals_default",
+      "action": "move_and_click",
+      "target": {
+        "selector": "[data-copy=\"no\"]",
+        "window": "Welcome to Scan Finder"
+      },
+      "narration": "Default is right for most people.",
+      "caption": "14. Keep Default",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "next_1",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#nextBtn",
+        "window": "Welcome to Scan Finder"
+      },
+      "narration": "Next.",
+      "caption": "15. Next",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "organise_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#ob-folder-pattern",
+        "window": "Welcome to Scan Finder"
+      },
       "narration": "This screen sets how filed documents are organised: folders by issuer, then year, then month; files named by type, date and reference. Rearrange the blocks if you prefer another layout.",
-      "caption": "Folders: Issuer › Year › Month · File: Type.Date.Ref", "duration_sec": 11 },
-    { "id": "preview", "action": "move_to",
-      "target": { "selector": "#ob-output-preview", "window": "Welcome to Scan Finder" },
-      "narration": "The preview shows a real filed path.", "caption": "Preview = a real filed path", "duration_sec": 4 },
-    { "id": "regional", "action": "move_to",
-      "target": { "selector": "#ob-date-order", "window": "Welcome to Scan Finder" },
+      "caption": "Folders: Issuer › Year › Month · File: Type.Date.Ref",
+      "duration_sec": 13.5
+    },
+    {
+      "id": "preview",
+      "action": "move_to",
+      "target": {
+        "selector": "#ob-output-preview",
+        "window": "Welcome to Scan Finder"
+      },
+      "narration": "The preview shows a real filed path.",
+      "caption": "Preview = a real filed path",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "regional",
+      "action": "move_to",
+      "target": {
+        "selector": "#ob-date-order",
+        "window": "Welcome to Scan Finder"
+      },
       "narration": "Regional format tells ScanFinder how your documents write dates and amounts — day-month-year in the UK, month-day-year in the US — so the 3rd of April isn't read as the 4th of March.",
-      "caption": "Regional format — how YOUR documents write dates", "duration_sec": 12 },
-    { "id": "next_2", "action": "move_and_click",
-      "target": { "selector": "#nextBtn", "window": "Welcome to Scan Finder" },
-      "narration": "Next.", "caption": "18. Next", "duration_sec": 2.5 },
-
-    { "id": "theme", "action": "move_and_click",
-      "target": { "selector": "[data-theme-choice=\"light\"]", "window": "Welcome to Scan Finder" },
+      "caption": "Regional format — how YOUR documents write dates",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "next_2",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#nextBtn",
+        "window": "Welcome to Scan Finder"
+      },
+      "narration": "Next.",
+      "caption": "18. Next",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "theme",
+      "action": "move_and_click",
+      "target": {
+        "selector": "[data-theme-choice=\"light\"]",
+        "window": "Welcome to Scan Finder"
+      },
       "narration": "Pick a theme — Light or Dark; you can switch any time.",
-      "caption": "Theme — switch any time", "duration_sec": 5 },
-    { "id": "next_3", "action": "move_and_click",
-      "target": { "selector": "#nextBtn", "window": "Welcome to Scan Finder" },
-      "narration": "Next.", "caption": "19. Next", "duration_sec": 2.5 },
-
-    { "id": "speed_explain", "action": "move_to",
-      "target": { "selector": ".card[data-threads]:nth-child(2)", "window": "Welcome to Scan Finder" },
+      "caption": "Theme — switch any time",
+      "duration_sec": 5.5
+    },
+    {
+      "id": "next_3",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#nextBtn",
+        "window": "Welcome to Scan Finder"
+      },
+      "narration": "Next.",
+      "caption": "19. Next",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "speed_explain",
+      "action": "move_to",
+      "target": {
+        "selector": ".card[data-threads]:nth-child(2)",
+        "window": "Welcome to Scan Finder"
+      },
       "narration": "Speed sets how many documents are read at once. Balanced suits most machines, Fast is for a powerful PC, Gentle keeps the computer responsive during big batches.",
-      "caption": "Speed = how many documents are read at once", "duration_sec": 10 },
-    { "id": "speed_balanced", "action": "move_and_click",
-      "target": { "selector": ".card[data-threads]:nth-child(2)", "window": "Welcome to Scan Finder" },
-      "narration": "Balanced is a safe choice.", "caption": "20. Balanced — safe for most PCs", "duration_sec": 3 },
-    { "id": "accuracy_thorough", "action": "move_and_click",
-      "target": { "selector": "[data-mode=\"smart\"]", "window": "Welcome to Scan Finder" },
+      "caption": "Speed = how many documents are read at once",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "speed_balanced",
+      "action": "move_and_click",
+      "target": {
+        "selector": ".card[data-threads]:nth-child(2)",
+        "window": "Welcome to Scan Finder"
+      },
+      "narration": "Balanced is a safe choice.",
+      "caption": "20. Balanced — safe for most PCs",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "accuracy_thorough",
+      "action": "move_and_click",
+      "target": {
+        "selector": "[data-mode=\"smart\"]",
+        "window": "Welcome to Scan Finder"
+      },
       "narration": "For accuracy, keep Thorough — the recommended setting; the time difference is small.",
-      "caption": "21. Thorough — best accuracy", "duration_sec": 6 },
-    { "id": "next_4", "action": "move_and_click",
-      "target": { "selector": "#nextBtn", "window": "Welcome to Scan Finder" },
-      "narration": "Next.", "caption": "22. Next", "duration_sec": 2.5 },
-
-    { "id": "diagnostics", "action": "move_and_click",
-      "target": { "selector": "[data-diag=\"no\"]", "window": "Welcome to Scan Finder" },
+      "caption": "21. Thorough — best accuracy",
+      "duration_sec": 7.5
+    },
+    {
+      "id": "next_4",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#nextBtn",
+        "window": "Welcome to Scan Finder"
+      },
+      "narration": "Next.",
+      "caption": "22. Next",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "diagnostics",
+      "action": "move_and_click",
+      "target": {
+        "selector": "[data-diag=\"no\"]",
+        "window": "Welcome to Scan Finder"
+      },
       "narration": "Diagnostics stay off unless you turn them on — and even then only app errors and version numbers are shared, never documents. No thanks is fine.",
-      "caption": "Diagnostics — off unless you say so", "duration_sec": 9 },
-    { "id": "next_5", "action": "move_and_click",
-      "target": { "selector": "#nextBtn", "window": "Welcome to Scan Finder" },
-      "narration": "Next.", "caption": "23. Next", "duration_sec": 2.5 },
-
-    { "id": "done", "action": "wait",
-      "narration": "Setup is complete — click Finish.", "caption": "Setup complete", "duration_sec": 4 },
-    { "id": "finish", "action": "move_and_click",
-      "target": { "selector": "#nextBtn", "window": "Welcome to Scan Finder" },
-      "narration": "", "caption": "24. Finish", "duration_sec": 3 },
-
-    { "id": "tour", "action": "wait", "optional": true,
-      "wait_for": { "window": "Welcome to Scan Finder", "selector": "#skip", "timeout": 15 },
+      "caption": "Diagnostics — off unless you say so",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "next_5",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#nextBtn",
+        "window": "Welcome to Scan Finder"
+      },
+      "narration": "Next.",
+      "caption": "23. Next",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "done",
+      "action": "wait",
+      "narration": "Setup is complete — click Finish.",
+      "caption": "Setup complete",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "finish",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#nextBtn",
+        "window": "Welcome to Scan Finder"
+      },
+      "narration": "",
+      "caption": "24. Finish",
+      "duration_sec": 3
+    },
+    {
+      "id": "tour",
+      "action": "wait",
+      "optional": true,
+      "wait_for": {
+        "window": "Welcome to Scan Finder",
+        "selector": "#skip",
+        "timeout": 15
+      },
       "narration": "A short tour introduces importing, reviewing and teaching. Step through it or skip it — it's always available from the user menu.",
-      "caption": "Welcome tour — Next through it, or Skip", "duration_sec": 8 },
-    { "id": "tour_skip", "action": "move_and_click", "optional": true,
-      "target": { "selector": "#skip", "window": "Welcome to Scan Finder" },
-      "narration": "For now, Skip.", "caption": "25. Skip for now", "duration_sec": 3 },
-    { "id": "home", "action": "focus_window", "window": "ScanFinder", "maximize": true, "timeout": 30,
+      "caption": "Welcome tour — Next through it, or Skip",
+      "duration_sec": 9.5
+    },
+    {
+      "id": "tour_skip",
+      "action": "move_and_click",
+      "optional": true,
+      "target": {
+        "selector": "#skip",
+        "window": "Welcome to Scan Finder"
+      },
+      "narration": "For now, Skip.",
+      "caption": "25. Skip for now",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "home",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "timeout": 30,
       "narration": "And here's Home. Next: import your first folder of scans.",
-      "caption": "Done — next: import your first scans", "duration_sec": 6 }
+      "caption": "Done — next: import your first scans",
+      "duration_sec": 6.0
+    }
   ]
 }

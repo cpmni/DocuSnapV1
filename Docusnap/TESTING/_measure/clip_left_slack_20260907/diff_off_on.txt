@@ -1,0 +1,6 @@
+docs A=147 B=147 common=147 onlyA=[] onlyB=[]
+wouldFile A=121 B=122 flips=1
+  FLIP (113, False, True, 'below-floor', 'ok')
+field diffs=1 across docs=1
+  DIFF (113, 'delivery_number', ['DN-16902', 70, 'template_mapping_shapewarn', "The taught box read 'IN-16902' but the text beside its label reads 'DN-16902' — the box may be clipping the first character; please check which is printed."], ['DN-16902', 94, 'template_mapping', None])
+VERDICT DIFFERS

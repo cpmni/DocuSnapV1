@@ -1,0 +1,195 @@
+{
+  "version": 1,
+  "title": "The Template Manager",
+  "description": "Explains the admin-only Template Manager (Settings -> Templates). What a template is (the learned recipe for one supplier+type layout), that only an administrator can open it and why, how to inspect a template's sample and its anchor/target field boxes, how a layout is recognised, and the cleanup tools -- with a clear warning that merging duplicate templates is the one irreversible action.",
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro_concept",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "Scan Finder learns how each supplier's documents are laid out -- where the sender, date and reference sit, and what the letterhead looks like. That learned recipe is called a template.",
+      "caption": "The Template Manager (admin only)",
+      "duration_sec": 13.5
+    },
+    {
+      "id": "admin_headline",
+      "action": "move_to",
+      "target": {
+        "selector": "#btn-settings",
+        "window": "ScanFinder"
+      },
+      "narration": "The Template Manager lives in Settings, and it is an administrator-only tool. Only someone signed in as an administrator can open Settings at all -- an edit or read-only user doesn't even see this cog.",
+      "caption": "Only an administrator can open Settings",
+      "duration_sec": 15.5
+    },
+    {
+      "id": "open_settings",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-settings",
+        "window": "ScanFinder"
+      },
+      "narration": "Let's open it -- click the settings cog.",
+      "caption": "1. Open Settings",
+      "duration_sec": 5.0
+    },
+    {
+      "id": "open_templates",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": ".tab[data-tab=\"templates\"]",
+        "timeout": 15
+      },
+      "target": {
+        "selector": ".tab[data-tab=\"templates\"]",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Settings opens with a row of tabs. The Templates tab sits in the Administration group -- open it.",
+      "caption": "2. Open the Templates tab",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "why_locked",
+      "action": "wait",
+      "narration": "It's locked to administrators for good reason. A template decides how every future document from that supplier is read and filed -- so a change here reaches far beyond the document in front of you.",
+      "caption": "Why it's locked down",
+      "duration_sec": 15.5
+    },
+    {
+      "id": "list_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#tpl-list",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "This is every template Scan Finder has learned, one for each supplier and document type it recognises. A brand-new supplier won't have one yet, and that's fine -- the app still reads it with its standard process.",
+      "caption": "Your learned templates",
+      "duration_sec": 16.5
+    },
+    {
+      "id": "teach_link",
+      "action": "move_to",
+      "target": {
+        "selector": "#btn-new-template",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "You won't usually create a template here. The normal way one appears is by teaching an example, which has its own tutorial. This screen is for looking after the templates you already have.",
+      "caption": "Templates come from teaching",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "open_template",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#tpl-list .tpl-row",
+        "timeout": 10
+      },
+      "target": {
+        "selector": "#tpl-list .tpl-row",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Click a template to inspect it.",
+      "caption": "3. Click a template to inspect",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "detail_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#tpl-img",
+        "timeout": 20
+      },
+      "target": {
+        "selector": "#tpl-overlay-canvas",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "This is the example document the template was built from. The coloured boxes show what the app looks for -- a blue box marks a label it recognises, like 'Invoice Number', and the green box marks where the value beside it sits.",
+      "caption": "Blue = label · Green = value",
+      "duration_sec": 18.5
+    },
+    {
+      "id": "detection_method",
+      "action": "move_to",
+      "target": {
+        "selector": "#tpl-detection-method",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Up here it shows how Scan Finder recognises this layout -- by its logo, by the wording in its header, or both. That's how an incoming scan is matched to the right template.",
+      "caption": "How a layout is recognised",
+      "duration_sec": 14.5
+    },
+    {
+      "id": "mappings_reassure",
+      "action": "move_to",
+      "target": {
+        "selector": "#tpl-mappings-table",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "The table lists each field's rule in plain terms. Most of the time this screen is mainly somewhere to look and understand how a document is read -- you don't need to change anything for it to work.",
+      "caption": "Mostly a place to look",
+      "duration_sec": 16.5
+    },
+    {
+      "id": "cleanups_scan",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-scan-duplicates",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "At the top are the cleanup tools. Sometimes a supplier ends up with two templates -- often when a scanned logo drifts and the app learns it twice. Click Scan for duplicate templates to check for that.",
+      "caption": "Cleanup: check for duplicates",
+      "duration_sec": 17.0
+    },
+    {
+      "id": "scan_result",
+      "action": "wait",
+      "narration": "Here it finds none -- exactly what you want to see. Scanning only ever looks; it never changes anything on its own.",
+      "caption": "No duplicates found",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "merge_warning",
+      "action": "wait",
+      "narration": "Merging two of them into one is the only action here you cannot undo. Because it is permanent, Scan Finder backs up all of its data first and asks you to confirm -- so only merge when you are certain the two really are the same layout.",
+      "caption": "Merging can't be undone",
+      "duration_sec": 20.5
+    },
+    {
+      "id": "relink_reversible",
+      "action": "move_to",
+      "target": {
+        "selector": "#btn-relink-strays",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "By contrast, Re-link stray documents only reattaches documents that lost their template link, and that can always be changed back. As a rule, anything reversible is safe to try -- merging is the one to pause on.",
+      "caption": "Re-linking is reversible",
+      "duration_sec": 16.5
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "So -- the Template Manager is administrator-only, it's mostly a place to look and understand how your documents are read, and its one permanent action is safely guarded. Most of the time, you'll never need to touch it.",
+      "caption": "Admin only · inspect first · one guarded action",
+      "duration_sec": 16.5
+    }
+  ]
+}

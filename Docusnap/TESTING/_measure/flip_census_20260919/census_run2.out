@@ -1,0 +1,9 @@
+=== base2_defaults (-) start 21:47:06
+   -> 400 rows, end 21:55:26
+=== on_confprec (CONFUSION_PRECEDENCE) start 21:55:26
+   -> 400 rows, end 22:03:49
+=== on_notededup (NOTE_TOPIC_DEDUP) start 22:03:49
+   -> 400 rows, end 22:12:11
+=== on_rereadrel (REREAD_HOLD_CORROB_RELEASE) start 22:12:11
+   -> 400 rows, end 22:20:38
+CENSUS2 DONE 22:20:38

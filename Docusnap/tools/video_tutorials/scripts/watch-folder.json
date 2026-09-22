@@ -1,0 +1,150 @@
+{
+  "version": 1,
+  "title": "Auto-import with a watch folder",
+  "description": "Point ScanFinder at your scanner's output folder so new scans import themselves, and keep it running in the tray so background import stays live. Watch Folder lives in Settings -> Files & filing; the tray option is in Settings -> Appearance. NOTE: picking the folder is a NATIVE Windows dialog and is NOT filmed — Browse is only hovered and narrated, and the shown folder path is set cosmetically over DevTools (neutral path C:\\ScanFinderDemo). NEEDS OWNER: to actually enable monitoring on a real folder, do the Browse pick off-camera before recording.",
+  "target_length_sec": 120,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "If your scanner always saves to the same folder, ScanFinder can watch it and import new scans on its own — no clicking Import each time.",
+      "caption": "Import scans automatically",
+      "duration_sec": 13.0
+    },
+    {
+      "id": "open_settings",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-settings",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Settings from the side bar.",
+      "caption": "1. Open Settings",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "open_tab",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": ".tab[data-tab=\"files\"]",
+        "timeout": 15
+      },
+      "target": {
+        "selector": ".tab[data-tab=\"files\"]",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Open the Files and filing tab.",
+      "caption": "2. Files & filing tab",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "watch_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#watch-folder-path",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#watch-folder-path",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "The Watch Folder is where you point ScanFinder at your scanner's output folder — the one new scans appear in.",
+      "caption": "The Watch Folder",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "browse_narrate",
+      "action": "move_to",
+      "target": {
+        "selector": "#btn-pick-watch",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Click Browse and choose that folder — a normal Windows folder picker opens for you to pick it.",
+      "caption": "3. Browse to the folder",
+      "duration_sec": 9.5
+    },
+    {
+      "id": "set_path",
+      "action": "eval_js",
+      "window": "Scan Finder — Settings",
+      "js": "document.getElementById('watch-folder-path').value = 'C:\\\\ScanFinderDemo\\\\Scanner Output';",
+      "narration": "We've pointed it at our scanner's output folder here.",
+      "caption": "Folder chosen",
+      "duration_sec": 5.5
+    },
+    {
+      "id": "enable",
+      "action": "move_and_click",
+      "optional": true,
+      "target": {
+        "selector": "#watch-folder-toggle + .toggle-slider",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Now switch monitoring on, and it'll check that folder for new files.",
+      "caption": "4. Enable monitoring",
+      "duration_sec": 6.5
+    },
+    {
+      "id": "tray_tab",
+      "action": "move_and_click",
+      "target": {
+        "selector": ".tab[data-tab=\"appearance\"]",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "One more thing — jump over to Appearance for how it runs.",
+      "caption": "5. Appearance tab",
+      "duration_sec": 6.5
+    },
+    {
+      "id": "tray_toggle",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#close-to-tray-toggle + .toggle-slider",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#close-to-tray-toggle + .toggle-slider",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Turn on close to the tray, so when you close the window ScanFinder keeps running quietly and importing in the background.",
+      "caption": "6. Keep running in the tray",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "tray_ensure",
+      "action": "eval_js",
+      "window": "Scan Finder — Settings",
+      "js": "(() => { const c = document.getElementById('close-to-tray-toggle'); if (c && !c.checked) { document.querySelector('#close-to-tray-toggle + .toggle-slider').click(); return 'flipped'; } return c && c.checked ? 'already-on' : 'no-elem'; })()",
+      "narration": "",
+      "caption": "6. Keep running in the tray",
+      "duration_sec": 2.5
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "From now on, scanning a document is all it takes — it imports, reads and files itself, completely hands-free.",
+      "caption": "Scan · and it files itself",
+      "duration_sec": 9.0
+    }
+  ]
+}

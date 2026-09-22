@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "title": "Where did my documents actually go?",
+  "description": "Shows that filing is sane and findable: open Search, find a filed document, open its page, and read off the folder structure and filename from the details ScanFinder extracted — the issuer becomes the folder, the date the year and month, and the type and reference the file name (e.g. Invoice.15-12-2025.INV-001.pdf under Company/Year/Month). Fully in-app; no native folder picker is opened. Searches 'Ironbridge' — the sandbox has one confirmed/filed Ironbridge Fabrication invoice (Search only returns confirmed documents), so there is exactly one clean result.",
+  "target_length_sec": 75,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "When Scan Finder files a document, where does it actually end up? In tidy folders you'll never have to dig through, because Search finds anything instantly.",
+      "caption": "Where your filed documents live",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "open_search",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-search",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Search.",
+      "caption": "1. Open Search",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "type_query",
+      "action": "type_text",
+      "wait_for": {
+        "window": "ScanFinder — Search",
+        "selector": "#inp-fulltext",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#inp-fulltext",
+        "window": "ScanFinder — Search"
+      },
+      "text": "Ironbridge",
+      "narration": "Type something printed on the document — here, the sender's name.",
+      "caption": "2. Search for a filed document",
+      "duration_sec": 8.0
+    },
+    {
+      "id": "run_search",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-search",
+        "window": "ScanFinder — Search"
+      },
+      "narration": "and Search.",
+      "caption": "3. Search",
+      "duration_sec": 3.5
+    },
+    {
+      "id": "open_result",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "ScanFinder — Search",
+        "selector": ".result-row",
+        "timeout": 15
+      },
+      "target": {
+        "selector": ".result-row",
+        "window": "ScanFinder — Search"
+      },
+      "narration": "Open a result and the filed page appears, exactly as it was scanned.",
+      "caption": "4. Open a result",
+      "duration_sec": 7.0
+    },
+    {
+      "id": "path_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "ScanFinder — Search",
+        "selector": "#preview-fields-scroll",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#preview-sidebar",
+        "window": "ScanFinder — Search"
+      },
+      "narration": "These details decide everything. The issuer becomes the folder, the date sets the year and month, and the type and reference make the file name.",
+      "caption": "Issuer, date, reference → the filing",
+      "duration_sec": 13.0
+    },
+    {
+      "id": "path_pattern",
+      "action": "wait",
+      "narration": "So this one sits under its company, then the year, then the month, with a clear name built from the type, the date and the reference number.",
+      "caption": "Company / Year / Month · clear filename",
+      "duration_sec": 12.5
+    },
+    {
+      "id": "no_digging",
+      "action": "wait",
+      "narration": "You never have to remember any of that. Type a word, open the page, done.",
+      "caption": "Never dig through folders",
+      "duration_sec": 7.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "That's where your documents go — findable in seconds, every time.",
+      "caption": "Findable in seconds",
+      "duration_sec": 6.0
+    }
+  ]
+}

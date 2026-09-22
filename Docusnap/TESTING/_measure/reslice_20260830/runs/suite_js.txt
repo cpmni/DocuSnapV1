@@ -1,0 +1,290 @@
+﻿# js suite 18:17:45
+PASS database\modules\test_accept_correction.js :: All accept-correction data checks passed
+PASS database\modules\test_anchor_label_sanitize.js :: All sanitizeAnchorLabel checks passed.
+PASS database\modules\test_anchor_max_width.js :: ALL PASS
+PASS database\modules\test_anchor_phantom_display_label.js :: All phantom-display-label checks passed.
+PASS database\modules\test_audit_archive.js :: All audit-archive (Stage A + Stage B) checks passed.
+PASS database\modules\test_audit_chain.js :: All Stage-5b audit-chain checks passed.
+PASS database\modules\test_audit_log.js :: ALL PASS
+FAIL database\modules\test_authoritative_anchor.js :: 2 FAILED
+PASS database\modules\test_batch_audit_learning.js :: ALL PASS
+PASS database\modules\test_build_template_fields.js :: ALL PASS
+PASS database\modules\test_bulk_review_delete.js :: All bulk-review-delete checks passed
+PASS database\modules\test_buyer_issued_scope.js :: 28 passed, 0 failed
+PASS database\modules\test_caption_empty_flagged.js :: ALL PASS
+FAIL database\modules\test_company_key_own_scope.js :: 1 FAILED
+PASS database\modules\test_confirm_supplier_link_guard.js :: ALL PASS
+PASS database\modules\test_confirmed_value_rows.js :: 24 passed, 0 failed
+PASS database\modules\test_confirmed_via.js :: All confirmed_via claim/undo pins passed.
+PASS database\modules\test_corrob_autofile.js :: ALL PASS
+PASS database\modules\test_currency_variability.js :: All currency-variability checks passed.
+PASS database\modules\test_delivery_number_typing.js :: all delivery_number typing pins passed
+PASS database\modules\test_detected_type_nudge.js :: All detected-type-nudge checks passed
+PASS database\modules\test_digits_only_fields.js :: All digits-only-field checks passed
+PASS database\modules\test_doctype_presets.js :: ALL PASS
+PASS database\modules\test_document_barcodes.js :: All document_barcodes checks passed
+FAIL database\modules\test_document_types_aliases.js :: Node.js v20.18.0
+PASS database\modules\test_documents_cas.js :: ALL PASS
+PASS database\modules\test_dominant_adopt_learning.js :: PASS ÔÇö 0 failure(s)
+PASS database\modules\test_duplicate_supplier_repair.js :: 21 passed, 0 failed
+PASS database\modules\test_editor_mint_identity_only.js :: PASS ÔÇö 0 failure(s)
+PASS database\modules\test_enrich_identity.js :: All enrichIdentity / C-A checks passed
+PASS database\modules\test_field_candidates_persist.js :: ALL PASS
+PASS database\modules\test_field_rules.js :: All field_rules CRUD checks passed
+PASS database\modules\test_field_suggestions.js :: All field-suggestion checks passed
+PASS database\modules\test_field_value_history.js :: ALL PASS
+PASS database\modules\test_field_visibility_resolve.js :: ALL PASS
+PASS database\modules\test_fingerprint_hygiene.js :: ALL PASS
+PASS database\modules\test_fixed_locked.js :: All fixed-locked persistence checks passed.
+PASS database\modules\test_freeze_guard.js :: All freeze-guard pins passed
+PASS database\modules\test_freeze_issuer_only.js :: 13 passed, 0 failed
+PASS database\modules\test_generic_autofile_refusal.js :: PASS ÔÇö 0 failure(s)
+PASS database\modules\test_generic_type.js :: PASS ÔÇö 0 failure(s)
+PASS database\modules\test_getallhints.js :: All getAllHints checks passed.
+PASS database\modules\test_graduation_template.js :: ALL PASS
+PASS database\modules\test_graduation_wiring.js :: ALL PASS
+PASS database\modules\test_hidden_field_scoring.js :: All hidden-field scoring parity checks passed.
+PASS database\modules\test_identity_hold_siblings.js :: 31 passed, 0 failed
+PASS database\modules\test_identity_overwrite_guard.js :: All pins passed
+PASS database\modules\test_identity_writers.js :: 19 passed, 0 failed
+PASS database\modules\test_issuer_plausibility.js :: All issuer-plausibility pins passed
+PASS database\modules\test_issuer_ripple_pins.js :: ALL PASS
+PASS database\modules\test_learn_on_commit.js :: All learn-on-commit route checks passed
+FAIL database\modules\test_learning_excluded_readers.js :: 86 ok, 1 failed
+PASS database\modules\test_license_enforcement_toggle.js :: ALL PASS
+PASS database\modules\test_license_phase1.js :: ALL PASS
+PASS database\modules\test_license_phase2.js :: ALL PASS
+PASS database\modules\test_license_phase3.js :: ALL PASS
+PASS database\modules\test_license_phase4.js :: ALL PASS
+PASS database\modules\test_license_phase5.js :: ALL PASS
+PASS database\modules\test_license_pinned_keys.js :: All pinned-key hardening checks passed
+PASS database\modules\test_license_release_invalidates_cache.js :: ALL PASS
+PASS database\modules\test_licensing_migration.js :: ALL PASS
+PASS database\modules\test_list_field_learning_skip.js :: 8 passed, 0 failed
+PASS database\modules\test_logo_crossplant_guard.js :: ALL PASS
+PASS database\modules\test_logo_detail_enrol.js :: ALL PASS
+PASS database\modules\test_machine_confirm_learning.js :: 16 ok, 0 failed
+PASS database\modules\test_migration_customer_hint_cleanup.js :: All migration-45 (stale customer learning) checks passed
+PASS database\modules\test_migration_customer_unlink.js :: All migration-44 checks passed
+PASS database\modules\test_migration_unfreeze_names.js :: ALL PASS
+PASS database\modules\test_migration71_defaults.js :: 10 passed, 0 failed
+PASS database\modules\test_name_presence.js :: ALL PASS
+PASS database\modules\test_name_snap_gate.js :: ALL PASS
+PASS database\modules\test_near_match_prefix.js :: ALL PASS
+PASS database\modules\test_page_count.js :: All checks passed ÔÇö documents.page_count round-trips.
+PASS database\modules\test_plant_text_gate.js :: All plant-gate checks passed.
+PASS database\modules\test_prefix_outlier.js :: All prefix_outlier JS + parity checks passed
+PASS database\modules\test_preset_labels.js :: All preset-label checks passed
+PASS database\modules\test_promote_custom_doctype.js :: All promote-custom-doctype checks passed
+FAIL database\modules\test_put_back_hold.js :: 2 FAILED
+PASS database\modules\test_recovery_scope.js :: All recovery-scope data-layer checks passed.
+PASS database\modules\test_recycle_bin.js :: All recycle-bin checks passed.
+PASS database\modules\test_reextract_merge.js :: All fast re-extract fill-only merge checks passed.
+PASS database\modules\test_rename_supplier.js :: All renameSupplier checks passed.
+PASS database\modules\test_repair_unplant.js :: All repair un-plant checks passed
+PASS database\modules\test_reprocess_type_flip.js :: All reprocess type-flip persistence checks passed.
+PASS database\modules\test_reset_fresh_install.js :: All reset-fresh-install checks passed
+PASS database\modules\test_reset_learning.js :: All reset-learning checks passed
+PASS database\modules\test_review_queue_issuer_suggested.js :: ALL PASS
+PASS database\modules\test_review_queue_missing_required.js :: All checks passed ÔÇö getReviewQueue.missing_required_labels mirrors the confirm gate.
+FAIL database\modules\test_rewrite_marker_exclusion.js :: 16 passed, 2 failed
+PASS database\modules\test_role_disagreement_refuse.js :: ALL PASS
+PASS database\modules\test_role_dominant_class.js :: ALL PASS
+PASS database\modules\test_route_decisions.js :: PASS ÔÇö 0 failure(s)
+PASS database\modules\test_save_corrections.js :: All saveCorrections display_value checks passed.
+PASS database\modules\test_saveanchor_scope.js :: ALL PASS
+PASS database\modules\test_scope_trust.js :: ALL PASS
+PASS database\modules\test_search_contract.js :: All search-documents contract checks passed.
+PASS database\modules\test_search_date_filter.js :: All search date-filter checks passed
+PASS database\modules\test_seed_support_prune.js :: ALL PASS
+PASS database\modules\test_sender_field_hidden.js :: PASS ÔÇö 0 failure(s)
+PASS database\modules\test_slug.js :: All slug checks passed.
+PASS database\modules\test_stale_document_refs.js :: All stale-document-ref checks passed
+PASS database\modules\test_structural_fields.js :: All structural-field checks passed
+PASS database\modules\test_suggested_supplier_persist.js :: ALL PASS
+PASS database\modules\test_supplier_identifiers.js :: All supplier-identifier pins passed
+PASS database\modules\test_supplier_identity_persistence.js :: while plausible names and explicit user corrections are preserved.
+PASS database\modules\test_supplier_pin_discharge.js :: PASS ÔÇö 0 failure(s)
+PASS database\modules\test_supplier_pin_persist.js :: ALL PASS
+PASS database\modules\test_supplier_siblings.js :: All supplier-sibling checks passed.
+PASS database\modules\test_taught_label_keyword.js :: All taught-label-keyword pins passed
+PASS database\modules\test_template_confirmed_count.js :: ALL PASS
+PASS database\modules\test_template_detail_veto.js :: All template detail-veto checks passed
+PASS database\modules\test_template_fixed_name_presence.js :: ALL PASS
+PASS database\modules\test_template_hidden_fields.js :: All template-hidden-fields checks passed
+PASS database\modules\test_template_logo_hashes.js :: All logo-hash multi-reference checks passed
+PASS database\modules\test_template_merge.js :: All template-merge checks passed
+PASS database\modules\test_template_merge_plan.js :: ALL PASS
+PASS database\modules\test_template_name_heal.js :: All template-name-heal checks passed
+PASS database\modules\test_template_reuse.js :: ALL PASS
+PASS database\modules\test_template_type_scoped_match.js :: ALL PASS
+PASS database\modules\test_templates.js :: All checks passed ÔÇö templates create/rename/remove behave as expected.
+PASS database\modules\test_text_normalise.js :: All 18 normaliser cases match (Py/JS parity holds).
+PASS database\modules\test_total_search.js :: ALL PASS
+PASS database\modules\test_trust_shadow_row_skip.js :: ALL PASS
+PASS database\modules\test_type_presence.js :: All type-presence (JS learn) pins passed.
+PASS database\modules\test_type_split_gate.js :: ALL PASS
+PASS database\modules\test_upsert_type_link.js :: ALL PASS
+PASS database\modules\test_workflow_paid_heal.js :: All paid-heal checks passed.
+PASS database\modules\test_workflow_route_rules.js :: PASS ÔÇö 0 failure(s)
+PASS src\lib\license\test_time_anchor.js :: All time-anchor checks passed.
+PASS src\lib\test_coverteardown.js :: coverTeardown: 19 passed, 0 failed
+PASS src\lib\test_focus_repair.js :: All focus-repair checks passed
+PASS src\lib\test_foreign_fields.js :: ALL PASS
+PASS src\lib\test_navguard.js :: navGuard: 10 passed, 0 failed
+PASS src\lib\test_protected_settings.js :: All protected-setting-key checks passed
+PASS src\lib\test_review_events.js :: ALL PASS
+PASS src\lib\test_safe_send.js :: All safeSend checks passed.
+PASS src\lib\test_secretstore.js :: secretStore: 12 passed, 0 failed
+PASS src\lib\test_totp.js :: All totp checks passed.
+PASS src\lib\test_workflow_notify.js :: All workflow-notify checks passed.
+PASS src\lib\test_xlsx_writer.js :: ALL PASS
+PASS src\lib\update\test_version.js :: ALL PASS
+PASS src\modules\api\test_cert_wizard.js :: cert wizard: 26 passed, 0 failed
+PASS src\modules\api\test_v1_auth.js :: All /v1 auth checks passed.
+PASS src\modules\api\test_v1_ca.js :: All /v1/ca checks passed.
+FAIL src\modules\api\test_v1_contract.js :: [90m    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)[39m
+PASS src\modules\api\test_v1_enroll.js :: All /v1/enroll checks passed.
+PASS src\modules\api\test_v1_entitlement.js :: All /v1 entitlement checks passed.
+PASS src\modules\api\test_v1_handshake.js :: All handshake gate checks passed.
+PASS src\modules\api\test_v1_pages_pathsec.js :: All /v1 pages path-security checks passed.
+PASS src\modules\api\test_v1_review.js :: ALL PASS
+PASS src\modules\api\test_v1_seats.js :: All /v1 seat-enforcement checks passed.
+PASS src\modules\api\test_v1_security.js :: ALL PASS ÔÇö /v1 security probes held.
+PASS src\modules\api\test_v1_workflow.js :: All /v1 workflow checks passed.
+PASS src\modules\auth\test_auth.js :: All checks passed ÔÇö local authentication behaves as expected.
+PASS src\modules\auth\test_stamp_permission.js :: ALL OK
+PASS src\modules\export\test_export_registry.js :: ALL PASS
+PASS src\modules\filing\test_filename_pattern.js :: All checks passed ÔÇö filename_pattern behaves as expected.
+PASS src\modules\filing\test_filing_edge_cases.js :: All filing edge-case checks passed.
+PASS src\modules\filing\test_filing_general_fallback.js :: PASS ÔÇö 0 failure(s)
+PASS src\modules\filing\test_normalise_date_predicate.js :: normaliseDate predicate: 16 passed, 0 failed
+PASS src\modules\filing\test_path_hardening.js :: All path-hardening checks passed.
+PASS src\modules\filing\test_remove_source_file.js :: All checks passed ÔÇö removeSourceFile behaves as expected.
+PASS src\modules\licensing\test_hwm_clamp.js :: All HWM clamp/heal checks passed.
+PASS src\modules\licensing\test_update_info.js :: ALL PASS
+PASS src\modules\print\test_print.js :: PASS ÔÇö 0 failure(s)
+PASS src\modules\processing\test_autofile_route.js :: PASS ÔÇö 0 failure(s)
+PASS src\modules\processing\test_debug_table.js :: All debug-table pins passed
+PASS src\modules\processing\test_drain_original.js :: All checks passed ÔÇö drainOriginalToFolder behaves as expected.
+PASS src\modules\processing\test_drain_tally.js :: All drain-tally pins passed
+PASS src\modules\processing\test_ensure_working_copy.js :: All checks passed ÔÇö ensureWorkingCopy behaves as expected.
+PASS src\modules\processing\test_failure_creates_holding_row.js :: All checks passed ÔÇö failed docs persist as status=error.
+PASS src\modules\processing\test_generic_fallback_mapping.js :: PASS ÔÇö 0 failure(s)
+PASS src\modules\processing\test_import_autofile_gate.js :: 33 ok, 0 failed
+PASS src\modules\processing\test_path_containment.js :: All SEC-17 containment pins passed
+PASS src\modules\processing\test_queue_sweep.js :: 27 passed, 0 failed
+PASS src\modules\processing\test_quiet_lane.js :: all green
+FAIL src\modules\processing\test_quiet_lane_first_fill_reliability.js :: FAILED: 1
+FAIL src\modules\processing\test_quiet_lane_layout.js :: FAILED: 1
+FAIL src\modules\processing\test_quiet_lane_ready_templated.js :: FAILED: 1
+PASS src\modules\processing\test_reconcile_holding.js :: All checks passed ÔÇö reconcileHolding behaves as expected.
+PASS src\modules\processing\test_region_worker.js :: PASS ÔÇö 0 failure(s)
+PASS src\modules\processing\test_reprocess_annotated_empty.js :: ALL PASS
+PASS src\modules\processing\test_reprocess_autocommit.js :: 28 passed, 0 failed
+FAIL src\modules\processing\test_reprocess_holds_as_lane.js :: FAILED: 1
+PASS src\modules\processing\test_reprocess_lock.js :: All reprocess-lock checks passed.
+PASS src\modules\processing\test_reprocess_type_args.js :: All reprocess-type-args checks passed
+PASS src\modules\processing\test_reread_holds_required_roles.js :: All required-role reread-hold checks passed
+PASS src\modules\processing\test_review_events_doors.js :: ALL PASS
+PASS src\modules\processing\test_scope_auto_accept.js :: all green
+PASS src\modules\processing\test_slip_e2e.js :: PASS ÔÇö 0 failure(s)
+PASS src\modules\processing\test_slip_pack.js :: PASS ÔÇö 0 failure(s)
+PASS src\modules\processing\test_split_plan.js :: PASS ÔÇö 0 failure(s)
+PASS src\modules\processing\test_working_copy_durability.js :: All working-copy durability / crash-safety checks passed.
+PASS src\modules\review\test_bin_changed_broadcast.js :: 18 passed, 0 failed
+PASS src\modules\review\test_cold_start_countdown.js :: 28 passed, 0 failed
+PASS src\modules\review\test_purge_and_bin_truth.js :: 20 passed, 0 failed
+PASS src\modules\review\test_template_file_sync.js :: ALL PASS
+PASS src\modules\review\test_upsert_generic_skip.js :: PASS ÔÇö 0 failure(s)
+PASS src\modules\review\test_upsert_issuer_precedence.js :: ALL PASS
+PASS src\modules\review\test_validation_patterns_merge.js :: All validation-pattern merge pins passed
+PASS src\modules\review\test_workflow_lock.js :: All workflow-lock reconciliation checks passed.
+PASS src\modules\search\test_dashboard_autofiled_tally.js :: ALL PASS
+PASS src\modules\settings\test_memory_inventory.js :: ALL PASS
+PASS src\modules\templates\test_audit_coverage.js :: All Stage-5a audit-coverage checks passed.
+PASS src\modules\templates\test_template_adversarial.js :: All template adversarial checks passed.
+PASS src\modules\test_logger_redaction.js :: All log-redaction pins passed
+PASS src\modules\test_path_overlap.js :: All path_overlap checks passed.
+PASS src\modules\test_telemetry.js :: telemetry: 22 passed, 0 failed
+PASS src\modules\watch\test_classify_poll.js :: All checks passed ÔÇö classifyPoll behaves as expected.
+FAIL src\modules\workflow\test_workflow_ipc.js :: Node.js v20.18.0
+PASS src\services\test_access_service.js :: PASS ÔÇö 0 failure(s)
+PASS src\services\test_amount_routing.js :: PASS ÔÇö 0 failure(s)
+PASS src\services\test_backup_retype.js :: All backup re-type checks passed.
+PASS src\services\test_backupservice.js :: All backupService checks passed.
+PASS src\services\test_batch_audit_correct.js :: batch-audit orchestrator: 29 passed, 0 failed
+PASS src\services\test_certservice.js :: certService: 28 passed, 0 failed
+PASS src\services\test_entitlement.js :: All entitlement checks passed.
+PASS src\services\test_exportservice.js :: ALL PASS
+PASS src\services\test_issuer_sibling_fill.js :: ALL PASS
+PASS src\services\test_keep_processed_originals.js :: ALL PASS
+PASS src\services\test_learning_repair_service.js :: 32 passed, 0 failed
+PASS src\services\test_pdfstamp.js :: All pdfStamp checks passed (13).
+PASS src\services\test_position_teach_hint.js :: All position-teach-nudge pins passed
+PASS src\services\test_presence.js :: ALL PASS
+PASS src\services\test_previewservice.js :: All previewService thumbnail checks passed.
+PASS src\services\test_recoveryservice.js :: All recoveryService checks passed.
+PASS src\services\test_ref_class_fix.js :: 87 passed, 0 failed
+PASS src\services\test_repair_suspects.js :: All repairSuspects detector checks passed.
+FAIL src\services\test_reviewservice.js :: 3 FAILED
+PASS src\services\test_reviewservice_refile.js :: All reviewService replace-in-place checks passed.
+PASS src\services\test_seatpool.js :: All seat-pool checks passed.
+PASS src\services\test_session.js :: All session checks passed.
+PASS src\services\test_stage1_path_security.js :: All Stage-1 path-security checks passed.
+PASS src\services\test_stage2_hardening.js :: All Stage-2 hardening checks passed.
+PASS src\services\test_stamp_service.js :: ALL OK
+PASS src\services\test_stamp_workflow_gate.js :: ALL OK
+PASS src\services\test_sweep_predicate.js :: ALL PASS
+PASS src\services\test_teach_followup.js :: ALL PASS
+FAIL src\services\test_type_ambiguity_ripple.js :: 1 FAILED
+PASS src\services\test_workflow.js :: All workflow checks passed.
+FAIL src\services\test_workflow_snapshot.js :: Node.js v20.18.0
+PASS src\windows\help\test_help_nav.js :: ALL PASS
+PASS src\windows\review\test_activity_actions_columns.js :: All activity-actions column pins passed
+FAIL src\windows\review\test_activity_strip.js :: 3 FAILED
+PASS src\windows\review\test_chris_r5_ui_cards.js :: All Chris R5 UI-card pins passed
+PASS src\windows\review\test_chris_r6_ui_cards.js :: all green
+PASS src\windows\review\test_confirm_hold_payloads.js :: All confirm-hold payload checks passed
+PASS src\windows\review\test_delete_target_copy.js :: 6 passed, 0 failed
+PASS src\windows\review\test_deskew_session.js :: ALL PASS
+PASS src\windows\review\test_drawn_date_parse.js :: PASS ÔÇö 0 failure(s)
+PASS src\windows\review\test_hold_reason_truthful.js :: All hold-reason truthfulness checks passed
+PASS src\windows\review\test_inferred_identity_reason.js :: PASS ÔÇö 0 failure(s)
+FAIL src\windows\review\test_issuer_clear_not_a_correction.js :: 1 FAILED
+PASS src\windows\review\test_issuer_hold_and_typeahead.js :: 11 passed, 0 failed
+PASS src\windows\review\test_issuer_ripple_contract.js :: All issuer-ripple contract checks passed
+PASS src\windows\review\test_letterhead_note_contract.js :: All letterhead note-contract checks passed
+PASS src\windows\review\test_list_field_pills.js :: 41 passed, 0 failed
+PASS src\windows\review\test_queue_badge_copy.js :: All queue-badge copy pins passed
+PASS src\windows\review\test_review_initial_selection.js :: All initial-selection checks passed
+PASS src\windows\review\test_review_untyped_reason.js :: All untyped-reason checks passed
+PASS src\windows\review\test_stale_note_matcher.js :: All stale-note matcher pins pass
+PASS src\windows\review\test_teach_speaks.js :: 53 passed, 0 failed
+PASS src\windows\review\test_toolbar_narrow.js :: All narrow-toolbar pins passed
+PASS src\windows\review\test_type_heading_label.js :: All type-heading-label checks passed.
+PASS src\windows\review\test_validation_pattern_surfaces.js :: all validation-surface pins passed
+PASS src\windows\search\test_no_global_collisions.js :: All search-window global-collision pins passed
+PASS src\windows\search\test_preview_error_state.js :: All preview error-state pins passed
+PASS src\windows\search\test_search_detail_depathed.js :: All search detail de-pathing pins passed
+PASS src\windows\search\test_search_print_action.js :: 5 passed, 0 failed
+FAIL src\windows\settings\test_settings_wiring.js :: 1 FAILED
+PASS src\windows\shared\test_anchor_label.js :: All anchor-label checks passed
+PASS src\windows\shared\test_box_snap.js :: All boxSnap checks passed (11).
+PASS src\windows\shared\test_doctype_reorder.js :: All reorder checks passed
+FAIL src\windows\shared\test_doctype_surface_parity.js :: 1 FAILED
+PASS src\windows\shared\test_issuer_blank_offer.js :: All issuer-blank-offer pins passed
+PASS src\windows\shared\test_logo_source.js :: All logo-source checks passed
+PASS src\windows\shared\test_offer_prune.js :: ALL PASS
+PASS src\windows\shared\test_pick_box.js :: ALL PASS
+PASS src\windows\shared\test_review_readiness.js :: ALL PASS
+PASS src\windows\shared\test_slip_fix.js :: ALL PASS
+PASS src\windows\shared\test_value_locate.js :: 13 checks passed
+PASS src\windows\shared\test_valueLocate.js :: PASS ÔÇö 0 failure(s)
+PASS src\windows\teach\test_teach_auto_field_rows.js :: all green
+PASS src\windows\teach\test_teach_fragment_name_guard.js :: ALL PASS
+PASS src\windows\teach\test_teach_label_pick.js :: all checks passed
+FAIL src\windows\teach\test_teach_multipage.js :: 1 FAILED
+PASS src\windows\teach\test_teach_template_name.js :: ALL PASS
+PASS src\windows\test_ocr_type_retired.js :: all ocr_type retirement pins passed
+# js done 18:20:21

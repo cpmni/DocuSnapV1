@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "title": "Search your documents from another PC",
+  "description": "NEEDS-OWNER: this cannot be recorded in the single-machine sandbox — it needs the separate ScanFinder Search Client app running on a SECOND PC, connected over your network to the main computer. This file is a narration/caption SKELETON only: every step is a still-frame slide (no live automation, no verified selectors). Record it manually on a second machine, then re-time the steps to the real screens. Flow and narration are based on client/ and docs/detached-client.md (connect by address + port ~8765, verify the certificate once, sign in, then search exactly like the built-in Search).",
+  "target_length_sec": 62,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder Client",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "wait",
+      "narration": "Scan Finder can also run as a small search client on other PCs on your network, so anyone can find and open filed documents without sitting at the main computer.",
+      "caption": "Search from another PC",
+      "duration_sec": 13.5
+    },
+    {
+      "id": "connect",
+      "action": "wait",
+      "narration": "On the second PC you open the client and point it at the main computer — its address and port, usually eight-seven-six-five.",
+      "caption": "Connect to the main computer",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "certificate",
+      "action": "wait",
+      "narration": "The first time, it checks the main computer's security certificate, so the connection is private and trusted from then on.",
+      "caption": "Verify the certificate once",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "signin",
+      "action": "wait",
+      "narration": "You sign in with your own account, and the client only shows what your role is allowed to see.",
+      "caption": "Sign in with your account",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "search",
+      "action": "wait",
+      "narration": "After that it works exactly like the Search you've already seen: type a word, open the page, zoom and read.",
+      "caption": "Search, open and read — just like at the desk",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "needs_owner",
+      "action": "wait",
+      "narration": "This one needs a second machine and your network to show properly, so it's recorded on real hardware rather than in the practice sandbox.",
+      "caption": "Recorded on real hardware",
+      "duration_sec": 10.8
+    }
+  ]
+}

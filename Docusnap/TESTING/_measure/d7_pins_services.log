@@ -1,0 +1,49 @@
+  OK   src\services\test_access_service.js
+  OK   src\services\test_amount_routing.js
+  OK   src\services\test_backup_retype.js
+  OK   src\services\test_backupservice.js
+  OK   src\services\test_batch_audit_correct.js
+  OK   src\services\test_buyer_issued_convention_confirm.js
+  OK   src\services\test_certservice.js
+  OK   src\services\test_charset_accept.js
+  OK   src\services\test_department_backup_remap.js
+  OK   src\services\test_department_denial_matrix.js
+  OK   src\services\test_department_multi_migration.js
+  OK   src\services\test_department_settings.js
+  OK   src\services\test_department_visibility.js
+  OK   src\services\test_device_import_gate.js
+  OK   src\services\test_direct_intake_service.js
+  OK   src\services\test_entitlement.js
+  OK   src\services\test_exportservice.js
+  OK   src\services\test_intake_guard.js
+  OK   src\services\test_intake_guard_source_contract.js
+  OK   src\services\test_issuer_sibling_fill.js
+  OK   src\services\test_keep_processed_originals.js
+  OK   src\services\test_learning_repair_service.js
+  OK   src\services\test_pdfstamp.js
+  OK   src\services\test_position_teach_hint.js
+  OK   src\services\test_presence.js
+  OK   src\services\test_previewservice.js
+  OK   src\services\test_recoveryservice.js
+  FAIL src\services\test_ref_class_fix.js (exit 1, 1 failed)
+  OK   src\services\test_repair_suspects.js
+  OK   src\services\test_reviewservice.js
+  OK   src\services\test_reviewservice_refile.js
+  OK   src\services\test_seatpool.js
+  OK   src\services\test_session.js
+  OK   src\services\test_stage1_path_security.js
+  OK   src\services\test_stage2_hardening.js
+  OK   src\services\test_stamp_service.js
+  OK   src\services\test_stamp_workflow_gate.js
+  OK   src\services\test_sweep_predicate.js
+  OK   src\services\test_teach_followup.js
+  OK   src\services\test_type_ambiguity_ripple.js
+  OK   src\services\test_workflow.js
+  OK   src\services\test_workflow_department_gate.js
+  OK   src\services\test_workflow_snapshot.js
+
+──── src\services\test_ref_class_fix.js ────
+  FAIL ARM B — flag OFF with a QUALIFYING correction is byte-identical to a no-op run (the kill switch really is a kill switch)
+86 passed, 1 failed
+
+[run-pins] 43 pin file(s): 42 green, 1 red (18s)

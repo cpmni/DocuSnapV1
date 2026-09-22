@@ -1,0 +1,160 @@
+[ccs] sampled 40 docs across 8 strata (SET=scanned, SEED=7)
+Migration applied: 001_initial.sql
+  Added column extractions.corroboration
+  Added column document_types.title_aliases
+JS migration 2 applied: v1 → v2 schema upgrade
+JS migration 4 applied: templates system
+JS migration 5 applied: cleared bad customer_name anchors
+JS migration 6 applied: field_anchors w_norm/h_norm columns
+JS migration 8 applied: template viewer / anchor mapping (sample_document_id, template_field_mappings)
+JS migration 7 applied: local authentication (users, recovery_codes, audit_log)
+JS migration 10 applied: documents.ocr_text for full-text search
+JS migration 11 applied: extractions.validation_note for format anomaly notes
+JS migration 12 applied: templates.ocr_auto_enabled / ocr_auto_params
+JS migration 14 applied: extractions.anchor_label
+JS migration 9 applied: template groups
+JS migration 16 applied: licensing scaffolding (device_registrations, license_tokens)
+JS migration 17 applied: documents.working_path (managed working copy)
+JS migration 18 applied: documents.review_acknowledged_at (explicit review ack)
+JS migration 19 applied: field_label_overrides (admin keyword label overrides)
+JS migration 20 applied: field_anchors.last_authoritative_at (explicit re-teach precedence)
+JS migration 21 applied: field_anchors.offset_dx_norm/offset_dy_norm (drift-invariant teach offset)
+JS migration 22 applied: registration groundwork (template_landmarks)
+JS migration 3 applied: trimmed built-in fields to name/date/ref
+JS migration 23 applied: sanitised anchor labels (cleaned 0, deleted 0)
+JS migration 24 applied: clean install — first-run wizard will show
+JS migration 25 applied: structured audit_log (category/outcome/actor snapshot/metadata + indexes)
+JS migration 26 applied: multi-reference logo phash (template_logo_hashes)
+JS migration 27 applied: structural fields permanent + relabel Company
+JS migration 28 applied: users.totp_secret/totp_enabled (detached-client MFA)
+JS migration 29 applied: audit_log search indexes (outcome, action_category+created_at)
+JS migration 30 applied: client_seats (concurrent sticky seat leases)
+JS migration 31 applied: template_fields.fixed_locked (admin-locked fixed values)
+JS migration 32 applied: client_seats.workflow_enabled (workflow add-on)
+JS migration 33 applied: template_landmarks.source (manual landmarks)
+JS migration 34 applied: template_sample_words (cross-sample landmark corpus)
+JS migration 35 applied: relabel company-role field by key (Supplier/Customer Name)
+JS migration 36 applied: field_rules (operator field-cleanup toolkit)
+JS migration 37 applied: documents.page_count
+JS migration 38 applied: company field → "Document Issuer"
+JS migration 39 applied: performance indexes (documents/extractions/learning)
+JS migration 40 applied: documents.deleted_at (recycle bin)
+JS migration 41 applied: documents.confirmed_by_username
+JS migration 42 applied: telemetry_events
+JS migration 43 applied: document_types.title_aliases
+  migration 44: reshaped 0 customer_name-identity type(s)
+JS migration 44 applied: customer_name unlinked from identity (supplier_name is sole issuer)
+  migration 45: deleted customer_name learning — hints self-equal=0 known-issuer=0, anchors=0
+JS migration 45 applied: stale customer_name learning cleaned (RC2)
+  migration 46: unfroze 0 auto-frozen recipient-name template field(s) (scanned 0)
+JS migration 46 applied: auto-frozen recipient names unfrozen
+JS migration 47 applied: logo detail-hash columns added (NULL-inert)
+JS migration 48 applied: extractions.candidates column added (NULL-inert)
+JS migration 49 applied: extractions.suggested_supplier column added (NULL-inert)
+JS migration 50 applied: documents.supplier_pin column added (NULL-inert)
+JS migration 51 applied: documents.detected_type_name column added (NULL-inert)
+JS migration 52 applied: field_anchors.max_w_norm column added (box-width; NULL-inert)
+JS migration 53 applied: documents.learning_retracted_at column added (delete/restore learning symmetry; NULL-inert)
+JS migration 54 applied: template_hidden_fields table added (per-template field-hiding mask; INERT with no rows)
+JS migration 55 applied: audit_log tamper-evidence (prev_hash/row_hmac + append-only triggers)
+JS migration 56 applied: doctype_grants scaffold (INERT — per-doc-type authorization groundwork, unused until Stage 8)
+JS migration 57 applied: documents.confirmed_via (NULL = human/legacy; scope-sweep confirms excluded from trust graduation)
+JS migration 58 applied: templates.sample_deskew_angle (teach-frame tilt for level-frame composition; NULL-inert)
+JS migration 59 applied: delivery_number typed reference_code (a digit-free caption can no longer auto-file)
+  migration 60: turned on 43 reading improvement(s) (43 newly seeded, existing choices untouched)
+JS migration 60 applied: proven reading improvements default ON
+JS migration 61 applied: field_label_overrides.exclusive (0/NULL-inert)
+JS migration 62 applied: field_label_overrides.template_id (0 = doc-type-wide)
+JS migration 63 applied: extractions.corroboration (record-only)
+JS migration 64 applied: template_fields.fixed_source/fixed_set_at (record-only)
+JS migration 65 applied: templates.identity_unconfirmed (hold-the-siblings, inert until armed)
+JS migration 66 applied: templates.buyer_issued (inert until armed)
+  migration 67: 7 measured improvement(s) newly seeded (autofile_gate_unify, far_lowconf_valued_only, type_election_title_first, reprocess_shadow_stale_drop, xcheck_corrob_note_demote, graduation_window, corroboration_autofile)
+JS migration 67 applied: the import arc + graduation window default ON
+  migration 68: 2 near-match guard(s) newly seeded (teach_identity_near_match_keep, issuer_near_match_confirm_guard)
+JS migration 68 applied: near-match identity guards default ON
+  migration 69: 8 corroboration-resolve switch(es) newly seeded OFF
+JS migration 69 applied: corroboration-resolve switches seeded (all OFF)
+  migration 70: 33 reading switch(es) defaulted ON (arc keys forced; other existing choices untouched)
+JS migration 70 applied: new-install defaults = the owner's proven all-on-except-straighten config
+JS migration 71 applied: fresh-install auto-file bar 90; P-adopt + vacuous-suppress switches seeded OFF
+JS migration 72 applied: page-match v2 + vat-reg symfold + money-sign switches seeded OFF
+JS migration 73 applied: confirm-persist-values + corrections-dedupe seeded OFF
+JS migration 74 applied: ref-class-fix seeded OFF
+JS migration 75 applied: rewrite-marker learning exclusion seeded OFF
+JS migration 76 applied: Chris round-11 validated fixes defaulted ON (ref-class-fix, hint-band-ws, geom-fragment-shed, date-invalid-yield)
+JS migration 77 applied: cold-start letterhead prefill defaulted ON
+JS migration 78 applied: confirm-persist-values + corrections-dedupe defaulted ON (paired)
+JS migration 79 applied: teach→file arc switches seeded OFF (sweep, auto-accept, fragment-abstain, quiet re-read)
+JS migration 80 applied: teach→file arc defaulted ON (sweep, auto-accept, fragment-abstain, quiet re-read, role-dominant-class)
+JS migration 81 applied: round-7 reading switches defaulted ON (prefix-adopt, vacuous-suppress, page-match v2, vat-reg $, money sign, net-misread pair)
+JS migration 82 applied: two-line wordmark slice defaulted ON (stack abstain, depth guard, fragment keep, kw select, ready re-read)
+JS migration 83 applied: documents.drained_at (+backfill) · keep_processed_originals ON (a filed document keeps its Processed original)
+JS migration 84 applied: fingerprint_seed_support_prune ON for new installs (one-sample seed support prune)
+JS migration 85 applied: catalog title aliases seeded on 0 type(s)
+JS migration 86 applied: documents.put_back_at (a put-back document never files itself until a human confirms it)
+JS migration 87 applied: documents.refile_declined_at + putback_refiled_at (put-back re-file via File All, DARK)
+JS migration 88 applied: supplier_identifiers (hard-identifier registry, DARK/inert)
+JS migration 89 applied: default-ON position_teach_nudge + issuer_sibling_fill + issuer_suggest_on_blank_confirm (identifier_registry stays DARK)
+JS migration 90 applied: documents.learning_excluded_at (Learning Repair start-fresh stamp; inert until stamped)
+JS migration 91 applied: document_barcodes (barcode inventory; inert until barcode_inventory is on)
+JS migration 92 applied: structural roles required by nature (0 role field(s) healed)
+JS migration 93 applied: 36 feature switch(es) defaulted ON for fresh installs (all-on-except-straighten; existing choices + hand-disables untouched)
+JS migration 94 applied: 3 re-slice witness arc switch(es) seeded OFF (DARK)
+JS migration 95 applied: cell-below keyword association seeded OFF (DARK, 1 row)
+JS migration 96 applied: 2 accounting-negative capture switch(es) seeded OFF (DARK)
+JS migration 97 applied: buyer-issued convention note seeded OFF (DARK, 1 row)
+JS migration 98 applied: 6 gated 08-31 arc switch(es) defaulted ON
+JS migration 99 applied: taught-total role-qualifier locate seeded OFF (DARK, 1 row)
+JS migration 100 applied: fragment-containment yield seeded OFF (DARK, 1 row)
+JS migration 101 applied: review-bound straighten retry defaulted ON for fresh installs (1 row)
+JS migration 102 applied: 3 DARK rollout features seeded OFF (3 setting rows) + extractions.charset_flag_meta
+JS migration 103 applied: 3 rollout feature(s) defaulted ON
+JS migration 104 applied: documents.ocr_recipe + quick_reprocess_enabled (DARK)
+JS migration 105 applied: format-variance relax seeded OFF (DARK, 1 row)
+JS migration 107 applied: format-variance relax (ref) seeded OFF (DARK, 1 row)
+JS migration 109 applied: format-variance relax (ref INLINE / box-drift disagreement) seeded OFF (DARK, 1 row)
+JS migration 111 applied: filing_sanity_ref_corrob_soften (Gate-C truthful soft note) seeded OFF (DARK, 1 row)
+JS migration 113 applied: resolve_ref_near_miss (unambiguous confirmed-literal pre-fill) seeded OFF (DARK, 1 row)
+JS migration 115 applied: resolve_ref_positional (binarisation re-slice + positional consensus) seeded OFF (DARK, 1 row)
+JS migration 117 applied: filing_sanity_ref_history_soften (Gate-C soft note on confirmed-literal + backed page slip) seeded OFF (DARK, 1 row)
+JS migration 119 applied: confusion_precedence (2a review-bound human-confusion correction) seeded OFF (DARK, 1 row)
+JS migration 120 applied: format_class_join (mixed-code scope keeps its format entry) seeded OFF (DARK, 1 row)
+JS migration 121 applied: resolve_ref_near_miss + resolve_ref_positional forced OFF (relocated as SUGGESTIONS — a new feature is born DARK; discharges the TEST force-ON migs 114/116)
+JS migration 122 applied: log-review arcs seeded OFF (anchor_bare_label_fuzzy, anchor_labelless_currency_refuse, type_uninstalled_heading_fold)
+JS migration 125 applied: buyer_issued_convention_one_confirm (one noted confirm licenses the convention) seeded OFF (DARK, 1 row)
+JS migration 127 applied: ocr_parallel_import_enabled (per-document OCR pools on a one-file import) seeded OFF (DARK, 1 row)
+JS migration 129 applied: teach_angle_compose_null_abstain (unknown sample tilt = stationary read) seeded OFF (DARK, 1 row)
+JS migration 130 applied: reread_hold_corrob_release (S3-C5 hold released on a licensed keyword-witnessed re-read) seeded OFF (DARK, 1 row)
+JS migration 131 applied: template_date_left_clip_grow (left-cut 1-digit-day date may grow) seeded OFF (DARK, 1 row)
+JS migration 132 applied: template_pad_date_containment_flag (clipped-first-digit date flags without the margin) seeded OFF (DARK, 1 row)
+JS migration 133 applied: template_clip_commit_left_slack (leading-glyph clip-commit slack) seeded OFF (DARK, 1 row)
+JS migration 135 applied: inline_disagree_corrob_soften (class G — reword the box-clip note on keyword corroboration) seeded OFF (DARK, 1 row)
+JS migration 137 applied: 24 DARK test switches reset OFF (customer-build reset; 24 row(s) written)
+JS migration 138 applied: ocr_dpi seeded 200 (the corpus-validated operating point; 1 row)
+JS migration 139 applied: ocr_parallel_import_enabled promoted ON (one-file import OCR pools; memory-pressure clause in singleDocParallelEnv)
+Workflow schema: created document_routes
+Workflow schema: added documents.workflow_status
+Workflow schema: added document_routes.matched_rule_summary
+Workflow schema: created route_decisions
+Workflow schema: created workflow_route_rules
+Stamp schema: created stamp_types (+6 defaults)
+Stamp schema: created stamp_events (append-only)
+[ccs] operating point: DPI 200 · OMP 1 · pools true · 111 app env var(s) from the fresh-install DB (mig 139) · overrides {"OMP_THREAD_LIMIT":"1","DS_OCR_PARALLEL_FULLPAGE":"1","DS_OCR_PARALLEL_FIELDS":"1"}
+# Customer-corpus score — TAG=det_8 (SET=scanned, SAMPLE=40, SEED=7)
+
+Processed 40/40 sampled docs (cold install — no learning/templates).
+
+Operating point: DPI 200 · OMP 1 · pools true · 111 app env var(s) from the fresh-install DB (mig 139) · overrides {"OMP_THREAD_LIMIT":"1","DS_OCR_PARALLEL_FULLPAGE":"1","DS_OCR_PARALLEL_FIELDS":"1"}
+
+| lane | digital | scanned | overall |
+|---|---|---|---|
+| ref | — | 27/40 (67.5%) | 27/40 (67.5%) |
+| date | — | 39/40 (97.5%) | 39/40 (97.5%) |
+| total | — | 9/30 (30.0%) | 9/30 (30.0%) |
+| issuer | — | 19/40 (47.5%) | 19/40 (47.5%) |
+| customer | — | 11/15 (73.3%) | 11/15 (73.3%) |
+| vat_no | — | 33/40 (82.5%) | 33/40 (82.5%) |
+| account_no | — | 15/40 (37.5%) | 15/40 (37.5%) |
+| job_ref | — | 5/5 (100.0%) | 5/5 (100.0%) |
+[ccs] reports: customer_score_det_8.md / .jsonl · heals captured: 2

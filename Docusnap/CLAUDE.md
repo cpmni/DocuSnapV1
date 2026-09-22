@@ -21,7 +21,45 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-18 (the DEPARTMENTS feature built end-to-end D4→D7, all Oracle gates green, mig 184; 2 live bug fixes; Template Manager video):
+## ⏭ LATEST — 2026-09-21 EVENING (opt-in auto-split + the Chris-vet fixes + the UNDETECTED-ISSUER feature A+B):
+**READ `HANDOVER_2026-09-21_EVENING.md` FIRST** (then `handover.md` = the same state in next-batch form). Branch
+`feat/teach-side-overnight`; **HEAD `d3df3ce`; origin CURRENT (all pushed); mig 195; `run-pins.js` 405/405 green;
+nothing running.** The only dirty tree paths are the OWNER's (`CLAUDE.md`, `tools/video_tutorials/*`) — don't commit.
+Installer pair last built at `52344d3` (`dist\…-1144-52344d3.exe` + client `…-1147-…`) — **it PREDATES the
+undetected-issuer gate + the "Not recognised" tab; rebuild at HEAD to ship Part B** (`AUDIT_OFFLINE_OK=1` — npm
+registry unreachable, github push works). **Shipped (8 commits):** (1) **opt-in auto-split** — mig 194
+`auto_separate_enabled` OFF by default (INSERT-OR-IGNORE, NOT in TEST_SWITCH_KEYS) + a scoped multi-doc auto-file
+HOLD (`process_docs.multi_doc_suspect` → `handler MULTI_DOC_HOLD_NOTE`) + the page-1 separator-sheet `compose_segments`
+override (`--auto-split` gates the whole-file heuristic; the segmentHoldPages/buildPairContext mixed-exemption seam
+fixed) + watch unified on `auto_separate_enabled||filing_slips` (**`watch_separate_enabled` RETIRED**) + the Review
+"N pages · Split" chip. (2) **All 6 Chris 2026-09-20 findings** (confirmed-doc "Checked by you", the named low-field
+banner, split/LAN copy, "ID code"→"certificate ID", the live teach-note refresh). (3) **UNDETECTED-ISSUER A+B**
+(reggie+gary → Oracle SIGN-OFF-W/COND) — **Part A mig 195 DARK `issuer_undetected_blank`** (`engine._declare_issuer_undetected`
+blanks a non-name unsupported cold issuer; predicate `keyword.issuer_read_looks_implausible` = a pinned JS↔Python TWIN
+on `python_backend/tests/issuer_implausible_vectors.json`; `TEST_SWITCH_KEYS`→**45**) + **Part B the Review
+"Not recognised" tab** (`shared/notRecognised.js`, display-only, docs moved out of the main queue). **OWED:** rebuild
+the pair · the Part-A flip census (realdoc M=0 + fire denominator + a multi-token FP set) · split "recover original"
+button · the standing owner-gated backlog (licensing deploy, DB-encryption 2a/2b, VM verify). ⚠ **STALE-claim fix:**
+`watch_separate_enabled` (the 08-15→09-02 switch ledger below still calls it "DEFAULT ON since mig 175") is **RETIRED
+2026-09-21** — watch separation now follows `auto_separate_enabled || filing_slips_enabled`.
+
+## ⏭ 2026-09-20 (hardened RELEASE build produced + verified; the 20 NEW-USER tutorial videos planned+scripted; a peer session is recording them):
+**READ `HANDOVER_2026-09-20.md` FIRST**, then `AUTO_SESSION_2026-09-20.md` (video/build detail) and `handover.md`
+(the 09-19 morning queue = the still-current DEV backlog). Branch `feat/teach-side-overnight`; **HEAD `16432a2`;
+2 commits ahead of origin, UNPUSHED (from 09-19); mig 191.** No app/engine code touched this session.
+**⚠️ LIVE:** a PEER Claude session `Handover continuation` is ACTIVELY recording the tutorial series on this machine
+(single mouse, sandbox `C:\ScanFinderDemo`, port 9222, → `Desktop\Tutorials\`). Two recorders = collision. It OWNS
+recording + dedup + the Tutorials README. **Run `ListAgents` before ANY video work; if it's still present, do NOT
+record / rename Tutorials files / kill sandbox processes.** **Built this session:** hardened installer
+`dist\ScanFinder Setup 2.0.0-r20260920-1220-16432a2.exe` (`build:release`, verified: boot smoke, 14 windows,
+bytecode-only, fuses OK, signed); the 20-video plan + ALL 20 scripts (schema-valid, selectors verified) in
+`tools/video_tutorials/scripts/`; 2 selector bug fixes (auto-file/watch-folder `+ .toggle-slider`); runner hardened
+(resolve 8→20s, CDP 4s); killed 5 CPU-zombie `grep` procs. 6 videos finished+voiced so far (2 mine, 4 peer). Video
+tooling changes are UNCOMMITTED (owner's call; peer may still be editing scripts). **DEV backlog unchanged** (`handover.md`):
+push the 2 commits · VM-verify installers · deploy 3 licensing-server changes (`BEFORE_RELEASE.md`) · DB-encryption
+2a/2b decision · Castellan Slice 2 reframe · `/christest`.
+
+## ⏭ 2026-09-18 (the DEPARTMENTS feature built end-to-end D4→D7, all Oracle gates green, mig 184; 2 live bug fixes; Template Manager video):
 **READ `HANDOVER_2026-09-18.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `96f356d`; origin CURRENT (all pushed);**
 migration **184**; no running processes. Installers (D7): core `dist\ScanFinder Setup 2.0.0-r20260918-1346-976f42f-TEST.exe`
 + client `client\dist\…-1509-976f42f.exe`. **Built + pushed:** the whole admin-only **Departments** feature (`325a014`

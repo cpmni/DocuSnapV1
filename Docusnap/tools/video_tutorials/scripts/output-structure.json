@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "title": "Make folders and filenames match your scheme",
+  "description": "Shape where filed documents land and what they're called, using the two block builders in Settings -> Files & filing: the folder builder (subfolders) and the filename builder, with the live preview updating as blocks are added or removed. NOTE: the editor is click-a-block-to-add / click-the-cross-to-remove (there is no drag-to-reorder), so the video builds the pattern rather than dragging blocks.",
+  "target_length_sec": 120,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "ScanFinder files every document into folders and gives it a tidy name. You decide the pattern — let's match it to how you already work.",
+      "caption": "Folders & filenames your way",
+      "duration_sec": 12.5
+    },
+    {
+      "id": "open_settings",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-settings",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Settings from the side bar.",
+      "caption": "1. Open Settings",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "open_tab",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": ".tab[data-tab=\"files\"]",
+        "timeout": 15
+      },
+      "target": {
+        "selector": ".tab[data-tab=\"files\"]",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Go to Files and filing.",
+      "caption": "2. Files & filing tab",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "folder_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#folder-pattern-input",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#folder-pattern-input",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "This row builds the subfolders. Each blue block is one piece of information — here, the sender, then the year, then the month.",
+      "caption": "Blue blocks = your subfolders",
+      "duration_sec": 12.5
+    },
+    {
+      "id": "tokens_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#folder-token-list",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Click a block below to add another level, or the little cross on a block to remove one.",
+      "caption": "Add or remove blocks",
+      "duration_sec": 9.5
+    },
+    {
+      "id": "filename_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#filename-pattern-input",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "This second builder is the file name itself — by default the document type, its date, and its reference number.",
+      "caption": "The file name pattern",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "add_block",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#filename-token-list .pe-chip",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Say you also want the sender's name in the filename —",
+      "caption": "3. Add a block",
+      "duration_sec": 6.0
+    },
+    {
+      "id": "preview",
+      "action": "move_to",
+      "target": {
+        "selector": "#output-path-preview",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "— just click Issuer, and the live preview shows exactly where a document would be saved and what it'd be called.",
+      "caption": "Live preview updates as you go",
+      "duration_sec": 10.5
+    },
+    {
+      "id": "reset_mention",
+      "action": "move_to",
+      "target": {
+        "selector": "#btn-reset-filename-pattern",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Not sure? Reset to Default puts either builder back the way it started.",
+      "caption": "Reset to Default anytime",
+      "duration_sec": 7.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "Now every document files itself neatly. Next: letting the easy ones file automatically.",
+      "caption": "Next: auto-filing",
+      "duration_sec": 7.0
+    }
+  ]
+}

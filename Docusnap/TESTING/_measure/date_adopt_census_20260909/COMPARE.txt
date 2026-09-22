@@ -1,0 +1,6 @@
+docs compared: 147
+FIRES (padadopt method OR date value changed): 0
+wouldFile REGRESSIONS (filed OFF, NOT ON) — must be 0: 0
+NEW filers (ON not OFF): 0
+NEW WRONG auto-files (new filer, date/ref != GT) — MUST be 0: 0
+FIXED (was wrong-auto-filing OFF, correct ON): 0

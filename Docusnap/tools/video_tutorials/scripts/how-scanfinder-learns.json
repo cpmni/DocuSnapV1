@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "title": "How ScanFinder learns to file by itself",
+  "description": "Explains auto-file and graduation: the Home 'Getting smarter' card, then Settings → Processing where the graduation count and confidence threshold live. The arc (teach once → confirm a few clean → the sender graduates → its documents file themselves) is narrated over the real controls, with the reassurance that anything unsure still waits in Review. No graduated supplier is faked.",
+  "target_length_sec": 120,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-home",
+        "window": "ScanFinder"
+      },
+      "narration": "As ScanFinder learns your suppliers, it starts filing their documents for you, with no review needed at all. Here's how that happens — and why you can trust it.",
+      "caption": "How it learns to file by itself",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "learning_card",
+      "action": "move_to",
+      "target": {
+        "selector": "#dash-learning",
+        "window": "ScanFinder"
+      },
+      "narration": "The dashboard keeps score here. It shows how many of your suppliers ScanFinder can now file on its own, and how many document layouts it has learned so far.",
+      "caption": "The dashboard tracks what it has learned",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "explain_arc",
+      "action": "move_to",
+      "target": {
+        "selector": "#dash-attention",
+        "window": "ScanFinder"
+      },
+      "narration": "The path to that is simple. You teach a supplier once, then confirm its first few documents in Review. Every clean confirmation — where you didn't have to change a thing — builds ScanFinder's confidence in that sender.",
+      "caption": "Teach once, then confirm a few clean ones",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "open_settings",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-settings",
+        "window": "ScanFinder"
+      },
+      "narration": "You set the details in Settings.",
+      "caption": "1. Open Settings",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "goto_processing",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "[data-tab=\"processing\"]",
+        "timeout": 20
+      },
+      "target": {
+        "selector": "[data-tab=\"processing\"]",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Open the Processing section.",
+      "caption": "2. Go to Processing",
+      "duration_sec": 5.0
+    },
+    {
+      "id": "graduation",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#graduation-window",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#graduation-window",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "This is the important one. It's how many clean confirmations a sender needs before ScanFinder trusts it — five by default. Once a supplier passes that mark it graduates, and from then on its documents file themselves the moment they're read.",
+      "caption": "Confirmations before a sender is trusted",
+      "duration_sec": 17.0
+    },
+    {
+      "id": "threshold",
+      "action": "move_to",
+      "target": {
+        "selector": "#auto-file-threshold",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "This sets how sure it must be before filing anything on its own. It's kept deliberately high and cautious to begin with; as the reads on your regular suppliers settle, you can ease it down a little to let more through.",
+      "caption": "How sure it must be to file automatically",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "toggle",
+      "action": "move_to",
+      "target": {
+        "selector": "#auto-file-toggle + .toggle-slider",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Automatic filing is switched on here, and there's a firm rule behind it: it only ever files a document that read cleanly, with nothing at all flagged for a look.",
+      "caption": "Auto-file is on — clean reads only",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "reassure",
+      "action": "wait",
+      "narration": "That's the safety net. If ScanFinder is ever unsure — a supplier it hasn't met, or a date it couldn't read clearly — it never guesses. It sets that one document aside in Review for you. So the more you use it, the less it asks — and it will never file something it isn't certain about.",
+      "caption": "Unsure? It always waits in Review",
+      "duration_sec": 19.5
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "Teach your regular senders, confirm the first few, and your filing quietly starts running itself.",
+      "caption": "Teach · confirm a few · then hands-off",
+      "duration_sec": 9.0
+    }
+  ]
+}

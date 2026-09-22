@@ -1,0 +1,6 @@
+
+  ⚠ vendor/python still carries the removed RapidOCR stack: google.protobuf, flatbuffers, yaml, requests, tqdm, urllib3, certifi, charset_normalizer, idna
+    It is unused since 2026-07 and adds ~80-180 MB to the installer. Reclaim (optional):
+    vendor\python\python.exe -m pip uninstall -y rapidocr-onnxruntime onnxruntime opencv-python shapely pyclipper
+(node:27160) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)

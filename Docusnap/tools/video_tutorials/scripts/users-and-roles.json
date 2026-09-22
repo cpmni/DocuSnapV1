@@ -1,0 +1,144 @@
+{
+  "version": 1,
+  "title": "Add your team — users and roles",
+  "description": "Add colleagues with their own sign-in and the right level of access. Settings -> Users. New accounts get a temporary password; the user sets their own on first sign-in. The Create button is HOVERED, not clicked, so no real account is made on camera. Selectors: .tab[data-tab=users], #users-list, #btn-add-user reveals #add-user-form (#new-user-username, #new-user-display-name, #new-user-role edit|readonly|admin, #btn-save-user). Not the LAN search client — out of scope for this series.",
+  "target_length_sec": 80,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "ScanFinder isn't just for one person. You can add your colleagues, each with their own sign-in and their own level of access.",
+      "caption": "Add your team",
+      "duration_sec": 11.5
+    },
+    {
+      "id": "open_settings",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-settings",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Settings from the side bar.",
+      "caption": "1. Open Settings",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "open_tab",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": ".tab[data-tab=\"users\"]",
+        "timeout": 15
+      },
+      "target": {
+        "selector": ".tab[data-tab=\"users\"]",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Open the Users tab.",
+      "caption": "2. Users tab",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "users_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#users-list",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#users-list",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Here's everyone who can sign in. You start as the Admin, and you add the rest of your team here.",
+      "caption": "Who can sign in",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "add_user",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-add-user",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Click Add User.",
+      "caption": "3. Add User",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "type_username",
+      "action": "type_text",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#new-user-username",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#new-user-username",
+        "window": "Scan Finder — Settings"
+      },
+      "text": "j.smith",
+      "narration": "Give them a username to sign in with,",
+      "caption": "A username",
+      "duration_sec": 6.0
+    },
+    {
+      "id": "type_name",
+      "action": "type_text",
+      "target": {
+        "selector": "#new-user-display-name",
+        "window": "Scan Finder — Settings"
+      },
+      "text": "Jane Smith",
+      "narration": "and the name you'll see them by.",
+      "caption": "Their name",
+      "duration_sec": 5.5
+    },
+    {
+      "id": "pick_role",
+      "action": "move_to",
+      "target": {
+        "selector": "#new-user-role",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Then choose their role. Admin can change everything, including users and settings. Edit can bring in documents and correct them. Read Only can search and view, but change nothing.",
+      "caption": "Admin · Edit · Read Only",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "create",
+      "action": "move_to",
+      "target": {
+        "selector": "#btn-save-user",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Click Create. They get a one-time password and set their own the first time they sign in.",
+      "caption": "4. Create the account",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "Give everyone just the access they need — your filing stays both easy to share and safe.",
+      "caption": "The right access for everyone",
+      "duration_sec": 8.0
+    }
+  ]
+}

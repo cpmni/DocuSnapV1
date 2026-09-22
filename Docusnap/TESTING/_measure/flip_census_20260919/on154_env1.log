@@ -1,0 +1,209 @@
+    [op] operating point: test_build_armed_rev=none; 0/49 TEST_SWITCH_KEYS ON; RR_APP_ENV=ON(default)
+    [ids] RR_IDS — 400 of the confirmed docs selected (7,8,9,10,11,12,13,14,21,22,23,24,25,26,27,28,35,36,37,38,39,40,41,42,49,50,51,52,53,54,55,56,63,64,65,66,67,68,69,70,77,78,79,80,81,82,83,84,91,92,93,94,95,96,97,98,105,106,107,108,109,110,111,112,119,120,121,122,123,124,125,126,133,134,135,136,137,138,139,140,147,148,149,150,151,152,153,154,161,162,163,164,165,166,167,168,175,176,177,178,179,180,181,182,189,190,191,192,193,194,195,196,203,204,205,206,207,208,209,210,217,218,219,220,221,222,223,224,231,232,233,234,235,236,237,238,245,246,247,248,249,250,251,252,259,260,261,262,263,264,265,266,273,274,275,276,277,278,279,280,287,288,289,290,291,292,293,294,301,302,303,304,305,306,307,308,315,316,317,318,319,320,321,322,329,330,331,332,333,334,335,336,343,344,345,346,347,348,349,350,357,358,359,360,361,362,363,364,371,372,373,374,375,376,377,378,385,386,387,388,389,390,391,392,399,400,401,402,403,404,405,406,413,414,415,416,417,418,419,420,427,428,429,430,431,432,433,434,441,442,443,444,445,446,447,448,455,456,457,458,459,460,461,462,469,470,471,472,473,474,475,476,483,484,485,486,487,488,489,490,497,498,499,500,501,502,503,504,511,512,513,514,515,516,517,518,525,526,527,528,529,530,531,532,539,540,541,542,543,544,545,546,553,554,555,556,557,558,559,560,567,568,569,570,571,572,573,574,581,582,583,584,585,586,587,588,595,596,597,598,599,600,601,602,609,610,611,612,613,614,615,616,623,624,625,626,627,628,629,630,637,638,639,640,641,642,643,644,651,652,653,654,655,656,657,658,665,666,667,668,669,670,671,672,679,680,681,682,683,684,685,686,693,694,695,696,697,698,699,700)
+    [env] RR_APP_ENV — mirroring 115 app spawn vars (NOT the historical baseline)
+[ 10%] 40/400 done · 2 disagreeing with their confirmed values
+    #14 doc14.pdf — date '12-11-2025'->'42-11-2025'
+    #40 doc40.pdf — ref 'CAS508205'->'# CAS508205'
+[ 20%] 80/400 done · 2 disagreeing with their confirmed values
+[ 30%] 120/400 done · 4 disagreeing with their confirmed values
+    #137 doc137.pdf — ref 'S0-38377'->'S$0-38377'
+    #166 doc166.pdf — ref 'IH-66710-25'->'null'
+[ 40%] 160/400 done · 4 disagreeing with their confirmed values
+[ 50%] 200/400 done · 4 disagreeing with their confirmed values
+[ 60%] 240/400 done · 4 disagreeing with their confirmed values
+[ 70%] 280/400 done · 5 disagreeing with their confirmed values
+    #498 doc498.pdf — ref 'QSC-9511'->'1:QSC-9511'
+[ 80%] 320/400 done · 8 disagreeing with their confirmed values
+    #514 doc514.pdf — ref 'QSD-35946'->'TQSD-35946'
+    #487 doc487.pdf — ref 'A-2291'->'A-229'
+    #517 doc517.pdf — ref 'QSD-28401'->'rQSD-28401'
+[ 90%] 360/400 done · 12 disagreeing with their confirmed values
+    #610 doc610.pdf — ref 'SO-19503'->'SO-1950.'
+    #612 doc612.pdf — ref 'SO-58788'->'SO-5878'
+    #614 doc614.pdf — ref 'SO-57041'->'SO-5704'
+    #616 doc616.pdf — ref 'SO-91065'->'SO-9106.'
+[100%] 400/400 done · 12 disagreeing with their confirmed values
+# Real-doc regression — 400 confirmed docs reprocessed vs their confirmed values
+(0 confirmed docs had no resolvable file and were skipped.)
+⚠ #81: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='HTS-DN-28376' file='Harrowgate-Timber_delivery_note_0011.pdf')
+⚠ #82: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='HTS-DN-39923' file='Harrowgate-Timber_delivery_note_0012.pdf')
+⚠ #92: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='HTS-INV-55059' file='Harrowgate-Timber_invoice_0008.pdf')
+⚠ #180: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='PO-48973' file='Ironclad-Tool-Hire_purchase_order_0012.pdf')
+⚠ #190: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='IHQ-7588' file='Ironclad-Tool-Hire_quote_0008.pdf')
+⚠ #259: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='PO-59236' file='Meadowvale-Dairy_purchase_order_0007.pdf')
+⚠ #262: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='PO-57177' file='Meadowvale-Dairy_purchase_order_0010.pdf')
+⚠ #263: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='PO-36828' file='Meadowvale-Dairy_purchase_order_0011.pdf')
+⚠ #266: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='PO-16470' file='Meadowvale-Dairy_purchase_order_0014.pdf')
+⚠ #273: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='MDW-315' file='Meadowvale-Dairy_statement_0007.pdf')
+⚠ #287: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='NRD-475490' file='Nordwind-Refrigeration_delivery_note_0007.pdf')
+⚠ #404: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='OEQ/2868' file='Oakhaven-Electrical_quote_0012.pdf')
+⚠ #413: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='OES/45486' file='Oakhaven-Electrical_sales_order_0007.pdf')
+⚠ #557: GT override SKIPPED (identity mismatch — DB reset / re-confirmed / other machine? db-ref='QSQ-5241' file='Quillstone-Print_quote_0011.pdf')
+
+## Early-warning disagreements: 12
+type/supplier/ref/date compared against the confirmed values as each document landed.
+A SUPERSET of the gate: a disagreement that was correctly flagged for review is not a
+failure. The gate numbers are the SILENT wrong values and wrong auto-files below.
+```
+  #14 doc14.pdf — date '12-11-2025'->'42-11-2025'
+  #40 doc40.pdf — ref 'CAS508205'->'# CAS508205'
+  #137 doc137.pdf — ref 'S0-38377'->'S$0-38377'
+  #166 doc166.pdf — ref 'IH-66710-25'->'null'
+  #487 doc487.pdf — ref 'A-2291'->'A-229'
+  #498 doc498.pdf — ref 'QSC-9511'->'1:QSC-9511'
+  #514 doc514.pdf — ref 'QSD-35946'->'TQSD-35946'
+  #517 doc517.pdf — ref 'QSD-28401'->'rQSD-28401'
+  #610 doc610.pdf — ref 'SO-19503'->'SO-1950.'
+  #612 doc612.pdf — ref 'SO-58788'->'SO-5878'
+  #614 doc614.pdf — ref 'SO-57041'->'SO-5704'
+  #616 doc616.pdf — ref 'SO-91065'->'SO-9106.'
+```
+
+| Field | correct | scored | accuracy |
+|---|---|---|---|
+| type | 400 | 400 | 100.0% |
+| supplier | 400 | 400 | 100.0% |
+| ref | 389 | 400 | 97.3% |
+| date | 399 | 400 | 99.8% |
+| total | 225 | 304 | 74.0% |
+| subtotal | 0 | 0 | - |
+
+**Regressions (a confirmed value the pipeline no longer reproduces): 12** — of which 1 SILENT (wrong + no review flag).
+- #14 credit_note date: want '12-11-2025' got '42-11-2025' [flagged]
+- #40 invoice ref: want 'CAS508205' got '# CAS508205' [flagged]
+- #137 sales_order ref: want 'S0-38377' got 'S$0-38377' [flagged]
+- #166 invoice ref: want 'IH-66710-25' got 'null' [SILENT]
+- #487 statement ref: want 'A-2291' got 'A-229' [flagged]
+- #498 credit_note ref: want 'QSC-9511' got '1:QSC-9511' [flagged]
+- #514 delivery_note ref: want 'QSD-35946' got 'TQSD-35946' [flagged]
+- #517 delivery_note ref: want 'QSD-28401' got 'rQSD-28401' [flagged]
+- #610 sales_order ref: want 'SO-19503' got 'SO-1950.' [flagged]
+- #612 sales_order ref: want 'SO-58788' got 'SO-5878' [flagged]
+- #614 sales_order ref: want 'SO-57041' got 'SO-5704' [flagged]
+- #616 sales_order ref: want 'SO-91065' got 'SO-9106.' [flagged]
+
+## Per-field fill rate (non-empty), by document type
+A withholding change must not drop any of these. supplier_name is called out separately:
+it is the learning-scope key AND the filing folder, so a drop there is the worst kind.
+- credit_note · account_no: 40/40 (100.0%)
+- credit_note · credit_note_date: 40/40 (100.0%)
+- credit_note · credit_note_number: 40/40 (100.0%)
+- credit_note · customer_name: 40/40 (100.0%)
+- credit_note · job_ref: 24/40 (60.0%)
+- credit_note · po_ref: 24/40 (60.0%)
+- credit_note · total_amount: 31/40 (77.5%)
+- credit_note · vat_no: 40/40 (100.0%)
+- delivery_note · account_no: 0/80 (0.0%)
+- delivery_note · customer_name: 80/80 (100.0%)
+- delivery_note · delivery_date: 80/80 (100.0%)
+- delivery_note · delivery_number: 80/80 (100.0%)
+- delivery_note · job_ref: 16/80 (20.0%)
+- delivery_note · po_ref: 80/80 (100.0%)
+- delivery_note · total_amount: 0/80 (0.0%)
+- delivery_note · vat_no: 80/80 (100.0%)
+- invoice · account_no: 80/80 (100.0%)
+- invoice · customer_name: 80/80 (100.0%)
+- invoice · invoice_date: 80/80 (100.0%)
+- invoice · invoice_number: 79/80 (98.8%)
+- invoice · job_ref: 23/80 (28.8%)
+- invoice · po_ref: 80/80 (100.0%)
+- invoice · total_amount: 59/80 (73.8%)
+- invoice · vat_no: 80/80 (100.0%)
+- purchase_order · account_no: 0/80 (0.0%)
+- purchase_order · customer_name: 80/80 (100.0%)
+- purchase_order · job_ref: 0/80 (0.0%)
+- purchase_order · po_date: 80/80 (100.0%)
+- purchase_order · po_number: 80/80 (100.0%)
+- purchase_order · po_ref: 0/80 (0.0%)
+- purchase_order · total_amount: 80/80 (100.0%)
+- purchase_order · vat_no: 77/80 (96.3%)
+- quote · account_no: 0/40 (0.0%)
+- quote · customer_name: 40/40 (100.0%)
+- quote · job_ref: 24/40 (60.0%)
+- quote · po_ref: 24/40 (60.0%)
+- quote · quote_date: 40/40 (100.0%)
+- quote · quote_number: 40/40 (100.0%)
+- quote · total_amount: 24/40 (60.0%)
+- quote · vat_no: 40/40 (100.0%)
+- sales_order · account_no: 0/32 (0.0%)
+- sales_order · customer_name: 32/32 (100.0%)
+- sales_order · job_ref: 0/32 (0.0%)
+- sales_order · order_date: 32/32 (100.0%)
+- sales_order · po_ref: 0/32 (0.0%)
+- sales_order · sales_order_number: 32/32 (100.0%)
+- sales_order · total_amount: 32/32 (100.0%)
+- sales_order · vat_no: 32/32 (100.0%)
+- service_worksheet · account_no: 0/16 (0.0%)
+- service_worksheet · customer_name: 16/16 (100.0%)
+- service_worksheet · date: 16/16 (100.0%)
+- service_worksheet · job_ref: 16/16 (100.0%)
+- service_worksheet · po_ref: 0/16 (0.0%)
+- service_worksheet · total_amount: 0/16 (0.0%)
+- service_worksheet · vat_no: 16/16 (100.0%)
+- service_worksheet · worksheet_date: 16/16 (100.0%)
+- service_worksheet · worksheet_number: 16/16 (100.0%)
+- statement · account_no: 32/32 (100.0%)
+- statement · customer_name: 32/32 (100.0%)
+- statement · job_ref: 0/32 (0.0%)
+- statement · po_ref: 0/32 (0.0%)
+- statement · statement_date: 32/32 (100.0%)
+- statement · statement_number: 32/32 (100.0%)
+- statement · total_amount: 32/32 (100.0%)
+- statement · vat_no: 30/32 (93.8%)
+
+**ISSUER FILL RATE (supplier_name) — watch this one first:**
+- credit_note · supplier_name: 40/40 (100.0%)
+- delivery_note · supplier_name: 80/80 (100.0%)
+- invoice · supplier_name: 80/80 (100.0%)
+- purchase_order · supplier_name: 80/80 (100.0%)
+- quote · supplier_name: 40/40 (100.0%)
+- sales_order · supplier_name: 32/32 (100.0%)
+- service_worksheet · supplier_name: 16/16 (100.0%)
+- statement · supplier_name: 32/32 (100.0%)
+
+**Auto-file soundness (#6): 189/400 reprocessed docs would auto-file; 36 would auto-file a WRONG value (must be 0).**
+- #8 credit_note would-auto-file but WRONG on: total
+- #35 invoice would-auto-file but WRONG on: total
+- #36 invoice would-auto-file but WRONG on: total
+- #37 invoice would-auto-file but WRONG on: total
+- #38 invoice would-auto-file but WRONG on: total
+- #41 invoice would-auto-file but WRONG on: total
+- #42 invoice would-auto-file but WRONG on: total
+- #167 invoice would-auto-file but WRONG on: total
+- #189 quote would-auto-file but WRONG on: total
+- #191 quote would-auto-file but WRONG on: total
+- #194 quote would-auto-file but WRONG on: total
+- #195 quote would-auto-file but WRONG on: total
+- #196 quote would-auto-file but WRONG on: total
+- #222 credit_note would-auto-file but WRONG on: total
+- #245 invoice would-auto-file but WRONG on: total
+- #246 invoice would-auto-file but WRONG on: total
+- #248 invoice would-auto-file but WRONG on: total
+- #251 invoice would-auto-file but WRONG on: total
+- #252 invoice would-auto-file but WRONG on: total
+- #274 statement would-auto-file but WRONG on: total
+- #301 invoice would-auto-file but WRONG on: total
+- #302 invoice would-auto-file but WRONG on: total
+- #303 invoice would-auto-file but WRONG on: total
+- #304 invoice would-auto-file but WRONG on: total
+- #305 invoice would-auto-file but WRONG on: total
+- #306 invoice would-auto-file but WRONG on: total
+- #307 invoice would-auto-file but WRONG on: total
+- #308 invoice would-auto-file but WRONG on: total
+- #329 quote would-auto-file but WRONG on: total
+- #330 quote would-auto-file but WRONG on: total
+- #331 quote would-auto-file but WRONG on: total
+- #332 quote would-auto-file but WRONG on: total
+- #333 quote would-auto-file but WRONG on: total
+- #334 quote would-auto-file but WRONG on: total
+- #335 quote would-auto-file but WRONG on: total
+- #336 quote would-auto-file but WRONG on: total
+
+**Wrong-TYPE auto-file (M_type, Oracle C3): 0 (must be 0 — would auto-file under the WRONG document type; a subset of M above, tracked + gated separately).**
+
+**Banner heading re-reads adopted (BANNER_HEADING_REREAD): 0 (red-channel recovery FIRED + adopted a trusted type; 0 = never fired on this corpus, NOT proof of safety).**
+
+**Gate-failure re-reads adopted (GATE_REREAD): 1 (review-bound — can't auto-file; 0 = the feature never fired, not "safe").**
+- #136 sales_order sales_order_number: 'S0-60958' (was garbled)
+
+**c2 taught-field ownership caps (TAUGHT_FIELD_OWNERSHIP): 0 (HOLD-only — value untouched, review-bound; this is the review-VOLUME delta, not an accuracy change).**

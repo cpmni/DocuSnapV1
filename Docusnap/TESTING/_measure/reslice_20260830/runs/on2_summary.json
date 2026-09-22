@@ -1,0 +1,1957 @@
+{
+ "Nordwind-Refrigeration_quote_0012.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "11-08-2025",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-3753",
+    "confidence": 97,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "6,323.64",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£5,269.70",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£1,053.94",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0013.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "09-05-2026",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-6357",
+    "confidence": 97,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "3,020.04",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£2,516.70",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£503.34",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0014.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "27-04-2026",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-4484",
+    "confidence": 97,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "1,876.80",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£1,564.00",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£312.80",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0015.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "21-04-2026",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-1124",
+    "confidence": 89,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "2,205.60",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£1,838.00",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£367.60",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0016.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "13-02-2026",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-9584",
+    "confidence": 97,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "4,251.60",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£3,543.00",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£708.60",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0017.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "13-02-2026",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-5662",
+    "confidence": 97,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "1,612.20",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£1,343.50",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£268.70",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0018.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "10-06-2026",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-8209",
+    "confidence": 97,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "4,773.00",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£3,977.50",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£795.50",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0019.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "16-03-2025",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-8478",
+    "confidence": 97,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "5,673.84",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£4,728.20",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£945.64",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0020.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint"
+     ],
+     "disagree": [
+      {
+       "family": "mapping",
+       "value": "Nerdwind Refrigeration Ltd"
+      }
+     ],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "02-12-2025",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-7396",
+    "confidence": 97,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "979.44",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£816.20",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£163.24",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0021.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "26-03-2025",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-3153",
+    "confidence": 97,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "3,564.72",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£2,970.60",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£594.12",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0022.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "26-05-2025",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-6472",
+    "confidence": 97,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "5,413.80",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£4,511.50",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£902.30",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0023.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "21-09-2025",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-7876",
+    "confidence": 89,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "2,363.76",
+    "confidence": 93,
+    "method": "keyword_override+corrob_clear",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "keyword",
+     "agree": [
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true,
+     "reslice_witness": {
+      "value": "£2,363.76",
+      "confidence": 92,
+      "rung": "R8",
+      "line": "£2,363.76"
+     },
+     "note_demoted": {
+      "note": "adjusted to the total that balances against the line amounts — please verify",
+      "witness_family": "mapping",
+      "witness_method": "template_mapping_resliced",
+      "witness_value": "£2,363.76",
+      "arithmetic": true,
+      "rejected_read": "29,242.76"
+     }
+    }
+   },
+   "subtotal": {
+    "value": "£1,969.80",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£393.96",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0024.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "12-06-2025",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-4843",
+    "confidence": 97,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "5,071.80",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£4,226.50",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£845.30",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0025.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "10-04-2026",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-7469",
+    "confidence": 97,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "6,139.68",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£5,116.40",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£1,023.28",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0026.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "23-04-2026",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-3901",
+    "confidence": 89,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "7,068.96",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£5,890.80",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£1,178.16",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0027.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "07-08-2026",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-1085",
+    "confidence": 97,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "6,763.08",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£5,635.90",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£1,127.18",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0028.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "04-04-2026",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-4135",
+    "confidence": 89,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "1,546.80",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£1,289.00",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£257.80",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0029.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "09-10-2025",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-1911",
+    "confidence": 89,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "3,858.00",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£3,215.00",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£643.00",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0030.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 75,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "01-01-2026",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-2551",
+    "confidence": 70,
+    "method": "anchor_crop_crosscheck",
+    "note": "The taught position and the full-page read disagreed — using the full-page value; please verify.",
+    "corrected_to": "NRQ-2551",
+    "corroboration": {
+     "winner_family": "anchor",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "total_amount": {
+    "value": "4,210.80",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£3,509.00",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£701.80",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ },
+ "Nordwind-Refrigeration_quote_0031.pdf": {
+  "supplier": "Nordwind Refrigeration Ltd",
+  "type": "Quote",
+  "overall": 100,
+  "needs_review": false,
+  "status": "needs_review",
+  "fields": {
+   "supplier_name": {
+    "value": "Nordwind Refrigeration Ltd",
+    "confidence": 95,
+    "method": "template_fixed",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "memory",
+     "agree": [
+      "hint",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_date": {
+    "value": "05-07-2025",
+    "confidence": 98,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "quote_number": {
+    "value": "NRQ-4624",
+    "confidence": 89,
+    "method": "anchor_crop",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "crop",
+     "agree": [
+      "keyword",
+      "mapping"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "total_amount": {
+    "value": "4,367.40",
+    "confidence": 94,
+    "method": "template_mapping",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "mapping",
+     "agree": [
+      "keyword"
+     ],
+     "disagree": [],
+     "independent_agree": true
+    }
+   },
+   "subtotal": {
+    "value": "£3,639.50",
+    "confidence": 87,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   },
+   "vat_tax": {
+    "value": "£727.90",
+    "confidence": 90,
+    "method": "shadow_reconcile",
+    "note": null,
+    "corrected_to": null,
+    "corroboration": {
+     "winner_family": "shadow_reconcile",
+     "agree": [],
+     "disagree": [],
+     "independent_agree": false
+    }
+   }
+  }
+ }
+}

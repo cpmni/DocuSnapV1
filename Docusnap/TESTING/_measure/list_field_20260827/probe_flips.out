@@ -1,0 +1,19 @@
+flipped true->false: 98 ids: 11,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,215,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,250,431,432,434,435,436,437,438,439,440,441,442,443,444,445,446,447,448,449,450,631,633,634,635,636,637,638,639,640,641,642,643,644,645,646,647,648,649,650,831,833,834,835,836,837,838,839,840,841,842,843,844,845,846,847,848,849,850,1089,1103
+  Castellan Security Systems | tmpl 4: 96 docs (e.g. 11,13,14,15,16)
+  DOCUMENT SOLUTIONS | tmpl 14: 2 docs (e.g. 1089,1103)
+
+flipped docs in DB (type/status/stamps): [{"type":"service_worksheet","sup":"Castellan Security Systems","status":"confirmed","n":96,"excl":0,"putback":0,"retracted":0},{"type":"service_worksheet","sup":"DOCUMENT SOLUTIONS","status":"confirmed","n":2,"excl":0,"putback":0,"retracted":0}]
+
+corrections today by supplier/type: "ERR no such column: created_at"
+
+confirmed today by supplier/type: [{"type":"purchase_order","sup":"Bramblewood Joinery Ltd","confirmed_via":"auto_threshold","n":40},{"type":"sales_order","sup":"Harrowgate Timber Supplies","confirmed_via":"auto_graduated","n":40},{"type":"sales_order","sup":"Veltrix Automotive Parts","confirmed_via":"auto_graduated","n":40},{"type":"statement","sup":"Ironclad Tool Hire","confirmed_via":"auto_graduated","n":40},{"type":"credit_note","sup":"Meadowvale Dairy Wholesale","confirmed_via":"auto_threshold","n":39},{"type":"delivery_note","sup":"Oakhaven Electrical Wholesale","confirmed_via":"auto_graduated","n":39},{"type":"quote","sup":"Nordwind Refrigeration Ltd","confirmed_via":"auto_graduated","n":39},{"type":"sales_order","sup":"Silverbeck Cleaning Supplies","confirmed_via":"auto_threshold","n":37},{"type":"invoice","sup":"Pelican Office Interiors","confirmed_via":"auto_graduated","n":34},{"type":"service_worksheet","sup":"Castellan Security Systems","confirmed_via":"auto_graduated","n":20},{"type":"service_worksheet","sup":"DOCUMENT SOLUTIONS","confirmed_via":"auto_threshold","n":20},{"type":"invoice","sup":"Pelican Office Interiors","confirmed_via":null,"n":3},{"type":"delivery_note","sup":"Oakhaven Electrical Wholesale","confirmed_via":null,"n":1},{"type":"sales_order","sup":"Silverbeck Cleaning Supplies","confirmed_via":null,"n":1},{"type":"service_worksheet","sup":"Castellan Security Systems","confirmed_via":null,"n":1}]
+
+audit today (learning/repair/switch): []
+
+learning_excluded stamps total: [{"n":0,"first":null,"last":null}]
+
+settings changed today: [{"key":"auto_file_threshold","value":"90"},{"key":"barcode_field","value":"true"},{"key":"barcode_inventory","value":"true"},{"key":"corrob_verification_doubt_clear","value":"true"},{"key":"graduation_window","value":"5"},{"key":"learning_exclude_docs","value":"true"},{"key":"list_field_scan","value":"true"},{"key":"template_buyer_issued_letterhead_scope","value":"true"},{"key":"trust_company_key_own_scope","value":"true"}]
+
+trust exports: TRUST_WINDOW, TRUST_MAX_CORRECTIONS, TRUSTED_FLOOR, UNTRUSTED_FLOOR, STRICT_TYPES, _configuredWindow, classifyLearnedShape, valueMatchesShape, fieldVerifiable, _dominantStructuredClass, _effectiveClass, _roleDominantEnabled, _nonRoleLenientEnabled, _shadowRowSkipEnabled, _gateUnifyEnabled, _missingRequiredKey, _corrobLicensed, _critFieldCorrobRelaxEnabled, _vacuousCorrectedToIgnore, _roleDisagreementRefuseEnabled, _pageFamilyDisagrees, _companyKeyOwnScopeEnabled, _scopeFormats, validDate, validIban, validVatGb, currencyDpConsistent, currencyConsistentForField, matchesTypePattern, scopeTrust, docTrustGate, isAutoFileEligible, autoFileEligibleIds, listGraduatedScopes, setScopeOptOut
+scopeTrust Castellan Security Systems service_worksheet {"trusted":true,"floor":95,"reason":"ok","confirmedCount":6}
+scopeTrust DOCUMENT SOLUTIONS service_worksheet {"trusted":false,"floor":100,"reason":"recent-correction","confirmedCount":10,"corrections":1}

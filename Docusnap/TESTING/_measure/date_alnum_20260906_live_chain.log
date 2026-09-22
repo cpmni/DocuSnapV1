@@ -1,0 +1,15 @@
+OLD: ['(?<!\\d)\\d{4}[/\\-]\\d{2}[/\\-]\\d{2}(?!\\d)', '(?<!\\d)\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{2,4}(?!\\d)']
+NEW: ['(?<![A-Za-z0-9])\\d{4}[/\\-]\\d{2}[/\\-]\\d{2}(?!\\d)', '(?<![A-Za-z0-9])\\d{1,2}[/\\-.]\\d{1,2}[/\\-.]\\d{2,4}(?!\\d)']
+=== ARM new start 13:42:15 ===
+exit=0
+22:failure. The gate numbers are the SILENT wrong values and wrong auto-files below.
+40:**Regressions (a confirmed value the pipeline no longer reproduces): 6** — of which 4 SILENT (wrong + no review flag).
+41:- #92 print_tracker ref: want '782923124N3M2' got '752923124N3M2' [SILENT]
+=== ARM new end 13:56:58 ===
+=== ARM old start 13:56:58 ===
+exit=0
+22:failure. The gate numbers are the SILENT wrong values and wrong auto-files below.
+40:**Regressions (a confirmed value the pipeline no longer reproduces): 6** — of which 4 SILENT (wrong + no review flag).
+41:- #92 print_tracker ref: want '782923124N3M2' got '752923124N3M2' [SILENT]
+=== ARM old end 14:11:48 ===
+ALL ARMS DONE

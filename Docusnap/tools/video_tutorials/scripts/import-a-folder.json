@@ -5,43 +5,114 @@
   "target_length_sec": 120,
   "lead_in_sec": 1.0,
   "lead_out_sec": 1.5,
-  "app": { "window_title": "ScanFinder", "cdp_port": 9222, "maximize": true },
-  "record": { "mode": "window", "fps": 30 },
-  "captions": { "position": "bottom", "font_size": 28 },
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
   "steps": [
-    { "id": "intro", "action": "focus_window", "window": "ScanFinder", "maximize": true,
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
       "narration": "Once ScanFinder knows your suppliers, importing is the everyday job: point it at the folder your scanner saves into, and let it work.",
-      "caption": "Import: point it at your scans folder", "duration_sec": 8 },
-    { "id": "open_import", "action": "move_and_click",
-      "target": { "selector": "#btn-import", "window": "ScanFinder" },
-      "narration": "Click Import in the side bar.", "caption": "1. Click Import", "duration_sec": 3.5 },
-    { "id": "folder_explain", "action": "move_to",
-      "target": { "selector": "#folder-box", "window": "ScanFinder" },
+      "caption": "Import: point it at your scans folder",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "open_import",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-import",
+        "window": "ScanFinder"
+      },
+      "narration": "Click Import in the side bar.",
+      "caption": "1. Click Import",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "folder_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#folder-box",
+        "window": "ScanFinder"
+      },
       "narration": "Click the folder box and choose the folder that holds your scans — the usual Windows folder picker opens. ScanFinder reads PDFs and images, and it never deletes the originals: each one is moved into a Processed folder alongside once it's been brought in.",
-      "caption": "2. Choose the folder your scanner saves into", "duration_sec": 13 },
-    { "id": "set_folder", "action": "eval_js", "window": "ScanFinder",
+      "caption": "2. Choose the folder your scanner saves into",
+      "duration_sec": 16.5
+    },
+    {
+      "id": "set_folder",
+      "action": "eval_js",
+      "window": "ScanFinder",
       "js": "(async () => { const folder = \"{{SCANS_BATCH_JS}}\"; selectedFolder = folder; const parts = folder.replace(/\\\\/g, '/').split('/'); folderDisplay.textContent = parts.length > 3 ? '…/' + parts.slice(-2).join('/') : folder; folderDisplay.title = folder; folderDisplay.classList.add('set'); folderBox.classList.remove('cue'); btnRun.disabled = false; const d = document.getElementById('dash-folder'); if (d) { d.textContent = folder; d.classList.add('set'); } await showFolderPreview(folder); return folder; })()",
       "narration": "We've chosen a Batch folder holding eight documents: three more from Copperfield Electrical, which it was taught earlier, and five from Ironbridge Fabrication, a supplier it has never seen. It lists what it found so you can check it's the right folder.",
-      "caption": "It lists the documents it found", "duration_sec": 12 },
-    { "id": "process", "action": "move_and_click",
-      "target": { "selector": "#btn-run", "window": "ScanFinder" },
-      "narration": "Click Process Documents.", "caption": "3. Click Process Documents", "duration_sec": 4 },
-    { "id": "processing_1", "action": "wait",
+      "caption": "It lists the documents it found",
+      "duration_sec": 15.5
+    },
+    {
+      "id": "process",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-run",
+        "window": "ScanFinder"
+      },
+      "narration": "Click Process Documents.",
+      "caption": "3. Click Process Documents",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "processing_1",
+      "action": "wait",
       "narration": "For each page it straightens the scan, reads the text, works out who sent it, the date and the reference, and checks them against what it has learned.",
-      "caption": "Reading each page…", "duration_sec": 12 },
-    { "id": "processing_2", "action": "wait",
+      "caption": "Reading each page…",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "processing_2",
+      "action": "wait",
       "narration": "Documents it is sure about are filed straight into your output folder, into a folder for the company, the year and the month. Anything it isn't sure about — a supplier it hasn't met, a smudged date — waits in Review for a quick check.",
-      "caption": "Sure → filed · unsure → Review", "duration_sec": 14 },
-    { "id": "processing_3", "action": "wait",
+      "caption": "Sure → filed · unsure → Review",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "processing_3",
+      "action": "wait",
       "narration": "A batch like this takes about a minute. Bigger batches carry on in the background while you get on with something else.",
-      "caption": "Bigger batches run in the background", "duration_sec": 9 },
-    { "id": "finished", "action": "move_to",
-      "wait_for": { "window": "ScanFinder", "selector": "#btn-review-docs", "timeout": 600 },
-      "target": { "selector": "#btn-review-docs", "window": "ScanFinder" },
+      "caption": "Bigger batches run in the background",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "finished",
+      "action": "move_to",
+      "wait_for": {
+        "window": "ScanFinder",
+        "selector": "#btn-review-docs",
+        "timeout": 600
+      },
+      "target": {
+        "selector": "#btn-review-docs",
+        "window": "ScanFinder"
+      },
       "narration": "When it finishes, the counters show how many were filed and how many need a look, and Review your documents takes you straight to those.",
-      "caption": "Filed vs needs a look → Review your documents", "duration_sec": 10 },
-    { "id": "outro", "action": "wait",
+      "caption": "Filed vs needs a look → Review your documents",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
       "narration": "That's importing. Next: what to do in Review.",
-      "caption": "Next: Review", "duration_sec": 5 }
+      "caption": "Next: Review",
+      "duration_sec": 5.5
+    }
   ]
 }

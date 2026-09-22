@@ -1,0 +1,130 @@
+{
+  "version": 1,
+  "title": "Back up your setup and move to a new PC",
+  "description": "Export your configuration — document types, filing scheme, templates and everything learned — to one password-encrypted file, and restore it on a new machine. Settings -> Advanced -> Backup & Restore. NOTE: both Export Backup (a Save dialog) and Restore Backup (an Open dialog) are NATIVE Windows dialogs and are NOT filmed — those buttons are only hovered and narrated. NEEDS OWNER: do the actual Export/Restore file choice off-camera.",
+  "target_length_sec": 120,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "Everything you set up — your document types, your filing scheme, and everything ScanFinder has learned — can be saved to one encrypted file, and restored on a new PC in minutes.",
+      "caption": "Back up and move PCs",
+      "duration_sec": 15.5
+    },
+    {
+      "id": "open_settings",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-settings",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Settings from the side bar.",
+      "caption": "1. Open Settings",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "open_tab",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": ".tab[data-tab=\"advanced\"]",
+        "timeout": 15
+      },
+      "target": {
+        "selector": ".tab[data-tab=\"advanced\"]",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Open the Advanced tab.",
+      "caption": "2. Advanced tab",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "backup_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#bk-exp-pw",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#bk-exp-pw",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Under Backup and Restore, choose a password. It's what locks the file — without it, nobody can open your backup, so keep it safe.",
+      "caption": "3. Choose a backup password",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "type_pw",
+      "action": "type_text",
+      "target": {
+        "selector": "#bk-exp-pw",
+        "window": "Scan Finder — Settings"
+      },
+      "text": "demo-pass-2026",
+      "clear": true,
+      "narration": "Type a password you'll remember,",
+      "caption": "Enter a password",
+      "duration_sec": 5.0
+    },
+    {
+      "id": "type_pw2",
+      "action": "type_text",
+      "target": {
+        "selector": "#bk-exp-pw2",
+        "window": "Scan Finder — Settings"
+      },
+      "text": "demo-pass-2026",
+      "clear": true,
+      "narration": "and type it again to confirm.",
+      "caption": "Confirm it",
+      "duration_sec": 5.0
+    },
+    {
+      "id": "export_narrate",
+      "action": "move_to",
+      "target": {
+        "selector": "#bk-export",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Then Export Backup — a Save dialog opens, and you choose where to keep the file, like a USB stick.",
+      "caption": "4. Export Backup",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "restore_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#bk-restore",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "On your new PC, install ScanFinder, come to this same tab, type the password, and click Restore Backup to bring back every type, template and learned value.",
+      "caption": "5. Restore on the new PC",
+      "duration_sec": 13.5
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "One file carries your whole setup across. Your documents move separately — they're just ordinary files in your output folder.",
+      "caption": "Your setup travels in one file",
+      "duration_sec": 10.5
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+docs A=147 B=147 common=147 onlyA=[] onlyB=[]
+wouldFile A=129 B=129 flips=0
+field diffs=0 across docs=0
+VERDICT BYTE-IDENTICAL

@@ -1,0 +1,6 @@
+ISOLATE STARTED Mon Sep 21 22:07:15 GMTST 2026
+=== on_readwiden (TEMPLATE_CODE_READ_WIDEN) start 22:07:15
+   -> 400 rows, end 22:15:57
+=== on_edgeclip (TEMPLATE_EDGE_CLIP_HEAL) start 22:15:57
+   -> 400 rows, end 22:24:30
+ISOLATE DONE 22:24:30

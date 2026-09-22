@@ -5,50 +5,146 @@
   "target_length_sec": 120,
   "lead_in_sec": 1.0,
   "lead_out_sec": 1.5,
-  "app": { "window_title": "ScanFinder", "cdp_port": 9222, "maximize": true },
-  "record": { "mode": "window", "fps": 30 },
-  "captions": { "position": "bottom", "font_size": 28 },
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
   "steps": [
-    { "id": "intro", "action": "focus_window", "window": "ScanFinder", "maximize": true,
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
       "narration": "Review is where ScanFinder shows you anything it wasn't sure about. Most of the time you're just confirming; now and then you fix a value — and every confirmation teaches it a little more.",
-      "caption": "Review: confirm what it read, fix what it missed", "duration_sec": 10 },
-    { "id": "open_review", "action": "move_and_click",
-      "target": { "selector": "#btn-review", "window": "ScanFinder" },
-      "narration": "Click Review in the side bar.", "caption": "1. Click Review", "duration_sec": 3.5 },
-    { "id": "queue_explain", "action": "move_to",
-      "wait_for": { "window": "ScanFinder — Review", "selector": "#queue-list .queue-group-head", "timeout": 30 },
-      "target": { "selector": "#queue-list", "window": "ScanFinder — Review" },
+      "caption": "Review: confirm what it read, fix what it missed",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "open_review",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-review",
+        "window": "ScanFinder"
+      },
+      "narration": "Click Review in the side bar.",
+      "caption": "1. Click Review",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "queue_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "ScanFinder — Review",
+        "selector": "#queue-list .queue-group-head",
+        "timeout": 30
+      },
+      "target": {
+        "selector": "#queue-list",
+        "window": "ScanFinder — Review"
+      },
       "narration": "The queue on the left lists what's waiting for you, grouped by sender. Ironbridge is a supplier ScanFinder has never met, so all five of its invoices are here. Copperfield was taught earlier — it says two more confirmations and that sender will file on its own.",
-      "caption": "Grouped by sender · new senders need a look", "duration_sec": 15 },
-    { "id": "open_group", "action": "move_and_click",
-      "target": { "selector": "#queue-list .queue-group-head", "window": "ScanFinder — Review" },
-      "narration": "Click a sender to open its documents,", "caption": "2. Click a sender", "duration_sec": 4 },
-    { "id": "open_doc", "action": "move_and_click",
-      "wait_for": { "window": "ScanFinder — Review", "selector": "#queue-list .qi-name", "timeout": 15 },
-      "target": { "selector": "#queue-list .qi-name", "window": "ScanFinder — Review" },
-      "narration": "then click one to open it.", "caption": "3. Click a document", "duration_sec": 4 },
-    { "id": "layout_explain", "action": "move_to",
-      "wait_for": { "window": "ScanFinder — Review", "selector": "#fields-panel .field-input", "timeout": 20 },
-      "target": { "selector": "#fields-panel", "window": "ScanFinder — Review" },
+      "caption": "Grouped by sender · new senders need a look",
+      "duration_sec": 17.0
+    },
+    {
+      "id": "open_group",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#queue-list .queue-group-head",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "Click a sender to open its documents,",
+      "caption": "2. Click a sender",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "open_doc",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "ScanFinder — Review",
+        "selector": "#queue-list .qi-name",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#queue-list .qi-name",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "then click one to open it.",
+      "caption": "3. Click a document",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "layout_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "ScanFinder — Review",
+        "selector": "#fields-panel .field-input",
+        "timeout": 20
+      },
+      "target": {
+        "selector": "#fields-panel",
+        "window": "ScanFinder — Review"
+      },
       "narration": "The page is on the right and the details it read are on the left: the issuer, the date and the reference — the three things that decide where the file goes and what it's called. Anything it's unsure about is highlighted.",
-      "caption": "Page on the right · details on the left", "duration_sec": 12 },
-    { "id": "field_explain", "action": "move_to",
-      "target": { "selector": "#fields-panel .field-input", "window": "ScanFinder — Review" },
+      "caption": "Page on the right · details on the left",
+      "duration_sec": 13.5
+    },
+    {
+      "id": "field_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#fields-panel .field-input",
+        "window": "ScanFinder — Review"
+      },
       "narration": "Compare each detail with the page. If a value is wrong, click in the field and type what's actually printed — ScanFinder remembers the correction for that sender. If it's missing altogether, the little plus button lets you draw a box round it on the page, just like teaching.",
-      "caption": "Wrong? Type the correction · Missing? ⊕ draw it", "duration_sec": 15 },
-    { "id": "confirm", "action": "move_and_click",
-      "target": { "selector": "#btn-confirm", "window": "ScanFinder — Review" },
+      "caption": "Wrong? Type the correction · Missing? ⊕ draw it",
+      "duration_sec": 17.5
+    },
+    {
+      "id": "confirm",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-confirm",
+        "window": "ScanFinder — Review"
+      },
       "narration": "When it all matches, click Confirm. The document is filed into its company, year and month folder, and the confirmation counts toward ScanFinder trusting this sender.",
-      "caption": "4. Confirm — files it and teaches it", "duration_sec": 10 },
-    { "id": "next_doc", "action": "wait",
+      "caption": "4. Confirm — files it and teaches it",
+      "duration_sec": 12.5
+    },
+    {
+      "id": "next_doc",
+      "action": "wait",
       "narration": "The next document loads straight away, so a queue goes quickly. Once a sender has been confirmed a few times, its documents stop appearing here at all — they file themselves.",
-      "caption": "A few confirms per sender, then it files itself", "duration_sec": 10 },
-    { "id": "file_all_explain", "action": "move_to", "optional": true,
-      "target": { "selector": "#btn-file-all-review", "window": "ScanFinder — Review" },
+      "caption": "A few confirms per sender, then it files itself",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "file_all_explain",
+      "action": "move_to",
+      "optional": true,
+      "target": {
+        "selector": "#btn-file-all-review",
+        "window": "ScanFinder — Review"
+      },
       "narration": "And when several documents read cleanly and just need a nod, File all ready files them in one go.",
-      "caption": "File all ready — one click for the clean ones", "duration_sec": 7 },
-    { "id": "outro", "action": "wait",
+      "caption": "File all ready — one click for the clean ones",
+      "duration_sec": 7.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
       "narration": "That's Review. Next: finding any document in seconds with Search.",
-      "caption": "Next: Search", "duration_sec": 5 }
+      "caption": "Next: Search",
+      "duration_sec": 6.5
+    }
   ]
 }

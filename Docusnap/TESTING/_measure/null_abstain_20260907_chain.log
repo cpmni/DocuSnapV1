@@ -1,0 +1,180 @@
+snapshot 15:01:05 at 7c61317
+  template 1 Ironbridge Fabrication: healed 0.0
+  template 2 Ironbridge Fabrication: healed 1.1
+  template 3 Ironbridge Fabrication: healed -0.7
+  template 4 Ironbridge Fabrication: healed -0.5
+  template 5 Ironbridge Fabrication: healed 0.3
+  template 6 Larkspur Interiors: healed -0.7
+  template 7 Larkspur Interiors: healed 1.5
+healed 7/7 -> c:/GIT Projects/Docusnap/TESTING/_measure/null_abstain_20260907/healed_copy.db
+=== ARM old start 15:01:13 ===
+exit=0
+32:**Regressions (a confirmed value the pipeline no longer reproduces): 5** â€” of which 4 SILENT (wrong + no review flag).
+  compose lines: 0  abstain lines: 0  fit-too-few: 0  registration inactive: 0
+=== ARM old end 15:08:52 ===
+=== ARM abstain start 15:08:52 ===
+exit=0
+33:**Regressions (a confirmed value the pipeline no longer reproduces): 6** â€” of which 5 SILENT (wrong + no review flag).
+  compose lines: 0  abstain lines: 0  fit-too-few: 0  registration inactive: 0
+=== ARM abstain end 15:15:42 ===
+=== ARM healed start 15:15:42 ===
+exit=0
+33:**Regressions (a confirmed value the pipeline no longer reproduces): 6** â€” of which 5 SILENT (wrong + no review flag).
+  compose lines: 0  abstain lines: 0  fit-too-few: 0  registration inactive: 0
+=== ARM healed end 15:43:11 ===
+=== diff old vs abstain ===
+docs A=147 B=147 common=147 onlyA=[] onlyB=[]
+wouldFile A=129 B=127 flips=18
+  FLIP (32, False, True, 'below-floor', 'ok')
+  FLIP (34, True, False, 'ok', 'below-floor')
+  FLIP (35, False, True, 'below-floor', 'ok')
+  FLIP (37, True, False, 'ok', 'below-floor')
+  FLIP (44, True, False, 'ok', 'below-floor')
+  FLIP (52, False, True, 'below-floor', 'ok')
+  FLIP (56, False, True, 'below-floor', 'ok')
+  FLIP (58, True, False, 'ok', 'below-floor')
+  FLIP (61, False, True, 'below-floor', 'ok')
+  FLIP (80, False, True, 'below-floor', 'ok')
+  FLIP (81, False, True, 'below-floor', 'ok')
+  FLIP (84, True, False, 'ok', 'below-floor')
+  FLIP (124, False, True, 'below-floor', 'ok')
+  FLIP (129, True, False, 'ok', 'below-floor')
+  FLIP (135, True, False, 'ok', 'below-floor')
+  FLIP (137, True, False, 'ok', 'below-floor')
+  FLIP (143, True, False, 'ok', 'below-floor')
+  FLIP (144, True, False, 'ok', 'below-floor')
+field diffs=60 across docs=49
+  DIFF (18, 'supplier_name', ['Ironbridge Fabrication', 95, 'template_fixed', None], ['Ironbridge Fabrication', 80, 'hint_text_match', None])
+  DIFF (23, 'invoice_number', ['INV-73553', 94, 'template_mapping_edgegrow', None], ['INV-73553', 94, 'template_mapping', None])
+  DIFF (24, 'invoice_number', ['INV-29130', 94, 'template_mapping_edgegrow', None], ['INV-29130', 94, 'template_mapping', None])
+  DIFF (25, 'invoice_number', ['INV-79039', 98, 'template_mapping_edgegrow', None], ['INV-79039', 98, 'template_mapping', None])
+  DIFF (27, 'invoice_number', ['INV-19842', 98, 'template_mapping_edgegrow', None], ['INV-19842', 98, 'template_mapping', None])
+  DIFF (30, 'invoice_number', ['INV-49114', 98, 'template_mapping_edgegrow', None], ['INV-49114', 98, 'template_mapping', None])
+  DIFF (32, 'invoice_number', ['INV-52418', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'], ['INV-52418', 98, 'template_mapping', None])
+  DIFF (33, 'invoice_number', ['INV-33875', 94, 'template_mapping_edgegrow', None], ['INV-33875', 94, 'template_mapping', None])
+  DIFF (34, 'invoice_number', ['INV-86202', 98, 'template_mapping', None], ['INV-86202', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'])
+  DIFF (35, 'invoice_number', ['INV-56529', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'], ['INV-56529', 98, 'template_mapping', None])
+  DIFF (37, 'invoice_number', ['INV-47935', 98, 'template_mapping_edgegrow', None], ['INV-47935', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'])
+  DIFF (38, 'invoice_number', ['INV-64013', 94, 'template_mapping_edgegrow', None], ['INV-64013', 94, 'template_mapping', None])
+  DIFF (40, 'invoice_number', ['INV-97674', 94, 'template_mapping_edgegrow', None], ['INV-97674', 94, 'template_mapping', None])
+  DIFF (42, 'invoice_number', ['INV-53350', 94, 'template_mapping_edgegrow', None], ['INV-53350', 94, 'template_mapping', None])
+  DIFF (44, 'po_number', ['PO-53104', 97, 'template_mapping', None], ['PO-53104', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'])
+  DIFF (52, 'po_date', ['25-06-2026', 94, 'keyword_override', 'Kept the read value “25/06/2026” — the taught date box read “25/06/2076”, which is far in the future (likely a mis-scanned year). Please check.'], ['25-06-2026', 96, 'template_mapping', None])
+  DIFF (53, 'po_number', ['PO-28203', 97, 'template_mapping', None], ['PO-28203', 97, 'template_mapping_edgegrow', None])
+  DIFF (56, 'po_date', ['06-08-2021', 94, 'template_mapping_paddisagree', "A wider reading of this date box shows '06-08-2026', which differs from the value shown here — please check which is printed."], ['06-08-2026', 96, 'template_mapping', None])
+  DIFF (56, 'po_number', ['PO-84536', 92, 'template_mapping_edgegrow', None], ['PO-84536', 92, 'template_mapping', None])
+  DIFF (57, 'po_date', ['28-10-2026', 96, 'template_mapping', None], ['28-10-2026', 96, 'template_mapping_edgegrow', None])
+  DIFF (57, 'po_number', ['PO-55603', 92, 'template_mapping', None], ['PO-55603', 92, 'template_mapping_edgegrow', None])
+  DIFF (58, 'po_date', ['15-05-2026', 96, 'template_mapping', None], ['05-05-2026', 94, 'template_mapping_paddisagree', "A wider reading of this date box shows '15-05-2026', which differs from the value shown here — please check which is printed."])
+  DIFF (61, 'po_number', ['PO-22319', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'], ['PO-22319', 97, 'template_mapping', None])
+  DIFF (69, 'customer_name', ['Brightwater Dental', 94, 'template_mapping', None], ['Brightwater Dental Practice', 82, 'keyword_override', None])
+  DIFF (69, 'order_date', ['03-09-2026', 98, 'template_mapping', None], ['03-09-2026', 98, 'template_mapping_edgegrow', None])
+  DIFF (69, 'sales_order_number', ['SO-84145', 98, 'template_mapping', None], ['SO-84145', 98, 'template_mapping_edgegrow', None])
+  DIFF (70, 'customer_name', ['Halcyon Leisure Gr', 94, 'template_mapping', None], ['Halcyon Leisure Group', 82, 'keyword_override', None])
+  DIFF (77, 'order_date', ['24-08-2026', 98, 'template_mapping', None], ['24-08-2026', 98, 'template_mapping_edgegrow', None])
+  DIFF (77, 'sales_order_number', ['SO-44760', 94, 'template_mapping', None], ['SO-44760', 94, 'template_mapping_edgegrow', None])
+  DIFF (80, 'order_date', ['24-07-2026', 98, 'template_mapping', None], ['04-07-2026', 98, 'template_mapping', None])
+  DIFF (80, 'sales_order_number', ['SO-94187', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'], ['SO-94187', 98, 'template_mapping_edgegrow', None])
+  DIFF (81, 'customer_name', ['Aldermoor Engineering', 82, 'keyword_override', None], ['Aldermoor Engineer', 91, 'template_mapping', None])
+  DIFF (81, 'sales_order_number', ['SO-42552', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'], ['SO-42552', 98, 'template_mapping', None])
+  DIFF (82, 'order_date', ['26-05-2026', 98, 'template_mapping', None], ['26-05-2026', 98, 'template_mapping_edgegrow', None])
+  DIFF (82, 'sales_order_number', ['SO-34254', 94, 'template_mapping', None], ['SO-34254', 94, 'template_mapping_edgegrow', None])
+  DIFF (83, 'customer_name', ['Brightwater Dente', 94, 'template_mapping', None], ['Brightwater Dental Practice', 82, 'keyword_override', None])
+  DIFF (84, 'order_date', ['10-11-2026', 98, 'template_mapping', None], ['10-11-2026', 94, 'keyword_override', "Kept the read value “10/11/2026” — the taught date box read “.0/11/2026”, which isn't a valid calendar date. Please check."])
+  DIFF (84, 'sales_order_number', ['SO-93280', 94, 'template_mapping', None], ['SO-93280', 98, 'template_mapping+corrected', None])
+  DIFF (88, 'date', ['21-04-2026', 98, 'template_mapping', None], ['21-04-2026', 98, 'template_mapping_edgegrow', None])
+  DIFF (91, 'date', ['20-01-2026', 98, 'template_mapping', None], ['20-01-2026', 98, 'template_mapping_edgegrow', None])
+VERDICT DIFFERS
+=== diff old vs healed ===
+docs A=147 B=147 common=147 onlyA=[] onlyB=[]
+wouldFile A=129 B=121 flips=20
+  FLIP (27, True, False, 'ok', 'below-floor')
+  FLIP (30, True, False, 'ok', 'below-floor')
+  FLIP (32, False, True, 'below-floor', 'ok')
+  FLIP (35, False, True, 'below-floor', 'ok')
+  FLIP (49, True, False, 'ok', 'below-floor')
+  FLIP (50, True, False, 'ok', 'below-floor')
+  FLIP (52, False, True, 'below-floor', 'ok')
+  FLIP (53, True, False, 'ok', 'below-floor')
+  FLIP (54, True, False, 'ok', 'below-floor')
+  FLIP (56, False, True, 'below-floor', 'ok')
+  FLIP (59, False, True, 'below-floor', 'ok')
+  FLIP (60, True, False, 'ok', 'below-floor')
+  FLIP (61, False, True, 'below-floor', 'ok')
+  FLIP (63, True, False, 'ok', 'below-floor')
+  FLIP (72, True, False, 'ok', 'flagged')
+  FLIP (113, True, False, 'ok', 'below-floor')
+  FLIP (114, True, False, 'ok', 'below-floor')
+  FLIP (123, True, False, 'ok', 'below-floor')
+  FLIP (129, True, False, 'ok', 'below-floor')
+  FLIP (145, True, False, 'ok', 'below-floor')
+field diffs=48 across docs=44
+  DIFF (23, 'invoice_number', ['INV-73553', 94, 'template_mapping_edgegrow', None], ['INV-73553', 94, 'template_mapping', None])
+  DIFF (24, 'invoice_number', ['INV-29130', 94, 'template_mapping_edgegrow', None], ['INV-29130', 94, 'template_mapping', None])
+  DIFF (25, 'invoice_number', ['INV-79039', 98, 'template_mapping_edgegrow', None], ['INV-79039', 98, 'template_mapping', None])
+  DIFF (27, 'invoice_number', ['INV-19842', 98, 'template_mapping_edgegrow', None], ['INV-19842', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'])
+  DIFF (30, 'invoice_number', ['INV-49114', 98, 'template_mapping_edgegrow', None], ['INV-49114', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'])
+  DIFF (32, 'invoice_number', ['INV-52418', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'], ['INV-52418', 98, 'template_mapping', None])
+  DIFF (33, 'invoice_number', ['INV-33875', 94, 'template_mapping_edgegrow', None], ['INV-33875', 94, 'template_mapping', None])
+  DIFF (35, 'invoice_number', ['INV-56529', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'], ['INV-56529', 98, 'template_mapping', None])
+  DIFF (37, 'invoice_number', ['INV-47935', 98, 'template_mapping_edgegrow', None], ['INV-47935', 98, 'template_mapping', None])
+  DIFF (38, 'invoice_number', ['INV-64013', 94, 'template_mapping_edgegrow', None], ['INV-64013', 94, 'template_mapping', None])
+  DIFF (40, 'invoice_number', ['INV-97674', 94, 'template_mapping_edgegrow', None], ['INV-97674', 94, 'template_mapping', None])
+  DIFF (42, 'invoice_number', ['INV-53350', 94, 'template_mapping_edgegrow', None], ['INV-53350', 94, 'template_mapping', None])
+  DIFF (48, 'po_date', ['10-11-2026', 96, 'template_mapping_edgegrow', None], ['10-11-2026', 96, 'template_mapping', None])
+  DIFF (48, 'po_number', ['PO-54675', 97, 'template_mapping_edgegrow', None], ['PO-54675', 97, 'template_mapping', None])
+  DIFF (49, 'po_number', ['PO-74395', 97, 'template_mapping', None], ['PO-74395', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'])
+  DIFF (50, 'po_number', ['PO-86661', 97, 'template_mapping', None], ['PO-86661', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'])
+  DIFF (52, 'po_date', ['25-06-2026', 94, 'keyword_override', 'Kept the read value “25/06/2026” — the taught date box read “25/06/2076”, which is far in the future (likely a mis-scanned year). Please check.'], ['25-06-2026', 96, 'template_mapping', None])
+  DIFF (53, 'po_number', ['PO-28203', 97, 'template_mapping', None], ['PO-28203', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'])
+  DIFF (54, 'po_number', ['PO-51326', 97, 'template_mapping', None], ['PO-51326', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'])
+  DIFF (55, 'po_date', ['04-07-2026', 96, 'template_mapping', None], ['14-07-2026', 96, 'template_mapping', None])
+  DIFF (56, 'po_date', ['06-08-2021', 94, 'template_mapping_paddisagree', "A wider reading of this date box shows '06-08-2026', which differs from the value shown here — please check which is printed."], ['06-08-2026', 96, 'template_mapping', None])
+  DIFF (56, 'po_number', ['PO-84536', 92, 'template_mapping_edgegrow', None], ['PO-84536', 92, 'template_mapping', None])
+  DIFF (59, 'po_number', ['PO-27849', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'], ['PO-27849', 97, 'template_mapping', None])
+  DIFF (60, 'po_date', ['01-02-2026', 96, 'template_mapping', None], ['01-02-2026', 94, 'keyword_override', 'Kept the read value “01/02/2026” — the taught date box read “11/02/2076”, which is far in the future (likely a mis-scanned year). Please check.'])
+  DIFF (61, 'po_number', ['PO-22319', 78, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'], ['PO-22319', 97, 'template_mapping', None])
+  DIFF (63, 'po_date', ['21-03-2026', 96, 'template_mapping', None], ['21-03-2026', 94, 'keyword_override', 'Kept the read value “21/03/2026” — the taught date box read “11/03/2096”, which is far in the future (likely a mis-scanned year). Please check.'])
+  DIFF (69, 'customer_name', ['Brightwater Dental', 94, 'template_mapping', None], ['Brightwater Dental Practice', 82, 'keyword_override', None])
+  DIFF (70, 'customer_name', ['Halcyon Leisure Gr', 94, 'template_mapping', None], ['Halcyon Leisure Group', 82, 'keyword_override', None])
+  DIFF (72, 'customer_name', ['Meadowvale Farm', 94, 'template_mapping', None], ['Meadowvale Farm :', 35, 'template_mapping', 'value looks like a label, not a field value'])
+  DIFF (81, 'order_date', ['27-06-2026', 98, 'template_mapping', None], ['27-06-2026', 94, 'keyword_override', 'Kept the read value “27/06/2026” — the taught date box read “7/06/2076”, which is far in the future (likely a mis-scanned year). Please check.'])
+  DIFF (83, 'customer_name', ['Brightwater Dente', 94, 'template_mapping', None], ['Brightwater Dental', 94, 'template_mapping', None])
+  DIFF (108, 'delivery_date', ['03-04-2026', 98, 'template_mapping_edgegrow', None], ['03-04-2026', 98, 'template_mapping', None])
+  DIFF (108, 'delivery_number', ['DN-37675', 94, 'template_mapping_edgegrow', None], ['DN-37675', 94, 'template_mapping', None])
+  DIFF (112, 'delivery_date', ['18-12-2026', 98, 'template_mapping_edgegrow', None], ['18-12-2026', 98, 'template_mapping', None])
+  DIFF (113, 'delivery_number', ['DN-16902', 94, 'template_mapping', None], ['DN-16902', 70, 'template_mapping_shapewarn', 'manually mapped value differs from the usual format for this field — please verify'])
+  DIFF (114, 'delivery_number', ['DN-35563', 94, 'template_mapping', None], ['DN-35562', 95, 'template_mapping', "'DN-35562' doesn't appear on this page as written — please check the reference before filing."])
+  DIFF (115, 'customer_name', ['Larch & Hollow Cafe Cs', 94, 'template_mapping', None], ['arch & Hollow Cafe Cc', 94, 'template_mapping', None])
+  DIFF (116, 'customer_name', ['Bluefin Marine Ltd', 94, 'template_mapping', None], ['Bluefin Marine Ltd', 82, 'keyword_override', None])
+  DIFF (116, 'delivery_number', ['DN-98447', 94, 'template_mapping', None], ['DN-98447', 94, 'template_mapping_edgegrow', None])
+  DIFF (120, 'customer_name', ['Corvus Security Services', 89, 'anchor_crop', None], ['Corvus Security Services', 94, 'template_mapping', None])
+VERDICT DIFFERS
+=== regressions per arm ===
+-- old
+**Regressions (a confirmed value the pipeline no longer reproduces): 5** â€” of which 4 SILENT (wrong + no review flag).
+- #42 invoice date: want '06-06-2026' got '26-06-2026' [SILENT]
+- #25 invoice date: want '09-10-2026' got '19-10-2026' [SILENT]
+- #27 invoice date: want '03-01-2026' got '28-01-2026' [SILENT]
+- #40 invoice date: want '09-09-2026' got '15-09-2026' [SILENT]
+- #56 purchase_order date: want '06-08-2026' got '06-08-2021' [flagged]
+
+-- abstain
+**Regressions (a confirmed value the pipeline no longer reproduces): 6** â€” of which 5 SILENT (wrong + no review flag).
+- #42 invoice date: want '06-06-2026' got '26-06-2026' [SILENT]
+- #25 invoice date: want '09-10-2026' got '19-10-2026' [SILENT]
+- #27 invoice date: want '03-01-2026' got '28-01-2026' [SILENT]
+- #40 invoice date: want '09-09-2026' got '15-09-2026' [SILENT]
+- #58 purchase_order date: want '15-05-2026' got '05-05-2026' [flagged]
+- #80 sales_order date: want '24-07-2026' got '04-07-2026' [SILENT]
+
+-- healed
+**Regressions (a confirmed value the pipeline no longer reproduces): 6** â€” of which 5 SILENT (wrong + no review flag).
+- #42 invoice date: want '06-06-2026' got '26-06-2026' [SILENT]
+- #25 invoice date: want '09-10-2026' got '19-10-2026' [SILENT]
+- #27 invoice date: want '03-01-2026' got '28-01-2026' [SILENT]
+- #40 invoice date: want '09-09-2026' got '15-09-2026' [SILENT]
+- #55 purchase_order date: want '04-07-2026' got '14-07-2026' [SILENT]
+- #114 delivery_note ref: want 'DN-35563' got 'DN-35562' [flagged]
+
+ALL ARMS DONE 15:43:11

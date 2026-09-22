@@ -1,0 +1,15 @@
+snapshot taken 14:17:06 at 3c4f9ef
+backup ok { n: 147 }
+=== ARM off start 14:17:06 ===
+exit=0
+32:**Regressions (a confirmed value the pipeline no longer reproduces): 5** — of which 4 SILENT (wrong + no review flag).
+=== ARM off end 14:24:40 ===
+=== ARM on start 14:24:40 ===
+exit=0
+32:**Regressions (a confirmed value the pipeline no longer reproduces): 5** — of which 4 SILENT (wrong + no review flag).
+=== ARM on end 14:32:14 ===
+docs A=147 B=147 common=147 onlyA=[] onlyB=[]
+wouldFile A=129 B=129 flips=0
+field diffs=0 across docs=0
+VERDICT BYTE-IDENTICAL
+ALL ARMS DONE 14:32:14

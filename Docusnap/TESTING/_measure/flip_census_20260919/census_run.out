@@ -1,0 +1,7 @@
+=== base_env1 (-) start 19:33:06
+   -> 400 rows, end 19:42:48
+=== on154_env1 (TRUST_REF_ROLE_SHAPE) start 19:42:48
+   -> 400 rows, end 19:52:31
+=== on157_env1 (TEMPLATE_DRIFT_OVERRIDE_GUARD) start 19:52:31
+   -> 400 rows, end 20:02:14
+CENSUS DONE 20:02:14

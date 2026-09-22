@@ -1,0 +1,36 @@
+log-review arms done 14:43:45
+templates 6/7 angles before: [(6, -1.2), (7, 0.0)] -> NULL | sibling confirmed docs: 30
+=== ARM angle_off start 14:43:46 ===
+exit=0
+21:**Regressions (a confirmed value the pipeline no longer reproduces): 2** — of which 0 SILENT (wrong + no review flag).
+=== ARM angle_off end 14:44:14 ===
+=== ARM angle_on start 14:44:14 ===
+exit=0
+21:**Regressions (a confirmed value the pipeline no longer reproduces): 2** — of which 0 SILENT (wrong + no review flag).
+=== ARM angle_on end 14:44:42 ===
+baseline score files preserved: 20
+=== HARDSET scan cold start 14:44:42 ===
+exit=0
+- table_total_017.pdf [carried_fwd] ref: want 'INV-24695' got EMPTY [held]
+- table_total_018.pdf [total_in_table] ref: want 'INV-23619' got EMPTY [held]
+- table_total_020.pdf [carried_fwd] supplier: want 'Lantern Bay Foods' got 'Bay' [flagged]
+- table_total_020.pdf [carried_fwd] ref: want 'INV-83627' got EMPTY [held]
+
+=== HARDSET scan cold end 14:47:35 ===
+=== HARDSET digital cold start 14:47:35 ===
+exit=0
+- table_total_014.pdf [carried_fwd] supplier: want 'Aldercroft Stationery Co' got EMPTY [held]
+- table_total_014.pdf [carried_fwd] ref: want 'INV-53323' got EMPTY [held]
+- table_total_015.pdf [total_in_table] supplier: want 'Thornfield Fabrication Ltd' got EMPTY [held]
+- table_total_015.pdf [total_in_table] ref: want 'INV-90333' got EMPTY [held]
+
+=== HARDSET digital cold end 14:47:44 ===
+=== HARDSET scan warm start 14:47:44 ===
+exit=0
+- table_total_014.pdf [carried_fwd] supplier: want 'Aldercroft Stationery Co' got EMPTY [held]
+- table_total_014.pdf [carried_fwd] ref: want 'INV-53323' got EMPTY [held]
+- table_total_015.pdf [total_in_table] supplier: want 'Thornfield Fabrication Ltd' got EMPTY [held]
+- table_total_015.pdf [total_in_table] ref: want 'INV-90333' got EMPTY [held]
+
+=== HARDSET scan warm end 14:51:38 ===
+ALL FOLLOW-ON ARMS DONE 14:51:38

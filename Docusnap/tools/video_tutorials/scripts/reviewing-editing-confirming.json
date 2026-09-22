@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "title": "Reviewing, editing and confirming your documents",
+  "description": "Clearing the review queue: the queue is grouped by sender; open a document, check the read against the page, confirm it (it files and drops off), and learn where Defer, Skip and File all ready fit. The field-correction mechanic is explained by hovering, not typed, so no wrong value is taught to the demo data. Assumes documents are waiting after the import video.",
+  "target_length_sec": 130,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "Most documents ScanFinder files on its own. Review is where it shows you the few it wasn't completely sure about — so nothing is ever filed wrongly behind your back.",
+      "caption": "Review: check what it wasn't sure about",
+      "duration_sec": 12.0
+    },
+    {
+      "id": "open_review",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-review",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Review from the side bar.",
+      "caption": "1. Click Review",
+      "duration_sec": 4.0
+    },
+    {
+      "id": "queue_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "ScanFinder — Review",
+        "selector": "#queue-list .queue-group-head",
+        "timeout": 30
+      },
+      "target": {
+        "selector": "#queue-list",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "Everything waiting is listed on the left, grouped by who sent it. A brand-new supplier has all of its documents here for a first look; a supplier ScanFinder already knows usually just needs a quick confirm or two.",
+      "caption": "Grouped by sender",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "open_group",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#queue-list .queue-group-head",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "Click a sender to open its documents,",
+      "caption": "2. Click a sender",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "open_doc",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "ScanFinder — Review",
+        "selector": "#queue-list .qi-name",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#queue-list .qi-name",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "and click one to open it up.",
+      "caption": "3. Open a document",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "layout_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "ScanFinder — Review",
+        "selector": "#fields-panel .field-input",
+        "timeout": 20
+      },
+      "target": {
+        "selector": "#fields-panel",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "The scanned page is on the right, and everything ScanFinder read from it is on the left — who sent it, the date, and the reference number. Those three decide where it's filed and what it's named. Anything it's unsure of is highlighted for you.",
+      "caption": "Page on the right · the read on the left",
+      "duration_sec": 16.0
+    },
+    {
+      "id": "field_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#fields-panel .field-input",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "Your job is simply to check each detail against the page. If something's wrong, click into the field and type what's actually printed — ScanFinder remembers that correction for this sender, so it won't make the same slip twice. If a detail is missing altogether, the small plus button lets you draw a box around it, exactly like teaching.",
+      "caption": "Wrong? Type it · Missing? ⊕ draw it",
+      "duration_sec": 21.0
+    },
+    {
+      "id": "confirm",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-confirm",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "When everything matches, click Confirm. The document is filed away into its sender, year and month folder, and that confirmation counts towards ScanFinder trusting this supplier in future.",
+      "caption": "4. Confirm — files it and teaches it",
+      "duration_sec": 14.0
+    },
+    {
+      "id": "next_doc",
+      "action": "wait",
+      "narration": "The next document loads by itself, so a queue moves quickly — watch the count drop as you work through it.",
+      "caption": "The next one loads automatically",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "defer_skip",
+      "action": "move_to",
+      "optional": true,
+      "target": {
+        "selector": "#btn-defer",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "Not ready to decide on one? Defer keeps it aside for later, and Skip simply jumps past it without filing — nothing is ever lost.",
+      "caption": "Defer for later · Skip for now",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "file_all",
+      "action": "move_to",
+      "optional": true,
+      "target": {
+        "selector": "#btn-file-all-review",
+        "window": "ScanFinder — Review"
+      },
+      "narration": "And when several have read cleanly and only need a nod, File all ready deals with them together in one click.",
+      "caption": "File all ready — the clean ones in one go",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "That's Review. Every correction you make here teaches ScanFinder, so over time there's less and less to check. Next, we'll teach it a brand-new document.",
+      "caption": "Next: teach a new document",
+      "duration_sec": 11.5
+    }
+  ]
+}

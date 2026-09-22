@@ -1,0 +1,30 @@
+[Learning] 150 hints, 6 anchors, 11 logos, 7 templates, 41 format templates loaded
+  OCR corrector: 21 format templates, 0 learned noise profile(s) loaded
+  Format checker: 41 format class rule(s) loaded
+  Keyword label overrides: 32 loaded
+  OCR: Invoice.03-01-2026.INV-19842.pdf
+  Barcodes: 0 decoded on 1 page(s) (174 ms)
+  Document type: Invoice (95%)
+  Template matched: Ironbridge Fabrication (60% via keywords+slug_rescue)
+  Stage 0: 1/3 fields from template
+  Stage 0.5: 3 anchor→target mapping(s)…
+  Stage 0.5: composed 3 mapping(s) teach-frame -> this page (teach 1.10 deg, scan -2.20 deg, net 3.30 deg) — no pixels rotated
+  Stage 0.5 heal: invoice_number inline_disagree_flag (template_mapping_shapewarn)
+  Stage 0.5: kept curated supplier 'Ironbridge Fabrication' — declined mapping read 'Ironbridge Fabrication' (agreement)
+  Stage 0.5: 2 field(s) refined via anchor/target mapping
+  Stage 1: keyword extraction…
+  Stage 1: 3/3 fields found
+  Stage 2: anchor extraction…
+  Stage 2: registration fit failed (5 landmarks, too few/poor matches)
+  Stage 2: +0 fields from anchors
+  Stage 4: validating…
+  Format consistency: document confidence -12
+  FOUND   supplier_name: 'Ironbridge Fabrication' (95% via template_fixed)
+  FOUND   invoice_date: '28-01-2026' (98% via anchor_crop)
+  FOUND   invoice_number: 'INV-19842' (78% via template_mapping_shapewarn)
+
+STDERR:
+[template_matcher] identity guard: template 6 ('Larkspur Interiors') is not named on this page - not a candidate
+[template_matcher] identity guard: template 7 ('Larkspur Interiors') is not named on this page - not a candidate
+[template_matcher] identity guard: template 6 ('Larkspur Interiors') is not named on this page - not a candidate
+[template_matcher] identity guard: template 7 ('Larkspur Interiors') is not named on this page - not a candidate

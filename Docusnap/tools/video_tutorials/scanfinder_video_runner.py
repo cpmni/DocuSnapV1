@@ -404,7 +404,7 @@ class CDP:
 
     def targets(self) -> list[dict]:
         try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/json/list", timeout=2) as resp:
+            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/json/list", timeout=4) as resp:
                 return [t for t in json.load(resp) if t.get("type") == "page"]
         except Exception as e:
             raise RuntimeError(
@@ -483,9 +483,10 @@ class TargetResolver:
     def _window_for(self, target: dict) -> str:
         return str(target.get("window") or self.app.get("window_title") or "ScanFinder")
 
-    def resolve(self, target: dict, timeout: float = 8.0) -> tuple[int, int, str]:
+    def resolve(self, target: dict, timeout: float = 20.0) -> tuple[int, int, str]:
         """Returns (x, y, description). Retries until `timeout` so a window/element that is still
-        opening gets a chance — the step's own duration is not consumed by this wait."""
+        opening — or the app briefly stalling under load (synchronous better-sqlite3 on a busy CPU) —
+        gets a chance to recover. The step's own duration is not consumed by this wait."""
         deadline = time.monotonic() + timeout
         last: Optional[Exception] = None
         while True:
@@ -851,7 +852,7 @@ class Actions:
         self.after_front: Callable[[int], None] = lambda _h: None   # runner hook: re-seat the backdrop under hwnd
 
     def _goto(self, st: Step) -> tuple[int, int]:
-        x, y, desc = self.resolver.resolve(st.target, float(st.params.get("resolve_timeout", 8)))
+        x, y, desc = self.resolver.resolve(st.target, float(st.params.get("resolve_timeout", 20)))
         log(f"  → {desc} = ({x},{y})")
         hwnd = self.resolver.last_hwnd
         if hwnd and not is_foreground(hwnd):
@@ -870,7 +871,7 @@ class Actions:
 
     def drag(self, st: Step) -> None:
         """Left-drag from `from` to `to` (both targets) — e.g. drawing a teach box on a page."""
-        timeout = float(st.params.get("resolve_timeout", 8))
+        timeout = float(st.params.get("resolve_timeout", 20))
         x1, y1, d1 = self.resolver.resolve(st.params["from"], timeout)
         x2, y2, d2 = self.resolver.resolve(st.params["to"], timeout)
         log(f"  → drag {d1} ({x1},{y1}) → {d2} ({x2},{y2})")

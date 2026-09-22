@@ -1,0 +1,7 @@
+
+> docusnap@2.0.0 start
+> node scripts/dev-start.js --remote-debugging-port=9223
+
+
+
+DevTools listening on ws://127.0.0.1:9223/devtools/browser/530356e4-fd55-4090-8337-92d838116c44

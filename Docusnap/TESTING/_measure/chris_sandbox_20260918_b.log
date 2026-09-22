@@ -1,0 +1,10 @@
+
+> docusnap@2.0.0 start
+> node scripts/dev-start.js --remote-debugging-port=9223
+
+
+
+DevTools listening on ws://127.0.0.1:9223/devtools/browser/570ef5cc-d9f8-4fb9-a92b-a9d689e9774b
+[focus] press: suspect=false forceEdge=false pageHasFocus=true winFocused=false wcFocused=false
+[focus] press: suspect=false forceEdge=false pageHasFocus=true winFocused=true wcFocused=true
+[focus] press: suspect=false forceEdge=false pageHasFocus=true winFocused=true wcFocused=true

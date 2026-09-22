@@ -1,0 +1,20 @@
+snapshot taken 14:08:23 at 03be597
+item-3 chain done 14:12:23
+=== ARM b_only start 14:12:24 ===
+exit=0
+40:**Regressions (a confirmed value the pipeline no longer reproduces): 6** — of which 4 SILENT (wrong + no review flag).
+=== ARM b_only end 14:27:15 ===
+=== ARM arcs_on start 14:27:15 ===
+exit=0
+40:**Regressions (a confirmed value the pipeline no longer reproduces): 6** — of which 4 SILENT (wrong + no review flag).
+=== ARM arcs_on end 14:41:35 ===
+anchor rows for Meadowvale now 4 | docs 20 [399, 401, 402, 404, 405, 407, 409, 410, 411, 412, 413, 414, 415, 416, 417, 418, 422, 425, 426, 433]
+=== ARM mv_off start 14:41:35 ===
+exit=0
+15:**Regressions (a confirmed value the pipeline no longer reproduces): 0** — of which 0 SILENT (wrong + no review flag).
+=== ARM mv_off end 14:42:22 ===
+=== ARM mv_on start 14:42:22 ===
+exit=0
+15:**Regressions (a confirmed value the pipeline no longer reproduces): 0** — of which 0 SILENT (wrong + no review flag).
+=== ARM mv_on end 14:43:05 ===
+ALL LOG-REVIEW ARMS DONE 14:43:05

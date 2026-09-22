@@ -1,0 +1,11 @@
+snapshot 14:42:54 at a0e3795
+=== ARM pools start 14:42:54 ===
+exit=0
+=== ARM pools end 14:49:57 ===
+docs A=147 B=147 common=147 onlyA=[] onlyB=[]
+wouldFile A=129 B=129 flips=0
+field diffs=0 across docs=0
+VERDICT BYTE-IDENTICAL
+=== 10x determinism repeat at full pool width 14:49:57 ===
+     10 0f140a5805dc
+ALL DONE 14:53:17

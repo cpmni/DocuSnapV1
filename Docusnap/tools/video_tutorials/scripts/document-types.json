@@ -1,0 +1,169 @@
+{
+  "version": 1,
+  "title": "Set up the document types you use",
+  "description": "Add the kinds of document your business handles from the ready-made catalogue (Purchase Invoice, Credit Note, Statement and more), each arriving complete with its fields and likely labels, and mention building a custom type by hand. Settings -> Document Types.",
+  "target_length_sec": 120,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "ScanFinder needs to know which kinds of document you deal with — invoices, statements, delivery notes and the rest. Let's add them from the ready-made catalogue.",
+      "caption": "Set up your document types",
+      "duration_sec": 13.0
+    },
+    {
+      "id": "open_settings",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-settings",
+        "window": "ScanFinder"
+      },
+      "narration": "Open Settings from the side bar.",
+      "caption": "1. Open Settings",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "open_tab",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": ".tab[data-tab=\"doctypes\"]",
+        "timeout": 15
+      },
+      "target": {
+        "selector": ".tab[data-tab=\"doctypes\"]",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Go to the Document Types tab.",
+      "caption": "2. Document Types tab",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "list_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#doctypes-list",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#doctypes-list",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Three come built in — Invoice, Sales Order and Purchase Order. Most businesses want a few more than that.",
+      "caption": "Invoice, Sales Order, Purchase Order",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "open_catalog",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-catalog",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Click Add from catalogue to see the ready-made types.",
+      "caption": "3. Add from catalogue",
+      "duration_sec": 5.5
+    },
+    {
+      "id": "catalog_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#cat-add",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#cat-rows",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Each one arrives complete with its fields and the labels it's likely to see on the page, so reading works well before you teach anything.",
+      "caption": "Each comes with its fields ready",
+      "duration_sec": 12.5
+    },
+    {
+      "id": "tick_1",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#cat-rows label:nth-of-type(1) input",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Tick the types your business uses —",
+      "caption": "4. Tick the ones you use",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "tick_2",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#cat-rows label:nth-of-type(4) input",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "— a purchase invoice, a credit note, whatever fits.",
+      "caption": "Tick a few",
+      "duration_sec": 5.5
+    },
+    {
+      "id": "add_selected",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#cat-add",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Then click Add selected, and they're all created in one go.",
+      "caption": "5. Add selected",
+      "duration_sec": 6.0
+    },
+    {
+      "id": "added_explain",
+      "action": "move_to",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#doctypes-list",
+        "timeout": 15
+      },
+      "target": {
+        "selector": "#doctypes-list",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "They're in your list straight away, each one ready to file and to learn from as documents come in.",
+      "caption": "Added and ready to use",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "custom_mention",
+      "action": "move_to",
+      "target": {
+        "selector": "#btn-add-type",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "And if you have something unusual, New type lets you build one by hand with its own fields.",
+      "caption": "Something unusual? New type",
+      "duration_sec": 9.5
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "That's your document types set up. Next: deciding where they get filed.",
+      "caption": "Next: folders & filenames",
+      "duration_sec": 6.5
+    }
+  ]
+}

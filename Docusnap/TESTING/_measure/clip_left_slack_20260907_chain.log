@@ -1,0 +1,26 @@
+snapshot 15:50:49 at 5ee8cd4
+P2 arms done 15:53:49
+=== ARM off start 15:53:50 ===
+exit=0
+33:**Regressions (a confirmed value the pipeline no longer reproduces): 6** — of which 5 SILENT (wrong + no review flag).
+=== ARM off end 15:58:29 ===
+=== ARM on start 15:58:29 ===
+exit=0
+33:**Regressions (a confirmed value the pipeline no longer reproduces): 6** — of which 5 SILENT (wrong + no review flag).
+=== ARM on end 16:03:15 ===
+docs A=147 B=147 common=147 onlyA=[] onlyB=[]
+wouldFile A=121 B=122 flips=1
+  FLIP (113, False, True, 'below-floor', 'ok')
+field diffs=1 across docs=1
+  DIFF (113, 'delivery_number', ['DN-16902', 70, 'template_mapping_shapewarn', "The taught box read 'IN-16902' but the text beside its label reads 'DN-16902' � the box may be clipping the first character; please check which is printed."], ['DN-16902', 94, 'template_mapping', None])
+VERDICT DIFFERS
+=== regressions ON ===
+**Regressions (a confirmed value the pipeline no longer reproduces): 6** — of which 5 SILENT (wrong + no review flag).
+- #42 invoice date: want '06-06-2026' got '26-06-2026' [SILENT]
+- #25 invoice date: want '09-10-2026' got '19-10-2026' [SILENT]
+- #27 invoice date: want '03-01-2026' got '28-01-2026' [SILENT]
+- #40 invoice date: want '09-09-2026' got '15-09-2026' [SILENT]
+- #55 purchase_order date: want '04-07-2026' got '14-07-2026' [SILENT]
+- #114 delivery_note ref: want 'DN-35563' got 'DN-35562' [flagged]
+
+ALL LEFTSLACK ARMS DONE 16:03:16

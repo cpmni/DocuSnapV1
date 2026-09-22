@@ -1,0 +1,26 @@
+
+> scanfinder-client@1.0.2 predist
+> node ../scripts/sync-client-search.js
+
+[sync-client-search] 0 written, 0 removed → client/renderer/shared/
+
+> scanfinder-client@1.0.2 dist
+> node -e "const c=require('child_process');process.env.BUILD_REV=require('../scripts/build-rev').buildRev();c.execSync('electron-builder --win --x64 --config.extraMetadata.buildRev=' + process.env.BUILD_REV,{stdio:'inherit',env:process.env})"
+
+  [34m•[39m electron-builder  [34mversion[39m=26.15.3 [34mos[39m=10.0.26200
+  [34m•[39m loaded configuration  [34mfile[39m=package.json ("build" field)
+  [34m•[39m executing @electron/rebuild  [34melectronVersion[39m=44.0.0 [34march[39m=x64 [34mbuildFromSource[39m=false [34mworkspaceRoot[39m=C:\GIT Projects\Docusnap\client [34mprojectDir[39m=./ [34mappDir[39m=./
+  [34m•[39m installing native dependencies  [34march[39m=x64
+  [34m•[39m completed installing native dependencies
+  [34m•[39m packaging       [34mplatform[39m=win32 [34march[39m=x64 [34melectron[39m=44.0.0 [34mappOutDir[39m=dist\win-unpacked
+  [34m•[39m downloaded      [34mlabel[39m=electron [34mprogress[39m=100%
+  [34m•[39m downloaded electron zip extracted successfully  [34moutput[39m=C:\GIT Projects\Docusnap\client\dist\win-unpacked
+  [34m•[39m searching for node modules  [34mpm[39m=npm [34msearchDir[39m=C:\GIT Projects\Docusnap\client
+  [34m•[39m updating asar integrity executable resource  [34mexecutablePath[39m=dist\win-unpacked\ScanFinder Search Client.exe
+  [34m•[39m executing @electron/fuses  [34melectronPath[39m=dist\win-unpacked\ScanFinder Search Client.exe
+  [34m•[39m signing with signtool.exe  [34mpath[39m=dist\win-unpacked\ScanFinder Search Client.exe
+  [34m•[39m building        [34mtarget[39m=nsis [34mfile[39m=dist\ScanFinder Search Client Setup 1.0.2-r20260919-1821-6c9d31c.exe [34marchs[39m=x64 [34moneClick[39m=false [34mperMachine[39m=true
+  [34m•[39m signing with signtool.exe  [34mpath[39m=dist\win-unpacked\resources\elevate.exe
+  [34m•[39m signing with signtool.exe  [34mpath[39m=dist\ScanFinder Search Client Setup 1.0.2-r20260919-1821-6c9d31c.__uninstaller.exe
+  [34m•[39m signing with signtool.exe  [34mpath[39m=dist\ScanFinder Search Client Setup 1.0.2-r20260919-1821-6c9d31c.exe
+  [34m•[39m building block map  [34mblockMapFile[39m=dist\ScanFinder Search Client Setup 1.0.2-r20260919-1821-6c9d31c.exe.blockmap

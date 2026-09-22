@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "title": "Keep everything private — local-only and database encryption",
+  "description": "Reassure on privacy and show the optional database-encryption feature. Recap the Local-only shield on Home, then Settings -> Advanced -> Database encryption: what it does, the one-time recovery code, and the trade-off. A CONCEPTUAL TOUR — the 'Turn on encryption' ceremony is NOT triggered (it would migrate the real demo DB and show a genuine recovery code), so the button is hovered and the recovery-code disclosure is expanded and read, but no real code is shown and nothing is encrypted on camera. Selectors: .rail-foot[data-help-key=local-only]; .tab[data-tab=advanced]; #dbenc-section, #dbenc-section summary, #dbenc-status, #dbenc-encrypt.",
+  "target_length_sec": 82,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "ScanFinder runs entirely on this PC. There's no cloud, no online account for your documents — everything stays with you.",
+      "caption": "Private by design — 100% offline",
+      "duration_sec": 11.0
+    },
+    {
+      "id": "local_only",
+      "action": "move_to",
+      "target": {
+        "selector": ".rail-foot[data-help-key=\"local-only\"]",
+        "window": "ScanFinder"
+      },
+      "narration": "This little shield, Local only, is your reminder: nothing you scan or file is ever sent anywhere.",
+      "caption": "The Local-only shield",
+      "duration_sec": 9.0
+    },
+    {
+      "id": "open_settings",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#btn-settings",
+        "window": "ScanFinder"
+      },
+      "narration": "For an extra layer, open Settings.",
+      "caption": "1. Open Settings",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "open_tab",
+      "action": "move_and_click",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": ".tab[data-tab=\"advanced\"]",
+        "timeout": 15
+      },
+      "target": {
+        "selector": ".tab[data-tab=\"advanced\"]",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "and go to the Advanced tab.",
+      "caption": "2. Advanced tab",
+      "duration_sec": 4.5
+    },
+    {
+      "id": "scroll_enc",
+      "action": "eval_js",
+      "window": "Scan Finder — Settings",
+      "js": "document.getElementById('dbenc-section').scrollIntoView({block:'center'}); 'scrolled'",
+      "wait_for": {
+        "window": "Scan Finder — Settings",
+        "selector": "#dbenc-section",
+        "timeout": 15
+      },
+      "narration": "",
+      "caption": "Database encryption",
+      "duration_sec": 2.5
+    },
+    {
+      "id": "enc_explain",
+      "action": "move_to",
+      "target": {
+        "selector": "#dbenc-status",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "Database encryption locks the file that holds everything ScanFinder has read — so even if that file were copied off your PC, its contents couldn't be read.",
+      "caption": "Lock the database file",
+      "duration_sec": 13.0
+    },
+    {
+      "id": "howitworks",
+      "action": "move_and_click",
+      "target": {
+        "selector": "#dbenc-section summary",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "When you turn it on, you're shown a one-time recovery code. That code is the key. Day to day the app just opens; you only need the code if you move to a new PC or restore a backup.",
+      "caption": "The recovery code is the key",
+      "duration_sec": 15.0
+    },
+    {
+      "id": "turn_on",
+      "action": "move_to",
+      "target": {
+        "selector": "#dbenc-encrypt",
+        "window": "Scan Finder — Settings"
+      },
+      "narration": "So if you use it, write that code down and keep it somewhere safe — there is no way back into the data without it, not even for us.",
+      "caption": "Keep the code safe — there's no other way in",
+      "duration_sec": 13.0
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "Local by default, and lockable when you want it. Your documents stay yours.",
+      "caption": "Your documents stay yours",
+      "duration_sec": 7.5
+    }
+  ]
+}

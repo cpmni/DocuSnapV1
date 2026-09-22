@@ -1,0 +1,306 @@
+﻿# python suite 18:13:00
+# pytest-style: 32 files; script-style: 271 files
+PASS pytest test_account_no_captions.py :: [32m[32m[1m7 passed[0m[32m in 0.09s[0m[0m
+PASS pytest test_anchor_arbiter_reorder.py :: [33m[32m6 passed[0m, [33m[1m6 warnings[0m[33m in 0.20s[0m[0m
+PASS pytest test_anchor_authoritative_precedence.py :: [32m[32m[1m5 passed[0m[32m in 0.16s[0m[0m
+PASS pytest test_anchor_inline_taught_offset.py :: [32m[32m[1m9 passed[0m[32m in 0.17s[0m[0m
+PASS pytest test_anchor_label_relocation.py :: [32m[32m[1m9 passed[0m[32m in 0.76s[0m[0m
+PASS pytest test_anchor_registration.py :: [33m[32m4 passed[0m, [33m[1m4 warnings[0m[33m in 0.33s[0m[0m
+PASS pytest test_currency_snap_drift_row.py :: [32m[32m[1m25 passed[0m[32m in 1.12s[0m[0m
+PASS pytest test_doctype_scoped_format_gate.py :: [32m[32m[1m4 passed[0m[32m in 0.31s[0m[0m
+PASS pytest test_field_data_types.py :: [32m[32m[1m7 passed[0m[32m in 0.94s[0m[0m
+PASS pytest test_fixed_seed_agreement.py :: [32m[32m[1m8 passed[0m[32m in 0.94s[0m[0m
+FAIL pytest test_identity_fusion.py :: [31m[31m[1m1 failed[0m, [32m9 passed[0m[31m in 1.28s[0m[0m
+PASS pytest test_identity_on_page.py :: [32m[32m[1m22 passed[0m[32m in 1.00s[0m[0m
+PASS pytest test_issuer_region_presence.py :: [32m[32m[1m16 passed[0m[32m in 0.92s[0m[0m
+PASS pytest test_issuer_repair.py :: [32m[32m[1m8 passed[0m[32m in 0.16s[0m[0m
+PASS pytest test_job_no_pattern.py :: [33m[32m2 passed[0m, [33m[1m2 warnings[0m[33m in 0.16s[0m[0m
+PASS pytest test_landmarks.py :: [33m[32m2 passed[0m, [33m[1m2 warnings[0m[33m in 0.14s[0m[0m
+PASS pytest test_letterhead_type_heading.py :: [32m[32m[1m9 passed[0m[32m in 0.92s[0m[0m
+PASS pytest test_money_snap_proof.py :: [32m[32m[1m17 passed[0m[32m in 0.79s[0m[0m
+PASS pytest test_precedence.py :: [33m[32m26 passed[0m, [33m[1m26 warnings[0m[33m in 1.05s[0m[0m
+PASS pytest test_reg_arbiter_anchor_evidence.py :: [32m[32m[1m8 passed[0m[32m in 0.85s[0m[0m
+PASS pytest test_registration.py :: [33m[32m6 passed[0m, [33m[1m6 warnings[0m[33m in 0.37s[0m[0m
+PASS pytest test_registration_arbiter.py :: [33m[32m8 passed[0m, [33m[1m8 warnings[0m[33m in 0.77s[0m[0m
+PASS pytest test_shape_withhold_supplier_scoped.py :: [33m[32m3 passed[0m, [33m[1m3 warnings[0m[33m in 0.91s[0m[0m
+PASS pytest test_stage_coverage_trace.py :: [33m[32m8 passed[0m, [33m[1m8 warnings[0m[33m in 1.06s[0m[0m
+PASS pytest test_stage2_winner_consistency.py :: [33m[32m6 passed[0m, [33m[1m6 warnings[0m[33m in 0.93s[0m[0m
+PASS pytest test_stage45_text_preserve.py :: [33m[32m6 passed[0m, [33m[1m6 warnings[0m[33m in 0.91s[0m[0m
+PASS pytest test_teach_angle_compose_scan.py :: [32m[32m[1m7 passed[0m[32m in 0.83s[0m[0m
+PASS pytest test_teach_side_gates.py :: [32m[32m[1m26 passed[0m[32m in 0.91s[0m[0m
+PASS pytest test_template_mapper.py :: [33m[32m16 passed[0m, [33m[1m16 warnings[0m[33m in 0.87s[0m[0m
+PASS pytest test_template_mapper_drift.py :: [33m[32m8 passed[0m, [33m[1m8 warnings[0m[33m in 0.81s[0m[0m
+PASS pytest test_text_enhance.py :: [33m[32m3 passed[0m, [33m[1m3 warnings[0m[33m in 0.63s[0m[0m
+PASS pytest test_vat_field_format.py :: [32m[32m[1m7 passed[0m[32m in 0.34s[0m[0m
+PASS script test_anchor_ambiguous_label.py :: All value-agreement anchoring checks passed.
+PASS script test_anchor_crop_credibility.py :: All anchor crop-credibility checks passed.
+FAIL script test_anchor_crop_crosscheck.py :: 3 FAILED
+PASS script test_anchor_crop_repair.py :: All crop-repair guard checks passed
+PASS script test_anchor_drift_fixes.py :: All anchor drift-fix checks passed.
+PASS script test_anchor_drift_guard.py :: ALL PASS
+PASS script test_anchor_line_select.py :: All ANCHOR_LINE_SELECT checks passed
+PASS script test_anchor_max_crop_width.py :: ALL PASS
+PASS script test_anchor_name_lock_guard.py :: All name-lock guard checks passed
+PASS script test_anchor_qualify.py :: All anchor-qualify checks passed
+PASS script test_anchor_selection_scope.py :: ALL PASS
+PASS script test_barcode_decode.py :: 16 passed, 0 failed
+PASS script test_barcode_field_stage.py :: 21 passed, 0 failed
+PASS script test_blind_geom_reconcile.py :: ALL PINS PASS
+PASS script test_born_digital.py :: All born_digital checks passed.
+PASS script test_both_forms_parity.py :: 16 ok, 0 failed
+PASS script test_branding_conflict.py :: ALL PASS
+PASS script test_branding_distinctive_tokens.py :: PASS ÔÇö 0 failed check(s)
+PASS script test_branding_reg_boilerplate.py :: ALL PASS (15 passed, 0 failed)
+FAIL script test_buyer_issued_issuer_guard.py :: 1 FAILED
+PASS script test_buyer_issued_letterhead_scope.py :: ALL PASS
+PASS script test_candidate_resolver.py :: All candidate-resolver checks passed
+PASS script test_caption_bleed_fuzzy.py :: ALL PASS
+PASS script test_caption_continuation.py :: ALL PASS
+PASS script test_caption_exclusion.py :: ALL PASS
+PASS script test_caption_prefix_strip.py :: All caption-prefix-strip checks passed
+PASS script test_charset_debris_recovery.py :: All charset-debris recovery checks passed.
+PASS script test_code_separator_structure.py :: 10 checks passed
+PASS script test_confidence_empty_fields.py :: All checks passed.
+PASS script test_confirmed_dominant_adopt.py :: ALL PASS
+PASS script test_confusable_ref_date_fix_20260828.py :: ALL PINS PASS
+PASS script test_corrob_date_fold.py :: All corroboration date-fold checks passed.
+PASS script test_corrob_note_resolve.py :: ALL PASS  (51 ok)
+PASS script test_corroboration_emit.py :: 26 checks passed
+PASS script test_credit_sign_coherence.py :: All CREDIT SIGN COHERENCE pins passed
+PASS script test_cross_field_duplication.py :: All cross-field duplication checks passed
+PASS script test_crosscheck_corroboration.py :: All cross-check corroboration checks passed
+PASS script test_crosscheck_outlier_reconcile.py :: All crosscheck-outlier reconcile pins passed
+PASS script test_currency_label_lock.py :: ALL PASS
+PASS script test_currency_spacing.py :: All currency-spacing checks passed.
+PASS script test_currency_symbol_cut.py :: ALL PASS
+PASS script test_custom_field_seeding.py :: All custom-field seeding checks passed
+PASS script test_customer_po_labels.py :: All CUSTOMER_PO_LABELS checks passed
+PASS script test_date_clip_gate.py :: All date-clip gate checks passed.
+PASS script test_date_formats.py :: All 47 standard date patterns parse to 06-08-2026
+PASS script test_date_future_only.py :: All checks passed.
+PASS script test_date_hard_gate.py :: All date hard-gate checks passed
+PASS script test_date_in_ref_flag.py :: ALL PINS PASS
+PASS script test_date_labels.py :: All date-label checks passed
+PASS script test_date_order.py :: all date-order checks passed
+PASS script test_date_precedence.py :: All checks passed.
+PASS script test_date_preclean.py :: ALL PASS
+PASS script test_date_salvage.py :: All checks passed.
+PASS script test_deskew_cache_fast.py :: ALL PASS
+PASS script test_deskew_min_angle.py :: ALL PASS
+PASS script test_deskew_pages.py :: All deskew-pages checks passed
+FAIL script test_deskew_raw_crops.py :: 1 FAILED
+PASS script test_deskew_raw_witness.py :: ALL PASS
+PASS script test_deskew_review_retry.py :: test_deskew_review_retry: 27/27 OK
+PASS script test_deskew_ss_rotate.py :: All DESKEW_SS_ROTATE checks passed.
+PASS script test_detail_veto_single_supplier_immune.py :: PASS
+PASS script test_detect_type_aliases.py :: ALL PASS
+PASS script test_detected_slug_fallback.py :: PASS ÔÇö 0 failed check(s)
+PASS script test_digit_disagree.py :: ALL PINS PASS
+PASS script test_doc_overrides_pin.py :: PASS ÔÇö 0 failure(s)
+PASS script test_document_confidence_weighting.py :: All checks passed.
+PASS script test_dominant_snap.py :: All dominant-snap checks passed
+PASS script test_dos_caps.py :: All DoS-cap checks passed.
+FAIL script test_engine_detail_thread.py :: 1 FAILED
+PASS script test_field_candidates.py :: ALL PASS
+PASS script test_field_charsets.py :: All field-charset checks passed
+PASS script test_field_rules.py :: All field-rules checks passed
+PASS script test_file_timeout_watchdog.py :: All file-timeout watchdog checks passed.
+PASS script test_filing_sanity_page_match.py :: ALL PASS  (25 ok)
+PASS script test_filing_sanity_page_token.py :: All checks passed.
+PASS script test_filing_slips.py :: PASS -- 0 failure(s)
+PASS script test_fixed_seed_debris.py :: ALL PASS
+PASS script test_fixed_seed_fragment_keep.py :: ALL PASS
+PASS script test_fixed_supplier_immune.py :: All fixed-supplier-immune checks passed
+PASS script test_format_anomaly_checker.py :: All checks passed.
+PASS script test_format_shape_consistency.py :: All checks passed.
+PASS script test_freetext_conf_rescue.py :: All free-text conf-rescue checks passed.
+PASS script test_freetext_guard_parity.py :: ALL PASS
+PASS script test_gate_class_invariants.py :: All format-gate class invariants hold.
+PASS script test_gate_fail_reread.py :: All targeted-reread slice-1 checks passed
+PASS script test_gate_reread_clean.py :: All gate-reread clean-accept checks passed
+PASS script test_generic_title_seam.py :: PASS -- 0 failure(s)
+PASS script test_group_mapping_fallback.py :: All checks passed.
+PASS script test_harvest_heading.py :: ALL PASS
+PASS script test_heading_absent_reread.py :: All HEADING_ABSENT_REREAD checks passed.
+PASS script test_heading_band_reread.py :: ALL PASS
+PASS script test_heading_fuzzy_vocab.py :: ALL PASS
+PASS script test_heading_garble_demotion.py :: ALL PASS
+PASS script test_heading_letter_spacing.py :: ALL PASS
+PASS script test_heading_reread.py :: PASS ÔÇö 0 failure(s)
+PASS script test_heading_title_gap.py :: All HEADING_TITLE_GAP_COLLAPSE checks passed.
+PASS script test_hidden_field_drop.py :: 6 checks passed
+PASS script test_hidden_field_scoring.py :: All hidden-field scoring checks passed.
+PASS script test_hint_band_ws_normalize.py :: PASS ÔÇö 0 failure(s)
+PASS script test_identifier_extract.py :: All identifier-extract pins passed
+PASS script test_identity_anchor_scope.py :: All identity-anchor-scope checks passed
+PASS script test_identity_established.py :: All identity-established checks passed
+PASS script test_identity_positional_drop.py :: ALL PASS
+PASS script test_identity_rescue.py :: All identity-rescue checks passed.
+PASS script test_identity_scope_post_repair.py :: All pins passed
+PASS script test_identity_variant.py :: All identity-variant checks passed
+PASS script test_inline_column_bleed.py :: All inline-column-bleed checks passed
+PASS script test_inline_harvest.py :: All inline-harvest checks passed.
+PASS script test_iso_date_clip.py :: ALL PASS
+PASS script test_issuer_caption_guard.py :: All issuer-caption guard checks passed.
+PASS script test_keyword_anchor_corrob.py :: All keyword-anchor corroboration checks passed
+PASS script test_keyword_currency_rejoin.py :: All keyword currency-rejoin checks passed.
+PASS script test_keyword_label_guard.py :: ALL PASS
+PASS script test_known_caption_guard.py :: All known-caption-guard (G3b) checks passed
+PASS script test_kw_type_ambiguity.py :: ALL PASS
+PASS script test_label_capture.py :: ALL PASS
+PASS script test_label_digit_exact.py :: All label digit-exactness checks passed.
+PASS script test_label_left_clamp.py :: All label-left-clamp pins passed
+FAIL script test_label_overrides.py :: 2 FAILED
+PASS script test_label_right_grow.py :: All label-right-grow pins passed
+PASS script test_landmark_selection.py :: ALL PASS
+PASS script test_late_anchor_rescue.py :: All late-anchor-rescue checks passed
+PASS script test_late_located_corrob.py :: ALL PASS
+PASS script test_letterhead_fragment_abstain.py :: ALL PASS
+PASS script test_letterhead_pick.py :: ALL PASS
+PASS script test_letterhead_prefill.py :: ALL PASS
+PASS script test_letterhead_stack_abstain.py :: ALL PASS
+PASS script test_light_text_recovery.py :: All checks passed.
+PASS script test_list_field_scan.py :: 27 checks passed
+PASS script test_logo_ambiguity.py :: All logo-ambiguity guard checks passed.
+PASS script test_logo_detail.py :: ALL PASS
+PASS script test_logo_detail_global_rivals.py :: All global-rivals veto checks passed
+PASS script test_logo_detail_primary.py :: ALL PASS
+PASS script test_logo_detail_sparse_guard.py :: All sparse-guard checks passed
+PASS script test_logo_detail_veto.py :: ALL PASS
+PASS script test_logo_phashes_multiref.py :: All checks passed - matcher matches the closest of several stored logo hashes; gate unchanged.
+PASS script test_logo_text_gate.py :: PASS ÔÇö 0 failed check(s)
+PASS script test_money_strict_shape.py :: test_money_strict_shape: all checks passed
+PASS script test_multiline_continue.py :: ALL PASS
+PASS script test_name_corrob_demote.py :: 39 ok, 0 failed
+PASS script test_name_guard_keyword_clear.py :: ALL PASS
+PASS script test_name_lexicon_low_distinct.py :: All B5/B6/B7 checks passed
+PASS script test_name_match.py :: All name_match checks passed
+PASS script test_name_relocate_disagreement.py :: ALL PASS
+PASS script test_name_snap.py :: ALL PASS (22 passed, 0 failed)
+PASS script test_name_unclip_reconcile.py :: ALL PASS
+PASS script test_name_wordness_engine.py :: All name-wordness engine checks passed
+PASS script test_namefix_pollution_xfield.py :: All pollution-merge + cross-field checks passed.
+PASS script test_needs_review_counter.py :: ALL PASS
+PASS script test_net_credit_precedence.py :: all green
+PASS script test_net_misread_total_flag.py :: All net-misread-total-flag pins passed
+FAIL script test_network_field_authority.py :: Stage 4.5: mac/ip accepted clean (no charset / no shape flag)
+PASS script test_number_format.py :: all number-format checks passed
+PASS script test_numeric_shape_fold.py :: All numeric-shape-fold checks passed.
+PASS script test_ocr_engine.py :: All OCR-engine seam checks passed.
+PASS script test_ocr_no_plaintext.py :: All checks passed ÔÇö no plaintext OCR text files are written to source folders.
+PASS script test_orientation.py :: ALL PASS
+PASS script test_override_caption_strip.py :: All caption-strip checks passed.
+PASS script test_page_ocr_cache.py :: All page-OCR-cache checks passed.
+PASS script test_pages_long_path.py :: All checks passed ÔÇö _win_long_path behaves as expected.
+PASS script test_parallel_fields_dispatch.py :: PASS ÔÇö 0 failure(s)
+PASS script test_parallel_fullpage.py :: PASS ÔÇö 0 failure(s)
+PASS script test_pattern_coverage.py :: ALL PASS
+PASS script test_pdf_splitter.py :: All checks passed.
+PASS script test_po_order_footer.py :: ALL GREEN
+PASS script test_po_order_no_labels.py :: All PO Order-No label checks passed
+PASS script test_prefix_amplification_invariant.py :: 7 ok, 0 failed
+PASS script test_prefix_outlier.py :: All prefix-outlier checks passed
+PASS script test_qualify_gate.py :: All qualify-gate checks passed
+PASS script test_quote_alias_precision.py :: ALL PASS
+PASS script test_raw_crop_witness.py :: ALL PASS
+PASS script test_raw_witness_note.py :: ALL PASS  (12 ok)
+PASS script test_reads_disagree.py :: ALL PASS
+PASS script test_recon_note_demote.py :: 34 ok, 0 failed
+PASS script test_reconcile_shadow_attribution.py :: ALL PASS
+PASS script test_reconciliation_pick.py :: All reconciliation-pick checks passed.
+PASS script test_reconstruct_sparse_merge.py :: All reconstruct sparse-merge helper checks passed.
+PASS script test_recover_clean_token.py :: ALL PASS
+PASS script test_reextract_text_only.py :: ALL PASS
+PASS script test_ref_digit_guard.py :: ALL PASS
+PASS script test_ref_length_outlier.py :: ALL PINS PASS
+PASS script test_ref_prefix_retype.py :: ALL PASS
+PASS script test_ref_role_digit_gate.py :: All REF_ROLE_DIGIT_GATE checks passed
+PASS script test_ref_role_gate.py :: ALL PASS
+PASS script test_region_embeddable_import.py :: PASS ÔÇö 0 failure(s)
+PASS script test_region_light_first.py :: All checks passed ÔÇö region.py reads clean crops faithfully.
+PASS script test_region_sliver.py :: All region-sliver checks passed
+PASS script test_region_worker.py :: PASS ÔÇö 0 failure(s)
+PASS script test_registration_min_inliers.py :: All REG_MIN_INLIERS gate pins passed
+PASS script test_relocate_keyvalue.py :: All key/value placement+harvest checks passed.
+PASS script test_relocation_quadrant.py :: All relocation-quadrant checks passed
+FAIL script test_reprocess_manifest.py :: doc_overrides:
+PASS script test_reprocess_type_flip.py :: All reprocess type-flip checks passed.
+PASS script test_reslice_witness.py :: test_reslice_witness: all checks passed
+PASS script test_resolve_geometry_landmarks.py :: All resolve_geometry landmark-forwarding checks passed.
+PASS script test_same_supplier_layout_gate.py :: All SAME_SUPPLIER_LAYOUT_GATE pins passed
+PASS script test_segmentation.py :: All segmentation checks passed.
+PASS script test_sep_misread.py :: All misread-separator checks passed
+PASS script test_shape_acceptance_proportional.py :: All proportional shape-acceptance checks passed.
+PASS script test_shape_match_score.py :: All shape-family / shape_match_score checks passed
+PASS script test_skew_angle.py :: All skew-angle checks passed
+PASS script test_slip_detect.py :: PASS -- 0 failure(s)
+PASS script test_slip_embeddable_import.py :: PASS ÔÇö 0 failure(s)
+PASS script test_slipfix_to_shape.py :: ALL PASS
+PASS script test_so_number_labels.py :: All SO-number label checks passed
+PASS script test_stage05_format_yield.py :: All TEMPLATE_FORMAT_FAIL_YIELD helper pins passed
+PASS script test_stage05_ocr_confidence.py :: All Stage 0.5 OCR-confidence checks passed.
+PASS script test_strip_rules.py :: All strip-rules checks passed
+PASS script test_struct_code_read.py :: All STRUCT_CODE_READ slice-1 pins passed
+PASS script test_substantial_containment.py :: ALL PASS
+PASS script test_suffix_reconcile.py :: ALL PINS PASS
+PASS script test_supplier_chrome_fragment.py :: ALL PASS
+PASS script test_supplier_identity_stability.py :: All checks passed ÔÇö supplier identity resolves identically and correctly across runs.
+PASS script test_supplier_name_precedence.py :: and survive contact with identity-poisoned learned anchors, without affecting unmapped templates.
+PASS script test_supplier_pin.py :: PASS ÔÇö 0 failure(s)
+PASS script test_taught_date_invalid_yield.py :: All taught-date yield checks passed.
+PASS script test_taught_field_ownership.py :: All taught-field-ownership (c2) checks passed
+PASS script test_taught_label_exclusive.py :: 13 checks passed
+PASS script test_taught_ownership_own_label.py :: ALL PASS
+PASS script test_teach_angle_compose.py :: All TEACH_ANGLE_COMPOSE checks passed.
+PASS script test_teach_from_gt_labels.py :: All teach_from_gt label-discipline checks passed.
+PASS script test_template_abs_edge_guard.py :: All abs edge-guard checks passed.
+PASS script test_template_code_edge_clean.py :: ALL PASS
+PASS script test_template_edge_cut_relocate.py :: All edge-cut relocate checks passed.
+PASS script test_template_fixed_name_presence.py :: ALL CHECKS PASSED
+PASS script test_template_fixed_near_match.py :: All TEMPLATE_FIXED near-match / fragment pins passed
+PASS script test_template_frag_clip.py :: ALL PASS
+PASS script test_template_identity_band_graduate.py :: All template-identity band-graduate pins passed.
+PASS script test_template_identity_fill.py :: ALL PASS
+PASS script test_template_identity_fragment_shed.py :: PASS ÔÇö 0 failure(s)
+PASS script test_template_identity_geom_fuzzy.py :: All graduation-fuzzy-shed checks passed.
+PASS script test_template_identity_geom_witness.py :: ALL PASS
+PASS script test_template_identity_graduate.py :: ALL PASS
+PASS script test_template_inline_row_overlap.py :: ALL PASS
+PASS script test_template_logo_text_gate.py :: PASS ÔÇö 0 failed check(s)
+PASS script test_template_mapper_failsafe.py :: All template-mapper failsafe checks passed
+PASS script test_template_mapping_reprocess.py :: All checks passed.
+PASS script test_template_matcher.py :: All checks passed - template_matcher Stage 0 identification behaves as expected.
+PASS script test_template_name_edge_grow.py :: all name-edge-grow pins green
+PASS script test_template_pad_window_code.py :: All PAD-WINDOW CODE pins passed
+PASS script test_template_pad_window_read.py :: All TEMPLATE_PAD_WINDOW_READ checks passed.
+FAIL script test_template_rescue.py :: 1 FAILED
+PASS script test_template_snap_union_witness.py :: All snap-union witness checks passed.
+PASS script test_template_supplier_precedence.py :: All template-supplier-precedence checks passed
+PASS script test_template_target_word_snap.py :: ALL PASS
+PASS script test_template_type_ambiguity.py :: ALL PASS
+PASS script test_template_veto_fallthrough.py :: All veto-fallthrough checks passed
+PASS script test_text_normalise.py :: All 18 normaliser cases match the golden corpus.
+PASS script test_thumbnail.py :: All checks passed ÔÇö --thumb behaves as expected.
+PASS script test_title_pick.py :: PASS -- 0 failure(s)
+PASS script test_total_gross_labels.py :: All TOTAL_GROSS_LABELS checks passed
+PASS script test_total_reconciliation.py :: All total-reconciliation checks passed.
+PASS script test_totals_block_extraction.py :: All synthetic totals-block extraction checks passed.
+PASS script test_type_ambiguity_flag.py :: ALL PASS
+PASS script test_type_ambiguity_unsupported.py :: ALL PASS
+PASS script test_type_election.py :: 19 ok, 0 failed
+PASS script test_type_heading_nudge.py :: ALL PASS
+PASS script test_type_heading_tokens.py :: ALL PASS
+PASS script test_type_presence_matcher.py :: All type-presence (Python consume) pins passed.
+PASS script test_universal_postmerge_verify.py :: ALL PASS
+PASS script test_validator_label_guard.py :: All checks passed ÔÇö label-shaped-value guard behaves as expected.
+PASS script test_validator_ocr_sanitisation.py :: All checks passed ÔÇö field-specific OCR sanitisation behaves as expected.
+PASS script test_value_quality.py :: All checks passed ÔÇö name_quality separates real names from OCR garbage.
+PASS script test_vat_eu_formats.py :: 12 checks passed
+PASS script test_vat_rate_at_skip.py :: ALL PASS
+PASS script test_vat_reg_not_amount.py :: all green
+PASS script test_vat_reg_symfold_and_sign.py :: ALL PASS  (19 ok)
+PASS script test_verification_doubt_clear.py :: 39 passed, 0 failed
+PASS script test_veto_fallthrough_corrob.py :: All veto-fallthrough corroboration checks passed
+PASS script test_wordness.py :: 39 passed, 0 failed
+PASS script test_xcheck_corrob_demote.py :: 27 ok, 0 failed
+# python done 18:17:45

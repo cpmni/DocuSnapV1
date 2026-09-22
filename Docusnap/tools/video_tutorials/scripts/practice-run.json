@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "title": "Try it safely — the practice run",
+  "description": "The sandboxed practice run: teach one sample document by drawing boxes, import a small batch, correct one uncertain value and confirm — all over bundled fixtures, so nothing touches your real files, folders or settings. References the welcome tour in passing (that tour has its own video). Opened from the Practice run card on Home.",
+  "target_length_sec": 120,
+  "lead_in_sec": 1.0,
+  "lead_out_sec": 1.5,
+  "app": {
+    "window_title": "ScanFinder",
+    "cdp_port": 9222,
+    "maximize": true
+  },
+  "record": {
+    "mode": "window",
+    "fps": 30
+  },
+  "captions": {
+    "position": "bottom",
+    "font_size": 28
+  },
+  "steps": [
+    {
+      "id": "intro",
+      "action": "focus_window",
+      "window": "ScanFinder",
+      "maximize": true,
+      "narration": "You've seen the welcome tour — this is the hands-on version: a safe practice run on sample documents, so nothing touches your real files.",
+      "caption": "A safe rehearsal on sample documents",
+      "duration_sec": 10.8
+    },
+    {
+      "id": "open_practice",
+      "action": "move_and_click",
+      "target": { "selector": "#dash-practice-btn", "window": "ScanFinder" },
+      "narration": "Open it from the Practice run card on Home.",
+      "caption": "Open the practice run",
+      "duration_sec": 5.5
+    },
+    {
+      "id": "start_run",
+      "action": "move_and_click",
+      "wait_for": { "window": "Practice run — Scan Finder", "selector": "#primary", "timeout": 15 },
+      "target": { "selector": "#primary", "window": "Practice run — Scan Finder" },
+      "narration": "A banner reminds you these are only samples. Click Start to begin.",
+      "caption": "1. Start",
+      "duration_sec": 7.0
+    },
+    {
+      "id": "teach_intro",
+      "action": "move_to",
+      "wait_for": { "window": "Practice run — Scan Finder", "selector": "#th-fields", "timeout": 12 },
+      "target": { "selector": "#th-fields", "window": "Practice run — Scan Finder" },
+      "narration": "First, you teach one document — point out each detail by drawing a box around its value, and it remembers where to look.",
+      "caption": "Step 1: teach one document",
+      "duration_sec": 10.5
+    },
+    {
+      "id": "teach_company",
+      "action": "drag",
+      "from": { "selector": "#th-company", "window": "Practice run — Scan Finder", "at": [0, 0], "offset": [-6, -6] },
+      "to": { "selector": "#th-company", "window": "Practice run — Scan Finder", "at": [1, 1], "offset": [6, 6] },
+      "drag_duration": 0.9,
+      "narration": "Start with the company name — drag a box across it and release.",
+      "caption": "Draw a box: the company",
+      "duration_sec": 7.0
+    },
+    {
+      "id": "teach_ref",
+      "action": "drag",
+      "from": { "selector": "#th-rows .dv[data-field='invoice_number']", "window": "Practice run — Scan Finder", "at": [0, 0], "offset": [-6, -6] },
+      "to": { "selector": "#th-rows .dv[data-field='invoice_number']", "window": "Practice run — Scan Finder", "at": [1, 1], "offset": [6, 6] },
+      "drag_duration": 0.9,
+      "narration": "Now the reference — box the invoice number.",
+      "caption": "Draw a box: the reference",
+      "duration_sec": 6.0
+    },
+    {
+      "id": "teach_date",
+      "action": "drag",
+      "from": { "selector": "#th-rows .dv[data-field='invoice_date']", "window": "Practice run — Scan Finder", "at": [0, 0], "offset": [-6, -6] },
+      "to": { "selector": "#th-rows .dv[data-field='invoice_date']", "window": "Practice run — Scan Finder", "at": [1, 1], "offset": [6, 6] },
+      "drag_duration": 0.9,
+      "narration": "And the date. Every box you draw teaches it where that detail sits.",
+      "caption": "Draw a box: the date",
+      "duration_sec": 7.0
+    },
+    {
+      "id": "teach_save",
+      "action": "move_and_click",
+      "target": { "selector": "#primary", "window": "Practice run — Scan Finder" },
+      "narration": "All three taught. Save the lesson and it files this one — and remembers this sender's layout for next time.",
+      "caption": "2. Save and file the taught doc",
+      "duration_sec": 10.0
+    },
+    {
+      "id": "process",
+      "action": "move_and_click",
+      "wait_for": { "window": "Practice run — Scan Finder", "selector": "#im-list", "timeout": 15 },
+      "target": { "selector": "#primary", "window": "Practice run — Scan Finder" },
+      "narration": "Now import a batch — two more scans. Click Process and it reads them.",
+      "caption": "Step 2: import the batch",
+      "duration_sec": 8.5
+    },
+    {
+      "id": "review_fix",
+      "action": "type_text",
+      "wait_for": { "window": "Practice run — Scan Finder", "selector": "#rv-fields input[data-key='invoice_number']", "timeout": 15 },
+      "target": { "selector": "#rv-fields input[data-key='invoice_number']", "window": "Practice run — Scan Finder" },
+      "clear": true,
+      "text": "INV-1042",
+      "narration": "In Review you check what it read. This invoice number is uncertain: the scan turned a zero into an O. Click and type the correct value.",
+      "caption": "Step 3: fix the uncertain value",
+      "duration_sec": 13.0
+    },
+    {
+      "id": "confirm1",
+      "action": "move_and_click",
+      "target": { "selector": "#primary", "window": "Practice run — Scan Finder" },
+      "narration": "Confirm, and it files — and learns from your correction too.",
+      "caption": "Confirm and file",
+      "duration_sec": 7.0
+    },
+    {
+      "id": "confirm2",
+      "action": "move_and_click",
+      "wait_for": { "window": "Practice run — Scan Finder", "selector": "#primary", "timeout": 12 },
+      "target": { "selector": "#primary", "window": "Practice run — Scan Finder" },
+      "narration": "The last document is from a new sender and reads cleanly: just confirm it.",
+      "caption": "Confirm the last one",
+      "duration_sec": 7.5
+    },
+    {
+      "id": "done",
+      "action": "wait",
+      "wait_for": { "window": "Practice run — Scan Finder", "selector": "#done-list", "timeout": 12 },
+      "narration": "That's the whole method: teach one, import, correct a detail, confirm. Each document is filed with a tidy name under company, year and month.",
+      "caption": "Filed by company, year, month",
+      "duration_sec": 11.5
+    },
+    {
+      "id": "outro",
+      "action": "wait",
+      "narration": "And it was all a sandbox: your real files were never touched. Try it whenever you're ready.",
+      "caption": "Nothing real was touched",
+      "duration_sec": 8.5
+    }
+  ]
+}
