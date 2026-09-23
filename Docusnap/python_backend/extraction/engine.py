@@ -6932,18 +6932,29 @@ class ExtractionEngine:
         for the C2 scope lookup; a direct unit call may omit them (the belt is skipped, the release still works).
 
         DARK env GLYPH_FALLBACK_ENABLED; OFF byte-identical. Best-effort — never raises into extraction."""
+        if getattr(self, '_trace', False):
+            try:
+                self._t('glyph_enter', field=ref_field_key, env=os.environ.get('GLYPH_FALLBACK_ENABLED'),
+                        resolve=os.environ.get('GLYPH_CONFUSABLE_RESOLVE'))
+            except Exception:
+                pass
         if os.environ.get('GLYPH_FALLBACK_ENABLED', '0') != '1' or not ref_field_key:
             return
         try:
+            def _skip(reason, **kw):
+                # Every early exit is TRACED (2026-09-23 re-census: six rigid-box winners vanished from the
+                # histogram with no event at all — a silent exit is indistinguishable from "never ran").
+                if getattr(self, '_trace', False):
+                    self._t('glyph_check', field=ref_field_key, outcome='abstain', reason=reason, **kw)
             data = results.get(ref_field_key)
             if not isinstance(data, dict):
-                return
+                return _skip('no_field')
             committed = str(data.get('value') or '').strip()
             if not committed:
-                return
+                return _skip('empty')
             method = str(data.get('method') or '')
             if any(m in method for m in ('override', 'manual', 'template_fixed')):
-                return                                   # human-set literal, not an OCR read
+                return _skip('human_set', method=method)   # human-set literal, not an OCR read
             _note0 = str(data.get('validation_note') or '').strip()
             _resolve = False
             if _note0 or data.get('corrected_to'):
@@ -6954,10 +6965,10 @@ class ExtractionEngine:
                         and _note0 == _FILING_SANITY_SOFTEN_NOTE.format(committed)):
                     _resolve = True
                 else:
-                    return
+                    return _skip('prior_note' if _note0 else 'corrected_to', method=method)
             # scanned only — a born-digital text-layer read is not an OCR misread to second-guess
             if not (page_provenance and all(p == 'ocr' for p in page_provenance)):
-                return
+                return _skip('born_digital')
             # C4 — locate the crop: the winning read's own box + its page. No box → abstain. The Stage-0.5
             # mapper populates _s05_read_geom; the Stage-2 anchor stage's winner box is captured into
             # _field_read_geom (so an anchor-read ref — the real Print Tracker case — also resolves a crop).
@@ -6991,12 +7002,12 @@ class ExtractionEngine:
             # so an anchor winner's crop page is KNOWN = 0; a mapping winner's is its row's page_number.
             page_idx = int((mapping or {}).get('page_number') or 0) if _geom_src == 'mapping' else 0
             if not (0 <= page_idx < len(pages)) or pages[page_idx] is None:
-                return
+                return _skip('no_page', page_idx=page_idx)
             box = {'x_norm': geom[0], 'y_norm': geom[1], 'w_norm': geom[2], 'h_norm': geom[3]}
             from extraction import reslice as _rs
             from ocr import glyph_reader as _gr
             if not _gr.available():
-                return                                   # onnxruntime/model absent → Tesseract-only
+                return _skip('reader_unavailable')       # onnxruntime/model absent → Tesseract-only
             # PAD PARITY (Oracle C1, 2026-09-23): "same slice" means the rect Tesseract actually READ. For a
             # crop-family anchor winner that is the value box +20 px on every side (anchor._crop_and_ocr); the
             # quiet-zone pad below (0.15×h ≈ 4 px on a 30 px box) left 5 of 16 second-reader holds on the owner's
@@ -7015,7 +7026,7 @@ class ExtractionEngine:
                 _vpad, _hpad = 0.3, 0.15                 # quiet-zone pad (oscar C7)
             crop, _band = _rs._crop_padded(pages[page_idx], box, _vpad, _hpad)
             if crop is None:
-                return
+                return _skip('no_crop', pad_px=_pad_px)
             # Dev-only (trace + slice dir): save the EXACT crop the second reader is handed, so a hold or an
             # agreement can be checked against the pixels (the 2026-09-23 "look at the artefact" rule).
             _cap = getattr(self, '_capture_slice', None)          # absent on a bare unit-test self
@@ -7024,7 +7035,7 @@ class ExtractionEngine:
                      tag=f'second reader narrow ({_geom_src})')
             pp = _gr.read_crop(_gr.prep_crop(crop))
             if not pp:
-                return
+                return _skip('reader_failed', pad_px=_pad_px)
             # Compare on ALPHANUMERIC CONTENT ONLY (strip separators/punctuation/whitespace) and hold ONLY
             # on a SAME-LENGTH substitution-class disagreement — the p7 `O`↔`0` / p11 `G`↔`6` shape. The
             # 700-corpus census (glyph_fallback_census_20260922) showed the raw compare false-holds ~14% on
@@ -7039,7 +7050,7 @@ class ExtractionEngine:
                 return _re.sub(r'[^A-Za-z0-9]', '', str(s)).upper()
             c_norm, p_norm = _alnum(committed), _alnum(pp[0])
             if not p_norm:
-                return                                   # PP produced nothing → silent
+                return _skip('reader_empty', pad_px=_pad_px, pp_conf=round(float(pp[1]), 3))   # PP produced nothing
             if c_norm == p_norm:
                 if _resolve:
                     if os.environ.get('GLYPH_CONFUSABLE_RELEASE', '0') == '1':
@@ -7097,7 +7108,10 @@ class ExtractionEngine:
             # prefix that pushes every char along, still nets same length); a length difference is
             # framing/dropped-char noise — abstain on both, hold ONLY a clean single-glyph swap.
             if len(c_norm) != len(p_norm) or sum(a != b for a, b in zip(c_norm, p_norm)) != 1:
-                return
+                # TRACED (2026-09-23 re-census): with Tesseract's +20 px rect the second reader picks up
+                # neighbouring ink and returns a different LENGTH — six rigid-box docs "vanished" here silently.
+                return _skip('length_or_multi_diff', committed=committed, pp_read=pp[0],
+                             pp_conf=round(float(pp[1]), 3), pad_px=_pad_px, geom_src=_geom_src)
             # PP CONFIDENCE FLOOR for a DISAGREEMENT (Oracle C10, 2026-09-23): on the owner's 727 every PP-right
             # disagreement read at ≥ 0.903 and every PP-wrong one on a bleed/fragment crop at ≤ 0.85 (oscar: PP's
             # measured failure shape is a long gappy or bled line at low confidence). IN-SAMPLE — chosen on those
@@ -7117,8 +7131,14 @@ class ExtractionEngine:
             if self._trace:
                 self._t('glyph_disagreement', field=ref_field_key, committed=committed,
                         pp_read=pp[0], pp_conf=round(float(pp[1]), 3))
-        except Exception:
-            pass   # advisory guard — must never break extraction
+        except Exception as _e:
+            # advisory guard — must never break extraction; but a SILENT exit hid six rigid-box winners from the
+            # 2026-09-23 re-census (no event at all), so under the trace say why.
+            if getattr(self, '_trace', False):
+                try:
+                    self._t('glyph_check', field=ref_field_key, outcome='error', reason=f"{type(_e).__name__}: {str(_e)[:120]}")
+                except Exception:
+                    pass
 
     def _glyph_release_page_family_disagrees(self, results, ref_field_key, document_slug=None):
         """C2 (confusable RELEASE): would trust.js `_pageFamilyDisagrees` HOLD this ref anyway? Builds the SAME

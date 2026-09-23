@@ -344,6 +344,25 @@ supply it; (iii) every PP read must go through Part A first — the clipped-box 
 **Geometry after S0:** every `glyph_check` carried `geom_src` (mapping / anchor); `no_box` now only on keyword/hint
 winners (169) + 2 mapping winners without a rect — the anchor-only population is reached (before S0 it abstained).
 
+### 12b. The C10 re-census — after C1 pad parity + casefold + the 0.90 floor (fixed beforehand, in-sample) ✔
+| | pre-C1 | after C1 + floor |
+|---|---|---|
+| disagreement holds | 16 (all false) | **2** (both false: `SO-71797`→`5O` 0.926 and `SO-99174`→`S0` 0.918, BOTH mapping winners — a clipped/bled MAPPING rect, i.e. C1's mapper half, not done) |
+| PP agrees, box wrong (common-mode, all branches) | 4 (the `RFH0` family via RESOLVE) | **0 / 340** — on the +20 px rect PP now reads `RFH073865` (a DROPPED glyph) at 0.74-0.77 → RESOLVE:disagree, so the identity-limit family no longer produces a false agreement |
+| true catches (`HS71Y07217`→`H571…`, PP 0.999, via RESOLVE) | 3 | **3** kept |
+| would-file lost | 6 | **1** (`SO-99174`) |
+| `pp_lowconf` abstains | — | 6 (3 mapping, 3 anchor: the bleed/serif reads at 0.82-0.90) |
+| rigid-box winners with NO event at all | — | **6** (`DN-98358`, `DN-16846`, `NRQ-1124`, `ITH-0093`, `WS-43726`, `WS-43655`) |
+**The six "no event" docs are the honest cost of pad parity, found by tracing every exit:** with Tesseract's +20 px
+rect the second reader picks up neighbouring ink and returns a read of a different LENGTH (`glyph_enter` fired; the
+only untraced exit was the same-length test). Pad parity therefore turned 5 clip holds into silent length abstains
+and dropped PP's confidence on clean serials (`W2E8X06407` 0.95 → 0.744 with a stray `*`). That is oscar's point
+verbatim — PP wants a value-only crop with a small quiet zone; Tesseract's +20 px works for Tesseract because
+`image_to_data` picks the word — and it is the Oracle's C2: the correct rect is the page-level WORD box (word-snap +
+row-band), not the padded crop. **C1 stays (it removed the clip common-mode) but is a stop-gap; S1 per C2 is the
+fix.** All exits now trace a reason (`length_or_multi_diff`, `pp_lowconf`, `reader_empty`, …) and `glyph_enter`
+records that the arm ran; a further re-census with those counts is in `RESULT_C10.md` when it lands.
+
 Licences: Tesseract 5 (Apache-2.0) via pytesseract (Apache-2.0); en_PP-OCRv3 rec weights (Apache-2.0) via
 onnxruntime (MIT); numpy (BSD-3); scipy (BSD-3, `_adaptive_binarise` only); Pillow (HPND); pypdfium2 (BSD-3 /
 Apache-2.0); DejaVu fixture font (Bitstream Vera licence, free). No OpenCV, no PyMuPDF (AGPL) anywhere in this arc.
