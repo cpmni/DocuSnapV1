@@ -4209,6 +4209,37 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 207 (glyph_fallback_enabled): ${e.message}`); }
   }
 
+  // mig 208 (2026-09-23, gary → Oracle SIGN-OFF-W/COND; owner-proven on the live Print Tracker batch):
+  // corrob_date_fold_wide — the corroboration date-agreement fold (validator._corrob_values_agree) accepts a
+  // WORDED / month-name date ('September 30, 2026') as equal to the SAME calendar date read numerically
+  // ('30-09-2026'), instead of logging a page-family DISAGREEMENT that HELD the doc forever (the Print Tracker
+  // depletion-date flood the owner hit). Self-scoping via parse_date (a ref/name/amount returns None, so only two
+  // real calendar dates fold, and only when they are the SAME day). DARK, seeded OFF, byte-identical off. Flip =
+  // owner's call after the census (see dark_switches.js). Single-key seed (no array literal — keeps the loose
+  // seed-pin regex honest).
+  if (!applied.has(208)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('corrob_date_fold_wide', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (208)').run();
+      console.log('JS migration 208 applied: corrob_date_fold_wide (worded-date corroboration fold) seeded OFF (DARK, 1 row)');
+    } catch (e) { console.warn(`  migration 208 (corrob_date_fold_wide): ${e.message}`); }
+  }
+
+  // mig 209 (2026-09-23, gary → Oracle SIGN-OFF-W/COND): recon_singlechar_misread_flag — an arithmetic-witness
+  // FLAG for the #464 class (a committed total that balances subtotal+tax ONLY via the 2% reconciliation
+  // tolerance while read-vs-computed is a SINGLE-digit substitution — the sole wrong-value money auto-file in
+  // the 1,076-doc corpus, Nordwind £2,363.76 read £2,368.76). Caps confidence + a neutral, SYMMETRIC note
+  // naming both numbers; NEVER swaps or adopts. DARK, seeded OFF, byte-identical off. Flip = owner's call
+  // after the #464 unit test + the false-hold census (see dark_switches.js). Single-key seed (no array
+  // literal — keeps the loose seed-pin regex honest).
+  if (!applied.has(209)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('recon_singlechar_misread_flag', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (209)').run();
+      console.log('JS migration 209 applied: recon_singlechar_misread_flag (arithmetic-witness single-digit total misread) seeded OFF (DARK, 1 row)');
+    } catch (e) { console.warn(`  migration 209 (recon_singlechar_misread_flag): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

@@ -49,17 +49,19 @@ const HELD = [
   'filing_sanity_confusable_prefix_autofile', 'confusion_precedence', 'buyer_issued_convention_one_confirm',
   'format_class_join', 'departments_enabled', 'segment_pair_hold', 'issuer_undetected_blank',
   // added AFTER the mig-205 batch (not part of it): a new DARK key, seeded OFF by its own migration.
-  'glyph_fallback_enabled',   // mig 207, 2026-09-22 — PP-OCR disagreement hold
+  'glyph_fallback_enabled',        // mig 207, 2026-09-22 — PP-OCR disagreement hold
+  'corrob_date_fold_wide',         // mig 208, 2026-09-23 — worded-date corroboration fold
+  'recon_singlechar_misread_flag', // mig 209, 2026-09-23 — arithmetic-witness single-digit total misread
 ];
 
 console.log('== mig 205 BATCH graduation (34 fail-toward-review switches) ==');
 
 console.log(`0. the batch is exactly ${FLIP.length} keys and the two sets are disjoint + cover the list`);
 check('FLIP is 34 distinct keys', new Set(FLIP).size === 34);
-check('HELD is 11 distinct keys', new Set(HELD).size === 11);
+check('HELD is 13 distinct keys', new Set(HELD).size === 13);
 check('FLIP ∩ HELD = ∅', FLIP.every(k => !HELD.includes(k)));
 check('TEST_SWITCH_KEYS == HELD (every flipped key delisted, every held key kept)',
-  TEST_SWITCH_KEYS.length === 11 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
+  TEST_SWITCH_KEYS.length === 13 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
 
 console.log('1. a fresh install has every flipped key ON, every held key OFF');
 {

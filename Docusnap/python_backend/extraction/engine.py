@@ -3216,6 +3216,18 @@ _NET_MISREAD_RATIO_LO  = 1.01   # gross/net band — VAT-plausible (≈5%..25% +
 _NET_MISREAD_RATIO_HI  = 1.30   # continuous + nearest-above; do NOT snap to {1.05,1.20} (mixed-rate baskets)
 _NET_MISREAD_CAP       = 50     # cap a flagged net to review level (matches validator _RECONCILE_CAP)
 
+# ── Arithmetic-witness single-digit total misread (gary → Oracle SIGN-OFF-W/COND 2026-09-23) ──
+# DEFAULT OFF. When ON, a committed total that balances subtotal+tax ONLY through the 2% tolerance while
+# read-vs-computed is a single-digit substitution (the #464 Nordwind £2,363.76-read-£2,368.76 class, the
+# sole wrong-value money auto-file in 1,076 corpus docs) is FLAGGED — never swapped. Cap conf + a NEUTRAL,
+# SYMMETRIC note (the components can themselves be the misread ones, so it NEVER asserts the total is
+# wrong). The note is deny-by-default in class F (never a verification-doubt mark), so a doubt-clear can
+# never lift it — pinned in tests/test_arith_witness_misread.py. Env idiom `== '1'` (Oracle C6).
+RECON_SINGLECHAR_MISREAD_FLAG = os.environ.get('RECON_SINGLECHAR_MISREAD_FLAG', '0') == '1'
+_SINGLECHAR_MISREAD_MARK = "differ by one digit — please check which is right before filing"
+_SINGLECHAR_MISREAD_NOTE = ("The filed total {} and the line amounts (subtotal {} + VAT {} = {}) "
+                            + _SINGLECHAR_MISREAD_MARK + ".")
+
 
 def _net_misread_verdict(total, subtotal, candidates, tol):
     """PURE (Oracle SIGN-OFF-W/COND 2026-08-06). Returns (gross_float, candidate_dict) when the
@@ -6914,7 +6926,8 @@ class ExtractionEngine:
                 # Visible in the import log so the operator can SEE the second-reader check ran and passed.
                 self.log(f"  Second reader checked the reference '{committed}' — agrees.")
                 if self._trace:
-                    self._t('glyph_check', field=ref_field_key, outcome='agree', committed=committed)
+                    self._t('glyph_check', field=ref_field_key, outcome='agree', committed=committed,
+                            pp_read=pp[0], pp_conf=round(float(pp[1]), 3))
                 return
             # EXACTLY ONE differing position (oracle C2 shape): the p7 `O`↔`0` / p11 `G`↔`6` single-glyph
             # substitution. A multi-position same-length difference is a SHIFTED crop artifact (a stray `F`/`t`
@@ -8979,6 +8992,61 @@ class ExtractionEngine:
                     subtotal=sub, capped=_NET_MISREAD_CAP)
         except Exception:
             pass  # flag aid — must never break extraction
+
+    def _flag_singlechar_reconcile_misread(self, results, field_defs, credit_expected=None):
+        """FLAG (never swap/adopt) a `total_amount` that balances against subtotal+tax ONLY through the
+        % reconciliation tolerance while read-vs-computed is a single-digit substitution — an arithmetic-
+        witnessed OCR misread of the total (the #464 Nordwind £2,363.76-read-£2,368.76 class, the only
+        wrong-value money auto-file in 1,076 corpus docs). Cap confidence to review level + a NEUTRAL,
+        SYMMETRIC note naming BOTH numbers (the components can themselves be the misread ones, so it NEVER
+        asserts the total is wrong — Oracle C1). Runs AFTER _flag_net_misread_total (its total≈subtotal
+        case is disjoint) and _reconciliation_pick_total (a valid swap wins first, notes, → this abstains),
+        BEFORE Stage 4. gary → Oracle SIGN-OFF-W/COND 2026-09-23. DEFAULT OFF (RECON_SINGLECHAR_MISREAD_FLAG)
+        → byte-identical. Fail-toward-review; changes no VALUE, writes no corrected_to, adopts nothing."""
+        if not RECON_SINGLECHAR_MISREAD_FLAG:
+            return
+        try:
+            from extraction import validator as _v
+            total_key = None
+            for k in ('total_amount', *keyword.ROLE_KEY_ALIASES.get('total_amount', ())):
+                d = results.get(k)
+                if isinstance(d, dict) and d.get('value'):
+                    total_key = k
+                    break
+            if not total_key:
+                return
+            inc = results[total_key]
+            if inc.get('validation_note'):
+                return                        # one-note guard (Oracle C5) — subordinate to pick_total / net-misread / credit-sign
+            # Credit abstention (Oracle C4) — the IDENTICAL call _flag_net_misread_total uses: a sign
+            # incoherence outranks a magnitude one, and this runs BEFORE Stage 4 where the sign note is
+            # written, so without this it would pre-empt the credit-sign arm.
+            if credit_expected is not None:
+                try:
+                    if _v._CREDIT_SIGN_ON and _v.credit_sign_note(
+                            inc.get('value'), inc.get('raw_value'), credit_expected):
+                        self._t('singlechar_misread_flag', field=total_key, decision='skip',
+                                reason='credit-sign note takes precedence (Oracle C4)')
+                        return
+                except Exception:
+                    pass        # best-effort: never let the precedence check break extraction
+            computed = _v.arith_witness_misread_total(inc.get('value'), results)
+            if computed is None:
+                self._t('singlechar_misread_flag', field=total_key, decision='skip',
+                        reason='no single-digit arithmetic-witness misread')
+                return
+            comp = _v._reconcile_components(results)
+            note = _SINGLECHAR_MISREAD_NOTE.format(
+                inc.get('value'), f"{comp['subtotal']:.2f}", f"{comp['tax']:.2f}", f"{computed:.2f}")
+            results[total_key] = {
+                **inc,
+                'confidence':      min(inc.get('confidence') or 0, _NET_MISREAD_CAP),
+                'validation_note': note,
+            }
+            self._t('singlechar_misread_flag', field=total_key, decision='flag',
+                    was=inc.get('value'), computed=round(computed, 2), capped=_NET_MISREAD_CAP)
+        except Exception:
+            pass   # flag aid — must never break extraction
 
     def _maybe_gate_reread(self, garble, data, fmt_entry, val_type, label,
                            page_images, page_provenance, cache):
@@ -11302,6 +11370,11 @@ class ExtractionEngine:
         # net silently when VAT didn't read (both reconcile safeties above starve). FLAG it — never
         # swap — when total≈subtotal AND a larger VAT-plausible total was also read. DEFAULT OFF.
         self._flag_net_misread_total(results, field_defs, credit_expected)
+
+        # Arithmetic-witness single-digit total misread (the #464 class the net-misread flag can't see: a
+        # correct-MAGNITUDE gross with one bad digit that the 2% reconcile tolerance swallows). FLAG, never
+        # swap; the one-note guard makes it subordinate to the flag above. DEFAULT OFF, byte-identical off.
+        self._flag_singlechar_reconcile_misread(results, field_defs, credit_expected)
 
         # ── DECLARED-ABSENT FIELD DROP (TEMPLATE_HIDDEN_FIELD_DROP, DEFAULT OFF) ──────────────
         # gary design 2026-08-11 (owner: "unneeded fields incorrectly filled … when I remove them

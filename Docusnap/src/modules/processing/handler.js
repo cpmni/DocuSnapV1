@@ -417,6 +417,11 @@ function _reconcileEnv(db) {
     // never overwrites, never a corroboration candidate. DARK (mig 207), byte-identical OFF; needs onnxruntime + the
     // vendored en rec model present (absent → read_crop returns None → Tesseract-only).
     if (learning.getSetting(db, 'glyph_fallback_enabled', 'false') === 'true') env.GLYPH_FALLBACK_ENABLED = '1';
+    // CORROB_DATE_FOLD_WIDE (mig 208, 2026-09-23, gary → Oracle SIGN-OFF-W/COND; owner-proven on the live Print
+    // Tracker batch): the corroboration date fold treats a worded / month-name date ('September 30, 2026') as equal
+    // to the SAME calendar date read numerically ('30-09-2026'), so the same day read two ways no longer logs a
+    // page-family DISAGREEMENT that holds the doc forever (the depletion-date flood). DARK (mig 208), byte-identical OFF.
+    if (learning.getSetting(db, 'corrob_date_fold_wide', 'false') === 'true') env.CORROB_DATE_FOLD_WIDE = '1';
     // FILING_SANITY_REF_REINSTATE (2026-09-11, 007+reggie+gary → Oracle B1-B5; Ridgeway VS-72672 vs page
     // WS-73673): after Gate C flags a Stage-0.5 located ref winner as page-ABSENT, reinstate a retained
     // on-page, dominant-prefix, exact-shape keyword candidate over it — review-bound (cap ≤69 + note, no
@@ -802,6 +807,10 @@ function _reconcileEnv(db) {
       env.CREDIT_SIGN_COHERENCE = '1';
     }
     if (learning.getSetting(db, 'net_misread_total_flag', 'false') === 'true') env.NET_MISREAD_TOTAL_FLAG = '1';
+    // RECON_SINGLECHAR_MISREAD_FLAG (mig 209, 2026-09-23, gary → Oracle SIGN-OFF-W/COND): the arithmetic-
+    // witness FLAG for the #464 class — a total that balances subtotal+tax ONLY via the 2% tolerance while
+    // read-vs-computed is a single-digit substitution. FLAG (cap + neutral symmetric note), never swap. DARK.
+    if (learning.getSetting(db, 'recon_singlechar_misread_flag', 'false') === 'true') env.RECON_SINGLECHAR_MISREAD_FLAG = '1';
     // TAUGHT LABEL-ABOVE MAPPING read the caption instead of the value (007 rounds 1+2, `d3cca7c`).
     // `_target_inline_with_anchor` answers "did the operator teach this value on the label's OWN
     // ROW?" and answered it with max(anchor_h, target_h, _DRIFT_FLOOR). _DRIFT_FLOOR (0.02) is a

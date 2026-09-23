@@ -489,6 +489,52 @@ def total_reconciles(total_value, results: dict):
                for s in (0, 1) for d in (0, 1))
 
 
+_SC_MISREAD_MIN_DELTA = 0.10   # ≥10p: rounding-proof by construction — a single-digit change < 10p is a
+                               # hundredths-place ±1..9 (≤9p), immaterial and rounding-plausible; a fire at
+                               # ≥10p is a tenths-or-higher single-digit misread no VAT rounding can produce.
+
+
+def arith_witness_misread_total(total_value, results: dict, min_delta: float = _SC_MISREAD_MIN_DELTA):
+    """PURE (gary → Oracle SIGN-OFF-W/COND 2026-09-23). Returns the computed component-sum (float) when
+    `total_value` balances against subtotal+tax (±shipping ∓discount) ONLY through the % reconciliation
+    tolerance AND read-vs-computed is a single-digit substitution (identical non-digit skeleton, exactly
+    one differing digit) at least `min_delta` apart — an arithmetic-witnessed OCR misread of the TOTAL,
+    not rounding (the #464 Nordwind £2,363.76-read-£2,368.76 class, the only wrong-value money auto-file
+    in the 1,076-doc corpus). Else None.
+
+    Discipline (Oracle conditions):
+      • Requires BOTH subtotal AND tax to PARSE (never defaults tax to 0) — so it only speaks on a genuine
+        full-VAT-breakdown invoice, never a statement / running-balance layout (C3).
+      • Reuses the pinned `suffix_reconcile.digit_substitution_diff` (the D1 comparator) and the SAME 2% tol
+        as `total_reconciles`; the `.2f` framing drops separators and makes dropped-decimal / extra-digit /
+        transposition fall out as length/skeleton mismatches (comparator → -1), scoping v1 to same-length
+        single substitution.
+      • min_delta excludes penny-scale VAT rounding (see _SC_MISREAD_MIN_DELTA).
+      • If ANY component combo balances to within min_delta (a genuine ~penny reconcile), the total is
+        correct that way → returns None (never flags a real reconcile).
+    NEVER adopts — callers FLAG only."""
+    from extraction.suffix_reconcile import digit_substitution_diff
+    total = parse_amount(total_value)
+    comp = _reconcile_components(results)
+    sub, tax = comp['subtotal'], comp['tax']
+    if not (total and total > 0 and sub and sub > 0 and tax is not None):
+        return None
+    tol = max(total * 0.02, 0.05)
+    combos = []
+    for s in (0, 1):
+        for d in (0, 1):
+            c = sub + tax + s * (comp['shipping'] or 0) - d * (comp['discount'] or 0)
+            if c > 0:
+                combos.append(c)
+    # A combo that balances to (near) the penny means the total is genuinely correct that way — never flag.
+    if any(abs(total - c) < min_delta for c in combos):
+        return None
+    for c in combos:
+        if abs(total - c) <= tol and digit_substitution_diff(f"{total:.2f}", f"{c:.2f}") == 1:
+            return round(c, 2)          # money → 2dp (avoid a float tail reaching the caller/note)
+    return None
+
+
 # ── Main validation ───────────────────────────────────────────────────────────
 
 def validate_and_adjust(extractions: dict,

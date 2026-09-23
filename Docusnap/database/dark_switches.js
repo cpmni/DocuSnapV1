@@ -120,6 +120,28 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   incl. p7+p11, false-hold rate published, agree-but-wrong≈0 sampled, the C1 corrob pin (must fail on a naive
   //   design), determinism two-run byte-identical release-gated on vendor/python, trade-lock pins.
   'glyph_fallback_enabled',
+  // corrob_date_fold_wide (mig 208, 2026-09-23, gary → Oracle SIGN-OFF-W/COND; owner-proven on the live Print
+  //   Tracker batch): the corroboration date-agreement fold (validator._corrob_values_agree) accepts a WORDED /
+  //   month-name date form ('September 30, 2026') as equal to the SAME calendar date read numerically ('30-09-2026'),
+  //   instead of logging it as a page-family DISAGREEMENT that HELD the doc forever (the depletion-date "flood" the
+  //   owner hit on Print Tracker). Self-scoping via validator.parse_date (a ref/name/amount returns None → only two
+  //   real calendar dates fold, and only the SAME day). NOTE: this arm RELEASES holds (not fail-toward-review), AND
+  //   re-arms the corroborated-auto-file licence on the date role (a worded witness now counts). ⚑ FLIP GATE: realdoc
+  //   M=0 OFF-vs-ON + the released-holds set is ALL genuine same-day pairs (a worded date that is a DIFFERENT day
+  //   must still hold) + zero date-field accuracy drop + measure the re-armed date auto-file, not just the note release.
+  'corrob_date_fold_wide',
+  // recon_singlechar_misread_flag (mig 209, 2026-09-23, gary → Oracle SIGN-OFF-W/COND): the arithmetic-witness
+  //   FLAG for the #464 class — a committed total that balances subtotal+tax ONLY through the 2% reconciliation
+  //   tolerance while read-vs-computed is a SINGLE-digit substitution (Nordwind £2,363.76 read £2,368.76, the sole
+  //   wrong-value money auto-file in 1,076 corpus docs). Caps conf + a NEUTRAL/SYMMETRIC note (components can be the
+  //   misread ones → never asserts the total is wrong); NEVER swaps/adopts. The note is deny-by-default in class F
+  //   (never a doubt-clear mark; pinned). ⚑ FLIP GATE (Oracle 2026-09-23): the #464-exact unit test (predicate →
+  //   2363.76 AND isAutoFileEligible flips eligible→flagged with auto_file_threshold set so conf-90 ≥ floor) is
+  //   MANDATORY (the corpus harness can't reproduce the batch-specific misread); OFF-arm md5 byte-identity; realdoc
+  //   M=0 + zero per-field drop + #464 held; a false-hold census (multi-line/multi-rate VAT, an uncaptured
+  //   handling/deposit/%-discount line, a misread-COMPONENT exhibit) — if real docs false-hold in the [10p,£1) band,
+  //   narrow min_delta to ≥£1 (still catches #464's £5); an owner live reprocess of #464 (harness can't reproduce it).
+  'recon_singlechar_misread_flag',
   // ref_confusable_confirmed_literal_disarm (mig 204) was FLIPPED ON by default at mig 206 (2026-09-22, owner
   //   "flip mig 204"): census M=0 / inert on the 700 corpus (TESTING/_measure/ref_disarm_census_20260922/), owner
   //   accepted the narrow ≥2-confirm supplier-strict auto-file lift. No longer dark — delisted here.

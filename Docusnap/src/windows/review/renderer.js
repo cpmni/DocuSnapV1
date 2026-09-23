@@ -11241,7 +11241,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     // sliceMap[field][stage] = [ {kind, bbox, page}, ... ] — links candidates to page regions
     const sliceMap = {};
     const get = (f) => {
-      if (!byField.has(f)) byField.set(f, { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null, steps: [] });
+      if (!byField.has(f)) byField.set(f, { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null, steps: [], glyph: null });
       return byField.get(f);
     };
     for (const ev of events) {
@@ -11261,6 +11261,9 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       else if (ev.event === 'transform') get(ev.field).transforms.push(ev);   // Stage 2.5 denoise/correct
       else if (ev.event === 'validation') get(ev.field).validations.push(ev);  // Stage 4/4.5 normalise/flag/withhold
       else if (ev.event === 'final') get(ev.field).final = ev;
+      // PP-OCR "second reader" (glyph_fallback): its read of the ref-role crop — shown so a
+      // dev can SEE what Paddle produced and whether it agreed/disagreed/abstained (dev-only).
+      else if (ev.event === 'glyph_check' || ev.event === 'glyph_disagreement') get(ev.field).glyph = ev;
       else if (ev.event === 'slice' && (ev.bbox || ev.path)) {
         // Keep the saved crop PATH too (served by devGetSlice) so the panel can SHOW the
         // exact image OCR'd — and capture a path-only slice (no bbox) as well, so a read
@@ -11355,7 +11358,7 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       return;
     }
     elEmpty.hidden = true;
-    const EMPTY_M = { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null, steps: [] };
+    const EMPTY_M = { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null, steps: [], glyph: null };
     const blocks = [];
     for (const field of orderedFields) {
       const m = byField.get(field) || EMPTY_M;
@@ -11437,6 +11440,21 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
         const calc = `${escHtml(String(rc.subtotal))} + ${comp('tax', rc.tax)} + ${comp('ship', rc.shipping)} − ${comp('disc', rc.discount)} = <b>${escHtml(String(rc.computed))}</b>`
           + ` &nbsp;vs total <b>${escHtml(String(rc.total))}</b> &nbsp;(Δ ${escHtml(String(rc.delta))}, tol ${escHtml(String(rc.tol))}) → ${rc.reconciles ? 'reconciles' : "doesn't reconcile"}`;
         rows.push(noteRow('reconcile', calc + (rc.verdict ? `<div class="rdc-why">${escHtml(String(rc.verdict))}</div>` : ''), 'valid'));
+      }
+      // PP-OCR "second reader" outcome for this field (dev-only; only when GLYPH_FALLBACK_ENABLED).
+      if (m.glyph) {
+        const g = m.glyph;
+        const pct = (c) => (c != null ? ` (${Math.round(Number(c) * 100)}%)` : '');
+        let txt;
+        if (g.event === 'glyph_disagreement') {
+          txt = `PP-OCR reads "${escHtml(shown(g.pp_read))}"${pct(g.pp_conf)} · scan reads "${escHtml(shown(g.committed))}" — <b style="color:var(--warn)">disagree</b>, doc held for your check`;
+        } else if (g.outcome === 'agree') {
+          txt = `PP-OCR reads "${escHtml(shown(g.pp_read ?? g.committed))}"${pct(g.pp_conf)} — <b style="color:var(--ok)">agrees</b> with the scan`;
+        } else {
+          txt = `did not run — ${escHtml(g.reason || 'no crop')}`
+            + (g.reason === 'no_box' ? ` (map-geom ${g.has_map_geom ? 'yes' : 'no'}, anchor-geom ${g.has_anchor_geom ? 'yes' : 'no'}, pages ${g.has_pages ? 'yes' : 'no'})` : '');
+        }
+        rows.push(noteRow('2nd reader', txt, 'valid'));
       }
       if (!rows.length) rows.push(hadEvents
         ? `<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">matched on the OCR text layer (no per-stage crop trace)</span></div>`
