@@ -2,8 +2,10 @@
 
 Branch `feat/teach-side-overnight`. Migrations now go to **211**. `TEST_SWITCH_KEYS` **15**. Python pins:
 `test_glyph_confusable_resolve.py` 12 · `test_glyph_confusable_release.py` 19 · `test_glyph_disagreement_hold.py` 16 ·
-`test_glyph_reader.py` 4. JS: `test_migration211_glyph_confusable_release.js` ALL OK; `run-pins.js` — see the commit
-log / last line of this file for the final count. Continues `HANDOVER_2026-09-23_EVENING.md` (date-fold / arithmetic-
+`test_glyph_reader.py` 4. JS: `test_migration211_glyph_confusable_release.js` ALL OK; **`run-pins.js` 414/414 green**
+(a run taken while the C0 harness saturated the CPU showed `src/services/test_ref_class_fix.js` red on a different arm
+each time — a two-DB md5 compare straddling a timestamp second under load; 87/87 twice in isolation and green on the
+quiet re-run — a FLAKE, not a regression). Continues `HANDOVER_2026-09-23_EVENING.md` (date-fold / arithmetic-
 witness / dual-reader census context).
 
 ⚠ A dev app from the evening (env `CORROB_DATE_FOLD_WIDE=1` + `GLYPH_FALLBACK_ENABLED=1`) may still be running — not
@@ -39,9 +41,12 @@ of the live DB (gitignored — real values; delete when done). ⚠ `stress_test/
 5. **C0 targeted (owner's live-DB copy, the 5 census docs confirmed there):** the soften fired on 1/5 — #45 Copperfield
    `PO-22954` (the Chris exhibit): keyword `P0-22954` in `suppressed_taught_role` → trust.js would NOT hold; reason
    `below-floor` at 81 = the note's own −12 fc penalty → **category (ii), yield 1/1**. 3 Vellum `SO-` docs carry no
-   note today (history-backed paths resolved them); #504 Pelican clean. **C0 FULL (747 confirmed docs) running** at
-   handover — `TESTING/_measure/release_c0_20260923/run_full.sh` → `stress_test/out/c0_release/full.jsonl`; analyse
-   with `node TESTING/_measure/release_c0_20260923/analyse_c0.js stress_test/out/c0_release/full.jsonl`.
+   note today (history-backed paths resolved them); #504 Pelican clean. **C0 FULL (727 confirmed docs, 18 min,
+   `TESTING/_measure/release_c0_20260923/RESULT.md`): 9 soften-noted refs → 8 are Print Tracker crop-WRONG/page-RIGHT
+   (`RFH0738865` for printed `RFHO738865` ×5, `HS71Y07217` for `H571Y07217` ×3) = TRUE positives the release can never
+   touch (PP disagrees; C2 abstains) · 1 = #45 → YIELD 1 of 9 (1 of 727).** Recommendation: keep mig 211 DARK, do
+   NOT flip on this alone; mig 210 fixes the copy on all 9. Broader finding: `disagreeing-read` holds 82/727 on
+   reprocess — the page-family gate is the dominant Print Tracker hold (own arc: a confusable-aware `disagree` fold).
 6. **Per-glyph census (`glyph_min_census.py`)** over the 18 slices + clipped twins: the 14 correct agrees have min glyph
    0.819-0.998; the ONE both-wrong clipped read scored **0.505** (mean 0.876) — the 0.80 floor rejects it. That is the
    cheap clip mitigation the Oracle hoped for.

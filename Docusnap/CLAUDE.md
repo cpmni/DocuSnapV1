@@ -37,8 +37,10 @@ re-judges the field; any abstain → the DOWNGRADE reword. **Oracle's premise ca
 `_pageFamilyDisagrees` holds the cold soften set anyway (the whole-page `S0-` read is a recorded keyword disagreement;
 only the mig-191 suppression lifts it for a taught on-shape winner) → **C0 yield census is the FLIP blocker** (yield ≈
 0 → retire the key). C0 targeted on the owner's live-DB COPY (`stress_test/out/c0_live_copy/`, gitignored): the Chris
-exhibit #45 `PO-22954` is held ONLY by the note (overall 81 = the −12 fc penalty) → yield 1/1; the full 747-doc arm →
-`stress_test/out/c0_release/full.jsonl` + `TESTING/_measure/release_c0_20260923/analyse_c0.js`. **Censuses:** filtered
+exhibit #45 `PO-22954` is held ONLY by the note (overall 81 = the −12 fc penalty); **the full 727-doc arm
+(`TESTING/_measure/release_c0_20260923/RESULT.md`): 9 soften refs → 8 Print Tracker crop-WRONG/page-RIGHT (true
+positives, correctly held) + 1 = #45 → YIELD 1 of 9. Recommendation: keep mig 211 DARK, don't flip on this alone.**
+Broader: `disagreeing-read` holds 82/727 on reprocess — the page-family gate is the dominant Print Tracker hold. **Censuses:** filtered
 `_absent` (`census_absent.py`, `RESULT_ABSENT_20260923.md`): 18 soften → all 14 PP-agrees crop-CORRECT, 4 disagrees
 crop-wrong/PP-right; per-glyph (`glyph_min_census.py`): correct agrees min 0.819+, the one both-wrong clipped read 0.505.
 Docs: `docs/oracle_log.md` (09-23 rulings + the RELEASE vet verbatim), ledger migs 207-211, `docs/designs/

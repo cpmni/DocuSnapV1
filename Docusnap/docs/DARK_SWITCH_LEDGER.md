@@ -83,7 +83,10 @@ in `database/dark_switches.js`'s history comment; the LIVE list is `TEST_SWITCH_
   correct, the 4 disagreements all genuine misreads the mig-207 hold catches) + the per-letter confidence census (the
   one clipped read both readers got wrong scored 0.505 — the 0.80 floor rejects it). Yield check on a copy of your
   own DB: the Chris exhibit `PO-22954` IS held only by this note (its overall 81 = the note's own −12 penalty), so
-  the release would file it correctly. Full 747-doc yield census running. Depends on migs 207 + 210 being on._
+  the release would file it correctly. Full yield census on all 727 of your confirmed docs: 9 carry the note, 8 of
+  them are genuine misreads (Print Tracker `RFH0…`/`HS71…` where the page had it right — correctly held, the release
+  can't touch them), 1 is the Copperfield exhibit → yield 1. RECOMMENDATION: keep it built but OFF; mig 210 already
+  fixes the wording on all 9. Depends on migs 207 + 210 being on._
 
 ---
 

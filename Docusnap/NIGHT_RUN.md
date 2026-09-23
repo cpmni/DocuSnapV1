@@ -223,11 +223,9 @@ and, with no safe route, that item STOPS** — never improvise around a refusal.
   `GLYPH_FALLBACK_ENABLED=1` ON-vs-`GLYPH_CONFUSABLE_RESOLVE` OFF/ON → every field byte-identical EXCEPT the soften
   note's text on PP-agree rows (count them = the efficacy denominator); 0 value/conf/method diffs. Same onnxruntime +
   model vendoring gate as mig 207. Seams for the future RELEASE leg: `docs/designs/CONFUSABLE_RELEASE_SEAMS_2026-09-23.md`.
-- **2026-09-23 · [mig 211 flip gate — Oracle C0 + C10] `glyph_confusable_release`** — built DARK (19 Python + 1 JS pin).
-  C0: finish reading `stress_test/out/c0_release/full.jsonl` (the 747-doc owner-DB-copy arm, `TESTING/_measure/
-  release_c0_20260923/run_full.sh`): among refs whose note contains "look like another on a scan" count (i) `corrob`
-  record still has a page family in `disagree ∪ discounted` / (ii) winner `template_mapping*` + `suppressed_taught_role`
-  present / (iii) neither → yield = (ii)+(iii); ≈0 → retire the key. C10: realdoc OFF-vs-ON at RR_APP_ENV=1 with
+- **2026-09-23 · [mig 211 flip gate — Oracle C10] `glyph_confusable_release`** — built DARK (19 Python + 1 JS pin).
+  C0 DONE (`TESTING/_measure/release_c0_20260923/RESULT.md`): yield 1 of 9 soften docs on the owner's 727 — keep DARK,
+  no flip on this alone. Run C10 ONLY if the owner wants the first-docs-after-teaching friction removed: realdoc OFF-vs-ON at RR_APP_ENV=1 with
   `GLYPH_FALLBACK_ENABLED=1 GLYPH_CONFUSABLE_RESOLVE=1` in BOTH arms, `GLYPH_CONFUSABLE_RELEASE` 0/1: M=0, zero per-field
   drop, wouldFile(ON) − wouldFile(OFF) ⊆ {glyph_release released}, every released-but-unfiled doc has a logged reason,
   every NEW file pixel-adjudicated, classify (a) already ≥ floor / (b) fc lift / (c) boost-only, the abstain-reason
