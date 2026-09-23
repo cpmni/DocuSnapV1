@@ -22,8 +22,9 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-09-23 EVENING (date-fold + arithmetic-witness built DARK; a dual-reader census FLIPS Oracle on the confusable RELEASE; CLAUDE.md collapsed + a VERIFY-DON'T-ASSUME rule):
-**READ `HANDOVER_2026-09-23_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `cfe30e7`; NOTHING
-committed this session (all UNCOMMITTED, owner's call); migs → 209; `TEST_SWITCH_KEYS` 13; `run-pins.js` 413/413.**
+**READ `HANDOVER_2026-09-23_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`; **the session's work is
+COMMITTED — `7748c81` (feat: fold + arithmetic-witness) · `7c0d2e4` (docs) · `dab0abf` (census tooling), UNPUSHED;
+migs → 209; `TEST_SWITCH_KEYS` 13; `run-pins.js` 413/413.**
 A dev app is RUNNING with env `CORROB_DATE_FOLD_WIDE=1`+`GLYPH_FALLBACK_ENABLED=1` (env-only, reverts on restart).
 **Built DARK (byte-identical off):** (1) **`corrob_date_fold_wide` mig 208** — wires the pre-existing worded-vs-numeric
 SAME-day date fold that ends the Print Tracker "depletion-date flood" (a `disagreeing-read` hold on "September 30,

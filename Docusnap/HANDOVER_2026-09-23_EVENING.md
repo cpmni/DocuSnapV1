@@ -1,7 +1,9 @@
 # HANDOVER — 2026-09-23 EVENING (date-fold + arithmetic-witness built DARK; dual-reader census flips Oracle on the confusable RELEASE)
 
-Branch `feat/teach-side-overnight`. **HEAD `cfe30e7` — NOTHING committed this session; all work is UNCOMMITTED
-(owner's call when to commit).** Migrations now go to **209** (208 `corrob_date_fold_wide`, 209
+Branch `feat/teach-side-overnight`. **The session's work is COMMITTED (UNPUSHED): `7748c81` (feat: date-fold mig
+208 + arithmetic-witness mig 209 + SFDEV console) · `7c0d2e4` (docs: this handover + CLAUDE.md collapse + VERIFY
+rule) · `dab0abf` (test: dual-reader census tooling). A tiny follow-up commit records these two lines. NOT pushed.**
+Migrations now go to **209** (208 `corrob_date_fold_wide`, 209
 `recon_singlechar_misread_flag` — both DARK, seeded OFF). `TEST_SWITCH_KEYS` **13**. `node scripts/run-pins.js`
 **413/413 green** (fixed the one red I introduced). Read `HANDOVER_2026-09-23_GLYPH.md` for the morning's PP-OCR
 second-reader context; this continues from it.
