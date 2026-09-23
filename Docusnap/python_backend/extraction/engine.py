@@ -6872,11 +6872,16 @@ class ExtractionEngine:
             # C4 — locate the crop: the winning read's own box + its page. No box → abstain. The Stage-0.5
             # mapper populates _s05_read_geom; the Stage-2 anchor stage's winner box is captured into
             # _field_read_geom (so an anchor-read ref — the real Print Tracker case — also resolves a crop).
-            geom = ((getattr(self, '_s05_read_geom', None) or {}).get(ref_field_key)
-                    or (getattr(self, '_field_read_geom', None) or {}).get(ref_field_key))
+            _map_geom = (getattr(self, '_s05_read_geom', None) or {}).get(ref_field_key)
+            _anc_geom = (getattr(self, '_field_read_geom', None) or {}).get(ref_field_key)
+            geom = _map_geom or _anc_geom
             pages = getattr(self, '_s05_pages', None)
             mappings = getattr(self, '_s05_mappings', None) or []
             if not (geom and len(geom) == 4 and pages):
+                if self._trace:
+                    self._t('glyph_check', field=ref_field_key, outcome='abstain', reason='no_box',
+                            committed=committed, method=method, has_map_geom=bool(_map_geom),
+                            has_anchor_geom=bool(_anc_geom), has_pages=bool(pages))
                 return
             mapping = next((m for m in mappings if m.get('field_key') == ref_field_key), None)
             page_idx = int((mapping or {}).get('page_number') or 0)
@@ -6908,6 +6913,8 @@ class ExtractionEngine:
             if c_norm == p_norm:
                 # Visible in the import log so the operator can SEE the second-reader check ran and passed.
                 self.log(f"  Second reader checked the reference '{committed}' — agrees.")
+                if self._trace:
+                    self._t('glyph_check', field=ref_field_key, outcome='agree', committed=committed)
                 return
             # EXACTLY ONE differing position (oracle C2 shape): the p7 `O`↔`0` / p11 `G`↔`6` single-glyph
             # substitution. A multi-position same-length difference is a SHIFTED crop artifact (a stray `F`/`t`
