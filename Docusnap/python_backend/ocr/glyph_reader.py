@@ -166,9 +166,14 @@ def _resize_norm(arr: np.ndarray, max_wh_ratio: float) -> np.ndarray:
     return pad
 
 
-def _ctc_decode(preds: np.ndarray, chars: list) -> tuple[str, float]:
+def _ctc_decode(preds: np.ndarray, chars: list) -> tuple[str, float, float]:
     """Greedy CTC: argmax per timestep, drop blank (idx 0), collapse consecutive repeats,
-    conf = mean of the kept per-step maxima. Mirrors rapidocr CTCLabelDecode."""
+    conf = mean of the kept per-step maxima. Mirrors rapidocr CTCLabelDecode.
+    Third element (2026-09-23, Oracle C1 for the confusable RELEASE): the MIN of the kept
+    per-step maxima — the weakest single glyph. A 0.95 MEAN over an 8-glyph code can hide
+    one glyph near 0.6, and the confusable glyph is the only one that matters. Text and
+    mean are unchanged (222/222 rapidocr parity holds on [0]/[1]); every existing caller
+    indexes [0]/[1] only."""
     idx = preds.argmax(axis=2)[0]
     prob = preds.max(axis=2)[0]
     sel = np.ones(len(idx), dtype=bool)
@@ -178,7 +183,8 @@ def _ctc_decode(preds: np.ndarray, chars: list) -> tuple[str, float]:
     kept_prob = prob[sel]
     text = "".join(chars[i] for i in kept_idx)
     conf = float(np.mean(kept_prob)) if len(kept_prob) else 0.0
-    return text, conf
+    gmin = float(np.min(kept_prob)) if len(kept_prob) else 0.0
+    return text, conf, gmin
 
 
 def prep_crop(img):
@@ -208,11 +214,11 @@ def available() -> bool:
     return sess is not None
 
 
-def read_crop(img) -> tuple[str, float] | None:
+def read_crop(img) -> tuple[str, float, float] | None:
     """Read one pre-located crop with the PP-OCR rec model. `img` is a PIL image or an
     ndarray (the RAW crop; the caller applies the frozen grey→upscale→unsharp prep before
-    calling). Returns (text, confidence 0-1) or None if the engine is unavailable or the
-    read fails. Never raises into extraction."""
+    calling). Returns (text, confidence 0-1, weakest-glyph confidence 0-1) or None if the
+    engine is unavailable or the read fails. Never raises into extraction."""
     try:
         sess, chars = _load()
         if sess is None:

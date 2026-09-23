@@ -2149,6 +2149,23 @@ _FILING_SANITY_SOFTEN_NOTE = ("The reference '{}' has a character that can look 
 _GLYPH_SOFTEN_KEY = "look like another on a scan"
 _GLYPH_RESOLVED_SOFTEN_NOTE = ("Two independent readers both read this reference as '{}' (one character can "
                                + _GLYPH_SOFTEN_KEY + ") — " + _FILING_SANITY_SOFTEN_MARK + ".")
+# GLYPH_CONFUSABLE_RELEASE (mig 211, 2026-09-23 — the RELEASE leg; gary design → Oracle SIGN-OFF-W/COND C0-C11 after
+# the filtered `_absent` census: 18 soften rows, all 14 PP-agrees crop-correct, common-mode 0). Inside the DOWNGRADE
+# branch, when EVERY guard in `_glyph_release_ok` passes, the confusable soften note is POPPED instead of re-worded, so
+# the doc becomes auto-file eligible by the NORMAL route (threshold / graduation / every other gate still applies).
+# Guards, in order: the note came from the CONFUSABLE-soften producer this run and the page form is a map-pair
+# confusable (C7) · not a veto-fallthrough doc · the crop page is KNOWN (C6) · PP mean ≥ _PP_FLOOR AND weakest glyph
+# ≥ _GLYPH_FLOOR (C1 — a mean hides one weak glyph) · no page-family disagreement in the corroboration record after
+# the mig-191 suppression, i.e. trust.js would not hold it anyway (C2) · the wide crop is inside the page (C4) · a
+# SECOND PP read on a WIDE crop (hpad 1.0×h) still contains the committed value, boundary-guarded (C3 — a glyph cut
+# by the taught box reads differently once restored). Every abstain falls through to the DOWNGRADE reword (held).
+_GLYPH_RELEASE_PP_FLOOR = 0.95       # mean over the narrow read; admits every correct agree seen (min 0.970)
+# Weakest kept glyph on the narrow read. glyph_min_census.py (2026-09-23, the 18 soften slices + their clipped
+# twins): the 14 CORRECT agrees have min glyph 0.819-0.998; the ONE both-readers-wrong clipped read (`SO-82482`
+# clipped → `30-82482`) has min glyph 0.505 (mean 0.876) — so 0.80 rejects the only common-mode seen while
+# admitting every correct row. This floor is the cheap clip mitigation Oracle C1 hoped for.
+_GLYPH_RELEASE_GLYPH_FLOOR = 0.80
+_GLYPH_RELEASE_WIDE_HPAD = 1.0       # × box height each side for the clip-guard re-read (narrow read = 0.15)
 # FILING_SANITY_REF_HISTORY_SOFTEN (2026-09-04; Oracle SIGN-OFF-W/COND, extends the mig-111 live soften).
 # The live soften needs >=2 live page families to AGREE on the committed value; but when the correct value
 # came from a `+corrected` adopt with NO live agreement (every reader read the page's confusable form), the
@@ -6854,7 +6871,8 @@ class ExtractionEngine:
             return tuple(tb)
         return None
 
-    def _glyph_disagreement_hold(self, results, ref_field_key, page_provenance):
+    def _glyph_disagreement_hold(self, results, ref_field_key, page_provenance,
+                                 field_defs=None, supplier_name=None, document_slug=None):
         """PP-OCR DISAGREEMENT HOLD (S1; Oracle SIGN-OFF-W/COND 2026-09-22, re-rule on the live Print
         Tracker exhibit `1G25802868`). A second, architecturally-independent recognizer (ocr.glyph_reader,
         PP-OCR rec via onnxruntime) re-reads the ref-role crop; if it DISAGREES with the committed
@@ -6883,6 +6901,13 @@ class ExtractionEngine:
         GLYPH_FALLBACK_ENABLED — the env check below gates it · D5 the AGREE branch fires on real anchor reads,
         confirmed in the 2026-09-23 diag). On DISAGREEMENT / abstain in that mode: NOTHING changes (the soften
         hold already stands; never stack a second note). Confidence/value/method untouched either way.
+
+        RELEASE leg (GLYPH_CONFUSABLE_RELEASE, mig 211; Oracle SIGN-OFF-W/COND C0-C11, 2026-09-23 evening): inside
+        the DOWNGRADE's AGREE branch, when `_glyph_release_ok` passes every guard the note is POPPED (the ONLY
+        mutation) so the doc files by the normal route; the ref-confusable ambiguous flag is then re-invoked on the
+        now-unnoted field (C5 belt — it had skipped the noted field). Any abstain → the DOWNGRADE reword (held).
+        `field_defs` / `supplier_name` / `document_slug` are threaded by the extract() call site for that belt and
+        for the C2 scope lookup; a direct unit call may omit them (the belt is skipped, the release still works).
 
         DARK env GLYPH_FALLBACK_ENABLED; OFF byte-identical. Best-effort — never raises into extraction."""
         if os.environ.get('GLYPH_FALLBACK_ENABLED', '0') != '1' or not ref_field_key:
@@ -6954,6 +6979,32 @@ class ExtractionEngine:
                 return                                   # PP produced nothing → silent
             if c_norm == p_norm:
                 if _resolve:
+                    if os.environ.get('GLYPH_CONFUSABLE_RELEASE', '0') == '1':
+                        # RELEASE (mig 211): every guard must pass; any abstain falls through to the reword.
+                        _page_known = (mapping is not None) or (len(pages) == 1)
+                        _ok, _why = self._glyph_release_ok(results, ref_field_key, committed, pp,
+                                                           pages[page_idx], box, _page_known, document_slug)
+                        if _ok:
+                            data.pop('validation_note', None)          # the ONLY mutation (C9)
+                            self.log(f"  Second reader agrees with the reference '{committed}' on a wide re-read "
+                                     f"— the look-alike note is released; the document may file by its own "
+                                     f"confidence.")
+                            if self._trace:
+                                self._t('glyph_release', field=ref_field_key, outcome='released',
+                                        committed=committed, pp_read=pp[0], pp_conf=round(float(pp[1]), 3),
+                                        pp_glyph_min=(round(float(pp[2]), 3) if len(pp) > 2 else None),
+                                        conf_at_release=data.get('confidence'),
+                                        geom_src=('mapping' if _map_geom else 'anchor'), page_idx=page_idx)
+                            # C5 belt: the ambiguous flag skipped this field while it was noted — let it judge now.
+                            if field_defs is not None:
+                                self._flag_ref_confusable_ambiguous(results, field_defs, supplier_name,
+                                                                    document_slug, ref_field_key, page_provenance)
+                            return
+                        if self._trace:
+                            self._t('glyph_release', field=ref_field_key, outcome='abstain', reason=_why,
+                                    committed=committed, pp_read=pp[0], pp_conf=round(float(pp[1]), 3),
+                                    pp_glyph_min=(round(float(pp[2]), 3) if len(pp) > 2 else None),
+                                    geom_src=('mapping' if _map_geom else 'anchor'), page_idx=page_idx)
                     # DOWNGRADE: re-word the confusable soften note to confident copy. Still a note (held),
                     # still the ref-advisory MARK, no absent mark, no cap/value/method change.
                     data['validation_note'] = _GLYPH_RESOLVED_SOFTEN_NOTE.format(committed)
@@ -6994,6 +7045,97 @@ class ExtractionEngine:
                         pp_read=pp[0], pp_conf=round(float(pp[1]), 3))
         except Exception:
             pass   # advisory guard — must never break extraction
+
+    def _glyph_release_page_family_disagrees(self, results, ref_field_key, document_slug=None):
+        """C2 (confusable RELEASE): would trust.js `_pageFamilyDisagrees` HOLD this ref anyway? Builds the SAME
+        corroboration record the emit will carry (`_build_corroboration_emit`, a pure derived read of the ledger),
+        applies the mig-191 `TAUGHT_REF_DISAGREE_SUPPRESS` transform to a COPY with the same predicates the late
+        site uses (winner `_is_stage05_located` + on the FINAL scope's learned shape; competitors OFF that shape
+        move out), then scans `disagree ∪ discounted` for a page family exactly as trust.js does. True = a page
+        family still contradicts the winner → releasing the note would only swap confident copy for the bare
+        "reads it two ways" gate reason (Oracle P2) → abstain. Fail-CLOSED on any error (True)."""
+        try:
+            import copy as _copy
+            rec = (self._build_corroboration_emit(results) or {}).get(ref_field_key)
+            if not isinstance(rec, dict):
+                return False                           # no record → trust.js has nothing to scan
+            rec = _copy.deepcopy(rec)
+            if os.environ.get("TAUGHT_REF_DISAGREE_SUPPRESS", "0") == "1":
+                _rd = results.get(ref_field_key)
+                _win_taught = isinstance(_rd, dict) and _is_stage05_located(_rd.get("method"))
+                _sup = results.get("supplier_name")
+                _s2 = str((_sup or {}).get("value") or "").lower().strip() if isinstance(_sup, dict) else ""
+                _dt2 = (document_slug or results.get("_document_slug") or "").lower().strip()
+                _fe2 = self.format_class_index.get((_s2, _dt2, ref_field_key)) if _s2 else None
+                _v = str((_rd or {}).get("value") or "").strip()
+                _win_shape_ok = bool(_fe2 and _fe2.get("shapes") and _v
+                                     and format_anomaly_checker.check_value(_v, _fe2) is None
+                                     and format_anomaly_checker.shape_match_score(_v, _fe2) == 1.0)
+                if _win_taught and _win_shape_ok:
+                    def _off_learned_shape(v):
+                        v = str(v or "").strip()
+                        if not v:
+                            return False
+                        return not (format_anomaly_checker.check_value(v, _fe2) is None
+                                    and format_anomaly_checker.shape_match_score(v, _fe2) == 1.0)
+                    _suppress_taught_ref_disagree_record(rec, _win_taught, _win_shape_ok, _off_learned_shape)
+            pool = list(rec.get("disagree") or []) + list(rec.get("discounted") or [])
+            return any(isinstance(d, dict) and str(d.get("family") or "") in _CORROB_PAGE_FAMILIES for d in pool)
+        except Exception:
+            return True                                # fail-closed: keep the note
+
+    def _glyph_release_ok(self, results, ref_field_key, committed, pp, page, box, page_known, document_slug=None):
+        """The confusable RELEASE guard ladder (Oracle C0-C11). Returns (ok, reason); every False reason is traced
+        by the caller as an abstain and the DOWNGRADE reword stands (held). Order: cheapest + most decisive first."""
+        try:
+            meta = (getattr(self, '_soften_meta', None) or {}).get(ref_field_key)
+            if not meta:
+                return False, 'meta_missing'            # the note matched but no soften LANDED this run
+            if meta[0] != 'confusable' or not _one_digit_letter_confusable(committed, str(meta[1] or '')):
+                return False, 'producer'                # C7: the census population only (map pairs, no history)
+            if getattr(self, '_veto_fallthrough', False):
+                return False, 'veto_fallthrough'        # G1 would re-note it; keep the confident copy instead
+            if not page_known:
+                return False, 'page_unknown'            # C6: an anchor-won ref on a multi-page doc without a mapping
+            try:
+                _mean = float(pp[1])
+            except Exception:
+                return False, 'pp_mean'
+            if _mean < _GLYPH_RELEASE_PP_FLOOR:
+                return False, 'pp_mean'
+            _gmin = pp[2] if len(pp) > 2 else None
+            if _gmin is None or float(_gmin) < _GLYPH_RELEASE_GLYPH_FLOOR:
+                return False, 'pp_glyph'                # C1: the weakest glyph, not the mean
+            if self._glyph_release_page_family_disagrees(results, ref_field_key, document_slug):
+                return False, 'page_family_disagrees'   # C2: trust.js would hold it anyway
+            # C4: the wide crop must lie INSIDE the page — `_crop_padded` clamps silently at the edge, and a
+            # clamped wide read is the narrow read again (false containment).
+            try:
+                W, H = page.size
+                bh = float(box['h_norm']) * H
+                padx = int(_GLYPH_RELEASE_WIDE_HPAD * bh)
+                x0 = int(float(box['x_norm']) * W) - padx
+                x1 = int((float(box['x_norm']) + float(box['w_norm'])) * W) + padx
+                if x0 < 0 or x1 > W:
+                    return False, 'page_edge'
+            except Exception:
+                return False, 'page_edge'
+            # C3: a second PP read on the WIDE crop; the committed value must be present as a bounded token
+            # (separator-tolerant, boundary-guarded — a restored edge glyph changes the string, a glued
+            # neighbouring digit fails the lookaround, label bleed with a space is tolerated).
+            from extraction import reslice as _rs
+            from ocr import glyph_reader as _gr
+            crop_w, _ = _rs._crop_padded(page, box, 0.3, _GLYPH_RELEASE_WIDE_HPAD)
+            if crop_w is None:
+                return False, 'wide_mismatch'
+            ppw = _gr.read_crop(_gr.prep_crop(crop_w))
+            if not ppw or not str(ppw[0] or '').strip():
+                return False, 'wide_mismatch'
+            if not _page_presence_corroborated(committed, str(ppw[0])):
+                return False, 'wide_mismatch'
+            return True, 'released'
+        except Exception:
+            return False, 'error'
 
     def _reinstate_page_absent_ref(self, results, ref_field_key, ocr_text, supplier_name, document_slug):
         """REF-ARBITER REINSTATEMENT (Chris/owner Ridgeway exhibit; reggie+gary+007 → Oracle SIGN-OFF-W/COND
@@ -7969,6 +8111,14 @@ class ExtractionEngine:
                 d['validation_note'] = text
                 return True
 
+            def _tag(producer, form):
+                # Record WHICH soften producer landed the note + the page form it saw (the note text is shared by
+                # three producers and carries only ONE {} since 2026-09-10, so neither is recoverable from it).
+                # Read only by the DARK confusable RELEASE (C7). Tolerates a bare unit-test self.
+                _sm = getattr(self, '_soften_meta', None)
+                if isinstance(_sm, dict):
+                    _sm[ref_field_key] = (producer, str(form or ''))
+
             # ── Gate A ────────────────────────────────────────────────────────────────────
             if ref_field_key and isinstance(results.get(ref_field_key), dict):
                 val = str(results[ref_field_key].get('value') or '').strip()
@@ -8032,6 +8182,7 @@ class ExtractionEngine:
                             _txt = _FILING_SANITY_SOFTEN_NOTE.format(rv, _witness)
                             if _note(ref_field_key, _txt):
                                 self._t('filing_sanity_ref_corrob_soften', field=ref_field_key, value=rv, page_form=_witness)
+                                _tag('corrob', _witness)
                                 self.log(f"  Filing sanity: {ref_field_key} '{rv}' — corroborated confirmed "
                                          f"literal, full-page slip '{_witness}': softened, kept in review")
                         else:
@@ -8062,6 +8213,7 @@ class ExtractionEngine:
                                 _txt = _FILING_SANITY_SOFTEN_NOTE.format(rv, _near)
                                 if _note(ref_field_key, _txt):
                                     self._t('filing_sanity_ref_history_soften', field=ref_field_key, value=rv, page_form=_near)
+                                    _tag('history', _near)
                                     self.log(f"  Filing sanity: {ref_field_key} '{rv}' — confirmed literal, backed "
                                              f"one-glyph page slip '{_near}' (history): softened, kept in review")
                             elif (_near and _FILING_SANITY_CONFUSABLE_SOFTEN
@@ -8092,6 +8244,7 @@ class ExtractionEngine:
                                     _txt = _FILING_SANITY_SOFTEN_NOTE.format(rv, _near)
                                     if _note(ref_field_key, _txt):
                                         self._t('filing_sanity_ref_confusable_soften', field=ref_field_key, value=rv, page_form=_near)
+                                        _tag('confusable', _near)
                                         self.log(f"  Filing sanity: {ref_field_key} '{rv}' — one-glyph digit/letter page "
                                                  f"confusable '{_near}': softened, kept in review")
                             else:
@@ -9247,6 +9400,10 @@ class ExtractionEngine:
         # anchor-stage winner boxes (glyph-hold fallback when the ref reads via anchor, not mapping;
         # inert unless GLYPH_FALLBACK_ENABLED — written unconditionally, read only by the DARK glyph hold).
         self._field_read_geom = {}
+        # Gate-C soften PRODUCER tag: ref_key -> (producer, page_form), written only when a soften note LANDED
+        # this run (C7 of the confusable RELEASE). Instance transient — never a field-dict key (a field-dict
+        # `_key` would leak into the emitted JSON; sanitise_extractions strips top-level `_` keys only).
+        self._soften_meta = {}
         self._reslice_witness = {}
         self._code_witnesses = {}   # leg-a binarisation re-slice witnesses (kept OUT of the corrob ledger)
         results      = {}
@@ -12195,7 +12352,9 @@ class ExtractionEngine:
         # independent recognizer re-reads the ref crop; DISAGREEMENT forces a review hold (the p7-class
         # silent-serial-misfile catch). AFTER the flag (a prior note makes it skip) and BEFORE the boost
         # (skips noted fields, so the ≤69 cap can never be re-lifted). OFF byte-identical.
-        self._glyph_disagreement_hold(results, ref_field_key, page_provenance)
+        self._glyph_disagreement_hold(results, ref_field_key, page_provenance,
+                                      field_defs=field_defs, supplier_name=supplier_name,
+                                      document_slug=document_slug)
 
         # ── LEARNED-AGREEMENT CONFIDENCE BOOST ────────────────────────────────
         # A value that is CONSISTENT with a well-supported learned format for its scope is

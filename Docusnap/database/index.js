@@ -4255,6 +4255,22 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 210 (glyph_confusable_resolve): ${e.message}`); }
   }
 
+  // mig 211 (2026-09-23 evening, gary → Oracle SIGN-OFF-W/COND C0-C11 after the filtered `_absent` census):
+  // glyph_confusable_release — the RELEASE leg of the second reader. Inside the DOWNGRADE branch, when every guard
+  // passes (confusable-soften producer only; PP mean ≥0.95 AND weakest glyph ≥0.80; no page-family disagreement
+  // after the mig-191 suppression; crop page known; wide crop inside the page; a second PP read on a WIDE crop still
+  // contains the value, boundary-guarded), the soften note is POPPED so the doc files by the NORMAL route. Every
+  // abstain → the DOWNGRADE reword (held). HARD deps glyph_fallback_enabled + glyph_confusable_resolve (engine env
+  // gates). DARK, seeded OFF, byte-identical off. Flip = the C0 yield census + C10 (see dark_switches.js). Single-key
+  // seed (no array literal — keeps the loose seed-pin regex honest).
+  if (!applied.has(211)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('glyph_confusable_release', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (211)').run();
+      console.log('JS migration 211 applied: glyph_confusable_release (second-reader agree + wide re-read clears the confusable soften note) seeded OFF (DARK, 1 row)');
+    } catch (e) { console.warn(`  migration 211 (glyph_confusable_release): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

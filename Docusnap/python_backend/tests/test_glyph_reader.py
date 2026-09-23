@@ -42,7 +42,7 @@ def test_garbage_never_raises():
             r = glyph_reader.read_crop(bad)
         except Exception as e:  # pragma: no cover
             raise AssertionError(f"read_crop raised on garbage: {e!r}")
-        assert r is None or (isinstance(r, tuple) and len(r) == 2)
+        assert r is None or (isinstance(r, tuple) and len(r) == 3)
 
 
 def test_deterministic_when_available():
@@ -56,14 +56,17 @@ def test_deterministic_when_available():
     assert r1 is not None and r2 is not None
     assert r1[0] == r2[0], f"text drift: {r1[0]!r} vs {r2[0]!r}"
     assert r1[1] == r2[1], f"conf drift: {r1[1]!r} vs {r2[1]!r}"
+    assert r1[2] == r2[2], f"glyph-min drift: {r1[2]!r} vs {r2[2]!r}"
 
 
 def test_output_shape_contract():
-    """When it returns a value it is (str, float in 0..1)."""
+    """When it returns a value it is (str, float in 0..1, float in 0..1) with min <= mean
+    (the third element is the weakest kept glyph — Oracle C1 for the confusable RELEASE)."""
     if not glyph_reader.available():
         return
     r = glyph_reader.read_crop(_synth_crop("H574240856"))
-    assert r is None or (isinstance(r[0], str) and 0.0 <= float(r[1]) <= 1.0)
+    assert r is None or (isinstance(r[0], str) and 0.0 <= float(r[1]) <= 1.0
+                         and 0.0 <= float(r[2]) <= float(r[1]) + 1e-9)
 
 
 if __name__ == "__main__":

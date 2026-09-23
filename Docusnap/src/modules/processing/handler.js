@@ -422,6 +422,12 @@ function _reconcileEnv(db) {
     // the note is re-worded to confident copy. Still a note (held), same ref-advisory mark, auto-file byte-
     // identical. HARD dep GLYPH_FALLBACK_ENABLED (the engine's own env gate enforces it). DARK, byte-identical OFF.
     if (learning.getSetting(db, 'glyph_confusable_resolve', 'false') === 'true') env.GLYPH_CONFUSABLE_RESOLVE = '1';
+    // GLYPH_CONFUSABLE_RELEASE (mig 211, 2026-09-23 evening, Oracle SIGN-OFF-W/COND C0-C11): the RELEASE leg — when
+    // the second reader agrees on the narrow AND a wide re-read (clip guard), the weakest glyph clears the floor, and
+    // no page family disagrees after the mig-191 suppression, the confusable soften note is POPPED so the doc files by
+    // the normal route. HARD deps GLYPH_FALLBACK_ENABLED + GLYPH_CONFUSABLE_RESOLVE (the engine's env gates enforce
+    // them). DARK, byte-identical OFF.
+    if (learning.getSetting(db, 'glyph_confusable_release', 'false') === 'true') env.GLYPH_CONFUSABLE_RELEASE = '1';
     // CORROB_DATE_FOLD_WIDE (mig 208, 2026-09-23, gary → Oracle SIGN-OFF-W/COND; owner-proven on the live Print
     // Tracker batch): the corroboration date fold treats a worded / month-name date ('September 30, 2026') as equal
     // to the SAME calendar date read numerically ('30-09-2026'), so the same day read two ways no longer logs a

@@ -155,6 +155,28 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   auto-file) is a SEPARATE future switch gated on the filtered `_absent` census (R1-R6, incl. the R4
   //   veto-fallthrough re-note seam at engine.py G1).
   'glyph_confusable_resolve',
+  // glyph_confusable_release (mig 211, 2026-09-23 evening, gary → Oracle SIGN-OFF-W/COND C0-C11 after the filtered
+  //   `_absent` census — 18 soften rows, all 14 PP-agrees crop-correct, 0 common-mode): the RELEASE leg. Inside the
+  //   DOWNGRADE branch, when the note came from the CONFUSABLE-soften producer (map-pair page form, no history), the
+  //   doc is not a veto-fallthrough, the crop page is known, PP mean ≥0.95 AND weakest glyph ≥0.80 (the census's one
+  //   both-wrong clipped read had 0.505), no page family still disagrees after the mig-191 suppression (trust.js
+  //   parity — else the pop only swaps confident copy for the bare gate reason), the wide crop is inside the page, and
+  //   a SECOND PP read on a WIDE crop (1.0×h) still contains the value boundary-guarded, the soften note is POPPED (the
+  //   only mutation; conf/value/method untouched; PP never a witness) and the ref-confusable ambiguous flag re-judges
+  //   the now-unnoted field. Every abstain → the DOWNGRADE reword (held). NOT fail-toward-review: it REMOVES a hold
+  //   and can CREATE auto-files. NAMED PRECONDITIONS (Oracle C8, all ON today): `trust_role_disagreement_refuse` +
+  //   `role_disagree_refuse_at100` (the at-100 path's only page-family belt once the fc −12 + boost lift a released
+  //   doc to 100) and `autofile_gate_unify` + `learning_exclude_machine_confirms` (a machine-filed value never feeds
+  //   value_counts — pinned in test_machine_confirm_learning.js — so a wrong release cannot disarm the S0-head belt).
+  //   ⚑ FLIP GATE (Oracle C0 + C10): C0 yield census on the owner's DB copy (TESTING/_measure/release_c0_20260923/) —
+  //   among soften-firing docs count (i) still page-family-held / (ii) taught+on-shape / (iii) neither; yield ≈ 0 →
+  //   retire the key; then realdoc OFF-vs-ON at RR_APP_ENV=1 with FALLBACK+RESOLVE=1 in both arms: M=0, zero per-field
+  //   drop, wouldFile(ON) − wouldFile(OFF) ⊆ {glyph_release released}, every released-but-unfiled doc has a logged
+  //   reason, EVERY new file pixel-adjudicated, classify (a) already ≥ floor / (b) fc lift / (c) boost-only, the
+  //   abstain-reason histogram, two ON runs byte-identical on vendor/python, OFF md5 identity. Back to the Oracle
+  //   with the numbers. Residual (named): a taught box clipped at a physical fold/table rule where the wide read
+  //   cannot restore pixels; cold-scope trailing-letter confusables the ambiguous flag is blind to.
+  'glyph_confusable_release',
   // ref_confusable_confirmed_literal_disarm (mig 204) was FLIPPED ON by default at mig 206 (2026-09-22, owner
   //   "flip mig 204"): census M=0 / inert on the 700 corpus (TESTING/_measure/ref_disarm_census_20260922/), owner
   //   accepted the narrow ≥2-confirm supplier-strict auto-file lift. No longer dark — delisted here.
