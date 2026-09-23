@@ -370,7 +370,10 @@ const ef = (m, k) => { const e = k && m.extractions && m.extractions[k]; return 
     // opportunity (and its M-safety) can be analysed offline vs the stored page OCR. Read-only.
     if (process.env.RR_CONSENSUS) {
       try {
-        const _cf = (k, ok) => { if (!k) return null; const e = m.extractions && m.extractions[k]; return { key: k, val: ef(m, k), conf: (e && typeof e === 'object') ? e.confidence : null, note: (e && typeof e === 'object') ? (e.validation_note || null) : null, method: (e && typeof e === 'object') ? (e.method || e.extraction_method || null) : null, correct: ok }; };
+        // `corrob` (2026-09-23, the confusable-RELEASE C0 census): the field's corroboration record as the
+        // gate sees it, so a "flagged" reason can be split into "would ALSO be held by disagreeing-read"
+        // (trust.js _pageFamilyDisagrees) vs "the note was the only blocker". Additive, RR_CONSENSUS-only.
+        const _cf = (k, ok) => { if (!k) return null; const e = m.extractions && m.extractions[k]; return { key: k, val: ef(m, k), conf: (e && typeof e === 'object') ? e.confidence : null, note: (e && typeof e === 'object') ? (e.validation_note || null) : null, method: (e && typeof e === 'object') ? (e.method || e.extraction_method || null) : null, correct: ok, corrob: (e && typeof e === 'object') ? (e.corroboration ?? null) : null }; };
         // 2026-08-27: `overall` + a compact per-field [value, conf, method, note] map, so a "below-floor" reason can
         // be traced to the field that dragged the document under its scope floor (the List-field census).
         const _fieldsCompact = Object.fromEntries(Object.entries(m.extractions || {}).map(([k, e]) => [k, [e && e.value, e && e.confidence, e && e.method, (e && e.validation_note) || null]]));
