@@ -45,7 +45,7 @@ console.log(`  → box-wrong (true catch) ${trueCatch} · box-right (false hold)
 const target = off.filter(r => String(r.reason).startsWith('disagreeing-read') || (r.ref && r.ref.note && r.ref.note.includes(SOFT)));
 console.log(`\n(c) baseline disagreeing-read + soften docs: ${target.length}`);
 const byDoc = {};
-for (const e of checks.concat(dis)) { const id = idOf(e.doc); (byDoc[id] = byDoc[id] || []).push(e); }
+for (const e of checks.concat(dis, resolves)) { const id = idOf(e.doc); (byDoc[id] = byDoc[id] || []).push(e); }
 const tally = {};
 for (const r of target) {
   const evs = byDoc[r.id] || [];
@@ -66,5 +66,23 @@ console.log(`\n(d) wouldFile OFF→ON: gained ${gained.length} (must be 0 — th
 gained.forEach(r => console.log(`  GAINED #${r.id} ${r.type} ref='${r.ref && r.ref.val}'`));
 lost.forEach(r => console.log(`  lost #${r.id} ${r.type} ref='${r.ref && r.ref.val}' ON reason=${r.reason}`));
 
+// (f) AGREE × box correctness — the common-mode (clear-and-wrong) number the RELEASE / tie-breaker rests on
+const agreeEv = checks.filter(e => e.outcome === 'agree');
+let agRight = 0, agWrong = 0, agUnk = 0; const agWrongRows = [];
+for (const e of agreeEv) {
+  const id = idOf(e.doc); const r = onBy.get(id);
+  const ok = r && r.ref ? r.ref.correct : null;
+  if (ok === true) agRight++; else if (ok === false) { agWrong++; agWrongRows.push({ id, r, e }); } else agUnk++;
+}
+console.log(`\n(f) PP AGREES with the box: ${agreeEv.length} → box RIGHT ${agRight} · box WRONG (common-mode) ${agWrong} · unknown ${agUnk}`);
+agWrongRows.forEach(({ id, r, e }) => console.log(`  COMMON-MODE #${id} ${r.type} box='${e.committed}' pp='${e.pp_read}' (pp ${e.pp_conf}) ON reason=${r.reason} note=${r.ref.note ? 'yes' : 'no'}`));
+// (g) the 9 soften docs + the 8 Print Tracker true positives by name
+const focus = off.filter(r => r.ref && r.ref.note && r.ref.note.includes(SOFT)).map(r => r.id);
+console.log(`\n(g) the ${focus.length} soften docs (OFF arm) — second-reader outcome:`);
+for (const id of focus) {
+  const evs = (byDoc[id] || []).map(e => e.event === 'glyph_disagreement' ? `DISAGREE pp='${e.pp_read}'` : `${e.event === 'glyph_resolve' ? 'RESOLVE:' : ''}${e.outcome}${e.reason ? ':' + e.reason : ''} pp='${e.pp_read || ''}' (${e.pp_conf})`);
+  const r = onBy.get(id), o = offBy.get(id);
+  console.log(`  #${id} ${o.type} box='${o.ref.val}' boxCorrect=${o.ref.correct} → ${evs.join(' | ') || 'no-event'} · ON reason=${r && r.reason}`);
+}
 // (e) downgrade rewords
 console.log(`\n(e) DOWNGRADE rewords (glyph_resolve agree): ${resolves.filter(e => e.outcome === 'agree').length}; disagree-in-resolve: ${resolves.filter(e => e.outcome === 'disagree').length}`);

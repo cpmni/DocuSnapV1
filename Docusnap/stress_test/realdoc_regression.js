@@ -127,7 +127,8 @@ function runP(folder, snapArgs, files, manifest, onDoc, ctl) {
     // engine's structured per-field trace events (glyph_check / glyph_release / … — the dev-inspector stream)
     // are appended as {doc, ...event} to that file. Observe-only; the scored file_done stream is unchanged.
     const _traceOut = process.env.RR_TRACE_OUT || null;
-    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs, ...(_traceOut ? ['--trace'] : [])],
+    const _sliceDir = (_traceOut && process.env.RR_SLICE_DIR) ? process.env.RR_SLICE_DIR : null;   // dev-inspector slice dump, with the trace only
+    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs, ...(_traceOut ? ['--trace'] : []), ...(_sliceDir ? ['--slice-dir', _sliceDir] : [])],
       { windowsHide: true, env: Object.keys(appEnv).length ? { ...process.env, ...appEnv } : undefined });
     procs.push(p);
     let out = '', tail = '', curDoc = null;

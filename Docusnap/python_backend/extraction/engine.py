@@ -786,6 +786,8 @@ def _invalid_taught_date_yields(taught_value, kw_value, now=None) -> str:
 # list object feeds every crop site. Default OFF (=1 arms); OFF = byte-identical by object
 # identity (the elected list is page_images itself).
 DESKEW_RAW_CROPS = os.environ.get('DESKEW_RAW_CROPS', '0') != '0'
+# Process-wide dev-slice sequence (see _capture_slice): one shard process runs many engines in sequence.
+_SLICE_SEQ = 0
 try:
     DESKEW_RAW_CROP_MAX_ANGLE = float(os.environ.get('DESKEW_RAW_CROP_MAX_ANGLE', '2.0') or 2.0)
 except (TypeError, ValueError):
@@ -5786,7 +5788,14 @@ class ExtractionEngine:
         try:
             import os
             self._slice_n += 1
-            path = os.path.join(self._slice_dir, f"slice_{self._slice_n}_{kind}.png")
+            # pid + a PROCESS-WIDE sequence in the name (2026-09-23): the realdoc harness runs shards in PARALLEL
+            # into ONE slice dir, and one shard process runs many documents in sequence with a NEW engine per doc,
+            # so a per-instance counter overwrote earlier docs' slices (310 of 340 lost; the contact sheet showed
+            # doc 45's caption over a Print Tracker crop). The inspector maps by the path in the trace event, never
+            # by the name, so the extra tokens are inert for it.
+            global _SLICE_SEQ
+            _SLICE_SEQ += 1
+            path = os.path.join(self._slice_dir, f"slice_{os.getpid()}_{_SLICE_SEQ}_{kind}.png")
             pil_img.save(path)
             self._t("slice", field=field, stage=stage, kind=kind, page=page,
                     bbox=(list(bbox) if bbox else None), path=path, tag=tag)
@@ -6988,6 +6997,12 @@ class ExtractionEngine:
             crop, _band = _rs._crop_padded(pages[page_idx], box, 0.3, 0.15)   # quiet-zone pad (oscar C7)
             if crop is None:
                 return
+            # Dev-only (trace + slice dir): save the EXACT crop the second reader is handed, so a hold or an
+            # agreement can be checked against the pixels (the 2026-09-23 "look at the artefact" rule).
+            _cap = getattr(self, '_capture_slice', None)          # absent on a bare unit-test self
+            if _cap and getattr(self, '_trace', False) and getattr(self, '_slice_dir', None):
+                _cap(ref_field_key, 'glyph', page_idx, geom, crop, kind='target',
+                     tag=f'second reader narrow ({_geom_src})')
             pp = _gr.read_crop(_gr.prep_crop(crop))
             if not pp:
                 return
@@ -6999,7 +7014,10 @@ class ExtractionEngine:
             # abstain (oracle C2's same-length discipline, applied to the hold — strictly tighter, never looser).
             import re as _re
             def _alnum(s):
-                return _re.sub(r'[^A-Za-z0-9]', '', str(s))
+                # CASE-FOLDED (2026-09-23 night, the 727-doc second-reader arm): PP read `Ws-62946` / `iTH-0093`
+                # for the printed `WS-62946` / `ITH-0093` — the same letters in another case are not a glyph
+                # substitution, yet the case-sensitive compare raised 2 of 16 (false) disagreement holds on them.
+                return _re.sub(r'[^A-Za-z0-9]', '', str(s)).upper()
             c_norm, p_norm = _alnum(committed), _alnum(pp[0])
             if not p_norm:
                 return                                   # PP produced nothing → silent
@@ -7156,6 +7174,9 @@ class ExtractionEngine:
             crop_w, _ = _rs._crop_padded(page, box, 0.3, _GLYPH_RELEASE_WIDE_HPAD)
             if crop_w is None:
                 return False, 'wide_mismatch'
+            _cap = getattr(self, '_capture_slice', None)
+            if _cap and getattr(self, '_trace', False) and getattr(self, '_slice_dir', None):
+                _cap(ref_field_key, 'glyph', None, None, crop_w, kind='target', tag='second reader wide (clip guard)')
             ppw = _gr.read_crop(_gr.prep_crop(crop_w))
             if not ppw or not str(ppw[0] or '').strip():
                 return False, 'wide_mismatch'
