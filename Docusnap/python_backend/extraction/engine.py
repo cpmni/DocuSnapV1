@@ -6813,6 +6813,23 @@ class ExtractionEngine:
         except Exception:
             pass   # advisory guard — must never break extraction
 
+    @staticmethod
+    def _winning_read_geom(data):
+        """The winning ANCHOR read's located value box as a top-left (x,y,w,h) norm tuple, or None.
+        Prefer `box` (the ACTUAL located box for anchor_inline / anchor_crop_relocated) over `taught_box`
+        (the pre-drift taught box, the only geometry a rigid anchor_crop carries). Non-None iff the
+        committed ref is an anchor-family read — the mapper pops its geometry into _s05_read_geom and
+        keyword/hint reads carry neither, so this can only be the winner's own box (anchor.py:1717/1721)."""
+        if not isinstance(data, dict):
+            return None
+        b = data.get('box')
+        if isinstance(b, dict) and all(k in b for k in ('x_norm', 'y_norm', 'w_norm', 'h_norm')):
+            return (b['x_norm'], b['y_norm'], b['w_norm'], b['h_norm'])
+        tb = data.get('taught_box')
+        if tb and len(tb) == 4:
+            return tuple(tb)
+        return None
+
     def _glyph_disagreement_hold(self, results, ref_field_key, page_provenance):
         """PP-OCR DISAGREEMENT HOLD (S1; Oracle SIGN-OFF-W/COND 2026-09-22, re-rule on the live Print
         Tracker exhibit `1G25802868`). A second, architecturally-independent recognizer (ocr.glyph_reader,
@@ -6852,8 +6869,11 @@ class ExtractionEngine:
             # scanned only — a born-digital text-layer read is not an OCR misread to second-guess
             if not (page_provenance and all(p == 'ocr' for p in page_provenance)):
                 return
-            # C4 — locate the crop: taught read geometry (norm box) + its Stage-0.5 page. No box → abstain.
-            geom = (getattr(self, '_s05_read_geom', None) or {}).get(ref_field_key)
+            # C4 — locate the crop: the winning read's own box + its page. No box → abstain. The Stage-0.5
+            # mapper populates _s05_read_geom; the Stage-2 anchor stage's winner box is captured into
+            # _field_read_geom (so an anchor-read ref — the real Print Tracker case — also resolves a crop).
+            geom = ((getattr(self, '_s05_read_geom', None) or {}).get(ref_field_key)
+                    or (getattr(self, '_field_read_geom', None) or {}).get(ref_field_key))
             pages = getattr(self, '_s05_pages', None)
             mappings = getattr(self, '_s05_mappings', None) or []
             if not (geom and len(geom) == 4 and pages):
@@ -9102,6 +9122,9 @@ class ExtractionEngine:
         self._s05_mappings = []
         self._s05_pages = None
         self._s05_read_geom = {}
+        # anchor-stage winner boxes (glyph-hold fallback when the ref reads via anchor, not mapping;
+        # inert unless GLYPH_FALLBACK_ENABLED — written unconditionally, read only by the DARK glyph hold).
+        self._field_read_geom = {}
         self._reslice_witness = {}
         self._code_witnesses = {}   # leg-a binarisation re-slice witnesses (kept OUT of the corrob ledger)
         results      = {}
@@ -11071,6 +11094,14 @@ class ExtractionEngine:
                     self._remember_candidates('2.6_late_corrob', _corrob_filtered)
                     self._t("late_located_corrob", fields=list(_corrob_filtered.keys()),
                             values=[str(v.get("value"))[:24] for v in _corrob_filtered.values()])
+
+        # Capture the winning ANCHOR read's own box for the ref role (glyph-hold fallback) — AFTER the
+        # anchor merge + the fill-empty rescue passes, BEFORE hints (hint fills carry no box). Isolated
+        # write; read only by the DARK glyph hold, so byte-identical when the switch is off.
+        if ref_field_key:
+            _g = self._winning_read_geom(results.get(ref_field_key))
+            if _g:
+                self._field_read_geom[ref_field_key] = _g
 
         # ── Stage 2.5b: Apply supplier hints (fill missing fields only) ──────────
         # Hints only fill fields that keyword/anchor found NOTHING for.

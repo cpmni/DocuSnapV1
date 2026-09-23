@@ -31,6 +31,7 @@ def _fake_engine():
     f = SimpleNamespace(
         _s05_pages=[object()],                       # a stand-in page (crop is mocked)
         _s05_read_geom={"reference_number": _BOX},
+        _field_read_geom={},                         # anchor-stage fallback store
         _s05_mappings=[{"field_key": "reference_number", "page_number": 0}],
         _field_candidates={},                        # C1 witness
         _trace=False, log=lambda *a, **k: None, _t=lambda *a, **k: None)
@@ -38,7 +39,7 @@ def _fake_engine():
 
 
 def _run(committed, pp_return, *, env="1", provenance=("ocr",), method="keyword",
-         geom=True, prior_note=None):
+         geom=True, prior_note=None, anchor_geom=False):
     """Call the bound method with the recognizer + crop mocked. Returns the ref data dict
     and the fake engine (to inspect _field_candidates)."""
     saved = (_gr.available, _gr.read_crop, _gr.prep_crop, _rs._crop_padded)
@@ -53,8 +54,13 @@ def _run(committed, pp_return, *, env="1", provenance=("ocr",), method="keyword"
         os.environ["GLYPH_FALLBACK_ENABLED"] = env
     try:
         f = _fake_engine()
+        if anchor_geom:
+            # the ref read via ANCHOR: no mapping geom, only the captured winner box
+            f._s05_read_geom = {}
+            f._field_read_geom = {"reference_number": _BOX}
         if not geom:
             f._s05_read_geom = {}
+            f._field_read_geom = {}
         data = {"value": committed, "confidence": 90, "method": method}
         if prior_note:
             data["validation_note"] = prior_note
@@ -121,6 +127,47 @@ def test_born_digital_skipped():
 
 def test_empty_pp_read_is_noop():
     d, _ = _run("1625802868", ("", 0.0))
+    assert d["confidence"] == 90 and "validation_note" not in d
+
+
+def test_winning_read_geom_prefers_box():
+    g = ExtractionEngine._winning_read_geom(
+        {"method": "anchor_crop_relocated",
+         "box": {"x_norm": .6, "y_norm": .4, "w_norm": .1, "h_norm": .02},
+         "taught_box": (.5, .5, .1, .02)})
+    assert g == (.6, .4, .1, .02), "prefer the actual located box over the pre-drift taught box"
+
+
+def test_winning_read_geom_rigid_uses_taught_box():
+    g = ExtractionEngine._winning_read_geom({"method": "anchor_crop", "box": None, "taught_box": (.5, .5, .1, .02)})
+    assert g == (.5, .5, .1, .02)
+
+
+def test_winning_read_geom_inline():
+    g = ExtractionEngine._winning_read_geom(
+        {"method": "anchor_inline", "box": {"x_norm": .1, "y_norm": .2, "w_norm": .3, "h_norm": .04}})
+    assert g == (.1, .2, .3, .04)
+
+
+def test_winning_read_geom_keyword_none():
+    # a keyword full-page read carries no box → no capture → the method abstains (C4)
+    assert ExtractionEngine._winning_read_geom({"method": "keyword", "value": "X"}) is None
+    assert ExtractionEngine._winning_read_geom(None) is None
+    assert ExtractionEngine._winning_read_geom({"box": "notadict"}) is None
+
+
+def test_fallback_anchor_disagree_holds():
+    """The load-bearing new path: an ANCHOR-read ref (no mapping geom, only the captured winner box)
+    still fires on a single-glyph disagreement. This is the real Print Tracker case."""
+    d, f = _run("1625802868", ("1G25802868", 1.0), anchor_geom=True, method="anchor_inline")
+    assert d["confidence"] <= 69 and (d.get("validation_note") or "")
+    assert "1625802868" in d["validation_note"] and "1G25802868" in d["validation_note"]
+    assert d["value"] == "1625802868", "never overwrites"
+    assert f._field_candidates == {}, "C1: still never a corroboration candidate"
+
+
+def test_fallback_anchor_agree_is_noop():
+    d, _ = _run("1G25802868", ("1G25802868", 1.0), anchor_geom=True, method="anchor_crop")
     assert d["confidence"] == 90 and "validation_note" not in d
 
 
