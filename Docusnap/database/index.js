@@ -4240,6 +4240,21 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 209 (recon_singlechar_misread_flag): ${e.message}`); }
   }
 
+  // mig 210 (2026-09-23, Oracle SIGN-OFF D1-D5 after the dual-reader census): glyph_confusable_resolve — the
+  // DOWNGRADE leg of the PP-OCR second reader. When a scanned reference's ONLY note is the Gate-C confusable
+  // soften ("has a character that can look like another on a scan") and the second reader AGREES with the
+  // committed read, the note is re-worded to confident copy. Still a validation_note ending in the same
+  // ref-advisory mark → the doc stays HELD, auto-file byte-identical; no value/confidence/method change.
+  // HARD dep glyph_fallback_enabled (the engine's env gate). DARK, seeded OFF, byte-identical off. Single-key
+  // seed (no array literal — keeps the loose seed-pin regex honest).
+  if (!applied.has(210)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('glyph_confusable_resolve', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (210)').run();
+      console.log('JS migration 210 applied: glyph_confusable_resolve (second-reader agree re-words the confusable soften note) seeded OFF (DARK, 1 row)');
+    } catch (e) { console.warn(`  migration 210 (glyph_confusable_resolve): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

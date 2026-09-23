@@ -2137,6 +2137,18 @@ _FILING_SANITY_REINSTATE_NOTE = ("'{}' — read from the page; the taught box re
 # validation_note so auto-file stays byte-identical (review-bound).
 _FILING_SANITY_SOFTEN_NOTE = ("The reference '{}' has a character that can look like another on a scan "
                               "(O/0, I/1) — " + _FILING_SANITY_SOFTEN_MARK + ".")
+# GLYPH_CONFUSABLE_RESOLVE (mig 210, 2026-09-23 — the DOWNGRADE leg; Oracle SIGN-OFF after the dual-reader census:
+# 3,718 scanned fields, 97.4% Tesseract/PP-OCR agree, 0 common-mode in the 120 hardest confusable-heavy agrees).
+# When the ONLY note on a scanned ref is the confusable SOFTEN note above (keyed on its UNIQUE phrase
+# `_GLYPH_SOFTEN_KEY`, never the shared MARK — the reinstate note carries the mark too) and the PP-OCR second
+# reader AGREES with the committed read, the note is RE-WORDED to this confident copy. It is STILL a
+# validation_note (non-empty) ending in the SAME `_FILING_SANITY_SOFTEN_MARK` — so composeNote.js still ranks it
+# a ref advisory, trust.isAutoFileEligible still HOLDS the doc, auto-file is byte-identical. It carries NO absent
+# mark (the renderer's "draw the box again" affordance rightly stays off — the value IS on the page). The RELEASE
+# leg (clear the note → auto-file) is a SEPARATE switch, gated on the filtered `_absent` census.
+_GLYPH_SOFTEN_KEY = "look like another on a scan"
+_GLYPH_RESOLVED_SOFTEN_NOTE = ("Two independent readers both read this reference as '{}' (one character can "
+                               + _GLYPH_SOFTEN_KEY + ") — " + _FILING_SANITY_SOFTEN_MARK + ".")
 # FILING_SANITY_REF_HISTORY_SOFTEN (2026-09-04; Oracle SIGN-OFF-W/COND, extends the mig-111 live soften).
 # The live soften needs >=2 live page families to AGREE on the committed value; but when the correct value
 # came from a `+corrected` adopt with NO live agreement (every reader read the page's confusable form), the
@@ -6863,6 +6875,15 @@ class ExtractionEngine:
               hold. C4 bbox: only fires when a located crop box + its page image are in hand (a pure
               keyword full-page read with no geometry → PP abstains).
 
+        DOWNGRADE leg (GLYPH_CONFUSABLE_RESOLVE, mig 210, 2026-09-23; Oracle SIGN-OFF D1-D5 after the dual-reader
+        census): the ONE prior note this method may touch is the Gate-C confusable SOFTEN note, ALONE (exact
+        text, no corrected_to). On PP AGREEMENT it is RE-WORDED to `_GLYPH_RESOLVED_SOFTEN_NOTE` — still a
+        non-empty validation_note ending in the same SOFTEN mark (D1 non-empty · D2 keeps the ref-advisory
+        mark, no absent mark · D3 keyed on the unique `_GLYPH_SOFTEN_KEY` phrase, sole note · D4 hard dep on
+        GLYPH_FALLBACK_ENABLED — the env check below gates it · D5 the AGREE branch fires on real anchor reads,
+        confirmed in the 2026-09-23 diag). On DISAGREEMENT / abstain in that mode: NOTHING changes (the soften
+        hold already stands; never stack a second note). Confidence/value/method untouched either way.
+
         DARK env GLYPH_FALLBACK_ENABLED; OFF byte-identical. Best-effort — never raises into extraction."""
         if os.environ.get('GLYPH_FALLBACK_ENABLED', '0') != '1' or not ref_field_key:
             return
@@ -6876,8 +6897,17 @@ class ExtractionEngine:
             method = str(data.get('method') or '')
             if any(m in method for m in ('override', 'manual', 'template_fixed')):
                 return                                   # human-set literal, not an OCR read
-            if str(data.get('validation_note') or '').strip() or data.get('corrected_to'):
-                return                                   # one-note-per-field; a prior arm spoke
+            _note0 = str(data.get('validation_note') or '').strip()
+            _resolve = False
+            if _note0 or data.get('corrected_to'):
+                # one-note-per-field; a prior arm spoke — EXCEPT the DOWNGRADE case: the soften note, alone,
+                # exact text (a value changed by a later resolver → no match → fail-closed), no corrected_to.
+                if (os.environ.get('GLYPH_CONFUSABLE_RESOLVE', '0') == '1' and not data.get('corrected_to')
+                        and _GLYPH_SOFTEN_KEY in _note0
+                        and _note0 == _FILING_SANITY_SOFTEN_NOTE.format(committed)):
+                    _resolve = True
+                else:
+                    return
             # scanned only — a born-digital text-layer read is not an OCR misread to second-guess
             if not (page_provenance and all(p == 'ocr' for p in page_provenance)):
                 return
@@ -6923,10 +6953,27 @@ class ExtractionEngine:
             if not p_norm:
                 return                                   # PP produced nothing → silent
             if c_norm == p_norm:
+                if _resolve:
+                    # DOWNGRADE: re-word the confusable soften note to confident copy. Still a note (held),
+                    # still the ref-advisory MARK, no absent mark, no cap/value/method change.
+                    data['validation_note'] = _GLYPH_RESOLVED_SOFTEN_NOTE.format(committed)
+                    self.log(f"  Second reader agrees with the reference '{committed}' — the look-alike "
+                             f"character reads the same both ways; confirm once before filing.")
+                    if self._trace:
+                        self._t('glyph_resolve', field=ref_field_key, outcome='agree', committed=committed,
+                                pp_read=pp[0], pp_conf=round(float(pp[1]), 3))
+                    return
                 # Visible in the import log so the operator can SEE the second-reader check ran and passed.
                 self.log(f"  Second reader checked the reference '{committed}' — agrees.")
                 if self._trace:
                     self._t('glyph_check', field=ref_field_key, outcome='agree', committed=committed,
+                            pp_read=pp[0], pp_conf=round(float(pp[1]), 3))
+                return
+            if _resolve:
+                # DOWNGRADE mode + a DISAGREEING second reader: the soften hold already stands — leave it
+                # untouched (never stack a second note, never re-cap). Trace-only so a census can count it.
+                if self._trace:
+                    self._t('glyph_resolve', field=ref_field_key, outcome='disagree', committed=committed,
                             pp_read=pp[0], pp_conf=round(float(pp[1]), 3))
                 return
             # EXACTLY ONE differing position (oracle C2 shape): the p7 `O`↔`0` / p11 `G`↔`6` single-glyph

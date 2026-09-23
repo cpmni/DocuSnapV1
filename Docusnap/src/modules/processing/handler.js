@@ -417,6 +417,11 @@ function _reconcileEnv(db) {
     // never overwrites, never a corroboration candidate. DARK (mig 207), byte-identical OFF; needs onnxruntime + the
     // vendored en rec model present (absent → read_crop returns None → Tesseract-only).
     if (learning.getSetting(db, 'glyph_fallback_enabled', 'false') === 'true') env.GLYPH_FALLBACK_ENABLED = '1';
+    // GLYPH_CONFUSABLE_RESOLVE (mig 210, 2026-09-23, Oracle SIGN-OFF D1-D5 after the dual-reader census): the
+    // DOWNGRADE leg — when the second reader AGREES with a scanned ref whose ONLY note is the confusable soften,
+    // the note is re-worded to confident copy. Still a note (held), same ref-advisory mark, auto-file byte-
+    // identical. HARD dep GLYPH_FALLBACK_ENABLED (the engine's own env gate enforces it). DARK, byte-identical OFF.
+    if (learning.getSetting(db, 'glyph_confusable_resolve', 'false') === 'true') env.GLYPH_CONFUSABLE_RESOLVE = '1';
     // CORROB_DATE_FOLD_WIDE (mig 208, 2026-09-23, gary → Oracle SIGN-OFF-W/COND; owner-proven on the live Print
     // Tracker batch): the corroboration date fold treats a worded / month-name date ('September 30, 2026') as equal
     // to the SAME calendar date read numerically ('30-09-2026'), so the same day read two ways no longer logs a

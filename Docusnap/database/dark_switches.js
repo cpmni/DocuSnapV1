@@ -142,6 +142,19 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   handling/deposit/%-discount line, a misread-COMPONENT exhibit) — if real docs false-hold in the [10p,£1) band,
   //   narrow min_delta to ≥£1 (still catches #464's £5); an owner live reprocess of #464 (harness can't reproduce it).
   'recon_singlechar_misread_flag',
+  // glyph_confusable_resolve (mig 210, 2026-09-23, Oracle SIGN-OFF D1-D5 after the dual-reader census — 3,718
+  //   scanned fields, 97.4% Tesseract/PP-OCR agree, 0 common-mode in the 120 hardest confusable-heavy agrees): the
+  //   DOWNGRADE leg of the second reader. A scanned ref whose ONLY note is the Gate-C confusable soften ("… can look
+  //   like another on a scan …") and whose PP-OCR re-read AGREES gets the note RE-WORDED to confident copy — still a
+  //   non-empty validation_note ending in the same ref-advisory mark, so the doc stays HELD and auto-file is
+  //   byte-identical (note-text-only; no value/confidence/method change; disagree/abstain → untouched). HARD dep
+  //   glyph_fallback_enabled (engine env gate). ⚑ FLIP GATE: the D5 live confirm (glyph_check AGREE fires on real
+  //   anchor reads — 40/40 on the 2026-09-23 Print Tracker diag) + realdoc OFF-vs-ON byte-identical on every field
+  //   except the note text + the JS mark-sync pin (composeNote.js still ranks the reworded note a ref advisory) +
+  //   the same onnxruntime/model vendoring owed by glyph_fallback_enabled. The RELEASE leg (clear the note →
+  //   auto-file) is a SEPARATE future switch gated on the filtered `_absent` census (R1-R6, incl. the R4
+  //   veto-fallthrough re-note seam at engine.py G1).
+  'glyph_confusable_resolve',
   // ref_confusable_confirmed_literal_disarm (mig 204) was FLIPPED ON by default at mig 206 (2026-09-22, owner
   //   "flip mig 204"): census M=0 / inert on the 700 corpus (TESTING/_measure/ref_disarm_census_20260922/), owner
   //   accepted the narrow ≥2-confirm supplier-strict auto-file lift. No longer dark — delisted here.
