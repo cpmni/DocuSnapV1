@@ -43,7 +43,30 @@ def _f(v):
         return None
 
 
-def snap_rect_to_words(rect, lines):
+def _alnum(s):
+    return ''.join(ch for ch in str(s or '') if ch.isalnum()).upper()
+
+
+def word_is_value(text, committed):
+    """VALUE-TEXT FILTER (S1 v3, 2026-09-23 night): is this page word part of the committed value's ink, rather than
+    its LABEL? The S1 v2 census showed the bare mapping rect (the rung's expanded read area) already covers "No:" on
+    many layouts, so a purely geometric admit swallowed the label into the reader's crop on 28 of 38 length abstains.
+    Content test on the alnum cores: containment either way (a split value `PO 12345`, a glued `No:SO-82482` word),
+    or the same length with ≤ 2 differing characters (the page pass's own misread of the value, `S0-82482` for
+    `SO-82482`, must still count as the value's word). A label ("NO", "DELIVERYNOTENO") fails both."""
+    a, c = _alnum(text), _alnum(committed)
+    if not a or not c:
+        return False
+    if len(a) >= 3 and (a in c or c in a):
+        return True
+    if len(a) == 2 and (c.startswith(a) or c.endswith(a)):
+        return True                                       # a split value's 2-letter prefix token (`PO 12345`)
+    if len(a) == len(c) and sum(x != y for x, y in zip(a, c)) <= 2:
+        return True
+    return False
+
+
+def snap_rect_to_words(rect, lines, committed=None):
     out = {'rect': rect, 'integrity': 'no_lines', 'n_words': 0, 'grown': False,
            'edges': {'left': False, 'right': False, 'top': False, 'bottom': False}}
     try:
@@ -66,6 +89,8 @@ def snap_rect_to_words(rect, lines):
                 overlap = min(x2, wx1 + ww) - max(x1, wx1)
                 if overlap < ADMIT_GLYPHS * g:
                     continue                                   # touched, not read
+                if committed is not None and not word_is_value(wd.get('text'), committed):
+                    continue                                   # the label (or a neighbour), not the value's ink
                 admitted.append((wx1, wy1, wx1 + ww, wy1 + wh))
         out['integrity'] = 'no_words'
         if not admitted:

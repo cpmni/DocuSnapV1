@@ -7036,7 +7036,7 @@ class ExtractionEngine:
                 from extraction import template_mapper as _tmsi
                 _lc = getattr(self, '_line_cache', None)
                 _lines = (_tmsi._page_words_cached(pages[page_idx], _tmsi._ocr_lines, _lc) if _lc is not None else None)
-                _si = _sli.snap_rect_to_words(box, _lines)
+                _si = _sli.snap_rect_to_words(box, _lines, committed)   # v3: the label never joins the value's ink
                 if self._trace:
                     self._t('slice_integrity', field=ref_field_key, integrity=_si['integrity'], n_words=_si['n_words'],
                             grown=_si['grown'], edges=_si['edges'], rect_in=box, rect_out=_si['rect'], geom_src=_geom_src)

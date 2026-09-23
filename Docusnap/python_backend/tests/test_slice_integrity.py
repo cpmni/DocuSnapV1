@@ -75,6 +75,25 @@ def test_cap_refuses_a_nick_on_a_long_line():
     assert r["integrity"] == "unhealed" and r["rect"] == R(0.64, 0.50, 0.10, 0.02)
 
 
+def test_value_text_filter_keeps_the_label_out():
+    """S1 v3: with the committed value known, a rect that covers the label too (the mapping rung's expanded read
+    area) yields the VALUE word only; the page pass's own one-glyph misread of the value still counts as the value."""
+    from extraction.slice_integrity import word_is_value
+    r = snap_rect_to_words(R(0.55, 0.30, 0.15, 0.02), LINES, committed="SO-82482")
+    assert r["n_words"] == 1 and abs(r["rect"]["x_norm"] - 0.60) < 1e-9, r
+    misread = [L(LABEL, W("S0-82482", 0.60, 0.30, 0.10, 0.02))]
+    r = snap_rect_to_words(R(0.55, 0.30, 0.15, 0.02), misread, committed="SO-82482")
+    assert r["n_words"] == 1 and abs(r["rect"]["x_norm"] - 0.60) < 1e-9, "the page's misread of the value is still the value's ink"
+    glued = [L(W("No:SO-82482", 0.55, 0.30, 0.15, 0.02))]
+    assert snap_rect_to_words(R(0.60, 0.30, 0.10, 0.02), glued, committed="SO-82482")["n_words"] == 1
+    split = [L(W("PO", 0.60, 0.30, 0.02, 0.02), W("12345", 0.63, 0.30, 0.06, 0.02))]
+    assert snap_rect_to_words(R(0.60, 0.30, 0.09, 0.02), split, committed="PO-12345")["n_words"] == 2
+    assert not word_is_value("No.", "DN-98358") and not word_is_value("DeliveryNoteNo.", "DN-98358")
+    assert word_is_value("DN-98358", "DN-98358") and word_is_value("DN.98358", "DN-98358")
+    # without a committed value the geometric rule alone still applies (label admitted when covered)
+    assert snap_rect_to_words(R(0.55, 0.30, 0.15, 0.02), LINES)["n_words"] == 2
+
+
 def test_never_raises_and_clamps():
     assert snap_rect_to_words(None, LINES)["integrity"] == "no_lines"
     assert snap_rect_to_words({"x_norm": "x"}, LINES)["integrity"] == "no_lines"
