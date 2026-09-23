@@ -40,7 +40,16 @@ only the mig-191 suppression lifts it for a taught on-shape winner) → **C0 yie
 exhibit #45 `PO-22954` is held ONLY by the note (overall 81 = the −12 fc penalty); **the full 727-doc arm
 (`TESTING/_measure/release_c0_20260923/RESULT.md`): 9 soften refs → 8 Print Tracker crop-WRONG/page-RIGHT (true
 positives, correctly held) + 1 = #45 → YIELD 1 of 9. Recommendation: keep mig 211 DARK, don't flip on this alone.**
-Broader: `disagreeing-read` holds 82/727 on reprocess — the page-family gate is the dominant Print Tracker hold. **Censuses:** filtered
+Broader: `disagreeing-read` holds 82/727 on reprocess — the page-family gate is the dominant Print Tracker hold.
+**LATER (the Paddle corroboration ARC, `docs/designs/PADDLE_CORROBORATION_ARC_2026-09-23.md`):** 007+oscar design
+(slice integrity → the reader's read set incl. the Review-drawn box + a label-line read → the decision rule). **007
+found a LIVE FRAME BUG in the dark hold** (`field_anchors` stores the taught box CENTRE; `anchor.py:1721` passes it
+unconverted; the hold cropped (+w/2,+h/2) off) → fixed S0 `a0c25f2` (centre→top-left, geometry follows the winner,
+anchor page 0, `_crop_pages` every doc). **Measured on the owner's 727 with the reader ON:** common-mode 0/358; 16
+disagreement holds ALL FALSE (5 clipped boxes, 4 bleed, 2 case → casefolded `f521ec5`, 2 serif, 4 sans 0/O identity at
+0.95); 3 true catches (PP siding with the PAGE). ⇒ PP is a TIE-BREAKER between box and page, never a lone arbiter; the
+0/O identity class needs the history/format axis; Part A (slice integrity) is the arc's own evidence. Oracle vet of the
+arc pending at the wrap; S1+ unbuilt. Step-1 (shape veto on taught reads) was REFUTED on data (Castellan) and withdrawn. **Censuses:** filtered
 `_absent` (`census_absent.py`, `RESULT_ABSENT_20260923.md`): 18 soften → all 14 PP-agrees crop-CORRECT, 4 disagrees
 crop-wrong/PP-right; per-glyph (`glyph_min_census.py`): correct agrees min 0.819+, the one both-wrong clipped read 0.505.
 Docs: `docs/oracle_log.md` (09-23 rulings + the RELEASE vet verbatim), ledger migs 207-211, `docs/designs/

@@ -125,6 +125,33 @@ integrity) → step 3 (Paddle + history tie-breaker, scored on the 727). **Owner
 worksheets are filed under the Job Ref (`JB-`), not the Job Sheet No; the 4 hand `JB-` confirms define the learned
 reference shape. Learning Repair on those 4 + a reprocess-ALL (which WOULD auto re-file the 19 under `CJB-`) — or leave.
 
+## LATER THE SAME NIGHT — the Paddle corroboration ARC (007 + oscar commissioned; design assembled; S0 built; measured)
+Owner: "go — commission 007 and oscar on the combined design" (slice integrity · Paddle read set incl. the Review-drawn
+box + a label-line keyword read · the decision rule). Both reports are folded into
+**`docs/designs/PADDLE_CORROBORATION_ARC_2026-09-23.md`** (every claim ✔ verified / ○ advisor-only; §12 = the numbers).
+- **007 found a LIVE FRAME BUG in the dark hold (verified):** `field_anchors.x_norm/y_norm` are the taught box CENTRE
+  (`renderer.js:5377`, `anchor.py:3970-3976`, `:960-962`); `anchor.py:1721` passes it unconverted as `taught_box`;
+  `_winning_read_geom` handed it to top-left crop math → every rigid `anchor_crop` winner gave PP a crop shifted
+  (+w/2,+h/2); masked because mapped docs preferred the mapping rect; the pin asserted the pass-through. **Fixed in
+  S0 `a0c25f2`** + geometry follows the winner's method (mapping rect / anchor box on page 0 per `anchor.py:1826` /
+  keyword = no box) + `_crop_pages` for every doc + capture for every field + harness `RR_TRACE_OUT` / `RR_SLICE_DIR`.
+- **oscar's corrections (verified):** ≥8 census DATE disagreements were PADDLE-wrong on merged two-token crops (PP
+  0.42-0.85) → a PP floor (~0.90) for any disagreement hold; the 95-char ASCII dict → `£` OOV; "PP disagrees on the
+  8 Print Tracker true positives" was inferred.
+- **THE MEASUREMENT (`run_glyph_on.sh` 727 docs, FALLBACK+RESOLVE on, trace; crops eyeballed via
+  `run_glyph_slices.sh` + `glyph_slice_sheet.py`):** 358 PP-agrees, **0 box-wrong (common-mode 0/358)**; **16
+  disagreement holds, ALL FALSE**: 5 CLIPPED boxes (S→`5O`, 3→`5`, D→`O`, W→`V`/`N`) · 4 vertical bleed · 2 case-only
+  (→ compare casefolded, `f521ec5`) · 2 serif S/5-O/0 · 4 sans 0/O identity (`W2E8X06407`→`…XO6407` at 0.95, page
+  agreed with the box); 3 TRUE catches via the resolve branch (`HS71Y07217`→PP `H571Y07217` 0.999, siding with the
+  page). The `RFH0`/`RFHO738865` glyph gave PP two answers on two crops → at the font's identity limit → the history/
+  format axis, not pixels. With casefold + floor 0.90 + Part A on the clips + "PP's lone dissent vs a box+page
+  agreement is trace-only": false holds 16→1, true catches 3. **Part C revised: PP is a TIE-BREAKER between box and
+  page, never a lone arbiter.** Two traps fixed on the way: dev slice names collided across shards/engines (pid +
+  process-wide seq now); the harness attribution of trace events is by the engine's own `doc` field.
+- **Oracle vet of the whole arc: RUNNING at handover** (verdict → `docs/oracle_log.md` + the design doc §11).
+  Nothing of S1+ is built. mig 207's own flip needs a re-census (its population widened; 16/529 false holds before
+  the fixes). Commits: `a0c25f2` (S0), `f521ec5` (casefold + slice capture + design + measurement).
+
 ## OWED / flip gates
 - **mig 211 (Oracle C0 + C10):** read the full C0 result (`analyse_c0.js`) — yield ≈ 0 → retire the key (Oracle's
   ruling); else realdoc OFF-vs-ON at RR_APP_ENV=1 with FALLBACK+RESOLVE=1 in BOTH arms: M=0, zero per-field drop,
