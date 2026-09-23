@@ -6883,23 +6883,25 @@ class ExtractionEngine:
             def _alnum(s):
                 return _re.sub(r'[^A-Za-z0-9]', '', str(s))
             c_norm, p_norm = _alnum(committed), _alnum(pp[0])
-            if not p_norm or c_norm == p_norm:
-                return                                   # AGREE on alnum content → do nothing
-            if len(c_norm) != len(p_norm):
-                return                                   # length differs → framing/dropped-char noise → abstain
+            if not p_norm:
+                return                                   # PP produced nothing → silent
+            if c_norm == p_norm:
+                # Visible in the import log so the operator can SEE the second-reader check ran and passed.
+                self.log(f"  Second reader checked the reference '{committed}' — agrees.")
+                return
             # EXACTLY ONE differing position (oracle C2 shape): the p7 `O`↔`0` / p11 `G`↔`6` single-glyph
             # substitution. A multi-position same-length difference is a SHIFTED crop artifact (a stray `F`/`t`
-            # prefix that pushes every char along, still nets same length) — the census's residual false-hold
-            # class after same-length alone. Abstain on it; hold ONLY a clean single-glyph swap.
-            if sum(a != b for a, b in zip(c_norm, p_norm)) != 1:
+            # prefix that pushes every char along, still nets same length); a length difference is
+            # framing/dropped-char noise — abstain on both, hold ONLY a clean single-glyph swap.
+            if len(c_norm) != len(p_norm) or sum(a != b for a, b in zip(c_norm, p_norm)) != 1:
                 return
             # SAME-LENGTH single-glyph disagreement → hold, review-bound, neutral note (never overwrite/auto-file)
             data['confidence'] = min(int(data.get('confidence') or 0), 69)
             data['validation_note'] = (
                 f"Two text readers disagree on this reference: the scan reads '{committed}', a second "
                 f"reader reads '{pp[0]}'. Please check it against the page before filing.")
-            self.log(f"  Glyph disagreement hold: {ref_field_key} tesseract '{committed}' vs "
-                     f"PP-OCR '{pp[0]}' — held for review")
+            self.log(f"  Second reader disagrees on the reference: the scan reads '{committed}', the "
+                     f"second reader reads '{pp[0]}' — holding this document for you to check.")
             if self._trace:
                 self._t('glyph_disagreement', field=ref_field_key, committed=committed,
                         pp_read=pp[0], pp_conf=round(float(pp[1]), 3))

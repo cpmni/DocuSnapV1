@@ -5679,3 +5679,15 @@ still cut). Either way a Rejoin / recovery path stays owed (the original sits in
 > the "Join with page N" button on the pair reason replaces the raw-folder hint). **STILL OWED before the mig-180 flip:**
 > the C9 census cells (rasterised real_34, a young-install stack, the email-arm-only class arm) re-run WITH C12 present,
 > and the manual e2e (2-page repeat-letterhead → held pair → Join → one 2-page doc that reads the page-2 total).
+
+## 2026-09-23 — LOGO PROPAGATION for the "Not recognised" tab (owner observation)
+When a batch imports and several docs land in the **Not recognised** tab (no template/logo match), teaching or
+identifying ONE of them (which learns its logo/template) does NOT automatically re-check the OTHER unrecognised
+docs against the newly-learned logo — they stay unrecognised until each is taught/reprocessed individually. The
+existing sibling-ripple (`SUPPLIER_RIPPLE` / `find-issuer-siblings`, review/handler.js:178+) only re-reads docs
+that ALREADY matched a template/issuer; it can't reach a doc with no match yet. **Wanted:** after teaching/
+identifying an unrecognised doc, run a logo/identity re-match of the still-unrecognised queue against the new
+logo and lift the ones that now match into their (now-recognised) sender. Scope/gate: barry → advisor → Oracle
+(a re-identify that mis-assigns a sibling to the wrong sender would be a silent misfile — must be review-bound /
+fail-toward-review, same as the ripple). Value: one teach clears a whole batch of same-sender unrecognised docs
+instead of N teaches. See also `issuer_sibling_fill`, the confirm-once ripple.
