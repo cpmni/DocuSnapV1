@@ -194,6 +194,25 @@ box + a label-line keyword read · the decision rule). Both reports are folded i
   + docs → S-B1 → S2 per C3 → S3 per C4 → Part C per C5-C9 → Oracle. Commits: `a0c25f2` (S0), `f521ec5`,
   `fff9482`, `e28a9d6` (C1 + floor + pin + vet), `e08c7db` (traced exits), `005b22b` (S1).
 
+## FINAL (the owner went to bed ~22:05: "sandbox run the app with everything on, Chris FULL teach-a-doc test + report")
+- **S1 v3 = the value-text filter (`625ccc0`)** — a row-band word joins the reader's rect only when it shares content
+  with the committed value (the page pass's own misread still counts; a label never does). **C10 RESULT on the 727
+  (`TESTING/_measure/release_c0_20260923/RESULT_C10.md`): false holds 1 · would-file lost 1 · 3 catches kept · agree 419
+  · length abstains 30 · `rewritten_winner` 32 · true common-mode 0 (18 Castellan GT artefacts) · the 5 clips 4 agree
+  + 1 safe abstain · the 4 bleeds 3 agree + the 1 hold · Print Tracker `W2E8X06407` agrees at 0.999.** Oracle C10 bar
+  MET; owed before any flip: OFF md5 identity + two ON runs byte-identical on vendor/python. Recommendation: migs
+  207 + 212 (+210) flip-ready; 211 stays DARK.
+- **CHRIS SANDBOX (per `/christest`):** root `C:\Users\cmccu\AppData\Local\Temp\claude\c--GIT-Projects-Docusnap\
+  chris-sandbox-20260923\` (fresh DB at mig 212 with ALL SIX 2026-09-23 switches ON via `arm_switches.py`: 207 hold,
+  210 reword, 211 release, 212 slice integrity, 208 date fold, 209 arithmetic witness; 1,475 Demo Docs copied; Output
+  `<root>\Output`), app on CDP **9223**, PID **30400**, launcher pid 17772, driver `…\chris-driver\`. Chris spawned
+  (general-purpose + persona) with the owner's contract verbatim and the mission: teach → 2 confirms → import the rest
+  for ≥4 suppliers, count filed/held/wrong, check filed values against the page, compare with the 09-22 / 09-20 /
+  09-15 / 08-23 rounds; report → `<root>\CHRIS_REPORT_2026-09-23.md` and `docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md`.
+  **RUNNING at handover** — if his report is not in `docs/`, read `<root>\CHRIS_REPORT_2026-09-23.md`. The sandbox is
+  left running for the owner to poke. IMPLEMENT NOTHING from his round without the owner's go.
+- NOT pushed (owner's call; the whole branch is unpushed). NOT run: the md5/determinism arms.
+
 ## OWED / flip gates
 - **mig 211 (Oracle C0 + C10):** read the full C0 result (`analyse_c0.js`) — yield ≈ 0 → retire the key (Oracle's
   ruling); else realdoc OFF-vs-ON at RR_APP_ENV=1 with FALLBACK+RESOLVE=1 in BOTH arms: M=0, zero per-field drop,

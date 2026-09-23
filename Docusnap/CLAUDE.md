@@ -48,8 +48,14 @@ unconverted; the hold cropped (+w/2,+h/2) off) → fixed S0 `a0c25f2` (centre→
 anchor page 0, `_crop_pages` every doc). **Measured on the owner's 727 with the reader ON:** common-mode 0/358; 16
 disagreement holds ALL FALSE (5 clipped boxes, 4 bleed, 2 case → casefolded `f521ec5`, 2 serif, 4 sans 0/O identity at
 0.95); 3 true catches (PP siding with the PAGE). ⇒ PP is a TIE-BREAKER between box and page, never a lone arbiter; the
-0/O identity class needs the history/format axis; Part A (slice integrity) is the arc's own evidence. Oracle vet of the
-arc pending at the wrap; S1+ unbuilt. Step-1 (shape veto on taught reads) was REFUTED on data (Castellan) and withdrawn. **Censuses:** filtered
+0/O identity class needs the history/format axis. **Oracle vet: SIGN OFF W/COND per slice (C1-C14; `pp_line` breaches
+C1 → withdrawn; C6 rewritten winners abstain). BUILT: C1 pad parity + floor 0.90 (`e28a9d6`), every hold exit traced
+(`e08c7db`), S1 `extraction/slice_integrity.py` mig 212 `glyph_slice_integrity` (`005b22b`→`feaa1a4`→`625ccc0`: snap the
+BARE box to the page word boxes, value-text filter keeps the label out). C10 RESULT on the 727
+(`TESTING/_measure/release_c0_20260923/RESULT_C10.md`): false holds 16→1, would-file lost 6→1, 3 catches kept, agree
+419, true common-mode 0 (18 Castellan GT artefacts) → migs 207+212(+210) flip-ready pending md5/determinism; 211 DARK.**
+Chris ran the sandbox (all six switches ON, CDP 9223, PID 30400) teach→2-confirms→import vet overnight →
+`docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md`. Step-1 (shape veto on taught reads) was REFUTED on data and withdrawn. **Censuses:** filtered
 `_absent` (`census_absent.py`, `RESULT_ABSENT_20260923.md`): 18 soften → all 14 PP-agrees crop-CORRECT, 4 disagrees
 crop-wrong/PP-right; per-glyph (`glyph_min_census.py`): correct agrees min 0.819+, the one both-wrong clipped read 0.505.
 Docs: `docs/oracle_log.md` (09-23 rulings + the RELEASE vet verbatim), ledger migs 207-211, `docs/designs/

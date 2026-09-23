@@ -385,6 +385,25 @@ job is to turn those 105 into real reads** — the S1 arm (`glyph_s1.*`) is the 
 | `length_or_multi_diff` abstains | 105 | 83 (77 anchor · 6 mapping) |
 | common-mode, all branches | 0 / 340 | 4 / 372 — the `RFH0738865` family again: on the word-tight rect PP reads `RFH0…` at **1.0**, Tesseract `0`, four human confirms `O` |
 | `slice_integrity` verdicts | — | healed 379 (192 + 55 grown mapping · 79 + 53 grown anchor) · clean 67 · no_words 11 · unhealed 4 |
+**S1 v2 (snap the BARE box first; parity only as the no-words fallback; Oracle C6 on the DOWNGRADE) ✔:**
+| | S1 v1 | **S1 v2** |
+|---|---|---|
+| DISAGREEMENT holds / would-file lost | 0 / 0 | **0 / 0** |
+| agree | 366 | **410** (human-confirmed 114 · machine 296) |
+| `length_or_multi_diff` abstains | 83 | **42** (36 anchor · 6 mapping) — 30 still label-admitted → v3 |
+| `rewritten_winner` abstains (C6) | — | 32 — incl. all 5 `RFH0738865` docs (the identity-limit family no longer agrees OR rewords) |
+| true catches (RESOLVE) | 3 | 3 |
+| "common-mode" per the harness GT | 4 | 3 — **all three are the Castellan worksheets `CJB-1578/2847/2592`: both readers read the printed Job Sheet number correctly; the "confirmed" value is the Job Ref from a machine `scope_sweep` (RESULT_SHAPE_EXEMPT.md) → GT artefact, TRUE common-mode 0** |
+| `slice_integrity` verdicts | — | healed 374 (n=1: 189+50 mapping, 74+27 anchor; n≥2: 34) · clean 67 · no_words 15 |
+**S1 v3 (+ the VALUE-TEXT FILTER: a row-band word is admitted only when it shares content with the committed value —
+containment either way, a 2-letter prefix token of a split value, or the same length within 2 characters so the page
+pass's own misread still counts; a label fails) — FINAL, `TESTING/_measure/release_c0_20260923/RESULT_C10.md`:**
+agree **419** · disagreement holds **1** (false: `SO-99174` serif O/0 at 0.918, no page word matched → parity fallback)
+· would-file lost **1** · catches **3** · length abstains **30** (label-swallowed 2) · `rewritten_winner` 32 ·
+`pp_lowconf` 2 · true common-mode **0** (18 Castellan GT artefacts) · the five clips: 4 agree (0.95-0.999) + 1 safe
+abstain; the four bleeds: 3 agree + the one false hold; the Print Tracker `W2E8X06407` sans 0/O now agrees at 0.999.
+**Oracle C10 bar MET** (false holds 1, would-file lost 1, catches kept, ⊆, M=0); owed: OFF md5 identity + two ON
+runs byte-identical. migs 207 + 212 (+210) flip-ready on this evidence; mig 211 stays DARK.
 **Oracle C10 bar (false holds ≤ 1) MET on this arm.** Two findings from the residue: (i) **70 of the 83 remaining length
 abstains admitted the LABEL** ("No.", "Delivery Note No.", "NO") — the snap was started from Tesseract's +20 px parity
 rect, which overlaps the label by ~2 glyphs, so the union swallowed it (`No. DN-98358`); fixed the same night: the

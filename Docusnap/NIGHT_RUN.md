@@ -6,6 +6,18 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
+## ✅ DONE 2026-09-23 NIGHT — the PADDLE CORROBORATION ARC: S0 geometry + C1 + traced exits + S1 slice integrity (mig 212) built DARK, C10 flip census MET, Chris teach-a-doc sandbox vet — `HANDOVER_2026-09-23_NIGHT.md` + `TESTING/_measure/release_c0_20260923/RESULT_C10.md`
+Owner "go — build S1 word-snap and re-census", then "sandbox run the app with everything on, Chris FULL teach-a-doc
+test + report; going to bed". 007+oscar design → Oracle SIGN OFF W/COND (C1-C14). Built: the taught-box CENTRE→top-left
+frame fix + geometry follows the winner (`a0c25f2`), pad parity + PP floor 0.90 (`e28a9d6`), every hold exit traced
+(`e08c7db` — the trace found 105 silent length abstains behind a "clean" census), S1 `slice_integrity.py` word-snap
+(`005b22b`) → bare box first + Oracle C6 (`feaa1a4`) → value-text filter (`625ccc0`). **Six 727-doc arms;** final:
+false holds 16→1, would-file lost 6→1, 3 catches kept, agree 419, true common-mode 0 → migs 207+212(+210) flip-ready.
+Chris sandbox (all six 09-23 switches ON, CDP 9223, PID 30400, fresh DB, 1,475 Demo Docs): teach → 2 confirms → import
+the rest, ≥4 suppliers, filed/held/wrong counts, comparison with 09-22/09-20/09-15/08-23 → `docs/CHRIS_FULL_APP_REVIEW_
+2026-09-23.md`. **Repeat only if:** the hold's compare/geometry changes again (re-run `run_glyph_s1.sh` + `analyse_glyph_on.js`).
+**Owed (morning):** OFF md5 identity + two ON runs byte-identical (the last C10 items) · push · Chris triage · kill 9223.
+
 ## ✅ DONE 2026-09-22 NIGHT — PP-OCR CONFUSABLE FALLBACK built S0→S2 (DARK, mig 207) + FULL SECURITY REVIEW + CHRIS full vet — `TESTING/_measure/glyph_fallback_census_20260922/RESULT.md` + `docs/SECURITY_REVIEW_2026-09-22.md`
 Autonomous (owner "going to bed, you are on auto"). **Pushed** through `bcbd7be`; pins **413/413 green**.
 **THE FEATURE (owner's `1G25802868` misread → "Tesseract is the bottleneck"):** measured PP-OCR (en_PP-OCRv3 rec, ONNX)
