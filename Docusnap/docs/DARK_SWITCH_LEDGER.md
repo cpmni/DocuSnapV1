@@ -53,6 +53,30 @@ after live proof on the owner's VM (the Castellan worksheet batch, 4/4 filed) + 
 **anchor_code_left_grow FLIPPED ON (mig 193)** (see HELD group). **45 keys are dark.** A fresh batch census ran
 2026-09-21 night at HEAD (mig 198) over the same 700-corpus copy — result in `TESTING/_measure/flip_census_20260921/RESULT.md`.
 
+**2026-09-22 UPDATE — the BATCH FLIP.** Mig 205 graduated **34 fail-toward-review switches** to customer defaults in
+one go (owner: "flip any safe/inert" for the test clients); mig 206 flipped `ref_confusable_confirmed_literal_disarm`
+(census M=0). The dark list collapsed to **11 keys**. Every bullet below marked with a later FLIPPED/GRADUATED note is
+in `database/dark_switches.js`'s history comment; the LIVE list is `TEST_SWITCH_KEYS` there — **14 keys as of
+2026-09-23 evening** (see the next update).
+
+**2026-09-22/23 UPDATE — the second-reader family + two Print Tracker fixes (four new dark keys, 11 → 14):**
+- **glyph_fallback_enabled (mig 207)** — a second, independent text reader (PP-OCR) re-reads a scanned reference; if it
+  DISAGREES with the main reader by one look-alike character, the document is HELD with a note naming both readings.
+  Never changes a value, never files. _Census: safety PASS on 700 docs (false-hold 0.2%), catches the owner's two real
+  Print Tracker misreads. Needs the reader's runtime + model vendored into the installer before any flip._
+- **corrob_date_fold_wide (mig 208)** — a date printed in words ("September 30, 2026") and the same day read as numbers
+  ("30-09-2026") now count as AGREEING instead of holding the document forever (the Print Tracker "depletion date"
+  flood). _Releases holds, so its gate is stricter: every released hold must be a genuine same-day pair._
+- **recon_singlechar_misread_flag (mig 209)** — a total that only balances subtotal+tax through the 2% tolerance AND
+  differs from the computed total by a single digit is held with a neutral note (the one wrong-value money auto-file
+  found in 1,076 docs: £2,363.76 read £2,368.76). _Gate: the exact-#464 unit test + a false-hold census._
+- **glyph_confusable_resolve (mig 210, 2026-09-23 evening)** — when the second reader AGREES with a reference that was
+  held only because it contains a look-alike character (O/0, I/1…), the note is RE-WORDED to say both readers agree.
+  Still held (one confirm click), auto-file unchanged. _Oracle SIGN OFF after the dual-reader census (3,718 scanned
+  fields: 97.4% agree, 0 both-confidently-wrong in the 120 hardest). Live check done: the agree branch fires on the
+  owner's real Print Tracker reads (40/40). Depends on mig 207 being on. The stronger "clear the note and file" leg is
+  NOT built — it waits on the filtered census (`census_absent.py`) + a re-vet._
+
 ---
 
 ## 🟢 READY — safety test passed, awaiting your go (2)

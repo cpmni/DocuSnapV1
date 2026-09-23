@@ -218,6 +218,11 @@ scratch/sandbox, implementing a Chris card); **anything dangerous goes to the ag
 and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
+- **2026-09-23 · [mig 210 flip gate] `glyph_confusable_resolve` realdoc OFF-vs-ON** — built DARK (12 pins green; D5
+  live-confirmed 40/40 AGREE on the Print Tracker diag). Owed before any flip: the 605 realdoc at `RR_APP_ENV=1` with
+  `GLYPH_FALLBACK_ENABLED=1` ON-vs-`GLYPH_CONFUSABLE_RESOLVE` OFF/ON → every field byte-identical EXCEPT the soften
+  note's text on PP-agree rows (count them = the efficacy denominator); 0 value/conf/method diffs. Same onnxruntime +
+  model vendoring gate as mig 207. Seams for the future RELEASE leg: `docs/designs/CONFUSABLE_RELEASE_SEAMS_2026-09-23.md`.
 - **2026-09-15 · [S4, owner-machine] LIVE end-to-end test of teach-over-client upload-to-teach** — built DARK
   `354c23d`, pins 81/81, but not driven live (S4 is a client main-process change → needs a client restart; Chris
   could only reload renderers). After flipping `teach_over_client_enabled='true'`: from the client, Import a
