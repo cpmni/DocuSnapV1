@@ -53,6 +53,18 @@ then sees an UN-NOTED ref for the first time.
   MORE evidence than the confusable-soften, so releasing them is not looser — but the census population is defined by
   the confusable-soften trigger, so the flip gate covers exactly the weakest producer.
 
+## Seam 6 — a CLIPPED crop can make BOTH readers wrong (found by the census's synthetic clip arm, 2026-09-23)
+- `RESULT_ABSENT_20260923.md`: 18 soften slices left-shaved by ~55% of one glyph → 7 both-agree, 6 on the true value,
+  **1 both WRONG** (`SO-82482` → `30-82482` by Tesseract AND PP). Same pixels, same loss — the exact shape Oracle R6
+  feared for the `_absent` population (enriched for clipped taught boxes).
+- Today it cannot reach the RELEASE (`S`↔`3` is not a `_CONFUSE_TO_DIGIT` pair → no soften → the ABSENT note holds),
+  and every in-map pair (`S`↔`5`, `O`↔`0`, `I`↔`1`) resolved correctly under the clip (PP read `SO-` where Tesseract
+  read `50-`/`$0-` → disagree → held). But the map is one edit away from admitting a pair PP shares.
+- **Design requirement for the RELEASE:** a flush-edge guard — abstain (keep the note) when the value's first or last
+  glyph box touches the crop edge (the mapper already knows the located box; `_crop_padded` adds the quiet zone, so a
+  glyph on the padded edge means the box clipped it). Alternative: scope the RELEASE to the two history-backed
+  producers (Seam 5) and leave the witness-less confusable-soften on the DOWNGRADE. Oracle's call at the re-vet.
+
 ## What the DOWNGRADE build already fixed for the RELEASE
 - The exact-text "sole note" match (`_note0 == _FILING_SANITY_SOFTEN_NOTE.format(committed)`) fails closed when a
   later resolver changed the value — the RELEASE inherits it.

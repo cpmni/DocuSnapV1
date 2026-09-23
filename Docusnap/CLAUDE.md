@@ -21,11 +21,30 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-23 EVENING (date-fold + arithmetic-witness built DARK; a dual-reader census FLIPS Oracle on the confusable RELEASE; CLAUDE.md collapsed + a VERIFY-DON'T-ASSUME rule):
-**READ `HANDOVER_2026-09-23_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`; **the session's work is
+## ⏭ LATEST — 2026-09-23 NIGHT (DOWNGRADE `glyph_confusable_resolve` mig 210 built DARK; the filtered `_absent` census MET the RELEASE gate 0/14; RELEASE still unbuilt pending an Oracle re-vet):
+**READ `HANDOVER_2026-09-23_NIGHT.md` FIRST** (then `_EVENING.md`). Branch `feat/teach-side-overnight`; **COMMITTED UNPUSHED
+`f3a6ccd` (feat: mig 210) · `8798fed` (test: census_absent.py) · `3313fc2` (docs) + the wrap commit; migs → 210;
+`TEST_SWITCH_KEYS` 14; `run-pins.js` 413/413; `test_glyph_confusable_resolve.py` 12/12.** **Built DARK:** inside
+`engine._glyph_disagreement_hold`, when the SOLE note is the Gate-C confusable soften (exact text, keyed on the unique
+phrase "look like another on a scan", no `corrected_to`) and PP-OCR AGREES, the note is RE-WORDED to confident copy —
+still a note ending in `_FILING_SANITY_SOFTEN_MARK` (held, auto-file byte-identical, no cap/value/method change);
+disagree/abstain untouched; hard dep `GLYPH_FALLBACK_ENABLED`. **D5 confirmed at source:** 40/40 `glyph_check` AGREE,
+0 `no_box`, on the owner's real Print Tracker diag. **Filtered `_absent` census** (`census_absent.py`, the engine's own
+`_nearest_confusable_page_token`/`_one_digit_letter_confusable` + `reconstruct_page_text`; verdict
+`TESTING/_measure/dual_reader_census/RESULT_ABSENT_20260923.md`): 1,323 refs → 64 absent → **18 soften → all 14
+PP-agrees crop-CORRECT (common-mode 0), all 4 disagrees crop-wrong/PP-right.** Synthetic clip arm: **1/18 BOTH wrong**
+(`SO-82482` clipped → `30-82482`; `S`↔`3` is not a map pair so unreachable today) → the RELEASE needs a flush-edge guard.
+**RELEASE NOT built:** R1-R6 survive only as a paraphrase → re-vet with `docs/designs/CONFUSABLE_RELEASE_SEAMS_2026-09-23.md`
+(G1 fall-through + Fix A `anchor_inline` both re-note the soften set by construction; the boost; the passed ambiguous
+flag; 3 producers; the clip) BEFORE building mig 211. `docs/oracle_log.md` now carries the 09-23 rulings (post-hoc);
+ledger has migs 207-210; `NIGHT_RUN.md` QUEUE has the mig-210 realdoc gate. Traps: run `run-pins.js` from the REPO ROOT
+(a `Set-Location` persists across PowerShell calls); long censuses go DETACHED via `Start-Process` (tool cap 10 min).
+
+## ⏭ 2026-09-23 EVENING (date-fold + arithmetic-witness built DARK; a dual-reader census FLIPS Oracle on the confusable RELEASE; CLAUDE.md collapsed + a VERIFY-DON'T-ASSUME rule):
+**READ `HANDOVER_2026-09-23_EVENING.md`.** Branch `feat/teach-side-overnight`; **the session's work is
 COMMITTED — `7748c81` (feat: fold + arithmetic-witness) · `7c0d2e4` (docs) · `dab0abf` (census tooling), UNPUSHED;
 migs → 209; `TEST_SWITCH_KEYS` 13; `run-pins.js` 413/413.**
-A dev app is RUNNING with env `CORROB_DATE_FOLD_WIDE=1`+`GLYPH_FALLBACK_ENABLED=1` (env-only, reverts on restart).
+A dev app may still be RUNNING with env `CORROB_DATE_FOLD_WIDE=1`+`GLYPH_FALLBACK_ENABLED=1` (env-only, reverts on restart).
 **Built DARK (byte-identical off):** (1) **`corrob_date_fold_wide` mig 208** — wires the pre-existing worded-vs-numeric
 SAME-day date fold that ends the Print Tracker "depletion-date flood" (a `disagreeing-read` hold on "September 30,
 2026" vs "30-09-2026"); `_reconcileEnv` mirror. (2) **`recon_singlechar_misread_flag` mig 209** (gary→Oracle
