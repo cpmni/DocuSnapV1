@@ -1,9 +1,25 @@
 # Confusable RELEASE (paddle-agree → clear the soften note → auto-file) — the seams to close BEFORE building it
 
-Date 2026-09-23 (evening). Status: **NOT BUILT.** The DOWNGRADE leg (`glyph_confusable_resolve`, mig 210) IS built
-DARK. This note records, at source, every downstream arm that would re-judge a ref whose soften note the RELEASE
-cleared — so the future build (and its Oracle re-vet with R1-R6 restated verbatim) starts from verified facts, not
-the summary in `HANDOVER_2026-09-23_EVENING.md`.
+Date 2026-09-23 (evening). Status: **BUILT DARK the same night — `glyph_confusable_release`, mig 211** (gary design →
+Oracle SIGN-OFF-W/COND C0-C11, `docs/oracle_log.md`). The DOWNGRADE leg (`glyph_confusable_resolve`, mig 210) is
+built DARK too. This note records, at source, every downstream arm that re-judges a ref whose soften note the
+RELEASE cleared, and how the build answered each seam:
+- Seam 1 (G1): the release ABSTAINS on a veto-fallthrough doc (`veto_fallthrough`) — the confident DOWNGRADE copy
+  beats G1's "couldn't be confirmed" note; the G1 predicate is pinned to refuse the released shape anyway.
+- Seam 2 (Fix A): OFF in production (corrected below) — an `anchor_inline` release goes straight to eligible; the
+  census's own geometry, kept in slice 1 (Oracle Q4).
+- Seam 2b: population bounded to mapped-template docs (`_s05_pages`); accepted for slice 1 (Oracle Q5).
+- Seam 3/3b: the fc −12 and the boost lift a released doc — a NAMED precondition (`role_disagree_refuse_at100`) and
+  a flip-census classification (a)/(b)/(c), not a code change.
+- Seam 4: the ambiguous flag is RE-INVOKED inside the release path (Oracle C5) — never by reordering.
+- Seam 5: the release keys on a producer TAG (`self._soften_meta`, confusable-soften only, map-pair page form).
+- Seam 6 (clip): a SECOND PP read on a 1.0×h-wide crop must still contain the value (boundary-guarded) AND the
+  weakest glyph on the narrow read must clear 0.80 — the one both-wrong clipped read scored 0.505.
+- NEW (Oracle P1, verified at source): trust.js `_pageFamilyDisagrees` would hold most of the cold soften set anyway
+  (the whole-page `S0-` read is a recorded keyword-family disagreement; only the mig-191 suppression lifts it, for a
+  taught on-shape winner) → the release runs the SAME rule in-engine (`_glyph_release_page_family_disagrees`, parity-
+  pinned against trust.js with shared fixtures) and abstains where trust.js would hold. C0 targeted run on the owner's
+  DB copy: the Chris exhibit #45 `PO-22954` is category (ii) — held ONLY by the note (overall 81 = −12 fc penalty).
 
 ## Where the RELEASE would sit
 `engine.py` `_glyph_disagreement_hold` (called at ~:12151), inside the `_resolve` branch on PP AGREE. Today (DOWNGRADE)
@@ -23,15 +39,30 @@ then sees an UN-NOTED ref for the first time.
   (fail-toward-review, RELEASE inert there). NOT a safety hole — but the two branches must be PINNED: (a) fall-through
   doc → note cleared then G1 re-noted → `_needs_review`; (b) non-fall-through doc → note stays cleared → eligible.
 
-## Seam 2 — Fix A inline-harvest absence hold (`engine.py` ~:12757, `INLINE_HARVEST_ABSENCE_HOLD`, default ON)
-- The general-doc twin of G1: for a critical winner with method EXACTLY `anchor_inline` and no note,
-  `_inline_absence_should_hold` (:3048) = `not _fallthrough_critical_corroborated(...)` → SAME predicate → for the
-  soften set → True → re-notes "read from the page layout but couldn't …".
-- **Consequence:** the RELEASE is inert for every `anchor_inline` winner (Print Tracker's refs are largely
-  `anchor_inline` / `anchor_crop` / `anchor_crop_relocated` — see the 2026-09-23 diag). Design choice for the re-vet:
-  (A) accept (RELEASE helps mapping / anchor_crop / anchor_crop_relocated winners only), or (B) let Fix A treat a
-  PP-confident-agree as corroboration — which is exactly the "PP as a witness" door Oracle C1 closed. Recommend (A),
-  pinned: an `anchor_inline` soften-set ref RELEASED then re-held by Fix A.
+## Seam 2 — Fix A inline-harvest absence hold (`engine.py` ~:12757, `INLINE_HARVEST_ABSENCE_HOLD`) — **OFF in production**
+- ⚠ CORRECTED 2026-09-23 (gary F4, verified at source): `INLINE_HARVEST_ABSENCE_HOLD = os.environ.get(…, '0') != '0'`
+  (engine.py:612) — default **OFF**, and NOT mirrored anywhere in `src/` (so `RR_APP_ENV=1` is OFF too; the
+  2026-07-26 evening handover reverted it to '0'). The first draft of this note said "default ON" — WRONG.
+- So the general-doc twin of G1 does NOT re-judge a released `anchor_inline` ref: after the RELEASE pops the note, an
+  `anchor_inline` winner goes STRAIGHT to eligible (subject to every other gate). There is no "safe by re-note" for that
+  method — the census (whose crops are word-geometry boxes, i.e. the `anchor_inline` shape) is the evidence for it.
+- Consequence for the design: a method-scoped RELEASE (`anchor_inline` only) would be the census's own geometry but is
+  the first thing a future dev widens; gary recommends one universal path with the clip guard instead (Seam 6).
+
+## Seam 2b — `_s05_pages` is set ONLY on a mapped-template doc (gary F3, verified: engine.py:9245 reset, :9599 assign
+inside `if tmpl_mappings and page_images` :9514)
+- The hold, the DOWNGRADE and the RELEASE all abstain `no_box` when `_s05_pages` is None — i.e. on any doc NOT matched to
+  a template with enabled mappings, even when `_field_read_geom` holds the anchor box. The population is therefore
+  bounded to taught/mapped suppliers (the graduated class the owner auto-files). D5's 40/40 on Print Tracker is
+  consistent (it has a template with mappings). Widening to `crop_pages` unconditionally would widen the mig-207 HOLD
+  too → its own census (gary Q5, slice 2).
+
+## Seam 3b — the format-consistency penalty (gary F6, verified: validator.py:1023-1042)
+- `format_consistency_delta` counts a VALUED field WITH a note as a MISMATCH → −12 for the first mismatch (cap −25);
+  with no mismatch and ≥3 valued + ≥2 supported fields → +3 per supported field (cap +10). So clearing the note moves
+  the overall by TWO routes — the −12 disappears (and up to +10 appears) BEFORE the per-field boost's delta/n. The flip
+  census must classify every new file: (a) already ≥ floor OFF-arm, (b) crosses via the fc lift (what any clean doc
+  gets), (c) crosses ONLY via the per-field boost — report (c) separately.
 
 ## Seam 3 — the learned-agreement boost (`engine.py` ~:12153) skips NOTED fields
 - A DOWNGRADED ref stays noted → boost skipped → byte-identical (pinned by the mig-210 test's conf==90 asserts).

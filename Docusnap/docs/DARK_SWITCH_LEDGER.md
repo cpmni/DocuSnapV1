@@ -74,8 +74,16 @@ in `database/dark_switches.js`'s history comment; the LIVE list is `TEST_SWITCH_
   held only because it contains a look-alike character (O/0, I/1…), the note is RE-WORDED to say both readers agree.
   Still held (one confirm click), auto-file unchanged. _Oracle SIGN OFF after the dual-reader census (3,718 scanned
   fields: 97.4% agree, 0 both-confidently-wrong in the 120 hardest). Live check done: the agree branch fires on the
-  owner's real Print Tracker reads (40/40). Depends on mig 207 being on. The stronger "clear the note and file" leg is
-  NOT built — it waits on the filtered census (`census_absent.py`) + a re-vet._
+  owner's real Print Tracker reads (40/40). Depends on mig 207 being on._
+- **glyph_confusable_release (mig 211, 2026-09-23 night)** — the stronger leg: when the second reader agrees on the
+  reference on BOTH a tight crop and a wider crop (so a character cut off by the box can't fool both), every letter is
+  read confidently, and no other reading on the page still disagrees, the "look-alike character" note is REMOVED so the
+  document can file on its own confidence like any clean one. Every doubt keeps the mig-210 wording (still held).
+  _Oracle SIGN OFF WITH CONDITIONS (C0-C11). Evidence: the filtered census (18 look-alike cases: all 14 agreements
+  correct, the 4 disagreements all genuine misreads the mig-207 hold catches) + the per-letter confidence census (the
+  one clipped read both readers got wrong scored 0.505 — the 0.80 floor rejects it). Yield check on a copy of your
+  own DB: the Chris exhibit `PO-22954` IS held only by this note (its overall 81 = the note's own −12 penalty), so
+  the release would file it correctly. Full 747-doc yield census running. Depends on migs 207 + 210 being on._
 
 ---
 

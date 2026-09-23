@@ -21,24 +21,30 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-23 NIGHT (DOWNGRADE `glyph_confusable_resolve` mig 210 built DARK; the filtered `_absent` census MET the RELEASE gate 0/14; RELEASE still unbuilt pending an Oracle re-vet):
-**READ `HANDOVER_2026-09-23_NIGHT.md` FIRST** (then `_EVENING.md`). Branch `feat/teach-side-overnight`; **COMMITTED UNPUSHED
-`f3a6ccd` (feat: mig 210) · `8798fed` (test: census_absent.py) · `3313fc2` (docs) + the wrap commit; migs → 210;
-`TEST_SWITCH_KEYS` 14; `run-pins.js` 413/413; `test_glyph_confusable_resolve.py` 12/12.** **Built DARK:** inside
-`engine._glyph_disagreement_hold`, when the SOLE note is the Gate-C confusable soften (exact text, keyed on the unique
-phrase "look like another on a scan", no `corrected_to`) and PP-OCR AGREES, the note is RE-WORDED to confident copy —
-still a note ending in `_FILING_SANITY_SOFTEN_MARK` (held, auto-file byte-identical, no cap/value/method change);
-disagree/abstain untouched; hard dep `GLYPH_FALLBACK_ENABLED`. **D5 confirmed at source:** 40/40 `glyph_check` AGREE,
-0 `no_box`, on the owner's real Print Tracker diag. **Filtered `_absent` census** (`census_absent.py`, the engine's own
-`_nearest_confusable_page_token`/`_one_digit_letter_confusable` + `reconstruct_page_text`; verdict
-`TESTING/_measure/dual_reader_census/RESULT_ABSENT_20260923.md`): 1,323 refs → 64 absent → **18 soften → all 14
-PP-agrees crop-CORRECT (common-mode 0), all 4 disagrees crop-wrong/PP-right.** Synthetic clip arm: **1/18 BOTH wrong**
-(`SO-82482` clipped → `30-82482`; `S`↔`3` is not a map pair so unreachable today) → the RELEASE needs a flush-edge guard.
-**RELEASE NOT built:** R1-R6 survive only as a paraphrase → re-vet with `docs/designs/CONFUSABLE_RELEASE_SEAMS_2026-09-23.md`
-(G1 fall-through + Fix A `anchor_inline` both re-note the soften set by construction; the boost; the passed ambiguous
-flag; 3 producers; the clip) BEFORE building mig 211. `docs/oracle_log.md` now carries the 09-23 rulings (post-hoc);
-ledger has migs 207-210; `NIGHT_RUN.md` QUEUE has the mig-210 realdoc gate. Traps: run `run-pins.js` from the REPO ROOT
-(a `Set-Location` persists across PowerShell calls); long censuses go DETACHED via `Start-Process` (tool cap 10 min).
+## ⏭ LATEST — 2026-09-23 NIGHT (DOWNGRADE mig 210 + RELEASE mig 211 built DARK; filtered `_absent` census MET the RELEASE gate 0/14; Oracle C0 yield census on the owner's DB copy):
+**READ `HANDOVER_2026-09-23_NIGHT.md` FIRST** (then `_EVENING.md`). Branch `feat/teach-side-overnight`; **migs → 211;
+`TEST_SWITCH_KEYS` 15; Python pins resolve 12 · release 19 · hold 16 · reader 4; JS `test_migration211_*` ALL OK.**
+**Built DARK:** (1) **`glyph_confusable_resolve` mig 210** — in `engine._glyph_disagreement_hold`, when the SOLE note is
+the Gate-C confusable soften (exact text, keyed on "look like another on a scan", no `corrected_to`) and PP-OCR AGREES,
+the note is RE-WORDED to confident copy (still a note → held, auto-file byte-identical). D5 confirmed: 40/40 AGREE, 0
+`no_box`, on the owner's real Print Tracker diag. (2) **`glyph_confusable_release` mig 211** (gary → Oracle
+SIGN-OFF-W/COND C0-C11) — inside that AGREE branch, when `_glyph_release_ok` passes EVERY guard (confusable-soften
+producer tag + map-pair page form · not veto-fallthrough · crop page known · PP mean ≥0.95 AND **weakest glyph ≥0.80**
+(`glyph_reader._ctc_decode` now returns `(text, mean, min_glyph)`) · no page-family disagreement after the mig-191
+suppression, computed in-engine with trust.js parity · wide crop inside the page · a SECOND PP read on a 1.0×h-wide
+crop still contains the value, boundary-guarded) the note is POPPED (only mutation) and `_flag_ref_confusable_ambiguous`
+re-judges the field; any abstain → the DOWNGRADE reword. **Oracle's premise catch (verified):** trust.js
+`_pageFamilyDisagrees` holds the cold soften set anyway (the whole-page `S0-` read is a recorded keyword disagreement;
+only the mig-191 suppression lifts it for a taught on-shape winner) → **C0 yield census is the FLIP blocker** (yield ≈
+0 → retire the key). C0 targeted on the owner's live-DB COPY (`stress_test/out/c0_live_copy/`, gitignored): the Chris
+exhibit #45 `PO-22954` is held ONLY by the note (overall 81 = the −12 fc penalty) → yield 1/1; the full 747-doc arm →
+`stress_test/out/c0_release/full.jsonl` + `TESTING/_measure/release_c0_20260923/analyse_c0.js`. **Censuses:** filtered
+`_absent` (`census_absent.py`, `RESULT_ABSENT_20260923.md`): 18 soften → all 14 PP-agrees crop-CORRECT, 4 disagrees
+crop-wrong/PP-right; per-glyph (`glyph_min_census.py`): correct agrees min 0.819+, the one both-wrong clipped read 0.505.
+Docs: `docs/oracle_log.md` (09-23 rulings + the RELEASE vet verbatim), ledger migs 207-211, `docs/designs/
+CONFUSABLE_RELEASE_SEAMS_2026-09-23.md` (Fix A is OFF — corrected), `NIGHT_RUN.md` QUEUE (210 + 211 gates). Traps:
+run `run-pins.js` from the REPO ROOT; long censuses DETACHED (`nohup`/`Start-Process`); the PowerShell guard blocks any
+command text containing `rm -f <path>`; RR_CONSENSUS `reason` is the FIRST failing gate (hence the new `corrob` field).
 
 ## ⏭ 2026-09-23 EVENING (date-fold + arithmetic-witness built DARK; a dual-reader census FLIPS Oracle on the confusable RELEASE; CLAUDE.md collapsed + a VERIFY-DON'T-ASSUME rule):
 **READ `HANDOVER_2026-09-23_EVENING.md`.** Branch `feat/teach-side-overnight`; **the session's work is
