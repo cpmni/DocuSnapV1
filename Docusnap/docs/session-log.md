@@ -3865,3 +3865,497 @@ non-blocking notes.
 Follow-ups: the /v1 purge fix, a `/v1` MINOR for the pop-out's hidden bits, client `npm run dist` in lockstep. Memory
 `project_client_search_parity_20260913.md`.
 
+
+
+---
+
+# Archived from CLAUDE.md at the 2026-09-23 compaction
+
+> The full-length per-session state blocks for 2026-09-04 → 2026-09-21, moved verbatim from CLAUDE.md when its
+> stacked blocks were collapsed to one-liners on 2026-09-23. Each also has its named HANDOVER_*.md. Newest first.
+
+## ⏭ 2026-09-21 EVENING (opt-in auto-split + the Chris-vet fixes + the UNDETECTED-ISSUER feature A+B):
+**READ `HANDOVER_2026-09-21_EVENING.md` FIRST** (then `handover.md` = the same state in next-batch form). Branch
+`feat/teach-side-overnight`; **HEAD `d3df3ce`; origin CURRENT (all pushed); mig 195; `run-pins.js` 405/405 green;
+nothing running.** The only dirty tree paths are the OWNER's (`CLAUDE.md`, `tools/video_tutorials/*`) — don't commit.
+Installer pair last built at `52344d3` (`dist\…-1144-52344d3.exe` + client `…-1147-…`) — **it PREDATES the
+undetected-issuer gate + the "Not recognised" tab; rebuild at HEAD to ship Part B** (`AUDIT_OFFLINE_OK=1` — npm
+registry unreachable, github push works). **Shipped (8 commits):** (1) **opt-in auto-split** — mig 194
+`auto_separate_enabled` OFF by default (INSERT-OR-IGNORE, NOT in TEST_SWITCH_KEYS) + a scoped multi-doc auto-file
+HOLD (`process_docs.multi_doc_suspect` → `handler MULTI_DOC_HOLD_NOTE`) + the page-1 separator-sheet `compose_segments`
+override (`--auto-split` gates the whole-file heuristic; the segmentHoldPages/buildPairContext mixed-exemption seam
+fixed) + watch unified on `auto_separate_enabled||filing_slips` (**`watch_separate_enabled` RETIRED**) + the Review
+"N pages · Split" chip. (2) **All 6 Chris 2026-09-20 findings** (confirmed-doc "Checked by you", the named low-field
+banner, split/LAN copy, "ID code"→"certificate ID", the live teach-note refresh). (3) **UNDETECTED-ISSUER A+B**
+(reggie+gary → Oracle SIGN-OFF-W/COND) — **Part A mig 195 DARK `issuer_undetected_blank`** (`engine._declare_issuer_undetected`
+blanks a non-name unsupported cold issuer; predicate `keyword.issuer_read_looks_implausible` = a pinned JS↔Python TWIN
+on `python_backend/tests/issuer_implausible_vectors.json`; `TEST_SWITCH_KEYS`→**45**) + **Part B the Review
+"Not recognised" tab** (`shared/notRecognised.js`, display-only, docs moved out of the main queue). **OWED:** rebuild
+the pair · the Part-A flip census (realdoc M=0 + fire denominator + a multi-token FP set) · split "recover original"
+button · the standing owner-gated backlog (licensing deploy, DB-encryption 2a/2b, VM verify). ⚠ **STALE-claim fix:**
+`watch_separate_enabled` (the 08-15→09-02 switch ledger below still calls it "DEFAULT ON since mig 175") is **RETIRED
+2026-09-21** — watch separation now follows `auto_separate_enabled || filing_slips_enabled`.
+
+## ⏭ 2026-09-20 (hardened RELEASE build produced + verified; the 20 NEW-USER tutorial videos planned+scripted; a peer session is recording them):
+**READ `HANDOVER_2026-09-20.md` FIRST**, then `AUTO_SESSION_2026-09-20.md` (video/build detail) and `handover.md`
+(the 09-19 morning queue = the still-current DEV backlog). Branch `feat/teach-side-overnight`; **HEAD `16432a2`;
+2 commits ahead of origin, UNPUSHED (from 09-19); mig 191.** No app/engine code touched this session.
+**⚠️ LIVE:** a PEER Claude session `Handover continuation` is ACTIVELY recording the tutorial series on this machine
+(single mouse, sandbox `C:\ScanFinderDemo`, port 9222, → `Desktop\Tutorials\`). Two recorders = collision. It OWNS
+recording + dedup + the Tutorials README. **Run `ListAgents` before ANY video work; if it's still present, do NOT
+record / rename Tutorials files / kill sandbox processes.** **Built this session:** hardened installer
+`dist\ScanFinder Setup 2.0.0-r20260920-1220-16432a2.exe` (`build:release`, verified: boot smoke, 14 windows,
+bytecode-only, fuses OK, signed); the 20-video plan + ALL 20 scripts (schema-valid, selectors verified) in
+`tools/video_tutorials/scripts/`; 2 selector bug fixes (auto-file/watch-folder `+ .toggle-slider`); runner hardened
+(resolve 8→20s, CDP 4s); killed 5 CPU-zombie `grep` procs. 6 videos finished+voiced so far (2 mine, 4 peer). Video
+tooling changes are UNCOMMITTED (owner's call; peer may still be editing scripts). **DEV backlog unchanged** (`handover.md`):
+push the 2 commits · VM-verify installers · deploy 3 licensing-server changes (`BEFORE_RELEASE.md`) · DB-encryption
+2a/2b decision · Castellan Slice 2 reframe · `/christest`.
+
+## ⏭ 2026-09-18 (the DEPARTMENTS feature built end-to-end D4→D7, all Oracle gates green, mig 184; 2 live bug fixes; Template Manager video):
+**READ `HANDOVER_2026-09-18.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `96f356d`; origin CURRENT (all pushed);**
+migration **184**; no running processes. Installers (D7): core `dist\ScanFinder Setup 2.0.0-r20260918-1346-976f42f-TEST.exe`
++ client `client\dist\…-1509-976f42f.exe`. **Built + pushed:** the whole admin-only **Departments** feature (`325a014`
+D4→D7) — a document (and a type default) belongs to a SET of departments; visible if you're in ANY; DARK behind the
+opt-in `departments_enabled` (seeded OFF). **mig 184** replaces the single `documents.department_id` scalar with the
+`document_departments`/`document_type_departments` JOIN (transactional, byte-identical, **go-forward-only**; scalars
+retired-in-place, nulled+pinned-unread). Gate `database/modules/departmentVisibility.js` = shared(no rows) OR member-of-ANY
+(correlated EXISTS). Write rule = Oracle **own-slice / immutable-foreign** (an edit user changes only their own
+departments — no self-lockout). Service `src/services/departmentService.js` (`setDocumentDepartments`,
+`validateCreateDepartments`, `applyTypeDefaultAtConfirm`, `setTypeDefaultDepartments`, `taggedDocCount`). D2b closed the
+intake bypass (`/v1`+Quick File run the create rule); **`INTAKE_GUARDED` = true**. UI: type "Who can see documents of
+this type?" + per-doc "Visible to" multi-select (locked foreign chips + Everyone); Chris Card B fixed (admin rows).
+**All Oracle before-flip gates GREEN**: D2b + denial matrix (multi-tag + MIN oracle) + intake-seam pins + the **perf
+gate PASS** (`TESTING/_measure/dept_perf_20260918/`, 50k docs, worst list 58ms, filter ≤x1.48). Pins: 5
+`test_department_*.js` incl. the load-bearing **`test_department_multi_migration.js`** (upgrade simulator) green; **0
+regressions across 306 pins** (1 red = pre-existing `test_ref_class_fix` flake). Design `docs/designs/DEPARTMENTS_D7_MULTI_2026-09-18.md`;
+Oracle log updated. **Also:** `aefd42a` fix `sweep-inview-recheck` ReferenceError (missing `documents` require, found in
+the live log); the Users-layout `flex-wrap` CSS fix (in `325a014`). The **Template Manager** tutorial video published
+(`Desktop\Tutorials\the-template-manager\`). The dark-switch flip-census **night run is QUEUED not run**
+(`docs/designs/NIGHT_RUN_2026-09-17.md`). Chris 2026-09-18 vet was CUT SHORT (setup screens only) —
+`docs/CHRIS_FULL_APP_REVIEW_2026-09-18.md`, re-run on the clean build. **NEXT:** owner live-test the D7 installers ·
+re-run `/christest` (enforcement test) · the queued night run · C12 (from `HANDOVER_2026-09-17_C12_AND_SWITCHES.md`).
+⚠ **STALE-claim correction:** `documents.department_id` / `document_types.default_department_id` are now **RETIRED**
+(all-NULL, never read by the gate) — read the `document_departments` JOIN, never the scalar.
+
+## Prior — 2026-09-17 AFTERNOON (the S4 SILENT-TRUNCATION BELT built DARK, mig 180 · the `vinny-video` agent created):
+**READ `HANDOVER_2026-09-17.md` FIRST** (written for a claude-opus-4-8 session: explicit, step-by-step), then
+`HANDOVER_2026-09-17_C12_AND_SWITCHES.md` (Part A = the C12 recovery action to design/build; Part B = every remaining
+dark switch grouped by the test it still needs + the suggested order). Branch
+`feat/teach-side-overnight`; **HEAD = the migs-182/183 flip commit on `70dda77` (mig 181) on `2a88d1f` (docs) on `6514f3f` (vinny) on
+`2e9f72a` (the belt); origin BEHIND — NOT pushed (owner's call);** migration **183** (**migs 181/182/183 = `segment_continuation_veto` /
+`segment_title_slug` / `segment_known_supplier_change` FLIPPED ON by default, owner's go 2026-09-17 evening, each `@DEFAULT_FLIP` +
+delisted + pinned (`test_default_flip_177.js`, `test_default_flip_178_179.js`); `deskew_corrob_autofile` stays OFF by decision**);
+`TEST_SWITCH_KEYS` **47**; `node scripts/run-pins.js` **385/385** before the flips (re-run at the next start, expect 387 files). The owner's 7
+`tools/video_tutorials/` edits stay uncommitted (theirs). The sandbox app (live-DB COPY) is still up on DevTools port 9223 — harmless.
+**Built:** the morning's e2e had caught the S4 class live (a 2-page doc whose page 2 repeats the letterhead with no page marker →
+cut at page 2 on the letterhead alone → page 1 AUTO-FILED as a complete 1-page doc, page 2 orphaned). gary → Oracle
+SIGN-OFF-W/COND C1-C12 (+ C6b) → **mig 180 `segment_pair_hold` DARK** (`docs/designs/SEGMENT_PAIR_HOLD_2026-09-17.md`): a HYBRID —
+the pre-pass classifies every cut WEAK (template-only, no doc-start: same-template fingerprint · no template → template · a
+same-SUPPLIER sibling switch via `_template_identity`, never `templates.name`) or STRONG (`segmentation.boundary_class`; the
+additive `weak_pages` key is UNCONDITIONAL metadata) and the handler compares both halves of every WEAK cut once read
+(`split_plan.pairHoldDecision`, the C6b principle: release only on POSITIVE own-document evidence — own number AND own date; any
+missing piece → inconclusive → hold BOTH with a durable per-pair "— confirm once." sentence; `handler._pairLanded`: the first
+half to land carries a PROVISIONAL note, never `msg.needs_review`; release re-invokes auto-file only for an auto-file landing
+(never watch) and after its IO tail). **Key fact:** the walk's reason is assigned by PRECEDENCE — every real_34 alert page is an
+EMAIL-header doc-start labelled "first-page fingerprint" → the class makes real_34 0 weak by construction. Census (shipped
+functions, `weak_cut_census2.py`): exhibits 4/4 weak, real_34 0/33, stacks ~22 weak all genuine (released). e2e4 + e2e5:
+**all 4 exhibit pairs held + marked, truncatedAutoFiled 0, no genuine doc held.** `hasSegmentHold` = EITHER family;
+`carrySegmentHold` carries every mark-bearing sentence; reason panel subkind `pair`. **Flip gate (Oracle): C9 cells (rasterised
+real_34, a young-install stack, the email-arm-only class arm, 178+179+belt over controls3/5) + C12 a one-click "Re-import as one
+document"/Rejoin — build C12 FIRST.** 177/178/179 FLIPPED (migs 181-183). **Also:** `.claude/agents/vinny-video.md`
+(two-phase tutorial producer; British English, ONE voice per video alternating Ryan/Sonia across videos, 5-min cap). Traps: a
+PowerShell-written JSON carries a BOM; rebuild e2e folders in PowerShell not a bash `$(py -c …)` loop; restart the sandbox app
+after a `split_plan.js` change; PowerShell cannot run heredocs (commit via the Bash tool). **NEXT:** push? · C12 (barry+eric →
+Oracle) · the C9 cells · the 09-15 EVENING queue (VM live-test, Departments D2b/D3/D4, client-Review S0).
+
+## Prior — 2026-09-16 DAY (the DARK-SWITCH FLIP CENSUS re-run at HEAD + the FIRST TWO FLIPS shipped):
+**READ `HANDOVER_2026-09-16_FLIPS.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD = the separator commit + its docs (`git log -3`; flips
+`764b397`/`cb60e3a`/`ad4b79b`, the belt `db04a8f`); origin CURRENT — everything PUSHED 2026-09-16;**
+migration **179** (179 = the 09-17 arc-3 seed, see the end of this block); pins 382/383 at 178 (the 1 red = the
+PRE-EXISTING `test_ref_class_fix.js` timing flake — ARM B hashes two corpora built at different moments); release gate
+"49 DARK keys guarded". The tree's
+7 `tools/video_tutorials/` modifications pre-date this session (owner's own, untouched). **Done:** the 700-corpus
+census re-run at mig 171 (copy+migrate the Desktop fixture; `TESTING/_measure/flip_corpus_20260912/CENSUS.md`
+2026-09-16 section + the reusable `rerun_20260916/` runner/comparator) — 159 + 156 IDENTICAL to 09-12 (M=0, real
+fires, file→hold only) → **owner go → mig 172 `name_role_nonname_flag` + mig 173 `ref_confusable_flag` are customer
+defaults** (`@DEFAULT_FLIP`, delisted, pin `database/test_default_flip_156_159.js`); then **owner: "flip 143 as
+well" → mig 174 `template_pad_date_adopt` ON by default** (PASS ×2, the one adopt == GT; pad_window_read dep pinned);
+`deskew_corrob_autofile` byte-identical to OFF on the corpus (stays DARK); **`watch_separate_enabled` → its soak
+gate was found NEVER RUN (the ledger's "PASSED" was unbacked) → RUN 2026-09-16 in a sandbox on a live-DB copy
+(`TESTING/_measure/watch_separate_soak_20260916/RESULT.md`: analyzer PASS, real 34-page bundle 34/34, 0 over-split,
+all 91 segments held) → mig 175 default ON**; the seam it exposed (import-time hold only; a merged multi-page cut
+auto-filed 12/16 on manual import) → **BUILT the same day: `split_segment_multipage_hold` mig 176 default ON
+(`db04a8f`; gary → Oracle SIGN-OFF-W/COND C1-C10; every multi-page cut of a heuristic split gets a "— confirm once."
+ref-role note on BOTH paths, carried across reprocess, own reason kind in Review; replay ON = 0 auto-filed, 1-page
+cuts untouched; `docs/designs/SPLIT_SEGMENT_HOLD_2026-09-16.md`)**. Then the SEPARATOR itself, diagnosed at the
+source (`TESTING/_measure/watch_separate_soak_20260916/seg_probe*.py`) → gary → Oracle SIGN-OFF-W/COND → **two
+DARK arcs (`docs/designs/SEPARATOR_ACCURACY_2026-09-16.md`): mig 177 `segment_continuation_veto`** (a
+self-declared continuation page — "Page 2 of 2"/"continued"/"brought forward" — is never a cut; closes a
+PRE-EXISTING silent truncation: 6/6 repeat-letterhead 2-page controls were cut at page 2 by today's code) **+ mig
+178 `segment_title_slug`** (the pre-pass never got the 2026-07-09 title precedence → the page's own title threaded
+as a fallback-guarded cascade: 72 → 79/95 stack boundaries, 0 lost). Both argv-only kills; six-arm census + e2e
+truncation metric = 0 → **gates green, flips = owner's call**. Owed (Oracle): supplier-aware identity change
+(slice 2), the orphan-shaped 1-page-cut belt (slice 3), a Rejoin/recovery path, the 150-DPI heading-garble
+residual, the never-split whole-stack class. Traps: the Bash tool's 10-min background cap
+(launch a census DETACHED via PowerShell `Start-Process bash`); a `TaskStop` leaves the bash running its NEXT arm
+(kill by PID, bash first); never run pins while arms run; the soak sandbox app may still be up on port 9223.
+**09-17 morning (the same "continue"): separator ARC 3 built DARK — mig 179 `segment_known_supplier_change`**
+(handover "FIFTH thing"; `docs/designs/SEPARATOR_ACCURACY_2026-09-16.md` "Arc 3"; Oracle 2026-09-17 C1-C9): a page
+naming a DIFFERENT known supplier (the install's own human-confirmed ≥ 3 / frozen identities via
+`learning.getKnownSupplierNames`, the 18th excluded-reader) with a labelled number/date witness starts a new document
+— the template-free leg (a non-templated stack imported WHOLE under page 1, the class the mig-176 belt cannot see).
+`segmentation.walk_boundaries` = the pure page walk; `template_matcher.header_band_lines` = the ONE band definition;
+the names ride their OWN temp JSON (`_separationOpts(db, args, tempFiles)`; never buildTrainingArgs' args); argv-only
+kill. Census with the SHIPPED functions: stacks 72 → 79 → **91/95** (0 lost, 0 over-splits; 4 residual = named
+trades), controls1-5 0 new over-splits, the owner's PDFs 0 unexplained deltas; e2e three switches (72 files, 189 docs):
+mig 179 adds 0 truncations, `bundle_05` held 2-page + 1-page, whole-file parity identical → RESULT.md "Arc 3".
+**Flip = owner's call.** ⚠ **The wider e2e set CAUGHT the S4 class LIVE in TODAY's code:** a marker-less
+repeat-letterhead 2-page PO was cut at page 2 and its page 1 AUTO-FILED as a complete document (identical under base
+and 177+178) → the recommended NEXT arc (pendingfeatures.md 09-17 second entry: the Oracle's slice-3 belt, or a
+suppress-only "same supplier + no witness → never a fingerprint cut" extension of arc 3; gary → Oracle first). Still
+open: the same-issuer TYPE switch (`bundle_05`), slice 2, Rejoin. The sandbox app is up on port 9223 (harmless).
+**NEXT:** the 09-15 EVENING queue (VM live-test both installers; Departments D2b/D3/D4; client-Review S0) · a fresh
+build carries migs 172-176 · the flips of 177/178/179 (gates green, owner's call).
+
+## Prior — 2026-09-15/16 NIGHT (the TUTORIAL-VIDEO tool built + FIVE YouTube tutorials recorded to `Desktop\Tutorials`):
+**READ `HANDOVER_2026-09-16_VIDEOS.md` FIRST.** No app code touched; pins untouched. New tooling
+`tools/video_tutorials/` (`scanfinder_video_runner.py` drives the UI over DevTools + pyautogui, records with FFmpeg
+gdigrab, click-through caption overlay + backdrop; `record.py` = sandboxed demo profile at the neutral
+`C:\ScanFinderDemo`, fake-licence segment, join, `--publish`) + the **`/makescript`** skill (storyboard + JSON with
+grep-verified selectors; privacy + narration rules). **Deliverable:** `Desktop\Tutorials\` — first-run-setup (4:00,
+incl. the licence screen) · teach-a-document · import-a-folder · review-and-confirm · search-for-a-document, each with
+`.narration.json` (timestamped lines for the owner's TTS pass) + `.captions.srt`, `tts_manifest.json`, `README.md`.
+Frames of every video inspected (no personal paths/terminal; teach read-backs correct; Confirm really filed).
+**Gotchas learned:** the packaged app refuses `--remote-debugging-port` (dev app only); the dev licence gate re-fetches
+this PC's seat online (hence the fake server + self-restoring `config/license.json` swap — `git status config` clean);
+native dialogs leak the presenter's folder tree (never filmed); the owner's terminal steals focus on any keypress
+(re-front per step; an early run typed "Demo Admin" into the terminal prompt — unsent). **09-16 morning: `voice.py` built + run** — every tutorial now has a `-final.mp4` with an edge-tts voice-over
+(free Microsoft neural voice; elevenlabs/openai optional); known trade-off = dense narration → ≤1.2× stretch / ≤2.4 s
+lag in the wizard stretch (listen; `--rate +15%` or re-time). **Owner next:** listen + upload; optional search re-take. **NEXT SESSION (owner 09-16): DARK-SWITCH FLIP TESTING** — resume from the
+09-15 EVENING block's flip-census pointers (`docs/DARK_SWITCH_LEDGER.md`, `TESTING/_measure/flip_corpus_20260912/CENSUS.md`,
+`RR_APP_ENV=1` baseline, copy+migrate the 700 corpus first); the rest of that queue (push `8ec76de`, VM live-test, D2b/D3/D4) unchanged.
+
+## Prior — 2026-09-15 EVENING (Departments D2 + D-C11 built · date-year fix · two LAN-blocker fixes · client-Review scoped · both installers rebuilt):
+**READ `HANDOVER_2026-09-15_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `8ec76de`; origin at
+`38bbb88` (the `8ec76de` docs commit is UNPUSHED, the rest pushed); tree clean; migration 171; `npm run test:pins`
+377/377.** Both installers rebuilt (signed; hardened core): `dist\ScanFinder Setup 2.0.0-r20260915-1820-38bbb88.exe`
++ `client\dist\ScanFinder Search Client Setup 1.0.2-r20260915-1824-38bbb88.exe`. **Shipped (6 commits):**
+`acd0b29` **Departments D2** — the visibility sweep + per-doc WRITE gates + count-broadcast collapse, DARK
+(`departments_enabled` off, byte-identical when empty; Oracle W/COND; primitive `departmentVisibility` + new
+`src/lib/countBroadcast.js`; pins `test_department_visibility.js` §1-§15) · `fddc003` **D-C11** processing
+broadcasts → the viewer-scoped helper (missed from acd0b29) · `16fba41` **core `127` LAN bug** —
+`client_api_host/port` are PROTECTED settings so the UI's generic `set-setting` was refused → the typed address
+never saved → server stuck on 127; fix = a dedicated admin `client-api-set-config` writer (protection UNCHANGED;
+pin `test_protected_settings.js`) · `7200a60` **client startup crash** (`lib/`+`windowBounds.js` were missing from
+the client build `files` allowlist; verified now in the asar) · `38bbb88` **date-year validator** —
+`trust._validDate` checked month+day but NEVER the year (clipped `October 14, 202` / `9/8/25` passed), a gap in
+the auto-file gate + the "Read differently…check which is right" noise note; fix = extract the ONE parser to
+`database/modules/date_parse.js`, `trust.validDate = parseDate(v) != null`, `filing` re-exports byte-identical
+(Oracle W/COND; 377/377 + a 700-corpus no-regression census green) · `8ec76de` **docs** (client-Review plan,
+UNPUSHED). **DEFERRED but SCOPE-VETTED:** Review over the search client (barry + Oracle W/COND) —
+`docs/designs/CLIENT_REVIEW_PARITY_PLAN_2026-09-15.md`. **OWED before the `departments_enabled` FLIP:** D2b (/v1
+intake dept tagging), D3/D4 (taggers + Settings UI), the denial matrix (`docs/designs/DEPARTMENTS_D2_PLAN_2026-09-15.md`).
+NEXT: push `8ec76de`? · owner live-tests both installers on the VM (core `0.0.0.0`→save+TLS; client no-crash).
+Memory `project_client_review_multiuser.md` (corrected stale claims).
+
+## Prior — 2026-09-15 DAY (security enforced by default + teach-over-client ON + S4 live-verified + a client polish loop):
+**READ `HANDOVER_2026-09-15_DAY.md` FIRST** (then `HANDOVER_2026-09-15_NIGHT.md` for the night run that
+preceded it). Branch `feat/teach-side-overnight`; **HEAD `60e37c0`; origin CURRENT (all pushed); NO
+uncommitted code; migration 170; pins 373/373.** NO installer built (owner: next builds FULLY HARDENED via
+`build:release`, HELD until the hardening is done). Owner-driven live-vet loop. **Shipped (5 commits):**
+`ac967e8` **mig 169** enforces the two 2026-09-15 security fixes BY DEFAULT (`v1_force_password_change` +
+`backup_import_seat_only`, INSERT OR IGNORE '1', fail-secure; pin `test_security_defaults.js`); `81b1c3e`
+**mig 170 `@DEFAULT_FLIP 170`** teach_over_client_enabled ON by default (UPSERT 'true'; pin
+`test_teach_default_on.js`) + **client teach thumbnails fixed** (shared `thumbs.js` reads
+`window.docusnap`, but the client bridge is `window.scanfinder` → expose a minimal `window.docusnap`
+getDocumentThumbnail shim in `client/preload.js`; LIVE-confirmed) + **client close-to-tray** (mirrors core;
+`Tray`/`Menu`/`isQuitting`) + removed the stale client "Get certificate from server…" button; `60e37c0`
+**red address prompt above the IP field** when access is switched on empty (empty host silently binds
+loopback) + **default port 8765 pre-filled** (editable) in core Settings + client connect. **S4
+(upload-to-teach) LIVE-VERIFIED** end-to-end over a real /v1 server (stage→OCR-import→commit→filed→idempotent
+replay; graduation gate intact). **Security audit (owner asked): CLIENT clean (token in main memory only,
+never on disk, renderer can't read it); CORE mostly clean, ONE caveat — DB plaintext by default,
+`users.totp_secret` cleartext (only if 2FA on).** **NEXT SESSION = the hardening decision (2a whole-DB
+encryption [recommended, has a recovery-code/data-loss trade] vs 2b encrypt just the TOTP secret) — ASK
+which first; then the fully-hardened build.** Release-gate rule learned: a UPSERT-to-'true' migration needs
+`// @DEFAULT_FLIP <N>` directly above its `if (!applied.has(N))`. Memory
+`project_teach_over_client_20260914.md` + `project_v1_backup_security_fixes_20260915.md`.
+
+## Prior — 2026-09-14 EVENING (a full day on the shared search screen + client, then the DATE FORMS fix; TEST installers for the customer):
+**READ `HANDOVER_2026-09-14_EVENING.md` FIRST** (cold start: state, the installer pair, the date rule, the owner's answered
+questions, the approval queue, commands, constraints). Branch `feat/teach-side-overnight`; **HEAD `2da47b2` on `18bd9a2`;
+origin CURRENT (all pushed); tree clean; NOTHING running.** **The pair to ship the test customer:** core
+`dist\ScanFinder Setup 2.0.0-r20260914-1254-18bd9a2-TEST.exe` (`build:test`, all 51 DARK keys arm; smoke-boot identity
+testBuild:true, smoke-windows 14/14) + client `client\dist\ScanFinder Search Client Setup 1.0.2-r20260914-1256-18bd9a2.exe`
+(contract 1.6.0). **Shipped today, all Oracle-vetted (`docs/oracle_log.md` 2026-09-14 ×4; detail = `HANDOVER_2026-09-13_LATE.md`
+ADDENDA 2-7):** Chris cards 1-8 (`0129053`/`ff49223`/`0f58ecb`) · `/v1` **1.4.0** the pop-out's last workflow bits (the inline
+provider in `searchWorkflow.js` is DEAD since `9c50b93` — the popup is the one front door) · **1.5.0** Contents (bookmarks)
+panel + viewer speed (JPEG for scans, thumb queue) · **1.6.0** `--page-info` one-process first paint + 3-page read-ahead ·
+`99959c2` importer refuses `.sf_separated_originals`/`.metadata` + the pop-out's off-screen restore fixed · **`18bd9a2` DATE
+FORMS (mig 167 `date_forms_wide`, `TEST_SWITCH_KEYS` 51):** "23rd Aug 2026" was refused at the desktop CONFIRM door
+(`filing/handler.js parseDate`) + shared `validation_patterns.date`, never by the engine → ONE month-name rule everywhere
+(any single `, . / \ -` or none between the parts; digits→digits NEVER glued; ordinal; "Sept"; 2-digit year pivot 69; day
+name dropped; a REAL calendar date only — JS Date rollover closed); UNSWITCHED at the human doors (confirm door, Review
+`_matchStrictDate`/`_realDMY`, badge + Quick-check grid via ONE helper `_widenDatePatterns`, Teach `_parsesAsDate`), DARK on
+the engine side (`validator._wide_month_form`, crop/keyword gates merge config `date_wide` under env `DATE_FORMS_WIDE`).
+Shared vectors `python_backend/tests/date_forms_vectors.json`; the renderer's pure functions are LIFTED and RUN in
+`test_validation_pattern_surfaces` (170). Pins **363/363**. **Owner Q&A today:** ship the build = yes (TEST, not hardened) ·
+two cores on one DB = NO (SQLite over a share + DPAPI-bound secrets) · teach in the client = ADD IT TO THE SEARCH CLIENT
+(the wizard's save steps over `/v1`; medium-large; Oracle first; NOT started, awaiting go). **Queue:** ship the pair · teach
+over the client (design) · flip gates mig 166 / mig 167 engine half (C5) / migs 159-156-143 · dead-provider tidy-up ·
+the two old security items · Quick File/Departments D2 sweep. Memory `project_date_forms_wide_20260914.md` +
+`project_client_search_parity_20260913.md`.
+
+## Prior — 2026-09-13 EVENING (Search/Quick File UX batch + date-precedence fix + CLIENT Quick File shipped + search-parity PLAN):
+**READ `HANDOVER_2026-09-13_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `a35051c`; origin CURRENT
+(0 ahead — all pushed).** No installer. One uncommitted file: `docs/designs/CLIENT_SEARCH_PARITY_PLAN_2026-09-13.md`
+(commit it first). Owner-driven live-vet session, all pinned. **SHIPPED:** big docs open fast (page-1-first for
+ANY pdf + `pages.py --count` probe; `5ff8f22`/`15c8c2d`/`aad26aa`/`144dc17`) · in-document Find works on SCANNED
+docs (OCR word-box fallback in `pdf_find.py`, oscar+gary; `811f5fc`) · **date-precedence fix `mig 166
+template_date_invalid_yield_lowconf`** DARK, Oracle SIGN-OFF-W/COND (`2cc3a27`): an impossible taught date yields
+to a valid keyword date even below the 90 conf floor — a seeded custom date field structurally reads 85 so the
+garble could never lose; KW-leg only, impossible-arm only, auto-file-NEUTRAL; pin `test_taught_date_invalid_yield.py`
+42 · Quick File drag-drop works (preload-resolved paths — a contextBridge File is a proxy; `f846cd2`), pane restyled
++ centered, Document Types names un-truncated · spreadsheet columns drag-resizable (`a9ca638`/`6785960`) · **CLIENT
+Quick File end-to-end** — `/v1/documents/intake` upload (contract 1.1.0→**1.2.0**; capped reader, in-flight cap,
+`fileKinds.isUploadIntake` SAFE-subset, temp minted+cleaned; Oracle SIGN-OFF-W/COND; pin `test_v1_intake.js` 18)
++ client UI (`44b430f`/`1e2fdc7`/`a35051c`), LIVE-tested (client filed a doc on the core). **NEXT (resume):** the
+**client search parity + pop-out PLAN** (`docs/designs/CLIENT_SEARCH_PARITY_PLAN_2026-09-13.md`, eric-designed,
+ORACLE-VET PENDING) — a SHARED `src/shared/search-ui/` module + injected transport + a generated client copy with
+a staleness check + no-direct-IPC pin so every future core-search change auto-replicates to the client; S0 = extract
+the shared module (core byte-identical) then S1 pop-out, S2 four `/v1` endpoints, S3 grid, S4 stamps. **RUNNING at
+wrap:** core dev app `TEST_BUILD=1` (contract 1.2.0, mig 166 armed) + the detached CLIENT app. Flip gates owed:
+mig 166 (heal-vs-mislead census + Oracle), Quick File graduation (D2 sweep). `%APPDATA%\ScanFinder\docusnap.db`
+still blocked to Claude tools. Memory `project_client_quickfile_and_search_parity_20260913.md`.
+
+## Prior — 2026-09-13 (overnight: flip-corpus CENSUSES + the "general doc filing" = QuickFile+Departments FOUNDATION + Chris):
+**READ `HANDOVER_2026-09-13_NIGHT.md` FIRST** (its NEEDS-YOUR-APPROVAL queue is the morning to-do). Branch
+`feat/teach-side-overnight`; **23 commits ahead of origin, NONE pushed** (owner's call); HEAD `b9811ea`; tree clean.
+Two owner directives ran overnight. **(1) FLIP-CORPUS:** built failure-mode injectors (`gen_customer_test.py
+--inject`, pin `test_inject_shapes.py`), scaled to a 700-doc warm corpus (`Desktop\Flip Corpus 700\warm_700.db`,
+SOUND at `RR_APP_ENV=1`), ran censuses → **mig 159 `ref_confusable_flag` + mig 156 `name_role_nonname_flag` PASS
+(M=0 + fire + file→hold) = FLIP-READY** (+ mig 143 `template_pad_date_adopt` PASS in the partial widen);
+`format_class_join` M=0 but a blast-radius finding (HOLD); 154/157 safety-pass. `TESTING/_measure/flip_corpus_20260912/CENSUS.md`.
+**⚠ TWO CORRECTIONS:** the census baseline MUST be `RR_APP_ENV=1` (`=0` is the vacuous-arm trap, ref→47%); the
+3 switches' lever is **SHELL ENV not a DB write** (read outside the mirrored `_appSpawnEnv` functions). NO flip
+done (customer-default = approval-class). **(2) QUICKFILE + DEPARTMENTS** (owner: "general document management …
+docs that don't require OCR … departmental roles + security gating"; plan `docs/designs/QUICKFILE_AND_DEPARTMENTS_PLAN_2026-09-12.md`,
+Oracle Q-C1-12+D-C1-12): built the **safe, tested, DARK+byte-identical-OFF+pinned FOUNDATION of both features**
+(7 commits `c348df3`→`202456e`: D-C6 security fix · `src/lib/fileKinds.js` · migs 164/165 · Q-C1 non-switchable
+learning-exclusion · `directIntakeService.submit` · Departments enforcement core `accessService.departmentDecision`
++ `departmentService`). Honest scope: a ~15-slice multi-day feature — **the D2 list-reader SWEEP (must be COMPLETE
+to be safe) + the UIs REMAIN** (finish path = handover PART 2). **(3) CHRIS** sandboxed vet (port 9223) →
+`docs/CHRIS_FULL_APP_REVIEW_2026-09-13.md`. `npm run test:pins` green bar the pre-existing `test_activity_strip`.
+Memory `project_flip_corpus_pipeline_20260912.md` + `project_quickfile_departments_plan_20260912.md` (both updated).
+
+## Prior — 2026-09-12 NIGHT (the FLIP-TEST corpus PIPELINE built + pilot VALIDATED; mig 163 shipped; 2 arcs Oracle DO-NOTHING):
+**READ `HANDOVER_2026-09-12_NIGHT.md` FIRST** — its §ACTIVE TASK is the resume point. Branch
+`feat/teach-side-overnight`; **14 commits ahead of origin, NONE pushed** (owner's call); HEAD `4683447`; tree CLEAN.
+Dev app RUNNING (46/47 dark switches armed; mig 163 off until next `npm start`; mig 162 flipped ON for the
+Ridgeway preview — it works). `npm run test:pins` 343 green (1 red = pre-existing `test_activity_strip`).
+**Owner concern → built a way to ensure DARK fixes reach the build:** (1) `docs/DARK_SWITCH_LEDGER.md` — the
+plain-English tracker of all **47** built-but-off fixes (READY 2 / HELD 5 / WAITING ~39 / PARKED 1 / DONE);
+(2) `database/build_arming.js` **auto-re-arm** (`928243c`) — a same-rev dev arm now DELTA-arms only new keys
+(companion `test_build_armed_keys`), so a fix added since the last arm activates on the next `TEST_BUILD=1
+npm start` without a full re-arm + never clobbers an operator OFF (pin +3); (3) `stress_test/build_warm_db.js`
+(`1eb9c4b`+`4683447`) — builds a synthetic RELEASE-shaped WARM DB from `gen_customer_test.py` (which ALREADY
+enforces one-fixed-template-per-supplier+type) + `ground_truth.json` so `realdoc_regression.js` (RR_DB) runs
+UNCHANGED. **Pilot at `Desktop\Flip Corpus Pilot` VALIDATED** (ref/date/supplier 12/12; 18/24 auto-file →
+graduation works). **KEY FINDING (load-bearing):** the SHIPPED keyword read + default-ON pad-window recover the
+EASY geometry failure → a synthetic clip/skew CANNOT fire the DARK geometry fixes (141/151/161/162/163) → the
+corpus is a strong **SAFETY gate** (M=0/no-regression), geometry **efficacy** stays on REAL exhibits, and
+injectable-mode efficacy is only the VALUE-shape modes (mig 156 non-name / mig 159 confusable / format_class_join).
+NEXT (HANDOVER §ACTIVE TASK): inject injectable modes → scale to 700 → OFF-vs-ON safety censuses → flip passers.
+**mig 163 `deskew_false_absent_reflag`** DARK (`2d15445`, `TEST_SWITCH_KEYS` → **47**); its auto-file RELEASE leg
+(would be mig 164) **Oracle DO NOTHING** (`b0eefba`; inert on default install + a cross-raster overall-inheritance
+misfile seam). **Suspect-code label re-read arc Oracle DO NOTHING, NOT built** (`a724055`; `VS-72672` is
+SHAPE-VALID so its trigger never fires + `_relocate_and_read` runs the tilt-unsafe geometric read first).
+**Owner standing rule (`feedback_simple_explanations`): ALL explanations to the owner in plain, non-technical
+terms.** Memory `project_flip_corpus_pipeline_20260912.md` + `project_deskew_false_absent_reflag_20260912.md` +
+`project_suspect_code_label_reread_20260912.md`.
+
+## Prior — 2026-09-12 (the Ridgeway SKEW exhibit MEASURED → mig 162 DARK built; the Quick File + Departments PLAN):
+**READ `HANDOVER_2026-09-12_EVENING.md` FIRST** (the gate is RUNNING at wrap + the live-#358 test recipe + the owner
+queue), then `HANDOVER_2026-09-12.md` (the morning cold-start). Branch `feat/teach-side-overnight`; **2 commits
+`79cb655`+`7fd1400` NOT pushed.** `npm run test:pins` 342/343 (the 1 red = pre-existing `test_activity_strip`).
+**MEASURED** (full `process_docs` path on inbox/358.pdf, app env mirrored): `VS-72672`@95 is the CURRENT read (NO
+Learning Repair owed); the straighten retry NEVER RAN (its door keys on engine `_needs_review`, False on a note-only
+hold — H3); forced open, the straightened pass reads `WS-73673`@82 (TCA mig 153, licensed mapping+keyword) but the
+WHOLE-DOC gate refuses (79<83, the confident garble inflates raw — H2); Arc B abstains by its own bar (3 human
+confirms <5). **BUILT DARK mig 162 `deskew_retry_field_adopt`** (gary → Oracle C1-C11, `docs/designs/
+DESKEW_RETRY_FIELD_ADOPT_2026-09-12.md`): a ROLE-note door (never supplier-only) + a field-scoped keyword-corroborated
+same-identity adopt when the whole-doc gate refuses, always held (overall=min; lane-hold over a machine-clearable
+note; no put-back of a page-absent raw). Whole-doc population byte-identical. HARD dep mig 153 +
+`template_pad_window_code`. `TEST_SWITCH_KEYS` → **46**. Pins 62 py + the mig-162 JS pin (C7 the note is the SOLE
+checkpoint; C8 Quick reprocess KEEPS the adopted read). Harness gained env-gated `RR_LOG_MATCH`/`RR_LOG_OUT`. Gate
+runner `TESTING/_measure/deskew_field_adopt_20260912/run_gate.sh` (armed + base cells; 605 corpus still owed).
+**PLAN (owner ask): `docs/designs/QUICKFILE_AND_DEPARTMENTS_PLAN_2026-09-12.md`** — "Quick File" (non-OCR submission +
+management) + Departments (visibility gating); barry+eric → Oracle SIGN-OFF-W/COND Q-C1-12 + D-C1-12; order = the
+**pre-existing security fix D-C6 first** (`ACCESS_GATE_ENABLED` has no `isPackaged` guard). Nothing built.
+Memory `project_deskew_field_adopt_20260912.md` + `project_quickfile_departments_plan_20260912.md`.
+
+## Prior — 2026-09-11 (customer_name postcode-drift ROOT-CAUSE fix + 5 DARK arcs + a night of flip-gates):
+**READ `HANDOVER_2026-09-11.md` FIRST** (cold-start + the "NEEDS YOUR APPROVAL" queue), then `docs/oracle_log.md`
+(7 new 2026-09-10 verdicts) + the per-arc design docs. Branch `feat/teach-side-overnight`; **9 commits ahead of
+origin, NONE pushed** (owner's call). Everything this session is DARK (byte-identical OFF, kill switch, in
+`TEST_SWITCH_KEYS` → **42**), Oracle-gated, pinned; `npm run test:pins` 341/342 (the 1 red = pre-existing
+`test_activity_strip`).
+**SHIPPED** (owner live-exhibit loop + night): mig 154 `trust_ref_role_shape` `1383bef` (a REF role verified by
+learned SHAPE, never 'constant' set-membership — fixes the 20-held-Thornbury-invoices blocker); mig 155
+`anchor_axis_lock` `1b4a956` (additive width-invariant label-column read — **CENSUSED 0 fires → STAYS DARK**
+`a5de4ab`); mig 156 `name_role_nonname_flag` `02dcd93` (flag+hold a name field whose whole value is a bare
+postcode/email/VAT/IBAN); ⭐ **mig 157 `template_drift_override_guard` `55a6271` — the customer_name postcode-drift
+ROOT CAUSE**: the Stage-0.5 drift guard fuzzy-matched the address word "Chester" (0.667) as "Customer" → phantom
+drift → relocated customer_name onto the postcode line, discarding the correct name read @95; fix = a
+drift-relocate may only discard the absolute read on a credible label match (match_score ≥ 0.8); Oracle C1 keeps
+the registration arbiter live; **LIVE-CONFIRMED #243 `CH1 2HU`→`Larch & Hollow Cafe Co`**; mig 158
+`note_topic_dedup` `40be4cc` (collapse stacked ref-confusable notes into one — owner "very wordy message");
+`7bbf48f` soften-note reword. **NIGHT** (`e97cf99`): 3 flip-gate measurements on a COPY of the live DB —
+drift/non-name/ref-role **ALL M=0** on the owner's real docs (`TESTING/_measure/night_20260910/GATE_RESULTS.md`).
+**Owner queue (morning, in the handover):** push · flip (drift-override first, highest-value/cleanest) · each
+arc's 605 M=0 + census before a customer default · the dev arm-marker clear command (handover #4 — `TEST_BUILD=1`
+noops once armed) · Chris (queued, NOT run — session length) · the parked Larkspur word-like-wrong-line residual.
+**GOTCHAS:** the live DB `%APPDATA%\ScanFinder\docusnap.db` is BLOCKED to Claude's script tools (read+write fail
+even app-closed — copy `.db`+`-wal`+`-shm` to scratch to inspect; live writes = owner `!` commands); the dev arm
+marker `dev` is STICKY. Memory `project_night_run_20260910.md` + `project_{drift_override_guard,nonname_flag,ref_role_shape,anchor_axis_lock}_20260910.md`.
+
+## Prior — 2026-09-09 (the 2026-09-08 NIGHT RUN — items 1-7 all done, 6 commits, none pushed):
+**READ `HANDOVER_2026-09-09.md` FIRST** (morning summary + the “NEEDS YOUR APPROVAL” queue), then
+`docs/CHRIS_FULL_APP_REVIEW_2026-09-09.md` (round 2, verdict YES + 7 cards) and
+`docs/CHRIS_VET_DIAGNOSES_2026-09-08_NIGHT.md` (item-5 fix designs). Branch `feat/teach-side-overnight`; 6 night
+commits `5db333e`,`82843a0`,`790c7d1`,`9097b31`,`ef12f72` + wrap, **NONE pushed** (owner's call).
+**THE click-through target = `dist/ScanFinder Setup 2.0.0-r20260908-2238-ef12f72.exe`** (release build, testBuild:false,
+verifier OK incl. the new **`--smoke-windows` 14/14 on the packaged binary**; supersedes `…-1843-9251551.exe`, now
+`.REFUSED`-free but stale). Night results: (1) the 17 pre-existing red pins were ALL STALE (0 real regressions) →
+`npm run test:pins` **325/325**; (2) `--smoke-windows` = a runtime per-window load/probe layer catching the
+dropped-renderer-script P0 class (present-but-throws / missing load-bearing global), verifier refuses on it;
+(3) harness `RR_ALLOW_ARMED` + `_operating_point` + `RR_APP_ENV` DEFAULT-ON (arm137 gate byte-identical);
+(4) `type_uninstalled_heading_fold` OCR re-detect = SAFETY 0/0 on the Hard Set digital+scan (arm137 has no `statement`
+type; efficacy = the 09-06 text census, 20/20 Ironclad→Statement); (5) two REAL Chris display/wiring bugs designed
+(mailbox card “Type —/Unknown”; import row stale after a MANUAL confirm) + bundle-issuer owner-gated; (6) Chris YES,
+7 cards (top = phantom “Format check · 1” flag pointing at no visible field), all destructive warnings verified TRUE
+— **but his helper read the owner's live DB `%APPDATA%\ScanFinder` READ-ONLY by misidentification (no writes; the
+sandbox got config-contaminated → cards 3/4/5 need a fresh re-vet)**; (7) client/cert-tool E44 graph + code smoke
+clean (electron BINARY download allow-scripts-gated → owner finishes). **Security to vet:** the Settings backup
+restore accepted a FABRICATED device fingerprint on an un-licensed machine (Chris card 7). Owner queue (push ·
+click-through+uninstall drill→`build` flip · Chris cards · the item-5 builds · flips · client/cert-tool finish ·
+Learning Repair) is in the handover's “NEEDS YOUR APPROVAL”. Memory `project_night_run_20260908.md`.
+
+## Prior — 2026-09-08 EVENING (audit fixes BUILT + RE-AUDIT vetted + belts gated + hardened REBUILD + Chris round):
+**NIGHT RUN: READ `HANDOVER_2026-09-08_NIGHT.md` FIRST** (cold start: state, commands, traps) → the plan `docs/designs/NIGHT_RUN_2026-09-08_NIGHT.md`; then `HANDOVER_2026-09-08_BUILD.md` (LATE EVENING + CHRIS TRIAGE), then `docs/PRE_DEPLOYMENT_AUDIT_2026-09-08_RERUN.md`
+(the Oracle's ordered "BEFORE A CUSTOMER BUILD" list = the queue). Branch `feat/teach-side-overnight`, 40 commits since `eeb8d56`,
+**NONE pushed** (owner's decision). **The click-through target = `dist/ScanFinder Setup 2.0.0-r20260908-1843-9251551.exe`** (hardened,
+manifest clean, identity via file; the 2017/1355 hardened installers are `.REFUSED` — every earlier HARDEN_JS build shipped a Review whose
+"File all ready" threw, fixed `5a4bd94`). **The old "revert list" is RETIRED:** mig 137 reset the 27 DARK test switches, the KEY-based gate
+`scripts/check-release-migrations.js` runs first in every build, runtime arming `database/build_arming.js` (`TEST_BUILD=1` = the one knob).
+`npm run build:release` = the hardened road; the DEFAULT `build` stays plain until the owner's click-through (Oracle C5) → then flip (2.7b).
+Efficiency: mig 138 `ocr_dpi=200` on an EMPTY install only (C7a), budget ∝ DPI², mig 139 import parallelism ON. Name-grow belts mig 140 DARK
+(gate: seam fixed `f4a32a7`, one page-verified heal, the kw-note belt VACUOUS on the corpus). Boot-smoke identity REQUIRED (`9251551`).
+`npm run test:pins` runs all 325 JS pins — 17 reds are PRE-EXISTING at `eeb8d56` (queued in `NIGHT_RUN.md`). Chris 09-08: "I'd keep
+using it"; import quicker; row fix confirmed; vet queue = bundle issuer from page 3, STATEMENT→Invoice (= the DARK `type_uninstalled_
+heading_fold` exhibit), Import list stale after a manual confirm (still), Edit-role mailbox card "Type —/Unknown", Pelican `PI` at 200 DPI
+(the documented confusable trade-off). Owner: click-through + uninstall drill → `build` flip; push; Learning Repair #42/#25/#27/#40 + Ridgeway
+8/19/21; incorporate (signing); DB-at-rest; backend DocumentRoot + 2FA; `pip uninstall` 9 dead packages + `--require-hashes`.
+Memory `project_audit_fix_build_20260908.md`.
+
+## Prior — 2026-09-08 MORNING (SOURCE PROTECTION shipped + MSIX/Store path wired + the pre-deployment AUDIT) — the owner's own block,
+moved verbatim to `docs/session-log.md` ("Archived from CLAUDE.md at the 2026-09-08 EVENING wrap"); its installer pointer (`…-2017-dd9a790.exe`)
+is now `.REFUSED` — see LATEST.
+## Prior — 2026-09-07 EVENING (placement root cause FIXED, five DARK arcs + speed + UX, TEST BUILD with everything
+ON): **READ `HANDOVER_2026-09-07.md` FIRST** (the cold-start summary; detail in `HANDOVER_2026-09-06.md` ADDENDUM 7 +
+UPDATE 1/2 and `docs/oracle_log.md` 2026-09-07). All PUSHED. Installer `ScanFinder Setup 2.0.0-r20260907-1503-7b75c73.exe` = HEAD with **mig 134**
+(TEST force-ON of 129-133) + 128 + the morning's 123/124/126. **Revert list before ANY customer build:
+108/110/112/114/116/118/123/124/126/128/134/136.** (mig 136 = TEST force-ON of the 2026-09-07-evening
+`inline_disagree_corrob_soften`.) The one fact to carry: `templates.sample_deskew_angle` NULL was read as
+0.00° and the packaged build had compiled `detect_angle.py` away — every taught box on the install landed a glyph to the
+side; `13cfcf9` + `7c61317` (angle at commit + startup backfill) close it, this installer is the first to carry both.
+Owner: Learning Repair invoice docs #42/#25/#27/#40 (poisoned clipped dates), doc 99 `ws-55718`; read the 133 arm
+(`TESTING/_measure/clip_left_slack_20260907/diff_off_on.txt`) before it stays ON. Memory
+`project_placement_rootcause_20260907.md`.
+## Prior — 2026-09-07 AFTERNOON (the PLACEMENT ROOT CAUSE + the Oracle-ordered fix set + import speed + six owner UX
+slices, 15 commits): **READ `HANDOVER_2026-09-06.md` ADDENDUM 7 (+ its UPDATE) FIRST.** HEAD = see `git log`. **ROOT CAUSE
+of the owner's four exhibits (`5/03/2026`, `NS-39241`/the `WS-39241` shape-warn, `NS-85617`, the 4 silent invoice-date
+regressions on the fresh DB): the Stage-0.5 scan compose read a NULL `templates.sample_deskew_angle` as 0.00° (a HALF
+compose ~13.7 px/degree to the side); every template on the install was NULL because the packaged build compiled
+`ocr/detect_angle.py` away (`13cfcf9` KEEP_SOURCE, not yet in an installer).** Fixes: `7c61317` P1(a) the wizard's
+measured tilt written at commit + a startup backfill (switchless) · DARK, seed OFF, NO force-ON: `e296310` mig 129
+`teach_angle_compose_null_abstain` (arm: NOT a flip candidate alone) · `90d62ad` mig 130 `reread_hold_corrob_release` ·
+`14074e8` mig 131 `template_date_left_clip_grow` · `3ef9ec4` mig 132 `template_pad_date_containment_flag` ·
+`5ee8cd4` mig 133 `template_clip_commit_left_slack` (+ the honest inline-disagree note, default ON) — **E2's note =
+`inline_disagree_flag`, not the format model; the 4 silent invoice-date "regressions" on the fresh DB are POISONED GT
+(doc 27 reads `28/01/2026` three independent ways)**. Speed:
+`8b8b095` SHARED_LOCATE_CACHE (byte-identical; yield only on level pages) · `5e40fa2` OMP inherit · `e9f67a4`
+OCR_PARALLEL_IMPORT (mig 127 seed OFF + **mig 128 TEST force-ON**; byte-identical + 10× determinism). UX: `d43bff6` one
+plain separator sheet · `bdcaf6c` session folder memory · `3c4f9ef` sticky-bottom import log · `a0e3795` teach-import
+thumbnail at once. Oracle: P5 (deskew identity-slip release) SEND BACK → the lever is a slip-tolerant `identity_present_
+on_page`; P6 (`ws-` case) WRONG LAYER → the prefix-confusable lane. **Revert list before a customer build:
+108/110/112/114/116/118/123/124/126/128.** Memory: `project_placement_rootcause_20260907.md`.
+## Prior — 2026-09-06 AFTERNOON (the 09-05 LOG-REVIEW FIX PLAN BUILT on auto, 11 commits): **READ
+`HANDOVER_2026-09-06.md` FIRST.** HEAD = `cc41c9f`, **13 local commits UNPUSHED**. Built in the Oracle's order, every
+slice pinned: 5a `templatesDir` ReferenceError (`dfc3cc4`, executing pin + lint) · Item 3 date patterns
+`(?<![A-Za-z0-9])` (`70bfe3a`, non-DARK, census = exactly the 2 Pelican `P1/26/…` windows) · 2A DARK
+`anchor_bare_label_fuzzy` (`c912c09`) · 2B clamp-before-widen + rigid/registration clamp + registration band
+mirror (`03be597`, rides `RELOCATE_CAPTION_EXCLUDE`/`CAPTION_BAND_REJECT`) · Item 1 DARK
+`anchor_labelless_currency_refuse` + engine note road (`ba454bf`), teach WARN (`c09c16c`), MONEY_SIGN_CAPTURE anchor
+twin (`799c212`, flip = owner) · 5b angle-heal argv (`8a26f6f`) · 4b DARK `type_uninstalled_heading_fold` (`25a0cfe`,
+re-detect census 20/20 Ironclad → Statement, 521 unchanged) · 4i copy (`cc41c9f`). **mig 122** seeds the three DARK
+arcs OFF. Harness gained `RR_CFG`/`RR_PY_ROOT` (frozen-snapshot arms). ⚠ **The live DB was RESET (541 docs, 453
+confirmed): the 605-corpus `rr_ids.txt` selects 15 → the DB harness is vacuous for that corpus; arms run on ALL
+453.** Findings: `clearAnchors` is document_type-blind (it deleted the Meadowvale label-less anchor on a typed
+correction); doc 471's confirmed date `26-01-6000` is poisoned GT. Owner actions + approvals (push, flips, presets
+tick, Meadowvale re-teach, Learning Repair) in the handover's "NEEDS YOUR APPROVAL". Arms (`old`, `b_only`,
+`arcs_on`, `mv_off`/`mv_on`) were running at wrap — read `TESTING/_measure/log_review_20260906/chain.log` and the
+handover ADDENDUM. **2026-09-07 TEST BUILD** `dist\ScanFinder Setup 2.0.0-r20260907-0829-ef47b51.exe` = HEAD `ef47b51` with **mig 123** force-ON of the three arcs + `money_sign_capture` (owner order) — **revert 123 with 108–118 before a customer build**; Then `638b7e2` = the in-view COUNTDOWN on the REPROCESS consent door (it was sweep-only; owner screenshot) → rebuilt **`dist\ScanFinder Setup 2.0.0-r20260907-0911-638b7e2.exe`** (supersedes the 08:29 one). Then **mig 124** `7e8f1c4` force-ON of the 09-04 arcs (confusion_precedence, format_class_join, resolve_ref_*) → **`dist\ScanFinder Setup 2.0.0-r20260907-0920-7e8f1c4.exe`** = EVERY switch since 09-03 ON. Then **`d514a15` ONE-CONFIRM buyer-issued convention** (owner screenshot; gary → Oracle C1-C8): a human answer to the "confirm which company to file under" note writes a `buyer_issued_convention` record → engine leg 2 licenses at usage 1; undo + Learning-Repair retract via the audit row; a "Re-check N other …" bar rides the existing reprocess-from-sender; mig 125 seed OFF + **mig 126 TEST force-ON** → `dist\ScanFinder Setup 2.0.0-r20260907-1020-d514a15.exe`. Revert list before a customer build: **108/110/112/114/116/118/123/124/126**. All PUSHED.
+## Prior — 2026-09-04 LATE (confusion-precedence 2a BUILT at a RELOCATED site + FORMAT_CLASS_JOIN + import
+messaging + leg-b/leg-a RELOCATED as SUGGESTIONS): **READ `HANDOVER_2026-09-04_LATE.md` FIRST (incl. ADDENDA 1+2).**
+HEAD = `f76e8d1` + docs; pushed through `fbf572a`. `f76e8d1` = RESOLVE_REF_NEAR_MISS/POSITIONAL moved to
+`engine._apply_ref_resolvers` (before 2a; the dead text-branch blocks deleted) as SUGGESTIONS (value unchanged,
+corrected_to, ≤70, count-bearing note, no was_corrected, NO method suffix — a suffix corrupts the corroboration
+record); **mig 121 forces both settings OFF** (re-arm by a settings write for testing); flip gate = Oracle C9
+(arms × join, M=0, the AUTO-FILE ELIGIBILITY DELTA, census vs the rendered page). Verified by render: docs 176/210's
+page prints `1G25802868` — the owner's `1625802868` confirms are rubber-stamps (Learning Repair owed).
+Earlier the same day: `12e5176` (import strip says grabbed/checking/splitting) · `f12b952`
+**FORMAT_CLASS_JOIN** (DARK `format_class_join`, mig 120; Oracle C1-C11 — a MIXED-code scope no longer loses its
+whole format entry to `classify_format`'s 3-newest unanimity rule; the entry's loss had silently disarmed EVERY
+confirmed-literal arc for Print Tracker; a joined entry has NO `shapes`, consents review-bound only, never
+clears class F, flags never blanks) · `c8baa68` docs. App running with ALL of today's switches ON. **2a = DARK `confusion_precedence` (mig 119, seed OFF, NO force-ON twin),
+REVIEW-BOUND, inert on the owner's DB (5 correction rows).** `engine._apply_confusion_precedence` runs AFTER
+Gate C … D1 and BEFORE the boost (Oracle O1) — NOT the leg-b site: **the Stage-4.5 text branch is unreachable for
+every ref-role field of a ref-NAMED type, so RESOLVE_REF_NEAR_MISS / RESOLVE_REF_POSITIONAL NEVER executed on the
+exhibit** (dead-guard class; the morning "proven e2e" claims for leg-b/leg-a were vacuous). Writes NO
+corrected_to/was_corrected (O2); refusal-side union of machine-confirmed literals + from-glyph attestation (O3);
+pins 34/41/17/7/11 + consumer pin 3. **LIVE EXHIBIT:** doc176 fresh read `1625802868` @95 clean, needs_review
+false — one backed glyph from confirmed `1G25802868` = leg-b's case, unresolved → auto-file candidate; relocation
+= its own commit (`pendingfeatures.md`). Also logged: Stage 2.5b silent @95 ref rewrite; barry's website
+download-ticker MVP (owner ask; prerequisite = the CF-header check on the licensing host).
+## Prior — 2026-09-04 morning (the REFERENCE-FLAG FAMILY + the confusion-precedence design): **READ
+`HANDOVER_2026-09-04.md`** (and `HANDOVER_2026-09-03.md` / `_NIGHT.md` for the run-up). Branch
+`feat/teach-side-overnight`; that wrap ended at `8d26532` PUSHED. No installer. Dev app running with ALL
+reference-flag arcs force-ON.
+**BUILT this session — the reference-flag family** (all DARK + a TEST force-ON pair, all REVIEW-BOUND —
+nothing auto-files a corrected ref; migs 107–118; each pinned + proven end-to-end on a live doc):
+`FORMAT_VARIANCE_RELAX_REF` shape-warn suppress (`dd4c855`/`13fa3a9`, mig 107/108, PUSHED) · `_REF_INLINE`
+box-drift suppress + R2 rigid-credibility guard (`238e13a`/`cd1121f`, 109/110, doc121) · `FILING_SANITY_REF_
+CORROB_SOFTEN` Gate-C truthful note on LIVE ≥2-family agreement (`661cd2a`/`5398b05`, 111/112, doc196) ·
+`RESOLVE_REF_NEAR_MISS` (leg-b) pre-fill a confirmed literal on a unique backed slip (`aff08df`/`2831bff`,
+113/114) · `RESOLVE_REF_POSITIONAL` (leg-a) binarisation re-slice witness + ≥3-source positional consensus,
+review-bound (`530172a`/`adef73e`/`c1fc69f`, 115/116) · `FILING_SANITY_REF_HISTORY_SOFTEN` Gate-C note on a
+confirmed literal + BACKED page slip with no live agreement (`a655bb8`/`4d01520`, 117/118, doc238) · **watch
+db_id fix** `205143a` (split rows open the right doc + show Filed). Engine has ONLY 200-DPI bitmaps → a
+higher-DPI re-render witness needs render-plumbing from process_docs (NOT built; binarisation is the
+feasible lever).
+**⏭ NEXT BUILD — confusion-precedence 2a** (reggie+gary → Oracle **SIGN-OFF-W/COND**, conditions A1–A4 in
+`HANDOVER_2026-09-04.md` + `docs/oracle_log.md`): mine the `corrections` table LIVE into per-scope
+OCR-confusion facts → correct a NEVER-SEEN serial, REVIEW-BOUND, DARK, mig 119. A1 supplier-scoped-only ·
+A2 support ≥3 docs/≥2 values/counter==0 · A3 both-forms note · A4 DROP the method-exclusion (unimplementable
+— no method column) + pin no-row-on-accept. The **HIGH auto-file tier is DESIGNED, NOT approved** — gated
+behind a census (Oracle H1–H5: unconditional hold leg, live JS re-derivation, S_AUTO≥10 distinct docs+values,
+supplier-scoped, the adversarial census).
+**OWED before any customer build:** revert the TEST force-ON migs (108/110/112/114/116/118) + run WARM-DB
+census + realdoc M=0 per arc (all review-bound → M=0 expected-trivial, NOT run). Push decision (15 local).
+Chris 09-03 audit: the import list doesn't flip to "Filed" after a MANUAL confirm (`docs/CHRIS_FULL_APP_
+REVIEW_2026-09-03.md`, owner vet).
+**Prior (still-open specs):** 09-02 NIGHT `HANDOVER_2026-09-02_NIGHT.md` (Fix B `eb67c47` mig-100 census owed) ·
+09-02 EVENING `_EVENING.md` (`watch_separate_enabled` soak `696b4bf`) · 09-03 `HANDOVER_2026-09-03.md` (the
+FORMAT_VARIANCE_RELAX_REF parent + the WRONG "stale-row" reading, corrected).
