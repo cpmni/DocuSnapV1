@@ -2168,6 +2168,9 @@ _GLYPH_RELEASE_PP_FLOOR = 0.95       # mean over the narrow read; admits every c
 # admitting every correct row. This floor is the cheap clip mitigation Oracle C1 hoped for.
 _GLYPH_RELEASE_GLYPH_FLOOR = 0.80
 _GLYPH_RELEASE_WIDE_HPAD = 1.0       # × box height each side for the clip-guard re-read (narrow read = 0.15)
+# Oracle C10 (2026-09-23): the mig-207 DISAGREEMENT hold needs PP mean ≥ this, else it abstains — set IN-SAMPLE on
+# the owner's 727 (PP-right disagreements ≥ 0.903; PP-wrong bleed/fragment reads ≤ 0.85); re-censused FIXED.
+_GLYPH_HOLD_PP_FLOOR = 0.90
 # FILING_SANITY_REF_HISTORY_SOFTEN (2026-09-04; Oracle SIGN-OFF-W/COND, extends the mig-111 live soften).
 # The live soften needs >=2 live page families to AGREE on the committed value; but when the correct value
 # came from a `+corrected` adopt with NO live agreement (every reader read the page's confusable form), the
@@ -6994,7 +6997,23 @@ class ExtractionEngine:
             from ocr import glyph_reader as _gr
             if not _gr.available():
                 return                                   # onnxruntime/model absent → Tesseract-only
-            crop, _band = _rs._crop_padded(pages[page_idx], box, 0.3, 0.15)   # quiet-zone pad (oscar C7)
+            # PAD PARITY (Oracle C1, 2026-09-23): "same slice" means the rect Tesseract actually READ. For a
+            # crop-family anchor winner that is the value box +20 px on every side (anchor._crop_and_ocr); the
+            # quiet-zone pad below (0.15×h ≈ 4 px on a 30 px box) left 5 of 16 second-reader holds on the owner's
+            # 727 reading a glyph the taught box cut and Tesseract's wider crop had rescued. Mapping rects are
+            # already the expanded rect the rung read (`_read_geom`), so they keep the quiet zone.
+            _pad_px = ((getattr(self, '_field_read_pad_px', None) or {}).get(ref_field_key, 0)
+                       if _geom_src == 'anchor' else 0)
+            if _pad_px:
+                _W, _H = pages[page_idx].size
+                box = {'x_norm': max(0.0, box['x_norm'] - _pad_px / _W),
+                       'y_norm': max(0.0, box['y_norm'] - _pad_px / _H),
+                       'w_norm': box['w_norm'] + 2.0 * _pad_px / _W,
+                       'h_norm': box['h_norm'] + 2.0 * _pad_px / _H}
+                _vpad, _hpad = 0.0, 0.0
+            else:
+                _vpad, _hpad = 0.3, 0.15                 # quiet-zone pad (oscar C7)
+            crop, _band = _rs._crop_padded(pages[page_idx], box, _vpad, _hpad)
             if crop is None:
                 return
             # Dev-only (trace + slice dir): save the EXACT crop the second reader is handed, so a hold or an
@@ -7078,6 +7097,15 @@ class ExtractionEngine:
             # prefix that pushes every char along, still nets same length); a length difference is
             # framing/dropped-char noise — abstain on both, hold ONLY a clean single-glyph swap.
             if len(c_norm) != len(p_norm) or sum(a != b for a, b in zip(c_norm, p_norm)) != 1:
+                return
+            # PP CONFIDENCE FLOOR for a DISAGREEMENT (Oracle C10, 2026-09-23): on the owner's 727 every PP-right
+            # disagreement read at ≥ 0.903 and every PP-wrong one on a bleed/fragment crop at ≤ 0.85 (oscar: PP's
+            # measured failure shape is a long gappy or bled line at low confidence). IN-SAMPLE — chosen on those
+            # same 16 holds; the C10 re-census runs with it FIXED and says so. Below the floor → abstain (traced).
+            if float(pp[1]) < _GLYPH_HOLD_PP_FLOOR:
+                if self._trace:
+                    self._t('glyph_check', field=ref_field_key, outcome='abstain', reason='pp_lowconf',
+                            committed=committed, pp_read=pp[0], pp_conf=round(float(pp[1]), 3), geom_src=_geom_src)
                 return
             # SAME-LENGTH single-glyph disagreement → hold, review-bound, neutral note (never overwrite/auto-file)
             data['confidence'] = min(int(data.get('confidence') or 0), 69)
@@ -9449,6 +9477,10 @@ class ExtractionEngine:
         # anchor-stage winner boxes (glyph-hold fallback when the ref reads via anchor, not mapping;
         # inert unless GLYPH_FALLBACK_ENABLED — written unconditionally, read only by the DARK glyph hold).
         self._field_read_geom = {}
+        # C1 (Oracle 2026-09-23, the Paddle corroboration vet): per field, the PIXEL pad anchor._crop_and_ocr added
+        # around the value box when it READ it (+20 px every side for the crop family) — so the second reader can
+        # be handed the rect Tesseract actually saw, not a ~4 px quiet zone around the bare box.
+        self._field_read_pad_px = {}
         # Gate-C soften PRODUCER tag: ref_key -> (producer, page_form), written only when a soften note LANDED
         # this run (C7 of the confusable RELEASE). Instance transient — never a field-dict key (a field-dict
         # `_key` would leak into the emitted JSON; sanitise_extractions strips top-level `_` keys only).
@@ -11438,6 +11470,11 @@ class ExtractionEngine:
             _g = self._winning_read_geom(_gd)
             if _g:
                 self._field_read_geom[_gk] = _g
+                # Oracle C1 (2026-09-23): the crop-family rungs read the value box through anchor._crop_and_ocr,
+                # which pads it by +20 px on every side (anchor.py:3975-3976) — that is the rect whose pixels
+                # produced the committed string. anchor_inline is a word-geometry harvest (no crop OCR) → 0.
+                _bm = str(_gd.get('method') or '').split('+')[0]
+                self._field_read_pad_px[_gk] = 20 if _bm in anchor._CROP_FAMILY_METHODS else 0
 
         # ── Stage 2.5b: Apply supplier hints (fill missing fields only) ──────────
         # Hints only fill fields that keyword/anchor found NOTHING for.

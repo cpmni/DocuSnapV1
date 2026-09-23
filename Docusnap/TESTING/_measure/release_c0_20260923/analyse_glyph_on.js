@@ -12,6 +12,9 @@
 const fs = require('fs');
 const load = (p) => fs.readFileSync(p, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
 const off = load(process.argv[2]), on = load(process.argv[3]), tr = load(process.argv[4]);
+// Oracle C9: confirm provenance (dump_via.py) — a machine confirm can be circular with the read under test.
+let via = {}; try { via = JSON.parse(fs.readFileSync(process.argv[5] || 'stress_test/out/c0_release/via.json', 'utf8')); } catch {}
+const prov = (id) => (via[String(id)] || '?') === 'human' ? 'human' : 'machine';
 const offBy = new Map(off.map(r => [r.id, r])), onBy = new Map(on.map(r => [r.id, r]));
 const SOFT = 'look like another on a scan';
 const norm = s => String(s || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -37,7 +40,7 @@ for (const e of dis) {
   // available here — so report both reads and the box verdict; adjudicate the residual by eye.
   const tag = boxOk === false ? 'BOX WRONG (PP likely right → true catch)' : boxOk === true ? 'BOX RIGHT (PP wrong → FALSE HOLD)' : '?';
   if (boxOk === false) trueCatch++; else if (boxOk === true) falseHold++; else ppWrongBoxWrong++;
-  console.log(`  #${id} ${r ? r.type : '?'} box='${e.committed}' pp='${e.pp_read}' (pp ${e.pp_conf}) ${tag} · OFF reason=${o && o.reason} note=${o && o.ref && o.ref.note ? 'yes' : 'no'}`);
+  console.log(`  #${id} ${r ? r.type : '?'} box='${e.committed}' pp='${e.pp_read}' (pp ${e.pp_conf}) ${tag} · OFF reason=${o && o.reason} note=${o && o.ref && o.ref.note ? 'yes' : 'no'} via=${prov(id)}`);
 }
 console.log(`  → box-wrong (true catch) ${trueCatch} · box-right (false hold) ${falseHold} · unknown ${ppWrongBoxWrong}`);
 
@@ -74,8 +77,14 @@ for (const e of agreeEv) {
   const ok = r && r.ref ? r.ref.correct : null;
   if (ok === true) agRight++; else if (ok === false) { agWrong++; agWrongRows.push({ id, r, e }); } else agUnk++;
 }
-console.log(`\n(f) PP AGREES with the box: ${agreeEv.length} → box RIGHT ${agRight} · box WRONG (common-mode) ${agWrong} · unknown ${agUnk}`);
-agWrongRows.forEach(({ id, r, e }) => console.log(`  COMMON-MODE #${id} ${r.type} box='${e.committed}' pp='${e.pp_read}' (pp ${e.pp_conf}) ON reason=${r.reason} note=${r.ref.note ? 'yes' : 'no'}`));
+const agHuman = agreeEv.filter(e => prov(idOf(e.doc)) === 'human').length;
+console.log(`\n(f) PP AGREES with the box: ${agreeEv.length} (human-confirmed ${agHuman} · machine-confirmed ${agreeEv.length - agHuman}) → box RIGHT ${agRight} · box WRONG (common-mode) ${agWrong} · unknown ${agUnk}`);
+agWrongRows.forEach(({ id, r, e }) => console.log(`  COMMON-MODE #${id} ${r.type} box='${e.committed}' pp='${e.pp_read}' (pp ${e.pp_conf}) ON reason=${r.reason} note=${r.ref.note ? 'yes' : 'no'} via=${prov(id)}`));
+// the RESOLVE-branch agrees count too (the soften docs never reach glyph_check)
+const resAg = resolves.filter(e => e.outcome === 'agree');
+const resAgWrong = resAg.filter(e => { const r = onBy.get(idOf(e.doc)); return r && r.ref && r.ref.correct === false; });
+console.log(`    + RESOLVE-branch agrees ${resAg.length}, box WRONG ${resAgWrong.length} → common-mode ALL BRANCHES ${agWrong + resAgWrong.length} / ${agreeEv.length + resAg.length}`);
+resAgWrong.forEach(e => { const id = idOf(e.doc); console.log(`  COMMON-MODE(resolve) #${id} box='${e.committed}' pp='${e.pp_read}' (pp ${e.pp_conf}) via=${prov(id)}`); });
 // (g) the 9 soften docs + the 8 Print Tracker true positives by name
 const focus = off.filter(r => r.ref && r.ref.note && r.ref.note.includes(SOFT)).map(r => r.id);
 console.log(`\n(g) the ${focus.length} soften docs (OFF arm) — second-reader outcome:`);

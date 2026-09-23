@@ -30,6 +30,24 @@ not independently traced · H = hypothesis with its one measurement.
   OFF. Measured by `run_glyph_on.sh` (§12).
 - **The rec model's dictionary is 95 printable-ASCII chars** (`python_backend/ocr/models/README.md:6`) → `£`/`€` are
   out of vocabulary; a totals compare must strip the leading non-digit run.
+- **ORACLE VET (same night, `docs/oracle_log.md` 2026-09-23 NIGHT): PAD PARITY, not placement.** `anchor._crop_and_ocr`
+  reads the taught/relocated value box **±20 px on every side** (`anchor.py:3975-3976` ✔); the hold handed PP the bare
+  box + 0.15×h ≈ 4 px. The five "clipped" crops are that mismatch — Tesseract's wider crop rescued the glyph, PP's did
+  not. **Built as C1 the same night:** the capture records the crop-family pad (+20 px) and the second reader gets the
+  rect Tesseract actually read (no extra quiet zone); `_grow_code_left_read` returns only (surface, conf) ✔, so a grown
+  winner's geometry stays the pre-grow box — threading the pad-window rect back is the C1 follow-up.
+- **ORACLE VET: PP's demonstrated value on the owner's fonts is the S/5 class** (3 true catches `HS71Y07217`→
+  `H571…` at 0.999, via the RESOLVE branch); **the sans O/0 class is PP-BLIND** (4/4 wrong on `W2E8X06407`; PP agrees
+  with the wrong `RFH0` on 4 docs) → reachable only by a page-family disagreement or history. The mig-207 hold does
+  NOT catch its founding exhibit p7 on the pipeline's anchor rect. Common-mode restated: **4 / 362 PP-agrees on
+  pipeline crops, one O/0 family** (not "0/358").
+- **ORACLE VET: the `pp_line` witness family (§3, first draft) BREACHES the standing C1** — `_corrob_licensed`
+  (engine.py:1964-1972 ✔) and trust.js `_corrobLicensed` (:687-689 ✔) count ANY agreeing family: {crop} ∪ {pp_line}
+  = 2 families with `crop` ∈ page families → LICENSED. Withdrawn: PP reads (P1, P2, P3, T1-on-a-grown-rect) never
+  enter `_field_candidates` or the corroboration record under any name; they live in an instance transient
+  `self._glyph_readset` + the trace. Mechanism pinned in `test_glyph_disagreement_hold.py`.
+- **ORACLE VET: "727 confirmed = ground truth" is overstated** — 371 `scope_sweep` + 119 `auto_*` machine confirms
+  (51 %) can be circular with the read under test; every count is partitioned by confirm provenance from here on.
 
 ## 1. Verified premises the design rests on
 - Reader (`ocr/glyph_reader.py`): en PP-OCRv3 rec via onnxruntime, RECOGNITION ONLY (no det/cls, no OpenCV — shed
@@ -130,9 +148,9 @@ page is healed by the page's own lines.
   only, never a clearing witness by itself.
 - **DPI:** stay at 200 (PP rescales to cap≈48 px; a 300-DPI re-render of a scanned PDF is a resample, no new
   information). Cost: PP ≈ 8-30 ms/slice; worst case 3 roles × 3 slices ≈ 0.2 s per scanned doc; born-digital abstains.
-- **The P_line keyword read must NOT be recorded under the `keyword` family** (it would license `_corrobLicensed`
-  against the crop read on overlapping pixels — C1). Its own non-page family `pp_line`, excluded from
-  `_CORROB_PAGE_FAMILIES`, pinned. T1 on a GROWN rect also stays out of the ledger in v1.
+- **No PP read is ever recorded in `_field_candidates` or the corroboration record — under ANY family name**
+  (ORACLE VET Seam 1: a `pp_line` family would still license the corroborated auto-file, see §0). P1/P2/P3 and T1 on
+  a grown rect live in `self._glyph_readset` (instance transient) + the trace only; Part C reads them from there.
 
 ## 4. Independence map + the witness ruling (007 and oscar agree)
 | read | pixels | engine | counts as |
@@ -161,13 +179,21 @@ PP's own faults (wide-gap space dropping, digit hallucination on long low-qualit
   trace-only (the sans 0/O class: 4/4 PP-wrong at 0.95). When box and page DISAGREE by one glyph, PP at mean ≥ 0.90
   on a Part-A-clean slice DECIDES — siding with the page = adopt review-bound (the `HS71Y07217` shape, 3/3 right);
   siding with the box = the existing hold stands with PP's vote named in the note.
+- **"Box and page AGREE" means a POSITIVE page-family `agree` entry on the same normalised value** (ORACLE C5) —
+  page-SILENT is not page-agree: page-silent + PP dissent ≥ 0.90 on a clean/healed slice → HOLD (the no-page-witness
+  unique-serial class the hold was built for); page-agree + PP dissent → trace-only, counted as `glyph_lone_dissent`.
+- **Rewritten winners abstain** (ORACLE C6): a `+corrected` / `+snapped` / `+confirmed_adopt` method, or `corrected_to`
+  / `was_corrected` set, means T0 is a history-rewritten string, not a pixel read — compare PP to the retained raw
+  read or abstain (no clear, no hold).
 - **HOLD** on a disagreement among {T0, P1, T_page, H} only where no two of them agree against the third at the floors
   (a PP disagreement counts only at PP mean ≥ 0.90 and integrity ∈ {clean, healed}; a date parse failure on either
   side abstains; P1 ≠ P2 holds as "two positions read differently").
 - **CLEAR** needs ALL of: (i) integrity ∈ {clean, healed}; (ii) T0 == P1 at PP mean ≥ 0.95 AND min glyph ≥ 0.80;
   (iii) one context/history axis: T_page contains the value (`_page_presence_corroborated`) OR H sides with it
-  (shape-passing on this scope). Engine agreement alone clears only where no page family disagrees (mig-211 C2 —
-  trust.js would hold anyway) and the box/page difference is a `_CONFUSE_TO_DIGIT` pair.
+  (shape-passing on this scope). (ORACLE C13 rewrite:) where the page pass and the box differ by ONE
+  `_CONFUSE_TO_DIGIT` glyph, engine agreement (ii) plus H decides; where the page pass is SILENT, (ii) plus
+  `_page_presence_corroborated` cannot be met, so H is the only route; where a page family DISAGREES on a non-map
+  pair, nothing clears (trust.js holds — mig-211 C2).
 - **Against a page-family disagreement:** T0 + P1 + H may outvote T_page (14/14 box+PP-side right in the soften
   census); T0 + P1 WITHOUT H may NOT (C0: 8/9 taught boxes wrong, page right). Clearing a page-family disagreement is
   a LEDGER write under the mig-191 predicate (`_suppress_taught_ref_disagree_record`) → the 82/727 `disagreeing-read`
@@ -255,7 +281,17 @@ useful only for rows where Tesseract returns NO word box (light 7.5-pt grey seri
 not fix a taught-box frame, does not split caption from value, adds no value-pixel independence. Log a separate
 "det for zero-words rows" arc gated on a census of role fields with no Tesseract word box (H < 1 %).
 
-## 11. Open questions for the Oracle
+## 11. Oracle verdict (2026-09-23 NIGHT — full text + conditions C1-C14 in `docs/oracle_log.md`)
+S0 SIGN OFF W/COND (incomplete without C1 pad parity — **built**) · S1 SIGN OFF W/COND, partly WRONG LAYER (Part A
+v1 = word-snap + row-band; the ink sensor DETECT-only, C2) · S-B1 SIGN OFF · S2 SIGN OFF W/COND (`unhealed` =
+abstain-all, no note/cap, C3) · S3 SEND BACK on the `pp_line` family (C4 — **withdrawn above**) · S-B3 SIGN OFF W/COND
+(C11) · S4 Part C SEND BACK (C5-C9 — C5/C6/C13 folded into §5 above; C7 the H axis from human confirms only, tie-break
+only, never against a taught + page-contained read, no H on a scope with a rival confusable confirm; C8 the 82-doc
+route = right layer, own vet, both licence twins must refuse any new suppression list first; C9 provenance
+partition + restate 4/362 + the in-sample floor) · det model DO NOTHING. **Gate to flip mig 207 = C10:** the 727
+re-census after C1 + casefold + the 0.90 floor FIXED beforehand: false holds ≤ 1 (each on a contact sheet), would-file
+lost ≤ 1 adjudicated, the 3 `HS71Y` catches kept, the 5 clip + 4 bleed docs read right, wouldFile(ON) ⊆ OFF, M=0,
+OFF md5 identical, two ON runs byte-identical. The original open questions, for the record:
 1. Part A's `unhealed` note — a NEW hold class on glued label/value layouts: acceptable (fail-toward-review) or must
    it abstain silently in v1 (trace-only) until the 727 histogram sizes it?
 2. R2 "two taught positions read differently" → HOLD: the human message + whether it should also mark the anchor for

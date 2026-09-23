@@ -213,14 +213,66 @@ def test_geometry_follows_the_winner():
         os.environ.pop("GLYPH_FALLBACK_ENABLED", None)
 
 
+def test_pad_parity_for_crop_family_winners():
+    """Oracle C1 (2026-09-23): a crop-family anchor winner was READ through anchor._crop_and_ocr = value box +20 px
+    every side; the second reader must get that rect (no extra quiet zone). An inline winner (word geometry, no
+    crop OCR) keeps the 0.3/0.15 quiet-zone pad."""
+    rec = []
+    saved = (_gr.available, _gr.read_crop, _gr.prep_crop, _rs._crop_padded)
+    os.environ["GLYPH_FALLBACK_ENABLED"] = "1"
+    try:
+        _gr.available = lambda: True
+        _gr.read_crop = lambda img: ("1G25802868", 1.0)
+        _gr.prep_crop = lambda img: img
+        _rs._crop_padded = lambda page, box, v, h: (rec.append((box, v, h)) or ("CROP", (0, 1)))
+
+        class _Page:
+            size = (1000, 2000)
+        f = _fake_engine()
+        f._s05_pages = [_Page()]
+        f._s05_read_geom = {}
+        f._field_read_geom = {"reference_number": (.5, .5, .1, .02)}
+        f._field_read_pad_px = {"reference_number": 20}
+        res = {"reference_number": {"value": "1625802868", "confidence": 90, "method": "anchor_crop+corrected"}}
+        ExtractionEngine._glyph_disagreement_hold.__get__(f, ExtractionEngine)(res, "reference_number", ["ocr"])
+        box, v, h = rec[0]
+        assert (v, h) == (0.0, 0.0), "no quiet zone on top of Tesseract's own +20 px"
+        assert abs(box["x_norm"] - (.5 - 20 / 1000)) < 1e-9 and abs(box["y_norm"] - (.5 - 20 / 2000)) < 1e-9
+        assert abs(box["w_norm"] - (.1 + 40 / 1000)) < 1e-9 and abs(box["h_norm"] - (.02 + 40 / 2000)) < 1e-9
+        assert res["reference_number"]["confidence"] <= 69, "the disagreement still holds on the parity rect"
+        # inline winner: pad 0 → the quiet-zone pad stands
+        rec.clear()
+        f._field_read_pad_px = {"reference_number": 0}
+        res = {"reference_number": {"value": "1625802868", "confidence": 90, "method": "anchor_inline"}}
+        ExtractionEngine._glyph_disagreement_hold.__get__(f, ExtractionEngine)(res, "reference_number", ["ocr"])
+        assert rec[0][1:] == (0.3, 0.15) and rec[0][0]["x_norm"] == .5
+    finally:
+        _gr.available, _gr.read_crop, _gr.prep_crop, _rs._crop_padded = saved
+        os.environ.pop("GLYPH_FALLBACK_ENABLED", None)
+
+
+def test_pp_confidence_floor_for_a_disagreement():
+    """Oracle C10: a single-glyph disagreement below PP mean 0.90 abstains (bleed/fragment reads); at/above it holds."""
+    d, _ = _run("1625802868", ("1G25802868", 0.899))
+    assert d["confidence"] == 90 and "validation_note" not in d
+    d, _ = _run("1625802868", ("1G25802868", 0.90))
+    assert d["confidence"] <= 69 and "validation_note" in d
+
+
 def test_c1_pp_not_a_corroboration_family():
     """Oracle C1 (ship-blocker), belt: PP must NEVER be a corroboration page family — else a same-pixel
     {crop-Tesseract, ppocr} pair would satisfy _corrob_licensed and license a wrong auto-file. The engine
     method already writes no _field_candidates entry (test_disagree_holds_with_neutral_note); this locks
     the constant so a future dev can't add a glyph/pp key to the family set."""
-    from extraction.engine import _CORROB_PAGE_FAMILIES
+    from extraction.engine import _CORROB_PAGE_FAMILIES, _corrob_licensed
     bad = [f for f in _CORROB_PAGE_FAMILIES if any(t in f.lower() for t in ("glyph", "ppocr", "pp_", "onnx"))]
     assert not bad, f"a PP recognizer read must not be a corroboration family: {bad}"
+    # Oracle 2026-09-23 (the Paddle corroboration vet, Seam 1): a PP read recorded under ANY family name — even one
+    # outside _CORROB_PAGE_FAMILIES — would still license the corroborated auto-file when the WINNER is a page
+    # family ({crop} ∪ {pp_line} = 2 families, crop ∈ page families). So PP reads must never enter the record at all.
+    # This pins the mechanism the design must respect (the predicate itself is untouched).
+    assert _corrob_licensed({"winner_family": "crop", "agree": ["pp_line"], "independent_agree": True,
+                             "disagree": []}) is True, "the licence predicate counts ANY agreeing family — PP must stay out of the record"
 
 
 if __name__ == "__main__":
