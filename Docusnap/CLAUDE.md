@@ -21,7 +21,32 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-21 EVENING (opt-in auto-split + the Chris-vet fixes + the UNDETECTED-ISSUER feature A+B):
+## ⏭ LATEST — 2026-09-23 (PP-OCR "second reader" confusable hold built S0→S2 DARK + anchor-read coverage; security review; Chris vet):
+**READ `HANDOVER_2026-09-23_GLYPH.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `14396ab`; origin CURRENT
+(all pushed); mig 207; `TEST_SWITCH_KEYS` = 11; `node scripts/run-pins.js` 413/413.** Dev app RUNNING (5 electron,
+my launched instance with env `GLYPH_FALLBACK_ENABLED=1` — reverts on restart). No uncommitted CODE (only regenerable
+census artifacts + a stray zip). **Built (owner's `1G25802868`→`1625802868` misread; "Tesseract is the bottleneck" —
+CONFIRMED):** a DARK **`glyph_fallback_enabled` (mig 207)** "second reader" — a PP-OCR rec model (`en_PP-OCRv3`,
+onnxruntime, vendored `python_backend/ocr/models/rec.onnx` 8.97MB Apache-2.0) re-reads a scanned ref-role crop and
+HOLDS the doc on a single-glyph disagreement (review-bound, neutral note, never overwrites/auto-files/corroborates —
+Oracle SEND-BACK→RE-RULE SIGN-OFF-W/COND, `docs/oracle_log.md` bottom). Slices: S0 `ocr/glyph_reader.py` (222/222
+parity, two-process deterministic, `test_glyph_reader.py`) · S1 `engine._glyph_disagreement_hold` (`test_glyph_disagreement_hold.py`)
+· S2 census `TESTING/_measure/glyph_fallback_census_20260922/RESULT.md` (safety PASS, false-hold 0.2%, refined to
+single-glyph swaps) · import-log lines · **anchor-read coverage** (gary: `_winning_read_geom` + `_field_read_geom`,
+so real Print-Tracker anchor reads resolve a crop, not only Stage-0.5 mappings) · glyph-check diag tracing.
+**⚠ OPEN:** does the second reader FIRE on real docs? The existing anchor arms already HOLD the two bad refs (p7/p11);
+the 31 clean refs need one owner reprocess + the new `glyph_check` trace to confirm the anchor-box fix is live.
+**⚠ CORRECTED:** the owner's "no auto-files on a fresh IMPORT" is **NOT** a new-supplier/graduation gate — Print
+Tracker IS graduated (custom type, 135 format rules). A graduated scope's floor is **95 overall** (trust.js:1278);
+its anchor reads plateau ~87–94 (several refs at 87 < `CRITICAL_FIELD_FLOOR` 88) so the blend sits below 95 → held.
+The actual overall/eligibility reason is JS-side (not the python diag) → the resume task. **Also this session
+(pushed):** `docs/SECURITY_REVIEW_2026-09-22.md` (no new Crit/High code vulns; top = admin-2FA-optional H1,
+unsigned-installer H2, backend-MySQL-PII M1, desktop-SQLite-plaintext M2) · `docs/CHRIS_FULL_APP_REVIEW_2026-09-22.md`
+(verdict YES, F1/F2/F3 fixes confirmed, 6 new findings top = teach accepting a customer address as company name) ·
+`pendingfeatures.md` logo-propagation for the Not-recognised tab. **OWED before a glyph flip:** Oracle vet of the
+anchor widening · the anchor-path false-hold census on real data · onnxruntime+model vendored into the shipped build.
+
+## ⏭ 2026-09-21 EVENING (opt-in auto-split + the Chris-vet fixes + the UNDETECTED-ISSUER feature A+B):
 **READ `HANDOVER_2026-09-21_EVENING.md` FIRST** (then `handover.md` = the same state in next-batch form). Branch
 `feat/teach-side-overnight`; **HEAD `d3df3ce`; origin CURRENT (all pushed); mig 195; `run-pins.js` 405/405 green;
 nothing running.** The only dirty tree paths are the OWNER's (`CLAUDE.md`, `tools/video_tutorials/*`) — don't commit.
