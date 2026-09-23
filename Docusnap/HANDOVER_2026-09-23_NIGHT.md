@@ -211,6 +211,19 @@ box + a label-line keyword read · the decision rule). Both reports are folded i
   09-15 / 08-23 rounds; report → `<root>\CHRIS_REPORT_2026-09-23.md` and `docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md`.
   **RUNNING at handover** — if his report is not in `docs/`, read `<root>\CHRIS_REPORT_2026-09-23.md`. The sandbox is
   left running for the owner to poke. IMPLEMENT NOTHING from his round without the owner's go.
+- **CHRIS RETURNED (~23:18):** report VERBATIM + my source verification in `docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md`.
+  Headline: orders types did exactly the ask (Saltmarsh 13 + Copperfield 11 filed by themselves after teach + 2
+  confirms, 0 wrong ref/date/company on 67 filed, 4 wrong dates + 1 S/5 ref all HELD); invoices 0/30 until he
+  switched the taught Total off. **VERIFIED at source (reproduced on a DB copy):** the taught Total box reads the
+  page's inline ISO code (`GBP 11,066.95`, once `SBP`), the LEGACY currency leg of `_stage05_format_fails`
+  (`template_format_fail_yield`, ON since mig 70) rejects a letter prefix → keyword yield + note on the OPTIONAL
+  total → `flagged` (soft-flag OFF) with a BARE reason (no field name) → and `add-field` never broadcasts
+  `doc-types-changed`, so the open Review window never drew the new field → the confirm payload + sidecar lack it.
+  Card 1 (taught Customer filed as the label word 'Customer' ×2 + garbles, page family disagreeing, no gate for
+  non-role fields) REAL. Card 3 ("Checked by you" on every confirmed doc; reprocess-all ledger kind 'approved')
+  REAL, cheap. Card 4 near-miss REFUTED: `isAutoFileEligible` on a copy with the customer note stripped →
+  `disagreeing-read:order_date` (mig 152 ON) — display gap only. Vet queue at the bottom of the review doc.
+  Sandbox left RUNNING (CDP 9223, PID 30400) for the owner; scratch copies in `%USERPROFILE%\.claude\jobs8b38f39	mp\sbdb*`.
 - NOT pushed (owner's call; the whole branch is unpushed). NOT run: the md5/determinism arms.
 
 ## OWED / flip gates

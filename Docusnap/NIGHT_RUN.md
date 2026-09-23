@@ -16,7 +16,7 @@ false holds 16→1, would-file lost 6→1, 3 catches kept, agree 419, true commo
 Chris sandbox (all six 09-23 switches ON, CDP 9223, PID 30400, fresh DB, 1,475 Demo Docs): teach → 2 confirms → import
 the rest, ≥4 suppliers, filed/held/wrong counts, comparison with 09-22/09-20/09-15/08-23 → `docs/CHRIS_FULL_APP_REVIEW_
 2026-09-23.md`. **Repeat only if:** the hold's compare/geometry changes again (re-run `run_glyph_s1.sh` + `analyse_glyph_on.js`).
-**Owed (morning):** OFF md5 identity + two ON runs byte-identical (the last C10 items) · push · Chris triage · kill 9223.
+Chris DONE 23:18 + source-verified triage appended to the review doc (card 2 = the ISO-code currency prefix failing the legacy format-fail leg + `add-field` not broadcasting + a bare `flagged` reason; card 4 near-miss REFUTED by the predicate). **Owed (morning):** OFF md5 identity + two ON runs byte-identical (the last C10 items) · push · the Chris vet queue (7 items, nothing built) · kill 9223.
 
 ## ✅ DONE 2026-09-22 NIGHT — PP-OCR CONFUSABLE FALLBACK built S0→S2 (DARK, mig 207) + FULL SECURITY REVIEW + CHRIS full vet — `TESTING/_measure/glyph_fallback_census_20260922/RESULT.md` + `docs/SECURITY_REVIEW_2026-09-22.md`
 Autonomous (owner "going to bed, you are on auto"). **Pushed** through `bcbd7be`; pins **413/413 green**.
