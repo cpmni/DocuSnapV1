@@ -78,6 +78,39 @@ of the live DB (gitignored — real values; delete when done). ⚠ `stress_test/
   `docs/designs/CONFUSABLE_RELEASE_SEAMS_2026-09-23.md` (seams + how the build answered each; Fix A corrected to OFF) ·
   `NIGHT_RUN.md` QUEUE (mig 210 + mig 211 flip gates).
 
+## WHERE NEXT — owner discussion after the C0 result (2026-09-23 late; facts verified at source)
+The owner's direction: the Paddle second read IS the way; a second read cannot hurt accuracy, only cost. Three
+questions answered, each checked in code:
+- **"Would `30-82482` (the clipped both-wrong read) have been held by a pattern rule alone?"** NO. Field regex passes
+  (a code with digits); trust.js shape classes are COARSE (`_codeish` = single token with a digit → passes); the
+  prefix-outlier guard needs a leading ALPHA prefix (`ocr_corrector.code_prefix` → None on a digit-led read); the
+  mapper's "differs from the usual format" note fires only on derived rungs. Only the PAGE holds it today (absent note
+  + `disagreeing-read`) — the full-page read saw the whole glyph. So a "box + Paddle agree → clear" rule must never let
+  Paddle-on-the-same-clipped-pixels outvote the page; Paddle must read a wider/healed slice.
+- **"But the learned shape is two letters + dash + digits — don't we have that rule?"** YES: `format_anomaly_checker.
+  check_value` learned `shapes` via `shape_signature` (digit→`#`, letter→`@`): `SO-82482`→`@@-#####`, `30-82482`→
+  `##-#####` → flagged (low severity) — **BUT engine.py ~:12081 SKIPS the shape flag for `_label_confirmed` reads
+  (`anchor._LABEL_CONFIRMED_METHODS` or `_is_stage05_located`, :11758) = every taught-box read.** The clipped taught
+  box is exactly such a read. The Oracle re-applied three content flags to taught reads in August (date-in-ref,
+  length, prefix-outlier); the SKELETON check was not among them. → **Step 1: apply the learned-shape veto to taught/
+  label-confirmed reads too, review-bound, on a scope with real history.** Small, protects the clipped case today.
+- **"DN- appears 200×, Paddle reads DN- — that has to count."** The prefix ADOPT (P lane, `_prefix_confusable_adopt`
+  ~:2360) exists but only for pairs in `_PREFIX_CONFUSE_CLASSES` (S/5/$, O/0, I/1, B/8, Z/2, 7/T, 6/G, 9/g, E/£).
+  S↔3 is NOT a print look-alike — it is the RIGHT HALF of an S after a left clip — so adding it would be guessing
+  (the owner's own rule). The sound version: HISTORY (dominant `SO`) + PADDLE's independent read (`SO`) = two
+  witnesses vs the box's one → adopt `SO-82482`, review-bound first, census, then auto-file. Paddle COUNTS there; the
+  only prohibition is Paddle reading the same clipped pixels as a second vote FOR the box.
+**Agreed build order (owner to pick the first):** 1. the learned-shape veto on taught reads (review-bound) ·
+2. ONE slice-integrity step before any reader (ink at the box edge → grow bounded by label/neighbours → re-slice →
+both readers read the healed slice; the existing parts are scattered: `_find_edge_cut_words` + `_EDGE_CUT_NOTE`,
+`TEMPLATE_PAD_WINDOW_READ` ON, `anchor_code_left_grow` ON, `template_code_left_grow` / `template_edge_clip_heal` /
+`template_date_left_clip_grow` DARK — 007+oscar, the OCR_SLICE_STUDY home) · 3. the Paddle + history TIE-BREAKER
+(box vs page differ by one glyph → Paddle on the healed/wide slice decides; history a third leg), scored against the
+owner's 727 confirmed values on the DB copy BEFORE it clears anything (the harness + copy are in place:
+`TESTING/_measure/release_c0_20260923/`). Also on the table: flip 207+210 for the owner now (safe, gate met, needs
+the reader vendored for a customer build); a TOTALS disagreement-hold (3 silent 5→9 in the census); widen coverage
+past mapped-template docs (`_s05_pages` bound). mig 211 stays DARK.
+
 ## OWED / flip gates
 - **mig 211 (Oracle C0 + C10):** read the full C0 result (`analyse_c0.js`) — yield ≈ 0 → retire the key (Oracle's
   ruling); else realdoc OFF-vs-ON at RR_APP_ENV=1 with FALLBACK+RESOLVE=1 in BOTH arms: M=0, zero per-field drop,
