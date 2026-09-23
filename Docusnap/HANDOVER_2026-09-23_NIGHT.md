@@ -111,6 +111,20 @@ owner's 727 confirmed values on the DB copy BEFORE it clears anything (the harne
 the reader vendored for a customer build); a TOTALS disagreement-hold (3 silent 5→9 in the census); widen coverage
 past mapped-template docs (`_s05_pages` bound). mig 211 stays DARK.
 
+## STEP 1 REFUTED by verification (2026-09-23 late; `TESTING/_measure/release_c0_20260923/RESULT_SHAPE_EXEMPT.md`)
+Owner: "carry on, but verify your thesis." Did. The exemption exists (`engine.py` ~:12081 skips the Stage-4.5 shape flag
+for `_label_confirmed` = `anchor._LABEL_CONFIRMED_METHODS` + `_is_stage05_located`; no pin; from `88b7080`) and the
+skeleton check WOULD flag `30-82482` (`##-#####` ∉ {`@@-#`}). But the census (`shape_exempt_census.py` on the 727 C0
+rows with the engine's own `build_format_class_index` from `dump_formats.js`) found the ONLY 20 shape-violating taught
+reads are Castellan worksheets reading the taught **`CJB-####` Job Sheet No** against a history of **`JB-####` Job Ref**
+values — 15 `scope_sweep` machine confirms (excluded from learning, verified `learning_exclude_machine_confirms=true`)
++ **4 HUMAN `JB-` confirms on 09-12 before the teach** + 1 human `CJB-` correction on 09-13 → learned {`@@-#`}. The
+taught reads are RIGHT; the history is the other field. Removing the exemption = 19 false holds, 0 catches; the
+clipped shape-violating taught read never occurred in 727 docs. **Step 1 withdrawn.** Remaining plan: step 2 (slice
+integrity) → step 3 (Paddle + history tie-breaker, scored on the 727). **Owner decision surfaced:** 19 Castellan
+worksheets are filed under the Job Ref (`JB-`), not the Job Sheet No; the 4 hand `JB-` confirms define the learned
+reference shape. Learning Repair on those 4 + a reprocess-ALL (which WOULD auto re-file the 19 under `CJB-`) — or leave.
+
 ## OWED / flip gates
 - **mig 211 (Oracle C0 + C10):** read the full C0 result (`analyse_c0.js`) — yield ≈ 0 → retire the key (Oracle's
   ruling); else realdoc OFF-vs-ON at RR_APP_ENV=1 with FALLBACK+RESOLVE=1 in BOTH arms: M=0, zero per-field drop,
