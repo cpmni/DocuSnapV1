@@ -177,6 +177,19 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   with the numbers. Residual (named): a taught box clipped at a physical fold/table rule where the wide read
   //   cannot restore pixels; cold-scope trailing-letter confusables the ambiguous flag is blind to.
   'glyph_confusable_release',
+  // glyph_slice_integrity (mig 212, 2026-09-23 night, Oracle C2/C3 of the Paddle corroboration vet — S1 of Part A):
+  //   the second reader's crop rect is SNAPPED to the page-level word boxes on the value's row band before the re-read
+  //   (extraction/slice_integrity.py, pure; words from the mapper's shared locate cache). A taught box that cuts a glyph
+  //   grows to the whole word; a box that bleeds into the next line tightens to the row; a neighbour touched by less
+  //   than half a glyph is left out; no words / no cache → the rect is left as it was. Changes ONLY the pixels the
+  //   second reader sees — never a committed value, never a note (Oracle C3: an unhealable slice abstains). WHY: on
+  //   the owner's 727 the second reader's 16 false holds were 5 clipped boxes + 4 next-line bleeds, and Tesseract's
+  //   own +20 px crop (the C1 stop-gap) made PP read neighbouring ink instead. HARD dep glyph_fallback_enabled.
+  //   ⚑ FLIP GATE (with mig 207's C10): the 727 re-census with the switch ON — false holds ≤1 (contact sheet), the
+  //   3 `HS71Y` catches kept, the 5 clip + 4 bleed docs read RIGHT (not abstained), wouldFile(ON) ⊆ wouldFile(OFF),
+  //   M=0, OFF md5 identity, two ON runs byte-identical; pins on drawn word geometry (clean / cut → healed / neighbour
+  //   left out / next line ignored / no lines → unchanged / page-clamped).
+  'glyph_slice_integrity',
   // ref_confusable_confirmed_literal_disarm (mig 204) was FLIPPED ON by default at mig 206 (2026-09-22, owner
   //   "flip mig 204"): census M=0 / inert on the 700 corpus (TESTING/_measure/ref_disarm_census_20260922/), owner
   //   accepted the narrow ≥2-confirm supplier-strict auto-file lift. No longer dark — delisted here.

@@ -4271,6 +4271,21 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 211 (glyph_confusable_release): ${e.message}`); }
   }
 
+  // mig 212 (2026-09-23 night, Oracle C2/C3 of the Paddle corroboration vet): glyph_slice_integrity — S1 of Part A.
+  // Before the second reader re-reads a reference crop, the crop rect is SNAPPED to the page-level word boxes on the
+  // value's own row band (extraction/slice_integrity.py, pure): a box that cuts a glyph grows to the whole word, a
+  // box that bleeds into the next line tightens to the row, a neighbour touched by less than half a glyph is left
+  // out. Changes ONLY the pixels the second reader sees — never a committed value, never a note (an unhealable slice
+  // abstains). HARD dep glyph_fallback_enabled (engine env gate). DARK, seeded OFF, byte-identical off. Single-key
+  // seed (no array literal — keeps the loose seed-pin regex honest).
+  if (!applied.has(212)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('glyph_slice_integrity', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (212)').run();
+      console.log('JS migration 212 applied: glyph_slice_integrity (second-reader crop snapped to the page word boxes) seeded OFF (DARK, 1 row)');
+    } catch (e) { console.warn(`  migration 212 (glyph_slice_integrity): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

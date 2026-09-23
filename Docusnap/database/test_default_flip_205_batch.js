@@ -54,16 +54,17 @@ const HELD = [
   'recon_singlechar_misread_flag', // mig 209, 2026-09-23 — arithmetic-witness single-digit total misread
   'glyph_confusable_resolve',      // mig 210, 2026-09-23 — second-reader agree re-words the confusable soften note
   'glyph_confusable_release',      // mig 211, 2026-09-23 — second-reader agree + wide re-read POPS the soften note (auto-file loosener)
+  'glyph_slice_integrity',         // mig 212, 2026-09-23 — second-reader crop snapped to the page word boxes (pixels only)
 ];
 
 console.log('== mig 205 BATCH graduation (34 fail-toward-review switches) ==');
 
 console.log(`0. the batch is exactly ${FLIP.length} keys and the two sets are disjoint + cover the list`);
 check('FLIP is 34 distinct keys', new Set(FLIP).size === 34);
-check('HELD is 15 distinct keys', new Set(HELD).size === 15);
+check('HELD is 16 distinct keys', new Set(HELD).size === 16);
 check('FLIP ∩ HELD = ∅', FLIP.every(k => !HELD.includes(k)));
 check('TEST_SWITCH_KEYS == HELD (every flipped key delisted, every held key kept)',
-  TEST_SWITCH_KEYS.length === 15 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
+  TEST_SWITCH_KEYS.length === 16 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
 
 console.log('1. a fresh install has every flipped key ON, every held key OFF');
 {

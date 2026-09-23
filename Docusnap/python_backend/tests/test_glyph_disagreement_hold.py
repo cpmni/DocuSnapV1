@@ -251,6 +251,54 @@ def test_pad_parity_for_crop_family_winners():
         os.environ.pop("GLYPH_FALLBACK_ENABLED", None)
 
 
+def test_slice_integrity_snaps_the_reader_rect():
+    """mig 212 (Oracle C2/C3): with GLYPH_SLICE_INTEGRITY on and page words cached, the rect handed to the second
+    reader is the WORD box on the value's row (quiet-zone pads), a cut box grows to the word; off / no cache →
+    today's rect. Pixels only — the hold's verdict logic is untouched."""
+    from extraction import template_mapper as _tm
+    rec = []
+    saved = (_gr.available, _gr.read_crop, _gr.prep_crop, _rs._crop_padded, _tm._page_words_cached)
+    os.environ["GLYPH_FALLBACK_ENABLED"] = "1"
+    try:
+        _gr.available = lambda: True
+        _gr.read_crop = lambda img: ("1G25802868", 1.0)
+        _gr.prep_crop = lambda img: img
+        _rs._crop_padded = lambda page, box, v, h: (rec.append((dict(box), v, h)) or ("CROP", (0, 1)))
+        word = {"text": "1625802868", "x_norm": .60, "y_norm": .30, "w_norm": .10, "h_norm": .02}
+        _tm._page_words_cached = lambda page, fn, cache: [{"words": [word]}]
+
+        class _Page:
+            size = (1000, 2000)
+
+        def _engine_with(cache):
+            f = _fake_engine()
+            f._s05_pages = [_Page()]
+            f._s05_read_geom = {}
+            f._field_read_geom = {"reference_number": (.606, .30, .094, .02)}   # a box cutting the first glyph
+            f._field_read_pad_px = {"reference_number": 0}
+            f._line_cache = cache
+            return f
+        # ON + cache → snapped to the word box, quiet-zone pads
+        os.environ["GLYPH_SLICE_INTEGRITY"] = "1"
+        res = {"reference_number": {"value": "1625802868", "confidence": 90, "method": "anchor_inline"}}
+        ExtractionEngine._glyph_disagreement_hold.__get__(_engine_with({}), ExtractionEngine)(res, "reference_number", ["ocr"])
+        box, v, h = rec[-1]
+        assert abs(box["x_norm"] - .60) < 1e-9 and abs(box["w_norm"] - .10) < 1e-9 and (v, h) == (0.3, 0.15), rec[-1]
+        assert res["reference_number"]["confidence"] <= 69, "verdict logic unchanged (the disagreement still holds)"
+        # ON + NO cache (SHARED_LOCATE_CACHE off) → abstain from snapping: today's rect
+        res = {"reference_number": {"value": "1625802868", "confidence": 90, "method": "anchor_inline"}}
+        ExtractionEngine._glyph_disagreement_hold.__get__(_engine_with(None), ExtractionEngine)(res, "reference_number", ["ocr"])
+        assert abs(rec[-1][0]["x_norm"] - .606) < 1e-9
+        # OFF → today's rect
+        os.environ["GLYPH_SLICE_INTEGRITY"] = "0"
+        res = {"reference_number": {"value": "1625802868", "confidence": 90, "method": "anchor_inline"}}
+        ExtractionEngine._glyph_disagreement_hold.__get__(_engine_with({}), ExtractionEngine)(res, "reference_number", ["ocr"])
+        assert abs(rec[-1][0]["x_norm"] - .606) < 1e-9
+    finally:
+        _gr.available, _gr.read_crop, _gr.prep_crop, _rs._crop_padded, _tm._page_words_cached = saved
+        os.environ.pop("GLYPH_FALLBACK_ENABLED", None); os.environ.pop("GLYPH_SLICE_INTEGRITY", None)
+
+
 def test_pp_confidence_floor_for_a_disagreement():
     """Oracle C10: a single-glyph disagreement below PP mean 0.90 abstains (bleed/fragment reads); at/above it holds."""
     d, _ = _run("1625802868", ("1G25802868", 0.899))

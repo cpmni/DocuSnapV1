@@ -428,6 +428,10 @@ function _reconcileEnv(db) {
     // the normal route. HARD deps GLYPH_FALLBACK_ENABLED + GLYPH_CONFUSABLE_RESOLVE (the engine's env gates enforce
     // them). DARK, byte-identical OFF.
     if (learning.getSetting(db, 'glyph_confusable_release', 'false') === 'true') env.GLYPH_CONFUSABLE_RELEASE = '1';
+    // GLYPH_SLICE_INTEGRITY (mig 212, 2026-09-23 night, Oracle C2/C3): the second reader's crop rect is snapped to the
+    // page-level word boxes on the value's row band before the re-read (extraction/slice_integrity.py). Pixels only —
+    // never a value, never a note. HARD dep GLYPH_FALLBACK_ENABLED (engine env gate). DARK, byte-identical OFF.
+    if (learning.getSetting(db, 'glyph_slice_integrity', 'false') === 'true') env.GLYPH_SLICE_INTEGRITY = '1';
     // CORROB_DATE_FOLD_WIDE (mig 208, 2026-09-23, gary → Oracle SIGN-OFF-W/COND; owner-proven on the live Print
     // Tracker batch): the corroboration date fold treats a worded / month-name date ('September 30, 2026') as equal
     // to the SAME calendar date read numerically ('30-09-2026'), so the same day read two ways no longer logs a

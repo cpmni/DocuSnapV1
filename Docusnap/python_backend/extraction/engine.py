@@ -7024,6 +7024,24 @@ class ExtractionEngine:
                 _vpad, _hpad = 0.0, 0.0
             else:
                 _vpad, _hpad = 0.3, 0.15                 # quiet-zone pad (oscar C7)
+            # SLICE INTEGRITY (mig 212, Oracle C2/C3 — S1 of Part A): snap the rect to the page-level WORD boxes on
+            # the value's row band (extraction/slice_integrity.py) so a taught box that cut a glyph, or Tesseract's
+            # +20 px crop that reaches neighbouring ink, is replaced by the word the page pass actually saw. Pixels
+            # only; a snapped rect takes the quiet-zone pad (the census geometry: value-only + a small margin).
+            # No cache (SHARED_LOCATE_CACHE off) → abstain (Oracle C14); no words → today's rect. DARK env.
+            _si = None
+            if os.environ.get('GLYPH_SLICE_INTEGRITY', '0') == '1':
+                from extraction import slice_integrity as _sli
+                from extraction import template_mapper as _tmsi
+                _lc = getattr(self, '_line_cache', None)
+                _lines = (_tmsi._page_words_cached(pages[page_idx], _tmsi._ocr_lines, _lc) if _lc is not None else None)
+                _si = _sli.snap_rect_to_words(box, _lines)
+                if self._trace:
+                    self._t('slice_integrity', field=ref_field_key, integrity=_si['integrity'], n_words=_si['n_words'],
+                            grown=_si['grown'], edges=_si['edges'], rect_in=box, rect_out=_si['rect'], geom_src=_geom_src)
+                if _si['integrity'] in ('clean', 'healed'):
+                    box = _si['rect']
+                    _vpad, _hpad = 0.3, 0.15
             crop, _band = _rs._crop_padded(pages[page_idx], box, _vpad, _hpad)
             if crop is None:
                 return _skip('no_crop', pad_px=_pad_px)
