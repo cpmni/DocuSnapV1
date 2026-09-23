@@ -143,6 +143,15 @@ def test_value_drift_after_soften_fails_closed():
     assert d["validation_note"] == SOFT and d["confidence"] == 90
 
 
+def test_rewritten_winner_abstains_c6():
+    """Oracle C6 (2026-09-23 night): a `+corrected` / `+snapped` / `+confirmed_adopt` winner is a history-rewritten
+    string — the DOWNGRADE never re-words on it (and the release, living inside, never fires)."""
+    for meth in ("anchor_crop+corrected", "template_mapping+snapped", "anchor_inline+confirmed_adopt"):
+        d, _ = _run(REF, (REF, 0.99), method=meth); _untouched(d)
+    d, _ = _run(REF, (REF, 0.99))
+    assert d["validation_note"] == _GLYPH_RESOLVED_SOFTEN_NOTE.format(REF), "a plain pixel read still re-words"
+
+
 def test_manual_method_skipped():
     for meth in ("template_fixed", "manual_override", "override"):
         d, _ = _run(REF, (REF, 0.99), method=meth); _untouched(d)

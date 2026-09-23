@@ -148,9 +148,51 @@ box + a label-line keyword read · the decision rule). Both reports are folded i
   agreement is trace-only": false holds 16→1, true catches 3. **Part C revised: PP is a TIE-BREAKER between box and
   page, never a lone arbiter.** Two traps fixed on the way: dev slice names collided across shards/engines (pid +
   process-wide seq now); the harness attribution of trace events is by the engine's own `doc` field.
-- **Oracle vet of the whole arc: RUNNING at handover** (verdict → `docs/oracle_log.md` + the design doc §11).
-  Nothing of S1+ is built. mig 207's own flip needs a re-census (its population widened; 16/529 false holds before
-  the fixes). Commits: `a0c25f2` (S0), `f521ec5` (casefold + slice capture + design + measurement).
+- **ORACLE VET (`docs/oracle_log.md` 2026-09-23 NIGHT; design doc §0/§11 updated):** S0 SIGN OFF W/COND (incomplete
+  without PAD PARITY) · S1 SIGN OFF W/COND / partly WRONG LAYER (9 of 16 false holds are a reader-RECT mismatch, not
+  placement; Part A v1 = word-snap + row-band, ink sensor detect-only) · S-B1 SIGN OFF · S2 W/COND (`unhealed` =
+  abstain-all, no note) · S3 SEND BACK on `pp_line` (BREACHES C1 — verified: `_corrob_licensed` + trust.js twin count
+  ANY agreeing family → withdrawn; PP reads live in `self._glyph_readset` + trace only) · S-B3 W/COND · S4 Part C SEND
+  BACK (C5 page-silent ≠ page-agree; C6 abstain on `+corrected` winners; C7 H from human confirms only; C8 the 82-doc
+  ledger route = right layer, own vet; C9 restate common-mode as 4/362 + provenance partition) · det DO NOTHING.
+  **Three premise corrections, all verified:** `anchor._crop_and_ocr` pads the value box **±20 px** (anchor.py:3975)
+  while the hold gave PP ~4 px → the 5 "clips" are pad parity; 51 % of the 727 confirms are MACHINE (scope_sweep 371
+  + auto 119) → partly circular; the mig-207 hold does NOT catch its founding p7 exhibit on the anchor rect (PP reads
+  `RFH0` 0.962) — PP's value on these fonts is the S/5 class, sans O/0 is PP-blind.
+- **BUILT after the vet (`e28a9d6`):** C1 pad parity (capture records the crop-family +20 px; PP gets Tesseract's rect)
+  · the C10 PP floor 0.90 on a disagreement (`_GLYPH_HOLD_PP_FLOOR`, in-sample, labelled) · the licence-mechanism pin
+  · `dump_via.py` + provenance partition in the analysis. Pins hold 19 / resolve 12 / release 19.
+- **C10 RE-CENSUS (mig 207's flip gate) — RESULT (design doc §12b):** false holds **16 → 2** (both MAPPING winners:
+  `SO-71797`→`5O` 0.926, `SO-99174`→`S0` 0.918 — the mapper half of C1 is not done); common-mode **0/340** (the `RFH0`
+  identity family now reads a DROPPED glyph at 0.74 → RESOLVE:disagree); the 3 `HS71Y` true catches kept; would-file
+  lost 6 → 1; 6 `pp_lowconf` abstains. **BUT six rigid-box winners vanished with NO event:** with Tesseract's +20 px
+  rect PP picks up neighbouring ink → a different LENGTH → the one untraced exit. Found by adding `glyph_enter` + a
+  traced reason on EVERY exit (`length_or_multi_diff`, `pp_lowconf`, …) — commit `e08c7db`.
+  **Conclusion:** C1 pad parity is a STOP-GAP (it removed the clip common-mode) — the correct rect is the page-level
+  WORD box (Oracle C2 → S1 word-snap + row-band). The Oracle's bar (false holds ≤1) is NOT yet met (2) → mig 207's
+  flip stays blocked. A further traced 727 re-census was running at handover (`glyph_on.*`; the two earlier arms are
+  kept as `glyph_on_pre_c1.*` and `glyph_on_c1_v1.*`); its abstain-reason histogram goes into the design doc §12b.
+- **S1 BUILT (owner "go — build S1 word-snap and re-census"; `005b22b`, mig 212 `glyph_slice_integrity` DARK,
+  `TEST_SWITCH_KEYS` 16):** `extraction/slice_integrity.py` (pure) snaps the reader's rect to the page WORD boxes on the
+  value's row band (row band 0.6·max(h); admit a word when ≥ half a glyph lies inside; union; long-line cap 3×/2.5× →
+  `unhealed` = today's rect; no cache → abstain, C14); the hold uses it under `GLYPH_SLICE_INTEGRITY=1` with the
+  quiet-zone pads (the census geometry); traces `slice_integrity`. Pins: `test_slice_integrity.py` 9 + a hold pin
+  (20) + `test_migration212_*.js`. **S1 RE-CENSUS chained behind the C1-only traced arm at handover:**
+  `run_glyph_s1.sh` → `stress_test/out/c0_release/glyph_s1.*`; analyse with `analyse_glyph_on.js full.jsonl
+  glyph_s1.jsonl glyph_s1.trace.jsonl via.json` + the `slice_integrity` verdict histogram. Pass (Oracle C10 + the
+  mig-212 gate): false holds ≤1, the 3 `HS71Y` catches kept, the 5 clip + 4 bleed docs read RIGHT (not abstained),
+  wouldFile(ON) ⊆ OFF.
+- **RESULTS (design doc §12b/§12c):** the traced C1-only arm: 2 false holds, 0 common-mode, 3 catches, **105
+  `length_or_multi_diff` abstains** (89 anchor + 16 mapping — the +20 px rect makes PP read neighbouring ink).
+  **S1 v1 (snap from the padded rect): false holds 0 ✔, would-file lost 0 ✔, 3 catches ✔, agree 366, length abstains
+  83** — but 70 of those 83 ADMITTED THE LABEL ("No. DN-98358") because the snap started from the +20 px rect, and the
+  `RFH0738865` family agrees at PP 1.0 on the tight rect (4 human confirms say `RFHO` — the identity-limit class).
+  **Fixed the same night (uncommitted at handover, pins green):** the snap runs on the BARE value box first, the
+  parity expansion is only the no-words fallback; Oracle C6 applied to the DOWNGRADE (`+corrected`/`+snapped`/
+  `+confirmed_adopt` winners abstain `rewritten_winner`). **S1 v2 re-census RUNNING** → `stress_test/out/c0_release/
+  s1_v2_analysis.txt` (auto-written by the watcher; v1 kept as `glyph_s1_v1.*`). **NEXT:** read s1_v2 → commit S1 v2
+  + docs → S-B1 → S2 per C3 → S3 per C4 → Part C per C5-C9 → Oracle. Commits: `a0c25f2` (S0), `f521ec5`,
+  `fff9482`, `e28a9d6` (C1 + floor + pin + vet), `e08c7db` (traced exits), `005b22b` (S1).
 
 ## OWED / flip gates
 - **mig 211 (Oracle C0 + C10):** read the full C0 result (`analyse_c0.js`) — yield ≈ 0 → retire the key (Oracle's

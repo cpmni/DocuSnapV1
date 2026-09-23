@@ -361,7 +361,41 @@ verbatim — PP wants a value-only crop with a small quiet zone; Tesseract's +20
 `image_to_data` picks the word — and it is the Oracle's C2: the correct rect is the page-level WORD box (word-snap +
 row-band), not the padded crop. **C1 stays (it removed the clip common-mode) but is a stop-gap; S1 per C2 is the
 fix.** All exits now trace a reason (`length_or_multi_diff`, `pp_lowconf`, `reader_empty`, …) and `glyph_enter`
-records that the arm ran; a further re-census with those counts is in `RESULT_C10.md` when it lands.
+records that the arm ran. **The traced C1-only arm (727 docs, `glyph_on_c1_v1` → re-run as `glyph_on.*`):**
+| `glyph_check` outcome | count |
+|---|---|
+| agree | 339 (human-confirmed 89 · machine 250); box wrong 0 |
+| abstain `no_box` (keyword / hint winner) | 169 (+2 mapping winners without a rect) |
+| **abstain `length_or_multi_diff`** — PP read neighbouring ink on the +20 px rect | **105** (89 anchor · 16 mapping) |
+| abstain `prior_note` / `human_set` / `no_field` / `empty` | 51 / 30 / 10 / 4 |
+| abstain `pp_lowconf` (< 0.90) | 6 (3 anchor · 3 mapping) |
+| DISAGREEMENT holds | 2, both false (mapping winners `SO-71797`, `SO-99174`) |
+| true catches (RESOLVE branch, `HS71Y07217`) | 3 |
+| common-mode (all branches) | 0 / 340 |
+So the C1 stop-gap neutered the reader on ~a quarter of the reachable references (105 of ~455 with a box). **S1's
+job is to turn those 105 into real reads** — the S1 arm (`glyph_s1.*`) is the comparison, §12c.
+
+### 12c. S1 slice integrity ON (mig 212 `glyph_slice_integrity`, built `005b22b`) — first arm ✔
+| | C1-only (traced) | S1 v1 (snap from the padded rect) |
+|---|---|---|
+| DISAGREEMENT holds | 2 (false) | **0** |
+| would-file lost | 1 | **0** |
+| true catches (RESOLVE, `HS71Y07217`) | 3 | 3 |
+| agree | 339 | 366 |
+| `length_or_multi_diff` abstains | 105 | 83 (77 anchor · 6 mapping) |
+| common-mode, all branches | 0 / 340 | 4 / 372 — the `RFH0738865` family again: on the word-tight rect PP reads `RFH0…` at **1.0**, Tesseract `0`, four human confirms `O` |
+| `slice_integrity` verdicts | — | healed 379 (192 + 55 grown mapping · 79 + 53 grown anchor) · clean 67 · no_words 11 · unhealed 4 |
+**Oracle C10 bar (false holds ≤ 1) MET on this arm.** Two findings from the residue: (i) **70 of the 83 remaining length
+abstains admitted the LABEL** ("No.", "Delivery Note No.", "NO") — the snap was started from Tesseract's +20 px parity
+rect, which overlaps the label by ~2 glyphs, so the union swallowed it (`No. DN-98358`); fixed the same night: the
+snap now runs on the BARE value box and the parity expansion is only the fallback when no words are found (S1 v2,
+re-census `glyph_s1.*` v2). The rest: 5 `no_words` rows, 5 genuine PP deletions (`DN-2333` for `DN-23333` at 0.91,
+`INV-5866` at 0.91 — the length compare is the only catch for a shared deletion), 3 capped unions. (ii) The
+`RFH0738865` family is the identity-limit class exactly as oscar described: two engines at 1.0 and 0.96 read `0`;
+the owner confirmed `O` on 4 documents and `0` on 1; the page families read `RFHO`. No pixel reader decides this —
+**Oracle C6 applied to the DOWNGRADE too:** a `+corrected` / `+snapped` / `+confirmed_adopt` winner (a history-
+rewritten string) now abstains (`rewritten_winner`), so neither the confident reword nor the release rests on PP
+agreeing with history rather than with pixels; the serial's FORMAT (history axis, C7) is the only route.
 
 Licences: Tesseract 5 (Apache-2.0) via pytesseract (Apache-2.0); en_PP-OCRv3 rec weights (Apache-2.0) via
 onnxruntime (MIT); numpy (BSD-3); scipy (BSD-3, `_adaptive_binarise` only); Pillow (HPND); pypdfium2 (BSD-3 /

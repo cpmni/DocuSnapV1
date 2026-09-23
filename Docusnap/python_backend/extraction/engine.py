@@ -6960,6 +6960,13 @@ class ExtractionEngine:
             if _note0 or data.get('corrected_to'):
                 # one-note-per-field; a prior arm spoke — EXCEPT the DOWNGRADE case: the soften note, alone,
                 # exact text (a value changed by a later resolver → no match → fail-closed), no corrected_to.
+                # Oracle C6 (2026-09-23 night): a `+corrected` / `+snapped` / `+confirmed_adopt` winner is a
+                # HISTORY-rewritten string, not a pixel read (Stage 2.5b correct_extraction) — PP agreeing with it is
+                # PP-vs-history, so neither the confident reword nor the release may rest on it (the Print Tracker
+                # `RFH0738865` family: both readers say `0` at 1.0, four human confirms say `O` — the glyph is at the
+                # font's identity limit and only the serial's FORMAT can decide it). Abstain, traced.
+                if any(s in method for s in ('+corrected', '+snapped', '+confirmed_adopt')) or data.get('was_corrected'):
+                    return _skip('rewritten_winner', method=method)
                 if (os.environ.get('GLYPH_CONFUSABLE_RESOLVE', '0') == '1' and not data.get('corrected_to')
                         and _GLYPH_SOFTEN_KEY in _note0
                         and _note0 == _FILING_SANITY_SOFTEN_NOTE.format(committed)):
@@ -7015,21 +7022,15 @@ class ExtractionEngine:
             # already the expanded rect the rung read (`_read_geom`), so they keep the quiet zone.
             _pad_px = ((getattr(self, '_field_read_pad_px', None) or {}).get(ref_field_key, 0)
                        if _geom_src == 'anchor' else 0)
-            if _pad_px:
-                _W, _H = pages[page_idx].size
-                box = {'x_norm': max(0.0, box['x_norm'] - _pad_px / _W),
-                       'y_norm': max(0.0, box['y_norm'] - _pad_px / _H),
-                       'w_norm': box['w_norm'] + 2.0 * _pad_px / _W,
-                       'h_norm': box['h_norm'] + 2.0 * _pad_px / _H}
-                _vpad, _hpad = 0.0, 0.0
-            else:
-                _vpad, _hpad = 0.3, 0.15                 # quiet-zone pad (oscar C7)
-            # SLICE INTEGRITY (mig 212, Oracle C2/C3 — S1 of Part A): snap the rect to the page-level WORD boxes on
-            # the value's row band (extraction/slice_integrity.py) so a taught box that cut a glyph, or Tesseract's
-            # +20 px crop that reaches neighbouring ink, is replaced by the word the page pass actually saw. Pixels
-            # only; a snapped rect takes the quiet-zone pad (the census geometry: value-only + a small margin).
-            # No cache (SHARED_LOCATE_CACHE off) → abstain (Oracle C14); no words → today's rect. DARK env.
+            # SLICE INTEGRITY (mig 212, Oracle C2/C3 — S1 of Part A): snap the BARE value rect to the page-level WORD
+            # boxes on its row band (extraction/slice_integrity.py) so a taught box that cut a glyph is replaced by the
+            # word the page pass actually saw. Runs on the bare box, BEFORE the +20 px parity expansion — the S1
+            # re-census showed the parity rect overlaps the label by ~2 glyphs, so a snap started from it swallowed
+            # "No." / "Delivery Note No." into the read on 70 of 83 length abstains. A snapped rect takes the
+            # quiet-zone pad (the census geometry: value-only + a small margin). No cache → abstain (Oracle C14); no
+            # words / a capped union → fall through to today's rect (parity for the crop family). DARK env.
             _si = None
+            _snapped = False
             if os.environ.get('GLYPH_SLICE_INTEGRITY', '0') == '1':
                 from extraction import slice_integrity as _sli
                 from extraction import template_mapper as _tmsi
@@ -7041,7 +7042,19 @@ class ExtractionEngine:
                             grown=_si['grown'], edges=_si['edges'], rect_in=box, rect_out=_si['rect'], geom_src=_geom_src)
                 if _si['integrity'] in ('clean', 'healed'):
                     box = _si['rect']
-                    _vpad, _hpad = 0.3, 0.15
+                    _snapped = True
+            if _snapped:
+                _vpad, _hpad = 0.3, 0.15                 # quiet-zone pad on the word-tight rect
+            elif _pad_px:
+                # PAD PARITY (Oracle C1): the crop-family rect Tesseract actually read (value box +20 px every side)
+                _W, _H = pages[page_idx].size
+                box = {'x_norm': max(0.0, box['x_norm'] - _pad_px / _W),
+                       'y_norm': max(0.0, box['y_norm'] - _pad_px / _H),
+                       'w_norm': box['w_norm'] + 2.0 * _pad_px / _W,
+                       'h_norm': box['h_norm'] + 2.0 * _pad_px / _H}
+                _vpad, _hpad = 0.0, 0.0
+            else:
+                _vpad, _hpad = 0.3, 0.15                 # quiet-zone pad (oscar C7)
             crop, _band = _rs._crop_padded(pages[page_idx], box, _vpad, _hpad)
             if crop is None:
                 return _skip('no_crop', pad_px=_pad_px)

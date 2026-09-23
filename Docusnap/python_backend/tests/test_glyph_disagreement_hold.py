@@ -289,6 +289,21 @@ def test_slice_integrity_snaps_the_reader_rect():
         res = {"reference_number": {"value": "1625802868", "confidence": 90, "method": "anchor_inline"}}
         ExtractionEngine._glyph_disagreement_hold.__get__(_engine_with(None), ExtractionEngine)(res, "reference_number", ["ocr"])
         assert abs(rec[-1][0]["x_norm"] - .606) < 1e-9
+        # ON + cache + a CROP-FAMILY winner (pad 20): the snap runs on the BARE box and WINS over the parity rect
+        # (the S1 re-census: a snap started from the +20 px rect swallowed the label on 70 of 83 reads)
+        f = _engine_with({}); f._field_read_pad_px = {"reference_number": 20}
+        res = {"reference_number": {"value": "1625802868", "confidence": 90, "method": "anchor_crop"}}
+        ExtractionEngine._glyph_disagreement_hold.__get__(f, ExtractionEngine)(res, "reference_number", ["ocr"])
+        box, v, h = rec[-1]
+        assert abs(box["x_norm"] - .60) < 1e-9 and abs(box["w_norm"] - .10) < 1e-9 and (v, h) == (0.3, 0.15), rec[-1]
+        # ON + cache but NO words on the row + pad 20 → falls back to the parity rect
+        _tm._page_words_cached = lambda page, fn, cache: [{"words": []}]
+        f = _engine_with({}); f._field_read_pad_px = {"reference_number": 20}
+        res = {"reference_number": {"value": "1625802868", "confidence": 90, "method": "anchor_crop"}}
+        ExtractionEngine._glyph_disagreement_hold.__get__(f, ExtractionEngine)(res, "reference_number", ["ocr"])
+        box, v, h = rec[-1]
+        assert abs(box["x_norm"] - (.606 - 20 / 1000)) < 1e-9 and (v, h) == (0.0, 0.0), rec[-1]
+        _tm._page_words_cached = lambda page, fn, cache: [{"words": [word]}]
         # OFF → today's rect
         os.environ["GLYPH_SLICE_INTEGRITY"] = "0"
         res = {"reference_number": {"value": "1625802868", "confidence": 90, "method": "anchor_inline"}}
