@@ -123,7 +123,11 @@ function runP(folder, snapArgs, files, manifest, onDoc, ctl) {
   const procs = [];
   if (ctl) ctl.kill = () => { for (const p of procs) { try { p.kill(); } catch {} } };
   const one = shardFile => new Promise(res => {
-    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs],
+    // RR_TRACE_OUT (2026-09-23, the glyph read-set census): env-gated → inert when unset. Adds `--trace` so the
+    // engine's structured per-field trace events (glyph_check / glyph_release / … — the dev-inspector stream)
+    // are appended as {doc, ...event} to that file. Observe-only; the scored file_done stream is unchanged.
+    const _traceOut = process.env.RR_TRACE_OUT || null;
+    const p = spawn('py', ['-3.12', PROCESS_DOCS, '--folder', folder, '--files-file', shardFile, '--mode', 'fast', '--tesseract', TESS, ...manifestArgs, ...snapArgs, ...(_traceOut ? ['--trace'] : [])],
       { windowsHide: true, env: Object.keys(appEnv).length ? { ...process.env, ...appEnv } : undefined });
     procs.push(p);
     let out = '', tail = '', curDoc = null;
@@ -135,7 +139,7 @@ function runP(folder, snapArgs, files, manifest, onDoc, ctl) {
     const _logOut = _logRe && process.env.RR_LOG_OUT ? process.env.RR_LOG_OUT : null;
     p.stdout.on('data', d => {
       out += d;
-      if (!onDoc && !_logOut) return;
+      if (!onDoc && !_logOut && !_traceOut) return;
       // Line-buffered live parse. The final partial line stays in `tail` until its newline arrives,
       // so a message split across two chunks is never parsed half-formed. `out` is still the source
       // of truth for the scoring pass below — this only OBSERVES.
@@ -147,6 +151,9 @@ function runP(folder, snapArgs, files, manifest, onDoc, ctl) {
         if (m.type === 'file_begin') curDoc = m.filename || curDoc;
         if (_logOut && m.type === 'log' && _logRe.test(String(m.text || ''))) {
           try { fs.appendFileSync(_logOut, JSON.stringify({ doc: curDoc, text: String(m.text).trim() }) + '\n'); } catch {}
+        }
+        if (_traceOut && m.type === 'trace') {
+          try { fs.appendFileSync(_traceOut, JSON.stringify({ doc: curDoc, ...m }) + '\n'); } catch {}
         }
         if (onDoc && m.type === 'file_done') { try { onDoc(m); } catch {} }
       }

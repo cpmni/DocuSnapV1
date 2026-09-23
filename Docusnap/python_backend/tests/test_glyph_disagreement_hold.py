@@ -38,15 +38,20 @@ def _fake_engine():
     return f
 
 
-def _run(committed, pp_return, *, env="1", provenance=("ocr",), method="keyword",
-         geom=True, prior_note=None, anchor_geom=False):
+def _run(committed, pp_return, *, env="1", provenance=("ocr",), method="template_mapping",
+         geom=True, prior_note=None, anchor_geom=False, record=None):
     """Call the bound method with the recognizer + crop mocked. Returns the ref data dict
     and the fake engine (to inspect _field_candidates)."""
     saved = (_gr.available, _gr.read_crop, _gr.prep_crop, _rs._crop_padded)
     _gr.available = lambda: pp_return is not None
     _gr.read_crop = lambda img: pp_return
     _gr.prep_crop = lambda img: img
-    _rs._crop_padded = lambda page, box, v, h: ("CROP", (0, 1))
+
+    def _cp(page, box, v, h):
+        if record is not None:
+            record.append((page, box))
+        return ("CROP", (0, 1))
+    _rs._crop_padded = _cp
     old_env = os.environ.get("GLYPH_FALLBACK_ENABLED")
     if env is None:
         os.environ.pop("GLYPH_FALLBACK_ENABLED", None)
@@ -138,9 +143,14 @@ def test_winning_read_geom_prefers_box():
     assert g == (.6, .4, .1, .02), "prefer the actual located box over the pre-drift taught box"
 
 
-def test_winning_read_geom_rigid_uses_taught_box():
+def test_winning_read_geom_rigid_converts_taught_box_centre_to_top_left():
+    """field_anchors stores the taught box CENTRE (renderer + anchor._crop_and_ocr); reslice._crop_padded
+    does top-left math. The old pass-through shipped a crop shifted (+w/2, +h/2) — 007, 2026-09-23."""
     g = ExtractionEngine._winning_read_geom({"method": "anchor_crop", "box": None, "taught_box": (.5, .5, .1, .02)})
-    assert g == (.5, .5, .1, .02)
+    assert g == (.45, .49, .1, .02), g
+    # clamped at the page origin, never negative
+    g = ExtractionEngine._winning_read_geom({"method": "anchor_crop", "box": None, "taught_box": (.02, .005, .1, .02)})
+    assert g == (0.0, 0.0, .1, .02), g
 
 
 def test_winning_read_geom_inline():
@@ -169,6 +179,38 @@ def test_fallback_anchor_disagree_holds():
 def test_fallback_anchor_agree_is_noop():
     d, _ = _run("1G25802868", ("1G25802868", 1.0), anchor_geom=True, method="anchor_crop")
     assert d["confidence"] == 90 and "validation_note" not in d
+
+
+def test_geometry_follows_the_winner():
+    """007 2026-09-23: the crop PP re-reads must be the rect that PRODUCED the value. A keyword winner has no
+    box read → abstain even when a mapping rect exists; an anchor winner on a multi-page doc is read on its
+    OWN box on page 0 (the anchor stage reads page 0 only) even when a page-2 ref mapping row exists."""
+    # keyword winner + a mapping rect present → no box to compare → untouched
+    d, _ = _run("1625802868", ("1G25802868", 1.0), method="keyword")
+    assert d["confidence"] == 90 and "validation_note" not in d
+    # anchor winner with BOTH geometries: the anchor box wins, on page 0
+    rec = []
+    saved = (_gr.available, _gr.read_crop, _gr.prep_crop, _rs._crop_padded)
+    os.environ["GLYPH_FALLBACK_ENABLED"] = "1"
+    try:
+        _gr.available = lambda: True
+        _gr.read_crop = lambda img: ("1G25802868", 1.0)
+        _gr.prep_crop = lambda img: img
+        _rs._crop_padded = lambda page, box, v, h: (rec.append((page, box)) or ("CROP", (0, 1)))
+        f = _fake_engine()
+        P0, P1 = object(), object()
+        f._s05_pages = [P0, P1]
+        f._s05_read_geom = {"reference_number": (.1, .1, .1, .02)}          # a mapping rect on page 2
+        f._s05_mappings = [{"field_key": "reference_number", "page_number": 1}]
+        f._field_read_geom = {"reference_number": (.6, .4, .1, .02)}        # the anchor's own box
+        res = {"reference_number": {"value": "1625802868", "confidence": 90, "method": "anchor_crop_relocated"}}
+        ExtractionEngine._glyph_disagreement_hold.__get__(f, ExtractionEngine)(res, "reference_number", ["ocr"])
+        assert rec and rec[0][0] is P0, "anchor winner → page 0"
+        assert rec[0][1]["x_norm"] == .6 and rec[0][1]["y_norm"] == .4, "anchor winner → its own box, not the mapping rect"
+        assert res["reference_number"]["confidence"] <= 69, "and the disagreement still holds"
+    finally:
+        _gr.available, _gr.read_crop, _gr.prep_crop, _rs._crop_padded = saved
+        os.environ.pop("GLYPH_FALLBACK_ENABLED", None)
 
 
 def test_c1_pp_not_a_corroboration_family():

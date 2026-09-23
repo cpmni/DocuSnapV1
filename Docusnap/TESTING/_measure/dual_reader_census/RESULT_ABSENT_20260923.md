@@ -38,6 +38,13 @@ Each soften slice re-cropped with its left edge shaved by ~55% of one glyph (a c
   should carry a flush-edge / clip guard (abstain when the value's first or last glyph box touches the crop edge), or
   be scoped to producers with a page witness. Owner/Oracle call.
 
+## Correction to the general census's disagreement claim (oscar, 2026-09-23, verified in `SUMMARY.md:38-40,63-67`)
+"The 98 disagreements are Tesseract-wrong/Paddle-right" was an overstatement: at least 8 Ironclad STATEMENT date
+rows are PADDLE-wrong — the census tool merged the reference and the date into one crop (`ITH-0093 | 04-08-2025`),
+Tesseract read it right, Paddle garbled the long gappy line (`ITH-009304-08-20205`, dropped space + hallucinated
+digit) at PP conf 0.42-0.85. That is Paddle's one measured failure shape (long multi-token lines) and it sets a PP
+confidence floor (~0.90) for any DISAGREEMENT hold — every PP-right disagreement in the census had PP ≥ 0.903.
+
 ## Verdict
 **GATE MET: 0 common-mode among the 14 releasable rows.** Caveats: N=18 is small; SO-/PO-dominated (the two Pelican
 `PI/26/…` rows both went the safe way); crops are the census tool's word-geometry boxes, not the pipeline's taught

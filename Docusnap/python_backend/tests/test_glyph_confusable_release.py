@@ -192,12 +192,17 @@ def test_page_edge_abstains():
         assert _reason(tr) == ["page_edge"] and calls["hpads"] == [0.15], "no wide read attempted at the edge"
 
 
-def test_page_unknown_abstains_and_single_page_anchor_releases():
+def test_page_known_rules():
+    """C6 after the 007 geometry fix: an ANCHOR winner's crop page is page 0 by construction (the anchor stage
+    reads page 0 only) → known even on a multi-page doc; a MAPPING winner without its row on a multi-page doc
+    is unknown → abstain; a single-page doc is always known."""
+    d, _, _ = _run(engine=_engine(mapping=False, pages=2, anchor=True), method="anchor_crop")
+    assert "validation_note" not in d and d["method"] == "anchor_crop", "anchor winner on 2 pages → page 0 known → released"
     tr = []
-    d, _, _ = _run(engine=_engine(mapping=False, pages=2, anchor=True), method="anchor_crop", trace=tr)
+    d, _, _ = _run(engine=_engine(mapping=False, pages=2), method="template_mapping", trace=tr)
     assert d.get("validation_note") == RESOLVED and _reason(tr) == ["page_unknown"]
-    d, _, _ = _run(engine=_engine(mapping=False, pages=1, anchor=True), method="anchor_crop")
-    assert "validation_note" not in d and d["method"] == "anchor_crop"
+    d, _, _ = _run(engine=_engine(mapping=False, pages=1), method="template_mapping")
+    assert "validation_note" not in d
 
 
 def test_veto_fallthrough_abstains():

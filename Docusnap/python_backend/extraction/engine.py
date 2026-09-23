@@ -6868,7 +6868,17 @@ class ExtractionEngine:
             return (b['x_norm'], b['y_norm'], b['w_norm'], b['h_norm'])
         tb = data.get('taught_box')
         if tb and len(tb) == 4:
-            return tuple(tb)
+            # FRAME (007, 2026-09-23): `field_anchors.x_norm/y_norm` are the taught box CENTRE (review renderer:
+            # "field_anchors stores CENTRE → convert ONCE"; anchor._crop_and_ocr crops around cx,cy) and
+            # anchor.py:1721 passes (x_norm, y_norm, w, h) through UNCONVERTED. reslice._crop_padded does
+            # top-left math, so the old pass-through handed PP a crop shifted (+w/2, +h/2) — half a box past
+            # the value — on every rigid anchor_crop winner (masked while mapped docs preferred the mapping
+            # rect). Convert to TOP-LEFT here, once.
+            try:
+                x, y, w, h = (float(v or 0.0) for v in tb)
+            except (TypeError, ValueError):
+                return None
+            return (max(0.0, x - w / 2.0), max(0.0, y - h / 2.0), w, h)
         return None
 
     def _glyph_disagreement_hold(self, results, ref_field_key, page_provenance,
@@ -6941,17 +6951,33 @@ class ExtractionEngine:
             # _field_read_geom (so an anchor-read ref — the real Print Tracker case — also resolves a crop).
             _map_geom = (getattr(self, '_s05_read_geom', None) or {}).get(ref_field_key)
             _anc_geom = (getattr(self, '_field_read_geom', None) or {}).get(ref_field_key)
-            geom = _map_geom or _anc_geom
-            pages = getattr(self, '_s05_pages', None)
+            # GEOMETRY FOLLOWS THE WINNER'S METHOD (007, 2026-09-23): a Stage-0.5 winner is re-read on the
+            # mapping rect that produced it; an anchor-family winner on its own located/taught box (centre →
+            # top-left converted at capture); a keyword/hint/memory winner has NO box read to compare → abstain.
+            # Never cross-pair — the old `_map_geom or _anc_geom` could hand PP the MAPPING rect (on the
+            # mapping's page) for a value the ANCHOR stage read from page 0.
+            if _is_stage05_located(method):
+                geom, _geom_src = _map_geom, 'mapping'
+            elif _anc_geom and 'anchor' in method:
+                geom, _geom_src = _anc_geom, 'anchor'
+            else:
+                geom, _geom_src = None, 'none'
+            # Pages: every scanned doc's elected crop frame (`_crop_pages`, stashed unconditionally), not only
+            # a mapped doc's `_s05_pages` — so an anchor-only doc resolves a crop too (the fallback keeps the
+            # older attribute for a bare unit-test self).
+            pages = getattr(self, '_crop_pages', None) or getattr(self, '_s05_pages', None)
             mappings = getattr(self, '_s05_mappings', None) or []
             if not (geom and len(geom) == 4 and pages):
                 if self._trace:
                     self._t('glyph_check', field=ref_field_key, outcome='abstain', reason='no_box',
-                            committed=committed, method=method, has_map_geom=bool(_map_geom),
+                            committed=committed, method=method, geom_src=_geom_src, has_map_geom=bool(_map_geom),
                             has_anchor_geom=bool(_anc_geom), has_pages=bool(pages))
                 return
-            mapping = next((m for m in mappings if m.get('field_key') == ref_field_key), None)
-            page_idx = int((mapping or {}).get('page_number') or 0)
+            mapping = (next((m for m in mappings if m.get('field_key') == ref_field_key), None)
+                       if _geom_src == 'mapping' else None)
+            # The Stage-2 anchor stage reads PAGE 0 only (anchor.extract_with_anchors takes page_images[0]),
+            # so an anchor winner's crop page is KNOWN = 0; a mapping winner's is its row's page_number.
+            page_idx = int((mapping or {}).get('page_number') or 0) if _geom_src == 'mapping' else 0
             if not (0 <= page_idx < len(pages)) or pages[page_idx] is None:
                 return
             box = {'x_norm': geom[0], 'y_norm': geom[1], 'w_norm': geom[2], 'h_norm': geom[3]}
@@ -6981,7 +7007,9 @@ class ExtractionEngine:
                 if _resolve:
                     if os.environ.get('GLYPH_CONFUSABLE_RELEASE', '0') == '1':
                         # RELEASE (mig 211): every guard must pass; any abstain falls through to the reword.
-                        _page_known = (mapping is not None) or (len(pages) == 1)
+                        # C6: the crop page is KNOWN for an anchor winner (page 0 by construction) or a mapping
+                        # winner with its row; a mapping winner without a row on a multi-page doc is not.
+                        _page_known = (_geom_src == 'anchor') or (mapping is not None) or (len(pages) == 1)
                         _ok, _why = self._glyph_release_ok(results, ref_field_key, committed, pp,
                                                            pages[page_idx], box, _page_known, document_slug)
                         if _ok:
@@ -6994,7 +7022,7 @@ class ExtractionEngine:
                                         committed=committed, pp_read=pp[0], pp_conf=round(float(pp[1]), 3),
                                         pp_glyph_min=(round(float(pp[2]), 3) if len(pp) > 2 else None),
                                         conf_at_release=data.get('confidence'),
-                                        geom_src=('mapping' if _map_geom else 'anchor'), page_idx=page_idx)
+                                        geom_src=_geom_src, page_idx=page_idx)
                             # C5 belt: the ambiguous flag skipped this field while it was noted — let it judge now.
                             if field_defs is not None:
                                 self._flag_ref_confusable_ambiguous(results, field_defs, supplier_name,
@@ -7004,7 +7032,7 @@ class ExtractionEngine:
                             self._t('glyph_release', field=ref_field_key, outcome='abstain', reason=_why,
                                     committed=committed, pp_read=pp[0], pp_conf=round(float(pp[1]), 3),
                                     pp_glyph_min=(round(float(pp[2]), 3) if len(pp) > 2 else None),
-                                    geom_src=('mapping' if _map_geom else 'anchor'), page_idx=page_idx)
+                                    geom_src=_geom_src, page_idx=page_idx)
                     # DOWNGRADE: re-word the confusable soften note to confident copy. Still a note (held),
                     # still the ref-advisory MARK, no absent mark, no cap/value/method change.
                     data['validation_note'] = _GLYPH_RESOLVED_SOFTEN_NOTE.format(committed)
@@ -9411,6 +9439,10 @@ class ExtractionEngine:
         # Straighten-arc frame election (C1: computed ONCE, the SAME list feeds every crop
         # site below — mapper, registration fit, anchors, late rescue, corroboration).
         crop_pages = _elect_crop_pages(page_images, raw_pages, deskew_angles)
+        # The elected crop frame for EVERY doc (007, 2026-09-23): `_s05_pages` is assigned only inside the
+        # Stage-0.5 block (a mapped doc), which left an anchor-only doc with no page for the second reader.
+        # Read only by the DARK glyph arms → byte-identical off.
+        self._crop_pages = crop_pages
         # Seed field_patterns from each field's configured TYPE (+ the ref-role
         # coercion) so CUSTOM doc-type fields and the structural REFERENCE role are
         # gated by their real type instead of loose free-text. The keyword config
@@ -11377,10 +11409,14 @@ class ExtractionEngine:
         # Capture the winning ANCHOR read's own box for the ref role (glyph-hold fallback) — AFTER the
         # anchor merge + the fill-empty rescue passes, BEFORE hints (hint fills carry no box). Isolated
         # write; read only by the DARK glyph hold, so byte-identical when the switch is off.
-        if ref_field_key:
-            _g = self._winning_read_geom(results.get(ref_field_key))
+        # Every field, not only the ref role (007, 2026-09-23 — the read-set arc compares dates and totals
+        # too): the write is isolated and read only by the DARK glyph arms, so it stays byte-identical off.
+        for _gk, _gd in results.items():
+            if str(_gk).startswith('_') or not isinstance(_gd, dict):
+                continue
+            _g = self._winning_read_geom(_gd)
             if _g:
-                self._field_read_geom[ref_field_key] = _g
+                self._field_read_geom[_gk] = _g
 
         # ── Stage 2.5b: Apply supplier hints (fill missing fields only) ──────────
         # Hints only fill fields that keyword/anchor found NOTHING for.

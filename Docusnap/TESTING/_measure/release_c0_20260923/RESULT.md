@@ -27,9 +27,10 @@ read disagree", 27).
 
 ## Reading
 - **On the owner's real data the soften note is a TRUE positive 8 times out of 9** — the crop misread a glyph (0 for
-  O, S for 5) and the whole page had it right. On those the RELEASE can never fire: PP disagrees (the mig-207 hold
-  catches it), and even on a PP agree the C2 page-family guard abstains. The Oracle's P1 premise catch was right and
-  load-bearing.
+  O, S for 5) and the whole page had it right. On those the RELEASE can never fire: the C2 page-family guard abstains
+  (a page family disagrees in the record — measured). Whether PP ALSO disagrees on those 8 is INFERRED from the
+  census's 4/4 (this arm ran with the glyph switches OFF — oscar's correction); measured by `run_glyph_on.sh`. The
+  Oracle's P1 premise catch was right and load-bearing.
 - **The one crop-RIGHT soften (#45) is exactly the RELEASE's target** — a taught supplier's early document, held only
   by the note (the fc penalty drags 93 → 81). The release would file it correctly at conf 90 ≥ the owner's threshold.
 - The general and filtered censuses (0 common-mode) were measured on the census tool's word-geometry crops, which are
