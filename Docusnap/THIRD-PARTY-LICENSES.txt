@@ -159,6 +159,12 @@ node-forge          Copyright (c) 2010 Digital Bazaar, Inc. All rights reserved.
 PDFium / pypdfium2  Copyright 2014 The PDFium Authors; pypdfium2-team.
 pytesseract         Copyright (c) Samuel Hoffstaetter and contributors.
 Tesseract OCR       Copyright (c) the Tesseract contributors (Apache-2.0).
+PP-OCR rec model    Copyright (c) 2020 PaddlePaddle Authors (Apache-2.0). The English text-recognition
+                    weights `en_PP-OCRv3_rec_infer` from PaddleOCR, shipped unmodified in ONNX form
+                    (python_backend/ocr/models/rec.onnx, SHA-256 pinned) as the second-reader
+                    fallback; obtained from the RapidOCR model hub
+                    (https://huggingface.co/spaces/RapidAI/RapidOCR). License text: Apache-2.0 (section 3).
+onnxruntime         Copyright (c) Microsoft Corporation (MIT) — the inference runtime for the model above.
 Pillow / PIL        Copyright (c) 1997-2011 Secret Labs AB;
                     Copyright (c) 1995-2011 Fredrik Lundh and contributors;
                     Copyright (c) 2010-2024 Jeffrey A. Clark and contributors.
