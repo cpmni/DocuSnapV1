@@ -140,6 +140,19 @@ D1: stub `notifyAllWindows` spy + `doctypes` → three handlers emit once on suc
 
 ---
 
+## BUILD STATUS (2026-09-24, owner "do the recommended" — built in the Oracle's order, one commit per slice)
+| slice | commit | state | pins |
+|---|---|---|---|
+| E1(a) field broadcast | `5afb359` | LIVE | `test_field_broadcast.js` 10 |
+| G3 `flagged:<key>` + `isFlaggedReason` | `265ea6c` | LIVE (15 test files converted; the caption test pins `flagged:item`, first-by-id, the predicate) | 13 gate tests green |
+| E3 `consented` on the reprocess accept | `a5badb7` | LIVE (expiry → `self_filed`, click → `approved`; single-doc only; toast) | autocommit 31, countdown ALL PASS |
+| E2 `filed_by` provenance + contract 1.9.0 | `0c58d87` | LIVE (5 copies + neutral fallback; client copies regenerated; lockstep) | `test_filed_by.js` 24, v1 contract, preview reads |
+| E1(b) Review diff-by-key refresh | `a983185` | LIVE (in-flight no-op via a confirm counter + `bulkFiling`, re-run after) | `test_field_refresh_on_type_change.js` 15 |
+| R1 code-led money exemption (C1-C4) | `7ddf9fa` | LIVE inside the mig-70 parent, env kill `TEMPLATE_FORMAT_FAIL_CODE_AGREE=0`; **gate running** (727 P/K/N + Hard Set; G1 arms queued) | number_format +15, format_yield +15 |
+| G1 `name_value_label_flag` mig 213 | `a3371dc` | DARK | py 39, JS 15, count pins 17 |
+| G2 census | `(census commit)` | DONE — `TESTING/_measure/taught_name_disagree_census_20260924/RESULT.md`: bar met ONLY with a ≥2-token witness guard (24 catches / 1 false hold on the 727; 6/6 catches on Chris's sandbox) → design + Oracle next | — |
+**Quick R1 gate on Chris's 36 invoices (DB copy, R1 tree):** OFF = 36 held by the Total note, 0 would-file; ON = **22 would-file**, 14 held each with a real reason: cents disagree (`GBP 9,229.12` vs `9,229.14`; `GBP 11,309-59` vs `11,386.55`), misread code (`SBP` ×2, `BP`), dropped digit (`GBP 7,214.7`), `-` for `.` (`22,334-54`), the reconcile note, and 5 by the pre-existing "the taught box's edge cuts through the printed value" guard (`template_mapping_edgecut`) on correct values — a follow-up for the Part A slice-integrity idea on TOTAL boxes, not R1's.
+
 ## Oracle verdict (2026-09-24; main session verified the load-bearing claims at source — `money_cents` at number_format.py:146, `keyword.value_is_caption` at keyword.py:240, the helper evaluated on BOTH sides at engine.py:10454-10455, exact-`'flagged'` test compares in 15 files)
 
 ### VERDICTS

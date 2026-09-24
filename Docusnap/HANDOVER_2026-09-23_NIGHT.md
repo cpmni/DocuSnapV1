@@ -232,6 +232,13 @@ box + a label-line keyword read · the decision rule). Both reports are folded i
   fix SIGN-OFF-W/COND (Oracle moved it to the call site + cents-agreement, env kill, no mig) · G1 value-equals-label DARK mig 213 ·
   G2 taught-name disagreement = census first · G3 `flagged:<key>` (15 dead pins) · E1 broadcast + diff-by-key · E2 `filed_by` DTO +
   contract 1.9.0 · E3 `consented` on the reprocess accept. Order: E1a → G3 → E3 → E2 → E1b → R1 → G1 → G2 census. AWAITING the owner's go.
+- **09-24 BUILD (owner "do the recommended"):** seven commits `5afb359`→`a3371dc` (+ the G2 census) — E1a broadcast ·
+  G3 `flagged:<key>` · E3 consent door · E2 `filed_by` + contract 1.9.0 · E1b diff-by-key · R1 code-led money (LIVE,
+  env kill) · G1 mig 213 DARK · G2 census (bar met only with a ≥2-token witness guard → design + Oracle next). Build
+  status table in `docs/designs/CHRIS_ROUND_FIXES_2026-09-24.md`. **R1 gate RUNNING in the background**
+  (`%USERPROFILE%\.claude\jobs\68b38f39\tmp\gate\status.txt`: 727 P/K/N + Hard Set P/K/N, then G1 OFF/ON) — read
+  `rr_*.jsonl` with `arms/compare_arms.py`; worktrees `gate/wt_pre` `wt_r1` `wt_g1` (remove after). Whole pin suite
+  running → `tmp/run_pins_full.log`.
 - NOT pushed (owner's call; the whole branch is unpushed). OFF md5 identity DONE on the sandbox 67 (the 727 arm + two-ON determinism still owed).
 
 ## OWED / flip gates
