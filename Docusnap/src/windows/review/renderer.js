@@ -7569,6 +7569,7 @@ async function fileAllReady() {
     }
   } finally {
     bulkFiling = false;   // re-enable auto-refresh before the post-run refresh below
+    if (_fieldRefreshPending) { try { _refreshFieldDefsForCurrentDoc(); } catch {} }   // a type edit that landed mid-run (2026-09-24, Oracle C11)
     lockBtns.forEach(b => b.disabled = false);
   }
 
@@ -10203,7 +10204,69 @@ window.docusnap.onDocTypesChanged?.(async () => {
   const cur = sel ? sel.value : '';
   populateTypeDropdown();
   if (sel) sel.value = cur || sel.value;
+  // FIELD REFRESH (2026-09-24, Chris 09-23 card 2c; eric D1 → Oracle C11): a field added / removed on the
+  // CURRENT type (the Teach wizard's "Edit this type…", Settings) now reaches this window (settings/handler.js
+  // broadcasts on add/update/delete-field) — refresh the rows for the doc on screen, by key, never by repaint.
+  _refreshFieldDefsForCurrentDoc();
 });
+
+// _refreshFieldDefsForCurrentDoc — re-resolve `fieldDefs` for the doc on screen after a type edit and DIFF the
+// rows BY KEY: append a row for each NEW key (from _lastRenderedDoc.extractions, honouring the hidden+empty
+// skip renderFields applies), remove the row of each key that LEFT the type (a deleted / disabled field must
+// not be scraped into allValues), touch no existing input. NOT renderFields(): a full repaint rebuilds every
+// input from ext.display_value and nothing reads `corrections[key]` back, so it would REVERT a value the
+// operator is typing (the clearedByIssuerChange guard covers only the cleared case). No-op while a confirm or
+// File All is in flight (the DOM scrape must see a stable row set) — re-run once it lands. Trade-off: an
+// appended row lands at the bottom until the next selectDoc.
+let _confirmInFlight = 0;
+let _fieldRefreshPending = false;
+function _refreshFieldDefsForCurrentDoc() {
+  if (_confirmInFlight > 0 || bulkFiling) { _fieldRefreshPending = true; return; }
+  _fieldRefreshPending = false;
+  const doc = _lastRenderedDoc;
+  if (!currentDoc || !doc || doc.id !== currentDoc.id) return;
+  const dt = (allDocTypes || []).find(t => t && t.slug === selectedTypeSlug);
+  if (!dt || !Array.isArray(dt.fields)) return;
+  const scroll = document.getElementById('fields-scroll');
+  if (!scroll) return;
+  const prev = new Set(reviewFields());
+  fieldDefs = dt.fields;
+  const next = reviewFields();
+  const nextSet = new Set(next);
+  const hiddenKeys = new Set(doc.hidden_fields || []);
+  const extMap = {};
+  for (const e of (doc.extractions || [])) extMap[e.field_key] = e;
+  for (const key of prev) {
+    if (nextSet.has(key)) continue;
+    scroll.querySelector(`.field-row[data-key="${CSS.escape(key)}"]`)?.remove();
+  }
+  for (const key of next) {
+    if (prev.has(key)) continue;                                   // existing rows (and any typed value) untouched
+    if (scroll.querySelector(`.field-row[data-key="${CSS.escape(key)}"]`)) continue;
+    const ext = extMap[key] || {};
+    const val = clearedByIssuerChange.has(key) ? '' : (ext.display_value ?? ext.raw_value ?? '');
+    if (hiddenKeys.has(key) && String(val).trim() === '') continue;
+    appendFieldRow(scroll, key, val, ext.confidence ?? null, ext.validation_note || null, ext.corrected_to || null, ext.anchor_label || null, ext.extraction_method || null, ext.candidates || null, ext.suggested_supplier || null, ext.corroboration || null, ext.raw_value || null, ext.verified);
+  }
+  validateConfirm();
+  updateAcknowledgeButton();
+  updateTotalsVerifiedBadge();
+  _updateSenderFieldsBtn();
+}
+
+// The in-flight guard for the refresh above: the single-document confirm is wrapped (its declaration below
+// stays byte-identical for the payload pins) so a type edit that lands mid-confirm waits for the scrape.
+{
+  const _confirmCurrentDocRaw = confirmCurrentDoc;
+  confirmCurrentDoc = async function (opts) {
+    _confirmInFlight++;
+    try { return await _confirmCurrentDocRaw(opts); }
+    finally {
+      _confirmInFlight--;
+      if (_confirmInFlight === 0 && _fieldRefreshPending && !bulkFiling) { try { _refreshFieldDefsForCurrentDoc(); } catch {} }
+    }
+  };
+}
 
 // LIVE field-visibility (migration 54): an admin changed which fields a layout shows in
 // Settings → Field visibility. If the doc on screen belongs to that template, refresh its hidden
