@@ -228,6 +228,10 @@ box + a label-line keyword read · the decision rule). Both reports are folded i
   **md5-IDENTICAL** (today's code is byte-identical with the switches off); HEAD ON differs on ONE doc (the S/5 PO
   released by mig 211 → files). The Total hold reproduces on the OLD tree → not today's work; first Chris round to
   teach a Total. Slices clean (63/66 agree). Recorded at the bottom of `docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md`.
+- **09-24 ADVISORS + ORACLE on the Chris cards (nothing built):** `docs/designs/CHRIS_ROUND_FIXES_2026-09-24.md` — R1 currency-code
+  fix SIGN-OFF-W/COND (Oracle moved it to the call site + cents-agreement, env kill, no mig) · G1 value-equals-label DARK mig 213 ·
+  G2 taught-name disagreement = census first · G3 `flagged:<key>` (15 dead pins) · E1 broadcast + diff-by-key · E2 `filed_by` DTO +
+  contract 1.9.0 · E3 `consented` on the reprocess accept. Order: E1a → G3 → E3 → E2 → E1b → R1 → G1 → G2 census. AWAITING the owner's go.
 - NOT pushed (owner's call; the whole branch is unpushed). OFF md5 identity DONE on the sandbox 67 (the 727 arm + two-ON determinism still owed).
 
 ## OWED / flip gates

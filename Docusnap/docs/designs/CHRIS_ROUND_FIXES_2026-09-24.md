@@ -1,0 +1,178 @@
+# Chris round 2026-09-23 — the fix set (advisor designs, 2026-09-24 morning; NOTHING BUILT)
+
+Exhibit + main-session verification: `docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md` (the two sections at the bottom).
+Control test: today's second-reader work is byte-identical with its switches OFF on all 67 of Chris's confirmed docs
+(md5) and changes ONE doc ON (a mig-211 release). Both failures below are OLD code, exercised for the first time because
+no earlier Chris round taught an optional field.
+
+Facts the main session verified at source before briefing (so the advisors vetted the design, not the premise):
+- `fields.type` for the taught Total = `currency`, `required` 0; the Copperfield mapping `anchor_text` = `Customer`;
+  all six wrong customer rows are method EXACTLY `template_mapping`.
+- `money_strict_shape`: `GBP 11,066.95` True · `SBP 10,239.38` False · `VAT 1,234.56` False · `GBP 9 32632.76` False ·
+  `GBP (1,000.00)` True · glued `GBP11,066.95` True (strip_currency's `\b` would not strip it at Stage 4).
+- The corroboration emit (engine ~5511-5552) compares `_cmp_norm` of the STORED (post-strip) winner and skips the
+  winner's own family.
+- `keyword_superstring_name_note` skipped the `Larch & Hollow Cafe C` rows with `kw_note_skip:winner_page_present`
+  (a substring of the right name IS page-present) — its page-presence test is substring-blind.
+- `STRICT_TYPES` (trust.js:94) contains `currency` → a money note never soft-clears even with
+  `optional_soft_flag_autofile` ON (the safe outcome).
+- "You filed 1" = the reprocess ACCEPT door (`processing/handler.js:5798`) reached by the in-view countdown EXPIRY
+  (`review/renderer.js:7707 onExpire → _acceptReprocessOffer`; `sweep_inview_countdown` ON since mig 103).
+- Gary corrected the brief: the wordness gate DID run on `Customer` and passed it (`_authoritative` there is PATTERN
+  authority, not "taught"; `wordness._CHROME` lacks customer/client/attention/sold and is prefix-matching, so adding
+  "customer" would trip "Custom Joinery" — not the fix).
+
+---
+
+## reggie — inline ISO currency code judged a "format failure" on a taught Total (advisory, no code written)
+
+### Facts
+- FACT `engine.py:3371-3375`: the LEGACY currency leg is `^[£$€¥]?\s*[-–]?\s*[£$€¥]?\s*\d` then `validator.parse_amount`. `parse_amount` is a SEARCH (`validator.py:343-344`, `CURRENCY_RE` even tolerates a TRAILING `GBP`), so `GBP 11,066.95` fails ONLY the leading-glyph regex. Bug class = pattern design (symbol-aware, code-blind), not precedence.
+- FACT `number_format.py:103,122-143`: `money_strict_shape` already strips an ISO code inside `_money_bare` — `money_strict_shape('GBP 11,066.95')` is True, `'SBP 10,239.38'` False (pinned form `'GBP2,363.76'` at `test_money_strict_shape.py:28`). The strict leg is Oracle NEVER-flip (`oracle_log.md:2321-2325`) because it FAILS MORE (space-bearing garbles) and pre-empts the sweep. My change goes the other way — it only turns a code-led verdict from True to False, so fire-set(ON) ⊆ fire-set(OFF); the sweep seam is untouched.
+- FACT `validator.py:583-595`: Stage 4 stores money bare via `strip_currency(canonical(v))` for `type in ('currency','number')` — so once the mapping WINS, the stored value is `11,066.95`.
+- FACT `engine.py:11778` (Stage 4) runs before the corroboration emit `13147`; the emit compares the POST-strip winner against raw candidates (`5511-5552`), same-family skipped. So after the fix the record becomes `agree:[keyword]`, `disagree:[]` by itself — the DISAGREE artefact in the brief only exists because the yield made the KEYWORD the winner and the raw `GBP …` mapping candidate then dissented. Candidate (c) is therefore NOT needed; do not touch `_cmp_norm` (34 callers, `engine.py:1171`; a code-blind global fold would also equate `USD 100.00`/`GBP 100.00`).
+- FACT `engine.py:10394` vs `10446`: the `_blind_reg` arm needs prefix `template_registration`, the yield needs `template_mapping` — mutually exclusive; the exhibit (yield note) is the mapping road. Residual: a REGISTRATION-resolved sibling can still be held by `_blind_reg`'s prefix-blind `_cmp_norm` compare (keyword ≥90 and > mapping conf) — name only, census before touching.
+- FACT `trust.js:1097` values reach the JS gate symbol-stripped; `_currencyish` (`:171`) and `_currencyDpConsistent` see the bare stored value; renderer on-blur `validation_patterns.currency[2]` (`config:709`) already accepts `(?:GBP|USD|EUR)\s*…`. No JS twin change.
+- ASSUMPTION (verify on the DB copy: `SELECT type FROM fields WHERE key=?`): the taught Total's `fields.type` is `currency`, so `_kw_types[key]=='currency'` (`engine.py:10331`) and the validator strip applies. [main session: VERIFIED — `currency`.]
+
+### Proposed pattern (Python `re`, backend only)
+Add ONE public helper in `number_format.py` beside `_CODE_STRIP_RE` (share one alternation string — no third copy of the code list):
+```
+_ISO_CODES = r"GBP|USD|EUR|JPY|INR|CAD|AUD|NZD|CHF|CNY|ZAR"
+_CODE_PREFIX_RE = re.compile(rf"^(?:{_ISO_CODES})\s+(?=[-–(£$€¥\d])", re.I)
+def has_currency_code_prefix(value) -> bool: return bool(_CODE_PREFIX_RE.match(str(value or "").strip()))
+```
+`^(?:…)` a KNOWN code only; `\s+` a real gap (the glued form `GBP11,066.95` is deliberately excluded — `strip_currency`'s `\b` at `:54` would not strip it at Stage 4, so it must keep yielding); lookahead = the amount starts next (sign/paren/symbol/digit), never a second word. `re.I` for parity with `_CODE_STRIP_RE`/`strip_currency`.
+In `_stage05_format_fails`, currency leg, immediately before `engine.py:3371`:
+```
+if _nf.has_currency_code_prefix(v):
+    return not _nf.money_strict_shape(v)   # code-led: admit ONLY a strictly well-formed amount
+```
+LOOSER than today on exactly one class (known code + strict amount); byte-identical on every other input.
+
+### Match examples (verdict = "format fails")
+PASS now (new): `GBP 11,066.95`, `GBP 5,823.50`, `USD 100`, `GBP -1,000.00`, `GBP (1,000.00)`, continental `EUR 1.234,56` under a continental install.
+Still FAIL (unchanged): `SBP 10,239.38`, `VAT 1,234.56`, `NET 9,222.46`, `INC 1,234.56`, `L922.14`, `GBP 11,O66.95`, `GBP 9 32632.76`, `GBP11,066.95`, `Tel 01632`.
+Unchanged legacy holes (pinned, `test_money_strict_shape.py:126`): `£9 32632.76`, `-3 5982.70` still PASS.
+Candidate (b) edit-distance-1 REJECTED: `INC→INR`, `CHG→CHF`, `ADD→AUD`, `ANY→CNY`, `OUR→EUR`, `USE→USD`, `GRP→GBP` are all distance-1 collisions and `INC` ("Total INC VAT") is a real label token. `SBP` stays review-bound (1/30 in the exhibit) — the correct fail-toward-review residual. Optional DARK follow-up if the census wants it: treat the pair as AGREEMENT only when `_cmp_norm(keyword) == _cmp_norm(mapping minus one leading [A-Z]{3} token)` — bound to the independent witness, never to a lexicon.
+
+### Integration point
+Candidate filtering (the Stage-1 merge's format-fail predicate) — reuses `money_strict_shape`; final validation unchanged; no UI change.
+
+### Risks / seam
+- Relies on: Stage-4 `strip_currency` (stored value), `money_strict_shape` (the strictness on the code-led path).
+- Disables: the yield's incidental catch of a code-led WRONG-ROW read (`GBP 9,222.46` = the Net row). That class is format-VALID and owned by `net_misread_total_flag` (ON since mig 81) + reconcile + `recon_singlechar_misread_flag`, exactly as a `£9,222.46` read is today (engine docstring `3336-3337`). The fix puts code-led reads on the same footing as symbol-led reads; nothing new bypasses a gate. The mapping winner is shape-veto-exempt (authoritative) — same as any symbol-led taught total today.
+- Corroboration record self-heals (above); `_pageFamilyDisagrees` is ref/date-only (`trust.js:1053,1073`), so a total dissent never holds either way.
+
+### Smallest change + pins + gate
+Two edits (helper + 2-line guard). Pins: extend `tests/test_stage05_format_yield.py` with the truth table above; `tests/test_number_format.py` with the helper (`GBP 1.00` T, `gbp 1.00` T, `GBP1.00` F, `VAT 1.00` F, `SBP 1.00` F, `GBP` F, `GBP -1.00` T); keep the legacy-leg pins in `test_money_strict_shape.py`. Gate (this REMOVES a hold, so `wouldFile(ON) ⊇ wouldFile(OFF)` is expected): realdoc 727 (`stress_test/realdoc_regression.js`, `RR_APP_ENV=1`) + Hard Set money class (`score_hard_set.js`) OFF vs ON — M=0, zero per-field drop; count the yield note "doesn't match this field's expected format": fires(ON) ⊆ fires(OFF) and every removed fire's `existing.value` matches `_CODE_PREFIX_RE`; every doc in wouldFile(ON)−wouldFile(OFF) has total == GT (0 new wrong would-file); Hard Set wrong+would-file stays 0; the Chris 30 on the DB copy: 29 unnoted totals equal to the page, 1 `SBP` held; two ON runs byte-identical.
+
+---
+
+## gary — taught optional `customer_name` filed as `Customer` / garbles: root cause + two slices
+
+### FACT vs ASSUMPTION (brief corrections first)
+- **FACT — the brief's "wordness gate skips authoritative (taught) reads" is WRONG.** `_authoritative` at `engine.py:11897-11901` is PATTERN authority (mac/ip precise types only), not "taught". The wordness gate (`:11992`) RAN on `Customer` and passed it: `wordness._CHROME` (`wordness.py:63-68`) has `bill/ship/deliver/order/…` but NOT `customer/client/attention/sold`, and "customer" is a real word so the trigram leg passes. Do NOT fix it by adding "customer" to `_CHROME`: `_is_chrome` (`:112-119`) is PREFIX-matching (`c.startswith(t)`), so "Custom Joinery" would trip, and the wordness note is soft-advisory (dissolvable under mig 142) with no sentinel.
+- FACT: mig-156 block `engine.py:12008-12041` is deterministic content-nature, runs on taught reads, appends `+nonname_flag`, exempts curated methods + `accepted_names`; trust.js `isNonNameFlagRow` (`trust.js:556-558`) recognises the sentinel by `includes('nonname_flag')` + non-empty note, at both `:580` and `:1067`. Oracle C1-C4 for it: `docs/oracle_log.md:2758`.
+- FACT: the Stage-4.5 loop already has `field_labels` (`engine.py:11851`) and the mapping result carries `anchor` = `anchor_text or field_key` (`template_mapper.py:1533`, `:2198`; read later at `engine.py:11020`), so Slice 1 needs no plumbing.
+- FACT: `_pageFamilyDisagrees` is applied ONLY to ref/date keys, at BOTH the sub-100 loop (`trust.js:1073`) and the at-100 `roleDisagreeOnly` branch (`:1050-1058`, entered from `:1408-1417` when `role_disagree_refuse_at100` is ON). `corroboration` is selected only when `_roleDisagreeOn` (`:1007-1012`) — HARD dep for Slice 2. Review already has copy for kind `disagreeing-read` naming the field (`review/renderer.js:3605`).
+- FACT: prior art on Slice 2's mechanism = the NAME-RELOCATE DISAGREEMENT guard (`engine.py:1410-1444`, `:10730-10744`, ON by default), Oracle-signed 2026-07-14, keyword-vs-`anchor_crop_relocated/anchor_inline` only, `name_quality` floor 0.6 pinned. It never sees a `template_mapping` winner — that gap is the exhibit.
+- FACT: `keyword_superstring_name_note` (`engine.py:8407-8487`, ON since mig 205) fires only when method is EXACTLY `template_mapping` and offers `corrected_to`; it evidently did not fire on the two `Larch & Hollow Cafe C` rows. ASSUMPTION: their method was a suffixed variant or the keyword candidate was `noted`. [main session: REFUTED — method is exactly `template_mapping`; it skipped with `kw_note_skip:winner_page_present` because the substring is page-present.]
+- ASSUMPTION: the wizard stored `anchor_text = 'Customer'` for that mapping. [main session: VERIFIED.]
+
+### Primary root cause (one lever)
+An optional non-role name field has NO deterministic checkpoint: the only guards are role-scoped (`_pageFamilyDisagrees`), colon-scoped (`validator.py:601`), or shape-scoped (mig 156 patterns). The reusable defect is that "value == its own caption" is not a content-nature test anywhere. Contributing: (2) role-only disagreement refusal; (3) superstring note's exact-method gate; (4) bare `'flagged'` reason.
+
+### Slice 1 — VALUE-EQUALS-LABEL flag (ship FIRST)
+- **Where:** `engine.py` directly after the mig-156 block (`:12041`), before the format lookup (`:12042`); same guard shape: `is_name_like_field(key)`, no existing note, not curated method (`template_fixed/override/fixed/manual/+confirmed_adopt/+name_snap`), `_accept_norm(val) not in accepted_names`.
+- **Predicate (pure, `value_quality.value_is_caption(val, field_label, anchor_text)`):** normalise both sides via `text_normalise` (NFKC, casefold, strip `:`/punct, collapse ws); flag iff `v == label_norm` or `v == anchor_norm` or `v in GENERIC_CAPTIONS` ({customer, client, bill to, ship to, sold to, deliver to, attention, attn, supplier, vendor, company name, name}) or (`len(v) >= 4` and (`label_norm.startswith(v)` or `anchor_norm.startswith(v)`) — the clipped `Custome` case). Exact equality only; NO fuzzy/prefix against the generic list.
+- **Effect:** value kept, `confidence = min(c, 69)`, note `reads as the label 'Customer', not a name — please check the value.`, method suffix **reuse `+nonname_flag`** (not a new `+label_flag`): trust.js then needs ZERO change, inherits the mig-142 forward-defence and its pins (`test_scope_trust.js:1018-1046`); distinguish producers by the note text + a `_t('label_flag', …)` trace event. `n_flagged += 1; format_anomaly_flagged = True; continue`.
+- **Switch:** `name_value_label_flag` / env `NAME_VALUE_LABEL_FLAG`, mig 213 single-key `INSERT OR IGNORE … 'false'` (pattern `database/index.js:4281-4287`), `dark_switches.js` entry after `glyph_slice_integrity`, `_reconcileEnv` line after `handler.js:388`, count pins 16→17 at `test_migration137_test_switch_reset.js:34`, `test_migration163_deskew_false_absent_reflag.js:48`, `database/test_default_flip_205_batch.js`.
+- **Compat/migration:** go-forward only (already-filed rows untouched; a reprocess re-judges). Invariant preserved: "teach fixed the position, not the value" — this is the sanctioned content-nature class; no learned-shape veto.
+
+### Slice 2 — page-family disagreement refusal for TAUGHT optional name fields (census, then Oracle)
+- **Where:** trust.js, both sites (`:1052-1056` and `:1073-1075`): when `taught_name_disagree_refuse` is ON, extend the key set from {ref,date} to `taughtNameKeys` = rows where `isNameLikeField(key)` (`learning.js:377`), `_requiredByKey.get(key) === 0`, `fieldTypes.get(key)` in {text, ''} (multiline/list/address-bearing keys EXCLUDED in v1), record `winner_family === 'mapping'`, and the disagreeing PAGE witness has `nameQuality(value) >= 0.6` (`learning.js:285`, the same floor the 07-14 guard pinned — a junk keyword witness must not hold a clean box). Refuse `disagreeing-read:<key>`. HARD deps: `trust_role_disagreement_refuse` ON (else no `corroboration` column selected), `role_disagree_refuse_at100` ON for the at-100 road (Chris's docs filed at 100).
+- **Containment:** v1 does NOT exempt substring/superstring pairs (fail-toward-review); the census measures how many holds are containment-only; if a flood, add a token-containment exemption (contained value ≥2 tokens, per the 2026-08-12 ruling `pendingfeatures.md:1635-1649`) as v1.1 with a pin.
+- **Blast radius (honest):** every optional text name field with a keyword competitor on every preset type; `crop` family (⊕ teach) deliberately out of v1.
+- **Census BEFORE Oracle** (both `stress_test/out/c0_live_copy/docusnap.db` and Chris's sandbox copy — the owner's DB may have few taught optional names): `SELECT d.id, d.confirmed_via, e.field_key, e.extraction_method, e.display_value, e.corroboration, c.corrected_value FROM extractions e JOIN documents d ON d.id=e.document_id JOIN fields f ON f.document_type_id=d.document_type_id AND f.key=e.field_key LEFT JOIN corrections c ON c.document_id=e.document_id AND c.field_key=e.field_key WHERE d.status='confirmed' AND f.required=0 AND f.type IN ('text','') AND e.corroboration LIKE '%"winner_family":"mapping"%' AND e.corroboration LIKE '%"family":"keyword"%' AND (e.field_key LIKE '%name%' OR e.field_key LIKE '%customer%' OR e.field_key LIKE '%client%' OR e.field_key LIKE '%contact%')`, then post-filter in JS with `_pageFamilyDisagrees` + the nameQuality floor. Report: new holds (rows with machine `confirmed_via`), precision (human-confirmed rows where `corrected_value` differs from `display_value` and equals the keyword witness), containment-only share.
+
+### Seam
+Slice 1 RELIES on `field_defs` labels + `anchor` surviving to Stage 4.5 and on the note reaching `_flaggedSoftAware`; it WEAKENS nothing (adds a hold). Slice 2 RELIES on the engine's `_cmp_norm` disagreement record being name-credible; it REMOVES the gate-free 100% auto-file for that class — a keyword witness that is itself wrong now holds a correct box (that is the accepted trade-off, pinned).
+
+### Test plan
+- `python_backend/tests/test_name_value_label_flag.py`: `Customer`/`Customer:`/`customer`/`CUSTOMER `/`Bill To`/`Custome` (prefix of anchor `Customer Name`) → note + `+nonname_flag` + conf ≤69; `Kingfisher Print Studio`, `Custom Joinery Ltd`, `Client Services Ltd` → untouched; accepted-name `customer` → untouched; `template_fixed` → untouched; supplier_name `Supplier` → flagged; OFF → byte-identical dict.
+- `database/modules/test_scope_trust.js` §: a row `template_mapping+nonname_flag` + the label note on an OPTIONAL field is refused with mig 142 ON (already pinned — reuse proves the sentinel choice).
+- Slice 2 `test_scope_trust.js`: mapping winner `Customer` + keyword `Sandpiper Hotels` → `disagreeing-read:customer_name` at overall 100 and sub-100; keyword witness `Cust0mer: Sandp` (quality <0.6) → eligible (PIN the trade-off); required/role/list/multiline rows unchanged; switch OFF → eligible; harness overlay without `corroboration` → fail-open (unchanged).
+- Corpus gate: `realdoc_regression.js` at `RR_APP_ENV=1`, 727 + Hard Set: M=0, zero per-field drop, OFF md5 identity, list every new hold with the value pair. HYPOTHESIS the harness can't reach: the 605 corpus has almost no taught optional name mappings — efficacy must come from Chris's sandbox re-run (6/6 held), safety from the corpus.
+
+### One-liners
+(i) `flagged:<key>` is safe: `review/handler.js:654` splits on `:`; `processing/handler.js:7063` → `main/renderer.js:1205` uses truthiness; `:4624/4808/4857/5764` pass the string through to `_SWEEP_REASON_COPY` (`review/renderer.js:7773-7798`), which has no `'flagged'` key so both old and new fall to the same default; `rereadHolds.js` never reads it. Only TESTS compare the full string — update to `startsWith('flagged')`: `test_multi_doc_hold.js:64`, `test_segment_pair_stamp.js:65`, `test_segment_hold_stamp.js:69`, `test_import_autofile_gate.js:126`, and `test_quiet_lane_first_fill_reliability.js:119` + `:141` (the `!== 'flagged'` there would go vacuously green — the dead-pin trap).
+(ii) No: `currency` is in `STRICT_TYPES` (`trust.js:94-97`), so `isSoftAdvisory` (`:533-537`) returns false and the Total note blocks even with `optional_soft_flag_autofile` ON. That is the safe outcome: a money note must never soft-clear.
+
+---
+
+## eric — three Chris-round defects: root causes, ONE fix each, seams, tests (ADVISORY, nothing edited)
+
+### D1 — field added mid-session never reaches an open Review window
+**Root cause (FACT):** `src/modules/settings/handler.js:146-148` — `add-field`/`update-field`/`delete-field` return without `notifyAllWindows('doc-types-changed')` (broadcast only at :90, :105 (aliases only), :121, :137). Review's listener `src/windows/review/renderer.js:10194-10200` reloads `allDocTypes` + the dropdown only; `fieldDefs` is set solely at :503/:1722/:2678/:9470. `renderFields` :4262 iterates `reviewFields()` (:1508-1511 = `fieldDefs` keys) → a `total` extraction row with no fieldDef is never drawn → Confirm's DOM scrape :6919-6922 omits it → `filing/handler.js:335/:353 buildXml` iterates `Object.entries(allValues)` → no Total in the sidecar. Chain confirmed end to end.
+
+**Listener inventory (FACT):** `preload.js:593`; `main/renderer.js:703` (reloads type keys — harmless); `settings/renderer.js:6511` → `loadDocTypes()` :1847-1855 = `getAllDocTypesAll` + `renderDocTypesList()` (list only — it does NOT re-run `selectDocType`/`renderDocTypeDetail` :2037-2043, so the mounted `dtEditor` survives; no re-entry); `review/training.js:209` (acts only while the tutorial is on `nt-fill`; create-mode field adds are local, `doctype-editor.js:516-519`, so no broadcast fires there); `review/renderer.js:10194`. **No client listener; teach.js has none** → `doctype-editor.js:429-436 reload()` → `opts.onChange` (teach.js:428) only refetches — no loop. `notifyAllWindows` = `main.js:1078-1080` over `safeSend` (ASSUMPTION: `safeSend` gates `isDestroyed` — not read).
+
+**Fix (one road):**
+(a) Main: after a SUCCESSFUL mutation in each of the three handlers, `notifyAllWindows('doc-types-changed')` (not on the throw path).
+(b) Review: extend the :10194 handler — `dt = allDocTypes.find(t=>t.slug===selectedTypeSlug)`; guard `currentDoc && _lastRenderedDoc && _lastRenderedDoc.id===currentDoc.id` (the :4461 idiom); `prev=new Set(reviewFields()); fieldDefs=dt.fields; next=reviewFields()`; **diff by key**: append rows for `next−prev` via `appendFieldRow` from `_lastRenderedDoc.extractions` (honour the :4271-4274 hidden+empty skip), remove rows for `prev−next` (a deleted/disabled field must not be scraped into `allValues`), then `validateConfirm(); updateTotalsVerifiedBadge(); _updateSenderFieldsBtn()`.
+**Why NOT `renderFields(doc)`:** it rebuilds every input from `ext.display_value` (:4270-4275) and nothing reads `corrections[key]` back (written only at :4900/:4902) — a full repaint mid-edit REVERTS typed values while `corrections` still holds them; the `clearedByIssuerChange` guard covers only the cleared case. Diff-by-key never touches an existing input, so no resurrection, no edit loss, no `committing` flag needed (the scrape at :6919 is synchronous before any await). Trade-off: appended rows land at the bottom until the next `selectDoc`.
+**Session/role (FACT):** `currentSession` is a module global (`auth/handler.js:47-70`) shared by every BrowserWindow — the Teach window runs under the same session; `add-field` stays `requireRole('admin')`. Side finding: teach.js does not role-gate "Edit this type…" (grep `.role|isAdmin|canEdit` → none), so an Edit-role user sees it and gets `showErr` at `doctype-editor.js:524`. `/v1`: no add-field route (only `createTypeWithFields` :1498); `client caps.editType=false` (`clientTeachTransport.js:53`), button hidden (teach.js:2377) — confirmed no client exposure. ASSUMPTION to check: whether `/v1 POST /doc-types` (:1498) notifies desktop windows.
+
+### D2 — "Checked by you" on machine-filed docs
+**Root cause (FACT):** `search-ui/searchActions.js:38-42` prints it for every `confirmed`. Deeper: the search UI CANNOT know — `renderActions(merged)` (`searchPreview.js:508-512`) gets the row+detail, and the detail is `dto.projectDocumentDetail` (`services/dto.js:88-95` = `SEARCH_ROW_FIELDS` + `DETAIL_EXTRA_FIELDS` :32-34) — **reused verbatim on the desktop IPC** (`review/handler.js:1081-1089`) — and neither list carries `confirmed_via`/`confirmed_by_username`; `searchService.js:86-91` strips them too. So this is a DTO change, not a copy change.
+**Provenance facts:** `confirmed_via` ∈ NULL (human) · `scope_sweep` (username = the HUMAN for the consented File-N, `reviewService.js:379`; `'Auto-filed (after your confirms)'` for the auto pass, `processing/handler.js:4965`) · `auto_reprocess` (:381) · `auto_threshold|auto_graduated|auto_corroborated` (:7463-7468) — BUT `_viaStamp` is NULL when gate-unify is off (:7464) with username `'Auto-filed (100%)'`, so via alone is insufficient (the Home tally already ORs `LIKE 'Auto-filed%'`, `search/handler.js:67`).
+**Fix:** derive ONE enum server-side in `previewService.getDocumentDetail` (:38-65, shared by both transports): `filed_by` = `person` | `self_after_confirms` (scope_sweep) | `auto_import` (auto_* via OR via-NULL + username LIKE 'Auto-filed%') | `auto_reprocess`; add `filed_by` + `confirmed_by_username` to `DETAIL_EXTRA_FIELDS` (usernames already cross the wire in `ROUTE_FIELDS` :48). Copy: "Checked by you" / "Checked by {name}" (SearchState keeps only `.role`, `searchInit.js:121` — also keep `username` from `authGetCurrentUser`, `_toSessionUser` :72-73) / "Filed itself after your confirmations" / "Filed automatically on import" / "Filed automatically after a re-read". `filed_by === undefined` (newer client, older core) → neutral "Checked" — never guess.
+**Seam:** additive detail field → precedent 1.8.0 (`intake`) bumped MINOR: 1.8.0→1.9.0 in BOTH `api/handler.js:50` and `client/apiClient.js:26` (lockstep pin `client/test_apiclient.js:63`; runtime checks MAJOR only :59-63). `test_v1_contract.js:162` checks leaks only → passes. Rerun `sync-client-search.js` (searchActions.js is a generated copy).
+
+### D3 — reprocess accept ledger kind
+**Root cause (FACT, premise corrected):** :5798 is the ACCEPT door, not the completion. The completion's own scope pass (:5686-5708 → `_autoAcceptScope` → :4776) already records `self_filed` ("14 filed themselves"). The "You filed 1" is the **in-view countdown EXPIRY** on the reprocess door (`renderer.js:7699-7711`, `onExpire → _acceptReprocessOffer` :7707) calling the same payload-less IPC (:7742) → server records `approved:true` (:5798), `_recordAutoFiled(db,id,true)` (:5786), toast "you approved" (:7746). `sweep_inview_countdown` is ON by default (mig 103, `database/index.js:2476-2481`). The :5784-5785 comment ("the operator clicked File N", Chris r7 card 2) predates the 09-07 countdown — the click IS a consent, the expiry is not; the server cannot tell them apart. DB attribution is machine either way (`auto_reprocess`, Oracle 08-12 — untouched).
+**Fix:** accept a validated presentation-only `{ consented: boolean }` on `reprocess-autocommit-accept` (absent/non-boolean → today's behaviour). Filed set stays server-decided. `consented=false` → mirror the sweep's own expiry precedent (:4821): `kind:'self_filed', approved:false`, scope `{supplier,typeSlug}` from the ONE doc (the countdown only runs for n===1 = the doc on screen, :7699), `_recordAutoFiled(db,id,false)`, renderer toast without "you approved". Not `auto_filed`: its copy claims "matched 100 %" (:727) and it merges by kind into import bursts (`reviewEvents.js:125`). Same-scope `self_filed` merges into the sweep chip within 60 s → "15 filed themselves" (Chris's model).
+**What else keys off it:** undo — nothing (`undo:null` → `_undoable` false either way, :105-107); re-surface bar: `approved=false` on an `auto_reprocess` doc falls into "filed automatically" (:583-585), honest. Pins to update: `test_reprocess_inview_countdown.js:47-50` (road signature, no-payload regex → "no ids, one boolean", toast); `test_reprocess_autocommit.js:77-110` re-run (confirm-shape unchanged). `test_activity_strip.js:142`, `test_activity_actions_columns.js`, `test_review_events_doors.js` pin other doors — untouched.
+
+### Test plan (hermetic, Electron-as-Node)
+D1: stub `notifyAllWindows` spy + `doctypes` → three handlers emit once on success, zero on throw; renderer source-slice pin (the `test_reprocess_inview_countdown.js` style): the `onDocTypesChanged` block re-resolves `fieldDefs`, contains `appendFieldRow(` and no `renderFields(`/`innerHTML = ''`. D2: table test for `deriveFiledBy` (7 rows incl. via-NULL+'Auto-filed (100%)' and unknown); detail DTO carries `filed_by`, `leaks()` 0; searchActions pin for the 5 copies + undefined fallback; lockstep bump both files. D3: extend `test_review_events_doors.js`: accept with `{consented:false}` → `self_filed`/approved false/`recent_auto_filed.approved` excludes id; `{consented:true}` and no-arg → `approved`; `{consented:'yes'}`/ids → treated as absent, filed set unchanged.
+
+---
+
+## Oracle verdict (2026-09-24; main session verified the load-bearing claims at source — `money_cents` at number_format.py:146, `keyword.value_is_caption` at keyword.py:240, the helper evaluated on BOTH sides at engine.py:10454-10455, exact-`'flagged'` test compares in 15 files)
+
+### VERDICTS
+- **R1 code-led money — SIGN OFF W/COND (C1-C4).** Bug fix inside the mig-70 ON parent, NO new DB switch/mig; env-only kill for the harness OFF arm. NOT as designed — the exemption must require cents-agreement with the challenger (C1).
+- **G1 value-equals-label — SIGN OFF W/COND (C5-C8)**, ship first of the engine slices, DARK mig 213. Sentinel reuse verified safe.
+- **G2 taught-name page-family refusal — CENSUS FIRST (zero code), then design → Oracle.**
+- **G3 `flagged:<key>` — SIGN OFF W/COND (C9-C10)**; the dead-pin inventory is 15 files, not 5.
+- **E1 broadcast + diff-by-key — SIGN OFF W/COND (C11).**
+- **E2 provenance DTO — SIGN OFF W/COND (C12)**; lockstep contract bump, not desktop-first (the DTO is the shared layer).
+- **E3 `consented` — SIGN OFF W/COND (C13)**; presentation input, not audit.
+- **DO NOTHING:** wordness `_CHROME` += 'customer' (prefix-matcher); edit-distance code repair.
+
+### Premise corrections (Oracle, checked at source)
+1. **R1's "fire-set(ON) ⊆ fire-set(OFF)" is FALSE as designed.** `_stage05_format_fails` is evaluated on BOTH sides (engine 10454-10455); a code-led KEYWORD challenger (`GBP 922.14`) fails the legacy leg today (no yield) but passes under R1 → NEW fires. C1 makes ⊆ true by construction.
+2. **R1 as designed removes the only hold on a code-led mapping-vs-keyword TOTAL disagreement.** A clipped-but-strict-valid box read (`GBP 1,066.95` off `11,066.95` — the mapper relocates a row on Chris's docs) is caught TODAY only by the legacy-leg accident; under R1 it wins and files. `net_misread_total_flag` needs a VAT-plausible larger sibling (covers the Net-row case, not a leading-digit clip); the corroboration record knows but currency has NO JS filing consumer (Oracle C7, 2026-08-30). C1 closes it.
+3. **Prior art:** `keyword.value_is_caption(value, vocab)` exists (keyword.py:240) with different semantics ("NEVER containment/prefix") — G1's helper name collides. Rename (C5).
+4. **G3 dead pins:** 15 files with an exact `=== 'flagged'` / `!== 'flagged'`; the `!==` sites go vacuously green.
+5. Premises that HOLD: STRICT_TYPES has currency; `_pageFamilyDisagrees` ref/date only; bare `'flagged'` at trust.js:1311 while `docTrustGate` already emits `flagged:<key>` (:1069) and review/handler.js:654 splits — G3 is shape-consistent; the reprocess accept door is payload-less + consume-once; sentinel: `_crosscheck_witness_bucket` resolves `template_mapping+nonname_flag` via `startswith('template')` → mapping; JS consumers all `startsWith`; `repairSuspects.js` never reads the method; G2's hard deps ON by default.
+
+### THE SEAM
+- **R1 × the corroboration/consumer gap** — the real one; fixed by C1.
+- **R1 × strict-money never-flip:** no interaction — R1-as-C1 only REMOVES yields. C4 pins it.
+- **G1 × G2:** complementary, both fail-toward-review.
+- **E1(b) × the visibility handler** (renderer.js:10206-10209) already does the full `renderFields()` repaint eric warns about — pre-existing hazard, note it.
+
+### CONDITIONS
+**R1** — **C1 (blocking):** keep `_stage05_format_fails` PURE and legacy. Put the exemption at the CALL SITE (engine.py:10454): the existing-side verdict is overridden to False only when `has_currency_code_prefix(existing) and money_strict_shape(existing) and money_cents(existing) == money_cents(data.value)`. Same amount, code aside → not a format failure → mapping wins, later stripped at validator.py:591. Disagreeing cents → today's yield + note. `SBP` stays held. Chris's 30 → 29 unnoted + 1 held, zero new silent files. **C2:** env kill `TEMPLATE_FORMAT_FAIL_CODE_AGREE` default ON (explicit `'0'` for the OFF arm), trace event on every exemption; no setting, no mig. **C3 gate:** realdoc 727 + Hard Set money class, OFF vs ON: md5 byte-identical with the kill `'0'`; M=0; zero per-field drop; fire-set diff enumerated BOTH directions (removals only); every removal a cents-agree pair; `wouldFile(ON)−wouldFile(OFF)` all total==GT on the stripped value. **C4 pin:** `test_stage05_format_yield.py`: (a) `GBP 11,066.95` vs `11,066.95` → no yield; (b) `GBP 1,066.95` vs `11,066.95` → yield + note; (c) `SBP …` → yield; (d) `GBP 922.14` as the CHALLENGER against `L922.14` → unchanged.
+**G1** — **C5:** name it `value_is_own_label` (or extend `keyword.value_is_caption` with `labels=`); pin `'Order Solutions Ltd'`/`'Total Office Supplies'` survive; the prefix rule is value-is-prefix-of-LABEL only (len≥4), never against GENERIC_CAPTIONS. **C6:** GENERIC_CAPTIONS exact whole-value equality only; pin `Attention Ltd`/`Vendor Systems` safe. **C7:** note text must differ from mig-156's + a trace event `name_value_label_flag`; `accepted_names` exemption stays. **C8 gate:** 727 + Hard Set OFF byte-identical; ON: list every new hold, each must be a caption/anchor/clip — any real name held = SEND BACK.
+**G2** — census on the 727 copy + Chris's sandbox, SQL only: name-like optional text keys, `winner_family:'mapping'`, a page-family `disagree`; classify box-right/keyword-wrong (false hold) vs box-wrong (catch); containment-only share; the `nameQuality≥0.6` filter's effect. Build DARK only if false holds ≤ ~5% of that population; then Oracle.
+**G3** — **C9:** the named key must come from the SAME filter that blocked (first blocking row from `_flaggedSoftAware` under soft-nonblock; first noted row by extraction id otherwise), deterministic. **C10:** convert all 15 files to a shared `isFlaggedReason(r)`; run the whole JS suite; optionally a `'flagged'` prefix line in `_SWEEP_REASON_COPY`.
+**E1** — **C11:** the diff-by-key handler no-ops while File All Ready or a confirm is in flight (no global flag today — `committing` at :1774 is the create-type modal only; add one in `confirmCurrentDoc` :6912) and re-runs after; pin: a typed value survives a field add.
+**E2** — **C12:** a 5th state for `scope_sweep` with a HUMAN username = consented File-N ("Filed with your approval"), distinct from the auto pass; never print a machine `confirmed_by_username`; contract 1.8.0→1.9.0 lockstep + DTO conformance + `sync-client-search.js`.
+**E3** — **C13:** validate `typeof consented === 'boolean'` (else today's path); honour `consented=false` ONLY when `offer.docIds.length === 1`; audit row `reprocess_autofiled` unchanged (optional `door:'expiry'|'click'` metadata).
+
+### BUILD ORDER (cheapest-safest first; R1 may run in parallel — its gate is a harness run)
+1. E1(a) broadcast → 2. G3 → 3. E3 → 4. E2 → 5. E1(b) → 6. R1 (C1-C4) → 7. G1 DARK mig 213 → 8. G2 census → design → Oracle.
