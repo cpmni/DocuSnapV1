@@ -18,7 +18,8 @@ function freshDb() {
     CREATE TABLE document_types (id INTEGER PRIMARY KEY, name TEXT, slug TEXT,
       ref_field_key TEXT, date_field_key TEXT);
     CREATE TABLE fields (id INTEGER PRIMARY KEY, document_type_id INTEGER, key TEXT,
-      type TEXT, required INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1);
+      type TEXT, required INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1,
+      label TEXT);   -- docTrustGate reads fields.label since 37b61d0 (mig 214, 2026-09-24); hand-rolled schemas must carry it
     CREATE TABLE documents (id INTEGER PRIMARY KEY, document_type_id INTEGER, status TEXT,
       supplier_name TEXT, overall_confidence INTEGER, confirmed_at TEXT, confirmed_via TEXT,
       confirmed_by_username TEXT, stored_filename TEXT, stored_path TEXT, supplier_pin TEXT,

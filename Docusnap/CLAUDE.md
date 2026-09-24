@@ -22,8 +22,7 @@ touches that area — read the pointed-to doc BEFORE working in it:
   ➜AN there). Read the matching block before changing one of those files.
 
 ## ⏭ LATEST — 2026-09-24 (Chris's teach round verified + control-tested; the seven-slice fix set BUILT; R1/G1 gates in flight):
-**READ `HANDOVER_2026-09-24_QUICK_RESCORE.md` FIRST if the task is the owner's sandbox test (the QUICK-reprocess stale-score fix: design + Oracle re-rule of Plan-B C4, NOT built; the sandbox app is RUNNING on CDP 9223 with the exhibit), else `HANDOVER_2026-09-24.md`.** Branch `feat/teach-side-overnight`; **HEAD `3de96dd`; origin at `14396ab` — 38
-commits — PUSHED at the evening wrap; migs → 215; `TEST_SWITCH_KEYS` 13; `/v1` contract 1.9.0; tree clean.** Chris's 09-23 round
+**READ `HANDOVER_2026-09-24_QUICK_RESCORE.md` FIRST if the task is the owner's sandbox test — the QUICK-reprocess stale-score fix is now BUILT + GATED (`a5f3cab` + `36f14a1`, UNPUSHED; Oracle RE-RULE of Plan-B C4 → `quickRescoreMerged`/`quickRescoreStore` in `processing/handler.js`, env kill `QUICK_RESCORE_MERGED=0`; gate `TESTING/_measure/quick_rescore_gate_20260924/RESULT.md`: exhibit 17 → 93 with 0 field diffs, arm B files 12/12 once the sender has a template, live-copy arm byte-identical; the sandbox app was RESTARTED on it, CDP 9223) — else `HANDOVER_2026-09-24.md`.** Branch `feat/teach-side-overnight`; **HEAD `36f14a1`; origin at `83cf5d4` — 2 commits UNPUSHED; migs → 215; `TEST_SWITCH_KEYS` 13; `/v1` contract 1.9.0.** Chris's 09-23 round
 (`docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md`): orders filed as promised, 0 wrong roles on 67; invoices 0/30 with a
 taught Total; a taught Customer filed as "Customer". **Control test:** `14396ab` OFF vs today OFF md5-identical on his
 67; the Total hold is the 2026-08-09 LEGACY currency leg (`^[£$€¥]?…\d`, code-blind) meeting a box that captures the

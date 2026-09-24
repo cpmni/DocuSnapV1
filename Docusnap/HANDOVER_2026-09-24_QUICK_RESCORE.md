@@ -1,4 +1,27 @@
-# HANDOVER 2026-09-24 (late) — the QUICK-reprocess stale-score fix (design; NOT built) — owner resumes testing after it lands
+# HANDOVER 2026-09-24 (late) — the QUICK-reprocess stale-score fix — **BUILT + GATED + APPLIED (evening 2)**
+
+> **STATUS (2026-09-24 ~20:40):** BUILT as `a5f3cab` (shared penalty constants) + `36f14a1` (the fix + pins + docs), on
+> `feat/teach-side-overnight`, UNPUSHED. gary vet → Oracle RE-RULE of Plan-B C4 = SIGN-OFF-W/COND C1-C6
+> (`docs/oracle_log.md` 2026-09-24 evening) — all six applied. Design deltas vs the text below: (1) the raise is also
+> BLOCKED when the doc is CONTESTED or when a TAUGHT key was kept on a scored key (`stats.taughtKeptKeys`); (2) the
+> mismatch penalty leg IS mirrored (constants now live once in `database/modules/format_consistency.js`, shared with
+> `charsetAcceptService`; cross-language pin `test_format_consistency_twin.js`); (3) hidden-key skip never applies to
+> identity/role keys. GATE MET (`TESTING/_measure/quick_rescore_gate_20260924/RESULT.md`): CONTROL = the 17 stay 31 ·
+> FIX arm A = 17 → 93, 0 field diffs, hold `below-floor` → **`no-template`** (gary's catch: the exhibit had NO Nordwind
+> template, so 93 alone cannot file — sub-100 needs a bound template) · arm B = 5 clean confirms graduate the sender
+> (`graduation_window` 5 on the sandbox) → template minted → the Quick pass binds + rescores the remaining 12 →
+> consume auto-files **12/12** · arm C (fresh live-DB copy, 53-doc Quick) = 800 docs byte-identical control vs fix,
+> flip list 0, Print Tracker zero raises. Pins `test_reprocess_quick_rescore.js` 14 sections ALL OK; whole suite
+> `node scripts/run-pins.js` 424 files: 423 green + ONE stale pin (`database/modules/test_corrob_autofile.js`, a
+> hand-rolled `fields` schema without `label`, which `37b61d0`'s trust query reads since the mig-215 flip — NOT this
+> fix) → column added to the test schema → ALL PASS. Gate scripts (prep / seed-user / CDP driver / snapshot / compare /
+> flips) live in the job scratch `…\jobs\68b38f39\tmp\gate\` and are described in the RESULT.md. **SANDBOX RESTARTED on the fixed code** (CDP 9223, new
+> PID 18836, same data folder; the owner's admin account + docs persist). ⚠ FLAG for the owner: the sandbox's
+> `output_folder` is the REAL `C:\Users\cmccu\Documents\Scan Finder` (sandbox files land in the live output tree).
+> **Owner's next step:** any low-scored docs from a sender that already HAS a template → Reprocess (Quick) → they
+> rescore and file by themselves; a sender WITHOUT a template holds honestly as "layout hasn't been matched to a
+> template yet" until ~5 clean confirms (graduation) or a teach. The 17 quotes in the LIVE sandbox were already Full
+> re-read + filed by the owner before the fix landed, so the exhibit itself is gone there.
 
 > **SANDBOX MOVED (before the /newsession):** its data folder now lives OUTSIDE the job scratch at
 > `C:\Users\cmccu\AppData\Local\Temp\claude\c--GIT-Projects-Docusnap\owner-sandbox-20260924` (userData · Output · Demo Docs · `exhibit-db-copy\`). The app was relaunched
