@@ -39,6 +39,12 @@ const REQUIRED = [
   ['pypdf',      'PDF split / rotate'],
   ['zxingcpp',   'QR decode — Filing Slips separator-sheet detection (ocr/slip_detect.py aborts to no-split without it)'],
   ['segno',      'QR encode — separator-sheet pack generation + slip test fixtures'],
+  // 2026-09-24 evening (owner "vendor onnxruntime and the model, then build"): the PP-OCR SECOND READER
+  // (ocr/glyph_reader.py, the en_PP-OCRv3 rec model ocr/models/rec.onnx) is a customer default since mig 215
+  // (glyph_fallback_enabled / glyph_confusable_resolve / glyph_slice_integrity). Without onnxruntime the reader
+  // abstains `reader_unavailable` on every document — silent, safe, and the feature quietly off. Its four deps
+  // (numpy, protobuf, flatbuffers, packaging) were already vendored; installed --no-deps, MIT licence.
+  ['onnxruntime', 'the PP-OCR second reader (ocr/glyph_reader.py) abstains reader_unavailable without it — mig 207/210/212 are customer defaults since mig 215'],
 ];
 // pip package name when it differs from the import name (for the "how to fix" hint).
 const PIP_NAME = { PIL: 'pillow', zxingcpp: 'zxing-cpp' };
@@ -49,7 +55,7 @@ const PIP_NAME = { PIL: 'pillow', zxingcpp: 'zxing-cpp' };
 // every REQUIRED package's installed dist-info version must equal the lock. Bumping = edit the lock deliberately (a
 // dated security decision), then re-provision. compareLock() is pure (pinned by scripts/test_check_vendor_python.js).
 const LOCK = path.join(root, 'python_backend', 'requirements.lock');
-const PIP_OF = { PIL: 'pillow', zxingcpp: 'zxing-cpp', rapidfuzz: 'rapidfuzz', pytesseract: 'pytesseract', pypdfium2: 'pypdfium2', pypdf: 'pypdf', segno: 'segno' };
+const PIP_OF = { PIL: 'pillow', zxingcpp: 'zxing-cpp', rapidfuzz: 'rapidfuzz', pytesseract: 'pytesseract', pypdfium2: 'pypdfium2', pypdf: 'pypdf', segno: 'segno', onnxruntime: 'onnxruntime' };
 const normName = (n) => String(n).toLowerCase().replace(/[-_.]+/g, '-');
 function parseLock(text) {
   const out = {};
@@ -85,10 +91,12 @@ function compareLock(lock, installed, required = REQUIRED.map(([m]) => PIP_OF[m]
 module.exports = { parseLock, installedVersions, compareLock, normName, PIP_OF, REQUIRED };
 if (require.main !== module) return;   // pure API for the pin — the checks below only run as a script
 
-// Import names that should NO LONGER be present (RapidOCR was removed 2026-07).
-const REMOVED = ['rapidocr_onnxruntime', 'onnxruntime', 'cv2', 'shapely', 'pyclipper',
+// Import names that should NO LONGER be present (RapidOCR was removed 2026-07). 2026-09-24: `onnxruntime` moved
+// to REQUIRED (the second reader calls it DIRECTLY, no rapidocr wrapper — see glyph_reader.py), and its deps
+// `google.protobuf` + `flatbuffers` are therefore legitimate again; the rapidocr wrapper itself stays removed.
+const REMOVED = ['rapidocr_onnxruntime', 'cv2', 'shapely', 'pyclipper',
                  // RapidOCR-era transitive leftovers (re-audit 2026-09-08): zero imports in python_backend, ~12 MB shipped.
-                 'google.protobuf', 'flatbuffers', 'yaml', 'requests', 'tqdm', 'urllib3', 'certifi', 'charset_normalizer', 'idna'];
+                 'yaml', 'requests', 'tqdm', 'urllib3', 'certifi', 'charset_normalizer', 'idna'];
 
 function canImport(mod) {
   try { execFileSync(py, ['-c', `import ${mod}`], { stdio: 'ignore' }); return true; }
@@ -134,7 +142,7 @@ const stale = REMOVED.filter(canImport);
 if (stale.length) {
   console.warn('\n  ⚠ vendor/python still carries the removed RapidOCR stack: ' + stale.join(', '));
   console.warn('    It is unused since 2026-07 and adds ~80-180 MB to the installer. Reclaim (optional):');
-  console.warn('    vendor\\python\\python.exe -m pip uninstall -y rapidocr-onnxruntime onnxruntime opencv-python shapely pyclipper');
+  console.warn('    vendor\\python\\python.exe -m pip uninstall -y rapidocr-onnxruntime opencv-python shapely pyclipper   (NOT onnxruntime — required since 2026-09-24)');
 }
 
 console.log('\n  ✓ vendor/python OK — required packages present (rapidfuzz + core backend deps)'

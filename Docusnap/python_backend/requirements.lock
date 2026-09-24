@@ -5,6 +5,7 @@ flatbuffers==25.12.19
 idna==3.18
 ImageHash==4.3.2
 numpy==2.4.6
+onnxruntime==1.27.0
 packaging==26.2
 pillow==12.2.0
 protobuf==7.35.1

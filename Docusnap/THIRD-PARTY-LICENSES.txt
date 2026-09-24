@@ -45,7 +45,7 @@ DISTRIBUTION & VERIFICATION NOTES
   the full text and are incorporated by reference (see section 3).
 
 Applies to product version: ScanFinder 2.0.0 (core) / 1.0.2 (search client).
-Last reviewed: 2026-09-14.
+Last reviewed: 2026-09-24.
 
 --------------------------------------------------------------------------------
 1. COMPONENT INVENTORY
@@ -112,7 +112,7 @@ Node.js components — production dependency tree (39)
   yargs                           17.7.2        MIT
   yargs-parser                    21.1.1        ISC
 
-Python components — bundled interpreter, vendor/python (24)
+Python components — bundled interpreter, vendor/python (25)
   certifi                         2026.6.17     MPL-2.0
   charset_normalizer              3.4.7         MIT
   colorama                        0.4.6         BSD
@@ -120,6 +120,7 @@ Python components — bundled interpreter, vendor/python (24)
   idna                            3.18          BSD-3-Clause
   ImageHash                       4.3.2         2-clause BSD License
   numpy                           2.4.6         BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0
+  onnxruntime                     1.27.0        MIT License
   packaging                       26.2          Apache-2.0 OR BSD-2-Clause
   pillow                          12.2.0        MIT-CMU
   pip                             26.1.2        MIT
