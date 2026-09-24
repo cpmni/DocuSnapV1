@@ -38,3 +38,14 @@ false holds ≤ ~5 % of the population.
 (`taught_name_disagree_refuse`, HARD deps `trust_role_disagreement_refuse` + `role_disagree_refuse_at100`), pins on the
 six sandbox rows (catch), `Fembank` (the pinned trade-off), `Make`/`Studio` (no hold), and the 7 human-corrected rows.
 The flip gate is this census re-run after the build (same 30 → the same 24/1) plus the 727 harness M=0.
+
+## JS-twin census (Oracle gate (a), `census_js.js` — the REAL trust.js predicate, built as mig 214 `taught_name_disagree_refuse`)
+| DB | confirmed docs | taught-name holds (JS) | vs the Python-30 |
+|---|---|---|---|
+| owner's 727 copy | 747 | **24** | = the 25 expected (24 catches + `Fembank`) **minus #229** (`edwood Co` → witness `Redwood Construction`): JS `nameQuality` has no `COMMON_WORDS` whitelist and "Construction" carries a 4-consonant run, so the witness scores < 0.6 in JS — a MISSED CATCH (never a wrong file); pinned as the documented parity gap. The 5 lone-word rows (`Make` ×4, `Studio`) are ABSENT ✔. JS holds ⊆ Python-30 ✔. |
+| Chris's sandbox | 67 | **6** | 6/6 = the card-1 exhibit ✔ |
+- **Adjudicated JS set on the 727: 23 catches · 1 false hold (#262 `Fernbank`/`Fembank`, the pinned trade-off) = 4 % → the bar holds.**
+- Lone-word witnesses among holds: 0 (both DBs). `templates.buyer_issued = 1` holds: 0.
+- "alnum-only-equal pairs among holds" = 6 on the 727 — ALL are the human-corrected rows (#82/#81/#78/#139/#613/#821) whose STORED value is now the corrected value (= the witness) while the corroboration record predates the correction; at gate time the disagreement was real. Not a punctuation-fold artefact (Oracle C3 stays: no JS fold).
+- FLOOD table (Oracle C7, human-confirmed-as-is per (supplier, field)): Copperfield|customer_name 6 holds / 0 as-is · Saltmarsh 5 / 0 · Thornbury 3 / 2 (two different garbles a human confirmed as-is: `vineficher`, `Homes I`) · Vellum 3 / 0 · Northgate 2 / 0 · Print Tracker|customer 5 / 2 (the two human corrections). No group reaches ≥3 confirmed-as-is with one witness shape → no flood on this data.
+- **Still owed before a flip:** realdoc 727 + Hard Set + sandbox OFF/ON via `TAUGHT_NAME_DISAGREE_REFUSE` (extraction md5 identical — JS-only; `wouldFile(ON) ⊆ wouldFile(OFF)`; every lost filer listed), two ON runs byte-identical.

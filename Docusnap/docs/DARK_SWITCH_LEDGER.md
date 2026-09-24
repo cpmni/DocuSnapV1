@@ -101,6 +101,14 @@ in `database/dark_switches.js`'s history comment; the LIVE list is `TEST_SWITCH_
   Customer box drifted onto the label line and "Customer" auto-filed as the customer's name twice. Exact equality only, so
   real names that contain a caption word (Attention Ltd, Custom Joinery) are safe. Flip gate (Oracle C8): realdoc 727 +
   Hard Set OFF identical; ON lists every new hold — each must be a caption/anchor/clip; a real name held = send back._
+- **taught_name_disagree_refuse (mig 214, 2026-09-24)** — the "the page reads this two ways" hold that already guards the
+  reference and date now also guards a TAUGHT optional name field (customer name): when the taught box read one name and
+  the page's own text read a different one (at least two words, name-shaped), the document waits for a person instead of
+  filing the box's value. The value is never rewritten; Review says "if the box cut the value short, re-teach a wider box;
+  if the box is right, just confirm". _Why: on Chris's 09-23 round six of eleven customer names filed wrong at 100 % while
+  the page had read the right name. Census on the owner's 727: 23 catches, 1 false hold (an OCR-misread witness). Flip
+  gate: the JS-twin census (done: 24/6 holds, no flood group) + realdoc/Hard Set/sandbox OFF-vs-ON md5-identical, no
+  lost correct filer beyond that one class. Depends on trust_role_disagreement_refuse + role_disagree_refuse_at100._
 ---
 
 ## 🟢 READY — safety test passed, awaiting your go (2)
