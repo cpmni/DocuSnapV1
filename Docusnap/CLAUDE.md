@@ -36,9 +36,7 @@ inline `GBP` — NOT the second reader. **reggie/gary/eric → Oracle** (`docs/d
 DARK mig 213 `name_value_label_flag`** `a3371dc` (`value_quality.value_is_own_label`, `+nonname_flag` sentinel) · G2
 census `6913cbf` (bar met ONLY with a ≥2-token witness guard) → gary final design → Oracle SIGN OFF W/COND C1-C7 → **G2 BUILT DARK mig 214 `taught_name_disagree_refuse`** `37b61d0` (`trust._disagreeRefusesRow` at both sites; JS-only, env `TAUGHT_NAME_DISAGREE_REFUSE`; JS-twin census 24 holds on the 727 = 23 catches + the pinned `Fembank`, 6/6 sandbox). Quick R1 gate on Chris's 36 invoices:
 OFF 0 file / ON 22 file, 14 held with real reasons (5 = the pre-existing `template_mapping_edgecut` guard on correct
-totals → a Part-A follow-up). **OWED:** the 727 P/K/N + Hard Set + G1 gate (running from the job scratch dir at the
-wrap — READ before any flip; R1 is live: kill via env if N is not removals-only) · a clean full `run-pins.js` (killed at
-369/415 for low memory; 2 stale pins fixed) · remove the 3 gate worktrees · push · G2 design → Oracle.
+totals → a Part-A follow-up). **GATES ALL READ + MET (evening):** R1 — kill md5-identical to the pre-R1 tree, exemption inert on the owner's 727 (efficacy = Chris's 36: 0→22 file), Hard Set P==K==N; G1 — OFF identical, ON = exactly the two `Customer` label holds; G2 — extraction identical OFF/ON, 727 lost 15 = 14 wrong boxes + the pinned `Fernbank`, sandbox lost exactly the six card-1 names (`TESTING/_measure/{r1_code_agree,g1_label_flag,g2_taught_name}_gate_20260924/RESULT.md`) → migs 213 + 214 flip-ready; pin suite green across 415 files (2 stale pins fixed). Gate worktrees removed. **OWED:** push · the flips (207/210/212 from last night's C10 + 213/214) · `docs/detached-client.md` contract 1.9.0 note · delete `stress_test/out/c0_live_copy/` · the Hard Set digital supplier-EMPTY question (pre-existing).
 
 ## ⏭ 2026-09-23 EVENING (date-fold + arithmetic-witness built DARK; a dual-reader census FLIPS Oracle on the confusable RELEASE; CLAUDE.md collapsed + a VERIFY-DON'T-ASSUME rule):
 **READ `HANDOVER_2026-09-23_EVENING.md`.** Branch `feat/teach-side-overnight`; **the session's work is
