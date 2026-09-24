@@ -1,5 +1,11 @@
 # HANDOVER 2026-09-24 (late) — the QUICK-reprocess stale-score fix (design; NOT built) — owner resumes testing after it lands
 
+> **SANDBOX MOVED (before the /newsession):** its data folder now lives OUTSIDE the job scratch at
+> `C:\Users\cmccu\AppData\Local\Temp\claude\c--GIT-Projects-Docusnap\owner-sandbox-20260924` (userData · Output · Demo Docs · `exhibit-db-copy\`). The app was relaunched
+> from there on CDP 9223 (PID 30092, launcher 12228 at the move; if gone, find it with `Get-NetTCPConnection -LocalPort 9223`
+> or relaunch with `DOCUSNAP_USERDATA` = that `userData`). Everything under `%USERPROFILE%\.claude\jobs\68b38f39\tmp\`
+> (gate arms, sbdb copies) is job-mortal — the RESULT.md files in the repo hold the numbers.
+
 **Branch:** `feat/teach-side-overnight` · HEAD `6d3b714` (+ this handover) · origin CURRENT · migrations **215** ·
 `TEST_SWITCH_KEYS` **13** · tree clean · installer to ship `dist\ScanFinder Setup 2.0.0-r20260924-1805-fa249d1.exe`.
 **Context:** `HANDOVER_2026-09-24.md` (the day: Chris round → 7 fixes → gates → flips → onnxruntime vendored + built).
@@ -13,7 +19,7 @@ scorer zeroed the required fields → `documents.overall_confidence = 31`. The o
 reads well — issuer 90 (`letterhead_prefill+issuer_sibling_fill`), quote_number 95 (`keyword_override`), quote_date 96,
 total 95 (`✓ Value mathematically verified`), no notes — but each doc still shows **"read at 31%, below the 90% you've
 set"**, none files by itself, and File All Ready offers all 20 (its readiness classifier looks at flags/blanks, not the %).
-Screenshot `Pictures\Screenshots\Screenshot 2026-09-24 193056.png`; DB copy `%USERPROFILE%\.claude\jobs\68b38f39\tmp\osb\`.
+Screenshot `Pictures\Screenshots\Screenshot 2026-09-24 193056.png`; DB copy `C:\Users\cmccu\AppData\Local\Temp\claude\c--GIT-Projects-Docusnap\owner-sandbox-20260924\exhibit-db-copy\`.
 Workaround the owner was told: **"Reprocess 17 from Nordwind" → Full re-read** (rescores → ~94 → files), or File All Ready.
 
 ## Root cause — verified at source (`src/modules/processing/handler.js`)
@@ -83,11 +89,11 @@ Pin it.
 1. Read this + `pendingfeatures.md` (2026-09-24 entry, same content) + `docs/oracle_log.md` 2026-09-01 (Plan B C1-C7 —
    the C4 wording that is being re-ruled).
 2. gary (design vet, the `requiredMean` twin, the cap) → Oracle (re-rule C4). Front-load the facts above.
-3. Build + pins + the sandbox gate. The sandbox app is RUNNING (CDP 9223, PID 27684, launcher 27744, data folder
-   `%USERPROFILE%\.claude\jobs\68b38f39\tmp\owner-sandbox\userData`, Output `…\owner-sandbox\Output`, Demo Docs copy beside
+3. Build + pins + the sandbox gate. The sandbox app is RUNNING (CDP 9223 — see the SANDBOX MOVED note at the top; data folder
+   `C:\Users\cmccu\AppData\Local\Temp\claude\c--GIT-Projects-Docusnap\owner-sandbox-20260924\userData`, Output `C:\Users\cmccu\AppData\Local\Temp\claude\c--GIT-Projects-Docusnap\owner-sandbox-20260924\Output`, Demo Docs copy beside
    it). **A main-process change needs the sandbox RESTARTED** to load it: kill PID 27684 + 27744 (`taskkill /PID … /T /F`),
    relaunch exactly as before —
-   `$env:DOCUSNAP_USERDATA="…\owner-sandbox\userData"; Start-Process cmd -ArgumentList '/c','npm start -- --remote-debugging-port=9223' -WorkingDirectory "C:\GIT Projects\Docusnap" -WindowStyle Hidden`
+   `$env:DOCUSNAP_USERDATA="C:\Users\cmccu\AppData\Local\Temp\claude\c--GIT-Projects-Docusnap\owner-sandbox-20260924\userData"; Start-Process cmd -ArgumentList '/c','npm start -- --remote-debugging-port=9223' -WorkingDirectory "C:\GIT Projects\Docusnap" -WindowStyle Hidden`
    (the data + the owner's admin account + the 17 quotes persist; the DB is at mig 215).
 4. Tell the owner: "Quick-reprocess the Nordwind 17 again" and what to expect (each ≥ 90, then "files by itself").
 5. Commit per slice; push when asked.
@@ -98,7 +104,7 @@ Pin it.
 - Decide the DARK-vs-default question if the Oracle punts it.
 
 ## Key facts / paths
-- Sandbox DB copy of the exhibit: `%USERPROFILE%\.claude\jobs\68b38f39\tmp\osb\docusnap.db` (docs 11-24 = the quotes at
+- Sandbox DB copy of the exhibit: `C:\Users\cmccu\AppData\Local\Temp\claude\c--GIT-Projects-Docusnap\owner-sandbox-20260924\exhibit-db-copy\docusnap.db` (docs 11-24 = the quotes at
   31; doc 1 = the one that filed via `scope_sweep` at 100 after a FULL read).
 - Quick road: `handler.js` ~5535 (`quick_reprocess_enabled`, ON since mig 203) → `shardGroups.push({ reextract: true … })`
   ~5580 → per-doc merge ~3760-3830 (C4 at ~3786) → `_updateDoc` ~3824.
