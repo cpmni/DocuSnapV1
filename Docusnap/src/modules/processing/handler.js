@@ -5736,7 +5736,7 @@ function register(ctx) {
   // at accept time, through the ONE shared confirm with the INTERNAL via='auto_reprocess' (machine
   // attribution: confirmed_via + 'Auto-filed (reprocess)' username; excluded from the human
   // graduation window in trust.js; hint/template learning self-skip via the sentinel).
-  ipcMain.handle('reprocess-autocommit-accept', async () => {
+  ipcMain.handle('reprocess-autocommit-accept', async (_e, p) => {
     requireRole('admin', 'edit');
     const db = getDb();
     const licenseDenial = require('../licensing/handler').licenseDenied(db);
@@ -5745,6 +5745,17 @@ function register(ctx) {
     const offer = _reprocessOffer;
     _reprocessOffer = null;   // consume-once — a second accept files nothing
     if (!offer || !Array.isArray(offer.docIds) || !offer.docIds.length) return { ok: false, reason: 'no-offer' };
+    // CONSENT DOOR (2026-09-24, Chris round card 3; eric D3 → Oracle C13): ONE accept road serves the File-N CLICK
+    // (a consent) and the in-view countdown EXPIRY (not a consent) — the server could not tell them apart, so the
+    // expiry was ledgered as `approved` and the strip said "You filed 1" for a document the machine filed. A
+    // validated, presentation-only boolean tells them apart; the filed SET stays server-decided (the recorded
+    // offer, re-validated per doc), so neither door can widen it. Absent / non-boolean → today's path (a click).
+    // The expiry is honoured only for a single-doc offer (the countdown runs for the doc on screen alone). Its
+    // ledger event mirrors the sweep's own expiry (`self_filed`, approved:false) and the re-surface banner marks
+    // it automatic; the audit row and the DB attribution (`auto_reprocess`) are unchanged.
+    const consented = (p && typeof p.consented === 'boolean') ? p.consented : true;
+    const expiryDoor = !consented && offer.docIds.length === 1;
+    let _expiryScope = null;
     const trust = require('../../../database/modules/trust');
     const documents = require('../../../database/modules/documents');
     const reviewService = require('../review/handler').getReviewService();
@@ -5766,6 +5777,7 @@ function register(ctx) {
       for (const r of rows) allValues[r.field_key] = r.display_value ?? r.raw_value;
       const dtRow = doc.document_type_id
         ? db.prepare('SELECT * FROM document_types WHERE id = ?').get(doc.document_type_id) : null;
+      if (expiryDoor) _expiryScope = { supplier: doc.supplier_name || null, typeSlug: dtRow ? dtRow.slug : null };
       let res;
       try {
         res = await reviewService.confirm(db, actor, {
@@ -5781,9 +5793,10 @@ function register(ctx) {
       } catch (e) { res = { ok: false, code: 'ERROR', error: e && e.message }; }
       if (res && res.ok) {
         filed.push(docId);
-        // the re-surface banner is a review checkpoint (Oracle C6); approved=true — the operator
-        // clicked File N, so the banner must not call this one "automatic" (Chris r7 card 2)
-        try { _recordAutoFiled(db, docId, true); } catch {}
+        // the re-surface banner is a review checkpoint (Oracle C6); approved=true when the operator
+        // clicked File N, so the banner must not call that one "automatic" (Chris r7 card 2) — and
+        // approved=false on the countdown EXPIRY, which is not a click (2026-09-24, Oracle C13).
+        try { _recordAutoFiled(db, docId, !expiryDoor); } catch {}
       } else {
         dropped.push({ docId, reason: (res && res.code) || 'confirm-failed' });
       }
@@ -5793,11 +5806,16 @@ function register(ctx) {
       logAudit(db, { action: 'reprocess_autofiled', target_type: 'scope', outcome: 'success',
         metadata: { filed_ids: filed.join(','), dropped: dropped.map(d => `${d.docId}:${d.reason}`).join(',') } });
     } catch { /* audit is best-effort */ }
-    // B1: the post-reprocess "File N" click — approved, queue-wide (no single sender), not sweep-undoable
-    if (filed.length || dropped.length) {
+    // B1: the post-reprocess "File N" click — approved, queue-wide (no single sender), not sweep-undoable.
+    // The countdown EXPIRY (single doc, consented=false) is the machine's own decision: `self_filed`, never
+    // "You filed" (same-scope self_filed merges into the sweep chip — "15 filed themselves").
+    if (expiryDoor && filed.length) {
+      recordReviewEvent(db, { kind: 'self_filed', ids: filed, dropped, approved: false,
+        scope: _expiryScope || { supplier: null, typeSlug: null }, undo: null });
+    } else if (filed.length || dropped.length) {
       recordReviewEvent(db, { kind: 'approved', ids: filed, dropped, approved: true, scope: { supplier: null, typeSlug: null }, undo: null });
     }
-    return { ok: true, filed, dropped };
+    return { ok: true, filed, dropped, consented: !expiryDoor };
   });
 
   // ── OCR region ──────────────────────────────────────────────────────────────

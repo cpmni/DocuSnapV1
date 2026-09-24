@@ -44,9 +44,10 @@ check('the static bar copy is byte-identical', barFn.includes("reprocessed docum
       && barFn.includes('id="rab-file">✓ File ${n}</button>') && barFn.includes('id="rab-review">Review them</button>') && barFn.includes('id="rab-dismiss">Not now</button>'));
 
 console.log('2 expiry = the ONE accept road');
-check('onExpire → _acceptReprocessOffer(bar)', /onExpire: \(\) => _acceptReprocessOffer\(bar\)/.test(offerFn));
-check('the File-N click uses the same road', /rab-file'\)\?\.addEventListener\('click', \(\) => _acceptReprocessOffer\(bar\), \{ once: true \}\)/.test(barFn));
-check('the accept IPC takes NO payload (the server files only its own recorded offer)', /reprocessAutocommitAccept\(\)/.test(acceptFn) && !/reprocessAutocommitAccept\([^)]+\)/.test(acceptFn));
+check('onExpire → _acceptReprocessOffer(bar, false) — the expiry is NOT a consent (2026-09-24, Oracle C13)', /onExpire: \(\) => _acceptReprocessOffer\(bar, false\)/.test(offerFn));
+check('the File-N click uses the same road, consented', /rab-file'\)\?\.addEventListener\('click', \(\) => _acceptReprocessOffer\(bar, true\), \{ once: true \}\)/.test(barFn));
+check('the accept IPC carries NO ids — only the consent boolean (the server files only its own recorded offer)', /reprocessAutocommitAccept\(\{ consented: consented === true \}\)/.test(acceptFn) && !/reprocessAutocommitAccept\(\{[^}]*ids/.test(acceptFn));
+check('the expiry toast says the document filed ITSELF, the click toast keeps "you approved"', /filed itself after the countdown/.test(acceptFn) && /you approved/.test(acceptFn));
 check('the "you approved" toast survives on the shared road', /you approved/.test(acceptFn));
 
 console.log('3 Stop and cancel fall back to the click door');

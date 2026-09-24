@@ -288,7 +288,7 @@ contextBridge.exposeInMainWorld('docusnap', {
   getQuietRereadStatus:        ()        => ipcRenderer.invoke('get-quiet-reread-status'),
   cancelQuietReread:           (jobId)   => ipcRenderer.invoke('cancel-quiet-reread', { jobId }),
   clearRecentAutoFiled:        ()        => ipcRenderer.invoke('clear-recent-auto-filed'),
-  reprocessAutocommitAccept:   ()        => ipcRenderer.invoke('reprocess-autocommit-accept'),
+  reprocessAutocommitAccept:   (p)       => ipcRenderer.invoke('reprocess-autocommit-accept', p),   // p = { consented: boolean } (presentation only; the server files its own recorded offer)
   getAutoFileReason:           (docId)   => ipcRenderer.invoke('get-auto-file-reason', docId),
   getSplitUndoInfo:            (docId, partnerPage) => ipcRenderer.invoke('get-split-undo-info', { docId, partnerPage }),
   undoDocumentSplit:           (docId, mode, partnerPage) => ipcRenderer.invoke('undo-document-split', { docId, mode, partnerPage }),

@@ -92,25 +92,34 @@ check('a new batch clears any unconsumed offer (fail-safe overwrite)',
 {
   const a = handler.slice(handler.indexOf("ipcMain.handle('reprocess-autocommit-accept'"));
   const accept = a.slice(0, a.indexOf('ipcMain.handle(', 10));
-  check('accept IPC is PAYLOAD-LESS (server-authoritative ids)',
-        /ipcMain\.handle\('reprocess-autocommit-accept', async \(\) =>/.test(handler));
+  check('accept IPC carries NO ids — only the presentation boolean (server-authoritative ids; 2026-09-24 Oracle C13)',
+        /ipcMain\.handle\('reprocess-autocommit-accept', async \(_e, p\) =>/.test(handler)
+        && /const consented = \(p && typeof p\.consented === 'boolean'\) \? p\.consented : true;/.test(accept)
+        && !/offer\.docIds = /.test(accept) && !/p\.docIds|p\.ids/.test(accept));
+  check('the expiry door is honoured ONLY for a single-doc offer (the countdown runs for the doc on screen alone)',
+        /const expiryDoor = !consented && offer\.docIds\.length === 1;/.test(accept));
+  check('the expiry door ledgers self_filed (approved:false, the doc\'s own scope) — never "You filed"',
+        /if \(expiryDoor && filed\.length\) \{\s*recordReviewEvent\(db, \{ kind: 'self_filed', ids: filed, dropped, approved: false,/.test(accept));
+  check('the click door still ledgers approved (queue-wide, not sweep-undoable)',
+        /else if \(filed\.length \|\| dropped\.length\) \{\s*recordReviewEvent\(db, \{ kind: 'approved', ids: filed, dropped, approved: true, scope: \{ supplier: null, typeSlug: null \}, undo: null \}\);/.test(accept));
   check('accept consumes the offer once (nulled before filing)',
         /const offer = _reprocessOffer;\s*\n\s*_reprocessOffer = null;/.test(accept));
   check('accept re-checks eligibility per doc at accept time', /isAutoFileEligible\(db, doc/.test(accept));
   check('accept skips workflow-locked docs', /'pending', 'claimed'/.test(accept));
   check("accept files through the ONE shared confirm with the internal via",
         /reviewService\.confirm\(db, actor, \{[\s\S]*?\}, \{ via: 'auto_reprocess' \}\)/.test(accept));
-  check('accept records each file for the re-surface banner, marked APPROVED (Chris r7 card 2 — '
-        + 'the operator clicked File N, so the banner must not call it "automatic")',
-        /_recordAutoFiled\(db, docId, true\)/.test(accept));
+  check('accept records each file for the re-surface banner, APPROVED on the click (Chris r7 card 2 — '
+        + 'the operator clicked File N, so the banner must not call it "automatic") and automatic on the expiry',
+        /_recordAutoFiled\(db, docId, !expiryDoor\)/.test(accept));
   check('accept audits a summary row (reprocess_autofiled)', /action: 'reprocess_autofiled'/.test(accept));
 }
 
 console.log('6. the queue-wide sweep is GONE, no restore door');
 check('renderer autoCommitFullConfidence removed (name may survive in history comments only)',
       !/function autoCommitFullConfidence|autoCommitFullConfidence\(\)/.test(renderer));
-check('renderer consent bar exists and files only via the payload-less accept',
-      /showReprocessAutofileOffer/.test(renderer) && /reprocessAutocommitAccept\(\)/.test(renderer));
+check('renderer consent bar exists and files only via the id-less accept (a presentation boolean, no ids)',
+      /showReprocessAutofileOffer/.test(renderer) && /reprocessAutocommitAccept\(\{ consented: consented === true \}\)/.test(renderer)
+      && !/reprocessAutocommitAccept\(\{[^}]*ids/.test(renderer));
 check('get-auto-file-eligible IPC retired (handler)', !/ipcMain\.handle\('get-auto-file-eligible'/.test(reviewH));
 check('get-auto-file-eligible retired from preload; accept exposed',
       !/get-auto-file-eligible/.test(preload) && /reprocess-autocommit-accept/.test(preload));

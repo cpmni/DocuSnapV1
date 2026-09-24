@@ -7704,7 +7704,7 @@ async function showReprocessAutofileOffer(offerIds) {
       bar.style.display = 'none';
       const started = _startInviewCountdown({ docId: offerIds[0], fingerprint: null }, {
         source: 'reprocess',
-        onExpire: () => _acceptReprocessOffer(bar),
+        onExpire: () => _acceptReprocessOffer(bar, false),   // the expiry is NOT a consent (2026-09-24, Oracle C13)
         onStop:   () => _renderReprocessOfferBar(bar, offerIds),
         onCancel: () => { if (_rabOfferIds && _rabOfferIds[0] === offerIds[0]) _renderReprocessOfferBar(bar, offerIds); },
       });
@@ -7723,7 +7723,7 @@ function _renderReprocessOfferBar(bar, offerIds) {
     + `<button class="btn" id="rab-review">Review them</button> `
     + `<button class="btn" id="rab-dismiss">Not now</button>`;
   bar.style.display = 'block';
-  document.getElementById('rab-file')?.addEventListener('click', () => _acceptReprocessOffer(bar), { once: true });
+  document.getElementById('rab-file')?.addEventListener('click', () => _acceptReprocessOffer(bar, true), { once: true });
   document.getElementById('rab-review')?.addEventListener('click', () => {
     bar.style.display = 'none'; _rabOfferIds = null;
     _sweepFilterIds = new Set(offerIds);   // reuse the existing "Review them" queue filter
@@ -7733,18 +7733,24 @@ function _renderReprocessOfferBar(bar, offerIds) {
     bar.style.display = 'none'; _rabOfferIds = null;   // offer stays server-side; a new batch overwrites it
   }, { once: true });
 }
-// ONE accept road for both doors (the click and the countdown expiry): the accept IPC takes NO payload —
-// the server files its own recorded offer and re-validates every doc, so neither door can widen it.
-async function _acceptReprocessOffer(bar) {
+// ONE accept road for both doors (the click and the countdown expiry): the accept IPC carries NO ids — only a
+// presentation boolean saying whether the operator CONSENTED (the click) or the countdown EXPIRED (2026-09-24,
+// Oracle C13). The server files its own recorded offer and re-validates every doc, so neither door can widen it;
+// the boolean only decides the ledger kind and the toast ("you approved" vs "filed itself").
+async function _acceptReprocessOffer(bar, consented = true) {
   if (bar) bar.style.display = 'none';
   _rabOfferIds = null;
   let r = null;
-  try { r = await window.docusnap.reprocessAutocommitAccept(); } catch {}
+  try { r = await window.docusnap.reprocessAutocommitAccept({ consented: consented === true }); } catch {}
   if (r && r.ok) {
     const dropped = (r.dropped || []).length;
-    // "you approved", not "automatically" — the operator just clicked "File N" (Chris card 4).
-    showToast(`✓ Filed ${r.filed.length} document${r.filed.length === 1 ? '' : 's'} you approved`
-      + (dropped ? ` · ${dropped} left for review` : ''), r.filed.length ? 'ok' : 'warn');
+    // "you approved" only when the operator clicked "File N" (Chris card 4); the countdown expiry is the
+    // machine's decision and says so (Chris 2026-09-23 card 3: "You filed 1" for a document he never touched).
+    const n = r.filed.length;
+    const head = (r.consented === false)
+      ? `✓ ${n} document${n === 1 ? '' : 's'} filed itself after the countdown`
+      : `✓ Filed ${n} document${n === 1 ? '' : 's'} you approved`;
+    showToast(head + (dropped ? ` · ${dropped} left for review` : ''), n ? 'ok' : 'warn');
   } else {
     showToast('Nothing was filed' + (r && r.reason ? ` (${r.reason})` : '') + ' — the documents stay in the queue.', 'warn');
   }
