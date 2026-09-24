@@ -432,6 +432,9 @@ function _reconcileEnv(db) {
     // page-level word boxes on the value's row band before the re-read (extraction/slice_integrity.py). Pixels only —
     // never a value, never a note. HARD dep GLYPH_FALLBACK_ENABLED (engine env gate). DARK, byte-identical OFF.
     if (learning.getSetting(db, 'glyph_slice_integrity', 'false') === 'true') env.GLYPH_SLICE_INTEGRITY = '1';
+    // NAME_VALUE_LABEL_FLAG (mig 213, 2026-09-24): a taught name-like value that is its own label / anchor caption is
+    //   flagged + held (Stage 4.5, the mig-156 sentinel). DARK, byte-identical OFF.
+    if (learning.getSetting(db, 'name_value_label_flag', 'false') === 'true') env.NAME_VALUE_LABEL_FLAG = '1';
     // CORROB_DATE_FOLD_WIDE (mig 208, 2026-09-23, gary → Oracle SIGN-OFF-W/COND; owner-proven on the live Print
     // Tracker batch): the corroboration date fold treats a worded / month-name date ('September 30, 2026') as equal
     // to the SAME calendar date read numerically ('30-09-2026'), so the same day read two ways no longer logs a

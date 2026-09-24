@@ -12080,6 +12080,38 @@ class ExtractionEngine:
                             n_flagged += 1
                             format_anomaly_flagged = True
                             continue
+                # ── VALUE-EQUALS-LABEL guard (mig 213, DARK NAME_VALUE_LABEL_FLAG; 2026-09-24, Chris 09-23 teach
+                # round card 1; gary → Oracle SIGN-OFF-W/COND C5-C8). A taught box for an OPTIONAL name-like field
+                # drifted onto the LABEL line and the app auto-filed the word "Customer" as the customer's name
+                # (twice, at overall 100, "Checked by you"). Deterministic content-nature (applies to TAUGHT reads):
+                # the whole value equals its own field LABEL, the mapping's ANCHOR caption or a generic caption, or
+                # is a clipped ≥4-char prefix of the label/anchor (value_quality.value_is_own_label — exact equality,
+                # never containment). FLAG+HOLD: keep the value (the evidence), cap ≤69, a note of its own, and the
+                # SAME `+nonname_flag` method sentinel as mig 156 so trust.js never soft-clears the note on the
+                # optional field (zero JS change; the producers are told apart by the note text + this trace).
+                # Exempts curated/human methods + accepted_names; defers to an existing note. OFF ⇒ byte-identical.
+                if os.environ.get("NAME_VALUE_LABEL_FLAG", "0") != "0" \
+                        and value_quality.is_name_like_field(key) \
+                        and not str(data.get('validation_note') or '').strip() \
+                        and self._accept_norm(val) not in self.accepted_names:
+                    _vl_m = str(data.get('method') or '')
+                    _vl_curated = any(x in _vl_m for x in
+                                      ('template_fixed', 'override', 'fixed', 'manual', '+confirmed_adopt', '+name_snap'))
+                    if not _vl_curated:
+                        _vl_label = field_labels.get(key) or ''
+                        _vl_anchor = data.get('anchor') if isinstance(data.get('anchor'), str) else ''
+                        if value_quality.value_is_own_label(str(val), _vl_label, _vl_anchor):
+                            _vl_cap = (_vl_anchor or _vl_label or key).strip()
+                            self._t("name_value_label_flag", field=key, value=val, label=_vl_label, anchor=_vl_anchor)
+                            results[key] = {
+                                **data,
+                                'confidence':      min(data.get('confidence') or 0, 69),
+                                'validation_note': f"This reads as the label ‘{_vl_cap}’, not a name — please check the value.",
+                                'method':          f"{data.get('method') or 'unknown'}+nonname_flag",
+                            }
+                            n_flagged += 1
+                            format_anomaly_flagged = True
+                            continue
                 # Supplier-scoped format first; fall back to the doc-type-scoped one ('' supplier)
                 # so qualification works even when the supplier is never identified (document-
                 # agnostic learning). The IDENTITY fields (supplier_name/customer_name) get this

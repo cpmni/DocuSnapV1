@@ -190,6 +190,16 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   M=0, OFF md5 identity, two ON runs byte-identical; pins on drawn word geometry (clean / cut → healed / neighbour
   //   left out / next line ignored / no lines → unchanged / page-clamped).
   'glyph_slice_integrity',
+  // name_value_label_flag (mig 213, 2026-09-24, Chris 09-23 teach round card 1; gary → Oracle SIGN-OFF-W/COND C5-C8):
+  //   a name-like field whose WHOLE value is its own field label / the taught mapping's anchor caption / a generic
+  //   caption ("Customer", "Bill To", …), or a clipped ≥4-char prefix of the label, is FLAGGED + HELD (value kept,
+  //   cap ≤69, its own note, the mig-156 `+nonname_flag` sentinel so trust.js never soft-clears it). WHY: a taught
+  //   customer_name box drifted onto the label line and "Customer" auto-filed as the customer's name twice at
+  //   overall 100. Deterministic content-nature → applies to TAUGHT reads; exact equality only (never containment):
+  //   'Attention Ltd' / 'Vendor Systems' / 'Custom Joinery Ltd' are safe by construction.
+  //   ⚑ FLIP GATE (Oracle C8): realdoc 727 + Hard Set OFF byte-identical; ON: list every new hold — each must be a
+  //   caption / anchor / clip; any REAL name held = SEND BACK. Pins: test_name_value_label_flag.py.
+  'name_value_label_flag',
   // ref_confusable_confirmed_literal_disarm (mig 204) was FLIPPED ON by default at mig 206 (2026-09-22, owner
   //   "flip mig 204"): census M=0 / inert on the 700 corpus (TESTING/_measure/ref_disarm_census_20260922/), owner
   //   accepted the narrow ≥2-confirm supplier-strict auto-file lift. No longer dark — delisted here.

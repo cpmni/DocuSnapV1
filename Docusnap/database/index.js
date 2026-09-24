@@ -4286,6 +4286,21 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 212 (glyph_slice_integrity): ${e.message}`); }
   }
 
+  // mig 213 (2026-09-24, Chris 09-23 teach round card 1; gary → Oracle SIGN-OFF-W/COND C5-C8): name_value_label_flag.
+  // A taught box for an OPTIONAL name-like field (customer_name) drifted onto the LABEL line and the app auto-filed
+  // the word "Customer" as the customer's name. The engine (Stage 4.5, right after the mig-156 non-name guard) now
+  // flags + holds a name-like value that EQUALS its own field label / the mapping's anchor caption / a generic
+  // caption, or is a clipped prefix of the label (value_quality.value_is_own_label — exact equality, never
+  // containment). Value kept, cap ≤69, its own note, the mig-156 `+nonname_flag` sentinel (trust.js unchanged).
+  // DARK, seeded OFF, byte-identical off. Single-key seed (no array literal — keeps the loose seed-pin regex honest).
+  if (!applied.has(213)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('name_value_label_flag', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (213)').run();
+      console.log('JS migration 213 applied: name_value_label_flag (a taught name-like value that is its own label is flagged) seeded OFF (DARK, 1 row)');
+    } catch (e) { console.warn(`  migration 213 (name_value_label_flag): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

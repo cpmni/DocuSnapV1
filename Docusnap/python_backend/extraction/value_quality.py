@@ -341,3 +341,47 @@ def strip_name_edges(value, allowed_extra=None):
     if len(out) < 3 and len(out) < len(s.strip()):
         return value                # over-stripped a longer value — leave to the gates
     return out
+
+
+# ── value_is_own_label (2026-09-24, Chris 09-23 teach round card 1; gary → Oracle SIGN-OFF-W/COND C5-C8) ──────
+# A taught box for an OPTIONAL name-like field (customer_name) drifted onto the LABEL line and the app filed the
+# word "Customer" as the customer's name — twice, at overall 100, marked "Checked by you". No guard compared a
+# value to its own caption: the colon guard needs a trailing ':', the mig-156 guard is postcode/email/VAT/IBAN,
+# the wordness gate passes a real word. This is the missing DETERMINISTIC content-nature test (it applies to taught
+# reads — "the teach fixed the position, not the value"). EXACT whole-value equality only, after a shared
+# normalisation (NFKC, casefold, punctuation/colons stripped, whitespace collapsed): the field's own LABEL, the
+# mapping's ANCHOR text (the caption the wizard auto-detected), or a GENERIC caption. The ONE fuzzy leg is a
+# clipped read that is a ≥4-char PREFIX of the label / anchor ('Custome' of 'Customer Name') — never applied to
+# the generic list (Oracle C5), so 'Attention Ltd' / 'Vendor Systems' / 'Custom Joinery Ltd' are safe by
+# construction (C6). Distinct from keyword.value_is_caption (a vocabulary test with a NEVER-containment contract).
+_GENERIC_CAPTIONS = frozenset({
+    "customer", "client", "bill to", "ship to", "sold to", "deliver to", "delivery to", "invoice to",
+    "attention", "attn", "supplier", "vendor", "company name", "name", "customer name", "client name",
+})
+_LABEL_NORM_STRIP_RE = re.compile(r"[^0-9a-z&' ]+")
+
+
+def _label_norm(text):
+    import unicodedata
+    t = unicodedata.normalize("NFKC", str(text or "")).casefold()
+    t = _LABEL_NORM_STRIP_RE.sub(" ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def value_is_own_label(value, field_label=None, anchor_text=None):
+    """True when a name-like field's WHOLE value is its own caption (field label / mapping anchor / a generic
+    caption) or a clipped ≥4-char prefix of the label / anchor. Pure; exact-equality first, never containment."""
+    v = _label_norm(value)
+    if not v:
+        return False
+    lab = _label_norm(field_label)
+    anc = _label_norm(anchor_text)
+    if v == lab or v == anc:
+        return True
+    if v in _GENERIC_CAPTIONS:
+        return True
+    if len(v) >= 4:
+        for cap in (lab, anc):
+            if cap and len(cap) > len(v) and cap.startswith(v):
+                return True
+    return False
