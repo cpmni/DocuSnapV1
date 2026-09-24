@@ -3602,9 +3602,11 @@ function renderCleanHoldReason(el, doc) {
         + 'document (the button below) to clear it, or confirm it and it files anyway.',
       'no-template': 'this layout hasn\'t been matched to a template yet.',
       // r19 (d): the box and the page's own text disagree on a filing-critical value
+      // mig 214 (2026-09-24, Oracle C5): the same hold now covers a taught optional NAME field — say what to do about it
+      // (8 of the census's 24 catches were a box that cut the name short).
       'disagreeing-read': fieldName
-        ? `the page reads <strong>${escHtml(fieldName)}</strong> two ways — the taught box and the page's own text don't agree — so this one waits for your eye.`
-        : 'the page reads a filing detail two ways, so this one waits for your eye.',
+        ? `the page reads <strong>${escHtml(fieldName)}</strong> two ways — the taught box and the page's own text don't agree — so this one waits for your eye. If the box cut the value short, re-teach a wider box; if the box is right, just confirm.`
+        : 'the page reads a filing detail two ways, so this one waits for your eye. If the box cut the value short, re-teach a wider box; if the box is right, just confirm.',
       'no-type': 'it has no document type yet.',
       'generic-type': 'General Documents are always checked by a person before filing.',
       // The critical-floor hold (trust.js weak-critical-field): a filing-critical field was read

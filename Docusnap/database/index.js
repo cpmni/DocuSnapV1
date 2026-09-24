@@ -4301,6 +4301,20 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 213 (name_value_label_flag): ${e.message}`); }
   }
 
+  // mig 214 (2026-09-24, Chris 09-23 teach round card 1; gary Slice 2 → Oracle SIGN-OFF-W/COND C1-C7 after the census):
+  // taught_name_disagree_refuse. trust.js extends the page-family disagreement refusal (today: the ref/date roles) to a
+  // TAUGHT optional NAME-like field whose page witness (≥2 tokens, nameQuality ≥ 0.6) read a different value — the
+  // document waits for a person instead of auto-filing "Customer" / a clipped name at overall 100. JS-only (no engine
+  // env); HARD deps trust_role_disagreement_refuse + role_disagree_refuse_at100. DARK, seeded OFF, byte-identical off.
+  // Single-key seed (no array literal — keeps the loose seed-pin regex honest).
+  if (!applied.has(214)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('taught_name_disagree_refuse', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (214)').run();
+      console.log('JS migration 214 applied: taught_name_disagree_refuse (a taught optional name field whose page witness disagrees waits for a person) seeded OFF (DARK, 1 row)');
+    } catch (e) { console.warn(`  migration 214 (taught_name_disagree_refuse): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

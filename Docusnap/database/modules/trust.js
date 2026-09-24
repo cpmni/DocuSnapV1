@@ -665,6 +665,62 @@ function _roleDisagreeAt100Enabled(db) {
   try { return require('./learning').getSetting(db, 'role_disagree_refuse_at100', 'false') === 'true'; }
   catch { return false; }
 }
+// TAUGHT-NAME DISAGREEMENT REFUSAL (mig 214, DARK `taught_name_disagree_refuse`; 2026-09-24, Chris 09-23 teach round
+// card 1; gary Slice 2 → Oracle SIGN-OFF-W/COND C1-C7 after the census). The page-family disagreement refusal above
+// guards the ref/date ROLES only. A TAUGHT optional NAME-like field (customer_name) has no such checkpoint, so a box
+// that drifted onto the label line ("Customer") or clipped the name ("Larch & Hollow Cafe C") auto-filed at overall 100
+// while the page's own text had read the right name and the disagreement sat RECORDED in `corroboration`. Census on the
+// owner's 727 (TESTING/_measure/taught_name_disagree_census_20260924/RESULT.md): with the ONE extra guard below — the
+// page witness must carry ≥2 tokens (a lone `Make` / `Studio` scores a perfect nameQuality and was 5 of the 6 false
+// holds) — 24 catches, 1 false hold (`Fernbank` vs `Fembank`, an OCR misread witness: the PINNED trade-off). Consumer-
+// side tightening of which records HOLD (the `_corrobLicensedKeyword` precedent, Oracle 2026-09-07 C13) — the engine's
+// record is untouched, the taught value is never rewritten; the document waits for a person. NOT a learned-shape veto.
+// Scope (v1 = the census population): non-role, `required = 0` (an admin-REQUIRED non-role name is un-censused —
+// Oracle C1), type text/'' (multiline/list out), NAME keys only (the `address` branch of isNameLikeField is OUT — postal
+// lines vary in commas/breaks: Oracle C2), winner family `mapping` (a located taught box; template_fixed is the memory
+// family), a PAGE witness with nameQuality ≥ 0.6 AND ≥ 2 alnum-bearing tokens. No punctuation fold here (Oracle C3):
+// `_cmp_norm` already folds EDGE punctuation (`Ltd.` == `Ltd`); an INTERNAL difference (`& Company` vs `and Company`)
+// disagrees by design. HARD deps: trust_role_disagreement_refuse (else `corroboration` is not selected) and, on the
+// gate-free 100% road, role_disagree_refuse_at100. Env TAUGHT_NAME_DISAGREE_REFUSE '1'/'0' wins (the harness lever).
+function _taughtNameDisagreeEnabled(db) {
+  const env = process.env.TAUGHT_NAME_DISAGREE_REFUSE;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return require('./learning').getSetting(db, 'taught_name_disagree_refuse', 'false') === 'true'; }
+  catch { return false; }
+}
+// alnum-bearing tokens of a witness after the shared fold (`& Co` = 1, `Studio.` = 1, `Larch & Hollow Cafe` = 3)
+function _nameWitnessTokens(value) {
+  try { return require('./text_normalise').tokenise(value).filter(t => /[0-9a-z]/i.test(t)).length; }
+  catch { return 0; }
+}
+// NAME keys only — isNameLikeField minus its postal-address branch (Oracle C2)
+function _isNameOnlyKey(key, label) {
+  const hay = `${key || ''} ${label || ''}`.toLowerCase();
+  if (/address/.test(hay)) return false;
+  try { return !!require('./learning').isNameLikeField(key, label); } catch { return false; }
+}
+// ONE row predicate for BOTH disagreement sites (the at-100 roleDisagreeOnly branch and the sub-100 loop).
+// ctx = { dtRow, roleKeys, fieldTypes, requiredByKey, labelByKey, taughtNameOn }
+function _disagreeRefusesRow(e, ctx) {
+  if (!e || !('corroboration' in e)) return false;                       // harness overlay without the record → fail-open
+  const k = e.field_key;
+  if (k === ctx.dtRow.ref_field_key || k === ctx.dtRow.date_field_key) return !!_pageFamilyDisagrees(e.corroboration);   // the role leg, unchanged
+  if (!ctx.taughtNameOn) return false;
+  if (ctx.roleKeys.has(k)) return false;                                   // the issuer role is never in scope here
+  if (!ctx.requiredByKey.has(k) || Number(ctx.requiredByKey.get(k)) !== 0) return false;   // a defined, OPTIONAL field (a shadow/foreign row has no entry)
+  if (!['text', ''].includes(String(ctx.fieldTypes.get(k) || '').toLowerCase())) return false;
+  if (!_isNameOnlyKey(k, ctx.labelByKey.get(k))) return false;
+  let rec = e.corroboration;
+  if (typeof rec === 'string') { try { rec = JSON.parse(rec); } catch { return false; } }
+  if (!rec || typeof rec !== 'object' || rec.winner_family !== 'mapping') return false;
+  const hit = _pageFamilyDisagrees(rec);
+  if (!hit) return false;
+  let q = 0;
+  try { q = Number(require('./learning').nameQuality(hit.value)) || 0; } catch { q = 0; }
+  if (q < 0.6) return false;
+  return _nameWitnessTokens(hit.value) >= 2;
+}
 function _pageFamilyDisagrees(record) {
   let rec = record;
   if (typeof rec === 'string') { try { rec = JSON.parse(rec); } catch { return null; } }
@@ -1007,9 +1063,11 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
   const sup  = _norm(supplier);
   const sl   = String(slug || '').toLowerCase().trim();
   const fmts = _scopeFormats(db, sup, sl, opts.formats);
-  const _fieldRows = db.prepare('SELECT key, type, required FROM fields WHERE document_type_id = ?').all(doc.document_type_id);
+  const _fieldRows = db.prepare('SELECT key, type, required, label FROM fields WHERE document_type_id = ?').all(doc.document_type_id);
   const fieldTypes = new Map(_fieldRows.map(r => [r.key, r.type]));
   const _requiredByKey = new Map(_fieldRows.map(r => [r.key, r.required]));   // for the soft-advisory note check (opts.softOptionalNonblock)
+  const _labelByKey = new Map(_fieldRows.map(r => [r.key, r.label]));         // for the taught-name disagreement scope (mig 214: isNameLikeField(key, label) parity with the census)
+  const _taughtNameOn = (opts.taughtNameDisagreeRefuse !== undefined) ? !!opts.taughtNameDisagreeRefuse : _taughtNameDisagreeEnabled(db);
   // extraction_method is selected for the SHADOW-ROW skip below. It is also the field the two
   // harness overlays (stress_test/realdoc_regression.js, services/sweepPredicate.js) were missing,
   // which would have made the gate for that skip VACUOUSLY GREEN — they now thread it too.
@@ -1056,11 +1114,14 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
   // the ref/date roles for an independent PAGE family that read a DIFFERENT value and refuse; everything
   // else files exactly as the gate-free 100% path does today. Inert unless _roleDisagreeOn (then the exs
   // query above carries `corroboration`). Returns early — never touches the strict/shape/note loop below.
+  // mig 214 (taught_name_disagree_refuse, DARK): the SAME row predicate also refuses a TAUGHT optional NAME field whose
+  // page witness disagrees (see _disagreeRefusesRow) — the branch keeps its name and return shape; with the switch OFF
+  // the predicate reduces to the ref/date test above, byte-identical (pinned).
+  const _disagreeCtx = { dtRow: _dtRow, roleKeys, fieldTypes, requiredByKey: _requiredByKey, labelByKey: _labelByKey, taughtNameOn: _taughtNameOn };
   if (opts.roleDisagreeOnly) {
     if (_roleDisagreeOn) {
       for (const e of exs) {
-        if ((e.field_key === _dtRow.ref_field_key || e.field_key === _dtRow.date_field_key)
-            && 'corroboration' in e && _pageFamilyDisagrees(e.corroboration))
+        if (_disagreeRefusesRow(e, _disagreeCtx))
           return { ok: false, reason: `disagreeing-read:${e.field_key}` };
       }
     }
@@ -1079,8 +1140,8 @@ function docTrustGate(db, docId, supplier, slug, opts = {}) {
     }
     // r19 (d): a filing-critical role read that an independent page family contradicts never files
     // by itself — the page said something else; a person decides which.
-    if (_roleDisagreeOn && (e.field_key === _dtRow.ref_field_key || e.field_key === _dtRow.date_field_key)
-        && 'corroboration' in e && _pageFamilyDisagrees(e.corroboration))
+    // (+ mig 214: a taught optional NAME field whose page witness disagrees — the same predicate, DARK.)
+    if (_roleDisagreeOn && _disagreeRefusesRow(e, _disagreeCtx))
       return { ok: false, reason: `disagreeing-read:${e.field_key}` };
     // SHADOW-ROW SKIP (see _shadowRowSkipEnabled). Deliberately AFTER the note check above: a
     // flagged shadow row still blocks. A row that is VISIBLE to the operator — a defined field of
@@ -1472,10 +1533,11 @@ function autoFileEligibleIds(db, docs, opts = {}) {
   const roleDominant = (opts.roleDominant !== undefined) ? !!opts.roleDominant : _roleDominantEnabled(db);
   const roleDisagreementRefuse = (opts.roleDisagreementRefuse !== undefined) ? !!opts.roleDisagreementRefuse : _roleDisagreementRefuseEnabled(db);   // r19 (d)
   const roleDisagreeAt100 = (opts.roleDisagreeAt100 !== undefined) ? !!opts.roleDisagreeAt100 : _roleDisagreeAt100Enabled(db);   // M=2 belt (mig 152)
+  const taughtNameDisagreeRefuse = (opts.taughtNameDisagreeRefuse !== undefined) ? !!opts.taughtNameDisagreeRefuse : _taughtNameDisagreeEnabled(db);   // mig 214 (Oracle C4: read once per batch)
   const refRoleShape = (opts.refRoleShape !== undefined) ? !!opts.refRoleShape : _refRoleShapeEnabled(db);   // ref-role shape verify (mig 154)
   const ids = [];
   for (const d of (docs || [])) {
-    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile, gateUnify, critFieldCorrobRelax, vacuousCorrectedToIgnore, roleDominant, roleDisagreementRefuse, roleDisagreeAt100, refRoleShape }).eligible) ids.push(d.id);
+    if (isAutoFileEligible(db, d, { ...opts, formats, gradOn, optOut, shadowRowSkip, corrobAutoFile, gateUnify, critFieldCorrobRelax, vacuousCorrectedToIgnore, roleDominant, roleDisagreementRefuse, roleDisagreeAt100, refRoleShape, taughtNameDisagreeRefuse }).eligible) ids.push(d.id);
   }
   return ids;
 }
@@ -1545,6 +1607,7 @@ module.exports = {
   _corrobLicensedKeyword,          // its keyword-witness tightening (rereadHolds corrob release; test_reread_holds_corrob_release.js)
   _critFieldCorrobRelaxEnabled, _vacuousCorrectedToIgnore,   // exported so pins can't drift from the default
   _roleDisagreementRefuseEnabled, _pageFamilyDisagrees,      // r19 (d): the role-field disagreement refusal
+  _taughtNameDisagreeEnabled, _nameWitnessTokens, _isNameOnlyKey, _disagreeRefusesRow,   // mig 214 (DARK): the taught-name leg — pinned in test_taught_name_disagree_refuse.js
   _companyKeyOwnScopeEnabled, _scopeFormats,                 // r19 N2: a company key verifies only against its own scope
   validDate: _validDate, validIban: _validIban, validVatGb: _validVatGb,
   currencyDpConsistent: _currencyDpConsistent, currencyConsistentForField: _currencyConsistentForField, matchesTypePattern: _matchesTypePattern,

@@ -34,6 +34,12 @@ check("'17/12/2026' vs '17-12-2026' agree (the artefact)", E._corrob_values_agre
 check("'1/2/2026' vs '01-02-2026' agree (padding)", E._corrob_values_agree('1/2/2026', '01-02-2026'))
 check("'12/10/2026' vs '02-10-2026' DISAGREE (the real r19 case: keyword right, box wrong)", not E._corrob_values_agree('12/10/2026', '02-10-2026'))
 check("non-dates keep the token normaliser: '6 102' == '6102'", E._corrob_values_agree('6 102', '6102'))
+# mig 214 reliance (Oracle C3, 2026-09-24): the taught-name disagreement refusal in trust.js does NO punctuation fold of
+# its own — it relies on this record. EDGE punctuation is already folded by the shared normaliser (`Ltd.` == `Ltd`);
+# an INTERNAL difference (`& Company` vs `and Company`) is a real disagreement by design (documented trade-off).
+check("names: 'Ashcombe Care Homes Ltd.' == 'Ashcombe Care Homes Ltd' (edge punctuation folded)", E._corrob_values_agree('Ashcombe Care Homes Ltd.', 'Ashcombe Care Homes Ltd'))
+check("names: 'Harvey & Company' vs 'Harvey and Company' DISAGREE (internal difference, by design)", not E._corrob_values_agree('Harvey & Company', 'Harvey and Company'))
+check("names: 'Fernbank Veterinary Clinic' vs 'Fembank Veterinary Clinic' DISAGREE (the pinned trade-off: no rn->m fold)", not E._corrob_values_agree('Fernbank Veterinary Clinic', 'Fembank Veterinary Clinic'))
 check("non-dates: 'INV-1' != 'INV-2'", not E._corrob_values_agree('INV-1', 'INV-2'))
 check("a date vs a non-date never folds", not E._corrob_values_agree('17/12/2026', 'INV-1712'))
 os.environ['FIELD_CORROBORATION_DATE_FOLD'] = '0'

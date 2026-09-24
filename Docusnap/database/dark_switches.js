@@ -200,6 +200,18 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   ⚑ FLIP GATE (Oracle C8): realdoc 727 + Hard Set OFF byte-identical; ON: list every new hold — each must be a
   //   caption / anchor / clip; any REAL name held = SEND BACK. Pins: test_name_value_label_flag.py.
   'name_value_label_flag',
+  // taught_name_disagree_refuse (mig 214, 2026-09-24, Chris 09-23 teach round card 1; gary Slice 2 → Oracle SIGN-OFF-
+  //   W/COND C1-C7 after the census): trust.js extends the ref/date page-family disagreement refusal to a TAUGHT
+  //   optional NAME field (customer_name: non-role, required 0, text, a located `mapping` winner) whose page witness
+  //   read a different name — witness nameQuality ≥ 0.6 AND ≥ 2 tokens (the census's decisive guard: a lone `Make` /
+  //   `Studio` witness was 5 of 6 false holds). Held with `disagreeing-read:<key>` for a person; the value is never
+  //   rewritten. JS-only. HARD deps trust_role_disagreement_refuse + role_disagree_refuse_at100 (both ON by default).
+  //   ⚑ FLIP GATE (Oracle): the JS-twin census (`TESTING/_measure/taught_name_disagree_census_20260924/census_js.js`)
+  //   must reproduce the 25 (24 catches + the pinned `Fembank` false hold) on the 727 copy and 6/6 on Chris's
+  //   sandbox with `Make`×4 / `Studio` absent; realdoc 727 + Hard Set + sandbox OFF/ON extraction md5-identical, M=0,
+  //   wouldFile(ON) ⊆ wouldFile(OFF), every lost filer box-wrong or the Fembank class; C7 FLOOD table by (supplier,
+  //   field): any group ≥3 human-confirmed-as-is with the same witness shape = NO-GO until a scope breaker exists.
+  'taught_name_disagree_refuse',
   // ref_confusable_confirmed_literal_disarm (mig 204) was FLIPPED ON by default at mig 206 (2026-09-22, owner
   //   "flip mig 204"): census M=0 / inert on the 700 corpus (TESTING/_measure/ref_disarm_census_20260922/), owner
   //   accepted the narrow ≥2-confirm supplier-strict auto-file lift. No longer dark — delisted here.
