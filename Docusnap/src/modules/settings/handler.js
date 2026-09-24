@@ -143,9 +143,15 @@ function register(ctx) {
 
   // ── Fields ──────────────────────────────────────────────────────────────────
   // Stage 5a: schema mutations are audited (field add/update/delete change what every future doc extracts).
-  ipcMain.handle('add-field',    (_e, data)    => { requireRole('admin'); const r = doctypes.addField(getDb(), data); logAudit(getDb(), { action: 'field_added', action_category: 'settings', target_type: 'field', target_id: String((data && data.key) || ''), outcome: 'success', metadata: { document_type_id: data && data.document_type_id } }); return r; });
-  ipcMain.handle('update-field', (_e, id, ch)  => { requireRole('admin'); const r = doctypes.updateField(getDb(), id, ch); logAudit(getDb(), { action: 'field_updated', action_category: 'settings', target_type: 'field', target_id: String(id), outcome: 'success' }); return r; });
-  ipcMain.handle('delete-field', (_e, id)      => { requireRole('admin'); const r = doctypes.deleteField(getDb(), id); logAudit(getDb(), { action: 'field_deleted', action_category: 'settings', target_type: 'field', target_id: String(id), outcome: 'success' }); return r; });
+  // FIELD BROADCAST (2026-09-24, Chris round card 2c, eric D1 -> Oracle C11): a field added / changed / deleted
+  // through these doors (the Teach wizard's "Edit this type..." uses add-field via the shared doctype-editor) must
+  // reach every OPEN window the same way a type create does - the Review window keeps its field list from the
+  // last `doc-types-changed`, so without this a field taught mid-session was never drawn, the Confirm DOM scrape
+  // omitted it and the sidecar lost it (the customer's Total). Broadcast on SUCCESS only: a throw propagates
+  // before this line, and a no-op mutator result (structural field / empty change set -> undefined) stays silent.
+  ipcMain.handle('add-field',    (_e, data)    => { requireRole('admin'); const r = doctypes.addField(getDb(), data); logAudit(getDb(), { action: 'field_added', action_category: 'settings', target_type: 'field', target_id: String((data && data.key) || ''), outcome: 'success', metadata: { document_type_id: data && data.document_type_id } }); if (r) notifyAllWindows('doc-types-changed'); return r; });
+  ipcMain.handle('update-field', (_e, id, ch)  => { requireRole('admin'); const r = doctypes.updateField(getDb(), id, ch); logAudit(getDb(), { action: 'field_updated', action_category: 'settings', target_type: 'field', target_id: String(id), outcome: 'success' }); if (r) notifyAllWindows('doc-types-changed'); return r; });
+  ipcMain.handle('delete-field', (_e, id)      => { requireRole('admin'); const r = doctypes.deleteField(getDb(), id); logAudit(getDb(), { action: 'field_deleted', action_category: 'settings', target_type: 'field', target_id: String(id), outcome: 'success' }); if (r) notifyAllWindows('doc-types-changed'); return r; });
 
   // ── Learning Recovery ────────────────────────────────────────────────────────
   // Small inspection/cleanup surface for the automatic-learning corpora
