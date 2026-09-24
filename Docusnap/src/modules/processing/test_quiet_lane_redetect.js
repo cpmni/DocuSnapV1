@@ -125,8 +125,13 @@ const waitDone = async (ms = 1500) => { const t0 = Date.now(); while (Date.now()
     const ids = stagedIds();
     check('NULL-typed and Generic-typed held docs are re-read', ids.includes(dNull) && ids.includes(dGen), JSON.stringify(ids));
     check('a REAL-typed doc is NOT in the untyped population (pinned: never "re-type everything")', !ids.includes(dReal));
-    check('templated / deferred / workflow-locked / lane-noted / no-text / viewed docs are excluded',
-          ![dTpl, dDef, dLock, dNoted, dNoText, dView].some(x => ids.includes(x)), JSON.stringify(ids));
+    check('templated / deferred / workflow-locked / no-text / viewed docs are excluded',
+          ![dTpl, dDef, dLock, dNoText, dView].some(x => ids.includes(x)), JSON.stringify(ids));
+    // Chris 2026-09-24 card 3: an UNTYPED doc carrying a "— confirm once." note (the engine's straighten note from
+    // import) was never asked anything by the lane — it IS re-typed by the untyped job (7 of 98 were left behind).
+    check('PIN: an untyped doc with a confirm-once note IS re-read by the untyped job', ids.includes(dNoted), JSON.stringify(ids));
+    check('the job_done event names the doc that was left alone because it was open (card 1)',
+          events.some(e => e.type === 'job_done' && Array.isArray(e.viewing) && e.viewing.includes(dView)), JSON.stringify(events.filter(e => e.type === 'job_done')));
     check('an OCR-cache-unusable doc is SKIPPED and counted, never staged (pinned: no background Full)',
           !ids.includes(dNoCache) && /no-cache:no-recipe-stamp/.test(String((lastAudit() || {}).metadata.skipped || '')), JSON.stringify((lastAudit() || {}).metadata));
     console.log('\n3. the imageless road + the staging flags');
@@ -196,17 +201,19 @@ const waitDone = async (ms = 1500) => { const t0 = Date.now(); while (Date.now()
     const q1 = mk({ type: 4 });                                      // a typed, template-less held quote
     const inv = mk({ type: 1 });                                     // another type: not in the quote override's population
     const n0 = mk({ type: null });                                   // untyped: not in a TYPED override job
+    const qNoted = mk({ type: 4 }); note(qNoted, 'quote_number', 'Read differently after learning — was X, now Y');   // already asked by the lane: the override job leaves it to the human
     applyHook = (docId) => { db.prepare("INSERT INTO extractions (document_id, field_key, raw_value, display_value, confidence, extraction_method) VALUES (?, 'supplier_name', 'Nordwind', 'Nordwind', 90, 'keyword_override')").run(docId); };
     check('schedule({redetect, typeSlug quote, overrideKey supplier_name}) → true', lane.schedule(db, { redetect: true, typeSlug: 'quote', overrideKey: 'supplier_name', reason: 'override' }) === true);
     check('the job key is <slug>|redetect', lane.status().queued.some(j => j.kind === 'redetect' && j.typeSlug === 'quote'));
     check('the run finished', await waitDone());
     const ids = stagedIds();
     check('the typed template-less quote is re-read; other types and untyped docs are not', ids.includes(q1) && !ids.includes(inv) && !ids.includes(n0), JSON.stringify(ids));
+    check('a typed doc the lane already asked about (lane note) is NOT re-read by the override job (the A1 seam stays for typed docs)', !ids.includes(qNoted), JSON.stringify(ids));
     const rowNote = String((db.prepare("SELECT validation_note FROM extractions WHERE document_id = ? AND field_key = 'supplier_name'").get(q1) || {}).validation_note || '');
     check('C5: the identity first-fill carries the "— confirm once." family note', /Read from the label you added — confirm once\./.test(rowNote), rowNote);
     check('an override needs a type (no slug → refused)', lane.schedule(db, { redetect: true, overrideKey: 'supplier_name' }) === false);
     applyHook = null;
-    for (const x of [q1, inv, n0]) db.prepare('DELETE FROM documents WHERE id = ?').run(x);
+    for (const x of [q1, inv, n0, qNoted]) db.prepare('DELETE FROM documents WHERE id = ?').run(x);
   }
 
   console.log('\n9. the cap + 10. ordering by detected_type_name');

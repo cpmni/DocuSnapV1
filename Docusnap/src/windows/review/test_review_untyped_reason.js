@@ -54,8 +54,12 @@ check('it only speaks for docs actually WAITING (needs_review / deferred)',
       /!doc\.document_type_id && \(doc\.status === 'needs_review' \|\| doc\.status === 'deferred'\)/.test(body));
 check('it returns, so the threshold copy cannot also run',
       idxNoType > -1 && body.slice(idxNoType, idxLowN).includes('return;'));
-check('it states that the threshold is NOT the lever (the false-advice correction)',
-      /never file itself automatically, whatever the confidence setting/.test(body));
+check('it states that the threshold is NOT the lever (the false-advice correction)',   // wording plain-Englished 2026-09-24 (Chris card 7): "confidence setting" → "automatic-filing level"
+      /never file itself automatically, (whatever the confidence setting|however the automatic-filing level is set)/.test(body));
+check('Chris 2026-09-24 card 2: when the detected name is ALREADY an installed type the notice offers to READ it as that type, never "Add"',
+      /const installedDet = detName \? _installedTypeNamed\(detName\) : null;/.test(body)
+      && /Read it as a \$\{escHtml\(installedDet\.name\)\}/.test(body)
+      && /installedDet && isAdmin\s*\n?\s*\? `<div class="rr-hint"><button/.test(body));
 
 console.log('\nvalidateConfirm — the no-type dead end:');
 const vc = renderer.slice(renderer.indexOf('function validateConfirm'));

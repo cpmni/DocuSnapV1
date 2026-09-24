@@ -7,7 +7,7 @@
  * less than creating one in Settings. The type EDITOR was already shared (`doctype-editor.js`), so
  * fields and structural roles were identical — what was missing is everything AROUND it, and the
  * catalog is the headline: in Settings you can tick "Sales Invoice, Credit Note, Statement" and get
- * each one complete with its fields and its likely printed labels, so extraction has a head start
+ * each one complete with its fields and its likely printed labels, so it knows what to look for
  * before anything is taught. In the wizard you had to build the type by hand, field by field, at
  * the exact moment you are least in the mood for it — you are mid-teach, holding a document.
  *
@@ -68,7 +68,7 @@
         <div style="font-size:13px; font-weight:600;">Add document types from catalog</div>
         <div style="font-size:11px; color:var(--muted); line-height:1.6;">
           Tick the document types your business uses. Each one is added with its fields and likely
-          labels, so extraction has a head start before you teach anything.</div>
+          labels, so it knows what to look for before you teach anything.</div>
         <div id="cat-rows" style="overflow-y:auto; border:1px solid var(--border); border-radius:8px;
              padding:4px; flex:1; min-height:120px;">${rows}</div>
         <div style="display:flex; gap:8px;">

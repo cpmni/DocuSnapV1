@@ -161,7 +161,7 @@ function create(deps) {
     if (!job) {
       job = { id: `q${++_seq}`, key, kind: REDETECT_REASON, quick: true, scopeless: true, supplier: '', typeSlug: overrideKey ? slug : '',
               typeSlugs: new Set(), overrideKeys: new Set(), reason: REDETECT_REASON, reasons: new Set(), state: 'queued', total: 0, seedDocId: null,
-              remaining: null, done: [], dropped: [], skipped: [], capped: 0, failed: 0, changed: [], rerun: false, cancelled: false, timer: null,
+              remaining: null, done: [], dropped: [], skipped: [], skippedViewing: [], capped: 0, failed: 0, changed: [], rerun: false, cancelled: false, timer: null,
               layoutArm: null, readyArm: null, holdsBatch: _holds.newBatch() };
       jobs.set(key, job);
     }
@@ -251,6 +251,7 @@ function create(deps) {
   // operator's own Quick reprocess stays the self-heal road for those. Capped at REDETECT_CAP; the
   // remainder is counted and picked up by the next event.
   function _redetectCandidates(db, job) {
+    job.skippedViewing = [];   // per pass (a rerun recomputes)
     const gid = (() => { try { const g = genericTypeId ? genericTypeId(db) : null; return g == null ? -1 : Number(g); } catch { return -1; } })();
     const noteSql = `
          AND NOT EXISTS (SELECT 1 FROM extractions e WHERE e.document_id = d.id
@@ -258,6 +259,7 @@ function create(deps) {
                              OR e.validation_note LIKE '%— confirm once.%'))`;
     let rows = [];
     if (job.typeSlug) {
+      // OVERRIDE job (typed docs): a doc the lane has already asked about keeps its lane-hold exclusion (the A1 seam).
       const dt = db.prepare('SELECT id FROM document_types WHERE LOWER(slug) = ?').get(job.typeSlug);
       if (!dt) return [];
       rows = db.prepare(`
@@ -269,6 +271,10 @@ function create(deps) {
            AND d.ocr_text IS NOT NULL AND TRIM(d.ocr_text) <> ''${noteSql}
          ORDER BY d.id DESC`).all(dt.id);
     } else {
+      // UNTYPED job: NO lane-note exclusion. An untyped doc was never "asked" by the lane — but the engine's own
+      // "Found 'X' after straightening — confirm once." (the deskew retry at import) is a member of the confirm-once
+      // family, and it excluded 7 of Chris's 98 unrecognised papers from the very pass that would have typed them
+      // (2026-09-24 card 3). A re-type re-derives every hold honestly (S3-C5 + the reliability first-fill hold).
       const names = job.typeSlugs.size
         ? db.prepare(`SELECT LOWER(name) AS n FROM document_types WHERE LOWER(slug) IN (${[...job.typeSlugs].map(() => '?').join(',')})`).all(...job.typeSlugs).map(r => r.n)
         : [];
@@ -278,14 +284,15 @@ function create(deps) {
            AND d.template_id IS NULL
            AND (d.document_type_id IS NULL OR d.document_type_id = ?)
            AND COALESCE(d.workflow_status, '') NOT IN ('pending', 'claimed')
-           AND d.ocr_text IS NOT NULL AND TRIM(d.ocr_text) <> ''${noteSql}
+           AND d.ocr_text IS NOT NULL AND TRIM(d.ocr_text) <> ''
          ORDER BY d.id DESC`).all(gid)
         .map(r => ({ ...r, pri: names.includes(r.dtn) ? 1 : 0 }))
         .sort((a, b) => (b.pri - a.pri) || (b.id - a.id));
     }
     const out = [];
     for (const r of rows) {
-      if (presence.viewers(r.id).length) continue;
+      // a doc being viewed is never touched — remember it so the Review window can tell the person (card 1)
+      if (presence.viewers(r.id).length) { job.skippedViewing.push(r.id); continue; }
       if (out.length >= REDETECT_CAP) { job.capped++; continue; }
       let v = { usable: true, reason: 'ok' };
       // allowBornDigital: a text-layer doc is exactly what a text-only redetect wants (the handler dep re-asks the batch
@@ -646,7 +653,8 @@ function create(deps) {
     } catch { /* best-effort */ }
     notify({ type: 'job_done', jobId: job.id, supplier: job.supplier, typeSlug: job.typeSlug, kind: job.kind || 'scoped',
              done: job.done.length, dropped: job.dropped.length, failed: job.failed, changed: job.changed.length,
-             skipped: (job.skipped || []).length, capped: job.capped || 0 });
+             skipped: (job.skipped || []).length, capped: job.capped || 0,
+             viewing: (job.skippedViewing || []).slice() });   // the docs left alone because someone had them open (card 1: the window says so)
     // The ONLY filing door: the sweep (offer bar, or the scope-local auto-accept when it is on). A scope-less
     // redetect fans out NO auto-accept (Oracle decision 1, 2026-09-24): a text-only pass recognises; the next human
     // confirm's scope sweep — and the queue-wide consent bar the renderer re-runs on job_done — decide filing.

@@ -2528,9 +2528,14 @@ function renderNotRecognisedList() {
   // Header + the ONE bulk action.
   const head = document.createElement('div');
   head.style.cssText = 'padding:8px 10px; font-size:12px; color:var(--muted); display:flex; align-items:center; gap:10px; justify-content:space-between; border-bottom:1px solid var(--border);';
+  // Chris 2026-09-24 card 8: in the narrow queue column this label wrapped into a 7-line sliver beside the button;
+  // let the header wrap so the sentence takes the full width and the button sits under it. Copy names what the tab
+  // actually means (the SENDER could not be identified — a typed-but-sender-less paper lands here; a paper with a
+  // sender but no type stays in the main list).
+  head.style.flexWrap = 'wrap';
   const lbl = document.createElement('span');
-  lbl.style.cssText = 'flex:1; min-width:0;';
-  lbl.textContent = 'Documents we couldn’t identify. Open one to choose its type or teach it.';
+  lbl.style.cssText = 'flex:1 1 100%; min-width:0; line-height:1.35;';
+  lbl.textContent = 'The sender of these documents couldn’t be identified. Open one to choose its type or teach it.';
   head.appendChild(lbl);
   const setAside = document.createElement('button');
   setAside.className = 'qi-btn';
@@ -3654,8 +3659,9 @@ function renderCleanHoldReason(el, doc) {
       ? `The Document Issuer box is still empty — an empty box pulls the overall score down. `
         // "you've set" blamed the operator for a DEFAULT they never chose (Chris round 9).
         + `Read at ${conf}%, below the ${thr}% needed to file without a check, so it's waiting for you.`
-      : `Nothing was flagged — this was read at ${conf}%, ${thr - conf <= 5 ? 'just below' : 'below'} the ${thr}% you've set for `
-        + 'filing without a check, so it\'s waiting for you.';
+      // Chris 2026-09-24 card 6: "you've set" on THIS branch too — the level is a default they may never have touched.
+      : `Nothing was flagged — this was read at ${conf}%, ${thr - conf <= 5 ? 'just below' : 'below'} the ${thr}% level for `
+        + 'filing without a check (Settings → Processing), so it\'s waiting for you.';
     cue  = `Read at ${conf}% · your setting ${thr}%`;
     // Chris r13 card 6: a doc with an EMPTY required field (date/reference) can't be filed by
     // any bar — pointing at the threshold sends the user to a setting that cannot help.
@@ -3676,7 +3682,9 @@ function renderCleanHoldReason(el, doc) {
       && (!doc.type_slug || !r.slug || r.slug === doc.type_slug));
     if (_senderGraduated && !_issuerEmpty && !_missingReq.length) {
       hint = 'Other documents from this sender now file themselves — this one was read before that. '
-           + 'Press Reprocess (below, under “This document”) to re-read it, and it should file too.';
+           // Chris 2026-09-24 card 6: a single Reprocess never files by itself (only Reprocess-all's consent road
+           // does) — promise what actually happens: it is offered in File All Ready when it reads clean.
+           + 'Press Reprocess (below, under “This document”) to re-read it — if it reads clean it will be offered in File All Ready.';
     }
   } else {
     lead = 'Nothing was flagged on this document — check the values and confirm to file it.';
@@ -3797,6 +3805,15 @@ function _showJoinConfirm(partnerPage, pages) {
 // Safe by construction: reprocess forces status='needs_review' (processing/handler.js) and
 // _maybeAutoFile has exactly ONE call site — the import file_done path — so nothing here can file
 // a document. The human checkpoint stays put.
+// Chris 2026-09-24 card 2: the detected name can ALREADY be an installed type — the stamp is cleared only by a
+// re-read, so a doc that was never re-read after the type arrived (e.g. one the quiet redetect could not take)
+// still says "Add 'Statement'" an inch under a dropdown that lists Statement, and pressing it fell through to
+// "create a new type" (the catalog lookup hides already-present presets). Resolve the installed type FIRST.
+function _installedTypeNamed(detName) {
+  const want = String(detName || '').trim().toLowerCase();
+  if (!want) return null;
+  return (allDocTypes || []).find(t => t && String(t.name || '').trim().toLowerCase() === want) || null;
+}
 async function _addDetectedType(detName) {
   if (!detName || !isAdmin) return;
   const afterAdd = () => {
@@ -3806,6 +3823,17 @@ async function _addDetectedType(detName) {
     // the grouped-template path).
     document.getElementById('btn-reprocess')?.click();
   };
+  const installed = _installedTypeNamed(detName);
+  if (installed) {
+    // The type exists: apply it to THIS document and re-read it (the same road the add-then-reprocess tail takes).
+    showToast(`“${installed.name}” is already set up — reading this document again as a ${installed.name}…`, 'ok');
+    try {
+      const sel = document.getElementById('doctype-select');   // value = the type SLUG (the change handler sets selectedTypeSlug)
+      if (sel && installed.slug && String(sel.value) !== String(installed.slug)) { sel.value = String(installed.slug); sel.dispatchEvent(new Event('change', { bubbles: true })); }
+    } catch {}
+    document.getElementById('btn-reprocess')?.click();
+    return;
+  }
   let catalog = [];
   try { catalog = await window.docusnap.getDoctypeCatalog(); } catch { catalog = []; }
   const preset = (Array.isArray(catalog) ? catalog : [])
@@ -3858,20 +3886,31 @@ function renderReviewReason(doc) {
     // and offer to add it. The BRANCH above does not depend on this — an untyped doc with no
     // detected name still gets the correction, which is the common case.
     const detName = (doc.detected_type_name || '').trim();
+    // Chris 2026-09-24 card 2: the detected name may ALREADY be an installed type (the stamp is only cleared by a
+    // re-read; a doc the quiet redetect could not take keeps it). Say the truth and offer to APPLY it, never "Add".
+    const installedDet = detName ? _installedTypeNamed(detName) : null;
     el.classList.add('rr-calm');
     el.innerHTML =
         `<div class="rr-lead">`
-      + (detName
+      + (installedDet
+          ? `This looks like a <strong>${escHtml(installedDet.name)}</strong> — that type is set up, but this `
+            + `document was read before it existed, so it hasn't been given a type yet and can't be filed.`
+          : detName
           ? `This looks like a <strong>${escHtml(detName)}</strong>, but you don't have that `
             + `document type yet — so it can't be filed, and it will never file itself `
-            + `automatically, whatever the confidence setting.`
+            + `automatically, however the automatic-filing level is set.`
           : `This document doesn't have a document type yet, so it can't be filed — and it will `
-            + `never file itself automatically, whatever the confidence setting.`)
+            + `never file itself automatically, however the automatic-filing level is set.`)
       + `</div>`
       + `<div class="rr-cues"><span class="rr-cue info">`
-      + (detName ? `${escHtml(detName)} · not set up` : 'No document type')
+      + (installedDet ? `${escHtml(installedDet.name)} · not applied yet` : detName ? `${escHtml(detName)} · not set up` : 'No document type')
       + `</span></div>`
-      + (detName && isAdmin
+      + (installedDet && isAdmin
+          ? `<div class="rr-hint"><button type="button" class="btn btn-sm" id="rr-add-type">`
+            + `Read it as a ${escHtml(installedDet.name)}</button> — or choose a type above.</div>`
+          : installedDet
+          ? `<div class="rr-hint">Choose “${escHtml(installedDet.name)}” above, then press Reprocess.</div>`
+          : detName && isAdmin
           ? `<div class="rr-hint"><button type="button" class="btn btn-sm" id="rr-add-type">`
             + `Add “${escHtml(detName)}”</button> — or choose an existing type above.</div>`
           : detName
@@ -10432,7 +10471,27 @@ window.docusnap.onQuietReprocess?.(async (ev) => {
   if (ev.type === 'job_start')    { j.supplier = ev.supplier || j.supplier; j.total = ev.total || 0; j.done = ev.done || 0; j.state = 'running'; if (ev.reason) j.reason = ev.reason; if (ev.kind) j.kind = ev.kind; if (Array.isArray(ev.typeSlugs)) j.typeSlugs = ev.typeSlugs; if (ev.ready) j.ready = true; }   // r20 card 5: the hint names the real trigger; ready → the autofile-check bar
   if (ev.type === 'doc_done')     { j.done = ev.done ?? (j.done + 1); j.total = ev.total || j.total; _quietRefreshList(); }
   if (ev.type === 'job_deferred') { j.state = 'deferred'; }
-  if (ev.type === 'job_done')     { j.state = 'done'; _quietJobs.delete(ev.jobId); _renderQuietHint(); _renderAutofileCheckBar(); try { await _deferOrRefresh(); } catch {} try { await _runQueueSweep({ via: 'quiet' }); } catch {} return; }
+  if (ev.type === 'job_done')     {
+    j.state = 'done'; _quietJobs.delete(ev.jobId); _renderQuietHint(); _renderAutofileCheckBar();
+    if (ev.kind === 'redetect') {
+      // Chris 2026-09-24 card 1 ("the window I'm looking at shows the OLD reading while the pile sorts itself"): a
+      // redetect is the direct consequence of something the user just did (added a type / saved a keyword), so its
+      // completion is a RECEIPT, not chatter — refresh the list at once (the open document's pane is never touched:
+      // the lane skipped anything being viewed) and say what happened. If the open document was one of the skipped
+      // ones, say that too, with the one action that applies it.
+      const n = Number(ev.done || 0), sk = Number(ev.skipped || 0);
+      const what = Array.isArray(j.typeSlugs) && j.typeSlugs.length ? ` after you added ${j.typeSlugs.join(', ')}` : '';
+      const openSkipped = !!(currentDoc && Array.isArray(ev.viewing) && ev.viewing.includes(currentDoc.id));
+      try { await _refreshQueueFromBroadcast(); } catch {}
+      try {
+        if (n > 0) showToast(`Re-read ${n} document${n === 1 ? '' : 's'}${what} — the list has been refreshed.${openSkipped ? ' The document you have open was left as it was while you had it open — press Reprocess to apply it there too.' : ''}${sk ? ` ${sk} skipped (no stored text to re-read).` : ''}`, 'ok');
+        else if (openSkipped) showToast(`The document you have open was left as it was while you had it open — press Reprocess to apply what you just added.`, 'warn');
+      } catch {}
+      try { await _runQueueSweep({ via: 'quiet' }); } catch {}
+      return;
+    }
+    try { await _deferOrRefresh(); } catch {} try { await _runQueueSweep({ via: 'quiet' }); } catch {} return;
+  }
   _quietJobs.set(ev.jobId, j);
   _renderQuietHint();
   _renderAutofileCheckBar();

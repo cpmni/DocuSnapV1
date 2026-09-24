@@ -4507,8 +4507,24 @@ function register(ctx) {
             document_type: doc.document_type_slug || null,
           }).map(r => r.field_key));
         } catch { /* no anchors → none abstained */ }
-        const suggestions = mergeReextractRows(existing, result.extractions, anchoredKeys,
+        let suggestions = mergeReextractRows(existing, result.extractions, anchoredKeys,
           { brandingBlankSupplier: process.env.REEXTRACT_UNPIN_BLANK_SUPPLIER !== '0' });
+        // Chris 2026-09-24 card 4 ("nanann" offered as a credit-note number with "Found on a second look"): the fast
+        // on-open suggestion filled an EMPTY reference-role input with a text-only read that no shape gate had seen —
+        // the engine's `ref_role_digit_gate` (ON) guards cold COMMITS, not this display-only suggestion road. Mirror it
+        // here: a suggestion for the type's REF ROLE must carry a digit, and any suggestion must carry at least one
+        // letter or digit. A dropped suggestion leaves the input empty (the honest state); nothing is stored.
+        try {
+          const _refKey = doc.document_type_slug
+            ? ((db.prepare('SELECT ref_field_key FROM document_types WHERE slug = ?').get(doc.document_type_slug) || {}).ref_field_key || null)
+            : null;
+          suggestions = (suggestions || []).filter(s => {
+            const v = String((s && s.value) || '').trim();
+            if (!/[A-Za-z0-9]/.test(v)) return false;
+            if (_refKey && s.field_key === _refKey && !/\d/.test(v)) return false;   // ref_role_digit_gate twin
+            return true;
+          });
+        } catch { /* gate failure ⇒ the unfiltered list (today's behaviour) */ }
         // `result`/`doc`/`existing` ride along for the scope sweep's consistency predicate;
         // the reextract-fields-fast IPC return shape below is built from the same fields it
         // always returned (byte-identical to the pre-refactor channel).
