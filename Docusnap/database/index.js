@@ -4315,6 +4315,33 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 214 (taught_name_disagree_refuse): ${e.message}`); }
   }
 
+  // mig 215 (2026-09-24 evening, owner "flip 207, 210, 212, 213 and 214"): FIVE DARK keys graduate to customer
+  // defaults after their gates — glyph_fallback_enabled (mig 207, the PP-OCR second reader's single-glyph
+  // disagreement hold; C10 census on the owner's 727: false holds 16→1, the 3 true catches kept) ·
+  // glyph_confusable_resolve (mig 210, the confusable-note reword on agreement; D5 40/40) · glyph_slice_integrity
+  // (mig 212, the second reader's crop snapped to the page word boxes; the S1 v3 census) · name_value_label_flag
+  // (mig 213, a taught name that is its own label is held; C8 gate: exactly the two `Customer` holds on the 727) ·
+  // taught_name_disagree_refuse (mig 214, a taught optional name whose page witness disagrees waits for a person;
+  // gate (b): 727 lost 15 = 14 wrong boxes + the pinned Fernbank, Chris's sandbox lost exactly his six wrong names).
+  // glyph_confusable_release (mig 211) stays DARK (yield 1/9). NOTE: the three glyph keys need onnxruntime + the
+  // vendored rec model in the SHIPPED Python (not vendored at this commit — the reader abstains `reader_unavailable`
+  // until it is; effective on a dev install). One-shot UPSERTs (a deliberate 'false' afterwards survives). All five
+  // DELISTED from dark_switches.js in this commit so the mig-137 customer reset can never un-promote them. Pinned by
+  // database/test_default_flip_215.js. Single-key UPSERTs (no array literal — keeps the loose seed-pin regex honest).
+  // @DEFAULT_FLIP 215
+  if (!applied.has(215)) {
+    try {
+      let nf = 0;
+      nf += db.prepare(`INSERT INTO settings (key, value) VALUES ('glyph_fallback_enabled', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run().changes;
+      nf += db.prepare(`INSERT INTO settings (key, value) VALUES ('glyph_confusable_resolve', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run().changes;
+      nf += db.prepare(`INSERT INTO settings (key, value) VALUES ('glyph_slice_integrity', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run().changes;
+      nf += db.prepare(`INSERT INTO settings (key, value) VALUES ('name_value_label_flag', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run().changes;
+      nf += db.prepare(`INSERT INTO settings (key, value) VALUES ('taught_name_disagree_refuse', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (215)').run();
+      console.log(`JS migration 215 applied: glyph_fallback_enabled + glyph_confusable_resolve + glyph_slice_integrity + name_value_label_flag + taught_name_disagree_refuse ON by default (${nf} row writes)`);
+    } catch (e) { console.warn(`  migration 215 (batch flip 207/210/212/213/214): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

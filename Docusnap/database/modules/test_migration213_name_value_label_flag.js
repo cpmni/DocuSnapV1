@@ -30,11 +30,11 @@ const get = (d, k) => { const r = d.prepare('SELECT value FROM settings WHERE ke
 const applied = new Set(db.prepare('SELECT version FROM migrations').all().map(r => r.version));
 check('migration 213 stamped', applied.has(213));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 213 applied/.test(l) && /seeded OFF/.test(l)));
-check(`a fresh install has ${KEY} === 'false'`, get(db, KEY) === 'false');
-check(`${KEY} is listed in TEST_SWITCH_KEYS`, TEST_SWITCH_KEYS.includes(KEY));
+check(`a fresh install has ${KEY} === 'true' (GRADUATED by the 215 batch, 2026-09-24 evening; the mig-213 seed 'false' is UPSERT-flipped)`, get(db, KEY) === 'true');
+check(`${KEY} is DELISTED from TEST_SWITCH_KEYS (graduated — the mig-137 reset can never un-promote it)`, !TEST_SWITCH_KEYS.includes(KEY));
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('single-key INSERT OR IGNORE seed of false', new RegExp(`INSERT OR IGNORE INTO settings \\(key, value\\) VALUES \\('${KEY}', 'false'\\)`).test(src));
-check('NO numbered force-ON twin exists', !new RegExp(`VALUES \\('${KEY}', 'true'\\)`).test(src));
+check('the ONLY force-ON is the labelled @DEFAULT_FLIP 215 batch (no unlabelled twin)', (src.match(new RegExp(`VALUES \\('${KEY}', 'true'\\)`, 'g')) || []).length === 1 && /@DEFAULT_FLIP 215/.test(src));
 const setS = (d, k, v) => d.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(k, v);
 setS(db, KEY, 'true'); quiet(() => runMigrations(db));
 check('a later manual ON survives the next start', get(db, KEY) === 'true');

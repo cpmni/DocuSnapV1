@@ -48,23 +48,22 @@ const HELD = [
   'deskew_corrob_autofile', 'optional_soft_flag_autofile', 'corrob_autofile_band88',
   'filing_sanity_confusable_prefix_autofile', 'confusion_precedence', 'buyer_issued_convention_one_confirm',
   'format_class_join', 'departments_enabled', 'segment_pair_hold', 'issuer_undetected_blank',
-  // added AFTER the mig-205 batch (not part of it): a new DARK key, seeded OFF by its own migration.
-  'glyph_fallback_enabled',        // mig 207, 2026-09-22 — PP-OCR disagreement hold
+  // added AFTER the mig-205 batch (not part of it): new DARK keys, seeded OFF by their own migrations.
   'corrob_date_fold_wide',         // mig 208, 2026-09-23 — worded-date corroboration fold
   'recon_singlechar_misread_flag', // mig 209, 2026-09-23 — arithmetic-witness single-digit total misread
-  'glyph_confusable_resolve',      // mig 210, 2026-09-23 — second-reader agree re-words the confusable soften note
-  'glyph_confusable_release',      // mig 211, 2026-09-23 — second-reader agree + wide re-read POPS the soften note (auto-file loosener)
-  'glyph_slice_integrity', 'name_value_label_flag', 'taught_name_disagree_refuse',         // mig 212, 2026-09-23 — second-reader crop snapped to the page word boxes (pixels only)
+  'glyph_confusable_release',      // mig 211, 2026-09-23 — second-reader agree + wide re-read POPS the soften note (auto-file loosener; yield 1/9 → stays DARK)
+  // (glyph_fallback_enabled 207, glyph_confusable_resolve 210, glyph_slice_integrity 212, name_value_label_flag 213,
+  //  taught_name_disagree_refuse 214 GRADUATED via the 215 batch, 2026-09-24 evening — see test_default_flip_215.js.)
 ];
 
 console.log('== mig 205 BATCH graduation (34 fail-toward-review switches) ==');
 
 console.log(`0. the batch is exactly ${FLIP.length} keys and the two sets are disjoint + cover the list`);
 check('FLIP is 34 distinct keys', new Set(FLIP).size === 34);
-check('HELD is 18 distinct keys', new Set(HELD).size === 18);
+check('HELD is 13 distinct keys', new Set(HELD).size === 13);
 check('FLIP ∩ HELD = ∅', FLIP.every(k => !HELD.includes(k)));
 check('TEST_SWITCH_KEYS == HELD (every flipped key delisted, every held key kept)',
-  TEST_SWITCH_KEYS.length === 18 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
+  TEST_SWITCH_KEYS.length === 13 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
 
 console.log('1. a fresh install has every flipped key ON, every held key OFF');
 {

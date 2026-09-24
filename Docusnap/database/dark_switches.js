@@ -25,6 +25,10 @@
  *     quick_reprocess_enabled (104→203) — DARK seeds that GRADUATED via a labelled @DEFAULT_FLIP migration and
  *     left this list in that same commit.
  *   - THE 205 BATCH (2026-09-22) — 34 fail-toward-review keys graduated together (see the array note below).
+ *   - THE 215 BATCH (2026-09-24 evening, owner "flip 207, 210, 212, 213 and 214") — glyph_fallback_enabled (207),
+ *     glyph_confusable_resolve (210), glyph_slice_integrity (212), name_value_label_flag (213),
+ *     taught_name_disagree_refuse (214) graduated after their gates (see database/test_default_flip_215.js).
+ *     glyph_confusable_release (211) stays listed (DARK).
  */
 const TEST_SWITCH_KEYS = Object.freeze([
   // ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -119,7 +123,7 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   (Oracle 2026-09-22): 605+Demo+PrintTracker ON-vs-OFF, wouldFile(ON)⊆wouldFile(OFF) provable, catch-set>0
   //   incl. p7+p11, false-hold rate published, agree-but-wrong≈0 sampled, the C1 corrob pin (must fail on a naive
   //   design), determinism two-run byte-identical release-gated on vendor/python, trade-lock pins.
-  'glyph_fallback_enabled',
+  // 'glyph_fallback_enabled' — GRADUATED via @DEFAULT_FLIP 215 (2026-09-24 evening, owner go) and DELISTED; the notes above stay as history.
   // corrob_date_fold_wide (mig 208, 2026-09-23, gary → Oracle SIGN-OFF-W/COND; owner-proven on the live Print
   //   Tracker batch): the corroboration date-agreement fold (validator._corrob_values_agree) accepts a WORDED /
   //   month-name date form ('September 30, 2026') as equal to the SAME calendar date read numerically ('30-09-2026'),
@@ -154,7 +158,7 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   the same onnxruntime/model vendoring owed by glyph_fallback_enabled. The RELEASE leg (clear the note →
   //   auto-file) is a SEPARATE future switch gated on the filtered `_absent` census (R1-R6, incl. the R4
   //   veto-fallthrough re-note seam at engine.py G1).
-  'glyph_confusable_resolve',
+  // 'glyph_confusable_resolve' — GRADUATED via @DEFAULT_FLIP 215 (2026-09-24 evening, owner go) and DELISTED; the notes above stay as history.
   // glyph_confusable_release (mig 211, 2026-09-23 evening, gary → Oracle SIGN-OFF-W/COND C0-C11 after the filtered
   //   `_absent` census — 18 soften rows, all 14 PP-agrees crop-correct, 0 common-mode): the RELEASE leg. Inside the
   //   DOWNGRADE branch, when the note came from the CONFUSABLE-soften producer (map-pair page form, no history), the
@@ -189,7 +193,7 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   3 `HS71Y` catches kept, the 5 clip + 4 bleed docs read RIGHT (not abstained), wouldFile(ON) ⊆ wouldFile(OFF),
   //   M=0, OFF md5 identity, two ON runs byte-identical; pins on drawn word geometry (clean / cut → healed / neighbour
   //   left out / next line ignored / no lines → unchanged / page-clamped).
-  'glyph_slice_integrity',
+  // 'glyph_slice_integrity' — GRADUATED via @DEFAULT_FLIP 215 (2026-09-24 evening, owner go) and DELISTED; the notes above stay as history.
   // name_value_label_flag (mig 213, 2026-09-24, Chris 09-23 teach round card 1; gary → Oracle SIGN-OFF-W/COND C5-C8):
   //   a name-like field whose WHOLE value is its own field label / the taught mapping's anchor caption / a generic
   //   caption ("Customer", "Bill To", …), or a clipped ≥4-char prefix of the label, is FLAGGED + HELD (value kept,
@@ -199,7 +203,7 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   'Attention Ltd' / 'Vendor Systems' / 'Custom Joinery Ltd' are safe by construction.
   //   ⚑ FLIP GATE (Oracle C8): realdoc 727 + Hard Set OFF byte-identical; ON: list every new hold — each must be a
   //   caption / anchor / clip; any REAL name held = SEND BACK. Pins: test_name_value_label_flag.py.
-  'name_value_label_flag',
+  // 'name_value_label_flag' — GRADUATED via @DEFAULT_FLIP 215 (2026-09-24 evening, owner go) and DELISTED; the notes above stay as history.
   // taught_name_disagree_refuse (mig 214, 2026-09-24, Chris 09-23 teach round card 1; gary Slice 2 → Oracle SIGN-OFF-
   //   W/COND C1-C7 after the census): trust.js extends the ref/date page-family disagreement refusal to a TAUGHT
   //   optional NAME field (customer_name: non-role, required 0, text, a located `mapping` winner) whose page witness
@@ -211,7 +215,7 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   sandbox with `Make`×4 / `Studio` absent; realdoc 727 + Hard Set + sandbox OFF/ON extraction md5-identical, M=0,
   //   wouldFile(ON) ⊆ wouldFile(OFF), every lost filer box-wrong or the Fembank class; C7 FLOOD table by (supplier,
   //   field): any group ≥3 human-confirmed-as-is with the same witness shape = NO-GO until a scope breaker exists.
-  'taught_name_disagree_refuse',
+  // 'taught_name_disagree_refuse' — GRADUATED via @DEFAULT_FLIP 215 (2026-09-24 evening, owner go) and DELISTED; the notes above stay as history.
   // ref_confusable_confirmed_literal_disarm (mig 204) was FLIPPED ON by default at mig 206 (2026-09-22, owner
   //   "flip mig 204"): census M=0 / inert on the 700 corpus (TESTING/_measure/ref_disarm_census_20260922/), owner
   //   accepted the narrow ≥2-confirm supplier-strict auto-file lift. No longer dark — delisted here.
