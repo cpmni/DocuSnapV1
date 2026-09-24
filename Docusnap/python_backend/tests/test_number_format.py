@@ -62,5 +62,24 @@ N.set_format("anglo")
 ck("canonical() anglo no-op", N.canonical("1,234.56"), "1,234.56")
 ck("unknown format falls back to anglo", C("1.234,56", "klingon"), "1.234,56")
 
+
+# ── has_currency_code_prefix (2026-09-24, Chris teach-round card 2a; reggie → Oracle C1-C4) ────────────
+# A KNOWN ISO code, a real gap, then an amount. Label bleeds / misread codes / the glued form are NOT a prefix.
+ck("prefix: 'GBP 1.00' True",        N.has_currency_code_prefix("GBP 1.00"), True)
+ck("prefix: 'gbp 1.00' True (case)", N.has_currency_code_prefix("gbp 1.00"), True)
+ck("prefix: 'GBP 11,066.95' True",   N.has_currency_code_prefix("GBP 11,066.95"), True)
+ck("prefix: 'GBP -1.00' True (sign)", N.has_currency_code_prefix("GBP -1.00"), True)
+ck("prefix: 'GBP (1,000.00)' True (parens)", N.has_currency_code_prefix("GBP (1,000.00)"), True)
+ck("prefix: 'EUR 1.234,56' True",    N.has_currency_code_prefix("EUR 1.234,56"), True)
+ck("prefix: 'GBP1.00' False (glued — strip_currency's \\b would not strip it at Stage 4)", N.has_currency_code_prefix("GBP1.00"), False)
+ck("prefix: 'VAT 1.00' False (label bleed)", N.has_currency_code_prefix("VAT 1.00"), False)
+ck("prefix: 'NET 9,222.46' False (label bleed)", N.has_currency_code_prefix("NET 9,222.46"), False)
+ck("prefix: 'SBP 1.00' False (misread code stays review-bound)", N.has_currency_code_prefix("SBP 1.00"), False)
+ck("prefix: 'GBP' False (no amount)", N.has_currency_code_prefix("GBP"), False)
+ck("prefix: 'GBP Total' False (a word, not an amount)", N.has_currency_code_prefix("GBP Total"), False)
+ck("prefix: '' False", N.has_currency_code_prefix(""), False)
+ck("prefix: None False", N.has_currency_code_prefix(None), False)
+ck("ONE alternation: strip_currency + _CODE_STRIP_RE + the prefix share _ISO_CODES", N._ISO_CODES in N._CODE_STRIP_RE.pattern and N._ISO_CODES in N._CODE_PREFIX_RE.pattern, True)
+
 print("\n" + (f"{fail} FAILED" if fail else "all number-format checks passed"))
 sys.exit(1 if fail else 0)

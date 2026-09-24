@@ -43,6 +43,11 @@ _NUM_RE = re.compile(r"\d[\d.,'   ]*\d|\d")
 _NUMBER_FORMAT = "anglo"
 
 
+# The ISO currency codes every money helper recognises — ONE alternation (strip_currency, _CODE_STRIP_RE and
+# the code-prefix predicate below share it; a third copy would drift). Uppercase-insensitive at every use.
+_ISO_CODES = r"GBP|USD|EUR|JPY|INR|CAD|AUD|NZD|CHF|CNY|ZAR"
+
+
 def strip_currency(value):
     """Remove any currency symbol/code (and the space it leaves) from a money value, leaving
     JUST the number: "$12,268.80" -> "12,268.80"; "GBP 118.83" -> "118.83"; "€1234.56" ->
@@ -51,7 +56,7 @@ def strip_currency(value):
         return value
     s = str(value)
     s = re.sub(r"[£$€¥₹]", "", s)
-    s = re.sub(r"\b(?:GBP|USD|EUR|JPY|INR|CAD|AUD|NZD|CHF|CNY|ZAR)\b", "", s, flags=re.IGNORECASE)
+    s = re.sub(rf"\b(?:{_ISO_CODES})\b", "", s, flags=re.IGNORECASE)
     return s.strip()
 
 
@@ -100,7 +105,20 @@ def normalise_currency_spacing(value):
 # in tests/test_money_snap_proof.py and unchanged).
 MONEY_STRICT_RE        = re.compile(r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?")
 MONEY_STRICT_INDIAN_RE = re.compile(r"\d{1,2}(?:,\d{2})*,\d{3}(?:\.\d{1,2})?")     # lakh grouping, region-gated
-_CODE_STRIP_RE = re.compile(r"(?<![A-Za-z])(?:GBP|USD|EUR|JPY|INR|CAD|AUD|NZD|CHF|CNY|ZAR)(?![A-Za-z])", re.I)
+_CODE_STRIP_RE = re.compile(rf"(?<![A-Za-z])(?:{_ISO_CODES})(?![A-Za-z])", re.I)
+# has_currency_code_prefix — the value STARTS with a KNOWN ISO code, a real gap, then an amount (sign / paren /
+# symbol / digit). The exhibit (2026-09-23, Chris teach round): a taught Total box on a page printing
+# `Total Due  GBP 5,823.50` reads `GBP 11,066.95` on every sibling, and the legacy Stage-0.5 currency leg
+# (`^[£$€¥]?…\d`, symbol-aware, code-blind) judged it a FORMAT FAILURE on every document. Known codes ONLY —
+# a 3-letter LABEL bleed (`VAT 1,234.56`, `NET 9,222.46`, `INC 1,234.56`) and a misread code (`SBP …`) are NOT
+# a prefix (edit-distance repair was rejected: INC→INR, OUR→EUR, ADD→AUD collide). The glued form
+# (`GBP11,066.95`) is deliberately NOT a prefix: strip_currency's `\b` would not strip it at Stage 4, so it
+# must keep yielding. reggie → Oracle SIGN-OFF-W/COND C1-C4 (2026-09-24).
+_CODE_PREFIX_RE = re.compile(rf"^(?:{_ISO_CODES})\s+(?=[-–(£$€¥\d])", re.I)
+
+
+def has_currency_code_prefix(value) -> bool:
+    return bool(_CODE_PREFIX_RE.match(str(value or "").strip()))
 _CR_STRIP_RE   = re.compile(r"(?<![A-Za-z])CR(?![A-Za-z])", re.I)                  # accounting credit marker
 _NEG_HINT_RES  = (re.compile(r"^\s*[(\[]"),                                          # (160.32)
                   re.compile(r"^\s*[£$€¥₹]?\s*[-–—]\s*[£$€¥₹]?\s*\d"),               # -£1.00 / £-1.00

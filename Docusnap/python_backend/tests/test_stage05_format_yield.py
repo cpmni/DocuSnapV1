@@ -114,6 +114,38 @@ check("TEMPLATE_FORMAT_FAIL_YIELD defaults OFF (byte-identical unless enabled)",
 check("_FORMAT_FAIL_KW_FLOOR is 85 (redesign — reaches the base-80+right seeded inline reads)",
       E._FORMAT_FAIL_KW_FLOOR == 85)
 
+
+# ── TEMPLATE_FORMAT_FAIL_CODE_AGREE — the CALL-SITE exemption (2026-09-24, Chris teach-round card 2a; reggie →
+#    Oracle SIGN-OFF-W/COND C1-C4). The pure helper above stays LEGACY (a code-led read still "fails" it — pinned
+#    below); the exemption lives at the merge call site and only ever REMOVES a yield, and ONLY when the code-led
+#    mapping read's cents + sign EQUAL the challenger's. Env kill '0' restores the legacy verdict.
+print()
+print("TEMPLATE_FORMAT_FAIL_CODE_AGREE (call-site exemption)")
+CA = E._format_fail_code_agree
+FP_CUR = {"total": {"validation": "currency"}}
+os.environ.pop("TEMPLATE_FORMAT_FAIL_CODE_AGREE", None)
+check("(a) 'GBP 11,066.95' vs '11,066.95' -> EXEMPT (same cents, code aside)", CA("GBP 11,066.95", "11,066.95", "total", "currency", FP_CUR) is True)
+check("(a') 'GBP 5,823.50' vs '£5,823.50' -> EXEMPT (symbol on the challenger is fine)", CA("GBP 5,823.50", "£5,823.50", "total", "currency", FP_CUR) is True)
+check("(b) 'GBP 1,066.95' vs '11,066.95' -> NOT exempt (a clipped box must keep today's hold)", CA("GBP 1,066.95", "11,066.95", "total", "currency", FP_CUR) is False)
+check("(c) 'SBP 10,239.38' vs '10,239.38' -> NOT exempt (a misread code is not a prefix)", CA("SBP 10,239.38", "10,239.38", "total", "currency", FP_CUR) is False)
+check("(c') 'VAT 1,234.56' vs '1,234.56' -> NOT exempt (label bleed)", CA("VAT 1,234.56", "1,234.56", "total", "currency", FP_CUR) is False)
+check("sign: 'GBP -1,000.00' vs '1,000.00' -> NOT exempt (cents equal, sign differs)", CA("GBP -1,000.00", "1,000.00", "total", "currency", FP_CUR) is False)
+check("glued: 'GBP11,066.95' vs '11,066.95' -> NOT exempt (Stage 4 could not strip it)", CA("GBP11,066.95", "11,066.95", "total", "currency", FP_CUR) is False)
+check("garble: 'GBP 9 32632.76' vs '932,632.76' -> NOT exempt (not strict-shaped)", CA("GBP 9 32632.76", "932,632.76", "total", "currency", FP_CUR) is False)
+check("non-currency key -> NOT exempt (ref-family untouched)", CA("GBP 11,066.95", "11,066.95", "po_ref", "text", {}) is False)
+check("currency by field_patterns validation (no val_type) -> EXEMPT", CA("GBP 11,066.95", "11,066.95", "total", None, FP_CUR) is True)
+check("challenger not an amount -> NOT exempt", CA("GBP 11,066.95", "The", "total", "currency", FP_CUR) is False)
+os.environ["TEMPLATE_FORMAT_FAIL_CODE_AGREE"] = "0"
+check("env kill '0' -> NOT exempt (byte-identical legacy verdict)", CA("GBP 11,066.95", "11,066.95", "total", "currency", FP_CUR) is False)
+os.environ.pop("TEMPLATE_FORMAT_FAIL_CODE_AGREE", None)
+check("(d) the PURE helper is untouched: 'GBP 922.14' still fails the legacy leg (as the challenger it stays rejected)", FF("GBP 922.14", "total", "currency", {}, {}) is True)
+check("(d') the PURE helper is untouched: 'GBP 11,066.95' still fails the legacy leg (the exemption is the call site's)", FF("GBP 11,066.95", "total", "currency", {}, {}) is True)
+# mechanical guard: the call site consults the exemption BEFORE the challenger re-check
+_src = Path(E.__file__).read_text(encoding="utf-8")
+_i = _src.find("_ff_ex_fails = _stage05_format_fails(existing.get(\"value\")")
+_j = _src.find("and not _stage05_format_fails(data.get(\"value\")", _i)
+check("call site: existing-side verdict computed, exemption consulted, THEN the challenger check", _i > 0 and _j > _i and "_format_fail_code_agree(existing.get(\"value\"), data.get(\"value\")" in _src[_i:_j] and "self._t(\"format_fail_code_agree\"" in _src[_i:_j])
+
 print()
 print(f"{fails} FAILED" if fails else "All TEMPLATE_FORMAT_FAIL_YIELD helper pins passed")
 sys.exit(1 if fails else 0)

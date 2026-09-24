@@ -3301,6 +3301,40 @@ def _net_misread_verdict(total, subtotal, candidates, tol):
 # yields, so the teaching gains (ref/date/issuer) are untouched. The format-VALID net-line case is owned
 # separately by NET_MISREAD_TOTAL_FLAG. Byte-identical when OFF.
 TEMPLATE_FORMAT_FAIL_YIELD = os.environ.get('TEMPLATE_FORMAT_FAIL_YIELD', '0') != '0'
+
+
+def _format_fail_code_agree(existing_value, challenger_value, key, val_type, field_patterns):
+    """TEMPLATE_FORMAT_FAIL_CODE_AGREE (2026-09-24, Chris 09-23 teach round card 2a; reggie → Oracle SIGN-OFF-
+    W/COND C1-C4). The Stage-0.5 format-fail yield's LEGACY currency leg is symbol-aware and code-blind
+    (`^[£$€¥]?…\\d`), so a taught Total box that captures the page's inline ISO code (`Total Due  GBP 5,823.50`
+    → the box reads `GBP 11,066.95` on every sibling) was judged a FORMAT FAILURE on every document: the bare
+    keyword read won, a note landed on the OPTIONAL total, and the sender never auto-filed (0 of 30 invoices).
+
+    This is the call-site EXEMPTION (the pure helper `_stage05_format_fails` is untouched — Oracle C1): a
+    code-led mapping read is NOT a format failure when (i) it starts with a KNOWN ISO code, (ii) it is a
+    strictly well-formed amount (`money_strict_shape`, which strips the code), and (iii) its integer cents
+    AND sign EQUAL the challenger's (`money_cents`). Same amount, code aside → the mapping wins and Stage 4
+    strips the code as it does for every symbol-led read ("money = numbers only"). Different cents (a clipped
+    `GBP 1,066.95` against `11,066.95` — the mapper relocates a row on these pages, and currency has NO
+    page-family filing consumer, so this exemption must not remove the only hold on that class) → today's
+    yield + note, held. A misread code (`SBP …`) or a label bleed (`VAT …`) is not a prefix → held.
+    Consequence by construction: fire-set(ON) ⊆ fire-set(OFF) — the exemption can only REMOVE a yield.
+    Env-only kill (no setting, no migration): TEMPLATE_FORMAT_FAIL_CODE_AGREE='0' restores the legacy verdict
+    byte-for-byte (the harness OFF arm); default ON. Read at call time so a pin can toggle it."""
+    if os.environ.get('TEMPLATE_FORMAT_FAIL_CODE_AGREE', '1') == '0':
+        return False
+    if not (val_type == "currency" or (field_patterns or {}).get(key, {}).get("validation") == "currency"):
+        return False
+    from extraction import number_format as _nf
+    ev = str(existing_value or "").strip()
+    if not _nf.has_currency_code_prefix(ev) or not _nf.money_strict_shape(ev):
+        return False
+    # money_cents reads the SIGN from the raw string's leading forms (symbol-then-minus, parens, …) and does not
+    # know a code-then-minus form (`GBP -1,000.00`), so strip the code prefix first: the sign must compare too
+    # (a negative box read against a positive page read is NOT the same amount).
+    ec = _nf.money_cents(_nf._CODE_PREFIX_RE.sub("", ev, count=1))
+    cc = _nf.money_cents(str(challenger_value or "").strip())
+    return ec is not None and cc is not None and ec == cc
 _FORMAT_FAIL_KW_FLOOR = 85   # REDESIGN 2026-08-09 (gary): 85 not 88 — the corpus challenger is a seeded
                              # inline label read at base 80 +5 (right direction) = 85; the old 88 stranded
                              # every such read (the po_ref 0-fire on the shapewarn cases). Below 85 is
@@ -10451,7 +10485,14 @@ class ExtractionEngine:
                         and (data.get("confidence") or 0) >= _FORMAT_FAIL_KW_FLOOR
                         and _cmp_norm(data.get("value")) != _cmp_norm(existing.get("value"))):
                     _ff_vt = _kw_types.get(key)
-                    if (_stage05_format_fails(existing.get("value"), key, _ff_vt, field_patterns, _ff_vpats)
+                    _ff_ex_fails = _stage05_format_fails(existing.get("value"), key, _ff_vt, field_patterns, _ff_vpats)
+                    # TEMPLATE_FORMAT_FAIL_CODE_AGREE (2026-09-24, Oracle C1): a code-led taught money read whose
+                    # cents + sign EQUAL the challenger's is not a format failure — the mapping keeps precedence
+                    # and Stage 4 strips the code. Only ever REMOVES a yield; traced so a census can count it.
+                    if _ff_ex_fails and _format_fail_code_agree(existing.get("value"), data.get("value"), key, _ff_vt, field_patterns):
+                        self._t("format_fail_code_agree", field=key, mapping=existing.get("value"), keyword=data.get("value"))
+                        _ff_ex_fails = False
+                    if (_ff_ex_fails
                             and not _stage05_format_fails(data.get("value"), key, _ff_vt, field_patterns, _ff_vpats)):
                         results[key] = {**data,
                                         "confidence": min((data.get("confidence") or 0), _CONFLICT_CAP),
