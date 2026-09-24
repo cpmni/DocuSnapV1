@@ -30,8 +30,9 @@ console.log('wiring (source-scan of trust.js):');
 const src = fs.readFileSync(path.join(__dirname, 'trust.js'), 'utf8').replace(/\r\n/g, '\n');
 check('the non-block is gated on a GRADUATED/corroborated scope, never a cold one',
       /const _softNonblock = _softFlagOn && \(graduated \|\| corroborated\);/.test(src));
-check('isAutoFileEligible uses the role-aware count only when _softNonblock',
-      /_softNonblock[\s\S]{0,20}\? _flaggedSoftAware\(db, doc, opts, _ctFlags\)/.test(src));
+check('isAutoFileEligible uses the role-aware ROWS only when _softNonblock (2026-09-24: rows, not a count, so the refusal can name the first blocking field)',
+      /_softNonblock[\s\S]{0,20}\? _flaggedSoftAwareRows\(db, doc, opts, _ctFlags\)/.test(src)
+      && /function _flaggedSoftAware\(db, doc, opts, ctFlags\) \{ return _flaggedSoftAwareRows\(db, doc, opts, ctFlags\)\.length; \}/.test(src));
 check('_flaggedSoftAware keeps corrected_to blocking and only skips soft-advisory notes',
       /if \(ctFlags\(e\.corrected_to, e\.display_value\)\) return true;/.test(src)
       && /return !isSoftAdvisory\(e\.field_key, m\.type, m\.required, roleKeys\);/.test(src));
@@ -39,9 +40,10 @@ check('docTrustGate skips the note-block ONLY for a soft-advisory field under so
       /opts\.softOptionalNonblock && isSoftAdvisory\(e\.field_key, fieldTypes\.get\(e\.field_key\), _requiredByKey\.get\(e\.field_key\), roleKeys\)/.test(src));
 check('isAutoFileEligible threads softOptionalNonblock into docTrustGate',
       /docTrustGate\(db, doc\.id, doc\.supplier_name, slug, \{ \.\.\.opts, softOptionalNonblock: _softNonblock \}\)/.test(src));
-check('the OFF path keeps the original flagged filter + COUNT SQL (byte-identical when the arc is off)',
-      /opts\.extractions\.filter\(e => String\(e\.validation_note \|\| ''\)\.trim\(\) \|\| _ctFlags\(e\.corrected_to, e\.display_value\)\)\.length/.test(src)
-      && /SELECT COUNT\(\*\) c FROM extractions WHERE document_id = \? AND \(\(validation_note IS NOT NULL/.test(src));
+check('the OFF path keeps the original flagged filter + the same-predicate SQL (byte-identical when the arc is off; 2026-09-24: rows ordered by id, `.length` is the count)',
+      /opts\.extractions\.filter\(e => String\(e\.validation_note \|\| ''\)\.trim\(\) \|\| _ctFlags\(e\.corrected_to, e\.display_value\)\)/.test(src)
+      && /SELECT field_key FROM extractions WHERE document_id = \? AND \(\(validation_note IS NOT NULL/.test(src)
+      && /const flagged = _flaggedRows\.length;/.test(src));
 
 console.log(fails ? `\n${fails} FAILED` : '\nAll optional-soft-flag pins passed');
 process.exit(fails ? 1 : 0);
