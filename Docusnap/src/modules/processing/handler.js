@@ -1662,6 +1662,76 @@ function _isImageFamilyMethod(m) {
   return /^anchor_crop/.test(s) || s === 'anchor_registration' || /^template_mapping/.test(s) || s === 'ocr_region';
 }
 
+// ── QUICK RESCORE (2026-09-24; owner sandbox exhibit → gary → Oracle RE-RULE of Plan-B C4, SIGN-OFF-W/COND
+// C1-C6). Plan B's C4 stored the doc's PRIOR overall whenever the imageless merge kept ≥1 stored row,
+// because the imageless engine scores kept image reads as 0. Correct intent, wrong outcome when the prior
+// was LOW: a Quick pass could never RAISE a score (17 Nordwind quotes stuck at a false "31%" with every
+// field reading 90-96 after the owner added keyword overrides). New C4: rescore in JS from the MERGED
+// rows — kept rows carry their STORED confidence, so "kept reads scored 0" is met by construction — and
+// store max(prior, min(rescored, 99)).
+//   quickRescoreMerged = the JS twin of validator.overall_confidence + the mismatch leg of
+//   format_consistency_delta over the type's REQUIRED keys (else every key): a valued row contributes its
+//   confidence; an empty required key contributes 0 unless it is a template-hidden key (skipped, mirroring
+//   the engine's exclude_keys — never for a protected identity/role key, engine.py `_protected`); a valued
+//   row with a validation_note is a mismatch (−12/−18/−24/−25, database/modules/format_consistency.js).
+//   Python's int() = Math.floor on a non-negative mean. The positive BOOST leg is omitted (Python-only
+//   learned-format index) — NOTE the engine never scores the merged rows, so this is a formula-parity
+//   claim, not a comparison against an existing number (Oracle premise note).
+//   quickRescoreStore decides the stored number: today's value (the prior) when the env kill
+//   QUICK_RESCORE_MERGED='0', when the type gave no field defs, when the doc is CONTESTED (Oracle C1 —
+//   the contested exclusion is RUN-scoped, so raising a low-prior contested doc would make it eligible
+//   on the NEXT sweep with the dissent invisible to trust.js), or when a TAUGHT key was kept on a SCORED
+//   key (Oracle's seam: C1's silent taught-keep exemption was safe only because C4 froze the filing
+//   status; a taught box the engine's text read dissented from must not lift the doc). PINNED trade-off:
+//   a taught keep on a NON-scored optional key does not block the raise. The cap 99 keeps a Quick pass
+//   with an engine-unverified kept row out of the at-100 gate-free road (Plan-B C1 "Quick never files
+//   what Full would hold"); the NO-keep Quick road still stores the engine's own score exactly as before.
+//   Every downstream door (consent offer, scope auto-accept, File-N) re-validates through
+//   trust.isAutoFileEligible — sub-100 still needs a bound template, no flags, the 88 critical floor.
+const QUICK_RESCORE_CAP = 99;
+
+function quickRescoreMerged(mergedRows, fieldDefs, opts = {}) {
+  if (!Array.isArray(fieldDefs) || !fieldDefs.length) return null;
+  const hidden = opts.hiddenKeys instanceof Set ? opts.hiddenKeys : null;
+  const protectedKeys = opts.protectedKeys instanceof Set ? opts.protectedKeys : new Set();
+  const req = fieldDefs.filter(f => f && f.required).map(f => f.key);
+  const keyFields = (req.length ? req : fieldDefs.map(f => f && f.key)).filter(Boolean);
+  if (!keyFields.length) return null;
+  const byKey = {};
+  for (const r of (mergedRows || [])) if (r && r.field_key) byKey[r.field_key] = r;
+  const scores = [];
+  let mismatched = 0;
+  for (const k of keyFields) {
+    const r = byKey[k];
+    const valued = !!(r && r.display_value != null && String(r.display_value).trim() !== '');   // Oracle C3: whitespace = empty
+    if (valued) {
+      scores.push(Math.max(0, Number(r.confidence) || 0));
+      if (String(r.validation_note || '').trim()) mismatched++;
+    } else if (hidden && hidden.has(k) && !protectedKeys.has(k)) {
+      continue;   // operator declared this layout lacks the field — not an expected miss (engine exclude_keys)
+    } else {
+      scores.push(0);   // an expected (required/schema) field with no value → 0
+    }
+  }
+  const { mismatchDelta } = require('../../../database/modules/format_consistency');
+  let score = scores.length ? Math.floor(scores.reduce((a, b) => a + b, 0) / scores.length) : 0;
+  score = Math.max(0, Math.min(100, score + mismatchDelta(mismatched)));
+  return { score, keys: keyFields, mismatched };
+}
+
+function quickRescoreStore({ prior, rescore, contested, taughtKeptKeys, cap = QUICK_RESCORE_CAP, enabled = true }) {
+  const p = (prior == null || !Number.isFinite(Number(prior))) ? null : Number(prior);
+  if (!enabled) return { stored: p, reason: 'kill' };
+  if (!rescore || !Number.isFinite(rescore.score)) return { stored: p, reason: 'no-fielddefs' };
+  if (contested) return { stored: p, reason: 'contested' };
+  const scored = new Set(rescore.keys || []);
+  const blocking = (taughtKeptKeys || []).filter(k => scored.has(k));
+  if (blocking.length) return { stored: p, reason: `taught-kept:${[...new Set(blocking)].join(',')}` };
+  const capped = Math.min(Math.max(0, rescore.score), cap);
+  const stored = Math.max(p == null ? 0 : p, capped);
+  return { stored, reason: (p == null || stored > p) ? 'raised' : 'kept' };
+}
+
 function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hiddenKeys = null, opts = {}) {
   const existingMap = {};
   for (const e of existing) existingMap[e.field_key] = e;
@@ -1716,6 +1786,7 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hidd
         const _imgFamE = _isImageFamilyMethod(ex.extraction_method);
         if (_taughtE || _imgFamE) {
           if (_stats) _stats.imagelessKept = (_stats.imagelessKept || 0) + 1;
+          if (_stats && _taughtE) (_stats.taughtKeptKeys = _stats.taughtKeptKeys || []).push(row.field_key);   // Quick-rescore C1 (Oracle 2026-09-24)
           if (!_taughtE && _imgFamE && _contestedOut) _contestedOut.push({ field: row.field_key, old: ex.display_value, new: row.display_value });
           trace(row.field_key, _taughtE ? 'kept_imageless_taught' : 'kept_imageless_contested', ex.display_value, row.display_value);
           return { ...row, raw_value: ex.raw_value, display_value: ex.display_value, confidence: ex.confidence,
@@ -1807,6 +1878,7 @@ function mergeReprocessRows(existing, newRows, flip = null, onTrace = null, hidd
       const _imgFam = _isImageFamilyMethod(ex.extraction_method);
       if (_taught || _imgFam) {
         if (_stats) _stats.imagelessKept = (_stats.imagelessKept || 0) + 1;
+        if (_stats && _taught) (_stats.taughtKeptKeys = _stats.taughtKeptKeys || []).push(row.field_key);   // Quick-rescore C1 (Oracle 2026-09-24)
         if (!_taught && _imgFam && _contestedOut) _contestedOut.push({ field: row.field_key, old: ex.display_value, new: row.display_value });
         trace(row.field_key, _taught ? 'kept_imageless_taught' : 'kept_imageless_contested', ex.display_value, row.display_value);
         return { ...row, raw_value: ex.raw_value, display_value: ex.display_value, confidence: ex.confidence,
@@ -3762,7 +3834,7 @@ function register(ctx) {
       } catch { /* no anchors → nothing abstains */ }
     }
     const _contested = [];
-    const _mergeStats = { imagelessKept: 0 };
+    const _mergeStats = { imagelessKept: 0, taughtKeptKeys: [] };
     const mergedRows = mergeReprocessRows(existing, newRows, flip, _emitMerge, _hiddenKeys,
       { imageless: _imageless, taughtKeys: _taughtKeys, contestedOut: _contested, stats: _mergeStats,
         noteTopicDedup: require('./composeNote').noteDedupOn(db) });   // mig 158 DARK — off ⇒ byte-identical
@@ -3785,10 +3857,36 @@ function register(ctx) {
     const _supBlanked = _imageless ? false : supplierColumnBlanked(mergedRows);
     let _overallToStore = result.overall_confidence || null;
     if (_imageless && _mergeStats.imagelessKept > 0) {
+      let _prior = null;
       try {
         const _po = db.prepare('SELECT overall_confidence FROM documents WHERE id = ?').get(docId);
-        if (_po && _po.overall_confidence != null) _overallToStore = _po.overall_confidence;
+        if (_po && _po.overall_confidence != null) { _overallToStore = _po.overall_confidence; _prior = _po.overall_confidence; }
       } catch {}
+      // QUICK RESCORE (new C4, Oracle 2026-09-24 — see quickRescoreMerged/quickRescoreStore above): rescore the
+      // MERGED rows over the type's required keys and store max(today's value, min(rescored, 99)); today's
+      // prior-preserve path is kept verbatim when the kill is set, the doc is contested, a taught key was kept
+      // on a scored key, or the type gave no field defs. Any failure ⇒ today's value.
+      try {
+        const _fd = (reprocType && Array.isArray(reprocType.fields)) ? reprocType.fields : null;
+        const _prot = new Set(['supplier_name', 'customer_name']);
+        if (reprocType && reprocType.ref_field_key)  _prot.add(reprocType.ref_field_key);
+        if (reprocType && reprocType.date_field_key) _prot.add(reprocType.date_field_key);
+        const _rs  = quickRescoreMerged(mergedRows, _fd, { hiddenKeys: _hiddenKeys, protectedKeys: _prot });
+        const _dec = quickRescoreStore({ prior: _overallToStore, rescore: _rs, contested: _contested.length > 0,
+                                         taughtKeptKeys: _mergeStats.taughtKeptKeys || [],
+                                         enabled: process.env.QUICK_RESCORE_MERGED !== '0' });
+        if (_dec.reason === 'raised') {
+          logger?.log?.(`  Quick rescore: doc ${docId} overall ${_overallToStore ?? 'null'} -> ${_dec.stored} `
+            + `(engine ${result.overall_confidence ?? 'n/a'}, merged rows ${_rs ? _rs.score : 'n/a'})`);
+        }
+        if (traceWanted(diagOn)) {
+          routeTrace({ type: 'trace', doc: filename, event: 'reprocess_quick_rescore', prior: _prior,
+                       engine: result.overall_confidence ?? null, rescored: _rs ? _rs.score : null,
+                       stored: _dec.stored, reason: _dec.reason, contested: _contested.length > 0,
+                       taught_kept: _mergeStats.taughtKeptKeys || [] }, true);
+        }
+        if (_dec.stored != null) _overallToStore = _dec.stored;
+      } catch { /* rescore failure ⇒ today's prior-preserve value */ }
     }
     // C1: a contested imageless doc is excluded from THIS run's consent offer + scope auto-accept, and
     // named in a trace + the log (no user-facing note — the value is kept, the exclusion is run-scoped).
@@ -7720,6 +7818,8 @@ module.exports = {
   _isOpenablePath,
   // Exposed for the reprocess type-flip persistence unit test (test_reprocess_type_flip.js).
   _mergeReprocessRows: mergeReprocessRows,
+  _quickRescoreMerged: quickRescoreMerged,       // Quick-rescore pure twin (test_reprocess_quick_rescore.js)
+  _quickRescoreStore: quickRescoreStore,
   _supplierColumnBlanked: supplierColumnBlanked,
   // Exposed for the fast re-extract fill-only merge unit test (test_reextract_merge.js).
   _mergeReextractRows: mergeReextractRows,

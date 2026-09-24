@@ -5712,4 +5712,19 @@ mean, unread = 0) and keep the format-consistency penalty by taking `min(rescore
 if the fc delta is available, else the plain mean. Gate: the Chris-30 / Nordwind-17 (Quick after overrides → ≥90 →
 files by itself); realdoc 727 quick-arm: no doc's overall DROPS; M=0. gary → Oracle (touches the Plan-B C4 condition —
 re-rule needed, not a bug fix). Workaround today: "Reprocess N from <sender>" → **Full re-read**, or File All Ready.
+**BUILT 2026-09-24 (evening) — gary vet + Oracle RE-RULE of C4 (SIGN-OFF-W/COND C1-C6, `docs/oracle_log.md`):**
+`handler.js quickRescoreMerged` (JS twin of the required-field mean + the mismatch penalty; kept rows keep their
+STORED confidence; hidden keys skipped only when empty and never for identity/role keys) + `quickRescoreStore`
+(store `max(today's value, min(rescored, 99))`; today's value when the env kill `QUICK_RESCORE_MERGED=0`, the doc
+is CONTESTED, or a TAUGHT key was kept on a scored key — the taught/contested exclusions are the Oracle's seam:
+C1's run-scoped exclusion is invisible to trust.js on the next sweep). Penalty constants now live ONCE in
+`database/modules/format_consistency.js` (charsetAcceptService reads them too; `test_format_consistency_twin.js`
+fails on a one-sided bump vs validator.py). Pins `test_reprocess_quick_rescore.js`. GATE
+(`TESTING/_measure/quick_rescore_gate_20260924/RESULT.md`): CONTROL = the 17 stay 31; FIX arm A = the 17 → 93,
+0 field diffs, hold reason `below-floor` → `no-template` (the exhibit had no Nordwind template yet); FIX arm B =
+five clean confirms graduate the sender (its `graduation_window` is 5) → template minted → the Quick pass binds +
+rescores the remaining 12 → the consume step auto-files all 12. ⚠ Residual, NOT this fix's: a keyword-only sender
+gets a template only at graduation or by teaching (a lone human confirm links, never creates) — until then the
+rescored doc holds honestly with "this layout hasn't been matched to a template yet". Follow-up (Oracle CX): that
+copy should name the next step ("confirm a few from this sender, or teach one, then Reprocess").
 

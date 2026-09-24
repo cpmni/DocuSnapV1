@@ -3092,3 +3092,38 @@ Gate: JS-twin census SET ⊆ Python-30 = 25, buyer_issued split; realdoc+HardSet
 **2026-09-24 — G1 C8 gate READ (`TESTING/_measure/g1_label_flag_gate_20260924/RESULT.md`):** G1off md5 == the R1 arm (no-op OFF); G1on on the 727: 2 new holds, both `customer_name` = `Customer` (docs 75, 82; label + anchor `Customer`), 0 other field changes, wouldFile 517→515 (those two), 0 real names held. C8 MET → mig 213 flip-ready.
 
 **2026-09-24 — G2 gate (b) READ (`TESTING/_measure/g2_taught_name_gate_20260924/RESULT.md`):** G2off md5 == the R1/G1 arm; extraction fields identical OFF/ON on the 727 AND Chris's sandbox; 727 wouldFile 517→502, gained 0, lost 15 = 14 wrong boxes (2 labels, 6 clips, 6 garbles incl. two new live ones) + the pinned `Fernbank`; 13 already-held Print Tracker docs moved reason date→customer (boxes `Workforce Training Springf` clip ×9, `Utax` wrong-row ×4 — all wrong); sandbox 53→47 = exactly the six card-1 names; no C7 flood group. MET → mig 214 flip-ready; re-check the flood table on the live install at flip time.
+
+## 2026-09-24 (evening) — QUICK RESCORE: RE-RULE of Plan-B condition C4 (owner sandbox exhibit → gary design vet → Oracle) — SIGN OFF WITH CONDITIONS C1-C6 (BUILT, env kill, no DB switch)
+Exhibit (verified on a DB copy): 17 Nordwind quotes imported before the Quote type had keywords → schema scorer
+zeroed the required fields → overall 31; owner added Keyword Label Overrides + QUICK reprocess → rows 90/95/96, no
+notes, but the stored overall stayed 31 ("read at 31%, below the 90%"). Mechanism: `handler.js` C4 (2026-09-01)
+stores the PRIOR overall whenever the imageless merge kept ≥1 row (here the identity-conf leg) → a Quick pass could
+never RAISE a score. gary: SIGN OFF the mechanism with three corrections — (1) the exhibit does NOT file at 93:
+sub-100 `docTrustGate` requires `template_id` (`no-template`, trust.js:1061) and the scope had no template yet;
+(2) contested ⇒ keep the prior (C1's exclusion is RUN-scoped; a raised low-prior contested doc would be eligible on
+the next sweep with the dissent invisible to trust.js); (3) protected-key strip on the hidden-key exclusion, mirroring
+`engine.py` `_protected`. Oracle premise check: every load-bearing claim traced (C4 block, three keep sites, C1
+run-scope, Python `int(mean)` + fc_delta, protected strip, no-template at sub-100, C2 bind on the Quick road,
+field-set parity via `getAllWithFields`). Two framing corrections: "JS ≤ Python" is a FORMULA claim (Python never
+scores the merged rows); a JS mirror of the penalty already existed in `charsetAcceptService.js` (a third literal
+copy = drift seam). THE SEAM: C1's silent taught-key exemption was safe only because C4 froze the filing status —
+a taught key kept at site (b) (engine text read DISSENTED) must not lift a low-prior doc; low-prior docs are the
+population enriched for stale/re-taught boxes; `extractions` has no timestamp → the rule is categorical.
+BINDING: **C1** raise only when `_contested.length === 0` AND no `kept_imageless_taught` on a SCORED key (merge
+records `stats.taughtKeptKeys`; pin BOTH polarities — taught keep on a required key → prior; on a non-scored optional
+key → raise allowed, the pinned trade-off); **C2** ONE source of the penalty constants for both JS consumers + a
+cross-language pin that reads validator.py's literals; **C3** whitespace/empty value → 0; **C4** trace
+`reprocess_quick_rescore {prior, engine, rescored, stored, reason, contested, taught_kept}` + log line; kill
+`QUICK_RESCORE_MERGED=0` → byte-identical prior path; **C5** site comment names the trade-off + "Python never scores
+merged rows; boost omitted"; **C6** gate = CONTROL + FIX arms on the exhibit PLUS a scripted Quick over the owner's
+live-DB copy asserting no overall drops, no value/note/template diffs vs CONTROL, and a FLIP LIST — Print Tracker
+(all taught) must show ZERO raises (the live test of C1). Anomalies noted: an un-noted empty for a taught key →
+`kept_existing` (not counted, C4 block skipped, engine score stores) — pre-existing, out of scope, pin 7 written so
+it does not mask it; hidden keys resolve by STORED template/supplier under the drop setting in JS vs FRESH supplier
+under env in Python (JS null ⇒ JS ≤ Python, acceptable). CX (non-blocking): the `no-template` copy on a ≥threshold
+doc should name the next step. Q2 answered: skip the raise on any `kept_imageless_taught` on a scored key. Q3: arm B
+proves the exhibit, not the blast radius → C6.
+BUILD (same evening): `handler.js` `quickRescoreMerged` + `quickRescoreStore` (pure, exported) inside the C4 block;
+`stats.taughtKeptKeys` at both taught keep sites; `database/modules/format_consistency.js` (constants + `mismatchDelta`)
+consumed by charsetAcceptService + the helper; pins `test_reprocess_quick_rescore.js` (14 sections) +
+`test_format_consistency_twin.js`. GATE: `TESTING/_measure/quick_rescore_gate_20260924/RESULT.md`.
