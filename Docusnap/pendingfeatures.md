@@ -5691,3 +5691,25 @@ logo and lift the ones that now match into their (now-recognised) sender. Scope/
 (a re-identify that mis-assigns a sibling to the wrong sender would be a silent misfile — must be review-bound /
 fail-toward-review, same as the ripple). Value: one teach clears a whole batch of same-sender unrecognised docs
 instead of N teaches. See also `issuer_sibling_fill`, the confirm-once ripple.
+
+## 2026-09-24 — QUICK reprocess never LIFTS a stale low score (owner sandbox observation, verified at source)
+**Seen:** 17 Nordwind quotes imported while "Not recognised" (typed Quote, but the quote fields had no keyword yet →
+the schema scorer zeroed them → `overall_confidence` 31). The owner added the Keyword Label Overrides ("Quotation Ref",
+"Total (inc VAT)"), ran a QUICK reprocess: every field now reads 90-96 (`keyword_override` 95, date 96, issuer 90) and
+File All Ready offers all 20 — but each still shows "read at 31%, below the 90% you've set" and none files by itself.
+**Mechanism (`src/modules/processing/handler.js` ~3786, Plan B Quick Reprocess, Oracle C4 2026-09-01):** the quick
+run is imageless (`--reextract`); `mergeReprocessRows` KEEPS a stored image/taught read the text-only pass cannot
+reproduce — here the identity-preserve leg (~1825: the supplier's fresh text read AGREES at lower confidence, so the
+stored 90 read is kept) — and every keep counts in `imagelessKept`; when that is > 0 the doc's PRIOR overall is kept
+because the imageless engine would have scored the kept reads as 0. Correct intent (don't mass-hold taught suppliers),
+wrong outcome when the prior was LOW: the score can never rise on a Quick pass, only a FULL re-read rescored them
+(Chris's Vellum went 100 after "Full re-read"). The readiness classifier ignores the % (flags/blanks only), which is
+why File All Ready still offers them — an honest manual road, but the "files by itself" promise silently dies.
+**Wanted:** after the imageless merge, RESCORE in JS from the MERGED rows over the type's required fields (kept rows keep
+their STORED confidence, so the C4 concern is met by construction) and store `max(prior, rescored)` — never below the
+prior (C4's purpose), never above what the merged rows support; mirror `validator.overall_confidence` (required-field
+mean, unread = 0) and keep the format-consistency penalty by taking `min(rescored, engine_overall + prior_fc_delta)`
+if the fc delta is available, else the plain mean. Gate: the Chris-30 / Nordwind-17 (Quick after overrides → ≥90 →
+files by itself); realdoc 727 quick-arm: no doc's overall DROPS; M=0. gary → Oracle (touches the Plan-B C4 condition —
+re-rule needed, not a bug fix). Workaround today: "Reprocess N from <sender>" → **Full re-read**, or File All Ready.
+
