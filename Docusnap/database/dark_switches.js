@@ -181,6 +181,17 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   with the numbers. Residual (named): a taught box clipped at a physical fold/table rule where the wide read
   //   cannot restore pixels; cold-scope trailing-letter confusables the ambiguous flag is blind to.
   'glyph_confusable_release',
+  // quiet_redetect_on_type_change (mig 216, 2026-09-24 evening 2; owner: "categorise everything quickly, then confirms
+  //   allow auto-file"; gary + eric → Oracle SIGN-OFF-W/COND C1-C7): a type that becomes available (created / catalog /
+  //   re-enabled / aliases edited) or a saved Keyword Label Override schedules the quiet lane's scope-less QUICK re-read
+  //   of the held untyped (NULL / General Document) template-less docs — or the override's type's. Same guards as the
+  //   lane (viewer, pre-empt, merge gate, S3-C5, reliability first-fill hold), NO sweep scope marked, NO auto-accept
+  //   fan-out (the next human confirm's scope sweep files); a doc whose OCR cache is unusable is skipped, never staged
+  //   Full. Under the switch the scoped arms also admit Generic-typed docs (C1) and a Generic→X re-type plants no
+  //   "type changed" note (3b). FLIP GATE: sandbox arm — import an uninstalled catalog type, add it, the redetect audit
+  //   lists them typed-wrong 0 / wrong-filed 0; then graduation → the graduated lane lists the formerly-Generic docs →
+  //   sweep files them; a Generic-heavy copy with no detection: OFF == ON row-identical.
+  'quiet_redetect_on_type_change',
   // glyph_slice_integrity (mig 212, 2026-09-23 night, Oracle C2/C3 of the Paddle corroboration vet — S1 of Part A):
   //   the second reader's crop rect is SNAPPED to the page-level word boxes on the value's row band before the re-read
   //   (extraction/slice_integrity.py, pure; words from the mapper's shared locate cache). A taught box that cuts a glyph

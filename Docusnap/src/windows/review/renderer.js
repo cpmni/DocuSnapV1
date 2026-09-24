@@ -10342,7 +10342,9 @@ let _quietSilent = false;
   catch { /* stays false */ }
 })();
 let _pendingQuietRefresh = false;
-function _isActivelyViewing() { return !!currentDoc && activeTab === 'review'; }
+// QUIET REDETECT (Oracle decision 5, 2026-09-24): a doc selected on the "Not recognised" tab is being viewed too — the
+// redetect moves rows OUT of that tab as they gain a type, so the refresh is deferred there as well (not only 'review').
+function _isActivelyViewing() { return !!currentDoc && (activeTab === 'review' || activeTab === 'undetected'); }
 async function _deferOrRefresh() {
   if (_quietSilent && _isActivelyViewing()) { _pendingQuietRefresh = true; return; }
   try { await _refreshQueueFromBroadcast(); } catch {}
@@ -10392,8 +10394,14 @@ function _renderQuietHint() {
             : j.reason === 'layout' ? 'after your box change'
             : j.reason === 'typesplit' ? 'after your type confirm'
             : 'now that you have taught its layout';
-  el.innerHTML = `<span class="qrh-cancel" title="Stop re-reading this sender's documents">Stop</span>`
-    + `Quietly re-reading <b>${escHtml(j.supplier)}</b> documents you haven't opened, ${why} — ${state}${extra}. `
+  // QUIET REDETECT (2026-09-24): a scope-less job has no sender — name the type(s) that became available instead.
+  const lead = (j.kind === 'redetect')
+    ? `Re-checking <b>${j.total || ''}</b> unrecognised document${j.total === 1 ? '' : 's'} you haven't opened`
+      + (Array.isArray(j.typeSlugs) && j.typeSlugs.length ? ` for <b>${escHtml(j.typeSlugs.join(', '))}</b>` : '')
+      + ` — ${state}${extra}. `
+    : `Quietly re-reading <b>${escHtml(j.supplier)}</b> documents you haven't opened, ${why} — ${state}${extra}. `;
+  el.innerHTML = `<span class="qrh-cancel" title="${j.kind === 'redetect' ? 'Stop re-checking' : "Stop re-reading this sender's documents"}">Stop</span>`
+    + lead
     + `Review stays fully usable.`;
   el.style.display = 'block';
   el.querySelector('.qrh-cancel')?.addEventListener('click', async () => { try { await window.docusnap.cancelQuietReread?.(j.id); } catch {} });
@@ -10421,7 +10429,7 @@ function _renderAutofileCheckBar() {
 window.docusnap.onQuietReprocess?.(async (ev) => {
   if (!ev || !ev.jobId) return;
   const j = _quietJobs.get(ev.jobId) || { id: ev.jobId, supplier: ev.supplier || '', total: 0, done: 0, state: 'running' };
-  if (ev.type === 'job_start')    { j.supplier = ev.supplier || j.supplier; j.total = ev.total || 0; j.done = ev.done || 0; j.state = 'running'; if (ev.reason) j.reason = ev.reason; if (ev.ready) j.ready = true; }   // r20 card 5: the hint names the real trigger; ready → the autofile-check bar
+  if (ev.type === 'job_start')    { j.supplier = ev.supplier || j.supplier; j.total = ev.total || 0; j.done = ev.done || 0; j.state = 'running'; if (ev.reason) j.reason = ev.reason; if (ev.kind) j.kind = ev.kind; if (Array.isArray(ev.typeSlugs)) j.typeSlugs = ev.typeSlugs; if (ev.ready) j.ready = true; }   // r20 card 5: the hint names the real trigger; ready → the autofile-check bar
   if (ev.type === 'doc_done')     { j.done = ev.done ?? (j.done + 1); j.total = ev.total || j.total; _quietRefreshList(); }
   if (ev.type === 'job_deferred') { j.state = 'deferred'; }
   if (ev.type === 'job_done')     { j.state = 'done'; _quietJobs.delete(ev.jobId); _renderQuietHint(); _renderAutofileCheckBar(); try { await _deferOrRefresh(); } catch {} try { await _runQueueSweep({ via: 'quiet' }); } catch {} return; }

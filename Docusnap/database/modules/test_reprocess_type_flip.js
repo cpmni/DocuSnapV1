@@ -167,5 +167,28 @@ section('Authority polarity — the never-confirmed predicate exists at both han
   check('batch manifest gates machine authority on never-confirmed', manifest);
 }
 
+// ── 5. QUIET REDETECT, Oracle decision 3(b) (2026-09-24): the General Document PLACEHOLDER is not a prior type ──
+// A Generic→X re-type keeps condition 4 (stale-type rows dropped) but plants NO "type changed" note (condition 3 is
+// for a REAL prior type); NULL→X is unchanged; RealType→X keeps its note (sections 2-3 above). The split lives at the
+// applyReprocessResult call site (noteText null) under the redetect switch — pinned by source here; the merge's two
+// consumers (newTypeKeys → drop, noteText → note) are pinned by behaviour.
+section('Generic placeholder → real type: rows dropped, NO note (Oracle 3b), under the redetect switch only:');
+{
+  const fresh = [row('invoice_number', 'INV-9'), row('invoice_date', '01-02-2026')];
+  const existing = [row('body_text', 'old generic body', { extraction_method: 'keyword' }), row('invoice_number', 'INV-9')];
+  const flipNoNote = { newTypeKeys: new Set(['invoice_number', 'invoice_date', 'supplier_name']), refKey: 'invoice_number', noteText: null };
+  const traces = [];
+  const out = merge(existing, fresh, flipNoNote, (f, d) => traces.push(`${d}:${f}`));
+  check('the stale Generic-type row is DROPPED (condition 4 kept)', !out.some(r => r.field_key === 'body_text') && traces.includes('dropped_stale_type:body_text'));
+  check('NO "type changed" note is planted anywhere (noteText null)', out.every(r => !/Document type changed/.test(String(r.validation_note || ''))));
+  const fs = require('fs');
+  const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'modules', 'processing', 'handler.js'), 'utf8');
+  check('call site: noteText is nulled ONLY for a Generic prior under _redetectEnabled',
+        /_fromGeneric = !!\(_g && Number\(_g\.id\) === Number\(priorTypeId\)\)/.test(src)
+        && /_redetectEnabled\(db\) \? require\('\.\.\/\.\.\/\.\.\/database\/modules\/document_types'\)\.getGenericType\(db\) : null/.test(src)
+        && /noteText:\s*_fromGeneric \? null : `Document type changed from/.test(src));
+  check('call site: newTypeKeys is built regardless (the drop is never skipped)', /newTypeKeys: new Set\(\(reprocType\.fields \|\| \[\]\)\.map\(f => f\.key\)\),\s*\n\s*refKey:/.test(src));
+}
+
 console.log(`\n${fails ? fails + ' FAILED' : 'All reprocess type-flip persistence checks passed.'}`);
 process.exit(fails ? 1 : 0);

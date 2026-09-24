@@ -153,10 +153,16 @@ function create(deps = {}) {
 
   // First-fills of REQUIRED ROLE fields. `noteText` picks the via; the reliability note never judges the
   // identity field (its own arbiters). Returns the held [{key, now}].
-  function holdFirstFills(db, docId, existing, noteText) {
+  function holdFirstFills(db, docId, existing, noteText, opts = {}) {
     const ti = _typeInfo(db, docId);
     if (!ti) return [];
-    const keys = ti.required.filter(k => ti.roleKeys.has(k)).filter(k => noteText !== RELIABILITY_NOTE || !COMPANY_KEYS.has(k));
+    // `opts.onlyKeys` (Set, optional — quiet redetect Oracle C5, 2026-09-24): restrict the hold to the named
+    // keys (an override saved on an identity/name key holds first-fills of THAT key only). A named key that
+    // is not a required role is still judged — the caller's key set is the contract. No opts ⇒ unchanged.
+    const only = opts && opts.onlyKeys instanceof Set ? opts.onlyKeys : null;
+    const keys = only
+      ? [...only]
+      : ti.required.filter(k => ti.roleKeys.has(k)).filter(k => noteText !== RELIABILITY_NOTE || !COMPANY_KEYS.has(k));
     const before = Object.fromEntries((existing || []).map(r => [r.field_key, r]));
     const after = _after(db, docId);
     const upd = db.prepare('UPDATE extractions SET validation_note = ? WHERE document_id = ? AND field_key = ?');
@@ -209,7 +215,11 @@ function create(deps = {}) {
   function newBatch() { return { fieldStats: new Map(), provisionalHolds: [], released: [], held: [] }; }
   function _scopeOf(db, docId) {
     const r = db.prepare(`SELECT d.supplier_name, dt.slug FROM documents d LEFT JOIN document_types dt ON dt.id = d.document_type_id WHERE d.id = ?`).get(docId) || {};
-    return `${_norm(r.supplier_name)}|${_norm(r.slug)}`;
+    // Quiet redetect (Oracle C3, 2026-09-24): a BLANK-supplier doc must not share the witness bucket
+    // `|<slug>|<key>` with every other unrecognised doc of the type — one disagreement on an unrelated
+    // sender would hold every first-fill of that field across the pile. Key it per document instead.
+    const sup = _norm(r.supplier_name);
+    return `${sup || `doc:${docId}`}|${_norm(r.slug)}`;
   }
   // One merged document. `via`: 'layout' | 'ready' | 'manual-single' → unconditional first-fill hold;
   // anything else with `reliability` on → provisional hold + witnesses. Returns { changed, firstFills }.

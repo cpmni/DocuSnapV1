@@ -62,6 +62,18 @@ function register(ctx) {
   // signed-in user". The "…All" variant (incl. disabled types, used to build
   // the Document Types tab) and every mutation below live only in the
   // Admin-exclusive Settings window — "access all settings".
+  // QUIET REDETECT (2026-09-24; gary + eric → Oracle SIGN-OFF-W/COND): a DETECTION change — a type created / added
+  // from the catalog / re-enabled / its title aliases edited, or a Keyword Label Override saved or removed — schedules
+  // the quiet lane's scope-less QUICK re-read of the held docs that were read before it (processing/handler
+  // scheduleQuietRedetect; DARK mig 216). Lazy require (processing/handler requires this module's neighbours — the
+  // :448 repair path uses the same idiom). NEVER throws into the write: a failed schedule is a lost convenience.
+  const _afterDetectionChange = (db, { typeId = null, typeSlug = null, overrideKey = null, reason = 'type-added' } = {}) => {
+    try {
+      let slug = typeSlug || null;
+      if (!slug && typeId != null) { const r = db.prepare('SELECT slug FROM document_types WHERE id = ?').get(typeId); slug = (r && r.slug) || null; }
+      return !!require('../processing/handler').scheduleQuietRedetect(db, { typeSlug: slug, overrideKey, reason });
+    } catch { return false; }
+  };
   ipcMain.handle('get-document-types',        () => { requireLogin(); return doctypes.getAll(getDb()); });
   ipcMain.handle('get-all-doc-types',         () => { requireLogin(); return doctypes.getAllWithFields(getDb()); });
   ipcMain.handle('get-all-doc-types-all',     () => { requireRole('admin'); return doctypes.getAllWithFieldsAll(getDb()); });
@@ -88,6 +100,7 @@ function register(ctx) {
       })();
     } catch (e) { return { error: e.message }; }
     notifyAllWindows('doc-types-changed');
+    _afterDetectionChange(db, { typeId: out.lastInsertRowid, reason: 'type-added' });   // QUIET REDETECT
     return { lastInsertRowid: out.lastInsertRowid, changes: out.changes, notices };
   });
   ipcMain.handle('update-document-type', (_e, id, ch)  => {
@@ -101,8 +114,12 @@ function register(ctx) {
       if (na.error) return { error: na.error };
       notices = na.notices;
     }
+    const _prev = (() => { try { return db.prepare('SELECT enabled, slug FROM document_types WHERE id = ?').get(id) || {}; } catch { return {}; } })();
     try { doctypes.updateType(db, id, ch); } catch (e) { return { error: e.message }; }
     if ('title_aliases' in ch) notifyAllWindows('doc-types-changed');   // detection args rebuild per run
+    // QUIET REDETECT (Oracle C7): an alias edit, or a type re-ENABLED (0→1 = "a type became available"), is a detection change.
+    const _reEnabled = ('enabled' in ch) && !!(ch.enabled === true || ch.enabled === 1 || ch.enabled === '1') && !Number(_prev.enabled || 0);
+    if ('title_aliases' in ch || _reEnabled) _afterDetectionChange(db, { typeId: id, reason: _reEnabled ? 'type-enabled' : 'alias-edited' });
     return { ok: true, notices };
   });
 
@@ -119,6 +136,7 @@ function register(ctx) {
     // teach-over-client create route) so both roads build a byte-identical type.
     const r = doctypes.createTypeWithFields(getDb(), data);
     if (r.success) notifyAllWindows('doc-types-changed');   // other open windows reload their doc-type lists
+    if (r.success) _afterDetectionChange(getDb(), { typeId: r.id, reason: 'type-created' });   // QUIET REDETECT
     return r;
   });
 
@@ -135,6 +153,7 @@ function register(ctx) {
     try {
       const results = doctypes.addPresetTypes(getDb(), list);
       notifyAllWindows('doc-types-changed');
+      for (const it of (results || [])) if (it && it.status === 'added' && it.slug) _afterDetectionChange(getDb(), { typeSlug: it.slug, reason: 'type-added' });   // QUIET REDETECT (one job; the lane coalesces)
       return { success: true, results };
     } catch (e) {
       return { success: false, error: e.message };
@@ -231,17 +250,24 @@ function register(ctx) {
   });
   ipcMain.handle('add-label-override', (_e, data) => {
     requireRole('admin');
-    return labelOverrides.addLabelOverride(getDb(), data || {});
+    const r = labelOverrides.addLabelOverride(getDb(), data || {});
+    if (r && r.ok && r.inserted) _afterDetectionChange(getDb(), { typeSlug: data && data.doc_type_slug, overrideKey: data && data.field_key, reason: 'override' });   // QUIET REDETECT (A2)
+    return r;
   });
   // Bulk add (comma/newline-separated labels in one transaction; reports
   // inserted / alreadyExisted / rejected / collision warnings).
   ipcMain.handle('add-label-overrides', (_e, data) => {
     requireRole('admin');
-    return labelOverrides.addLabelOverrides(getDb(), data || {});
+    const r = labelOverrides.addLabelOverrides(getDb(), data || {});
+    if (r && r.ok && Number(r.inserted || 0) > 0) _afterDetectionChange(getDb(), { typeSlug: data && data.doc_type_slug, overrideKey: data && data.field_key, reason: 'override' });   // QUIET REDETECT (A2)
+    return r;
   });
   ipcMain.handle('delete-label-override', (_e, id) => {
     requireRole('admin');
-    return labelOverrides.deleteLabelOverride(getDb(), id);
+    const _row = (() => { try { return getDb().prepare('SELECT doc_type_slug, field_key FROM field_label_overrides WHERE id = ?').get(id) || null; } catch { return null; } })();
+    const r = labelOverrides.deleteLabelOverride(getDb(), id);
+    if (r && r.ok && Number(r.deleted || 0) > 0 && _row) _afterDetectionChange(getDb(), { typeSlug: _row.doc_type_slug, overrideKey: _row.field_key, reason: 'override-removed' });   // QUIET REDETECT (A2)
+    return r;
   });
 
   ipcMain.handle('clear-learning-anchors', (_e, params) => {

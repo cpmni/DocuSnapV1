@@ -4342,6 +4342,21 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 215 (batch flip 207/210/212/213/214): ${e.message}`); }
   }
 
+  // mig 216 (2026-09-24 evening 2; owner: "categorise everything quickly, then confirms allow auto-file"; gary + eric →
+  // Oracle SIGN-OFF-W/COND C1-C7): `quiet_redetect_on_type_change` — when a document type becomes available (created /
+  // added from the catalog / re-enabled / aliases edited) or a Keyword Label Override is saved, the quiet lane re-reads
+  // the held untyped (NULL or General-Document) template-less docs — or the override's type's — on the QUICK imageless
+  // road (quietLane.js kind 'redetect'); under the same switch the scoped lane arms admit Generic-typed docs (C1) and a
+  // Generic→X re-type plants no "type changed" note (decision 3b; rows still dropped). JS-only (no engine env). DARK,
+  // seeded OFF, byte-identical off. Single-key seed (no array literal — keeps the loose seed-pin regex honest).
+  if (!applied.has(216)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('quiet_redetect_on_type_change', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (216)').run();
+      console.log('JS migration 216 applied: quiet_redetect_on_type_change (a type/override change re-reads the held unrecognised documents on the Quick road) seeded OFF (DARK, byte-identical off)');
+    } catch (e) { console.warn(`  migration 216 (quiet_redetect_on_type_change): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

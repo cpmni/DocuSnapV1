@@ -1261,6 +1261,17 @@ function _layoutRereadEnabled(db) {
   try { return require('../../../database/modules/learning').getSetting(db, 'quiet_reread_on_layout', 'false') === 'true'; }
   catch { return false; }
 }
+// QUIET REDETECT (2026-09-24; gary + eric → Oracle SIGN-OFF-W/COND C1-C7): a type that becomes available or a
+// keyword override that is saved re-reads the held untyped / same-type template-less docs on the QUICK road
+// (quietLane.js, kind 'redetect'). DARK: env QUIET_REDETECT_ON_TYPE_CHANGE wins both ways, else the setting
+// `quiet_redetect_on_type_change` (mig 216, seeded OFF). Rides the lane's own gate (quiet_reread_enabled + licence).
+function _redetectEnabled(db) {
+  const env = process.env.QUIET_REDETECT_ON_TYPE_CHANGE;
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return require('../../../database/modules/learning').getSetting(db, 'quiet_redetect_on_type_change', 'false') === 'true'; }
+  catch { return false; }
+}
 // Chris r18 A1 (2026-08-23): the first-fill reliability hold (DARK). K is a NAMED constant: one witness
 // (an S3-C5 disagreement, a valued→empty loss or an engine taught-box yield) on a role field in one lane
 // job holds that field's uncorroborated first-fills in the job — a first-fill is single-witness by
@@ -1331,6 +1342,15 @@ function nameArmTokens(name) {
 }
 
 function scheduleQuietReread(db, info) { return _quietLaneImpl ? _quietLaneImpl.schedule(db, info) : false; }
+// QUIET REDETECT trigger (settings/handler type + override writes, the /v1 type create): { typeSlug, reason, overrideKey }.
+// The lane gates on _redetectEnabled + quiet_reread_enabled + licence; a throwing scheduler never reaches the caller.
+function scheduleQuietRedetect(db, info = {}) {
+  try {
+    if (!_quietLaneImpl || !_redetectEnabled(db)) return false;
+    return !!_quietLaneImpl.schedule(db, { redetect: true, typeSlug: info.typeSlug || null, overrideKey: info.overrideKey || null,
+                                           reason: info.reason || 'redetect' });
+  } catch { return false; }
+}
 
 function _diagEnabled(db) {
   const env = (process.env.DOCUSNAP_DIAGNOSTIC_LOG || '').toLowerCase();
@@ -3773,13 +3793,24 @@ function register(ctx) {
     if (reprocDocTypeId != null && priorTypeId != null && reprocDocTypeId !== priorTypeId) {
       const _old = db.prepare('SELECT name FROM document_types WHERE id = ?').get(priorTypeId);
       const oldName = (_old && _old.name) || 'previous type';
+      // QUIET REDETECT, Oracle decision 3(b) (2026-09-24): General Document is the mig-93 FALLBACK placeholder,
+      // not a detection — a fresh import that detects X plants no note, so a re-read that replaces the placeholder
+      // with X is the same first-typing event: the stale-type rows are still DROPPED (newTypeKeys, condition 4) but
+      // no "type changed" note is planted (condition 3 stays for a REAL prior type). Under the redetect switch only;
+      // OFF ⇒ byte-identical. Pinned in test_reprocess_type_flip.js.
+      let _fromGeneric = false;
+      try {
+        const _g = _redetectEnabled(db) ? require('../../../database/modules/document_types').getGenericType(db) : null;
+        _fromGeneric = !!(_g && Number(_g.id) === Number(priorTypeId));
+      } catch { _fromGeneric = false; }
       flip = {
         newTypeKeys: new Set((reprocType.fields || []).map(f => f.key)),
         refKey:      reprocType.ref_field_key || null,
-        noteText:    `Document type changed from '${oldName}' to '${reprocType.name}' on reprocess — please check the fields.`,
+        noteText:    _fromGeneric ? null : `Document type changed from '${oldName}' to '${reprocType.name}' on reprocess — please check the fields.`,
       };
       if (logger) logger.log(`Reprocess TYPE CHANGE: ${filename} '${oldName}' -> '${reprocType.name}'`
-        + (result.type_overridden ? " (machine-assigned type overridden by the doc's own title)" : ''));
+        + (result.type_overridden ? " (machine-assigned type overridden by the doc's own title)" : '')
+        + (_fromGeneric ? ' (from the General Document placeholder — first typing, no note)' : ''));
       if (traceWanted(diagOn)) {
         routeTrace({ type: 'trace', doc: filename, event: 'reprocess_type_change',
                      from: oldName, to: reprocType.name, overridden: !!result.type_overridden }, true);
@@ -5130,7 +5161,7 @@ function register(ctx) {
     getDb,
     enabled: _quietEnabled,
     isForegroundBusy: _anyProcessingBusy,
-    stageDocs: (db, chunk, { auditMeta } = {}) => {
+    stageDocs: (db, chunk, { auditMeta, quick = false } = {}) => {
       const learning2 = require('../../../database/modules/learning');
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docusnap-qb-'));
       const { args: trainingArgs, tempFiles } = buildTrainingArgs(db, configPath, logger);
@@ -5138,6 +5169,12 @@ function register(ctx) {
       for (const [name, nd] of Object.entries(staged.nameToDoc)) {
         const src = chunk.find(c => c.docId === nd.docId);
         if (src) nd.folderPath = src.folderPath;
+        // QUIET REDETECT (quick job): mirror the operator's Quick partition EXACTLY — the imageless engine cannot run
+        // live Stage-0 identification, so pre-resolve the known template by fingerprint (Plan-B C2, the same helper
+        // the batch uses at its quick partition). Never for a scoped (Full) job.
+        if (quick && staged.manifest[name] && !nd.pinDiff) {
+          try { staged.manifest[name].known_template_id = reextractKnownTemplateId(db, require('../../../database/modules/templates'), nd.identity); } catch {}
+        }
       }
       const manifestFile = writeTempJson('qbmanifest', staged.manifest);
       return {
@@ -5146,7 +5183,7 @@ function register(ctx) {
         cleanup: () => { try { fs.rmSync(tmpDir, { recursive: true }); } catch {} cleanupFiles([manifestFile, ...tempFiles]); },
       };
     },
-    runShard: ({ db, staged, label, extraEnv, track, onFileDone }) => {
+    runShard: ({ db, staged, label, extraEnv, track, onFileDone, reextract = false }) => {
       // Split the chunk across a few concurrent workers (owner: the 1-worker lane "is quite slow").
       // The per-shard OMP cap is _reprocessThreadCap UNCHANGED — every doc reads under the identical
       // threading whether the lane runs 1 worker or several (S3-C4: no boundary glyph flips → no
@@ -5164,6 +5201,7 @@ function register(ctx) {
         deskewAll: false, deskewMinAngle: 0.2,
         threadCap: cap,
         label, extraEnv, track, onFileDone,
+        reextract: !!reextract,                    // QUIET REDETECT: the quick job's imageless road; false for every scoped job
         onMsg: () => {},                           // never the reprocess-progress channel
       })));
     },
@@ -5199,6 +5237,37 @@ function register(ctx) {
     // `quiet_reread_on_ready` (the crossing itself). The floor is the scope's LIVE trust floor.
     // Chris r18 A1 (Oracle 2026-08-23): the per-job FIELD-RELIABILITY hold on first-fills. DARK.
     firstFillReliability: { enabled: (db) => _firstFillReliabilityEnabled(db), k: FIRST_FILL_UNRELIABLE_K },
+    // QUIET REDETECT deps (2026-09-24, Oracle C1/C5): the switch, the per-doc OCR-cache probe (the batch's own
+    // predicate over the stored text + recipe stamp), the Generic type id, the identity/name-key predicate.
+    redetectEnabled: (db) => _redetectEnabled(db),
+    quickUsable: (db, docId, opts = {}) => {
+      const ocrCache = require('./ocrCache');
+      const r = db.prepare('SELECT ocr_text, ocr_recipe FROM documents WHERE id = ?').get(docId) || {};
+      const current = ocrCache.currentOcrRecipe(db);
+      const v = ocrCache.ocrCacheUsable({ ocr_text: r.ocr_text, ocr_recipe: r.ocr_recipe, enhance_active: false }, current);
+      // BORN-DIGITAL relaxation for the redetect job ONLY (gate finding 2026-09-24 evening 2: the exhibit's four untyped
+      // docs were all skipped `born-digital-doc`). The batch predicate refuses a text-layer doc because the operator's
+      // Quick exists to skip OCR and a born-digital Full is nearly free anyway — a COST rule, not a safety one. Here the
+      // alternative to Quick is NOT Full (the lane never stages Full for this job) but NOTHING, and the redetect wants
+      // exactly what the text layer gives: type detection + keyword reads over exact text (the page-0 geometry hand-off
+      // is empty for a born-digital page on the Full road too). Every OTHER invalidator (dpi / light / bd setting /
+      // pipeline rev / tesseract) is still applied by re-asking the predicate with only `bd_used` waived.
+      if (!v.usable && v.reason === 'born-digital-doc' && opts.allowBornDigital) {
+        try {
+          const rec = ocrCache.parseRecipe(r.ocr_recipe) || {};
+          const v2 = ocrCache.ocrCacheUsable({ ocr_text: r.ocr_text, ocr_recipe: JSON.stringify({ ...rec, bd_used: false }), enhance_active: false }, current);
+          return v2.usable ? { usable: true, reason: 'ok-born-digital' } : v2;
+        } catch { return v; }
+      }
+      return v;
+    },
+    genericTypeId: (db) => { try { const g = require('../../../database/modules/document_types').getGenericType(db); return g ? g.id : null; } catch { return null; } },
+    isIdentityKey: (key) => {
+      const k = String(key || '').trim();
+      if (!k) return false;
+      if (k === 'supplier_name' || k === 'customer_name') return true;
+      try { return !!require('../../../database/modules/learning').isNameLikeField(k, null); } catch { return false; }
+    },
     readyArm: {
       enabled: (db) => _readyTemplatedEnabled(db),
       floor: (db, supplier, slug) => { const t = require('../../../database/modules/trust').scopeTrust(db, supplier, slug); return t && Number.isFinite(t.floor) ? t.floor : null; },
@@ -7774,6 +7843,7 @@ module.exports = {
   scheduleScopeAutoAccept: (db, info) => (_scheduleScopeAutoAcceptImpl ? _scheduleScopeAutoAcceptImpl(db, info) : false),
   _quietLaneActiveScopes,    // Slice 3 marks a scope here while its quiet re-read is in flight (S1-C5)
   scheduleQuietReread,   // Slice 3 trigger (a taught confirm / a layout write)
+  scheduleQuietRedetect, // QUIET REDETECT trigger (a type became available / an override was saved) — DARK mig 216
   _layoutRereadEnabled, _readyTemplatedEnabled, _firstFillReliabilityEnabled, FIRST_FILL_UNRELIABLE_K, _reprocessHoldsEnabled, nameArmTokens, NAME_ARM_GENERIC,
   readyProbe: (db, sup, slug) => (_readyProbeImpl ? _readyProbeImpl(db, sup, slug) : null),              // P2: scope readiness BEFORE a confirm (memoised)
   scheduleReadyReread: (db, info) => (_scheduleReadyRereadImpl ? _scheduleReadyRereadImpl(db, info) : false),   // P2: fire the lane on the ready crossing

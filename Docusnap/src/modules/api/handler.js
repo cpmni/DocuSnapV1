@@ -1501,6 +1501,8 @@ function createRequestListener(ctx) {
           title_aliases: body && body.title_aliases,
         });
         if (!r.success) return sendJson(res, 400, { error: r.error });
+        // QUIET REDETECT (2026-09-24): a type created over /v1 is the same detection change as the desktop road.
+        try { const dt = r.type || {}; require('../processing/handler').scheduleQuietRedetect(getDb(), { typeSlug: dt.slug || null, reason: 'type-created' }); } catch {}
         try { audit({ user_id: session.userId, action: 'doc_type_create', action_category: 'admin', outcome: 'success',
                       metadata: { via: 'client', ip: clientIp(req), type_id: r.id, name: String((body && body.name) || '').trim() } }); } catch {}
         return sendJson(res, 200, { success: true, id: r.id, type: r.type, notices: r.notices || [] });
