@@ -6,6 +6,12 @@
 > "repeat only if" condition — so no night repeats work unless it is needed.** Before planning a night, read the
 > DONE ledger first. Keep entries one to three lines; detail lives in the linked report/handover.
 
+## ✅ DONE 2026-09-24 NIGHT — QUICK RESCORE shipped to the sandbox · QUIET REDETECT built DARK (mig 216) + Oracle re-rule · CHRIS round + the owner-pre-authorised fix pass — `HANDOVER_2026-09-24_QUIET_REDETECT.md` + `docs/CHRIS_FULL_APP_REVIEW_2026-09-24.md`
+- Quick rescore (Plan-B C4 re-ruled): a Quick pass lifts a stale low overall; gate exhibit 17 → 93, arm B 12/12 filed after graduation, live copy byte-identical.
+- Quiet redetect (owner: "categorise everything, then confirms allow auto-file"): a type/override change re-reads the held unrecognised docs on the Quick road (gary+eric → Oracle A w/cond, B/C do-nothing); gate OFF identical / ON typed 3 of 4 (the 4th's type not added) + 16/17 quotes 31→93; born-digital relaxation re-ruled SIGN-OFF-W/COND.
+- Chris (fresh sandbox 9226): 91/98 sorted themselves, 19/20 credit notes fixed by one keyword, 9 siblings filed after the 10th confirm, verdict yes. Fixed same night: untyped job ignores the lane-note family (7 leftovers), "Read it as a Statement" notice, fast-suggestion digit gate ("nanann"), redetect receipt toast + list refresh, copy/layout. Logged: near-identical sender names, tab rename/pill, "Set aside all" prompt, two statements typed Invoice, natural-language search.
+- run-pins 429/429. Owner sandbox restarted on the final code with the switch persisted ON. NEEDS APPROVAL: push (12 commits), flip mig 216, card-5 design. Repeat if: the quiet lane's population queries, the catalog/override IPCs, or the redetect switch change.
+
 ## ✅ DONE 2026-09-23 NIGHT — the PADDLE CORROBORATION ARC: S0 geometry + C1 + traced exits + S1 slice integrity (mig 212) built DARK, C10 flip census MET, Chris teach-a-doc sandbox vet — `HANDOVER_2026-09-23_NIGHT.md` + `TESTING/_measure/release_c0_20260923/RESULT_C10.md`
 Owner "go — build S1 word-snap and re-census", then "sandbox run the app with everything on, Chris FULL teach-a-doc
 test + report; going to bed". 007+oscar design → Oracle SIGN OFF W/COND (C1-C14). Built: the taught-box CENTRE→top-left
