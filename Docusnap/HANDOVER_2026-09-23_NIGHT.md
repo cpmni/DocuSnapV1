@@ -238,7 +238,11 @@ box + a label-line keyword read · the decision rule). Both reports are folded i
   status table in `docs/designs/CHRIS_ROUND_FIXES_2026-09-24.md`. **R1 gate RUNNING in the background**
   (`%USERPROFILE%\.claude\jobs\68b38f39\tmp\gate\status.txt`: 727 P/K/N + Hard Set P/K/N, then G1 OFF/ON) — read
   `rr_*.jsonl` with `arms/compare_arms.py`; worktrees `gate/wt_pre` `wt_r1` `wt_g1` (remove after). Whole pin suite
-  running → `tmp/run_pins_full.log`.
+  ran → `tmp/run_pins_full.log`: **369 of 415 pins ran (2 stale source pins fixed `6defb98`) before the harness killed the
+  suite for LOW MEMORY (0.7 GB free: the gate's python shards + 4 claude + chrome); the 49 unreached pins are listed in
+  `tmp/pins_unrun.txt` (the review/search/settings/shared window tail) — the six most relevant ran green by hand. The
+  Chris sandbox app (PID 30400) was CLOSED to free memory. ⚠ The gate is SLOW under this load (727 P arm ~3 h) — ETA
+  ~10-12 h for all arms; trim to P+N on the 727 if that is too long (K's identity is provable on the 67-doc sandbox set).
 - NOT pushed (owner's call; the whole branch is unpushed). OFF md5 identity DONE on the sandbox 67 (the 727 arm + two-ON determinism still owed).
 
 ## OWED / flip gates
