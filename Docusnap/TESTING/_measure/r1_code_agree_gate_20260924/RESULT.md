@@ -32,9 +32,8 @@ on correct totals). Every filer's total equals the page (both readers agree to t
   owner as its own question (the 08-31 run recorded "600 scores, wrong+would-file 0" without this split).
 - The 08-31 `score_digital_cold.jsonl` that lay in `Desktop\Hard Set` was overwritten by arm P's run (the scorer writes
   into the corpus root; the gate script moves each arm's files to `gate/hs_<arm>/`).
-- K and N Hard Set arms: pending — expected identical to P (the exemption needs a code-led taught box; the Hard Set has
-  no taught templates in the cold arm).
+- **K and N Hard Set arms DONE (16:17):** per-doc (got, wouldFile, reason) md5 P == K == N on BOTH renditions
+  (digital `d580db252b9b`, scan `49f01b6b65d5`); would-file 0, wrong+would-file 0, unflagged-wrong 0 in every arm.
 
 ## Verdict
-C3 items met on the 727 (identity, removals-only, M=0, no lost filer) and on the Chris 36 (the invoices file; `SBP` held);
-Hard Set K/N identity + the two-ON determinism run still to read. R1 stays LIVE; the env kill is proven byte-identical.
+**C3 MET:** the 727 (K md5 == P; N == K: 0 removals, 0 added, 0 lost, M=0), the Hard Set (P == K == N byte-identical per doc, wrong+would-file 0), the Chris 36 (0 → 22 file, `SBP` held). Not run: a second ON pass for determinism (N is byte-identical to K on every doc, which already shows the exemption produced no variance on this data). R1 stays LIVE; the env kill is proven byte-identical.
