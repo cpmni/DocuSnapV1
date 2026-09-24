@@ -3127,3 +3127,62 @@ BUILD (same evening): `handler.js` `quickRescoreMerged` + `quickRescoreStore` (p
 `stats.taughtKeptKeys` at both taught keep sites; `database/modules/format_consistency.js` (constants + `mismatchDelta`)
 consumed by charsetAcceptService + the helper; pins `test_reprocess_quick_rescore.js` (14 sections) +
 `test_format_consistency_twin.js`. GATE: `TESTING/_measure/quick_rescore_gate_20260924/RESULT.md`.
+
+## 2026-09-24 (evening 2) — QUIET REDETECT after a type / override change (owner: "quick reprocess after every confirm … or everything in the queue for unrecognised docs, so everything gets categorised, then confirms allow auto-file"; gary + eric design → Oracle) — A: SIGN OFF WITH CONDITIONS C1-C7 · B: DO NOTHING · C: DO NOTHING (BUILT DARK mig 216)
+Premise (traced): the quiet lane (`quietLane.js`, S3 2026-08-21, ON since mig 93) already re-reads a sender's held
+template-less docs after a TAUGHT confirm / layout write / graduation mint / the READY crossing / Learning Repair — but
+NOTHING fires when a type is created / added from the catalog / re-enabled / its aliases edited, or an override is saved,
+and an ordinary confirm schedules no re-read. The lane is FULL-only although `_runReprocessShard` accepts `reextract`.
+`--reextract` reuses the cached text (process_docs.py:1067-1072) and `detect_document_type` runs at :1154 OUTSIDE that
+branch → a new type IS detected on the Quick road. **The seam everyone missed:** `_candidates` (:183/:229) and
+`_ownedTemplateRows` (:165) admit `document_type_id = ? OR IS NULL` — a GENERIC-typed doc (the mig-93 fallback, ON) is
+in NEITHER set, so every scoped arm silently skipped placeholder-typed docs; slice A retypes only what detection can
+name and the rest stayed invisible after the owner taught the sender. Two framing corrections: "a redetect is all
+first-fills" is overstated (a NULL-typed import stores the flat-catalog keys → mostly same-value S3-C5 non-events); the
+real reason an unconditional role hold is wrong = `REPROCESS_CARRY_LANE_HOLD` (handler.js:1858) carries "— confirm
+once." through the later graduated-lane Full re-read as a same-value carry → the sweep never files → the promise dies.
+gary's at-100 seam is closed by `QUICK_RESCORE_CAP = 99` except when the prior was already 100 (counted in the gate).
+**Rulings.** (1) eric — NO wildcard sweep block (`_autoAcceptScope` :5053 returns `quiet-lane-active` with no
+re-queue → every confirm during a 400-doc job would silently lose its auto-accept), NO `onJobDone` fan-out (`job_done`
+already re-asks the queue-wide consent bar, renderer :10427); populations are disjoint by construction (sweep candidates
+need a type + a supplier). (2) gary — `via:'redetect'` takes the reliability branch (provisional first-fill hold,
+released at finish unless the field proved unreliable). (3) option (b) — Generic→X: rows dropped (newTypeKeys :1915),
+NO note (noteText :1951), General Document is a placeholder not a detection; paired with the `_candidates` widening
+(C1) — (b) without it changes nothing for the lane flow, the widening without (b) plants the note on every lane re-read.
+(4) A2 (overrides) IN, keyed `<slug>|redetect`, with the narrow identity-key hold (C5: G1/G2 guard TAUGHT boxes, not
+keyword captures — a "Customer:" caption on supplier_name is the unguarded twin of Chris's 09-22 finding). (5) UI minimum
+= `_isActivelyViewing` covers the Not-recognised tab + a blank-scope hint copy; skip the KINDS extension. **B = DO
+NOTHING** as a re-read: on the Quick road a re-read carries nothing of a typed name to a no-supplier sibling
+(identity_fusion never fills an empty issuer; hints need usage ≥2; the logo plant is text-gated + Full-only + unreliable
+on scans; a lone confirm links, never creates a template) — the existing "Apply 'X' to N & re-read" ripple OFFER is the
+honest lever. **C = DO NOTHING** (READY arm + graduation mint cover "the confirm that makes a sender fileable").
+BINDING: **C1** `_candidates` (both queries) + `_ownedTemplateRows` admit `document_type_id = <generic id>` under the
+switch, OFF byte-identical (pin ON/OFF); **C2** flip split — Generic→X rows dropped no note · RealType→X note kept ·
+NULL→X unchanged (pinned in `test_reprocess_type_flip.js`); **C3** blank-supplier docs key their reliability witness
+bucket per document (`doc:<id>|<slug>`), never `|<slug>` shared across unrelated senders (pin); **C4** a human confirm
+during a running `*|redetect` job still schedules its auto-accept (no wildcard block — pinned by the absence of
+`markScopeActive` for the kind); **C5** A2 only: an override on an identity/name key holds first-fills of THAT key with
+an unconditional "— confirm once." (otherwise the reliability branch); **C6** the Quick-rescore cap keeps a redetect
+merge with a kept row below 100 (prior 100 reported in the gate); **C7** `update-document-type` fires on `title_aliases`
+OR `enabled` 0→1 (a re-enabled type is a "type became available" event). GATE additions: the sandbox arm end-to-end
+(add the type → confirm `graduation_window` → the graduated lane lists the formerly-Generic docs → sweep files them,
+wrong-filed = 0) + a Generic-heavy copy where detection stays None: OFF == ON row-identical.
+BUILD (same evening): `quietLane.js` kind `redetect` (scope-less key `*|redetect` / `<slug>|redetect`, `quick:true` →
+`reextract`, population + `quickUsable` skip + cap 400 + `detected_type_name` ordering, scoped-first tick, no scope mark,
+no fan-out, C5 hold); `_genericAdmitId` widening (C1); `rereadHolds._scopeOf` per-doc for a blank supplier (C3) +
+`holdFirstFills(opts.onlyKeys)`; `handler.js` `_redetectEnabled` + `scheduleQuietRedetect` + the four lane deps + the
+runShard `reextract` forward + the quick-staging C2 `known_template_id` mirror + the Generic flip-note split; triggers in
+settings/handler (create / presets / add-type / update-type aliases|enabled / override add|bulk|delete) + the /v1 type
+create; renderer `_isActivelyViewing` + the redetect hint copy; mig 216 DARK + `TEST_SWITCH_KEYS` 14 + ledger. Pins:
+`test_quiet_lane_redetect.js` (10 sections), `test_migration216_quiet_redetect.js`,
+`test_reread_holds_blank_supplier_scope.js`, `test_detection_change_triggers.js` (17), `test_reprocess_type_flip.js` §5,
+`python_backend/tests/test_reextract_type_detect_order.py`. GATE: `TESTING/_measure/quiet_redetect_gate_20260924/RESULT.md`.
+**GATE FINDING + a deviation NOT put to the Oracle (flagged for a morning re-rule):** the first ON arm's type-add job
+skipped ALL four untyped exhibit docs `no-cache:born-digital-doc` — `ocrCacheUsable` refuses a text-layer doc (`bd_used`)
+because the operator's Quick exists to skip OCR and a born-digital Full is nearly free: a COST rule, not a safety one,
+and it made the redetect a no-op on the owner's whole Demo Docs population. Applied: the redetect's `quickUsable` re-asks
+the SAME predicate with only `bd_used` waived (`allowBornDigital`, the lane is the only caller) — every other invalidator
+still applies; the imageless read gets the exact text layer (type detection + keyword reads; the page-0 geometry hand-off
+is empty for a born-digital page on Full too); the job still never stages Full. The override job in the same arm re-read
+16/17 quotes 31 → 93 hands-free (the 17th was open in Review — correctly untouched). Also: the audit redactor masked the
+job's `override_keys` field → renamed `override_fields`.

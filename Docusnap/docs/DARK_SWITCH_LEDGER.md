@@ -79,6 +79,17 @@ in `database/dark_switches.js`'s history comment; the LIVE list is `TEST_SWITCH_
   reference on BOTH a tight crop and a wider crop (so a character cut off by the box can't fool both), every letter is
   read confidently, and no other reading on the page still disagrees, the "look-alike character" note is REMOVED so the
   document can file on its own confidence like any clean one. Every doubt keeps the mig-210 wording (still held).
+- **quiet_redetect_on_type_change (mig 216, 2026-09-24 evening 2)** — when you add a document type (from the catalog,
+  the wizard, or by re-enabling one), edit its "Also appears as" words, or save a Keyword Label Override, the app quietly
+  re-reads the held documents that were read BEFORE that change — the ones with no type (or only the General Document
+  placeholder) and no taught layout, or the override's own type — on the fast text-only road, so they get their type and
+  fields without anyone pressing Reprocess. Same manners as the existing quiet re-read: never a document you have open,
+  pauses for any import or reprocess, changed values are held with a note, and it never files anything by itself (the
+  next confirm's sweep does). Documents whose page text was never stamped are skipped, not re-read. Under the same switch,
+  a re-read that replaces the General Document placeholder with a real type plants no "type changed" note, and the quiet
+  lane's other arms also pick up placeholder-typed documents. _Flip gate: the sandbox arm (add an uninstalled catalog
+  type → the redetect audit lists the held docs typed-wrong 0 / wrong-filed 0; then graduation → sweep files them) and a
+  Generic-heavy copy with no detection OFF == ON row-identical (TESTING/_measure/quiet_redetect_gate_20260924/)._
   _Oracle SIGN OFF WITH CONDITIONS (C0-C11). Evidence: the filtered census (18 look-alike cases: all 14 agreements
   correct, the 4 disagreements all genuine misreads the mig-207 hold catches) + the per-letter confidence census (the
   one clipped read both readers got wrong scored 0.505 — the 0.80 floor rejects it). Yield check on a copy of your

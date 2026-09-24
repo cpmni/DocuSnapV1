@@ -5728,3 +5728,26 @@ gets a template only at graduation or by teaching (a lone human confirm links, n
 rescored doc holds honestly with "this layout hasn't been matched to a template yet". Follow-up (Oracle CX): that
 copy should name the next step ("confirm a few from this sender, or teach one, then Reprocess").
 
+## 2026-09-24 (evening 2) — QUIET REDETECT built DARK (mig 216) · the "re-read after every confirm" ask: two legs decided against
+**Owner ask:** "quick reprocess after every confirm for all docs from that supplier, or for unrecognised docs everything
+in the queue, so everything gets categorised quickly, then further confirms allow auto-file." gary + eric → Oracle
+(`docs/oracle_log.md` 2026-09-24 evening 2; design `docs/designs/QUIET_REDETECT_2026-09-24.md`).
+**BUILT (slice A, DARK `quiet_redetect_on_type_change`):** a type created / added from the catalog / re-enabled / aliases
+edited, or a Keyword Label Override saved or removed, schedules the quiet lane's scope-less QUICK re-read of the held
+untyped (NULL / General Document) template-less docs — or the override's type's. No press needed. Same guards as the
+lane; never files by itself; skips docs with no OCR stamp. Under the switch the scoped lane arms also admit
+General-Document-typed docs (they were silently skipped) and a Generic→real re-type plants no "type changed" note.
+**DECIDED AGAINST (deferred, not built):**
+- **B — a re-read after a confirm that names a supplier / picks a type on an unrecognised doc.** Oracle DO NOTHING: on
+  the Quick road a re-read carries nothing of the typed name to a no-supplier sibling (identity_fusion never fills an
+  empty issuer; hints need 2 confirms and never name a sender; the logo plant is text-gated, Full-only, unreliable on
+  scans; a lone confirm links but never creates a template). The existing "Apply 'X' to N & re-read" ripple OFFER at
+  the issuer field IS this feature, kept as an offer with a count on purpose (one bad name must not fan across 100 docs).
+  **B′ idea (unbuilt):** let the accepted ripple's re-read ride the quiet lane on the Quick road instead of a foreground
+  reprocess.
+- **C — a re-read after EVERY confirm.** Oracle DO NOTHING: the READY arm + the graduation mint already fire on "the
+  confirm that makes a sender fileable"; a spawn per confirm is churn (rows shifting under the reviewer, CPU).
+**Follow-ups:** the "Not recognised" hint could name the next step after a redetect leaves a doc untyped (the heading
+banner needs a render — Quick can't see it); a `reviewEvents` "recognised" receipt in the activity strip (Oracle: skip
+for now).
+
