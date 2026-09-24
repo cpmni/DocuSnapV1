@@ -35,8 +35,9 @@ fileable (`pendingfeatures.md` 2026-09-24 evening 2).
 ## 3. The owner's sandbox NOW
 Restarted ~21:58 on HEAD with **`QUIET_REDETECT_ON_TYPE_CHANGE=1` in its process env** (CDP 9223, PID 4500, data folder
 `C:\Users\cmccu\AppData\Local\Temp\claude\c--GIT-Projects-Docusnap\owner-sandbox-20260924\userData`, logs `app3*.log`
-beside it). The env arming reverts on the next plain restart; to make it stick set the setting
-`quiet_redetect_on_type_change=true` in the sandbox DB (or flip mig 216 after the owner's verdict). **What to try:**
+beside it). **PERSISTED (owner ask, ~22:05): `quiet_redetect_on_type_change = 'true'` written into the sandbox DB** — the predicate
+reads the setting per call, so it is live now and survives restarts; the env arming is now redundant (a plain
+restart keeps the feature on in the sandbox). Flip mig 216 for everyone only after the owner's verdict. **What to try:**
 import a few docs of a type that is not installed → they land in "Not recognised" → Settings → Document Types → "Add
 from catalog" → within ~10 s they should be typed and field-filled (Review refresh is deferred while a doc is open);
 save a Keyword Label Override → the held docs of that type re-read and rescore. ⚠ sandbox `output_folder` is the REAL
