@@ -56,6 +56,49 @@ save a Keyword Label Override → the held docs of that type re-read and rescore
 - Gate scripts live in the job scratch `%USERPROFILE%\.claude\jobs\68b38f39\tmp\gate\` (prep / seed-user / CDP driver /
   snapshot / compare / flips / audit / run_arm / run_redetect_arm) — mortal; both RESULT.md files describe them.
 
+## 6. NIGHT (owner asleep: "take Chris's review and apply any fixes that you deem suitable")
+**Chris round** (`docs/CHRIS_FULL_APP_REVIEW_2026-09-24.md`, fresh sandbox CDP 9226, PID 32576, still running): both roads
+WORK underneath — adding four kinds from the catalog sorted **91 of 98** kind-less papers by themselves, one saved keyword
+fixed **19 of 20** credit notes hands-free, the confirm road filed 9 siblings 10 s after his 10th confirm, every file on
+the right shelf, delete/bin/restore never lost a file. Verdict "yes, I'd keep it". Eight cards; the Review window's
+SILENCE while the pile sorted was his top friction.
+**Fixed the same night (all pinned, suite green — see §7):**
+- **Card 3 (root cause verified in his DB):** the 7 leftovers all carried the engine's import-time "Found '…' after
+  straightening — confirm once." note; the lane's "already asked" family exclusion dropped them. The UNTYPED redetect job
+  no longer applies the lane-note exclusion (an untyped doc was never asked); the override (typed) job keeps it.
+- **Card 2:** the untyped notice now recognises an INSTALLED type named by `detected_type_name` ("Statement is set up —
+  Read it as a Statement" → selects the type + reprocesses) instead of the false "Add 'Statement'" → "isn't a ready-made
+  type" → create-a-duplicate door.
+- **Card 4 "nanann":** the on-open fast-suggestion road (`reextract_fast_enabled`) had no shape gate; it now drops a
+  suggestion for the type's reference role with no digit (the `ref_role_digit_gate` twin) and any suggestion with no
+  letter or digit.
+- **Card 1 (receipt):** a redetect's `job_done` now refreshes the Review list at once (never the open document's pane),
+  toasts "Re-read N documents after you added X — the list has been refreshed", and, when the open document was one the
+  pass left alone, says so and points at Reprocess; the lane reports the viewer-skipped ids (`viewing`) in the event.
+- **Cards 6/7/8:** copy ("if it reads clean it will be offered in File All Ready"; "the 90% level for filing without a
+  check (Settings → Processing)"; "so it knows what to look for"; "however the automatic-filing level is set"); the
+  Not-recognised intro wraps full-width and says the SENDER couldn't be identified.
+- Two source pins adjusted for the new shapes (`test_quiet_lane.js` job_done window; `test_review_untyped_reason.js`
+  wording) + new pins in `test_quiet_lane_redetect.js` / `test_review_untyped_reason.js`.
+**Logged, NOT built:** card 5 (near-identical sender names "Meadowyale" / "Dairy Wholesale" — identity near-match arc);
+card 8's tab rename + a "no type yet" pill on kind-less rows; "Set aside all" with no prompt; two Ironclad statements
+typed Invoice (detection; held anyway); natural-language search ("Harrowgate March 2026"); a durable activity-strip
+receipt for the redetect (Oracle skipped the KINDS extension).
+
+## 7. Verification state at the night wrap
+`node scripts/run-pins.js` **429 files: 428 green + the client teach-shared sync pin** (the catalog wording change made
+the synced client copy stale → `node scripts/sync-client-teach.js` → 17/17) = green across the board. Every new pin green
+in isolation. The owner's sandbox was RESTARTED on the final code (CDP 9223) with the switch persisted in its DB; Chris's
+instance (9226) still runs the pre-fix code and is left up per the skill. Not measured live tonight: the receipt toast and
+the "Read it as a Statement" door (renderer pins only) — the first sandbox click in the morning is the check.
+
+## NEEDS YOUR APPROVAL (morning)
+- **Push** the branch (10+ commits unpushed: the Quick rescore, the quiet redetect, the Oracle re-rule, the Chris-round fixes).
+- **Flip mig 216** (`quiet_redetect_on_type_change`) for everyone, or keep it DARK + armed only in your sandbox. Chris's
+  round is the efficacy evidence (91/98, 19/20, nothing filed by the pass); the OFF arm is byte-identical.
+- **Card 5** design (near-identical sender names) — gary/Oracle before any build.
+- The sandbox's `output_folder` is still your REAL `Documents\Scan Finder`.
+
 ## 5. Traps met tonight
 - The CDP driver must pick the main page by URL (`/main/`), not by the title "ScanFinder" (the splash shares it).
 - A Review window can close on its own after an offer is consumed → a driver loop that waits on "review" must time out.
