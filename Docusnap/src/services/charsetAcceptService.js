@@ -21,7 +21,10 @@
 const path = require('path');
 const learning = require('../../database/modules/learning');
 
-const _FC_MISMATCH_BASE = 12, _FC_MISMATCH_STEP = 6, _FC_MISMATCH_CAP = 25;   // = validator.py:896-898
+// = validator.py `_FC_MISMATCH_*` — read from the ONE JS home (Oracle C2 2026-09-24: the Quick-rescore helper
+// in processing/handler.js mirrors the same penalty; two literal copies were a drift seam). Values unchanged.
+const { FC_MISMATCH_BASE: _FC_MISMATCH_BASE, FC_MISMATCH_STEP: _FC_MISMATCH_STEP, FC_MISMATCH_CAP: _FC_MISMATCH_CAP }
+  = require('../../database/modules/format_consistency');
 
 // WHERE THE SHIPPED CONFIG ACTUALLY LIVES (2026-09-07, source-protection Build 2 prep). Same DEAD-GUARD
 // as database/modules/freeze_guard.js:69 (Oracle C1, 2026-08-10): `config/` ships as extraResources at
