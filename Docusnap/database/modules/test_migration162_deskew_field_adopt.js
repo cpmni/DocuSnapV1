@@ -121,13 +121,13 @@ function makeDb() {
   const opts = (note) => ({ extractions: rows(note), templateMatched: true, critFieldCorrobRelax: true, optionalSoftFlag: true });
   const held = trust.isAutoFileEligible(d, doc, opts(TCA));
   check("with the TCA note the adopted row is refused as 'flagged' (mig 142 + corrob autofile + floor relax all ON)",
-        held.eligible === false && held.reason === 'flagged', JSON.stringify(held));
+        held.eligible === false && trust.isFlaggedReason(held.reason), JSON.stringify(held));
   const open = trust.isAutoFileEligible(d, doc, opts(null));
   check('the SAME row with the note stripped is ELIGIBLE (@82 < 88 relaxed by the licensed+shape-matched record) — the note is the SOLE checkpoint',
         open.eligible === true, JSON.stringify(open));
   const lane = trust.isAutoFileEligible(d, doc, opts("Read differently after straightening — was 'VS-72672', now 'WS-73673' — confirm once."));
   check("the deskew lane-hold note on the ref ROLE is also 'flagged' under mig 142 (a role note is never soft)",
-        lane.eligible === false && lane.reason === 'flagged', JSON.stringify(lane));
+        lane.eligible === false && trust.isFlaggedReason(lane.reason), JSON.stringify(lane));
   d.close();
 }
 

@@ -61,7 +61,7 @@ const doc = (id) => documents.getById(db, id);
   const n1 = noteOf(id1, 'invoice_number');
   check('the ref-role row carries the multi-document note', n1 === SP.MULTI_DOC_HOLD_NOTE, n1);
   const v1 = trust.isAutoFileEligible(db, doc(id1));
-  check("isAutoFileEligible refuses it: 'flagged'", v1.eligible === false && v1.reason === 'flagged', JSON.stringify(v1));
+  check("isAutoFileEligible refuses it: 'flagged'", v1.eligible === false && trust.isFlaggedReason(v1.reason), JSON.stringify(v1));
   check('the File-All bypass does NOT lift it', !trust.autoFileEligibleIds(db, [doc(id1)], { bypassPutBack: true }).includes(id1));
   check('msg.needs_review was raised', m1.needs_review === true);
 

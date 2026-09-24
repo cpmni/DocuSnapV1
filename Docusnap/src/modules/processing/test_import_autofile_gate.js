@@ -123,7 +123,7 @@ console.log('1. T2 missing-required refusal (isAutoFileEligible, fixture DB)');
 
   const noted = addDoc(db, { rows: drop(FULL, 'vat_no').concat([{ key: 'vat_no', value: 'VAT', conf: 60, note: 'unexpected characters (…)' }]) });
   check('ARMED: a NOTED field still refuses via flagged (precedence: flagged before missing-required)',
-        trust.isAutoFileEligible(db, noted, { gateUnify: true }).reason === 'flagged');
+        trust.isFlaggedReason(trust.isAutoFileEligible(db, noted, { gateUnify: true }).reason));
 
   // opts.extractions data path (the harness/batch leg) mirrors the DB path.
   const exRows = withEmpty(FULL, 'invoice_number').map(r => ({ field_key: r.key, display_value: r.value, raw_value: r.value, confidence: r.conf }));

@@ -48,7 +48,7 @@ console.log('1. GATE 1 — the note holds the document at EVERY floor');
   const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(id);
   const ex = [clean('supplier_name', 'Print Tracker'), row2a(), clean('date', '01-09-2026')];
   const r = trust.isAutoFileEligible(db, doc, { extractions: ex, gradOn: false, corrobAutoFile: false });
-  check('overall 100, threshold 100: refused with reason "flagged" (the note)', r.eligible === false && r.reason === 'flagged');
+  check('overall 100, threshold 100: refused with reason "flagged" (the note)', r.eligible === false && trust.isFlaggedReason(r.reason));
   db.close();
 }
 

@@ -118,7 +118,7 @@ function main() {
   doc = addCandidate(db);
   db.prepare("UPDATE extractions SET validation_note = 'doesn''t read like a name' WHERE document_id = ? AND field_key = 'supplier_name'").run(doc.id);
   r = elig(db, doc);
-  check('4. wordness note → flagged (corroboration cannot bypass the flag block)', !r.eligible && r.reason === 'flagged');
+  check('4. wordness note → flagged (corroboration cannot bypass the flag block)', !r.eligible && trust.isFlaggedReason(r.reason));
 
   // 5. role-field disagree non-empty → declined
   doc = addCandidate(db, { corrobs: { worksheet_number: DISAGREE } });

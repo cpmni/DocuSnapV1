@@ -66,7 +66,7 @@ const strip = (rows) => rows.map(r => ({ ...r }));   // plain objects for JSON d
   check('the ref-role row carries the sentence', SP.hasSegmentHold(n1) && String(n1).endsWith('— confirm once.'), n1);
   check('…with the page range', /^Pages 2–3 /.test(String(n1)));
   const v1 = trust.isAutoFileEligible(db, doc(id1));
-  check("isAutoFileEligible refuses it: 'flagged'", v1.eligible === false && v1.reason === 'flagged', JSON.stringify(v1));
+  check("isAutoFileEligible refuses it: 'flagged'", v1.eligible === false && trust.isFlaggedReason(v1.reason), JSON.stringify(v1));
   check('the File-All bypass (bypassPutBack) does NOT lift it', !trust.autoFileEligibleIds(db, [doc(id1)], { bypassPutBack: true }).includes(id1));
   const q1 = queueRow(id1);
   check("the readiness classifier says 'flagged' (File-All-Ready skips it)", !!q1 && ReviewReadiness.classify(q1) === 'flagged', q1 && ReviewReadiness.classify(q1));

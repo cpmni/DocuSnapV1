@@ -52,10 +52,10 @@ console.log('1. THREE independent gates, each alone');
   const db = freshDb(); const doc = docAt(db, 100);
   const ex = (row) => [clean('supplier_name', 'Print Tracker'), row, clean('date', '01-09-2026')];
   const r1 = trust.isAutoFileEligible(db, doc, { ...OPTS, extractions: ex(rowB()) });
-  check('gate 1+2 present: refused "flagged"', r1.eligible === false && r1.reason === 'flagged');
+  check('gate 1+2 present: refused "flagged"', r1.eligible === false && trust.isFlaggedReason(r1.reason));
   const r2 = trust.isAutoFileEligible(db, doc, { ...OPTS, extractions: ex(rowB({ validation_note: null })) });
   check('note stripped, corrected_to DIFFERS from the value (a real suggestion): still "flagged" even with vacuous-ignore ON',
-        r2.eligible === false && r2.reason === 'flagged');
+        r2.eligible === false && trust.isFlaggedReason(r2.reason));
   const r3 = trust.isAutoFileEligible(db, doc, { ...OPTS, extractions: ex(rowB({ validation_note: null, corrected_to: null })) });
   check('note AND corrected_to stripped, conf 70 < 88 on the ref role: "weak-critical-field:reference_number"',
         r3.eligible === false && r3.reason === 'weak-critical-field:reference_number');

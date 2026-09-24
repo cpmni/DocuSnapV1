@@ -116,7 +116,7 @@ const fresh = (date, ref = 'INV-1', extra = {}) => ({ extractions: { supplier_na
   check('the blank-LAST sibling is held too', /— confirm once\./.test(ext(blankLast, 'invoice_date').validation_note || ''));
   check('…the note names the sender and the box', /read it differently on another document from this sender — confirm once\./.test(ext(blankFirst, 'invoice_date').validation_note || ''));
   check('the agreeing sibling carries no note', !(ext(same, 'invoice_date').validation_note || '').trim());
-  check("THE ONE predicate refuses the held first-fill ('flagged') — the sweep cannot file it", trust.isAutoFileEligible(db, docRow(blankFirst)).reason === 'flagged');
+  check("THE ONE predicate refuses the held first-fill ('flagged') — the sweep cannot file it", trust.isFlaggedReason(trust.isAutoFileEligible(db, docRow(blankFirst))));
   const a1 = lastJobAudit().metadata;
   check('audit: field_unreliable=invoice_date:2, reliability_held_ids has both blanks', /invoice_date:2/.test(a1.field_unreliable) && a1.reliability_held_ids.split(',').map(Number).includes(blankFirst) && a1.reliability_held_ids.split(',').map(Number).includes(blankLast));
   check('audit: first_fill_ids includes the held docs', a1.first_fill_ids.split(',').map(Number).includes(blankFirst));
@@ -138,7 +138,7 @@ const fresh = (date, ref = 'INV-1', extra = {}) => ({ extractions: { supplier_na
   const _dsV = [d1, d2, d3].map(id => trust.isAutoFileEligible(db, docRow(id)));
   // (this hermetic fixture has no confirmed history, so the predicate's cold-start refusal is
   //  'unverifiable-value' — the point here is that NO hold note makes it 'flagged')
-  check("the DS first-fills are NOT 'flagged' — the sweep's only reason left is the cold-start one (the hand-off)", _dsV.every(v => v.reason !== 'flagged'));
+  check("the DS first-fills are NOT 'flagged' — the sweep's only reason left is the cold-start one (the hand-off)", _dsV.every(v => !trust.isFlaggedReason(v.reason)));
   check('audit: field_unreliable empty, reliability_released_ids has all three', lastJobAudit().metadata.field_unreliable === '' && [d1, d2, d3].every(id => lastJobAudit().metadata.reliability_released_ids.split(',').map(Number).includes(id)));
 
   console.log('\n§3 Nordwind control — all valued, all agree');

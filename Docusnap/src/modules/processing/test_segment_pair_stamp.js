@@ -62,7 +62,7 @@ const land = (msg, ctx, autoFileRun = true, extra = {}) => H.handleFileMessage(d
     await land(m1, ctx);
     const n1 = notesOf(m1.db_id);
     check('the predecessor\'s ref-role row carries ITS pair sentence (provisional)', n1.length === 1 && n1[0] === S.pred && rowsOf(m1.db_id).find(r => r.field_key === 'invoice_number').validation_note === S.pred, JSON.stringify(n1));
-    check("isAutoFileEligible refuses it ('flagged'); the File-All bypass does NOT lift it", trust.isAutoFileEligible(db, doc(m1.db_id)).reason === 'flagged' && !trust.autoFileEligibleIds(db, [doc(m1.db_id)], { bypassPutBack: true }).includes(m1.db_id));
+    check("isAutoFileEligible refuses it ('flagged'); the File-All bypass does NOT lift it", trust.isFlaggedReason(trust.isAutoFileEligible(db, doc(m1.db_id))) && !trust.autoFileEligibleIds(db, [doc(m1.db_id)], { bypassPutBack: true }).includes(m1.db_id));
     check('PIN (C1 precondition): the provisional stamp does NOT raise msg.needs_review (the T1 bail must pass the release re-run)', m1.needs_review === false && !!m1.review_hold);
     const m2 = fileDone('a_split_p2.pdf', { ref: 'INV-29597' });   // the exhibit: same supplier, the same number, no date
     await land(m2, ctx);

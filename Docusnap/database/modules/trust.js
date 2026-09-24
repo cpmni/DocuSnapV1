@@ -567,20 +567,29 @@ function _optionalSoftFlagEnabled(db) {
 // Role-aware flagged count for the graduated soft-advisory non-block: a validation_note on an optional
 // non-role non-strict field does NOT count; a pending corrected_to and any role/required/strict note DO.
 // Self-contained (fetches its own dtRow + field metadata) so it never depends on a caller's scope.
-function _flaggedSoftAware(db, doc, opts, ctFlags) {
+function _flaggedSoftAwareRows(db, doc, opts, ctFlags) {
   const dt = db.prepare('SELECT ref_field_key, date_field_key FROM document_types WHERE id = ?').get(doc.document_type_id) || {};
   const roleKeys = new Set([...require('./document_types').COMPANY_KEYS, dt.ref_field_key, dt.date_field_key].filter(Boolean));
   const meta = new Map();
   try { for (const r of db.prepare('SELECT key, type, required FROM fields WHERE document_type_id = ?').all(doc.document_type_id)) meta.set(r.key, r); } catch {}
   const rows = opts.extractions
-    || db.prepare('SELECT field_key, validation_note, corrected_to, display_value, extraction_method FROM extractions WHERE document_id = ?').all(doc.id);
+    || db.prepare('SELECT field_key, validation_note, corrected_to, display_value, extraction_method FROM extractions WHERE document_id = ? ORDER BY id').all(doc.id);
   return rows.filter(e => {
     if (ctFlags(e.corrected_to, e.display_value)) return true;         // a pending correction always blocks
     if (!String(e.validation_note || '').trim()) return false;         // no note → fine
     if (isAxisLockNoteRow(e) || isNonNameFlagRow(e)) return true;      // never soft-cleared: axis-lock (mig 155) / non-name flag (mig 156)
     const m = meta.get(e.field_key) || {};
     return !isSoftAdvisory(e.field_key, m.type, m.required, roleKeys); // a soft-advisory note does not block
-  }).length;
+  });
+}
+function _flaggedSoftAware(db, doc, opts, ctFlags) { return _flaggedSoftAwareRows(db, doc, opts, ctFlags).length; }
+// isFlaggedReason — the ONE predicate for "this refusal is the note / pending-correction block" now that the
+// reason carries the field (`flagged:<key>`, 2026-09-24). Accepts the result object or the reason string. Tests
+// and consumers must use this instead of an exact `=== 'flagged'` compare (a `!== 'flagged'` compare goes
+// vacuously green against the keyed form — the dead-pin trap).
+function isFlaggedReason(r) {
+  const v = String(((r && typeof r === 'object') ? r.reason : r) || '');
+  return v === 'flagged' || v.startsWith('flagged:');
 }
 
 // Critical-field floor relax by corroboration (2026-08-15, Oracle SIGN-OFF-W/COND). The 88 critical
@@ -1297,18 +1306,29 @@ function isAutoFileEligible(db, doc, opts = {}) {
   // Graduated soft-advisory non-block (owner 2026-09-09): ONLY on a scope that has earned trust (graduated OR
   // corroborated) does a soft optional-field note stop counting as a blocking flag — never on a cold scope.
   const _softNonblock = _softFlagOn && (graduated || corroborated);
-  const flagged = _softNonblock
-    ? _flaggedSoftAware(db, doc, opts, _ctFlags)
+  // FLAGGED FIELD NAME (2026-09-24, Chris round card 2b; gary → Oracle C9/C10): the refusal names the FIRST
+  // blocking row's field (`flagged:<key>`) so Review can say "Total was flagged by a formatting check" instead of
+  // "a value was flagged" — the customer's Total held 30 invoices with no field named anywhere on screen. The key
+  // comes from the SAME filter that blocked (the soft-aware rows under the graduated non-block, else the plain
+  // note / pending-correction test), in extraction-row order (deterministic). docTrustGate already emits the
+  // keyed form; every consumer splits on ':' or uses isFlaggedReason. A bare 'flagged' survives only when no key
+  // can be named. Read-only otherwise: the count is the same rows' length.
+  const _flaggedRows = _softNonblock
+    ? _flaggedSoftAwareRows(db, doc, opts, _ctFlags)
     : (opts.extractions
-        ? opts.extractions.filter(e => String(e.validation_note || '').trim() || _ctFlags(e.corrected_to, e.display_value)).length
+        ? opts.extractions.filter(e => String(e.validation_note || '').trim() || _ctFlags(e.corrected_to, e.display_value))
         : (vacuousIgnore
             ? db.prepare(
-                "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> '' AND NOT (display_value IS NOT NULL AND TRIM(display_value) <> '' AND TRIM(corrected_to) = TRIM(display_value))))"
-              ).get(doc.id).c
+                "SELECT field_key FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> '' AND NOT (display_value IS NOT NULL AND TRIM(display_value) <> '' AND TRIM(corrected_to) = TRIM(display_value)))) ORDER BY id"
+              ).all(doc.id)
             : db.prepare(
-                "SELECT COUNT(*) c FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> ''))"
-              ).get(doc.id).c));
-  if (flagged) return { eligible: false, floor, trusted: t.trusted, reason: 'flagged' };
+                "SELECT field_key FROM extractions WHERE document_id = ? AND ((validation_note IS NOT NULL AND TRIM(validation_note) <> '') OR (corrected_to IS NOT NULL AND TRIM(corrected_to) <> '')) ORDER BY id"
+              ).all(doc.id)));
+  const flagged = _flaggedRows.length;
+  if (flagged) {
+    const _fk = String((_flaggedRows[0] && _flaggedRows[0].field_key) || '').trim();
+    return { eligible: false, floor, trusted: t.trusted, reason: _fk ? `flagged:${_fk}` : 'flagged' };
+  }
   // T2 (gate-unify slice): an EMPTY ref role / date role / required non-identity field refuses
   // with a reason instead of relying on the import pre-gate's blanket needs_review bail (which
   // the flag retires in handler.js). Flag-gated so OFF is byte-identical; also reachable via
@@ -1511,6 +1531,7 @@ module.exports = {
   isSoftAdvisory,                  // shared soft-advisory predicate (optional_soft_flag_autofile; Chris card 1 twin)
   isAxisLockNoteRow,               // C1 (mig 155): axis-lock note is never soft-cleared — pinned in test_scope_trust.js
   isNonNameFlagRow,                // mig 156: non-name flag note is never soft-cleared — pinned in test_scope_trust.js
+  isFlaggedReason,                 // the ONE 'flagged' reason predicate (flagged | flagged:<key>, 2026-09-24) — tests never compare the string
   _optionalSoftFlagEnabled,        // exported so the both-ON mig-142 pin reads the same default
   classifyLearnedShape, valueMatchesShape, fieldVerifiable,
   classifyRefShape, _refRoleShapeEnabled,   // ref-role shape verify (mig 154) — pinned in test_scope_trust.js

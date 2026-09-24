@@ -93,9 +93,9 @@ console.log('\nname suffix-snap gate (clean-row + self-feed)');
   // always has a row, so the belt returns 'role-disagree-only' ok for a clean read — only the fixture needs this.
   const rClean = trust.isAutoFileEligible(db, doc, { extractions: clean, roleDisagreeAt100: false });
   const rWeak  = trust.isAutoFileEligible(db, doc, { extractions: weak,  roleDisagreeAt100: false });
-  check('clean-row: the +name_snap row does NOT trip the flagged gate', rClean.reason !== 'flagged');
+  check('clean-row: the +name_snap row does NOT trip the flagged gate', !trust.isFlaggedReason(rClean.reason));
   check('clean-row: it auto-files (eligible)', rClean.eligible === true);
-  check('WEAK shape: corrected_to + note DOES trip the flagged gate', rWeak.reason === 'flagged');
+  check('WEAK shape: corrected_to + note DOES trip the flagged gate', trust.isFlaggedReason(rWeak.reason));
 }
 
 console.log(fails === 0 ? '\nALL PASS' : `\nFAILED (${fails})`);

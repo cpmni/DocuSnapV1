@@ -44,11 +44,25 @@ function main() {
   const d1 = mkDoc(); emit(d1, NOTE);
   const r1 = trust.isAutoFileEligible(db, getDoc(d1));
   check("caption guard's empty (value=NULL) + note row -> NOT eligible", r1.eligible === false);
-  check("  -> reason 'flagged' (held for review; never a silent blank auto-file)", r1.reason === 'flagged');
+  check("  -> reason 'flagged' (held for review; never a silent blank auto-file)", trust.isFlaggedReason(r1.reason));
 
   const d2 = mkDoc(); emit(d2, null);   // control: identical row, no note
   const r2 = trust.isAutoFileEligible(db, getDoc(d2));
-  check("control: SAME null-value row WITHOUT the note is NOT held (proves the note is load-bearing)", r2.reason !== 'flagged');
+  check("control: SAME null-value row WITHOUT the note is NOT held (proves the note is load-bearing)", !trust.isFlaggedReason(r2.reason));
+
+  // FLAGGED FIELD NAME (2026-09-24, Chris round card 2b; Oracle C9): the refusal names the FIRST blocking
+  // row's field so Review can say "<Field> was flagged" — the customer's Total held 30 invoices with no field
+  // named on screen. Deterministic: extraction-row (id) order, from the same filter that blocked.
+  check("the refusal NAMES the flagged field: reason === 'flagged:item'", r1.reason === 'flagged:item', r1.reason);
+  const d3 = mkDoc();
+  db.prepare("INSERT INTO extractions (document_id, field_key, display_value, raw_value, confidence, extraction_method, validation_note) VALUES (?, 'ticket_no', 'T-1', 'T-1', 95, 'anchor', NULL)").run(d3);
+  db.prepare("INSERT INTO extractions (document_id, field_key, display_value, raw_value, confidence, extraction_method, validation_note) VALUES (?, 'total', '10.00', '10.00', 95, 'keyword', ?)").run(d3, NOTE);
+  db.prepare("INSERT INTO extractions (document_id, field_key, display_value, raw_value, confidence, extraction_method, validation_note) VALUES (?, 'item', 'x', 'x', 95, 'anchor', ?)").run(d3, NOTE);
+  const r3 = trust.isAutoFileEligible(db, getDoc(d3));
+  check("two noted rows: the FIRST by extraction id is named (total, not item); the clean row never is", r3.reason === 'flagged:total', r3.reason);
+  check("isFlaggedReason accepts the result object, the keyed string and the bare string; rejects others",
+        trust.isFlaggedReason(r3) && trust.isFlaggedReason('flagged:total') && trust.isFlaggedReason('flagged')
+        && !trust.isFlaggedReason('below-floor') && !trust.isFlaggedReason('flaggedx') && !trust.isFlaggedReason(null));
 
   console.log('\n' + (fails === 0 ? 'ALL PASS' : `${fails} FAILED`));
   process.exit(fails ? 1 : 0);

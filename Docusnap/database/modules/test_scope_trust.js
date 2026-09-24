@@ -879,7 +879,7 @@ function main() {
       trust.isAutoFileEligible(db, d98, { extractions: exB('PI/26/9646', 'PI/26/9647'), templateMatched: true, vacuousCorrectedToIgnore: true }).eligible === false);
     const rBnull = trust.isAutoFileEligible(db, d98, { extractions: exB('', 'PI/26/9646'), templateMatched: true, vacuousCorrectedToIgnore: true });
     check("B ON: empty display_value + corrected_to → still flags (null-safe)",
-      rBnull.eligible === false && rBnull.reason === 'flagged');
+      rBnull.eligible === false && trust.isFlaggedReason(rBnull.reason));
 
     // Slice 2 of the garbled-issuer arc (2026-08-22 evening; Oracle C2.4): the engine now CLEARS a
     // Stage-4.5 token repair from corrected_to when it writes `suggested_supplier` beside the
@@ -893,7 +893,7 @@ function main() {
     ];
     const rS2 = trust.isAutoFileEligible(db, d98, { extractions: exS2, templateMatched: true, vacuousCorrectedToIgnore: true });
     check("S2: identity note + corrected_to null + suggested_supplier → still held, reason 'flagged'",
-      rS2.eligible === false && rS2.reason === 'flagged');
+      rS2.eligible === false && trust.isFlaggedReason(rS2.reason));
   }
 
   // ── 25. ref-role shape verify (mig 154, trust_ref_role_shape) ───────────────

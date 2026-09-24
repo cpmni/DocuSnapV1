@@ -134,7 +134,7 @@ section('Auto-file gate — the flip note is what blocks a silent file:');
 
   const withNote = trust.isAutoFileEligible(db, doc, { extractions: flipped });
   check('flipped doc WITH the note: auto-file REFUSED', withNote.eligible === false);
-  check("... for the 'flagged' reason (the note is what blocked it)", withNote.reason === 'flagged');
+  check("... for the 'flagged' reason (the note is what blocked it)", trust.isFlaggedReason(withNote.reason));
 
   // Now simulate a future dev deleting the note-planting: same rows, note stripped.
   const stripped = flipped.map(r => ({ ...r, validation_note: null }));
