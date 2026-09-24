@@ -23,7 +23,7 @@ touches that area — read the pointed-to doc BEFORE working in it:
 
 ## ⏭ LATEST — 2026-09-24 (Chris's teach round verified + control-tested; the seven-slice fix set BUILT; R1/G1 gates in flight):
 **READ `HANDOVER_2026-09-24.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `3de96dd`; origin at `14396ab` — 38
-commits UNPUSHED; migs → 213; `TEST_SWITCH_KEYS` 17; `/v1` contract 1.9.0; tree clean.** Chris's 09-23 round
+commits UNPUSHED (+ the afternoon's G2 build); migs → 214; `TEST_SWITCH_KEYS` 18; `/v1` contract 1.9.0; tree clean.** Chris's 09-23 round
 (`docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md`): orders filed as promised, 0 wrong roles on 67; invoices 0/30 with a
 taught Total; a taught Customer filed as "Customer". **Control test:** `14396ab` OFF vs today OFF md5-identical on his
 67; the Total hold is the 2026-08-09 LEGACY currency leg (`^[£$€¥]?…\d`, code-blind) meeting a box that captures the
@@ -34,7 +34,7 @@ inline `GBP` — NOT the second reader. **reggie/gary/eric → Oracle** (`docs/d
 `a983185` · **R1 LIVE** `7ddf9fa`: `engine._format_fail_code_agree` at the merge call site (known ISO code + strict shape
 + `money_cents` incl. sign == challenger → not a format failure; env kill `TEMPLATE_FORMAT_FAIL_CODE_AGREE=0`) · **G1
 DARK mig 213 `name_value_label_flag`** `a3371dc` (`value_quality.value_is_own_label`, `+nonname_flag` sentinel) · G2
-census `6913cbf` (bar met ONLY with a ≥2-token witness guard → design + Oracle). Quick R1 gate on Chris's 36 invoices:
+census `6913cbf` (bar met ONLY with a ≥2-token witness guard) → gary final design → Oracle SIGN OFF W/COND C1-C7 → **G2 BUILT DARK mig 214 `taught_name_disagree_refuse`** `37b61d0` (`trust._disagreeRefusesRow` at both sites; JS-only, env `TAUGHT_NAME_DISAGREE_REFUSE`; JS-twin census 24 holds on the 727 = 23 catches + the pinned `Fembank`, 6/6 sandbox). Quick R1 gate on Chris's 36 invoices:
 OFF 0 file / ON 22 file, 14 held with real reasons (5 = the pre-existing `template_mapping_edgecut` guard on correct
 totals → a Part-A follow-up). **OWED:** the 727 P/K/N + Hard Set + G1 gate (running from the job scratch dir at the
 wrap — READ before any flip; R1 is live: kill via env if N is not removals-only) · a clean full `run-pins.js` (killed at
@@ -93,7 +93,7 @@ anchor widening · the anchor-path false-hold census on real data · onnxruntime
 ## Prior sessions — 2026-09-04 → 2026-09-21 (collapsed 2026-09-23; every block VERBATIM in `docs/session-log.md` under "Archived from CLAUDE.md at the 2026-09-23 compaction" + its named `HANDOVER_*.md`; durable per-feature facts in `MEMORY.md` + `memory/project_*.md`)
 > Grep the matching `HANDOVER_*.md` (or `docs/session-log.md`) before re-touching anything a recent session built.
 > ⚠ **CURRENT switch / migration state is authoritative in `database/dark_switches.js` + `docs/DARK_SWITCH_LEDGER.md`
-> + `MEMORY.md`, NOT the narrative below.** As of 2026-09-24: migration **213**, `TEST_SWITCH_KEYS` **17**. The
+> + `MEMORY.md`, NOT the narrative below.** As of 2026-09-24: migration **214**, `TEST_SWITCH_KEYS` **18**. The
 > 2026-09-22 batch flip (**mig 205**) graduated 34 fail-toward-review switches to customer-default. The mig numbers
 > below are the mig that BUILT each switch (stable history) — read the source before asserting any switch is ON/OFF/DARK.
 > Newest first (date → what was built → handover):
