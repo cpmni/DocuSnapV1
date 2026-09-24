@@ -3182,7 +3182,32 @@ skipped ALL four untyped exhibit docs `no-cache:born-digital-doc` — `ocrCacheU
 because the operator's Quick exists to skip OCR and a born-digital Full is nearly free: a COST rule, not a safety one,
 and it made the redetect a no-op on the owner's whole Demo Docs population. Applied: the redetect's `quickUsable` re-asks
 the SAME predicate with only `bd_used` waived (`allowBornDigital`, the lane is the only caller) — every other invalidator
-still applies; the imageless read gets the exact text layer (type detection + keyword reads; the page-0 geometry hand-off
-is empty for a born-digital page on Full too); the job still never stages Full. The override job in the same arm re-read
-16/17 quotes 31 → 93 hands-free (the 17th was open in Review — correctly untouched). Also: the audit redactor masked the
-job's `override_keys` field → renamed `override_fields`.
+still applies; the imageless read gets the exact text layer (type detection + keyword reads); the job still never stages
+Full. The override job in the same arm re-read 16/17 quotes 31 → 93 hands-free (the 17th was open in Review — correctly
+untouched). Also: the audit redactor masked the job's `override_keys` field → renamed `override_fields`.
+
+## 2026-09-24 (night) — RE-RULE of the born-digital relaxation in the quiet redetect's cache predicate — SIGN OFF WITH CONDITIONS C1-C3 (all applied)
+Premise check: the main session's sentence "the page-0 geometry hand-off is empty for a born-digital page on the Full
+road too" was FALSE — `_page0_geom` is empty, but `letterhead.geometry_from_lines(page_text_lines)` (letterhead.py:416)
+bridges the vector text layer into the geometry issuer arm, and `page_text_lines` is built on Full
+(process_docs.py:1116-1124) and forced None on `--reextract`. So Full-bd HAS page-0 geometry; Quick-bd does not. The
+verdict survives it — every consumer traced: engine.py:10145 is a witness inside `if logo_match` (the logo arm never
+runs imageless → moot); :11315/:11356/:11393 require `method == 'template_identity'` and :11304 already declares the
+cached-reprocess outcome "no witness → note kept (honest)" — fail-toward-review; anchor.py `page0=None` is the same road
+the operator's Quick has run on scanned docs since Plan B and `mergeReprocessRows` keeps image-family rows. In the
+change's favour: tesseract.py:1006 — even the FULL reprocess road returns `cached_text` verbatim, so `bd_used` never
+protected text validity; it protected renders (logo, `page_text_lines`, `_id_img`). Seam feared and CLOSED: a redetect
+laundering the stamp so the batch later treats a bd doc as Quick — `_ocr_recipe_emit_keys(reextract=True)` →
+`{imageless:true}` only (process_docs.py:70-71, pinned `test_reextract_recipe.py`) and `ocr_recipe = COALESCE(?,
+ocr_recipe)` (handler.js) — two separately pinned facts. Identity: `COALESCE(result.supplier_name, supplier_name)` could
+let a different non-null text-only issuer replace a logo/geometry one (C7 stops blanking only) — same function on the
+same text → same pick; HYPOTHESIS-low, reported in the gate (C3). Q2: LANE-ONLY — the batch's Full fallback buys the
+logo arm + vector anchor harvests + the geometry witness at near-zero cost. **C1** fix the three stale sentences and
+reword `ocrCache.js:84` to name what Quick can't rebuild (`page_text_lines`); **C2** behavioural pins (bd_used+current →
+`ok-born-digital` with the flag / `born-digital-doc` without; bd_used+dpi mismatch → `dpi-changed`; bd setting changed →
+`born-digital-setting-changed`; empty text / no stamp still refused; the stamp composite); **C3** the gate RESULT adds a
+per-doc `supplier_name` before/after column for the ON arm — accept only unchanged or NULL→value.
+APPLIED: the re-ask moved into `ocrCache.ocrCacheUsableForRedetect(row, current, { allowBornDigital })` (pure, exported);
+the lane dep calls it; the batch partition untouched (pinned); `test_ocr_cache_born_digital.js` (C2, 17 checks);
+comments/docs reworded (C1); C3 read from the ON-arm snapshots: every doc's issuer unchanged (docs 3-6 NULL → NULL,
+no non-null change) — MET.

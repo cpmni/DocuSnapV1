@@ -44,11 +44,14 @@ check('_redetectEnabled reads env QUIET_REDETECT_ON_TYPE_CHANGE (1 â†’ true, 0 â
       /function _redetectEnabled\(db\) \{\s*\n\s*const env = process\.env\.QUIET_REDETECT_ON_TYPE_CHANGE;\s*\n\s*if \(env === '1'\) return true;\s*\n\s*if \(env === '0'\) return false;\s*\n\s*try \{ return require\('\.\.\/\.\.\/\.\.\/database\/modules\/learning'\)\.getSetting\(db, 'quiet_redetect_on_type_change', 'false'\) === 'true'; \}/.test(h));
 check('scheduleQuietRedetect is exported and gated on _redetectEnabled', /scheduleQuietRedetect,\s*\/\/ QUIET REDETECT trigger/.test(h) && /if \(!_quietLaneImpl \|\| !_redetectEnabled\(db\)\) return false;/.test(h));
 check('the lane receives the four redetect deps', /redetectEnabled: \(db\) => _redetectEnabled\(db\),/.test(h) && /quickUsable: \(db, docId, opts = \{\}\) =>/.test(h) && /genericTypeId: \(db\) =>/.test(h) && /isIdentityKey: \(key\) =>/.test(h));
-check('quickUsable is the batch\'s own predicate (ocrCache.ocrCacheUsable over the stored text + recipe stamp)', /ocrCache\.ocrCacheUsable\(\{ ocr_text: r\.ocr_text, ocr_recipe: r\.ocr_recipe, enhance_active: false \}, current\)/.test(h));
-check('the born-digital relaxation is opt-in (allowBornDigital), waives ONLY bd_used and re-asks the same predicate (gate finding 2026-09-24)',
-      /if \(!v\.usable && v\.reason === 'born-digital-doc' && opts\.allowBornDigital\)/.test(h)
-      && /ocr_recipe: JSON\.stringify\(\{ \.\.\.rec, bd_used: false \}\), enhance_active: false \}, current\)/.test(h)
-      && /return v2\.usable \? \{ usable: true, reason: 'ok-born-digital' \} : v2;/.test(h));
+check('quickUsable is the batch\'s own predicate via ocrCache.ocrCacheUsableForRedetect over the stored text + recipe stamp',
+      /ocrCache\.ocrCacheUsableForRedetect\(\{ ocr_text: r\.ocr_text, ocr_recipe: r\.ocr_recipe, enhance_active: false \},\s*\n?\s*ocrCache\.currentOcrRecipe\(db\), \{ allowBornDigital: !!opts\.allowBornDigital \}\)/.test(h));
+const oc = fs.readFileSync(path.join(ROOT, 'src', 'modules', 'processing', 'ocrCache.js'), 'utf8');
+check('the born-digital relaxation is opt-in, waives ONLY bd_used and re-asks the same predicate (Oracle re-rule C2; behaviour pinned in test_ocr_cache_born_digital.js)',
+      /if \(v\.usable \|\| !allowBornDigital \|\| v\.reason !== 'born-digital-doc'\) return v;/.test(oc)
+      && /ocr_recipe: JSON\.stringify\(\{ \.\.\.rec, bd_used: false \}\) \}, current\)/.test(oc)
+      && /return v2\.usable \? \{ usable: true, reason: 'ok-born-digital' \} : v2;/.test(oc));
+check('the operator\'s Quick batch partition still uses the UNrelaxed predicate (lane-only by ruling)', /const v = ocrCache\.ocrCacheUsable\(\(nd && nd\.cache\) \|\| null, current\);/.test(h) && !/ocrCacheUsableForRedetect\(\(nd/.test(h));
 const ql = fs.readFileSync(path.join(ROOT, 'src', 'modules', 'processing', 'quietLane.js'), 'utf8');
 check('the lane asks quickUsable with allowBornDigital ONLY from the redetect population', (ql.match(/allowBornDigital: true/g) || []).length === 1 && /quickUsable\(db, r\.id, \{ allowBornDigital: true \}\)/.test(ql));
 check('the lane\'s runShard dep forwards reextract (and only from the quick job)', /runShard: \(\{ db, staged, label, extraEnv, track, onFileDone, reextract = false \}\) =>/.test(h) && /reextract: !!reextract,\s*\/\/ QUIET REDETECT/.test(h));

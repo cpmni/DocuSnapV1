@@ -30,8 +30,12 @@ evening 2 — A: SIGN OFF WITH CONDITIONS C1-C7 · B: DO NOTHING · C: DO NOTHIN
   never staged Full; no sweep scope marked, no auto-accept fan-out; scoped jobs tick first. **Gate finding (same
   evening):** a born-digital doc (`bd_used`) is refused by the batch predicate for a COST reason (its Quick skips OCR;
   a born-digital Full is nearly free) — that made the redetect a no-op on the whole Demo Docs population, so the
-  redetect asks the same predicate with only `bd_used` waived (`allowBornDigital`; every other invalidator applies;
-  the lane is the only caller). ⚠ Not put to the Oracle as a separate question — flagged for a morning re-rule.
+  redetect asks the same predicate with only `bd_used` waived (`ocrCache.ocrCacheUsableForRedetect`, `allowBornDigital`;
+  every other invalidator applies; the lane is the only caller). **Oracle re-rule (same night): SIGN OFF WITH CONDITIONS
+  C1-C3, applied** — correction: Full-bd DOES build page-0 geometry from the vector text (`page_text_lines` →
+  `letterhead.geometry_from_lines`), Quick-bd does not; every consumer traced fail-toward-review; the stamp is never
+  laundered (imageless emits `{imageless:true}` only + `COALESCE(?, ocr_recipe)`); lane-only by ruling; behavioural
+  pins `test_ocr_cache_born_digital.js`; issuer before/after column in the gate RESULT (all unchanged).
 - **B — DO NOTHING.** On the Quick road a re-read carries nothing of a typed name to a no-supplier sibling
   (identity_fusion never fills an empty issuer; hints need usage ≥2; the logo plant is text-gated, Full-only and
   unreliable on scans; a lone confirm links but never creates a template). The ripple offer is the honest lever.

@@ -45,9 +45,17 @@ Byte-identical off, as pinned.
 — only `bd_used` is waived, every other invalidator (dpi / light / bd setting / pipeline rev / tesseract) still applies;
 the lane is the ONLY caller that asks for it (`test_migration216` source pins + `test_quiet_lane_redetect` §3).
 Rationale: the alternative to Quick here is not Full (the lane never stages Full for this job) but nothing, and a
-text-only redetect wants exactly what the text layer gives (type detection + keyword reads over exact text; the page-0
-geometry hand-off is empty for a born-digital page on the Full road too). ⚠ Not put to the Oracle as a separate
-question — flagged in the log for a morning re-rule.
+text-only redetect wants exactly what the text layer gives (type detection + keyword reads over exact text). What a
+Quick-bd read LOSES vs the batch's Full fallback: the renders (logo identity arm, `_id_img`) and `page_text_lines`
+(the letterhead geometry witness Full builds from the vector text) — every consumer of those is fail-toward-review on
+this population. **Oracle re-rule (night): SIGN OFF WITH CONDITIONS C1-C3, all applied** — the re-ask lives in
+`ocrCache.ocrCacheUsableForRedetect` (lane-only; the batch partition keeps its Full fallback by ruling), behavioural
+pins `test_ocr_cache_born_digital.js` (17), the stamp is never laundered (imageless emits `{imageless:true}` only +
+`COALESCE(?, ocr_recipe)`), and C3 below.
+
+**C3 — issuer before/after on the ON arm (docs 3-6 and every changed row):** 3 NULL → NULL · 4 NULL → NULL · 5 NULL →
+NULL · 6 NULL → NULL; no document's `supplier_name` changed from one non-null value to another anywhere in the 30-doc
+snapshot. MET (accept only unchanged or NULL→value).
 
 ## ON arm 2 (`redetectOn2`, with the relaxation) — MET
 - **Type-add job** (8 s after the presets; `kind:redetect quick:1 reasons:type-added type_slugs:credit_note,delivery_note,

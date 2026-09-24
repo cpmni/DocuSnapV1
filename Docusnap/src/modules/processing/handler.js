@@ -5243,23 +5243,12 @@ function register(ctx) {
     quickUsable: (db, docId, opts = {}) => {
       const ocrCache = require('./ocrCache');
       const r = db.prepare('SELECT ocr_text, ocr_recipe FROM documents WHERE id = ?').get(docId) || {};
-      const current = ocrCache.currentOcrRecipe(db);
-      const v = ocrCache.ocrCacheUsable({ ocr_text: r.ocr_text, ocr_recipe: r.ocr_recipe, enhance_active: false }, current);
-      // BORN-DIGITAL relaxation for the redetect job ONLY (gate finding 2026-09-24 evening 2: the exhibit's four untyped
-      // docs were all skipped `born-digital-doc`). The batch predicate refuses a text-layer doc because the operator's
-      // Quick exists to skip OCR and a born-digital Full is nearly free anyway — a COST rule, not a safety one. Here the
-      // alternative to Quick is NOT Full (the lane never stages Full for this job) but NOTHING, and the redetect wants
-      // exactly what the text layer gives: type detection + keyword reads over exact text (the page-0 geometry hand-off
-      // is empty for a born-digital page on the Full road too). Every OTHER invalidator (dpi / light / bd setting /
-      // pipeline rev / tesseract) is still applied by re-asking the predicate with only `bd_used` waived.
-      if (!v.usable && v.reason === 'born-digital-doc' && opts.allowBornDigital) {
-        try {
-          const rec = ocrCache.parseRecipe(r.ocr_recipe) || {};
-          const v2 = ocrCache.ocrCacheUsable({ ocr_text: r.ocr_text, ocr_recipe: JSON.stringify({ ...rec, bd_used: false }), enhance_active: false }, current);
-          return v2.usable ? { usable: true, reason: 'ok-born-digital' } : v2;
-        } catch { return v; }
-      }
-      return v;
+      // The batch's own predicate, with the redetect's ONE relaxation (`allowBornDigital`, Oracle re-rule SIGN-OFF-W/COND
+      // 2026-09-24 evening 2): only `born-digital-doc` is waived — a Quick-bd read loses the renders (logo arm) and
+      // `page_text_lines` (the letterhead geometry witness Full builds from the vector text), every consumer of which is
+      // fail-toward-review here; every other invalidator still refuses. See ocrCache.ocrCacheUsableForRedetect.
+      return ocrCache.ocrCacheUsableForRedetect({ ocr_text: r.ocr_text, ocr_recipe: r.ocr_recipe, enhance_active: false },
+                                                ocrCache.currentOcrRecipe(db), { allowBornDigital: !!opts.allowBornDigital });
     },
     genericTypeId: (db) => { try { const g = require('../../../database/modules/document_types').getGenericType(db); return g ? g.id : null; } catch { return null; } },
     isIdentityKey: (key) => {

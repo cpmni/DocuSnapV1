@@ -81,7 +81,7 @@ function ocrCacheUsable(row, current) {
   if (row.enhance_active) return no('enhance-active-template');   // crops read on enhanced pixels; Quick skips crop OCR
   const rec = parseRecipe(row.ocr_recipe);
   if (!rec) return no('no-recipe-stamp');                        // NULL / malformed = legacy, never reusable
-  if (rec.bd_used) return no('born-digital-doc');                // text-layer read; Quick can't rebuild its geometry
+  if (rec.bd_used) return no('born-digital-doc');                // text-layer read; Quick can't rebuild `page_text_lines` (the letterhead geometry witness, built from the vector text only on a Full read) nor the renders (logo arm, _id_img) — the batch sends it to a near-free Full instead
 
   // ── recipe-vs-current invalidators ──
   if (Number(rec.dpi) !== Number(current.dpi)) return no('dpi-changed');
@@ -102,4 +102,24 @@ function ocrCacheUsable(row, current) {
 //   * region_date_order / number_format — these drive PARSING of already-extracted text, not the OCR;
 //     Quick still re-runs the per-field parse/validate on the reused text.
 
-module.exports = { currentOcrRecipe, ocrCacheUsable, parseRecipe, OCR_PIPELINE_REV, TESS_MARKER_SETTING, LIGHT_LEVELS_DEFAULT };
+// QUIET REDETECT's variant (2026-09-24; gate finding → Oracle re-rule SIGN-OFF-W/COND C1-C3). The scope-less quiet
+// redetect never stages a Full read, so for it the alternative to Quick is NOTHING — and a text-only redetect wants
+// exactly what a born-digital text layer gives (type detection + keyword reads over exact text). With
+// `allowBornDigital` the ONLY refusal waived is `born-digital-doc`: the same predicate is re-asked with the recipe's
+// `bd_used` set false, so dpi / light-recovery / bd-setting / pipeline-rev / tesseract invalidators still refuse, and
+// an empty text or a missing stamp is still refused. What a Quick-bd read LOSES vs the batch's Full fallback: the
+// renders (logo identity arm, _id_img) and `page_text_lines` (letterhead geometry from the vector text, Full only) —
+// every consumer of those is fail-toward-review on the redetect population (Oracle trace), and the stamp is never
+// laundered: an imageless run emits `{imageless:true}` only and the handler writes `ocr_recipe = COALESCE(?, ocr_recipe)`,
+// so the operator's batch still sees `bd_used` and still Full-falls-back. LANE-ONLY by ruling — the batch keeps its
+// Full fallback (it buys the logo arm + vector anchor harvests + the geometry witness at near-zero cost).
+function ocrCacheUsableForRedetect(row, current, { allowBornDigital = false } = {}) {
+  const v = ocrCacheUsable(row, current);
+  if (v.usable || !allowBornDigital || v.reason !== 'born-digital-doc') return v;
+  const rec = parseRecipe(row && row.ocr_recipe);
+  if (!rec) return v;
+  const v2 = ocrCacheUsable({ ...row, ocr_recipe: JSON.stringify({ ...rec, bd_used: false }) }, current);
+  return v2.usable ? { usable: true, reason: 'ok-born-digital' } : v2;
+}
+
+module.exports = { currentOcrRecipe, ocrCacheUsable, ocrCacheUsableForRedetect, parseRecipe, OCR_PIPELINE_REV, TESS_MARKER_SETTING, LIGHT_LEVELS_DEFAULT };

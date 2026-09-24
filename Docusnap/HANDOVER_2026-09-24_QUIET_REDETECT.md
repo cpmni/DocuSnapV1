@@ -44,9 +44,11 @@ save a Keyword Label Override → the held docs of that type re-read and rescore
 `C:\Users\cmccu\Documents\Scan Finder`; docs 2-10 still point at the mortal job-scratch inbox.
 
 ## 4. OWED / open
-- **Oracle re-rule (morning):** the born-digital relaxation in the redetect's `quickUsable` (gate finding: every
-  exhibit doc was skipped `born-digital-doc`; applied by waiving only `bd_used`, every other invalidator kept, lane-only
-  caller) — flagged in `docs/oracle_log.md`, not separately vetted.
+- ~~Oracle re-rule of the born-digital relaxation~~ — **DONE the same night: SIGN OFF WITH CONDITIONS C1-C3, all
+  applied** (`docs/oracle_log.md` 2026-09-24 night): the re-ask now lives in `ocrCache.ocrCacheUsableForRedetect`
+  (lane-only; the batch keeps its Full fallback), `test_ocr_cache_born_digital.js` (17 checks), wording corrected
+  (Full-bd does build letterhead geometry from `page_text_lines`; Quick-bd does not — consumers fail-toward-review),
+  issuer before/after column in the gate RESULT (all unchanged).
 - Flip decision for mig 216 after the owner's sandbox verdict (+ the CX copy: a still-untyped doc's hint should name the
   next step; a heading-absent scan stays untyped on Quick by design).
 - Push the 6 commits. `docs/detached-client.md` 1.9.0 note. The Hard Set digital supplier-EMPTY question. A Chris round
