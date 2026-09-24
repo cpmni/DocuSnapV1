@@ -224,7 +224,11 @@ box + a label-line keyword read · the decision rule). Both reports are folded i
   REAL, cheap. Card 4 near-miss REFUTED: `isAutoFileEligible` on a copy with the customer note stripped →
   `disagreeing-read:order_date` (mig 152 ON) — display gap only. Vet queue at the bottom of the review doc.
   Sandbox left RUNNING (CDP 9223, PID 30400) for the owner; scratch copies in `%USERPROFILE%\.claude\jobs8b38f39	mp\sbdb*`.
-- NOT pushed (owner's call; the whole branch is unpushed). NOT run: the md5/determinism arms.
+- **09-24 MORNING control (owner: "what made Chris worse?"):** 3 arms on his 67 confirmed docs — `14396ab` OFF vs HEAD OFF
+  **md5-IDENTICAL** (today's code is byte-identical with the switches off); HEAD ON differs on ONE doc (the S/5 PO
+  released by mig 211 → files). The Total hold reproduces on the OLD tree → not today's work; first Chris round to
+  teach a Total. Slices clean (63/66 agree). Recorded at the bottom of `docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md`.
+- NOT pushed (owner's call; the whole branch is unpushed). OFF md5 identity DONE on the sandbox 67 (the 727 arm + two-ON determinism still owed).
 
 ## OWED / flip gates
 - **mig 211 (Oracle C0 + C10):** read the full C0 result (`analyse_c0.js`) — yield ≈ 0 → retire the key (Oracle's
