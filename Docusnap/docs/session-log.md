@@ -4359,3 +4359,47 @@ REVIEW_2026-09-03.md`, owner vet).
 **Prior (still-open specs):** 09-02 NIGHT `HANDOVER_2026-09-02_NIGHT.md` (Fix B `eb67c47` mig-100 census owed) ·
 09-02 EVENING `_EVENING.md` (`watch_separate_enabled` soak `696b4bf`) · 09-03 `HANDOVER_2026-09-03.md` (the
 FORMAT_VARIANCE_RELAX_REF parent + the WRONG "stale-row" reading, corrected).
+
+## Archived from CLAUDE.md at the 2026-09-24 wrap (the 2026-09-23 NIGHT LATEST block, verbatim)
+
+## ⏭ LATEST — 2026-09-23 NIGHT (DOWNGRADE mig 210 + RELEASE mig 211 built DARK; filtered `_absent` census MET the RELEASE gate 0/14; Oracle C0 yield census on the owner's DB copy):
+**READ `HANDOVER_2026-09-23_NIGHT.md` FIRST** (then `_EVENING.md`). Branch `feat/teach-side-overnight`; **migs → 211;
+`TEST_SWITCH_KEYS` 15; Python pins resolve 12 · release 19 · hold 16 · reader 4; JS `test_migration211_*` ALL OK.**
+**Built DARK:** (1) **`glyph_confusable_resolve` mig 210** — in `engine._glyph_disagreement_hold`, when the SOLE note is
+the Gate-C confusable soften (exact text, keyed on "look like another on a scan", no `corrected_to`) and PP-OCR AGREES,
+the note is RE-WORDED to confident copy (still a note → held, auto-file byte-identical). D5 confirmed: 40/40 AGREE, 0
+`no_box`, on the owner's real Print Tracker diag. (2) **`glyph_confusable_release` mig 211** (gary → Oracle
+SIGN-OFF-W/COND C0-C11) — inside that AGREE branch, when `_glyph_release_ok` passes EVERY guard (confusable-soften
+producer tag + map-pair page form · not veto-fallthrough · crop page known · PP mean ≥0.95 AND **weakest glyph ≥0.80**
+(`glyph_reader._ctc_decode` now returns `(text, mean, min_glyph)`) · no page-family disagreement after the mig-191
+suppression, computed in-engine with trust.js parity · wide crop inside the page · a SECOND PP read on a 1.0×h-wide
+crop still contains the value, boundary-guarded) the note is POPPED (only mutation) and `_flag_ref_confusable_ambiguous`
+re-judges the field; any abstain → the DOWNGRADE reword. **Oracle's premise catch (verified):** trust.js
+`_pageFamilyDisagrees` holds the cold soften set anyway (the whole-page `S0-` read is a recorded keyword disagreement;
+only the mig-191 suppression lifts it for a taught on-shape winner) → **C0 yield census is the FLIP blocker** (yield ≈
+0 → retire the key). C0 targeted on the owner's live-DB COPY (`stress_test/out/c0_live_copy/`, gitignored): the Chris
+exhibit #45 `PO-22954` is held ONLY by the note (overall 81 = the −12 fc penalty); **the full 727-doc arm
+(`TESTING/_measure/release_c0_20260923/RESULT.md`): 9 soften refs → 8 Print Tracker crop-WRONG/page-RIGHT (true
+positives, correctly held) + 1 = #45 → YIELD 1 of 9. Recommendation: keep mig 211 DARK, don't flip on this alone.**
+Broader: `disagreeing-read` holds 82/727 on reprocess — the page-family gate is the dominant Print Tracker hold.
+**LATER (the Paddle corroboration ARC, `docs/designs/PADDLE_CORROBORATION_ARC_2026-09-23.md`):** 007+oscar design
+(slice integrity → the reader's read set incl. the Review-drawn box + a label-line read → the decision rule). **007
+found a LIVE FRAME BUG in the dark hold** (`field_anchors` stores the taught box CENTRE; `anchor.py:1721` passes it
+unconverted; the hold cropped (+w/2,+h/2) off) → fixed S0 `a0c25f2` (centre→top-left, geometry follows the winner,
+anchor page 0, `_crop_pages` every doc). **Measured on the owner's 727 with the reader ON:** common-mode 0/358; 16
+disagreement holds ALL FALSE (5 clipped boxes, 4 bleed, 2 case → casefolded `f521ec5`, 2 serif, 4 sans 0/O identity at
+0.95); 3 true catches (PP siding with the PAGE). ⇒ PP is a TIE-BREAKER between box and page, never a lone arbiter; the
+0/O identity class needs the history/format axis. **Oracle vet: SIGN OFF W/COND per slice (C1-C14; `pp_line` breaches
+C1 → withdrawn; C6 rewritten winners abstain). BUILT: C1 pad parity + floor 0.90 (`e28a9d6`), every hold exit traced
+(`e08c7db`), S1 `extraction/slice_integrity.py` mig 212 `glyph_slice_integrity` (`005b22b`→`feaa1a4`→`625ccc0`: snap the
+BARE box to the page word boxes, value-text filter keeps the label out). C10 RESULT on the 727
+(`TESTING/_measure/release_c0_20260923/RESULT_C10.md`): false holds 16→1, would-file lost 6→1, 3 catches kept, agree
+419, true common-mode 0 (18 Castellan GT artefacts) → migs 207+212(+210) flip-ready pending md5/determinism; 211 DARK.**
+Chris ran the sandbox (all six switches ON, CDP 9223, PID 30400) teach→2-confirms→import vet overnight →
+`docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md`. Step-1 (shape veto on taught reads) was REFUTED on data and withdrawn. **Censuses:** filtered
+`_absent` (`census_absent.py`, `RESULT_ABSENT_20260923.md`): 18 soften → all 14 PP-agrees crop-CORRECT, 4 disagrees
+crop-wrong/PP-right; per-glyph (`glyph_min_census.py`): correct agrees min 0.819+, the one both-wrong clipped read 0.505.
+Docs: `docs/oracle_log.md` (09-23 rulings + the RELEASE vet verbatim), ledger migs 207-211, `docs/designs/
+CONFUSABLE_RELEASE_SEAMS_2026-09-23.md` (Fix A is OFF — corrected), `NIGHT_RUN.md` QUEUE (210 + 211 gates). Traps:
+run `run-pins.js` from the REPO ROOT; long censuses DETACHED (`nohup`/`Start-Process`); the PowerShell guard blocks any
+command text containing `rm -f <path>`; RR_CONSENSUS `reason` is the FIRST failing gate (hence the new `corrob` field).

@@ -88,6 +88,19 @@ in `database/dark_switches.js`'s history comment; the LIVE list is `TEST_SWITCH_
   can't touch them), 1 is the Copperfield exhibit → yield 1. RECOMMENDATION: keep it built but OFF; mig 210 already
   fixes the wording on all 9. Depends on migs 207 + 210 being on._
 
+- **glyph_slice_integrity (mig 212, 2026-09-23 night)** — before the second reader re-reads a reference crop, the crop
+  rectangle is snapped to the page's own word boxes on that row (a box that cut a glyph grows to the whole word; a box that
+  bled into the next line tightens; a neighbour touched by less than half a glyph is left out). Changes only the pixels the
+  second reader sees — never a value, never a note. _Census on the owner's 727 (`TESTING/_measure/release_c0_20260923/`
+  `RESULT_C10.md`): false holds 16→1, would-file lost 6→1, the 3 true catches kept. Flip-ready with mig 207 once the two
+  byte-identity runs are done. Depends on mig 207._
+- **name_value_label_flag (mig 213, 2026-09-24)** — a taught name-like field (customer_name) whose WHOLE value is its own
+  caption — the field label, the taught box's auto-detected label, or a generic caption like "Bill To" — or a clipped
+  prefix of that label, is flagged and held with "This reads as the label ‘Customer’, not a name — please check the value".
+  Value kept, confidence capped, the same never-soft-cleared sentinel as mig 156. _Why: on Chris's 09-23 round a taught
+  Customer box drifted onto the label line and "Customer" auto-filed as the customer's name twice. Exact equality only, so
+  real names that contain a caption word (Attention Ltd, Custom Joinery) are safe. Flip gate (Oracle C8): realdoc 727 +
+  Hard Set OFF identical; ON lists every new hold — each must be a caption/anchor/clip; a real name held = send back._
 ---
 
 ## 🟢 READY — safety test passed, awaiting your go (2)

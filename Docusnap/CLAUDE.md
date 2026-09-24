@@ -21,47 +21,24 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-23 NIGHT (DOWNGRADE mig 210 + RELEASE mig 211 built DARK; filtered `_absent` census MET the RELEASE gate 0/14; Oracle C0 yield census on the owner's DB copy):
-**READ `HANDOVER_2026-09-23_NIGHT.md` FIRST** (then `_EVENING.md`). Branch `feat/teach-side-overnight`; **migs → 211;
-`TEST_SWITCH_KEYS` 15; Python pins resolve 12 · release 19 · hold 16 · reader 4; JS `test_migration211_*` ALL OK.**
-**Built DARK:** (1) **`glyph_confusable_resolve` mig 210** — in `engine._glyph_disagreement_hold`, when the SOLE note is
-the Gate-C confusable soften (exact text, keyed on "look like another on a scan", no `corrected_to`) and PP-OCR AGREES,
-the note is RE-WORDED to confident copy (still a note → held, auto-file byte-identical). D5 confirmed: 40/40 AGREE, 0
-`no_box`, on the owner's real Print Tracker diag. (2) **`glyph_confusable_release` mig 211** (gary → Oracle
-SIGN-OFF-W/COND C0-C11) — inside that AGREE branch, when `_glyph_release_ok` passes EVERY guard (confusable-soften
-producer tag + map-pair page form · not veto-fallthrough · crop page known · PP mean ≥0.95 AND **weakest glyph ≥0.80**
-(`glyph_reader._ctc_decode` now returns `(text, mean, min_glyph)`) · no page-family disagreement after the mig-191
-suppression, computed in-engine with trust.js parity · wide crop inside the page · a SECOND PP read on a 1.0×h-wide
-crop still contains the value, boundary-guarded) the note is POPPED (only mutation) and `_flag_ref_confusable_ambiguous`
-re-judges the field; any abstain → the DOWNGRADE reword. **Oracle's premise catch (verified):** trust.js
-`_pageFamilyDisagrees` holds the cold soften set anyway (the whole-page `S0-` read is a recorded keyword disagreement;
-only the mig-191 suppression lifts it for a taught on-shape winner) → **C0 yield census is the FLIP blocker** (yield ≈
-0 → retire the key). C0 targeted on the owner's live-DB COPY (`stress_test/out/c0_live_copy/`, gitignored): the Chris
-exhibit #45 `PO-22954` is held ONLY by the note (overall 81 = the −12 fc penalty); **the full 727-doc arm
-(`TESTING/_measure/release_c0_20260923/RESULT.md`): 9 soften refs → 8 Print Tracker crop-WRONG/page-RIGHT (true
-positives, correctly held) + 1 = #45 → YIELD 1 of 9. Recommendation: keep mig 211 DARK, don't flip on this alone.**
-Broader: `disagreeing-read` holds 82/727 on reprocess — the page-family gate is the dominant Print Tracker hold.
-**LATER (the Paddle corroboration ARC, `docs/designs/PADDLE_CORROBORATION_ARC_2026-09-23.md`):** 007+oscar design
-(slice integrity → the reader's read set incl. the Review-drawn box + a label-line read → the decision rule). **007
-found a LIVE FRAME BUG in the dark hold** (`field_anchors` stores the taught box CENTRE; `anchor.py:1721` passes it
-unconverted; the hold cropped (+w/2,+h/2) off) → fixed S0 `a0c25f2` (centre→top-left, geometry follows the winner,
-anchor page 0, `_crop_pages` every doc). **Measured on the owner's 727 with the reader ON:** common-mode 0/358; 16
-disagreement holds ALL FALSE (5 clipped boxes, 4 bleed, 2 case → casefolded `f521ec5`, 2 serif, 4 sans 0/O identity at
-0.95); 3 true catches (PP siding with the PAGE). ⇒ PP is a TIE-BREAKER between box and page, never a lone arbiter; the
-0/O identity class needs the history/format axis. **Oracle vet: SIGN OFF W/COND per slice (C1-C14; `pp_line` breaches
-C1 → withdrawn; C6 rewritten winners abstain). BUILT: C1 pad parity + floor 0.90 (`e28a9d6`), every hold exit traced
-(`e08c7db`), S1 `extraction/slice_integrity.py` mig 212 `glyph_slice_integrity` (`005b22b`→`feaa1a4`→`625ccc0`: snap the
-BARE box to the page word boxes, value-text filter keeps the label out). C10 RESULT on the 727
-(`TESTING/_measure/release_c0_20260923/RESULT_C10.md`): false holds 16→1, would-file lost 6→1, 3 catches kept, agree
-419, true common-mode 0 (18 Castellan GT artefacts) → migs 207+212(+210) flip-ready pending md5/determinism; 211 DARK.**
-Chris ran the sandbox (all six switches ON, CDP 9223, PID 30400) teach→2-confirms→import vet overnight →
-`docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md`. Step-1 (shape veto on taught reads) was REFUTED on data and withdrawn. **Censuses:** filtered
-`_absent` (`census_absent.py`, `RESULT_ABSENT_20260923.md`): 18 soften → all 14 PP-agrees crop-CORRECT, 4 disagrees
-crop-wrong/PP-right; per-glyph (`glyph_min_census.py`): correct agrees min 0.819+, the one both-wrong clipped read 0.505.
-Docs: `docs/oracle_log.md` (09-23 rulings + the RELEASE vet verbatim), ledger migs 207-211, `docs/designs/
-CONFUSABLE_RELEASE_SEAMS_2026-09-23.md` (Fix A is OFF — corrected), `NIGHT_RUN.md` QUEUE (210 + 211 gates). Traps:
-run `run-pins.js` from the REPO ROOT; long censuses DETACHED (`nohup`/`Start-Process`); the PowerShell guard blocks any
-command text containing `rm -f <path>`; RR_CONSENSUS `reason` is the FIRST failing gate (hence the new `corrob` field).
+## ⏭ LATEST — 2026-09-24 (Chris's teach round verified + control-tested; the seven-slice fix set BUILT; R1/G1 gates in flight):
+**READ `HANDOVER_2026-09-24.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `3de96dd`; origin at `14396ab` — 38
+commits UNPUSHED; migs → 213; `TEST_SWITCH_KEYS` 17; `/v1` contract 1.9.0; tree clean.** Chris's 09-23 round
+(`docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md`): orders filed as promised, 0 wrong roles on 67; invoices 0/30 with a
+taught Total; a taught Customer filed as "Customer". **Control test:** `14396ab` OFF vs today OFF md5-identical on his
+67; the Total hold is the 2026-08-09 LEGACY currency leg (`^[£$€¥]?…\d`, code-blind) meeting a box that captures the
+inline `GBP` — NOT the second reader. **reggie/gary/eric → Oracle** (`docs/designs/CHRIS_ROUND_FIXES_2026-09-24.md`)
+→ **BUILT in the Oracle's order:** E1a field-mutation broadcast `5afb359` · G3 `flagged:<key>` + `trust.isFlaggedReason`
+(tests never compare the string) `265ea6c` · E3 reprocess accept `{consented}` (expiry → `self_filed`) `a5badb7` · E2
+`filed_by` provenance on the detail DTO + 5 copies + contract 1.9.0 `0c58d87` · E1b Review diff-by-key on a type edit
+`a983185` · **R1 LIVE** `7ddf9fa`: `engine._format_fail_code_agree` at the merge call site (known ISO code + strict shape
++ `money_cents` incl. sign == challenger → not a format failure; env kill `TEMPLATE_FORMAT_FAIL_CODE_AGREE=0`) · **G1
+DARK mig 213 `name_value_label_flag`** `a3371dc` (`value_quality.value_is_own_label`, `+nonname_flag` sentinel) · G2
+census `6913cbf` (bar met ONLY with a ≥2-token witness guard → design + Oracle). Quick R1 gate on Chris's 36 invoices:
+OFF 0 file / ON 22 file, 14 held with real reasons (5 = the pre-existing `template_mapping_edgecut` guard on correct
+totals → a Part-A follow-up). **OWED:** the 727 P/K/N + Hard Set + G1 gate (running from the job scratch dir at the
+wrap — READ before any flip; R1 is live: kill via env if N is not removals-only) · a clean full `run-pins.js` (killed at
+369/415 for low memory; 2 stale pins fixed) · remove the 3 gate worktrees · push · G2 design → Oracle.
 
 ## ⏭ 2026-09-23 EVENING (date-fold + arithmetic-witness built DARK; a dual-reader census FLIPS Oracle on the confusable RELEASE; CLAUDE.md collapsed + a VERIFY-DON'T-ASSUME rule):
 **READ `HANDOVER_2026-09-23_EVENING.md`.** Branch `feat/teach-side-overnight`; **the session's work is
@@ -116,10 +93,11 @@ anchor widening · the anchor-path false-hold census on real data · onnxruntime
 ## Prior sessions — 2026-09-04 → 2026-09-21 (collapsed 2026-09-23; every block VERBATIM in `docs/session-log.md` under "Archived from CLAUDE.md at the 2026-09-23 compaction" + its named `HANDOVER_*.md`; durable per-feature facts in `MEMORY.md` + `memory/project_*.md`)
 > Grep the matching `HANDOVER_*.md` (or `docs/session-log.md`) before re-touching anything a recent session built.
 > ⚠ **CURRENT switch / migration state is authoritative in `database/dark_switches.js` + `docs/DARK_SWITCH_LEDGER.md`
-> + `MEMORY.md`, NOT the narrative below.** As of 2026-09-23: migration **207**, `TEST_SWITCH_KEYS` **11**. The
+> + `MEMORY.md`, NOT the narrative below.** As of 2026-09-24: migration **213**, `TEST_SWITCH_KEYS` **17**. The
 > 2026-09-22 batch flip (**mig 205**) graduated 34 fail-toward-review switches to customer-default. The mig numbers
 > below are the mig that BUILT each switch (stable history) — read the source before asserting any switch is ON/OFF/DARK.
 > Newest first (date → what was built → handover):
+- **09-23 NIGHT** → `HANDOVER_2026-09-23_NIGHT.md` — DOWNGRADE mig 210 + RELEASE mig 211 (DARK; C0 yield 1/9 → keep DARK); the Paddle corroboration ARC (007+oscar → Oracle C1-C14): the taught-box CENTRE frame bug fixed `a0c25f2`, pad parity + floor 0.90, every hold exit traced, **S1 `slice_integrity.py` mig 212** (word-snap, bare box first, value-text filter); C10 RESULT on the 727: false holds 16→1, would-file lost 6→1, 3 catches kept → migs 207+212(+210) flip-ready pending the byte-identity runs; Chris's teach-a-doc sandbox round (block archived verbatim in `docs/session-log.md`, 2026-09-24 wrap).
 - **09-21 EVENING** → `HANDOVER_2026-09-21_EVENING.md` — opt-in auto-split **mig 194** `auto_separate_enabled`
   OFF-default + scoped multi-doc auto-file HOLD + page-1 separator-sheet override; **`watch_separate_enabled` RETIRED**
   (watch separation now follows `auto_separate_enabled || filing_slips_enabled`); UNDETECTED-ISSUER **Part A mig 195
