@@ -257,7 +257,7 @@ a look-alike label — the "CH1 2HU" root cause), **note_topic_dedup** (collapse
 notes into one), **reread_hold_corrob_release** (release a hold once a re-read corroborates the value). All M=0 on the
 400-doc census, delisted. **2026-09-20 (mig 191): taught_ref_disagree_suppress** — a taught reference field that matches
 its scope's learned shape suppresses a different-shape generic-caption competitor so the worksheet files by graduation
-instead of holding forever (Castellan batch, live-proven 4/4). **2026-09-21 (mig 193): anchor_code_left_grow** (see HELD).
+instead of holding forever (Castellan batch, live-proven 4/4). **2026-09-21 (mig 193): anchor_code_left_grow** (see HELD). **2026-09-24 evening (mig 215, the 215 BATCH — owner go after the gates): glyph_fallback_enabled (207) · glyph_confusable_resolve (210) · glyph_slice_integrity (212) · name_value_label_flag (213) · taught_name_disagree_refuse (214)** — the second reader's disagreement hold, its confident reword, its word-snapped crop, the label-word hold and the taught-name disagreement hold are customer defaults; glyph_confusable_release (211) stays DARK. ⚠ The three glyph switches only DO anything once onnxruntime + the rec model ship inside `vendor/python` (not vendored at the flip; the reader abstains safely until then).
 All still switchable off. Earlier: **filing_sanity_confusable_soften** (reclassify a
 one-glyph confusable — census passed, shipped), **ocr_parallel_import_enabled** (faster imports), **money_sign_capture**
 (read `CR` / parentheses as a credit sign). The pad-window reads that make clipped crops read correctly

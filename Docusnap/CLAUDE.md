@@ -23,7 +23,7 @@ touches that area — read the pointed-to doc BEFORE working in it:
 
 ## ⏭ LATEST — 2026-09-24 (Chris's teach round verified + control-tested; the seven-slice fix set BUILT; R1/G1 gates in flight):
 **READ `HANDOVER_2026-09-24.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `3de96dd`; origin at `14396ab` — 38
-commits UNPUSHED (+ the afternoon's G2 build); migs → 214; `TEST_SWITCH_KEYS` 18; `/v1` contract 1.9.0; tree clean.** Chris's 09-23 round
+commits — PUSHED at the evening wrap; migs → 215; `TEST_SWITCH_KEYS` 13; `/v1` contract 1.9.0; tree clean.** Chris's 09-23 round
 (`docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md`): orders filed as promised, 0 wrong roles on 67; invoices 0/30 with a
 taught Total; a taught Customer filed as "Customer". **Control test:** `14396ab` OFF vs today OFF md5-identical on his
 67; the Total hold is the 2026-08-09 LEGACY currency leg (`^[£$€¥]?…\d`, code-blind) meeting a box that captures the
@@ -36,7 +36,7 @@ inline `GBP` — NOT the second reader. **reggie/gary/eric → Oracle** (`docs/d
 DARK mig 213 `name_value_label_flag`** `a3371dc` (`value_quality.value_is_own_label`, `+nonname_flag` sentinel) · G2
 census `6913cbf` (bar met ONLY with a ≥2-token witness guard) → gary final design → Oracle SIGN OFF W/COND C1-C7 → **G2 BUILT DARK mig 214 `taught_name_disagree_refuse`** `37b61d0` (`trust._disagreeRefusesRow` at both sites; JS-only, env `TAUGHT_NAME_DISAGREE_REFUSE`; JS-twin census 24 holds on the 727 = 23 catches + the pinned `Fembank`, 6/6 sandbox). Quick R1 gate on Chris's 36 invoices:
 OFF 0 file / ON 22 file, 14 held with real reasons (5 = the pre-existing `template_mapping_edgecut` guard on correct
-totals → a Part-A follow-up). **GATES ALL READ + MET (evening):** R1 — kill md5-identical to the pre-R1 tree, exemption inert on the owner's 727 (efficacy = Chris's 36: 0→22 file), Hard Set P==K==N; G1 — OFF identical, ON = exactly the two `Customer` label holds; G2 — extraction identical OFF/ON, 727 lost 15 = 14 wrong boxes + the pinned `Fernbank`, sandbox lost exactly the six card-1 names (`TESTING/_measure/{r1_code_agree,g1_label_flag,g2_taught_name}_gate_20260924/RESULT.md`) → migs 213 + 214 flip-ready; pin suite green across 415 files (2 stale pins fixed). Gate worktrees removed. **OWED:** push · the flips (207/210/212 from last night's C10 + 213/214) · `docs/detached-client.md` contract 1.9.0 note · delete `stress_test/out/c0_live_copy/` · the Hard Set digital supplier-EMPTY question (pre-existing).
+totals → a Part-A follow-up). **GATES ALL READ + MET (evening):** R1 — kill md5-identical to the pre-R1 tree, exemption inert on the owner's 727 (efficacy = Chris's 36: 0→22 file), Hard Set P==K==N; G1 — OFF identical, ON = exactly the two `Customer` label holds; G2 — extraction identical OFF/ON, 727 lost 15 = 14 wrong boxes + the pinned `Fernbank`, sandbox lost exactly the six card-1 names (`TESTING/_measure/{r1_code_agree,g1_label_flag,g2_taught_name}_gate_20260924/RESULT.md`) → migs 213 + 214 flip-ready; pin suite green across 415 files (2 stale pins fixed). Gate worktrees removed. **FLIPPED (owner go, evening): mig 215 = the 215 BATCH — 207 `glyph_fallback_enabled` · 210 `glyph_confusable_resolve` · 212 `glyph_slice_integrity` · 213 `name_value_label_flag` · 214 `taught_name_disagree_refuse` ON by default + DELISTED (`database/test_default_flip_215.js`); 211 stays DARK. ⚠ The three glyph keys need onnxruntime + `ocr/models/rec.onnx` in the SHIPPED Python — NOT vendored (the vendor gate `scripts/check-vendor-python.js` still lists onnxruntime as a REMOVED package): on a packaged build the second reader abstains `reader_unavailable` (safe, silent) until the owner approves vendoring (~20 MB); effective on a dev install now.** **OWED:** the vendoring decision · `docs/detached-client.md` contract 1.9.0 note · delete `stress_test/out/c0_live_copy/` · the Hard Set digital supplier-EMPTY question (pre-existing).
 
 ## ⏭ 2026-09-23 EVENING (date-fold + arithmetic-witness built DARK; a dual-reader census FLIPS Oracle on the confusable RELEASE; CLAUDE.md collapsed + a VERIFY-DON'T-ASSUME rule):
 **READ `HANDOVER_2026-09-23_EVENING.md`.** Branch `feat/teach-side-overnight`; **the session's work is
@@ -91,7 +91,7 @@ anchor widening · the anchor-path false-hold census on real data · onnxruntime
 ## Prior sessions — 2026-09-04 → 2026-09-21 (collapsed 2026-09-23; every block VERBATIM in `docs/session-log.md` under "Archived from CLAUDE.md at the 2026-09-23 compaction" + its named `HANDOVER_*.md`; durable per-feature facts in `MEMORY.md` + `memory/project_*.md`)
 > Grep the matching `HANDOVER_*.md` (or `docs/session-log.md`) before re-touching anything a recent session built.
 > ⚠ **CURRENT switch / migration state is authoritative in `database/dark_switches.js` + `docs/DARK_SWITCH_LEDGER.md`
-> + `MEMORY.md`, NOT the narrative below.** As of 2026-09-24: migration **214**, `TEST_SWITCH_KEYS` **18**. The
+> + `MEMORY.md`, NOT the narrative below.** As of 2026-09-24 evening: migration **215**, `TEST_SWITCH_KEYS` **13** (the 215 batch graduated 207/210/212/213/214). The
 > 2026-09-22 batch flip (**mig 205**) graduated 34 fail-toward-review switches to customer-default. The mig numbers
 > below are the mig that BUILT each switch (stable history) — read the source before asserting any switch is ON/OFF/DARK.
 > Newest first (date → what was built → handover):
