@@ -23,7 +23,7 @@ const { URL } = require('url');
 
 // The contract version this client build targets — keep in lockstep with the
 // server's API_CONTRACT_VERSION (src/modules/api/handler.js).
-const CLIENT_CONTRACT = '1.8.0';   // keep in lockstep with the server's API_CONTRACT_VERSION (1.8.0: + `intake` on the search-row DTO — the client hides the Review dead-end for a typed doc; additive, no new client gate; 1.7.0: + teach-over-client reads — ocr-region-boxes / ocr-page-words / page-deskew / teach config; the client gates its teach cap on ≥ 1.7.0; 1.6.0: + page-info, one request for the first paint + the read-ahead; 1.5.0: + the outline read for the Contents panel + fmt=auto on the page read; 1.4.0: + per-doc routes/history, admin cancel, new stamp type; 1.3.0: + the four preview reads for the search pop-out; 1.2.0: + Quick File upload)
+const CLIENT_CONTRACT = '1.9.0';   // keep in lockstep with the server's API_CONTRACT_VERSION (1.9.0: + filed_by / filed_by_username on the detail DTO — the provenance line; additive, "Checked" when absent; 1.8.0: + `intake` on the search-row DTO — the client hides the Review dead-end for a typed doc; additive, no new client gate; 1.7.0: + teach-over-client reads — ocr-region-boxes / ocr-page-words / page-deskew / teach config; the client gates its teach cap on ≥ 1.7.0; 1.6.0: + page-info, one request for the first paint + the read-ahead; 1.5.0: + the outline read for the Contents panel + fmt=auto on the page read; 1.4.0: + per-doc routes/history, admin cancel, new stamp type; 1.3.0: + the four preview reads for the search pop-out; 1.2.0: + Quick File upload)
 
 function parseVer(v) {
   const m = String(v || '').match(/^(\d+)\.(\d+)\.(\d+)/);

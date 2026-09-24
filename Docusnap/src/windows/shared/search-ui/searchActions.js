@@ -24,6 +24,23 @@ function registerActionProvider(fn) {
   _providers.push(fn);
 }
 
+// filedByLabel — the provenance line on a confirmed document (2026-09-24, Chris card 3; eric D2 → Oracle C12).
+// Reads the server-derived `filed_by` + the HUMAN's `filed_by_username`; "you" only when that name is the
+// signed-in user (SearchState.username), else the colleague's name. Absent (older core) → "Checked".
+function filedByLabel(doc) {
+  const me = String((window.SearchState && window.SearchState.username) || '').trim().toLowerCase();
+  const who = String((doc && doc.filed_by_username) || '').trim();
+  const isMe = !!who && who.toLowerCase() === me;
+  switch (doc && doc.filed_by) {
+    case 'person':              return isMe ? 'Checked by you' : (who ? `Checked by ${who}` : 'Checked');
+    case 'approved_batch':      return isMe ? 'Filed with your approval' : (who ? `Filed with ${who}'s approval` : 'Filed with approval');
+    case 'self_after_confirms': return 'Filed itself after your confirmations';
+    case 'auto_import':         return 'Filed automatically on import';
+    case 'auto_reprocess':      return 'Filed automatically after a re-read';
+    default:                    return 'Checked';
+  }
+}
+
 function renderActions(doc) {
   const panel = document.getElementById('preview-actions');
   panel.innerHTML = '';
@@ -33,12 +50,15 @@ function renderActions(doc) {
   bar.className = 'ap-status-bar';
   bar.appendChild(_statusChip(doc.status));
   // Confidence is the ORIGINAL machine-read score. On a document a person has CONFIRMED it is a doubt-number on
-  // signed-off work (Chris 2026-09-20, Finding 1) — so on confirmed docs say "Checked by you" instead; keep the %
-  // only while the document is still being read/reviewed.
+  // signed-off work (Chris 2026-09-20, Finding 1) — so on confirmed docs say who filed it instead; keep the %
+  // only while the document is still being read/reviewed. WHO is the server-derived `filed_by` (2026-09-24,
+  // Chris card 3: "Checked by you" was printed on documents the machine filed): a person, a consented batch,
+  // the scope's own pass, an import auto-file, or a re-read auto-file. An older core sends no `filed_by` →
+  // the neutral "Checked", never a guess.
   if (doc.status === 'confirmed') {
     const chk = document.createElement('span');
     chk.className   = 'ap-confidence';
-    chk.textContent = 'Checked by you';
+    chk.textContent = filedByLabel(doc);
     bar.appendChild(chk);
   } else if (doc.overall_confidence != null) {
     const conf = document.createElement('span');

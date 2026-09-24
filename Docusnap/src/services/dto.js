@@ -31,6 +31,8 @@ const SEARCH_ROW_FIELDS = [
 // undefined so the >1 gate never fires and the whole page set renders before anything shows.
 const DETAIL_EXTRA_FIELDS = [
   'document_type_id', 'confirmed_at', 'processed_at', 'digit_only_fields', 'page_count',
+  // filed-by provenance (2026-09-24, contract 1.9.0): a derived enum + the HUMAN's name only (never a machine stamp)
+  'filed_by', 'filed_by_username',
 ];
 
 // Per-extraction display fields — display_value (what the UI shows), confidence,

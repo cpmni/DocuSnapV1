@@ -61,7 +61,43 @@ function getDocumentDetail(db, id, deps = {}) {
   // confirming a non-digit value on one.
   doc.digit_only_fields = learning.getDigitsOnlyFields(db, doc.supplier_name, typeSlug);
 
+  // FILED-BY PROVENANCE (2026-09-24, Chris round card 3; eric D2 → Oracle C12): the search pane printed
+  // "Checked by you" on EVERY confirmed document, including the ones the machine filed — the detail DTO carried
+  // neither confirmed_via nor confirmed_by_username, so the UI could not know. Derive ONE enum HERE (the layer
+  // both transports share) and expose the human's name only — a machine stamp never rides as a "username".
+  const fb = deriveFiledBy(doc);
+  doc.filed_by = fb.filed_by;
+  doc.filed_by_username = fb.filed_by_username;
+
   return doc;
+}
+
+/**
+ * deriveFiledBy — who (or what) filed a confirmed document, from the two attribution columns every filing door
+ * already stamps (reviewService.confirm: `confirmed_via` + `confirmed_by_username`). Pure; exported for the pin.
+ *   person              — a human pressed Confirm (via NULL, a real username)
+ *   approved_batch      — the consented File-N / File All Ready (via scope_sweep, a real username)
+ *   self_after_confirms — the scope's own auto-accept pass ('Auto-filed (after your confirms)')
+ *   auto_reprocess      — the post-reprocess auto-file (via auto_reprocess)
+ *   auto_import         — filed at import: auto_threshold / auto_graduated / auto_corroborated, OR (gate-unify
+ *                         off) via NULL with the 'Auto-filed (100%)' stamp — the via alone is not enough
+ *   null                — not confirmed
+ * `filed_by_username` is the HUMAN's name for person / approved_batch, null otherwise (never a machine stamp).
+ */
+function deriveFiledBy(doc) {
+  const out = { filed_by: null, filed_by_username: null };
+  if (!doc || doc.status !== 'confirmed') return out;
+  const via = String(doc.confirmed_via || '').trim();
+  const who = String(doc.confirmed_by_username || '').trim();
+  const machineName = /^Auto-filed\b/i.test(who);
+  if (via === 'auto_reprocess') { out.filed_by = 'auto_reprocess'; return out; }
+  if (via === 'scope_sweep') {
+    if (machineName || !who) { out.filed_by = 'self_after_confirms'; return out; }
+    out.filed_by = 'approved_batch'; out.filed_by_username = who; return out;
+  }
+  if (/^auto_/.test(via) || machineName) { out.filed_by = 'auto_import'; return out; }
+  out.filed_by = 'person'; out.filed_by_username = who || null;
+  return out;
 }
 
 /**
@@ -496,4 +532,6 @@ function getSpreadsheetGrid(db, { docId, folderPath, filename }, deps) {
   catch (e) { log(`[grid] parse failed for ${filePath}: ${e.message}`); return null; }
 }
 
-module.exports = { getDocumentDetail, getDocumentPages, getDocumentPage, getDocumentPageCount, getDocumentOutline, getDocumentPageInfo, PAGE_INFO_ALSO_MAX, getThumbnail, findInDocument, getSpreadsheetGrid, resolveDocFile: _resolveDocFile };
+module.exports = {
+  deriveFiledBy,   // filed-by provenance (2026-09-24) — exported for test_filed_by.js
+  getDocumentDetail, getDocumentPages, getDocumentPage, getDocumentPageCount, getDocumentOutline, getDocumentPageInfo, PAGE_INFO_ALSO_MAX, getThumbnail, findInDocument, getSpreadsheetGrid, resolveDocFile: _resolveDocFile };

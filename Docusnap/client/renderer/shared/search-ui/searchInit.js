@@ -119,7 +119,7 @@ async function _searchInit(opts) {
   // The results painted BEFORE the entitlement was known (results-first ordering), so the enhanced search's
   // confidence pips were missing until the next search. Re-decorate the same rows once, now that it is known.
   if (window.SearchState.entitled && window.SearchResults.redecorate) { try { window.SearchResults.redecorate(); } catch {} }
-  try { const u = await window.SearchTransport.authGetCurrentUser(); window.SearchState.role = u && u.role; } catch { /* ignore */ }
+  try { const u = await window.SearchTransport.authGetCurrentUser(); window.SearchState.role = u && u.role; window.SearchState.username = (u && u.username) || null; } catch { /* ignore */ }   // username: the filed-by line says "you" only for the signed-in user (2026-09-24)
   // Stamp permission (Workflow+Stamping redesign): drives whether the "Stamp" option is shown at all.
   // A core capability (not the add-on); the main process re-checks on every place. A transport without
   // stamping (caps.stamps === false) never offers it.
