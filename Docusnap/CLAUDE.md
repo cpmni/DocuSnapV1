@@ -21,7 +21,29 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-25 MORNING (Chris's 09-24 cards VERIFIED LIVE; card 4 ROOT CAUSE fixed; card 5 + Ironclad answered at source):
+## ⏭ LATEST — 2026-09-25 EVENING (mig 219 label tail-bound DARK+census-gated · deskew invalid-date note · Review banner reconciliation BUILT · suggested-teach census → picker):
+**READ `HANDOVER_2026-09-25_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `2bb483f` = origin (all
+pushed); migs → 219; `TEST_SWITCH_KEYS` 17; run-pins 459/459 (full run pre-cut-2; cut-2 pins green alone — re-run to
+confirm ~460); tree clean.** Four threads (owner "continue"/"go"/"push and continue"):
+- **mig 219 `keyword_label_tail_bound` DARK (Oracle C6, `2ea3911`):** a multi-word label ("Credit No") gets `(?![a-z])`
+  so it stops prefix-hitting its own heading ("CREDIT NOTE") — Chris card 4. `val_type != 'currency'` EXCLUDED (the
+  label-hit census caught "Total DueGBP…" losses). Gate (i) label-hit census MET (`TESTING/_measure/label_tail_bound_
+  census_20260925/`); (ii) realdoc M=0 + (iii) Hard Set OWED (need a rebuilt confirmed-doc harness — `rr_ids.txt` EMPTY).
+  Bridge `_reconcileEnv`. Next mig = 220.
+- **deskew note (`b5c2d5c`):** an invalid raw date ('41-02-2025') is no longer named in the "confirm once" note (reuses
+  `_put_back_offerable`); plausible A→B alternatives keep the compare. No switch.
+- **Review banner reconciliation BUILT — Idea B (owner screenshot, Oracle SIGN-OFF-W/COND; `89d7145`+`7af6d63`):** the
+  four clashing counts. De-numbered `_renderAutofileCheckBar` (B3, no `done of total`) + pure reducer
+  `src/windows/shared/reviewStatus.js` `deriveReviewStatus` (priority `countdown>offer>checking>idle`; the check YIELDS,
+  the offer/countdown are NEVER suppressed = Oracle B1). Chose offer-priority over the vetted offer-defers (stronger; flagged for re-vet).
+  Pins `test_review_status.js` + `test_autofile_check_bar.js`. ⚠ NOT driven live (renderer → reopen Review). B4 N/A (event-driven bars).
+- **suggested-teach — Idea A (owner idea, advisors 007+barry+eric → Oracle SEND BACK → census DONE):** the read-geom is
+  trace-only + empty for the untaught case → blind pre-fill FAILS (`TESTING/_measure/teach_reconstruction_census_
+  20260925/`: ref 77% unique / 23% MULTIPLE / 0 NONE — the ambiguous ~20% is entirely statements + repeat-ref templates).
+  The PICKER is the right build (UNIQUE→suggest, MULTIPLE→pick, always re-read-verify). NOT built — owner/Oracle go; do
+  NOT touch `keyword.extract_fields` (candidate retention) without it. Oracle verdicts in `docs/oracle_log.md`.
+
+## ⏭ 2026-09-25 MORNING (Chris's 09-24 cards VERIFIED LIVE; card 4 ROOT CAUSE fixed; card 5 + Ironclad answered at source):
 **READ `HANDOVER_2026-09-25.md` FIRST.** Owner: "push it" (origin was current) → "continue". Verify-first list PASSED live on the
 owner's sandbox (redetect receipt toast, "Read it as a Statement" door; the toast named SLUGS → now type NAMES `1efae11`,
 pin `test_review_redetect_receipt.js`). **Card 4 root cause `b46d1a7`:** the Review on-open "second look" road
