@@ -21,7 +21,19 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-24 (Chris's teach round verified + control-tested; the seven-slice fix set BUILT; R1/G1 gates in flight):
+## ⏭ LATEST — 2026-09-25 MORNING (Chris's 09-24 cards VERIFIED LIVE; card 4 ROOT CAUSE fixed; card 5 + Ironclad answered at source):
+**READ `HANDOVER_2026-09-25.md` FIRST.** Owner: "push it" (origin was current) → "continue". Verify-first list PASSED live on the
+owner's sandbox (redetect receipt toast, "Read it as a Statement" door; the toast named SLUGS → now type NAMES `1efae11`,
+pin `test_review_redetect_receipt.js`). **Card 4 root cause `b46d1a7`:** the Review on-open "second look" road
+(`_reextractFastCore`) spawned Python with NONE of the ~160 switch bridges (`_reconcileEnv` etc.) — and the pill's pre-fill
+unblocks Confirm, so a plain Confirm filed + minted the value; gary → Oracle SIGN-OFF-W/COND C1-C7 → ONE `_pipelineSpawnEnv(db)`
+shared by the Quick shard + the fast spawn (A/B kill `REEXTRACT_FAST_PIPELINE_ENV=0`), gate MET on 177+12 docs (GAINED 0,
+24 drops all wrong: `VAT Reg No … 7719 06` as vat_tax; caption `Date` as a ref) — `TESTING/_measure/fast_road_env_gate_20260925/`.
+**Any NEW Python spawn must use `_pipelineSpawnEnv(db)`.** Card 5 fact: the near-match confirm guard needs 3 HUMAN confirms
+(0 today) → design still the owner's go. Ironclad statements typed Invoice = herald: `TYPE_TITLE_OWNER_PRECEDENCE` promotes a
+lone skew-sheared `Invoice` cell over the folded UNINSTALLED heading → Option B queued in `NIGHT_RUN.md` (+ the Stage-1 label
+tail-bound arc, Oracle C6). Pins 431 files green (`test_ref_class_fix.js` flaky under load, green alone). ⚠ The owner's sandbox
+(CDP 9223) runs the PRE-fix main process — restart it; its DB now has Credit Note / Delivery Note / Statement installed.
 **For Chris's 2026-09-24 cards (what was fixed, what is open, the next step per card) READ `HANDOVER_2026-09-25_CHRIS_ISSUES.md`. READ `HANDOVER_2026-09-24_QUIET_REDETECT.md` FIRST (evening 2): the QUICK-reprocess stale-score fix is BUILT + GATED + on the sandbox (`a5f3cab`+`36f14a1`, Oracle RE-RULE of Plan-B C4 → `quickRescoreMerged`/`quickRescoreStore`, env kill `QUICK_RESCORE_MERGED=0`, gate `TESTING/_measure/quick_rescore_gate_20260924/RESULT.md`), AND the owner's "categorise everything after a type/override change" ask is BUILT DARK as **QUIET REDETECT mig 216 `quiet_redetect_on_type_change`** (`34a9f11`+`b887dae`; gary+eric → Oracle A SIGN-OFF-W/COND C1-C7, B/C DO NOTHING; `quietLane.js` kind `redetect` = a scope-less QUICK re-read of the held untyped/Generic template-less docs, or an override's type; gate `TESTING/_measure/quiet_redetect_gate_20260924/RESULT.md` MET; the born-digital relaxation was Oracle re-ruled SIGN-OFF-W/COND the same night → `ocrCache.ocrCacheUsableForRedetect`). NIGHT: Chris round (`docs/CHRIS_FULL_APP_REVIEW_2026-09-24.md`: 91/98 sorted, 19/20 fixed, verdict yes) → the owner pre-authorised fixes landed (untyped job ignores the lane-note family, "Read it as a Statement" notice, fast-suggestion digit gate, redetect receipt toast + list refresh, copy/layout); see the handover's "NEEDS YOUR APPROVAL (morning)". The owner's sandbox app runs on HEAD with the switch PERSISTED ON in its DB (CDP 9223); Chris's sandbox on 9226. Else `HANDOVER_2026-09-24_QUICK_RESCORE.md` / `HANDOVER_2026-09-24.md`.** Branch `feat/teach-side-overnight`; **HEAD `356fcd3` = origin (PUSHED 2026-09-25 morning); migs → 216; `TEST_SWITCH_KEYS` 14; `/v1` contract 1.9.0; run-pins 429/429; tree clean.** Chris's 09-23 round
 (`docs/CHRIS_FULL_APP_REVIEW_2026-09-23.md`): orders filed as promised, 0 wrong roles on 67; invoices 0/30 with a
 taught Total; a taught Customer filed as "Customer". **Control test:** `14396ab` OFF vs today OFF md5-identical on his
