@@ -56,10 +56,14 @@ check('promptField calls renderFieldPrompt THEN maybeSuggestField',
 console.log('\nREUSE the shipped typed-locate path (no second OCR / picker)');
 check('maybeSuggestField locates via the shared locateTypedValue',
       /function maybeSuggestField[\s\S]{0,900}await locateTypedValue\(/.test(js));
-check('it routes through the shipped showLocatedPick (never a new picker)',
-      /function maybeSuggestField[\s\S]{0,1400}showLocatedPick\(f, String\(value\), hits, 0, \{ onYes:/.test(js));
-check('it commits via useLocatedBox with valueSource:read (value-correction row shows)',
-      /onYes:\s*\(box\)\s*=>\s*useLocatedBox\(f, String\(value\), box, \{ valueSource:\s*'read' \}\)/.test(js));
+check('UNIQUE (one hit) is ONE screen — reveal the box then commit DIRECT (no separate pick step; Chris r1 double-confirm)',
+      /if \(hits\.length === 1\)\{[\s\S]{0,600}return useLocatedBox\(f, String\(value\), box, \{ valueSource: 'read' \}\);/.test(js));
+check('C-A: the UNIQUE box is revealed+ringed before the confirm (tzReset + emphasiseBox + scrollIntoView)',
+      /if \(hits\.length === 1\)\{[\s\S]{0,400}tzReset\(\);[\s\S]{0,200}emphasiseBox\(box\);[\s\S]{0,200}canvas\.scrollIntoView/.test(js));
+check('MULTIPLE routes through the shipped showLocatedPick (never a new picker, never auto-picks)',
+      /showLocatedPick\(f, String\(value\), hits, 0, \{ onYes:/.test(js));
+check('the commit is useLocatedBox with valueSource:read (value-correction row shows), both paths',
+      /useLocatedBox\(f, String\(value\), box, \{ valueSource: 'read' \}\)/.test(js));
 check('useLocatedBox takes a valueSource opt (default typed = shipped behaviour)',
       /async function useLocatedBox\(f, value, box, opts\)\{[\s\S]{0,200}const src\s*=\s*\(opts && opts\.valueSource\)\s*\|\|\s*'typed';/.test(js));
 check('located is set ONLY when typed (a read value keeps the correction row)',

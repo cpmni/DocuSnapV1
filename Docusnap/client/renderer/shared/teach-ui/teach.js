@@ -1377,9 +1377,20 @@ async function maybeSuggestField(f){
   if (state.doc?.id !== openDocId || state.pageIndex !== openPage || state.deskewAngle !== openAngle) return;
   if (curField() !== f || drag || state.results[f.key]) return;
   if (!hits || !hits.length) return;                          // NONE → the manual draw prompt stands (no regression)
-  // UNIQUE or MULTIPLE both route through the shipped pick step — it reveals + rings the box (C-A) and is
-  // the "seen == approved" gate; it NEVER auto-picks (multi-spot steps through). onYes commits with
-  // valueSource:'read' so the value-correction row shows (owner: reads used right-or-wrong).
+  if (hits.length === 1){
+    // UNIQUE → ONE combined screen (Chris r1 / owner: the separate "Yes — teach this spot" pick was a
+    // second near-identical confirm — ~2 taps per field, "too many requests"). Reveal + ring the box
+    // HERE (C-A: the box is in view before the confirm — showValueConfirm alone only scrollIntoViews),
+    // then go STRAIGHT to the value/label confirm (Accept / Redraw / Type the correction) — one screen.
+    const box = hits[0].box;
+    try { tzReset(); } catch {}
+    hideStoredBoxes = true; drawnBox = box; redrawCanvas();
+    try { emphasiseBox(box); } catch {}
+    try { canvas.scrollIntoView({ block: 'nearest' }); } catch {}
+    return useLocatedBox(f, String(value), box, { valueSource: 'read' });
+  }
+  // MULTIPLE → the pick step is REQUIRED (owner: "printed in N places, pick one") — it reveals each box
+  // and NEVER auto-picks. onYes commits with valueSource:'read' so the value-correction row shows.
   showLocatedPick(f, String(value), hits, 0, { onYes: (box) => useLocatedBox(f, String(value), box, { valueSource: 'read' }) });
 }
 function renderFieldRail(){
