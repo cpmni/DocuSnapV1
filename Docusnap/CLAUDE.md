@@ -21,9 +21,20 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-25 (later) — SUGGESTED-TEACH auto-draw BUILT DARK in the GUIDED TEACH WIZARD (mig 220; owner re-scope):
+## ⏭ LATEST — 2026-09-26 — SUGGESTED-TEACH auto-draw in the GUIDED TEACH WIZARD (mig 220) + Chris double-confirm FIX (VERIFIED):
 Branch `feat/teach-side-overnight`; **migs → 220; `TEST_SWITCH_KEYS` 18; run-pins 462/462 green; commits LOCAL/UNPUSHED
-(origin was `2bb483f`); tree otherwise clean (pre-existing untracked `TESTING/_measure/*`).** Owner "build the picker"
+(`a8bee89` Review Slice 1 → `0486f5e` wizard re-host → `59d2fb0` double-confirm fix; origin was `2bb483f`); tree clean
+apart from a docs commit for the Chris review.** **CHRIS REVIEW CYCLE DONE (owner "going to bed", pre-authorised
+implementing Chris's fixes for this feature):** Chris r1 CONFIRMED the owner's complaint (a UNIQUE auto-suggested field
+took 2 taps across two near-identical screens — `showLocatedPick` "Yes teach this spot" THEN `showValueConfirm` "Looks
+right"); **FIX `59d2fb0`:** UNIQUE (`hits.length===1`) now reveals+rings the box inline (C-A) and goes STRAIGHT to the
+single value/label confirm — ONE screen, ONE tap; MULTIPLE keeps `showLocatedPick`; the shipped typed-locate flow
+untouched. **Chris r2 VERIFIED FIXED** (2 taps → 1). Chris's other cards (issuer warn-not-block on a hand-drawn box =
+pre-existing + not this feature; the type-it-instead path still double-asks = shipped Oracle-signed typed-locate;
+auto-draw only pre-draws fields read at import; "value/label" jargon) are LOGGED for the owner's morning vet in
+`docs/CHRIS_FULL_APP_REVIEW_2026-09-26.md` (the OWNER VET QUEUE section) — NOT changed overnight. Sandbox left running
+(port 9223; admin chris/`Sandbox123!`).
+Owner "build the picker"
 → built on the ⊕ Review readout → owner tested + rejected the surface ("I didn't want it in Review"; verbatim: "when you
 go to teach a doc, the keyword reads, whether right or wrong, are suggested and the boxes are drawn automatically for the
 user to confirm or redraw"). RE-HOSTED to the guided Teach WIZARD. Advisor round 007+reggie+eric → Oracle
