@@ -28,8 +28,12 @@ check('the bar is hidden by default (the `hidden` attribute)', /id="autofile-che
   check('_renderAutofileCheckBar filters to live ready jobs', /find\(j => j\.ready && j\.state !== 'done'\)/.test(body));
   check('_renderAutofileCheckBar never reads _quietSilent (surfaces autofile without un-silencing the lane)',
         body.length > 0 && !/_quietSilent/.test(body));
-  check('the bar carries the owner copy "Checking eligible docs … for Autofile"',
-        /Checking eligible docs\$\{sup\} for Autofile/.test(body));
+  check('the bar carries the plain no-jargon copy "Checking which documents … can file on their own"',
+        /Checking which documents\$\{sup\} can file on their own/.test(body));
+  // Oracle 2026-09-25 B3: NO DENOMINATOR — the frozen "done of total" fraction drifts from the queue and is
+  // worse than no number. The bar must never render a done/total pair.
+  check('the bar shows NO denominator (no "done of total" fraction)',
+        !/ready\.total/.test(body) && !/ready\.done/.test(body) && !/\bof \$\{/.test(body));
 }
 check('_renderQuietHint STILL returns early on _quietSilent (silence preserved for teach/layout re-reads)',
       /function _renderQuietHint\(\)[\s\S]{0,220}if \(_quietSilent\)/.test(rend));

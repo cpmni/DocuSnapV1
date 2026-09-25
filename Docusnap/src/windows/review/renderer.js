@@ -10497,9 +10497,13 @@ function _renderAutofileCheckBar() {
   const ready = [..._quietJobs.values()].find(j => j.ready && j.state !== 'done');
   if (!ready) { el.hidden = true; el.textContent = ''; return; }
   const sup = ready.supplier ? ` from ${ready.supplier}` : '';
+  // NO DENOMINATOR (Oracle 2026-09-25 B3, banner-reconciliation): the quiet job's `total` is frozen at job start
+  // (quietLane.js) and its population is the sender's eligible held docs — legitimately WIDER than the visible
+  // queue — so "done of total" drifts from what the user can count ("there weren't 18"). A number that disagrees
+  // with their own eyes is worse than no number; show a calm working-state, not a fraction. Plain copy, no jargon.
   el.textContent = ready.state === 'deferred'
-    ? `Checking eligible docs${sup} for Autofile — paused while you work, resumes on its own`
-    : `Checking eligible docs${sup} for Autofile${ready.total ? ` — ${ready.done || 0} of ${ready.total}` : ''}…`;
+    ? `Checking which documents${sup} can file on their own — paused while you work, resumes on its own`
+    : `Checking which documents${sup} can file on their own…`;
   el.hidden = false;
 }
 window.docusnap.onQuietReprocess?.(async (ev) => {
