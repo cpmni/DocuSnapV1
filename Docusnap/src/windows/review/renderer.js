@@ -229,6 +229,10 @@ let reviewGroupByLetterhead = false;
   catch { /* stays false — legacy grouping */ }
 })();
 function reviewGroupKey(doc) {
+  // Tier C (2026-09-25, DARK `issuer_sibling_dominant_hold`): a near-miss of the spelling its converging siblings
+  // carry groups UNDER that spelling. The queue stamps `issuer_sibling_dominant` only when the switch is on.
+  const dom = String(doc?.issuer_sibling_dominant || '').trim();
+  if (dom) return dom;
   if (reviewGroupByLetterhead) {
     const sug = String(doc?.issuer_suggested || '').trim();
     if (sug) return sug;
@@ -237,6 +241,12 @@ function reviewGroupKey(doc) {
 }
 // A row whose group is the letterhead company while its own read still differs → "check sender".
 function reviewGroupChip(doc) {
+  const dom = String(doc?.issuer_sibling_dominant || '').trim();
+  const ownName = String(doc?.supplier_name || '').trim();
+  if (dom && dom !== ownName) {
+    const n = Number(doc?.issuer_sibling_count) || 0;
+    return ` <span class="qi-check-sender" title="${n} other document${n === 1 ? '' : 's'} with this same layout read “${escHtml(dom)}” — this one read “${escHtml(ownName)}”. Open it to choose the sender.">check sender</span>`;
+  }
   if (!reviewGroupByLetterhead) return '';
   const sug = String(doc?.issuer_suggested || '').trim();
   const own = String(doc?.supplier_name || '').trim();
@@ -7353,7 +7363,15 @@ function showIssuerNearMatchHold(nm, idx, supplier) {
   note.className = 'field-note issuer-nm-hold';
   // source 'letterhead' (slice 3 of the garbled-issuer arc, Oracle C3.3): not a near-miss of a
   // company you use — the letterhead on THIS page reads the company; the issuer box read a garble.
-  const lead = nm.source === 'letterhead'
+  // source 'siblings' (Tier C, Chris 2026-09-24 card 5; Oracle C6): NOT "a company you already use" — the other
+  // documents in THIS pile with the same layout read the dominant spelling. A QUESTION naming both spellings and the
+  // count; never asserts the dominant is right (the pile could be the garbled side); Use / Keep carry equal weight.
+  const _sibN = Number(nm.siblings) || 0;
+  const lead = nm.source === 'siblings'
+    ? `"${escHtml(cur)}" is ${nm.kind === 'subrun' ? 'part of' : `<strong>${diff}</strong> off`} <strong>${known}</strong>, which `
+      + `<strong>${_sibN}</strong> other document${_sibN === 1 ? '' : 's'} with this same layout read${Number(nm.confirmedSiblings) > 0 ? ` (${Number(nm.confirmedSiblings)} already filed)` : ''} — same sender? `
+      + `Filing as "${escHtml(cur)}" would start a second folder. `
+    : nm.source === 'letterhead'
     ? `The letterhead on this page reads <strong>${known}</strong> — the issuer box read "${escHtml(cur)}". `
       + `Filing as "${escHtml(cur)}" would start a new sender folder. `
     : nm.kind === 'subrun'

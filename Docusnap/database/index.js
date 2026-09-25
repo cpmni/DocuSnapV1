@@ -4373,6 +4373,21 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 217 (type_owner_uninstalled_block): ${e.message}`); }
   }
 
+  // mig 218 (2026-09-25; Chris 09-24 card 5 "one sender split three ways"; gary → Oracle SIGN-OFF-W/COND C1-C8):
+  // `issuer_sibling_dominant_hold` — Tier C of the issuer near-match gate. When Tier A (≥ 3 human confirms) and Tier B
+  // (frozen template identities) miss, the confirm gate, the teach ask (desktop + /v1) and the Review grouping ask the
+  // PILE: among the queued + human-confirmed documents that CONVERGE with this one by layout (branding fingerprint at
+  // 0.80 OR logo phash ≤ 13), is the typed issuer a 1-2-edit / sub-run near-miss of the DOMINANT spelling? A hit is the
+  // same Use / Keep hold as Tier A/B — never an adoption, never a write; bulk callers stay held. Fold-first with a
+  // pair-test budget (fail open). JS-only (no engine env). DARK, seeded OFF, byte-identical off. Single-key seed.
+  if (!applied.has(218)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('issuer_sibling_dominant_hold', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (218)').run();
+      console.log('JS migration 218 applied: issuer_sibling_dominant_hold (Tier C converging-siblings issuer hold at the confirm gate, the teach ask and the Review grouping) seeded OFF (DARK, byte-identical off)');
+    } catch (e) { console.warn(`  migration 218 (issuer_sibling_dominant_hold): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

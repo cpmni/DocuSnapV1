@@ -248,7 +248,13 @@ and, with no safe route, that item STOPS** — never improvise around a refusal.
   correct as untyped + `detected_type_name == GT` (also fixes balance_bf / sib_statement scoring); gate: digital + scan,
   OFF/ON, wrong + would-file 0, controls clean. (3) C4 separation arms recorded in
   `TESTING/_measure/type_owner_block_20260925/RESULT.md`. Then back to the Oracle with the numbers → owner flip.
-- **2026-09-25 · [DESIGNS SIGNED, owner go/no-go] card 5 sender split → `docs/designs/SIBLING_DOMINANT_HOLD_2026-09-25.md`
+- **2026-09-25 · [FLIP GATE for mig 218 `issuer_sibling_dominant_hold` — BUILT DARK the same day]** census MET
+  (`TESTING/_measure/sibling_dominant_census_20260925/RESULT.md`: Chris copy exactly {62, 69}, replay 0; the owner's
+  live copy 0/0). Owed: (1) one live CLIENT confirm of Chris's doc 69 against a core with the switch armed → the 400
+  toast reads the server's self-sufficient text (Oracle C4; the client Use/Keep pair = `pendingfeatures.md` card);
+  (2) a Chris round on a fresh sandbox with the switch armed: confirm 69 FIRST → held with the "18 others" sentence →
+  Use → ONE folder; File All → 18; 62 → sub-run hold → Use; then the Oracle with the numbers → owner flip.
+- **2026-09-25 · [DESIGNS SIGNED → BOTH BUILT DARK] card 5 sender split → `docs/designs/SIBLING_DOMINANT_HOLD_2026-09-25.md`
   (Oracle C1-C8; C1 teach-ask + C2 confirmed-siblings BLOCKING; census C5 = hand-adjudicated FALSE = 0 on Chris's copy /
   727 / 605) · Ironclad → `docs/designs/TYPE_OWNER_UNINSTALLED_BLOCK_2026-09-25.md` (Oracle C1-C10; C1 alias exclusion
   BLOCKING; C3 red-first fold twin; C4 separation arms OFF/ON; C9 Hard Set `statement_layout` = FLIP gate). Both DARK

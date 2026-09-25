@@ -93,7 +93,7 @@ check("group KEY fallback stays '—' in reviewDisplayGroups (expand/nav depends
       // slice 3 of the garbled-issuer arc (2026-08-22): the key now comes from ONE helper,
       // reviewGroupKey(doc), whose fallback is the same '—' (pinned there).
       /const key = reviewGroupKey\(doc\);/.test(renderer)
-      && /function reviewGroupKey\(doc\)[\s\S]{0,400}?\|\| '—';/.test(renderer));
+      && /function reviewGroupKey\(doc\)[\s\S]{0,800}?\|\| '—';/.test(renderer));   // window 400 → 800 (2026-09-25: the Tier C issuer_sibling_dominant prelude)
 check('groupTitle maps the "—" pile to human copy by live group count (display only)',
       /function groupTitle\(supplier, groupCount\)/.test(renderer)
       && /Your scanned documents/.test(renderer) && /Sender not identified/.test(renderer));

@@ -1519,7 +1519,7 @@ async function _warnOnIssuerValue(f, r){
   if (!v) return;
   let implausible = false, nm = null;
   try { const res = await D.checkIssuerRead(v); implausible = !!(res && res.implausible); } catch {}
-  try { if (D.checkIdentityNearMatch) nm = await D.checkIdentityNearMatch({ value: v, templateId: (state.doc && state.doc.template_id) || null }); } catch {}
+  try { if (D.checkIdentityNearMatch) nm = await D.checkIdentityNearMatch({ value: v, templateId: (state.doc && state.doc.template_id) || null, docId: (state.doc && state.doc.id) || null }); } catch {}   // docId: the Tier C sibling ask (2026-09-25)
   // The operator may have moved on (redraw, typed a different value, next field) while we waited.
   if (curField() !== f || String((state.results[f.key]||{}).value||'').trim() !== v) return;
   const host = $('rg-confirm-top'); if (!host) return;
@@ -2144,7 +2144,7 @@ async function doCommit(){
     // "keep" path stays (a genuine second company) but is never the default button.
     if (!state.issuerNearMatchAck && supplier && D.checkIdentityNearMatch) {
       let nm = null;
-      try { nm = await D.checkIdentityNearMatch({ value: supplier, templateId: (state.doc && state.doc.template_id) || null }); } catch {}
+      try { nm = await D.checkIdentityNearMatch({ value: supplier, templateId: (state.doc && state.doc.template_id) || null, docId: (state.doc && state.doc.id) || null }); } catch {}   // docId: the Tier C sibling ask (2026-09-25)
       if (nm && nm.near && nm.existing && String(nm.existing).trim().toLowerCase() !== String(supplier).trim().toLowerCase()) {
         const full = esc(nm.existing), frag = esc(supplier);
         $('commit-err').innerHTML = (nm.kind === 'subrun'

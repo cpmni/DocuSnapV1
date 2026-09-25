@@ -203,6 +203,17 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   type ∈ the ablated set + the third-type arm count decided (C5); separation arms OFF == ON (C4); realdoc OFF
   //   md5-identical + ON M=0; the Hard Set `statement_layout` class + scorer rule (C9) wrong+would-file 0.
   'type_owner_uninstalled_block',
+  // issuer_sibling_dominant_hold (mig 218, 2026-09-25; Chris 09-24 card 5 "one sender split three ways"; gary → Oracle
+  //   SIGN-OFF-W/COND C1-C8): Tier C of the issuer near-match gate — after Tier A (≥ 3 human confirms) / Tier B
+  //   (frozen template identities) miss, the confirm gate + the teach ask (desktop + /v1) + the Review grouping ask
+  //   the PILE: among queued + human-confirmed documents that CONVERGE by layout (branding 0.80 OR phash ≤ 13), is the
+  //   typed issuer a 1-2-edit / sub-run near-miss of the DOMINANT spelling → the same Use/Keep hold, never adopted,
+  //   bulk stays held; fold-first + pair budget (fail open). JS-only. FLIP GATE: the hand-adjudicated census
+  //   (`TESTING/_measure/sibling_dominant_census_20260925/`): Chris's 09-24 copy → EXACTLY docs 69 + 62 held, 0 of the
+  //   18; the owner's live copy + the 605 corpus with the REPLAY arm → FALSE holds 0 (an offer that is a different
+  //   real company, or the confirmed value was right); perf pin ≤ +25 ms per confirm / ≤ +100 ms per queue read; one
+  //   client confirm of doc 69 shows the actionable 400 toast; then a Chris round (confirm 69 FIRST → held → Use → ONE folder).
+  'issuer_sibling_dominant_hold',
   // glyph_slice_integrity (mig 212, 2026-09-23 night, Oracle C2/C3 of the Paddle corroboration vet — S1 of Part A):
   //   the second reader's crop rect is SNAPPED to the page-level word boxes on the value's row band before the re-read
   //   (extraction/slice_integrity.py, pure; words from the mapper's shared locate cache). A taught box that cuts a glyph

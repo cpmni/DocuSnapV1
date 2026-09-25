@@ -1,0 +1,5 @@
+== live727: C:\Users\cmccu/.claude/jobs/68b38f39/tmp/dbcopy/live727.db
+distinct sender spellings: 30
+arm Q (queued today): 20 docs · holds 0 · avg 2.2 ms · max 14 ms · max pairTests 0
+arm R (REPLAY of human-confirmed docs — every hold is a FALSE-hold candidate to adjudicate): 256 docs · holds 0 · avg 1.2 ms · max 2 ms · max pairTests 0
+SUMMARY live727: queued holds 0 · replay candidates 0

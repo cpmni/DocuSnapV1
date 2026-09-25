@@ -270,6 +270,7 @@ function getReviewQueue(db, viewer) {
     ORDER BY d.processed_at DESC
   `).all();
   _stampPutBackRefileable(db, _rows);
+  _stampSiblingDominant(db, _rows);
   return _rows;
 }
 
@@ -287,6 +288,67 @@ function _putbackRefileEnabled(db) {
   try { return require('./learning').getSetting(db, 'putback_refile_on_file_all', 'false') === 'true'; }
   catch { return false; }
 }
+// Tier C display slice (Chris 2026-09-24 card 5; Oracle C1-C8, 2026-09-25; DARK `issuer_sibling_dominant_hold`):
+// the Review list groups a held document whose issuer read is a near-miss of the spelling its converging siblings
+// carry UNDER that spelling ("18 others read 'Meadowvale…' — check sender"). Computed ONCE per queue read (Oracle C3):
+// the rows' own distinct folds are near-tested pairwise first (tens, no fingerprints); only rows whose fold has a near
+// fold among the others go through learning.findDominantSiblingIdentity (fold-first + pair budget). The SAME predicate
+// the confirm gate uses, so the screen and the DB decision cannot disagree. OFF ⇒ no property on any row (byte-identical).
+function _stampSiblingDominant(db, rows) {
+  let learning;
+  try { learning = require('./learning'); } catch { return; }
+  if (!learning.siblingDominantEnabled || !learning.siblingDominantEnabled(db)) return;
+  try {
+    const { foldIdentity, nearMatchIdentity, tokenSubrunIdentity } = require('./name_proximity');
+    const byFold = new Map();
+    for (const r of rows) {
+      const v = String((r && r.supplier_name) || '').trim();
+      const f = foldIdentity(v);
+      if (!f) continue;
+      let e = byFold.get(f);
+      if (!e) { e = { spelling: v, rows: [] }; byFold.set(f, e); }
+      e.rows.push(r);
+    }
+    const folds = [...byFold.entries()];
+    if (folds.length > 400) return;   // bounded (Oracle C3): no chip on a queue with hundreds of distinct senders — fail open
+    // Fold SIZES include the HUMAN-confirmed converging population the gate counts (Oracle C2), so the pre-filter
+    // below cannot hide a chip the gate would hold: a fold can only be DOMINATED by a strictly larger one (the gate's
+    // `count(S) ≥ 2 AND count(S) > own`), so rows of the larger-or-equal fold are never evaluated (the 2,000-row /
+    // 100-near-named-senders queue: one evaluation instead of two thousand).
+    const confirmedBy = new Map();
+    try {
+      let hasVia = true; try { db.prepare('SELECT confirmed_via FROM documents LIMIT 0'); } catch { hasVia = false; }
+      const { MACHINE_VIAS_SQL, learningExcludedSql } = require('./machine_vias');
+      for (const r of db.prepare(`SELECT TRIM(supplier_name) AS v, COUNT(*) AS n FROM documents d
+                                   WHERE d.status = 'confirmed' AND d.supplier_name IS NOT NULL AND TRIM(d.supplier_name) <> ''
+                                     ${hasVia ? `AND COALESCE(d.confirmed_via, '') NOT IN (${MACHINE_VIAS_SQL})` : ''}${learningExcludedSql(db, 'd')}
+                                   GROUP BY LOWER(TRIM(supplier_name))`).all()) {
+        const f = foldIdentity(r.v); if (f) confirmedBy.set(f, (confirmedBy.get(f) || 0) + Number(r.n || 0));
+      }
+    } catch { /* an older DB: queue sizes alone */ }
+    const sizeOf = (f, e) => e.rows.length + (confirmedBy.get(f) || 0);
+    for (const [f, e] of folds) {
+      const mine = sizeOf(f, e);
+      let hasNear = false;
+      for (const [g, o] of folds) {
+        if (g === f) continue;
+        const theirs = sizeOf(g, o);
+        if (theirs < 2 || theirs <= mine) continue;   // cannot dominate this fold — skip the text test entirely
+        if (nearMatchIdentity(e.spelling, o.spelling).near || tokenSubrunIdentity(e.spelling, o.spelling).near) { hasNear = true; break; }
+      }
+      if (!hasNear) continue;
+      for (const r of e.rows) {
+        if (String(r.status || '') !== 'needs_review' && String(r.status || '') !== 'deferred') continue;
+        const sd = learning.findDominantSiblingIdentity(db, r.id, e.spelling);
+        if (sd && sd.near && String(sd.existing || '').toLowerCase() !== e.spelling.toLowerCase()) {
+          r.issuer_sibling_dominant = sd.existing;
+          r.issuer_sibling_count = Number(sd.siblings) || 0;
+        }
+      }
+    }
+  } catch { /* display slice: never fails a queue read */ }
+}
+
 function _stampPutBackRefileable(db, rows) {
   try {
     if (!_hasPutBackAt(db) || !_putbackRefileEnabled(db)) return;

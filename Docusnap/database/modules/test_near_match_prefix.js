@@ -73,8 +73,8 @@ const CR = String.fromCharCode(13), LF = String.fromCharCode(10);
 const read = (...p) => fs.readFileSync(path.join(__dirname, '..', '..', ...p), 'utf8').split(CR + LF).join(LF);
 const svc = read('src', 'services', 'reviewService.js'), teach = read('src', 'windows', 'shared', 'teach-ui', 'teach.js'), rev = read('src', 'windows', 'review', 'renderer.js'), rh = read('src', 'modules', 'review', 'handler.js');
 check('reviewService passes the doc\'s template id to the finder', /findNearMatchIdentity\(db, issuerVal, \{ templateId: docRow\.template_id \|\| null \}\)/.test(svc));
-check('the IPC accepts { value, templateId } and a bare string', /if \(value && typeof value === 'object'\) return learning\.findNearMatchIdentity\(getDb\(\), value\.value, \{ templateId: value\.templateId \|\| null \}\);/.test(rh));
-check('the wizard asks with its document\'s template id and offers the FULL name first on a sub-run', /checkIdentityNearMatch\(\{ value: v, templateId: \(state\.doc && state\.doc\.template_id\) \|\| null \}\)/.test(teach)
+check('the IPC accepts { value, templateId } and a bare string', /if \(value && typeof value === 'object'\) \{[\s\S]{0,200}?const nm = learning\.findNearMatchIdentity\(db, value\.value, \{ templateId: value\.templateId \|\| null \}\);/.test(rh) && /return learning\.findNearMatchIdentity\(getDb\(\), value\);/.test(rh));   // 2026-09-25: the object road also runs the Tier C sibling ask (docId) after an A/B miss
+check('the wizard asks with its document\'s template id and offers the FULL name first on a sub-run', /checkIdentityNearMatch\(\{ value: v, templateId: \(state\.doc && state\.doc\.template_id\) \|\| null, docId: \(state\.doc && state\.doc\.id\) \|\| null \}\)/.test(teach)
       && /nm\.kind === 'subrun'/.test(teach) && /is part of <span class="mono">\$\{esc\(nm\.existing\)\}<\/span>/.test(teach));
 check('the Review hold has a sub-run sentence (no "null characters")', /nm\.kind === 'subrun'/.test(rev) && /is part of <strong>\$\{known\}<\/strong>/.test(rev));
 check('the ⊕ teach read-back branches on kind subrun', /nm\.kind === 'subrun'\s*\n\s*\? `&#9888; \$\{read\} That is part of `/.test(rev));

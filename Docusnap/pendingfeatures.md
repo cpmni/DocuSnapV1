@@ -5751,3 +5751,12 @@ General-Document-typed docs (they were silently skipped) and a Generic→real re
 banner needs a render — Quick can't see it); a `reviewEvents` "recognised" receipt in the activity strip (Oracle: skip
 for now).
 
+
+## 2026-09-25 — the detached client's Use / Keep affordance on an issuer near-match hold (Oracle C4 of the Tier C arc)
+The `/v1` review-confirm now returns `nearMatch` on an `ISSUER_NEAR_MATCH` 400 (contract 1.10.0) and the server's error
+text is self-sufficient ("… correct the issuer here, or keep it from the main Scan Finder app"), but the client's
+`rvConfirm` only toasts the text — there is no one-click "Use <dominant>" / "Keep what I typed" pair as the desktop
+Review has, so a client user hit by ANY near-match (Tier A/B today, Tier C when armed) must retype or defer to the core.
+Build: read `r.json.nearMatch` in `client/renderer/renderer.js rvConfirm`, render the two buttons inline (Use → swap
+the issuer input + re-confirm; Keep → re-confirm with `acknowledgeIssuerNearMatch: true` — the API road must accept that
+body flag; verify it is whitelisted, today it is not client-supplied). Pin the client's rendering + the API's ack pass.

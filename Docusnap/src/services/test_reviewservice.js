@@ -474,6 +474,62 @@ const basePayload = (id, extra = {}) => ({
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('template_identity_hold_siblings','false')").run();
   }
 
+  // ── Tier C: CONVERGING SIBLINGS (Chris 2026-09-24 card 5; Oracle C1-C8, 2026-09-25; DARK issuer_sibling_dominant_hold) ──
+  // The pile: 18 queued "Meadowvale Dairy Wholesale" + one "Meadowyale…" + one "Dairy Wholesale", all on ONE layout
+  // (same fingerprint + phash). Tier A is silent (0 confirms) — the gate used to file the odd spellings as new senders.
+  console.log('\n── Tier C sibling-dominant hold (issuer_sibling_dominant_hold) ──');
+  {
+    const realLearning = require('../../database/modules/learning');
+    deps.learning.siblingDominantEnabled = (d) => realLearning.siblingDominantEnabled(d);
+    deps.learning.findDominantSiblingIdentity = (d, id, v, o) => realLearning.findDominantSiblingIdentity(d, id, v, o);
+    const FP = JSON.stringify(['Meadowvale', 'Dairy', 'Wholesale', 'CREDIT', 'NOTE', 'Creamery', 'Butterwick', 'VAT']);
+    const mkSib = (name) => {
+      const id = newDoc(db);
+      db.prepare("UPDATE documents SET supplier_name = ?, keyword_fingerprint = ?, logo_phash = '807f8181c37e7f61' WHERE id = ?").run(name, FP, id);
+      return id;
+    };
+    const sibs = []; for (let i = 0; i < 18; i++) sibs.push(mkSib('Meadowvale Dairy Wholesale'));
+    const garble = mkSib('Meadowyale Dairy Wholesale');
+    const trunc = mkSib('Dairy Wholesale');
+    const pay = (id, name, extra = {}) => basePayload(id, { allValues: { supplier_name: name, invoice_number: 'INV-9', invoice_date: '01-01-2026' }, supplier_name: name, corrections: {}, ...extra });
+    const held = () => calls.audit.filter(e => e.action === 'confirm_held_sibling_dominant').length;
+
+    // OFF (the default): the garble FILES as a new sender — the gap this arc closes, documented
+    delete process.env.ISSUER_SIBLING_DOMINANT_HOLD;
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('issuer_sibling_dominant_hold', 'false')").run();
+    const offDoc = mkSib('Meadowyale Dairy Wholesale');
+    const rOff = await svc.confirm(db, { username: 'sarah', role: 'admin' }, pay(offDoc, 'Meadowyale Dairy Wholesale'));
+    check('OFF: the garbled issuer files as a new sender (today\'s gap, documented)', rOff.ok === true && held() === 0);
+
+    process.env.ISSUER_SIBLING_DOMINANT_HOLD = '1';
+    const h0 = held();
+    const r1 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, pay(garble, 'Meadowyale Dairy Wholesale'));
+    check('ON: confirming "Meadowyale…" is HELD with ISSUER_NEAR_MATCH, source siblings, existing = the dominant spelling, 18 siblings',
+          r1.ok === false && r1.code === 'ISSUER_NEAR_MATCH' && r1.nearMatch && r1.nearMatch.source === 'siblings'
+          && r1.nearMatch.existing === 'Meadowvale Dairy Wholesale' && r1.nearMatch.siblings >= 18 && r1.nearMatch.kind === 'edit', JSON.stringify(r1));
+    check('  → audited confirm_held_sibling_dominant with the tally (C8) and the row still needs_review (pre-claim, nothing written)',
+          held() === h0 + 1 && calls.audit.find(e => e.action === 'confirm_held_sibling_dominant').metadata.siblings >= 18 && get(db, garble).status === 'needs_review');
+    check('  → the message names both spellings and the count, never "already use"',
+          /"Meadowyale Dairy Wholesale" is very close to "Meadowvale Dairy Wholesale", which \d+ other documents with this same layout read/.test(r1.error) && !/already use/.test(r1.error));
+    const r2 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, pay(trunc, 'Dairy Wholesale'));
+    check('ON: the truncated head is HELD via the sub-run arm', r2.ok === false && r2.code === 'ISSUER_NEAR_MATCH' && r2.nearMatch.kind === 'subrun', JSON.stringify(r2));
+    const r3 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, pay(trunc, 'Dairy Wholesale', { bulk: true }));
+    check('ON: a BULK confirm (File All) is held too — never files a near-miss silently', r3.ok === false && r3.code === 'ISSUER_NEAR_MATCH');
+    const r4 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, pay(garble, 'Meadowyale Dairy Wholesale', { acknowledgeIssuerNearMatch: true }));
+    check('ON: "Keep what I typed" (acknowledge) passes and files', r4.ok === true && get(db, garble).status === 'confirmed');
+    const r5 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, pay(trunc, 'Meadowvale Dairy Wholesale'));
+    check('ON: "Use" (the value now equals the dominant spelling) passes and files', r5.ok === true && get(db, trunc).status === 'confirmed');
+    const r6 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, pay(sibs[0], 'Meadowvale Dairy Wholesale'));
+    check('ON: one of the 18 (its own spelling dominates) files without a hold', r6.ok === true && get(db, sibs[0]).status === 'confirmed');
+    // Tier A outranks: once the right name has 3 HUMAN confirms, a garble is held by Tier A (source confirms), not C
+    for (const s of sibs.slice(1, 3)) await svc.confirm(db, { username: 'sarah', role: 'admin' }, pay(s, 'Meadowvale Dairy Wholesale'));
+    const g2 = mkSib('Meadowyale Dairy Wholesale');
+    const r7 = await svc.confirm(db, { username: 'sarah', role: 'admin' }, pay(g2, 'Meadowyale Dairy Wholesale'));
+    check('Tier A outranks Tier C once 3 human confirms exist (source confirms)', r7.ok === false && r7.code === 'ISSUER_NEAR_MATCH' && r7.nearMatch.source === 'confirms', JSON.stringify(r7.nearMatch));
+    delete process.env.ISSUER_SIBLING_DOMINANT_HOLD;
+    delete deps.learning.siblingDominantEnabled; delete deps.learning.findDominantSiblingIdentity;
+  }
+
   console.log(`\n${fails === 0 ? 'ALL PASS' : fails + ' FAILED'}`);
   process.exit(fails ? 1 : 0);
 })();

@@ -66,7 +66,7 @@ console.log('\n4. contract lockstep');
 const api = require('../modules/api/handler');
 const clientSrc = fs.readFileSync(path.join(__dirname, '..', '..', 'client', 'apiClient.js'), 'utf8');
 const m = clientSrc.match(/const CLIENT_CONTRACT = '([\d.]+)'/);
-check('server API_CONTRACT_VERSION is 1.9.0', api.API_CONTRACT_VERSION === '1.9.0', api.API_CONTRACT_VERSION);
+check('server API_CONTRACT_VERSION is 1.10.0 (1.9.0 added filed_by; 1.10.0 added nearMatch on the review-confirm 400, 2026-09-25)', api.API_CONTRACT_VERSION === '1.10.0', api.API_CONTRACT_VERSION);
 check('client CLIENT_CONTRACT moved in lockstep', !!m && m[1] === api.API_CONTRACT_VERSION, m && m[1]);
 
 console.log(`\n${pass} passed, ${fail} failed`);

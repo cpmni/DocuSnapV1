@@ -3298,3 +3298,17 @@ ON → Statement@95). Census `TESTING/_measure/type_owner_block_20260925/RESULT.
 EXACTLY {46, 52} (C8); the owner's live copy 758 texts → 0 changes installed AND ablated (C5 third-type arm EMPTY →
 trade-off pinned, no review route needed); OLD-vs-NEW block-OFF identical on all 958 texts (the refactor). C4 separation
 arms + the realdoc ON arm + C9 Hard Set class = the FLIP gate (queued). DARK; nothing flipped.
+APPLIED (2026-09-25, same day — owner "go" after design 2): Tier C `learning.findDominantSiblingIdentity` (fold-first,
+queued + HUMAN-confirmed siblings [C2], `issuer_sibling_fill`'s convergence pair, pair budget 5,000 fail-open [C3],
+`siblingDominantEnabled` with explicit '1'/'0' env [C7]) · the confirm gate after a Tier A/B miss with the C8 audit tally ·
+the teach ask on BOTH roads (`check-identity-near-match` with `docId`; `/v1/teach/commit` pre-tx) [C1] · the wizard
+passes docId at both sites · `/v1` review-confirm 400 carries `nearMatch` [C4] · the Review list groups under the
+dominant spelling with a "check sender" chip (once per read, size-prefiltered, fold cap 400) · the hold copy names the
+count + both spellings, never "already use" [C6] · mig 218 seed 'false', TEST_SWITCH_KEYS 16, ledger. Pins:
+`test_near_match_siblings.js` (a-j + C2 + 1-vs-1 abstain + majority-garble byte-unchanged + perf 13 ms / 25 ms on a
+2,000-row 100-sender queue — the first draft of the display slice took 36 s there; fixed by the size pre-filter),
+`test_reviewservice.js` Tier C section (held / ack / Use / bulk held / own spelling files / Tier A outranks / OFF files
+the garble), `test_migration218_issuer_sibling_dominant_hold.js` (seed + every consumer's shape). Census
+`TESTING/_measure/sibling_dominant_census_20260925/RESULT.md`: Chris's copy → queued holds EXACTLY {62, 69}, replay 0;
+the owner's live copy → queued 0 / replay 0 over 256 human-confirmed docs [C5]. DARK; not flipped. Owed: the client
+toast check on a live client (C4 — the server text is self-sufficient), a Chris round.

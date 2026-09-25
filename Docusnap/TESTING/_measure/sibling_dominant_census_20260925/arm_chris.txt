@@ -1,0 +1,7 @@
+== chris: C:\Users\cmccu/.claude/jobs/68b38f39/tmp/dbcopy/chris-sandbox-20260924.db
+distinct sender spellings: 10
+arm Q (queued today): 136 docs · holds 2 · avg 1.0 ms · max 12 ms · max pairTests 19
+    {"id":62,"file":"Meadowvale-Dairy_credit_note_0019.pdf","typed":"Dairy Wholesale","offer":"Meadowvale Dairy Wholesale","kind":"subrun","distance":null,"siblings":18,"confirmedSiblings":0,"own":1,"pairTests":19}
+    {"id":69,"file":"Meadowvale-Dairy_credit_note_0025.pdf","typed":"Meadowyale Dairy Wholesale","offer":"Meadowvale Dairy Wholesale","kind":"edit","distance":1,"siblings":18,"confirmedSiblings":0,"own":1,"pairTests":18}
+arm R (REPLAY of human-confirmed docs — every hold is a FALSE-hold candidate to adjudicate): 14 docs · holds 0 · avg 0.7 ms · max 1 ms · max pairTests 0
+SUMMARY chris: queued holds 2 · replay candidates 0

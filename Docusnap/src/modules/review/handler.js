@@ -416,7 +416,20 @@ function register(ctx) {
     try {
       // Chris r17 card 3: the wizard may pass { value, templateId } so a sub-run hit on the document's own
       // layout reads as 'prefix-template'; a bare string still works (the ⊕ teach, older callers).
-      if (value && typeof value === 'object') return learning.findNearMatchIdentity(getDb(), value.value, { templateId: value.templateId || null });
+      if (value && typeof value === 'object') {
+        const db = getDb();
+        const nm = learning.findNearMatchIdentity(db, value.value, { templateId: value.templateId || null });
+        // Tier C in the TEACH ASK (Oracle C1, 2026-09-25 — ship-blocking): without it the wizard freezes a garbled
+        // letterhead read as the template identity and then loops on the confirm's hold with no Use/Keep. Runs only
+        // after a Tier A/B miss, only when the caller names the document, only when the switch is armed.
+        if (!(nm && nm.near) && value.docId && learning.siblingDominantEnabled && learning.siblingDominantEnabled(db)) {
+          try {
+            const sd = learning.findDominantSiblingIdentity(db, value.docId, value.value);
+            if (sd && sd.near) return sd;
+          } catch (e) { logger?.warn?.(`check-identity-near-match (siblings): ${e.message}`); }
+        }
+        return nm;
+      }
       return learning.findNearMatchIdentity(getDb(), value);
     } catch (e) {
       logger?.warn?.(`check-identity-near-match: ${e.message}`);
@@ -2330,7 +2343,12 @@ async function teachCommit(ctx, db, payload, actor, reviewSvc) {
     } catch {}
   }
   try {
-    const nm = learning.findNearMatchIdentity(db, supplierName);
+    let nm = learning.findNearMatchIdentity(db, supplierName);
+    // Tier C on the /v1 teach road too (Oracle C1): the template is born inside the tx below, so the ask must run
+    // BEFORE it — same switch, same "after an A/B miss", same acknowledge flag.
+    if (!(nm && nm.near) && supplierName && documentId && learning.siblingDominantEnabled && learning.siblingDominantEnabled(db)) {
+      try { const sd = learning.findDominantSiblingIdentity(db, documentId, supplierName); if (sd && sd.near) nm = sd; } catch {}
+    }
     if (nm && nm.near && !p.acknowledgeIssuerNearMatch) return { ok: false, code: 'ISSUER_NEAR_MATCH', error: (nm && nm.message) || 'this issuer is very close to an existing one — confirm it is a different company' };
   } catch {}
 

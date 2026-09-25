@@ -30,7 +30,7 @@ check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 217 appl
 check(`a fresh install has ${KEY} === 'false'`, get(db, KEY) === 'false');
 check('the parent fold is ON by default (graduated mig 205) — the child is bridged only inside its block', get(db, 'type_uninstalled_heading_fold') === 'true');
 check(`${KEY} is listed in TEST_SWITCH_KEYS`, TEST_SWITCH_KEYS.includes(KEY));
-check('TEST_SWITCH_KEYS is 15 keys', TEST_SWITCH_KEYS.length === 15 && new Set(TEST_SWITCH_KEYS).size === 15);
+check('TEST_SWITCH_KEYS is 16 keys (+ issuer_sibling_dominant_hold mig 218)', TEST_SWITCH_KEYS.length === 16 && new Set(TEST_SWITCH_KEYS).size === 16);
 const src = norm(fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8'));
 check('single-key INSERT OR IGNORE seed of false', new RegExp(`INSERT OR IGNORE INTO settings \\(key, value\\) VALUES \\('${KEY}', 'false'\\)`).test(src));
 check('NO force-ON of the key anywhere in the migrations', !new RegExp(`VALUES \\('${KEY}', 'true'\\)`).test(src) && !new RegExp(`'${KEY}'[^\\n]*'true'`).test(src.replace(/\/\/[^\n]*/g, '')));

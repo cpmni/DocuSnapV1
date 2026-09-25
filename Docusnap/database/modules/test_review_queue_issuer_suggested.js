@@ -62,10 +62,10 @@ check('…and the classifier puts the blank-issuer row in `missing`, the valued 
 console.log('\nrenderer source contract:');
 const renderer = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'windows', 'review', 'renderer.js'), 'utf8');
 check('reviewGroupKey(doc) exists and falls back to supplier_name / "—"',
-      /function reviewGroupKey\(doc\)[\s\S]{0,400}?return String\(doc\?\.supplier_name \|\| ''\)\.trim\(\) \|\| '—';/.test(renderer));
+      /function reviewGroupKey\(doc\)[\s\S]{0,800}?return String\(doc\?\.supplier_name \|\| ''\)\.trim\(\) \|\| '—';/.test(renderer));   // window 400 → 800 (2026-09-25: the Tier C issuer_sibling_dominant prelude)
 check('…it is gated on the review_group_by_letterhead setting (OFF → plain supplier key)',
       /reviewGroupByLetterhead = \(await window\.docusnap\.getSetting\('review_group_by_letterhead'\)\) === 'true'/.test(renderer)
-      && /function reviewGroupKey\(doc\) \{\s*\n\s*if \(reviewGroupByLetterhead\)/.test(renderer));
+      && /function reviewGroupKey\(doc\) \{[\s\S]{0,400}?if \(reviewGroupByLetterhead\)/.test(renderer));   // the switch-stamped Tier C prelude may precede the letterhead gate (2026-09-25)
 check('reviewDisplayGroups keys on reviewGroupKey (site 1)',
       /for \(const doc of _sweepVisibleQueue\(\)\) \{\s*\n\s*const key = reviewGroupKey\(doc\);/.test(renderer));
 check('the expand-on-select branch keys on reviewGroupKey (site 2, lockstep)',
@@ -78,7 +78,7 @@ check('the confirm path advances on the group key, the catch-up sweep keeps the 
 check('the per-sender Reprocess button still reads doc.supplier_name (it reprocesses the REAL value)',
       /function updateReprocessSupplierButton[\s\S]{0,600}?currentDoc\?\.supplier_name/.test(renderer));
 check('the row chip "check sender" renders only when the suggestion differs from the read',
-      /function reviewGroupChip\(doc\)[\s\S]{0,500}?if \(!sug \|\| sug === own\) return '';[\s\S]{0,300}?qi-check-sender/.test(renderer)
+      /function reviewGroupChip\(doc\)[\s\S]{0,1200}?if \(!sug \|\| sug === own\) return '';[\s\S]{0,300}?qi-check-sender/.test(renderer)   // window 500 → 1200 (the Tier C chip branch precedes, 2026-09-25)
       && /\$\{reviewGroupChip\(doc\)\}/.test(renderer));
 check('the letterhead hold copy exists in showIssuerNearMatchHold (source "letterhead")',
       /nm\.source === 'letterhead'/.test(renderer) && /The letterhead on this page reads <strong>/.test(renderer));

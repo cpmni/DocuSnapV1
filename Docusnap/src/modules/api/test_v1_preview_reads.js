@@ -119,9 +119,9 @@ async function main() {
   void login;
 
   console.log('contract');
-  check('API_CONTRACT_VERSION is 1.9.0 (1.9.0: + filed_by on the detail DTO)', api.API_CONTRACT_VERSION === '1.9.0');
+  check('API_CONTRACT_VERSION is 1.10.0 (1.10.0: + nearMatch on the review-confirm 400; 1.9.0: + filed_by on the detail DTO)', api.API_CONTRACT_VERSION === '1.10.0');
   const health = await request(port, 'GET', '/v1/health');
-  check('health advertises 1.9.0', health.json && health.json.contractVersion === '1.9.0');
+  check('health advertises 1.10.0', health.json && health.json.contractVersion === '1.10.0');
 
   console.log('auth / entitlement on every read');
   for (const p of ['/v1/documents/1/page/0', '/v1/documents/1/page-count', '/v1/documents/1/find?q=inv', '/v1/documents/2/spreadsheet']) {

@@ -301,7 +301,28 @@ function createReviewService(deps = {}) {
               metadata: { typed: issuerVal, existing: nm.existing, distance: nm.distance, source: nm.source } });
             return fail('ISSUER_NEAR_MATCH',
               `"${issuerVal}" looks like "${nm.existing}", a company you already use — please check the issuer.`,
-              { nearMatch: { existing: nm.existing, distance: nm.distance, confirms: nm.confirms, source: nm.source, kind: nm.kind || null } });   // r18: `kind` rides along — without it the sub-run hold read "null characters off" 
+              { nearMatch: { existing: nm.existing, distance: nm.distance, confirms: nm.confirms, source: nm.source, kind: nm.kind || null } });   // r18: `kind` rides along — without it the sub-run hold read "null characters off"
+          }
+          // ── Tier C: CONVERGING SIBLINGS (Chris 2026-09-24 card 5; gary → Oracle SIGN-OFF-W/COND C1-C8; DARK
+          // `issuer_sibling_dominant_hold`, mig 218). Tier A/B outrank (above). When they miss, ask the PILE: among
+          // the queued + human-confirmed documents that converge with this one by LAYOUT, is the typed issuer a
+          // 1-2-edit / sub-run near-miss of the DOMINANT spelling? Same hold, same Use/Keep, same ack + bulk
+          // semantics; nothing adopted, nothing written; fails open on error like the tiers above. Audit metadata
+          // carries the tally so a false hold in the field is forensically traceable (Oracle C8).
+          if (!(nm && nm.near) && learning.siblingDominantEnabled && learning.siblingDominantEnabled(db)
+              && typeof learning.findDominantSiblingIdentity === 'function') {
+            const sd = learning.findDominantSiblingIdentity(db, document_id, issuerVal);
+            if (sd && sd.near && issuerVal.toLowerCase() !== String(sd.existing).toLowerCase()) {
+              audit(db, { action: 'confirm_held_sibling_dominant', target_type: 'document', target_id: document_id,
+                document_id, outcome: 'held', actor_username: actorName,
+                metadata: { typed: issuerVal, existing: sd.existing, siblings: sd.siblings, confirmedSiblings: sd.confirmedSiblings,
+                            kind: sd.kind, distance: sd.distance, pairTests: sd.pairTests } });
+              const _n = Number(sd.siblings) || 0;
+              return fail('ISSUER_NEAR_MATCH',
+                `"${issuerVal}" is very close to "${sd.existing}", which ${_n} other document${_n === 1 ? '' : 's'} with this same layout read — same sender? Correct the issuer here, or keep it from the main Scan Finder app.`,
+                { nearMatch: { existing: sd.existing, distance: sd.distance, confirms: null, source: 'siblings', kind: sd.kind || null,
+                               siblings: sd.siblings, confirmedSiblings: sd.confirmedSiblings } });
+            } 
           }
           // ── LETTERHEAD-SUGGESTION hold (slice 3 of the garbled-issuer arc, 2026-08-22; Oracle C3.3) ──
           // The Review list now GROUPS a garbled issuer ("NOCUMENT") under the company the letterhead

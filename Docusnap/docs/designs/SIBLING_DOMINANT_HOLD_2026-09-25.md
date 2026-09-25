@@ -1,7 +1,8 @@
-# Sibling-dominant issuer hold — Chris 2026-09-24 card 5 "one sender split three ways" (DESIGN, not built)
+# Sibling-dominant issuer hold — Chris 2026-09-24 card 5 "one sender split three ways" (BUILT DARK 2026-09-25, mig 218)
 
-**Status:** gary design → Oracle **SIGN OFF WITH CONDITIONS C1-C8** (2026-09-25; `docs/oracle_log.md`). **Owner go/no-go
-pending.** DARK switch `issuer_sibling_dominant_hold` (mig 217 seeds `'false'`; env `ISSUER_SIBLING_DOMINANT_HOLD` `'0'` kill /
+**Status:** gary design → Oracle **SIGN OFF WITH CONDITIONS C1-C8** (2026-09-25; `docs/oracle_log.md`) → owner "go" →
+**BUILT DARK the same day** (C1-C4, C6-C8 applied; C5 census MET — `TESTING/_measure/sibling_dominant_census_20260925/
+RESULT.md`; owed before a flip: one live client confirm of the exhibit doc + a Chris round with the switch armed). DARK switch `issuer_sibling_dominant_hold` (mig 217 seeds `'false'`; env `ISSUER_SIBLING_DOMINANT_HOLD` `'0'` kill /
 `'1'` force — explicit strings, never the `!= '0'` EMPTY-as-ON idiom); listed in `TEST_SWITCH_KEYS`.
 
 ## The exhibit (verified in Chris's 09-24 sandbox DB copy)

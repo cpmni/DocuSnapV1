@@ -52,6 +52,7 @@ const HELD = [
   'corrob_date_fold_wide',         // mig 208, 2026-09-23 — worded-date corroboration fold
   'recon_singlechar_misread_flag', // mig 209, 2026-09-23 — arithmetic-witness single-digit total misread
   'quiet_redetect_on_type_change', // mig 216, 2026-09-24 evening 2 — a type/override change re-reads the held unrecognised docs on the Quick road (DARK)
+  'issuer_sibling_dominant_hold',  // mig 218, 2026-09-25 — Tier C converging-siblings issuer hold (Chris card 5)
   'type_owner_uninstalled_block',  // mig 217, 2026-09-25 — an uninstalled shipped title BLOCKS the owner-precedence steal (Ironclad statements typed Invoice)
   'glyph_confusable_release',      // mig 211, 2026-09-23 — second-reader agree + wide re-read POPS the soften note (auto-file loosener; yield 1/9 → stays DARK)
   // (glyph_fallback_enabled 207, glyph_confusable_resolve 210, glyph_slice_integrity 212, name_value_label_flag 213,
@@ -62,10 +63,10 @@ console.log('== mig 205 BATCH graduation (34 fail-toward-review switches) ==');
 
 console.log(`0. the batch is exactly ${FLIP.length} keys and the two sets are disjoint + cover the list`);
 check('FLIP is 34 distinct keys', new Set(FLIP).size === 34);
-check('HELD is 15 distinct keys', new Set(HELD).size === 15);   // 14 → 15: type_owner_uninstalled_block (mig 217, 2026-09-25)
+check('HELD is 16 distinct keys', new Set(HELD).size === 16);   // 15 → 16: issuer_sibling_dominant_hold (mig 218, 2026-09-25)   // 14 → 15: type_owner_uninstalled_block (mig 217, 2026-09-25)
 check('FLIP ∩ HELD = ∅', FLIP.every(k => !HELD.includes(k)));
 check('TEST_SWITCH_KEYS == HELD (every flipped key delisted, every held key kept)',
-  TEST_SWITCH_KEYS.length === 15 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
+  TEST_SWITCH_KEYS.length === 16 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
 
 console.log('1. a fresh install has every flipped key ON, every held key OFF');
 {

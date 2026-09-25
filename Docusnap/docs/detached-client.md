@@ -125,7 +125,12 @@ the add-on off. (Design history: `memory/scanfinder-*` + the plan in `.claude/pl
   WHO filed a confirmed doc: a person, a consented batch (`consented`), the scope's own pass (`self_filed`), an import
   or a re-read auto-file; the client falls back to "Checked" when the field is absent (an older core). Five DTO
   copies carry it (core detail DTO + the client/search projections); pins `src/services/test_filed_by.js` +
-  `src/modules/api/test_v1_preview_reads.js`. Adding endpoints under the same MAJOR never needs a bump — only a DTO/field change does.
+  `src/modules/api/test_v1_preview_reads.js`. **1.10.0** (2026-09-25) = `nearMatch` on the review-confirm **400** body
+  when `code === 'ISSUER_NEAR_MATCH'` (`{existing, distance, confirms, source, kind[, siblings, confirmedSiblings]}`;
+  `source` = `confirms` / `template` / `prefix-template` / `letterhead` / `siblings` — the last is the Tier C
+  converging-siblings hold, DARK mig 218). Additive: a client without an affordance shows the server's self-sufficient
+  error text; the client Use/Keep pair is a `pendingfeatures.md` card. Adding endpoints under the same MAJOR never
+  needs a bump — only a DTO/field change does.
 - **SEARCH POP-OUT (client search parity S1, 2026-09-13)**: the client's search is the SHARED search screen
   (`client/renderer/shared/` = generated copies of `src/windows/shared/{search-ui,theme.css,fonts,patterns}`,
   `scripts/sync-client-search.js`, pin `test_client_search_sync.js`) in its own window

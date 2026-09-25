@@ -101,6 +101,18 @@ in `database/dark_switches.js`'s history comment; the LIVE list is `TEST_SWITCH_
   _Flip gate: Chris-copy text census (import-time type set) changes exactly {46, 52}; the owner's 727 → 0; the ablated
   arm's confirmed types ∈ the ablated set + the third-type count decided (C5); separation arms identical (C4); realdoc
   OFF md5-identical / ON M=0; Hard Set `statement_layout` + controls wrong+would-file 0 (C9)._
+- **issuer_sibling_dominant_hold (mig 218, 2026-09-25)** — one sender split three ways: 18 pages read "Meadowvale Dairy
+  Wholesale", one "Meadowyale…", one "Dairy Wholesale", all letterhead prefills, none confirmed — the shipped near-match
+  gate needs 3 human confirms before it holds a near-miss, so the first confirms could mint two false senders. Tier C
+  asks the PILE: among queued + human-confirmed documents that CONVERGE by layout (the `issuer_sibling_fill` pair:
+  branding fingerprint 0.80 OR phash ≤ 13), a 1-2-edit / token-sub-run near-miss of the DOMINANT spelling is HELD with
+  the same Use/Keep at the confirm gate, in the teach ask (desktop `check-identity-near-match` with `docId`, `/v1/teach/
+  commit` pre-tx — Oracle C1) and grouped under the dominant spelling in the Review list with a "check sender" chip.
+  Never adopted, never written; bulk stays held; fold-first with a pair budget (fail open); `/v1` review-confirm 400
+  carries `nearMatch` (C4). JS-only (env `ISSUER_SIBLING_DOMINANT_HOLD` `'1'`/`'0'` explicit). Design
+  `docs/designs/SIBLING_DOMINANT_HOLD_2026-09-25.md`. _Flip gate: hand-adjudicated census (Chris copy → exactly
+  69 + 62 held, 0 of the 18; the owner's live copy + the 605 corpus REPLAY arm → FALSE holds 0); perf pin; the client
+  toast check; a Chris round (confirm 69 first → held → Use → ONE folder)._
   _Oracle SIGN OFF WITH CONDITIONS (C0-C11). Evidence: the filtered census (18 look-alike cases: all 14 agreements
   correct, the 4 disagreements all genuine misreads the mig-207 hold catches) + the per-letter confidence census (the
   one clipped read both readers got wrong scored 0.505 — the 0.80 floor rejects it). Yield check on a copy of your

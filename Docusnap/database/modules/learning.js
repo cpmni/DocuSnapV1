@@ -243,6 +243,147 @@ function findNearMatchIdentity(db, candidate, { minConfirms = 3, templateId = nu
   return best || { near: false, reason: 'no-near-match' };
 }
 
+// ── Tier C — "CONVERGING SIBLINGS" (Chris 2026-09-24 card 5 "one sender split three ways"; gary → Oracle SIGN-OFF-W/COND
+// C1-C8, 2026-09-25; DARK `issuer_sibling_dominant_hold`, mig 218; design docs/designs/SIBLING_DOMINANT_HOLD_2026-09-25.md).
+// THE GAP: findNearMatchIdentity's population is confirmed history (≥ 3 human confirms) + frozen template identities —
+// the batch's OWN pages are invisible to it, so the first confirms of a garbled letterhead read ("Meadowyale" beside 18
+// "Meadowvale" pages of the SAME layout) mint a second sender folder + a poisoned learning scope. Tier C asks the pile:
+// among the documents that CONVERGE with this one by LAYOUT (the shipped issuer_sibling_fill pair — branding-fingerprint
+// convergence at 0.80 OR a logo phash within 13; two independent families, never a witness count) which spelling is
+// DOMINANT, and is the candidate a 1-2-edit / token-sub-run near-miss of it? ASK-only: the caller renders the same
+// Use / Keep hold as Tier A/B; nothing is adopted, nothing written. Fold-FIRST (Oracle C3): one aggregate over the
+// queue + HUMAN-confirmed rows grouped by name → near-test the DISTINCT folds only → fetch fingerprints and run the
+// convergence pair ONLY for rows in a near fold (+ the candidate's own fold) under a pair-test budget (fail open).
+// Tallies include HUMAN-confirmed converging siblings (Oracle C2, machine vias excluded) so the tie-break does not
+// drift as docs file and the "3 right + 1 garble, two already confirmed" window is closed. Every arm fails toward
+// review-or-today: no signature on the doc → no-siblings; no near fold → cheap exit; over budget → fail open.
+const SIBLING_DOMINANT_PAIR_BUDGET = 5000;
+const SIBLING_DOMINANT_MIN_SIBLINGS = 2;
+const SIBLING_DOMINANT_ROW_CAP = 2000;
+
+function siblingDominantEnabled(db) {
+  const env = process.env.ISSUER_SIBLING_DOMINANT_HOLD;     // explicit '1' / '0' only — never the `!= '0'` EMPTY-as-ON idiom
+  if (env === '1') return true;
+  if (env === '0') return false;
+  try { return getSetting(db, 'issuer_sibling_dominant_hold', 'false') === 'true'; } catch { return false; }
+}
+
+function _parseFingerprint(v) {
+  try { const a = typeof v === 'string' ? JSON.parse(v) : v; return Array.isArray(a) && a.length ? a : null; } catch { return null; }
+}
+
+function findDominantSiblingIdentity(db, docId, candidate, opts = {}) {
+  const { foldIdentity, nearMatchIdentity, tokenSubrunIdentity } = require('./name_proximity');
+  const brandingFp = require('./branding_fingerprint');
+  const templates = require('./templates');
+  const budget = Number(opts.budget) > 0 ? Number(opts.budget) : SIBLING_DOMINANT_PAIR_BUDGET;
+  const minSiblings = Number(opts.minSiblings) > 0 ? Number(opts.minSiblings) : SIBLING_DOMINANT_MIN_SIBLINGS;
+  const phashMax = Number.isFinite(Number(opts.phashMax)) ? Number(opts.phashMax) : 13;
+  const brandingMin = Number(opts.brandingMin) > 0 ? Number(opts.brandingMin) : 0.80;
+  const out = (near, reason, extra = {}) => ({ near, reason, source: 'siblings', confirms: null, ...extra });
+
+  const v = String(candidate == null ? '' : candidate).trim();
+  const vf = foldIdentity(v);
+  if (!v || !vf) return out(false, 'empty');
+  const id = Number(docId);
+  if (!Number.isFinite(id) || id <= 0) return out(false, 'no-doc');
+
+  // The candidate document's own layout signature — no signature ⇒ no layout witness ⇒ today's behaviour.
+  let me = null;
+  try { me = db.prepare('SELECT keyword_fingerprint, logo_phash FROM documents WHERE id = ?').get(id) || null; } catch { me = null; }
+  const myKw = _parseFingerprint(me && me.keyword_fingerprint);
+  const myPh = me && me.logo_phash ? String(me.logo_phash) : null;
+  if (!myKw && !myPh) return out(false, 'no-siblings', { pairTests: 0 });
+
+  // 1. FOLD-FIRST aggregate: queued rows + HUMAN-confirmed rows, one row per (lower-trimmed name, status).
+  let hasVia = true, hasIntake = true;
+  try { db.prepare('SELECT confirmed_via FROM documents LIMIT 0'); } catch { hasVia = false; }
+  try { db.prepare('SELECT intake FROM documents LIMIT 0'); } catch { hasIntake = false; }
+  const { MACHINE_VIAS_SQL } = require('./machine_vias');
+  const confirmedClause = `(d.status = 'confirmed'${hasVia ? ` AND COALESCE(d.confirmed_via, '') NOT IN (${MACHINE_VIAS_SQL})` : ''}${learningExcludedSql(db, 'd')})`;
+  const whereCommon = `d.id <> @id AND d.supplier_name IS NOT NULL AND TRIM(d.supplier_name) <> ''`
+    + (hasIntake ? ` AND COALESCE(d.intake, '') <> 'direct'` : '')
+    + ` AND (d.status IN ('needs_review', 'deferred') OR ${confirmedClause})`;
+  let groups;
+  try {
+    groups = db.prepare(`
+      SELECT TRIM(d.supplier_name) AS v, LOWER(TRIM(d.supplier_name)) AS k, d.status AS status, COUNT(*) AS n
+      FROM documents d
+      WHERE ${whereCommon}
+      GROUP BY k, d.status`).all({ id });
+  } catch { return out(false, 'error', { pairTests: 0 }); }
+  // fold → { keys:Set(lower-trimmed), spellings: Map(raw → n), queued, confirmed }
+  const folds = new Map();
+  for (const g of groups) {
+    const f = foldIdentity(g.v);
+    if (!f) continue;
+    let e = folds.get(f);
+    if (!e) { e = { keys: new Set(), spellings: new Map(), queued: 0, confirmed: 0 }; folds.set(f, e); }
+    e.keys.add(g.k);
+    e.spellings.set(g.v, (e.spellings.get(g.v) || 0) + Number(g.n || 0));
+    if (g.status === 'confirmed') e.confirmed += Number(g.n || 0); else e.queued += Number(g.n || 0);
+  }
+  const spellingOf = (e) => [...e.spellings.entries()].sort((a, b) => b[1] - a[1])[0][0];
+
+  // 2. Near-test the candidate against the DISTINCT folds (its own fold excluded) — tens to hundreds, no fingerprints.
+  const nearFolds = [];
+  for (const [f, e] of folds) {
+    if (f === vf) continue;
+    const existing = spellingOf(e);
+    let verdict = nearMatchIdentity(v, existing), kind = 'edit';
+    if (!verdict.near) { verdict = tokenSubrunIdentity(v, existing); kind = 'subrun'; }
+    if (!verdict.near) continue;
+    nearFolds.push({ fold: f, entry: e, existing, kind, distance: verdict.distance, similarity: verdict.similarity });
+  }
+  if (!nearFolds.length) return out(false, 'no-near-fold', { pairTests: 0, folds: folds.size });
+
+  // 3. Layout convergence ONLY for rows in a near fold + the candidate's own fold, under the pair budget.
+  const wantKeys = new Set();
+  for (const nf of nearFolds) for (const k of nf.entry.keys) wantKeys.add(k);
+  const own = folds.get(vf);
+  if (own) for (const k of own.keys) wantKeys.add(k);
+  const keys = [...wantKeys];
+  let rows;
+  try {
+    rows = db.prepare(`
+      SELECT d.id, TRIM(d.supplier_name) AS v, d.status AS status, d.keyword_fingerprint, d.logo_phash
+      FROM documents d
+      WHERE ${whereCommon} AND LOWER(TRIM(d.supplier_name)) IN (${keys.map(() => '?').join(',')})
+      ORDER BY d.id DESC LIMIT ${SIBLING_DOMINANT_ROW_CAP}`).all({ id }, ...keys);
+  } catch { return out(false, 'error', { pairTests: 0 }); }
+  let pairTests = 0;
+  const conv = new Map();   // fold → { total, confirmed }
+  for (const r of rows) {
+    if (++pairTests > budget) return out(false, 'budget', { pairTests });
+    const kw = _parseFingerprint(r.keyword_fingerprint);
+    const phClose = !!(myPh && r.logo_phash && templates.hammingDistance(myPh, String(r.logo_phash)) <= phashMax);
+    const brClose = !!(myKw && kw && brandingFp.convergesByBranding(myKw, kw, brandingMin));
+    if (!phClose && !brClose) continue;
+    const f = foldIdentity(r.v);
+    let c = conv.get(f);
+    if (!c) { c = { total: 0, confirmed: 0 }; conv.set(f, c); }
+    c.total += 1;
+    if (r.status === 'confirmed') c.confirmed += 1;
+  }
+  const ownConv = 1 + ((conv.get(vf) || {}).total || 0);   // the candidate document itself counts for its own spelling
+
+  // 4. DOMINANT = a near fold whose converging count clears the floor AND beats the candidate's own spelling.
+  //    Direction tie-break only; the safety is the two independent families above (layout AND text), ask-only.
+  let best = null;
+  for (const nf of nearFolds) {
+    const c = conv.get(nf.fold) || { total: 0, confirmed: 0 };
+    if (c.total < minSiblings || c.total <= ownConv) continue;
+    const rank = (nf.kind === 'edit' ? 10 : 0) + Math.min(c.total, 9) / 10;
+    const cand = { fold: nf.fold, existing: nf.existing, kind: nf.kind, distance: nf.distance, similarity: nf.similarity,
+                   siblings: c.total, confirmedSiblings: c.confirmed, rank };
+    if (!best || cand.rank > best.rank) best = cand;
+  }
+  if (!best) return out(false, 'no-dominant-fold', { pairTests, own: ownConv, nearFolds: nearFolds.map(n => ({ existing: n.existing, kind: n.kind, converging: ((conv.get(n.fold) || {}).total || 0) })) });
+  return out(true, best.kind === 'edit' ? 'near-match' : 'subrun',
+             { existing: best.existing, kind: best.kind, distance: best.distance, similarity: best.similarity,
+               siblings: best.siblings, confirmedSiblings: best.confirmedSiblings, own: ownConv, pairTests });
+}
+
 // THIRD consumer of Tier A / Tier B (2026-09-17, mig 179 `segment_known_supplier_change`): the batch separator's
 // KNOWN-SUPPLIER population — the SAME two queries as findNearMatchIdentity, verbatim, returned as a plain name list
 // (human confirms >= minConfirms with the machine vias, Learning-Repair-excluded and Quick File rows never counted;
@@ -2551,7 +2692,7 @@ module.exports = {
   getFieldValueHistory, getDocumentsForFieldValue, purgeFieldValue, renameFieldValue, getPrefixModelForScope,
   getSupplierScopeCounts, renameSupplier, findDuplicateSupplierPairs,
   saveCorrections, retractConfirmHints, replantConfirmHints, getHints, getAllHints, isPlausibleSupplierName,
-  BUYER_ISSUED_CONVENTION_KEY, isBuyerIssuedConventionNote, recordBuyerIssuedConvention, retractBuyerIssuedConvention, retractBuyerIssuedConventionForDoc, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, issuerReadLooksImplausible, findNearMatchIdentity, getKnownSupplierNames, normalizeSupplierName,
+  BUYER_ISSUED_CONVENTION_KEY, isBuyerIssuedConventionNote, recordBuyerIssuedConvention, retractBuyerIssuedConvention, retractBuyerIssuedConventionForDoc, isPlausibleSupplierNameBase, isNameLikeField, nameQuality, issuerReadLooksImplausible, findNearMatchIdentity, findDominantSiblingIdentity, siblingDominantEnabled, getKnownSupplierNames, normalizeSupplierName,
   saveAnchor, sanitizeAnchorLabel, clearAnchors, getAllAnchors, getAnchorsForScope, getTaughtFieldKeys, deleteAnchor,
   saveLogoFingerprint, getAllLogos, findLogoMatch,
   detailCrossPlantCloser: _detailCrossPlantCloser,   // exported for the detail-backfill script's final anti-poison check (2026-07-23)
