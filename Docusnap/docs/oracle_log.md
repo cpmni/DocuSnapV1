@@ -3247,3 +3247,45 @@ Fail direction of every arm: ON refuses → empty input + the ordinary required 
 what import/Quick stores; Tier-2 sweep → zero filing change.
 APPLIED (same day): `_pipelineSpawnEnv` at both spawns (kill `REEXTRACT_FAST_PIPELINE_ENV=0` = the A/B lever only), the
 pin extended (C2), the twin's comment (C3); C5 arms + C7 smoke in this session's handover.
+
+## 2026-09-25 — Chris card 5 "one sender split three ways" (Meadowvale / Meadowyale / Dairy Wholesale) — gary Tier C "converging siblings" hold — SIGN OFF WITH CONDITIONS C1-C8 (build DARK; C1/C2 SHIP-BLOCKING before arming). Design: `docs/designs/SIBLING_DOMINANT_HOLD_2026-09-25.md`
+Premise held with one over-statement corrected: "0 confirms → mints a second sender" is TRUE but the natural flow on the
+exhibit usually closes it (the 18-pile sorts first → one confirm → `issuer_sibling_fill` clears 17 → File All → Tier A = 18 →
+the odd docs are caught by the SHIPPED gate when opened; 62 "Dairy Wholesale" via `tokenSubrunIdentity`). Real reward = the
+operator who opens the odd header FIRST (what Chris did), small batches, and the TEACH road where a garble gets FROZEN.
+Fork: NOT do-nothing-plus-display (grouping alone = the known-bad half, Oracle C3.3 2026-08-22); confirm gate + grouping under
+ONE switch is the right layer; `name_dominant_snap` adopts (refused); an engine cross-doc vote has no batch memory; lowering
+Tier A's 3-bar has no layout witness. Gate ordering verified pre-claim (reviewService ~240-387). SEAMS FOUND: (1) TEACH
+WIZARD — `teach.js` ~2145-2164 asks Tier A/B only, then `promoteToTemplate` FREEZES the garble as `fixed_value`, then
+`confirmReview` → a Tier-C hold with no Use/Keep → Save loops forever while Tier B offers the garble to the 18 → **C1: Tier
+C in the teach ask (desktop IPC `check-identity-near-match` + `/v1/teach/commit` pre-tx), same slice.** (2) `/v1` review
+confirm returns 400 without `nearMatch` (client dead-end, pre-existing, population grows) → **C4**. (3) `issuer_sibling_fill`
+after a Use-confirm: verified NO ripple (C1 norm(display)==norm(C)) — correct. Tie-break anomalies: drift as docs file
+(10/10 inverts as the queue drains) and the 3+1 batch (garble files silently) → **C2: count HUMAN-confirmed converging
+siblings (MACHINE_VIAS excluded) in the fold tallies NOW**, not a later slice. PERF as designed = a real hazard (≤2,000
+parses per confirm; O(N²) per queue read on every poll) → **C3 fold-first + pair-test budget, slice 2 once per read** (perf
+pin ≤ +25 ms confirm / ≤ +100 ms queue read). Legal suffix Ltd/Limited = `different-company` (not a false-hold class); the
+subrun arm is directional (a longer candidate never holds). **C5** census holds HAND-ADJUDICATED (FALSE = a different real
+company or the confirmed value was right; CATCH separate), FALSE = 0 on Chris's copy (exactly 69+62), the 727 and the 605;
+realdoc vacuous. **C6** copy pins (never "already use"; both spellings + count; Use/Keep equal). **C7** OFF byte-identity
+(rows + DOM), explicit `'0'`/`'1'` env. **C8** audit metadata `{typed, existing, siblings, confirmedSiblings, kind,
+pairTests}`. Verdict recorded; OWNER GO/NO-GO pending (design, not built).
+
+## 2026-09-25 — two Ironclad STATEMENTS typed INVOICE (Chris 09-24 one-liner) — herald forensics → gary generalised Option B → SIGN OFF WITH CONDITIONS C1-C10 (build DARK now; Hard Set class = FLIP gate). Design: `docs/designs/TYPE_OWNER_UNINSTALLED_BLOCK_2026-09-25.md`
+Premise held: `keyword.py:1214-1236` owners over `known_types` only, one owner → promoted regardless of the sum; the fold's
+`heading_only_lc` = {statement, letter} under the shipped config → generalise to every uninstalled shipped bucket name.
+Corrections: the reward is a TEACH-POISONING vector (a confident stolen type + one confirm/teach binds an Invoice template +
+anchors to statement layouts), not two labels; the fold has been HALF-DEAD for its own exhibit class since mig 205 (its pin
+never arms owner-precedence; its fixture puts the date column first) — the shipped combination was never pinned (C3, proven
+RED first); B puts the class INTO the mig-216 redetect's scope (un-stated reward); the 44/39 nudge comes from
+`type_detection` directly, not the harvest (C8). Fork: re-rank = RIGHT layer; NO Option A; NO depth/score guard; fold and
+geometry = WRONG layer. SEAM: M1 SHIP-BLOCKING — an installed type's ALIAS equal to a shipped name ("Sales Invoice" alias
+"Invoice") would self-block → untyped on an install that HAS the type → C1 exclude installed names ∪ aliases (never
+`name_alias_lc`). M2 blockers fire on ordinary docs ("Purchase Order 4500012345" header lines) — but that IS today's
+two-owner path when PO is installed → no new failure KIND; pin + count the third-type arm (C5). M3 close-sum robust. C4
+the separator pre-pass CAN lose a known-supplier-change cut (title_trusted was the last-resort witness on a stolen page →
+`(None, False)` under B) — an under-split nothing holds → measure on the mig-178/179 arms. M4 disabled types = pre-existing.
+Conditions C1 alias exclusion · C2 symmetry pin · C3 red-first fold twin · C4 separation gate · C5 census with the
+third-type count · C6 name `type_owner_uninstalled_block` + ledger · C7 three stale comments · C8 recipe-level efficacy pin
+· C9 Hard Set `statement_layout` + controls + scorer rule (FLIP precondition) · C10 mig 217 / TEST_SWITCH_KEYS 15 / count
+pins / bridge-nesting regex. OWNER GO/NO-GO pending (design, not built).

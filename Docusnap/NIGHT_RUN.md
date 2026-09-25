@@ -237,7 +237,12 @@ scratch/sandbox, implementing a Chris card); **anything dangerous goes to the ag
 and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
-- **2026-09-25 · [TYPE, herald-diagnosed, needs gary→Oracle + owner go] the two Ironclad statements typed INVOICE**
+- **2026-09-25 · [DESIGNS SIGNED, owner go/no-go] card 5 sender split → `docs/designs/SIBLING_DOMINANT_HOLD_2026-09-25.md`
+  (Oracle C1-C8; C1 teach-ask + C2 confirmed-siblings BLOCKING; census C5 = hand-adjudicated FALSE = 0 on Chris's copy /
+  727 / 605) · Ironclad → `docs/designs/TYPE_OWNER_UNINSTALLED_BLOCK_2026-09-25.md` (Oracle C1-C10; C1 alias exclusion
+  BLOCKING; C3 red-first fold twin; C4 separation arms OFF/ON; C9 Hard Set `statement_layout` = FLIP gate). Both DARK
+  when built; next mig = 217. The entry below is the pre-design diagnosis, kept for the mechanism.**
+- **2026-09-25 · [TYPE, herald-diagnosed → gary → Oracle SIGNED above] the two Ironclad statements typed INVOICE**
   (Chris 09-24 one-liner; docs 46/52 in his sandbox) = `TYPE_TITLE_OWNER_PRECEDENCE` (keyword.py ~1214-1236, ON
   since mig 60) promoting a lone `Invoice` TABLE CELL that lands alone on reading line 15 (= `_HEADING_TOP_BAND_LINES`,
   `<=`) on the two SKEWED pages (+1.5°/+1.4° shear splits every row), while the folded UNINSTALLED `STATEMENT` heading
