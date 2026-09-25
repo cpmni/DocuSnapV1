@@ -116,6 +116,16 @@ the add-on off. (Design history: `memory/scanfinder-*` + the plan in `.claude/pl
   `docRead` — a hidden doc's 404 → null → the per-page reads); against a 1.5.0 core the pop-out uses the per-page
   reads + the outline read (pin run A6). Pins: `src/modules/api/test_v1_preview_reads.js`, the Python pin, the
   pop-out + core functional pins (one page-info for the first paint, one for the read-ahead, no per-page read).
+- **CONTRACT 1.6.0 → 1.7.0 → 1.8.0 → 1.9.0 (all MINOR, additive; authoritative comment on `API_CONTRACT_VERSION` in
+  `src/modules/api/handler.js`)**: **1.7.0** (2026-09-14) = the teach-over-client READS (`POST …/documents/:id/
+  {ocr-region-boxes,ocr-page-words,page-deskew}` + `GET /teach/config`; the client gates its teach cap on ≥ 1.7.0) +
+  the WRITES `POST /doc-types(/presets)` + `POST /teach/commit` + `POST /teach/stage` (upload-to-teach, admin).
+  **1.8.0** = `intake` on the search-row DTO (Quick File Q-C2 — the search UI hides the Review dead-end for a typed
+  doc; no client gate needed). **1.9.0** (2026-09-24) = `filed_by` / `filed_by_username` on the document-detail DTO —
+  WHO filed a confirmed doc: a person, a consented batch (`consented`), the scope's own pass (`self_filed`), an import
+  or a re-read auto-file; the client falls back to "Checked" when the field is absent (an older core). Five DTO
+  copies carry it (core detail DTO + the client/search projections); pins `src/services/test_filed_by.js` +
+  `src/modules/api/test_v1_preview_reads.js`. Adding endpoints under the same MAJOR never needs a bump — only a DTO/field change does.
 - **SEARCH POP-OUT (client search parity S1, 2026-09-13)**: the client's search is the SHARED search screen
   (`client/renderer/shared/` = generated copies of `src/windows/shared/{search-ui,theme.css,fonts,patterns}`,
   `scripts/sync-client-search.js`, pin `test_client_search_sync.js`) in its own window

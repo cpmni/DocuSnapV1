@@ -10480,7 +10480,11 @@ window.docusnap.onQuietReprocess?.(async (ev) => {
       // the lane skipped anything being viewed) and say what happened. If the open document was one of the skipped
       // ones, say that too, with the one action that applies it.
       const n = Number(ev.done || 0), sk = Number(ev.skipped || 0);
-      const what = Array.isArray(j.typeSlugs) && j.typeSlugs.length ? ` after you added ${j.typeSlugs.join(', ')}` : '';
+      // Say the type NAMES a person chose, never the slugs the lane keys on ("Credit Note", not "credit_note");
+      // allDocTypes is refreshed by the doc-types broadcast before this event arrives, and an unknown slug falls
+      // back to itself rather than to nothing.
+      const typeName = (s) => { const t = (allDocTypes || []).find(x => x && String(x.slug || '') === String(s)); return t && t.name ? t.name : s; };
+      const what = Array.isArray(j.typeSlugs) && j.typeSlugs.length ? ` after you added ${j.typeSlugs.map(typeName).join(', ')}` : '';
       const openSkipped = !!(currentDoc && Array.isArray(ev.viewing) && ev.viewing.includes(currentDoc.id));
       try { await _refreshQueueFromBroadcast(); } catch {}
       try {
