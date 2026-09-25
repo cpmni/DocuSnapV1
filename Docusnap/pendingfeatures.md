@@ -64,6 +64,22 @@ Guard: fail toward SHOWING LESS, never a wrong number; a stale/ahead count is wo
   orders + a mid-scan confirm + an active countdown, asserting exactly ONE live-status element, the countdown never
   hidden/cancelled by a reducer re-render, NO silent file, `job_deferred` through the one writer — plus a PIN that
   reproduces the ready-vs-checking clash and FAILS on today's code. Log: docs/oracle_log.md.
+- **BUILT 2026-09-25 (cuts 1+2, commits `8b17704`-area `fix(review)` B3 + `7af6d63` cut 2):** **B3** — the
+  autofile-check bar is de-numbered (`_renderAutofileCheckBar` now shows the calm no-jargon "Checking which
+  documents from <sender> can file on their own…", never a `done of total`). **Cut 2** — a pure reducer
+  `src/windows/shared/reviewStatus.js` `deriveReviewStatus({inviewActive,offerActive,checkActive})` with a fixed
+  priority `countdown > offer > checking > idle`: the background check YIELDS to the offer/countdown, which are
+  NEVER suppressed (B1 satisfied MORE strictly than the vetted offer-defers design — chose offer-priority so the
+  fragile countdown bar is never mutated; B2 satisfied by construction, nothing deferred). Wired into
+  `_renderAutofileCheckBar` (reads the live offer bar + `_inviewCd`); the offer teardown re-renders the check bar.
+  Pins: `test_review_status.js` (node unit: priority, the clash reproduced+resolved, the 8-state B1 invariant, an
+  event sequence — the runtime harness the Oracle asked for isn't feasible here (no jsdom) so the DECISION is a
+  pure function tested at the logic level) + `test_autofile_check_bar.js` (no-denominator + yield wiring). **Owed
+  vs the Oracle:** B4's "three auto-hide timers" premise does NOT map to the status strip (bars are event-driven;
+  the countdown is already cancelled on doc-change, renderer.js:2631) — recorded as N/A. The design VARIANCE
+  (offer-priority vs the vetted offer-defers-to-check sequence) is flagged for a re-vet if "checking-first" is
+  preferred. A live in-app drive on a reopened Review window is still owed (renderer change). The "19 more offered"
+  stays a past-tense activity-strip receipt (barry/Oracle: copy/placement, not a number) — unchanged.
 
 ## 2026-09-25 — Suggested teach: auto-draw the value + label boxes from the keyword read, ask the user to confirm (owner idea; NOT built — barry → advisor → Oracle)
 Owner idea (live, on the Review teach readout "Check what I read for Quote Number"): instead of the user DRAWING
