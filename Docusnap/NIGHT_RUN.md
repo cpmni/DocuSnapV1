@@ -272,14 +272,16 @@ and, with no safe route, that item STOPS** — never improvise around a refusal.
   census = exactly {46,52} · realdoc M=0 at `RR_APP_ENV=1` · **a Hard Set statement/remittance class must be ADDED**
   (skewed + type-first-column variants) — it does not exist. Probes: `%USERPROFILE%\.claude\jobs\68b38f39\tmp\herald\`
   (`score_matrix.py`, `census2.py`, `synth.py`; job-mortal). Open: did the 09-06 fold census run with owner-prec ON?
-- **2026-09-25 · [Stage 1, Oracle C6, DARK arc] `KEYWORD_LABEL_TAIL_BOUND`** — a multi-word label whose last word
-  is alphabetic gets `(?![a-z])` (mirror `LIST_CAPTION_TAIL_BOUND`, keyword.py ~2117) so "Credit No" stops
-  prefix-hitting "CREDIT NOTE" and "Delivery No" its own "DELIVERY NOTE" heading (the card-4 class; the digit gate
-  catches only the digit-less walks — "Unit 12, Low Lane" under a heading hit still commits @80 while the real ref
-  lower down is never read: HYPOTHESIS, unmeasured). Ships ALONE: (i) a label-hit census over the 605 cached texts
-  listing every scalar hit the bound would refuse (eyeballed), (ii) realdoc M=0 + zero per-field drop, (iii) Hard Set
-  P==K==N. Separately (data-only, new ticks): reorder the Delivery Note / Credit Note preset labels so the colliding
-  short form is not first (document_types.js ~666/~686).
+- **2026-09-25 · [BUILT DARK — mig 219 `keyword_label_tail_bound`, commit `8b17704`] Stage-1 label tail bound (Oracle C6)** —
+  the scalar twin of `LIST_CAPTION_TAIL_BOUND`: a multi-word label whose last word is alphabetic gets `(?![a-z])` so
+  "Credit No" stops prefix-hitting "CREDIT NOTE" and "Delivery No" its own "DELIVERY NOTE" (the card-4 class). Engine env
+  `KEYWORD_LABEL_TAIL_BOUND`; `_reconcileEnv` bridge; `TEST_SWITCH_KEYS` → 17; pins `test_keyword_label_tail_bound.py`
+  (OFF preserves the bug → "Meadowvale", ON reads the real ref, digit-glued still matches, single-word labels untouched)
+  + `test_migration219_*.js`; run-pins 459/459 green. Delivery Note preset labels reordered (data-only, new ticks;
+  "Credit Note" was already specific-first). NEXT MIG = 220. **FLIP GATE (owed, ships alone):** (i) a label-hit census
+  over the 605 cached texts listing every scalar hit the bound would refuse (eyeballed), (ii) realdoc M=0 + zero
+  per-field drop, (iii) Hard Set P==K==N. Then Oracle → owner flip. (NB the "Unit 12, Low Lane" digit-less variant is a
+  HYPOTHESIS, unmeasured — the census tells.)
 - **2026-09-23 · [mig 210 flip gate] `glyph_confusable_resolve` realdoc OFF-vs-ON** — built DARK (12 pins green; D5
   live-confirmed 40/40 AGREE on the Print Tracker diag). Owed before any flip: the 605 realdoc at `RR_APP_ENV=1` with
   `GLYPH_FALLBACK_ENABLED=1` ON-vs-`GLYPH_CONFUSABLE_RESOLVE` OFF/ON → every field byte-identical EXCEPT the soften
