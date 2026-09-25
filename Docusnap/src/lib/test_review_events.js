@@ -49,7 +49,12 @@ const firstAt = evs[0].at;
 tick(61_000);
 L.record(db, { kind: 'auto_filed', ids: [docId++], scope: { supplier: 'Nordwind', typeSlug: 'invoice' } });
 evs = L.list(db);
-check('a door 61 s after the last → a NEW event (the 60 s burst gap)', evs.length === 2 && evs[0].count === 1 && evs[1].at === firstAt);
+// Owner 2026-09-07 (`49a76e4`, pinned in test_review_events_consecutive_merge.js): a same-key door lands on the NEWEST
+// chip even past the 60 s gap — consecutive same-sender filings grow ONE chip. The gap rule still applies to OLDER
+// events (an intervening chip of another key starts a fresh one). This check used to expect a new chip here and
+// went stale unnoticed because src/lib was not a run-pins location (fixed 2026-09-25).
+check('a door 61 s after the last on the SAME key → merges into the newest chip (count grows, at advances)',
+      evs.length === 1 && evs[0].count === 201 && evs[0].at === firstAt + 4000 + 61_000 && evs[0].started_at === 1_000_000);   // the loop ticked 4 s after its last door
 
 console.log('\nscope-keyed kinds:');
 L.record(db, { kind: 'self_filed', ids: [901, 902], scope: { supplier: 'Nordwind', typeSlug: 'quote' }, undo: { type: 'sweep' } });
@@ -166,6 +171,19 @@ const z = L.record(db, { kind: 'approved', ids: [], scope: { supplier: 'Castella
 check('a pass that filed nothing but kept one back is still recorded (the receipt)', !!z && L.list(db)[0].count === 0 && L.list(db)[0].dropped.length === 1);
 check('…and is NEVER undoable — there is nothing to put back', L.list(db)[0].undoable === false);
 check('…while a filed event of the same kind stays undoable', (L.record(db, { kind: 'approved', ids: [7001], scope: { supplier: 'Pelican', typeSlug: 'invoice' }, undo: { type: 'sweep' } }), L.list(db).find(e => e.count === 1 && e.kind === 'approved').undoable === true));
+
+console.log("\n'recognised' — the quiet redetect's durable receipt (Chris 2026-09-24 card 1; 2026-09-25):");
+tick(61_000);
+const rg = L.record(db, { kind: 'recognised', ids: [8101, 8102, 8103], scope: { supplier: null, typeSlug: 'credit_note' }, typeSlugs: ['credit_note', 'Delivery_Note', '', null], undo: null });
+check('a recognised event is accepted and counts its docs', !!rg && L.list(db)[0].kind === 'recognised' && L.list(db)[0].count === 3);
+check('…it keeps the type slugs it ran for, normalised and de-duplicated (never an empty one)',
+      JSON.stringify(L.get(db, rg.id).typeSlugs) === '["credit_note","delivery_note"]');
+check('…and is NEVER undoable — it typed, it filed nothing', L.list(db)[0].undoable === false && L.list(db)[0].undo === null);
+const rg2 = L.record(db, { kind: 'recognised', ids: [8104], scope: { supplier: null, typeSlug: 'credit_note' }, typeSlugs: ['statement'], undo: null });
+check('a follow-on pass on the same key MERGES into the chip and unions its type slugs',
+      rg2 && rg2.id === rg.id && L.list(db)[0].count === 4 && JSON.stringify(L.get(db, rg.id).typeSlugs) === '["credit_note","delivery_note","statement"]');
+check('a recognised event with no ids records nothing (no receipt for a pass that typed nothing)',
+      L.record(db, { kind: 'recognised', ids: [], scope: { supplier: null, typeSlug: 'quote' }, typeSlugs: ['quote'] }) === null);
 
 console.log('\nprotected setting (Oracle C3):');
 check("'review_events' is refused by the generic set-setting door and excluded from backups", isProtectedSettingKey(SETTING_KEY) === true);

@@ -26,7 +26,8 @@ console.log('1 the ledger + the strip');
 check("reviewEvents KINDS carries 'convention'", /KINDS = new Set\(\[[^\]]*'convention'[^\]]*\]\)/.test(ev));
 check("_asShort: case 'convention' → 'Filing rule learned'", /case 'convention': return 'Filing rule learned';/.test(rv));
 check("_asLine: the rule in the owner's words (letterhead → files under, without asking)", /case 'convention': \{[\s\S]{0,200}letterhead will now file under[\s\S]{0,80}without asking/.test(rv));
-check('the icon/colour class treats it as a fix (pencil, accent), not a filed tick', /ev\.kind === 'issuer_fill' \|\| ev\.kind === 'convention'\) \? '✎'/.test(rv) && /ev\.kind === 'issuer_fill' \|\| ev\.kind === 'convention'\) return 'fix';/.test(rv));
+// 2026-09-25: the 'recognised' kind (the quiet redetect's receipt) joined the same fix family on these lines — optional in the regex.
+check('the icon/colour class treats it as a fix (pencil, accent), not a filed tick', /ev\.kind === 'issuer_fill' \|\| ev\.kind === 'convention'( \|\| ev\.kind === 'recognised')?\) \? '✎'/.test(rv) && /ev\.kind === 'issuer_fill' \|\| ev\.kind === 'convention'( \|\| ev\.kind === 'recognised')?\) return 'fix';/.test(rv));
 check("the undo slot reads 'Undo' for a convention event and 'Put back' otherwise", /const _undoLabel = ev\.kind === 'convention' \? 'Undo' : 'Put back';/.test(rv) && /_apGhost\(_undoLabel\)/.test(rv));
 check('…with a title that says the rule is forgotten, not that documents move', /Forgets this filing rule — the next document on this letterhead asks again\./.test(rv));
 

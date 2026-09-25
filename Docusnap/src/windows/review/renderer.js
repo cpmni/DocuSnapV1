@@ -660,13 +660,13 @@ function _asRelTime(at) {
   const dt = new Date(Number(at)); const hh = String(dt.getHours()).padStart(2, '0'), mm = String(dt.getMinutes()).padStart(2, '0');
   return d < 2 * 86_400_000 ? `Yesterday ${hh}:${mm}` : `${dt.toLocaleDateString()} ${hh}:${mm}`;
 }
-function _asIcon(ev) { return ev.kind === 'put_back' ? '↩' : (ev.kind === 'class_fix' || ev.kind === 'issuer_fill' || ev.kind === 'convention') ? '✎' : '✓'; }
+function _asIcon(ev) { return ev.kind === 'put_back' ? '↩' : (ev.kind === 'class_fix' || ev.kind === 'issuer_fill' || ev.kind === 'convention' || ev.kind === 'recognised') ? '✎' : '✓'; }
 // Kind → an icon COLOUR class (green filed · amber put-back · accent fix) so the line reads at a glance
 // without painting the whole chip (bob: reserve colour, don't nag). A zero-filed approved is "kept back",
 // which reads as put-back tone (amber), not a green tick.
 function _asIconClass(ev) {
   if (ev.kind === 'put_back') return 'putback';
-  if (ev.kind === 'class_fix' || ev.kind === 'issuer_fill' || ev.kind === 'convention') return 'fix';
+  if (ev.kind === 'class_fix' || ev.kind === 'issuer_fill' || ev.kind === 'convention' || ev.kind === 'recognised') return 'fix';   // 'recognised' = typed, not filed → the pencil, never a green tick
   if (ev.kind === 'approved' && (Number(ev.count) || 0) === 0) return 'putback';
   if (ev.kind === 'approved') return 'youfiled';
   return 'filed';
@@ -699,8 +699,18 @@ function _asShort(ev) {
     case 'issuer_fill': return `${n} more offered in File All Ready`;   // MANUAL bulk availability — NOT the auto "files by itself" countdown (Chris r2 finding 5)
     case 'put_back':   return `${n} put back`;
     case 'convention': return 'Filing rule learned';
+    case 'recognised': return `${n} given ${n === 1 ? 'its' : 'their'} type`;   // the quiet redetect's durable receipt (Chris 09-24 card 1)
     default:           return `${n} document${s}`;
   }
+}
+// The type NAMES a 'recognised' chip ran for (its typeSlugs), resolved through the doc-type cache; a slug with no
+// installed type falls back to its words. Empty when the event carries none.
+function _asTypeNames(ev) {
+  const slugs = Array.isArray(ev && ev.typeSlugs) ? ev.typeSlugs : (ev && ev.scope && ev.scope.typeSlug ? [ev.scope.typeSlug] : []);
+  return slugs.map(slug => {
+    const t = Array.isArray(allDocTypes) ? allDocTypes.find(x => x && x.slug === slug) : null;
+    return (t && t.name) ? t.name : String(slug || '').replace(/_/g, ' ');
+  }).filter(Boolean);
 }
 // Line 2 of a chip — the WHEN plus one short detail, kept calm (senders + the full sentence live in the
 // panel). Named senders on filed runs; kept-back count on a held run; the put-back tag once reverted.
@@ -735,6 +745,11 @@ function _asLine(ev) {
     // ONE-CONFIRM convention (2026-09-07, Oracle C5: told with an undo): the rule, in the owner's words.
     case 'convention': { const t = _conventionTypeWords(ev.scope && ev.scope.typeSlug);
       return sup ? `${t} on <b>${sup}</b>'s letterhead will now file under ${sup} without asking` : `${t} on this letterhead will now file under it without asking`; }
+    // The quiet redetect's receipt (Chris 09-24 card 1): what was re-read and WHY — the type(s) the user just added
+    // or the keyword they saved. Typed, not filed: the next confirm's sweep / File All Ready decide filing.
+    case 'recognised': { const names = _asTypeNames(ev).map(escHtml);
+      const why = names.length ? ` after you set up <b>${names.join('</b>, <b>')}</b>` : ' after your type or keyword change';
+      return `${n} waiting document${s} ${n === 1 ? 'was' : 'were'} given ${n === 1 ? 'its' : 'their'} type${why} — check and confirm them as usual`; }
     default:           return `${n} document${s}`;
   }
 }
@@ -2543,6 +2558,10 @@ function renderNotRecognisedList() {
   setAside.title = 'Move all of these to Deferred to deal with later';
   setAside.style.flexShrink = '0';
   setAside.addEventListener('click', async () => {
+    // Chris 2026-09-24 ("Set aside all" moved 7 papers with no prompt): a bulk move asks ONCE, with the count and the
+    // way back — the same native confirm the delete and the big put-back use. Per-row set-aside stays prompt-free.
+    const _n = docs.length;
+    if (!confirm(`Set aside ${_n} document${_n === 1 ? '' : 's'}?\n\nThey move to Deferred — open one there to bring it back to Review.`)) return;
     setAside.disabled = true;
     for (const d of docs) { try { await window.docusnap.deferDocument(d.id); } catch {} }
     queue = await window.docusnap.getReviewQueue();

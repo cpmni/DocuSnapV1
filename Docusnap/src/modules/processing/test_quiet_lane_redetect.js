@@ -57,7 +57,7 @@ let redetectOn = true, laneOn = true, busy = false;
 const usable = new Map();            // docId -> { usable, reason } (default usable)
 const quickOpts = [];                // every quickUsable call's opts (the born-digital relaxation is asked for by the lane)
 const viewers = new Set();
-const events = [], audits = [], stagedCalls = [], shardCalls = [], scopeMarks = [], jobDone = [];
+const events = [], audits = [], stagedCalls = [], shardCalls = [], scopeMarks = [], jobDone = [], receipts = [];
 let applyHook = null;
 const lane = quietLane.create({
   getDb: () => db,
@@ -88,9 +88,10 @@ const lane = quietLane.create({
   taskkill: () => {},
   markScopeActive: (key, on) => scopeMarks.push({ key, on }),
   onJobDone: (_db, info) => jobDone.push(info),
+  recordEvent: (_db, ev) => receipts.push(ev),   // the activity-strip receipt (2026-09-25)
 });
 const stagedIds = () => stagedCalls.flatMap(s => s.ids);
-const reset = () => { events.length = 0; audits.length = 0; stagedCalls.length = 0; shardCalls.length = 0; scopeMarks.length = 0; jobDone.length = 0; };
+const reset = () => { events.length = 0; audits.length = 0; stagedCalls.length = 0; shardCalls.length = 0; scopeMarks.length = 0; jobDone.length = 0; receipts.length = 0; };
 const lastAudit = () => audits.filter(a => a.action === 'quiet_reprocess_job').slice(-1)[0];
 const waitDone = async (ms = 1500) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (events.some(e => e.type === 'job_done')) return true; await sleep(10); } return false; };
 
@@ -142,6 +143,13 @@ const waitDone = async (ms = 1500) => { const t0 = Date.now(); while (Date.now()
     console.log('\n4. no sweep scope, no fan-out (Oracle decision 1)');
     check('markScopeActive never called for the redetect job', scopeMarks.length === 0, JSON.stringify(scopeMarks));
     check('onJobDone NOT called for the redetect job', jobDone.length === 0);
+    // 2026-09-25 (Chris card 1, durable receipt): the redetect records ONE 'recognised' activity-strip event — the docs it
+    // typed, the type slug(s) it ran for, never undoable. Nothing else in the lane touches the ledger.
+    check('recordEvent called exactly once with kind recognised, the done ids and the type slugs (no undo)',
+          receipts.length === 1 && receipts[0].kind === 'recognised' && receipts[0].undo === null
+          && Array.isArray(receipts[0].typeSlugs) && receipts[0].typeSlugs.includes('quote')
+          && receipts[0].ids.length === ids.length && ids.every(i => receipts[0].ids.includes(i)),
+          JSON.stringify(receipts));
     check('audit row names the kind, the type slugs and quick', (lastAudit() || {}).metadata.kind === 'redetect' && /quote/.test((lastAudit() || {}).metadata.type_slugs) && (lastAudit() || {}).metadata.quick === 1);
     check('job_start / job_done events carry kind redetect', events.some(e => e.type === 'job_start' && e.kind === 'redetect' && e.quick === true) && events.some(e => e.type === 'job_done' && e.kind === 'redetect'));
     viewers.clear();

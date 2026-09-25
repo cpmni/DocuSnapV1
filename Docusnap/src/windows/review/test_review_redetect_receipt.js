@@ -45,6 +45,17 @@ check('3. ... and the toast then says it was left as it was and points at Reproc
 check('the toast is a receipt only: nothing is shown when the pass re-read 0 documents',
       /if \(n > 0\) showToast\(/.test(branch));
 
+// ── The DURABLE receipt (2026-09-25): the activity strip renders the lane's 'recognised' event ──
+console.log('\nactivity strip — the recognised chip:');
+check('the pencil icon + the fix tone (typed, not filed — never a green tick)',
+      /_asIcon\(ev\) \{[^\n]*ev\.kind === 'recognised'\) \? '✎'/.test(renderer)
+      && /ev\.kind === 'convention' \|\| ev\.kind === 'recognised'\) return 'fix';/.test(renderer));
+check('the chip label says how many were given their type', /case 'recognised': return `\$\{n\} given \$\{n === 1 \? 'its' : 'their'\} type`;/.test(renderer));
+check('the panel sentence names the type(s) the pass ran for via the doc-type cache, and says typed-not-filed',
+      /function _asTypeNames\(ev\)/.test(renderer)
+      && /case 'recognised': \{ const names = _asTypeNames\(ev\)\.map\(escHtml\);/.test(renderer)
+      && /given \$\{n === 1 \? 'its' : 'their'\} type\$\{why\} — check and confirm them as usual/.test(renderer));
+
 // The cache the name mapping reads must be refreshed by the doc-types broadcast (a type added from the catalog
 // reaches this window before the lane finishes), or the toast would fall back to slugs again.
 check('allDocTypes is reloaded on the doc-types-changed broadcast',

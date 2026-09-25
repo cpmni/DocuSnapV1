@@ -70,6 +70,7 @@ function create(deps) {
   const {
     getDb, enabled, isForegroundBusy, stageDocs, runShard, applyResult, presence, extractionsFingerprint,
     notify, logAudit, logger, setPriority, taskkill, markScopeActive, onJobDone, findSiblings = null,
+    recordEvent = null,         // (db, ev) → the activity-strip ledger (reviewEvents.record); the redetect's durable receipt (2026-09-25)
     kwSelect = null,            // (c′) deps: (db, ocrText, slug) → template id the keyword arm would match, or null
     kwSelectEnabled = null,     // (db) → bool (the `quiet_reread_kw_select` switch)
     scopeTemplateIds = null,    // (db, supplier, slug) → Set of the scope's template ids
@@ -659,6 +660,15 @@ function create(deps) {
     // redetect fans out NO auto-accept (Oracle decision 1, 2026-09-24): a text-only pass recognises; the next human
     // confirm's scope sweep — and the queue-wide consent bar the renderer re-runs on job_done — decide filing.
     if (job.kind !== REDETECT_REASON) { try { onJobDone && onJobDone(db, { supplier: job.supplier, typeSlug: job.typeSlug, done: job.done.slice() }); } catch {} }
+    else if (job.done.length) {
+      // Chris 2026-09-24 card 1 (durable receipt): the redetect's result outlives the toast as an activity-strip chip —
+      // "N given their type", scoped to the type(s) the user added / the override's type; never undoable (nothing filed).
+      try {
+        const _slugs = [...(job.typeSlugs || [])].filter(Boolean);
+        recordEvent && recordEvent(db, { kind: 'recognised', ids: job.done.slice(), scope: { supplier: null, typeSlug: _slugs[0] || job.typeSlug || null },
+                                         typeSlugs: _slugs.length ? _slugs : (job.typeSlug ? [job.typeSlug] : []), undo: null });
+      } catch { /* a receipt never fails the job */ }
+    }
     if (job.rerun) {
       job.rerun = false;
       if (job.kind === REDETECT_REASON) {

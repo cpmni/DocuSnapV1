@@ -24,6 +24,7 @@ const LOCATIONS = {
   database: ['database', 'database/modules'],
   modules: ['src/modules'],            // recursed one level: src/modules/<area>/test_*.js
   services: ['src/services'],
+  lib: ['src/lib'],                    // recursed one level: src/lib/{license,update}/test_*.js (added 2026-09-25 — test_review_events.js had gone stale unseen here)
   windows: ['src/windows'],            // recursed one level: src/windows/<win>/test_*.js
   client: ['client/lib'],              // the detached client's own unit pins (e.g. certVerify — the connection trust decisions)
 };
@@ -44,7 +45,7 @@ function discover(which) {
   const files = [];
   for (const k of keys) {
     if (!LOCATIONS[k]) { console.error(`unknown location "${k}" (one of ${Object.keys(LOCATIONS).join(', ')})`); process.exit(2); }
-    for (const d of LOCATIONS[k]) files.push(...listPins(d, k === 'modules' || k === 'windows' ? 1 : 0));
+    for (const d of LOCATIONS[k]) files.push(...listPins(d, k === 'modules' || k === 'windows' || k === 'lib' ? 1 : 0));
   }
   const filter = process.env.FILTER;
   return [...new Set(files)].filter(f => !filter || f.includes(filter)).sort();

@@ -57,7 +57,7 @@ check('a chip is TWO lines: line1 = kind-coloured icon + bold action; line2 = wh
       && rend.includes('<span class="as-l2"><span class="as-when">${escHtml(_asRelTime(ev.at))}</span>${detail ? ` · ${escHtml(detail)}` : \'\'}<span class="as-caret">▾</span></span>'));
 check('the put-back state stays visible on the chip (now via the line-2 detail)', /function _asChipDetail\(ev\)[\s\S]{0,700}put back/.test(rend));
 check('the icon carries a kind-colour class (green filed / amber put-back / accent fix)',
-      /function _asIconClass\(ev\)[\s\S]{0,320}return 'filed'/.test(rend)
+      /function _asIconClass\(ev\)[\s\S]{0,520}return 'filed'/.test(rend)   // window 320 → 520 (2026-09-25: the 'recognised' kind joined the fix family on the same line)
       && /\.as-chip \.as-ico\.filed \{ color: var\(--ok\); \}/.test(html)
       && /\.as-chip \.as-ico\.putback \{ color: var\(--warn\); \}/.test(html));
 check('YOU-filed reads apart from auto (owner 2026-09-07): approved → youfiled/accent icon + k-you left rail; auto stays green',

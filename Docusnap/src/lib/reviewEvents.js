@@ -35,7 +35,7 @@ const CAP = 50;
 const BURST_GAP_MS = 60 * 1000;
 const NOTIFY_THROTTLE_MS = 1000;
 const UNDO_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-const KINDS = new Set(['auto_filed', 'self_filed', 'approved', 'class_fix', 'issuer_fill', 'put_back', 'convention']);   // 'convention' (2026-09-07): a one-confirm filing rule learned, undoable
+const KINDS = new Set(['auto_filed', 'self_filed', 'approved', 'class_fix', 'issuer_fill', 'put_back', 'convention', 'recognised']);   // 'recognised' (2026-09-25, Chris 09-24 card 1): a quiet REDETECT gave N waiting documents their type after the user added/renamed a type or saved a keyword — a durable receipt, never undoable (nothing filed)   // 'convention' (2026-09-07): a one-confirm filing rule learned, undoable
 
 function _scopeKey(scope) {
   const s = scope || {};
@@ -154,12 +154,17 @@ function create(deps = {}) {
         latest.seen = false;
         if (ev.approved != null) latest.approved = !!ev.approved;
         if (ev.undo && !latest.undo) latest.undo = ev.undo;
+        if (Array.isArray(ev.typeSlugs) && ev.typeSlugs.length) {   // a merged 'recognised' chip lists every type it ran for
+          latest.typeSlugs = [...new Set((latest.typeSlugs || []).concat(ev.typeSlugs.map(s => String(s || '').trim().toLowerCase())).filter(Boolean))].slice(0, 20);
+        }
         out = latest;
       } else {
         state.seq += 1;
         out = { id: state.seq, key, kind, at: t, started_at: t, ids, bySender: { [sender]: ids.length }, scope,
                 approved: !!ev.approved, undo: ev.undo && ev.undo.type ? { type: String(ev.undo.type), ...(ev.undo.batchId ? { batchId: String(ev.undo.batchId) } : {}) } : null,
-                dropped: _dedupDropped(dropped), seen: false, ...(ev.bulk ? { bulk: true } : {}) };
+                dropped: _dedupDropped(dropped), seen: false, ...(ev.bulk ? { bulk: true } : {}),
+                // 'recognised' carries the type slugs the pass ran for (one chip may span several catalog ticks).
+                ...(Array.isArray(ev.typeSlugs) && ev.typeSlugs.length ? { typeSlugs: [...new Set(ev.typeSlugs.map(s => String(s || '').trim().toLowerCase()).filter(Boolean))].slice(0, 20) } : {}) };
         state.events.push(out);
       }
       _save(db, state);

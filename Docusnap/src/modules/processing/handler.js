@@ -5203,6 +5203,7 @@ function register(ctx) {
     getDb,
     enabled: _quietEnabled,
     isForegroundBusy: _anyProcessingBusy,
+    recordEvent: (db, ev) => recordReviewEvent(db, ev),   // the redetect's durable 'recognised' receipt (activity strip)
     stageDocs: (db, chunk, { auditMeta, quick = false } = {}) => {
       const learning2 = require('../../../database/modules/learning');
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docusnap-qb-'));
