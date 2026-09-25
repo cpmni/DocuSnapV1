@@ -7807,9 +7807,11 @@ function _renderReprocessOfferBar(bar, offerIds) {
     bar.style.display = 'none'; _rabOfferIds = null;
     _sweepFilterIds = new Set(offerIds);   // reuse the existing "Review them" queue filter
     renderQueueList();
+    _renderAutofileCheckBar();   // the offer cleared → let the background check line reappear if still running
   }, { once: true });
   document.getElementById('rab-dismiss')?.addEventListener('click', () => {
     bar.style.display = 'none'; _rabOfferIds = null;   // offer stays server-side; a new batch overwrites it
+    _renderAutofileCheckBar();   // ditto — the check bar yields to the offer, so re-render when it goes
   }, { once: true });
 }
 // ONE accept road for both doors (the click and the countdown expiry): the accept IPC carries NO ids — only a
@@ -7842,6 +7844,7 @@ async function _acceptReprocessOffer(bar, consented = true) {
     if (queue.length) selectDoc(queue[0]);
     else { currentDoc = null; clearDocPanel(); }
   }
+  _renderAutofileCheckBar();   // the offer cleared (filed / expired) → let the background check line reappear if still running
 }
 
 // ── Catch-up Filing slice 3 (design 2026-07-31, dark unless scope_sweep_enabled) ──────
@@ -10496,6 +10499,14 @@ function _renderAutofileCheckBar() {
   if (!el) return;
   const ready = [..._quietJobs.values()].find(j => j.ready && j.state !== 'done');
   if (!ready) { el.hidden = true; el.textContent = ''; return; }
+  // ONE live surface at a time (Oracle 2026-09-25 B1/B2, cut 2): the background check YIELDS to the actionable
+  // auto-file offer / its countdown — which are never suppressed — so "still checking" and "ready to file" never
+  // shout at once (the clash the owner hit). deriveReviewStatus (shared/reviewStatus.js) owns the priority.
+  const _offerBar = document.getElementById('reprocess-autofile-bar');
+  const _offerActive = !!(_offerBar && _offerBar.style.display !== 'none' && String(_offerBar.innerHTML || '').trim());
+  if (window.ReviewStatus && !window.ReviewStatus.checkBarShows({ inviewActive: !!_inviewCd, offerActive: _offerActive, checkActive: true })) {
+    el.hidden = true; el.textContent = ''; return;
+  }
   const sup = ready.supplier ? ` from ${ready.supplier}` : '';
   // NO DENOMINATOR (Oracle 2026-09-25 B3, banner-reconciliation): the quiet job's `total` is frozen at job start
   // (quietLane.js) and its population is the sender's eligible held docs — legitimately WIDER than the visible

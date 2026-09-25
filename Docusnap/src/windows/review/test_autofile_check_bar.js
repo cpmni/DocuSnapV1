@@ -34,7 +34,18 @@ check('the bar is hidden by default (the `hidden` attribute)', /id="autofile-che
   // worse than no number. The bar must never render a done/total pair.
   check('the bar shows NO denominator (no "done of total" fraction)',
         !/ready\.total/.test(body) && !/ready\.done/.test(body) && !/\bof \$\{/.test(body));
+  // Oracle 2026-09-25 B1/B2 (cut 2): the background check YIELDS to the offer/countdown via the pure
+  // deriveReviewStatus reducer — so "still checking" and "ready to file" never co-render (the owner's clash).
+  check('the check bar yields via ReviewStatus.checkBarShows (offer/countdown own the surface)',
+        /window\.ReviewStatus[\s\S]{0,80}checkBarShows\(\{ inviewActive: !!_inviewCd, offerActive:/.test(body));
+  check('the yield reads the live reprocess-offer bar + the in-view countdown state',
+        /getElementById\('reprocess-autofile-bar'\)/.test(body) && /_inviewCd/.test(body));
 }
+// the reducer is loaded in the Review window (a <script>, requireable by test_review_status.js)
+check('reviewStatus.js is loaded in review/index.html', /<script src="\.\.\/shared\/reviewStatus\.js">/.test(html));
+// when the offer clears (dismiss / review / accept-or-expire), the check bar is re-rendered so it reappears
+check('the offer teardown re-renders the check bar (dismiss + review + accept)',
+      (rend.match(/_renderAutofileCheckBar\(\);/g) || []).length >= 3);
 check('_renderQuietHint STILL returns early on _quietSilent (silence preserved for teach/layout re-reads)',
       /function _renderQuietHint\(\)[\s\S]{0,220}if \(_quietSilent\)/.test(rend));
 
