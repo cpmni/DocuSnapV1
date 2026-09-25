@@ -45,7 +45,7 @@ DISTRIBUTION & VERIFICATION NOTES
   the full text and are incorporated by reference (see section 3).
 
 Applies to product version: ScanFinder 2.0.0 (core) / 1.0.2 (search client).
-Last reviewed: 2026-09-24.
+Last reviewed: 2026-09-25.
 
 --------------------------------------------------------------------------------
 1. COMPONENT INVENTORY
