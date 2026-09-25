@@ -1620,6 +1620,18 @@ window.__drawConcurrentAnchor = false;
   catch { /* stays false — serial path */ }
 })();
 
+// SUGGESTED-TEACH picker (mig 220 `suggested_teach_enabled`, DARK; owner idea, Oracle SIGN-OFF-W/COND).
+// When ON, a ⊕ teach on a captioned field first tries to SUGGEST the box(es) the machine already read
+// for the field's current value (ocr-page-words → ValueLocate → SuggestTeach): one located spot → a
+// pre-filled suggestion (after a fresh RAW-frame placement verify), several spots → the picker (never
+// auto-pick), none/verify-fail → the manual draw that is always still armed. OFF → enterZoneMode is
+// byte-identical (no page-words spawn). Read once at load like the other teach-side switches.
+window.__suggestTeachOn = false;
+(async () => {
+  try { window.__suggestTeachOn = (await window.docusnap.getSetting('suggested_teach_enabled')) === 'true'; }
+  catch { /* stays false — the manual-draw teach path is unchanged */ }
+})();
+
 // LIST field type (2026-08-11): when armed, a ⊕ teach on a list-typed field is refused with the
 // reason (the scan owns the field; a stored box would be dead). OFF = the ⊕ behaves as ever.
 window.__listFieldScanOn = false;
@@ -2666,6 +2678,7 @@ async function _selectDoc(doc, { fieldsOnly = false } = {}) {
   clearedByIssuerChange = new Set();   // doc-scoped, like corrections
   anchorTaughtFields = new Set();
   pendingAnchors = {};   // discard any un-confirmed ⊕ teach when the doc changes
+  _pwCache = null;       // suggested-teach: drop the per-frame page-words cache (frame-keyed, but free the memory)
   taughtFieldKeys = new Set();   // re-fetched for the new doc's scope before renderFields
   pendingFieldRules = {}; // ...and any un-confirmed field cleanup rule
   // Straighten default FOLLOWS the session toggle; deskewByPage MUST still reset per doc ({} is
@@ -5666,6 +5679,11 @@ function enterZoneMode(key, label) {
   hintField.textContent = label;
   selectHint.classList.add('visible');
   selCanvas.classList.add('active');
+  // SUGGESTED-TEACH (mig 220 `suggested_teach_enabled`, DARK): the manual draw is armed above; on top
+  // of it, try to pre-locate the field's current value and offer the box (unique) or the picker
+  // (multiple). Fire-and-forget — a manual draw that lands first ALWAYS wins (suggestTeachBoxes bails
+  // if a drag has started or a box is already staged). OFF → this is skipped → byte-identical arm.
+  if (window.__suggestTeachOn) { try { suggestTeachBoxes(key, label); } catch {} }
 }
 
 function cancelZoneMode() {
@@ -5681,6 +5699,157 @@ function cancelZoneMode() {
 }
 
 hintCancel.addEventListener('click', cancelZoneMode);
+
+// ── Suggested-teach (mig 220 `suggested_teach_enabled`, DARK; owner idea → 007+reggie+eric → Oracle
+//    SIGN-OFF-W/COND C1-C7) ─────────────────────────────────────────────────────────────────────────
+// When a ⊕ teach arms, reconstruct the box(es) the machine read for the field's CURRENT value and offer
+// them, instead of making the operator draw. The whole population of AMBIGUOUS cases the Oracle census
+// measured is SAME-VALUE-multiple-boxes (statements, repeat-ref templates), so Slice 1 locates the ONE
+// current value: one spot → a single suggestion AFTER a fresh RAW-frame placement verify; two+ spots →
+// the picker (never auto-pick); none/verify-fail → the manual draw that is always still armed. Every
+// confirmed box rides the IDENTICAL pendingAnchors → saveFieldAnchor path a hand-draw uses — authority
+// never exceeds a hand-draw. Candidate VALUE retention (two different labels → two values) is the
+// deferred Slice 2 (its own census); Slice 1 never touches the extraction engine.
+let _pwCache = null;   // single-slot, frame-keyed page-words cache: { key, result }
+
+function _suggestFrameKey(snap) { return `${snap.docId}:${snap.page}:${Math.round((snap.angle || 0) * 100)}`; }
+
+// OCR the CURRENT DISPLAY frame the operator sees (deskewed if straighten is on) into word geometry,
+// cached per doc:page:angle so repeated ⊕ on one frame spawns once. Rasterise docImg at natural res.
+async function _suggestPageWords(snap) {
+  const key = _suggestFrameKey(snap);
+  if (_pwCache && _pwCache.key === key && _pwCache.result) return _pwCache.result;
+  if (!(docImg && docImg.complete && docImg.naturalWidth > 0)) return null;
+  const c = document.createElement('canvas');
+  c.width = docImg.naturalWidth; c.height = docImg.naturalHeight;
+  c.getContext('2d').drawImage(docImg, 0, 0);
+  const b64 = c.toDataURL('image/png').split(',')[1];
+  const result = await window.docusnap.ocrPageWords?.(b64);
+  _pwCache = { key, result };
+  return result;
+}
+
+// C1/C3 — back-transform a DISPLAY-frame top-left box to the RAW page frame (what extraction + the
+// picker markers use), reusing the SAME deskew math + frame-consistency drop the hand-draw commit uses.
+// Returns a RAW top-left {x_norm,y_norm,w_norm,h_norm}, or null if the frame changed (→ drop, C3).
+function _suggestBoxDisplayToRaw(boxTL, snap) {
+  const cx = boxTL.x + boxTL.w / 2, cy = boxTL.y + boxTL.h / 2;
+  const live = { angle: deskewPageAngle, docId: currentDoc?.id, page: currentPage,
+                 W: docImg.naturalWidth, H: docImg.naturalHeight };
+  const d = window.AnchorLabel?.deskewFinalizeAnchor?.({ x_norm: cx, y_norm: cy }, snap, live);
+  if (!d || d.action === 'drop') return null;             // frame changed under us → drop (C3)
+  const rcx = d.action === 'transform' ? d.x : cx;
+  const rcy = d.action === 'transform' ? d.y : cy;         // 'keep' → display === raw (angle 0)
+  return { x_norm: Math.max(0, rcx - boxTL.w / 2), y_norm: Math.max(0, rcy - boxTL.h / 2),
+           w_norm: boxTL.w, h_norm: boxTL.h };
+}
+
+function _decodeImage(b64) {
+  return new Promise((resolve) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => resolve(null);
+    im.src = 'data:image/png;base64,' + b64;
+  });
+}
+
+// C4 — placement verify on a DIFFERENT frame/bitmap (the RAW page), never the display words that
+// DEFINED the box (that re-read is circular). Crop the RAW page TIGHT at the back-transformed coords,
+// fresh-OCR it, and require the value to reproduce there AND the crop to read roughly the value (not the
+// value plus a whole neighbour column) — so a half-box offset, which reads a partial/merged span, FAILS.
+// Tesseract-only in the renderer (no glyph IPC here); any mismatch fails toward the manual draw.
+async function _verifySuggestedRaw(rawTL, value) {
+  try {
+    const rawB64 = getRawPageBase64();
+    if (!rawB64) return false;
+    const img = await _decodeImage(rawB64);
+    if (!img || !img.naturalWidth) return false;
+    const pad = 0.004;
+    const x = Math.max(0, rawTL.x_norm - pad), y = Math.max(0, rawTL.y_norm - pad);
+    const w = Math.min(1 - x, rawTL.w_norm + 2 * pad), h = Math.min(1 - y, rawTL.h_norm + 2 * pad);
+    if (!(w > 0 && h > 0)) return false;
+    const c = document.createElement('canvas');
+    c.width  = Math.max(1, Math.round(w * img.naturalWidth));
+    c.height = Math.max(1, Math.round(h * img.naturalHeight));
+    c.getContext('2d').drawImage(img, Math.round(x * img.naturalWidth), Math.round(y * img.naturalHeight),
+                                 c.width, c.height, 0, 0, c.width, c.height);
+    const b64 = c.toDataURL('image/png').split(',')[1];
+    const txt = ((await window.docusnap.ocrRegion(b64)) || '').trim();
+    const V = window.ValueLocate;
+    const cropSq = V.squash(txt), valSq = V.squash(value);
+    if (valSq.length < 2 || !cropSq) return false;
+    // The value's whole squashed form must be present (placement), and the crop must not read far more
+    // than the value (a half-box offset that pulls in a neighbour column reads long → reject).
+    return cropSq.indexOf(valSq) !== -1 && cropSq.length <= valSq.length * 1.6 + 4;
+  } catch { return false; }
+}
+
+function _suggestZone(yNorm) {
+  return yNorm < 0.33 ? 'near the top' : yNorm < 0.66 ? 'in the middle' : 'near the bottom';
+}
+
+// The orchestrator, fired from enterZoneMode when the switch is on. Fire-and-forget; every exit leaves
+// the manual draw armed (no regression). Aborts on any doc/page/angle change or if the operator has
+// begun drawing / a box is already staged (manual draw wins the race).
+async function suggestTeachBoxes(fieldKey, label) {
+  if (!window.__suggestTeachOn) return;
+  // The issuer is a logo/position-only field with no reliably-locatable printed value — keep its v1
+  // draw/teach behaviour. (LIST/barcode ⊕ arms are refused before this fires, so no guard needed here.)
+  if (fieldKey === 'supplier_name') return;
+  const input = document.querySelector(`.field-input[data-key="${fieldKey}"]`);
+  const value = (input?.value || '').trim();
+  if (!value || value.length < 2) return;                      // nothing to locate → manual draw
+  const snap = _captureDeskewSnap();                            // the frame we OCR + present + verify against
+  const openDocId = currentDoc?.id, openPage = currentPage, openAngle = deskewPageAngle;
+  let pw;
+  try { pw = await _suggestPageWords(snap); } catch { return; }
+  // doc/page/angle moved under the page-words await, or the operator left this field / already drew.
+  if (currentDoc?.id !== openDocId || currentPage !== openPage || deskewPageAngle !== openAngle) return;
+  if (activeField !== fieldKey || isDragging || pendingAnchors[fieldKey]) return;
+  if (!pw || !Array.isArray(pw.words) || !pw.words.length) return;   // NONE (or OCR failed) → manual draw
+  const r = window.SuggestTeach.suggestTeachState([value], { words: pw.words, natW: pw.w, natH: pw.h });
+  if (r.state === 'none') return;
+  if (r.state === 'unique') await _suggestUnique(fieldKey, value, r.boxes[0], snap);
+  else _suggestMultiple(fieldKey, value, r.boxes, snap, input);
+}
+
+// UNIQUE — one located spot. Verify placement on the RAW frame, then stage via the IDENTICAL hand-draw
+// tail (display rect → captureAnchorContext → _deskewFixPending) so the box is position-only, supplier-
+// scoped, authority-equal to a hand-draw, and the value is NOT mutated / the server flag NOT cleared (C5).
+async function _suggestUnique(fieldKey, value, hit, snap) {
+  const rawTL = _suggestBoxDisplayToRaw(hit.box, snap);
+  if (!rawTL) return;                                          // frame changed → drop → manual draw
+  const ok = await _verifySuggestedRaw(rawTL, value);          // C4 fresh RAW re-read
+  if (!ok) return;                                             // placement not verified → manual draw
+  if (currentDoc?.id !== snap.docId || currentPage !== snap.page || deskewPageAngle !== snap.angle) return;
+  if (activeField !== fieldKey || isDragging || pendingAnchors[fieldKey]) return;
+  const scaleX = docImg.naturalWidth / docImg.offsetWidth;
+  const scaleY = docImg.naturalHeight / docImg.offsetHeight;
+  const imgW = docImg.offsetWidth, imgH = docImg.offsetHeight;
+  const rect = { x: hit.box.x * imgW, y: hit.box.y * imgH, w: hit.box.w * imgW, h: hit.box.h * imgH };
+  lastTeachCtx = { fieldKey, rect, imgW, imgH, scaleX, scaleY, value, deskewSnap: snap };
+  const detected = await captureAnchorContext(rect, fieldKey, value, imgW, imgH, scaleX, scaleY, null, snap);
+  if (!detected || !pendingAnchors[fieldKey]) return;          // captureAnchorContext dropped on frame change
+  anchorTaughtFields.add(fieldKey);
+  showAnchorReadout(detected, value);
+  try { showToast(`Suggested where I read “${value}”. Press Confirm to keep it, or draw your own box.`, 'ok'); } catch {}
+}
+
+// MULTIPLE — the value sits in 2+ spots (the census's whole ambiguous class). Back-transform each box to
+// RAW (C1) so the picker markers draw on the raw page AND the picked coord is stored raw, then hand them
+// to the shared resolve picker. NEVER auto-pick; the human picks the right spot off the raw-page markers
+// (that pick IS the placement confirmation for this path). Any frame change → drop → manual draw (C3).
+function _suggestMultiple(fieldKey, value, boxes, snap, input) {
+  const cands = [];
+  for (const b of boxes) {
+    const rawTL = _suggestBoxDisplayToRaw(b.box, snap);
+    if (!rawTL) return;                                        // frame changed → drop the whole offer
+    cands.push({ value, box: rawTL, source_label: `printed ${_suggestZone(rawTL.y_norm)} of the page` });
+  }
+  if (cands.length < 2) return;
+  const row = input?.closest('.field-row');
+  openResolveOverlay(fieldKey, cands, row, input);
+}
 
 // ── Canvas drawing ────────────────────────────────────────────────────────────
 function clearCanvas() {

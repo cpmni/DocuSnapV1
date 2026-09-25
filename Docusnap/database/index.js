@@ -4404,6 +4404,26 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 219 (keyword_label_tail_bound): ${e.message}`); }
   }
 
+  // mig 220 (2026-09-25; owner idea "suggest the boxes I read"; advisor round 007+reggie+eric → Oracle
+  // SIGN-OFF-W/COND C1-C7, DARK): `suggested_teach_enabled` — Slice 1 of the SUGGESTED-TEACH PICKER. On the
+  // ⊕ Review teach readout, reconstruct the box(es) the machine read for the field's CURRENT value
+  // (ocr-page-words → ValueLocate → SuggestTeach reducer): UNIQUE → pre-fill one suggestion (after a
+  // live-frame placement verify), MULTIPLE → the picker (never auto-pick), NONE/verify-fail → manual draw
+  // (no regression). RENDERER/shared-JS only — no Python, no extraction hot-path change (reggie's candidate
+  // retention is the deferred Slice 2, behind its own census). Every confirmed box rides the IDENTICAL
+  // pendingAnchors → saveFieldAnchor Stage-2 path a hand-draw uses (authority never exceeds a hand-draw;
+  // supplier-scoped; persist on Confirm only). DARK, seeded OFF, byte-identical off. Single-key seed.
+  // ⚑ FLIP GATE (Oracle): byte-identical OFF + a false-suggestion IoU census over the corpus INCLUDING
+  // deskew-active statements (every blessed box overlaps the GT value on the RAW page; 0 verify-passed-but-
+  // box-wrong) + realdoc M=0 with no per-field accuracy drop on the confirmed supplier's siblings.
+  if (!applied.has(220)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('suggested_teach_enabled', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (220)').run();
+      console.log('JS migration 220 applied: suggested_teach_enabled (⊕ Review suggested-teach picker, Slice 1) seeded OFF (DARK, byte-identical off)');
+    } catch (e) { console.warn(`  migration 220 (suggested_teach_enabled): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

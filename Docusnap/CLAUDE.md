@@ -21,7 +21,33 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-25 EVENING (mig 219 label tail-bound DARK+census-gated · deskew invalid-date note · Review banner reconciliation BUILT · suggested-teach census → picker):
+## ⏭ LATEST — 2026-09-25 (later) — SUGGESTED-TEACH PICKER Slice 1 BUILT DARK (mig 220; owner "build the picker"):
+Branch `feat/teach-side-overnight`; **migs → 220; `TEST_SWITCH_KEYS` 18; run-pins 462/462 green; the Slice-1 commit is
+LOCAL/UNPUSHED (origin was `2bb483f`); tree otherwise clean (pre-existing untracked `TESTING/_measure/*`).** Owner "read
+the handover and continue" → chose **build the picker** (from the four evening threads). Full advisor round
+**007+reggie+eric → Oracle SIGN-OFF-W/COND C1-C7** (all four reports + the Oracle verdict this session).
+- **Idea A picker, Slice 1 = `suggested_teach_enabled` (mig 220, DARK, renderer/shared-JS ONLY, no Python):** on a ⊕
+  teach the app reconstructs the box(es) it read for the field's CURRENT value (`ocr-page-words` → new shared
+  `src/windows/shared/suggestTeach.js` reducer over `ValueLocate`): **UNIQUE** → one suggestion AFTER a fresh RAW-frame
+  placement verify → `showAnchorReadout`; **MULTIPLE** (the census's whole ambiguous class = same-value repeats:
+  statements, Pelican) → the shared resolve PICKER, never auto-pick; **NONE/verify-fail** → the manual draw (still
+  armed, no regression). Confirmed box rides the IDENTICAL `pendingAnchors → saveFieldAnchor` hand-draw tail (authority
+  never exceeds a hand-draw; **supplier-scoped** — 007 caught the CLAUDE.md ➜AN "all suppliers" line is STALE).
+- **Oracle SEAM caught + fixed (C1):** the shared picker (`resolveCandidatePick`) stages `cand.box` as RAW with no
+  deskew back-transform → a display-frame box on a **deskewed statement** would persist mis-registered (the exact
+  SEND-BACK failure). Fix: back-transform each candidate display→raw via `deskewFinalizeAnchor` before
+  `openResolveOverlay` (also gives C3 drop-on-frame-change). C4 = a TIGHT fresh RAW crop re-read (`getRawPageBase64`→
+  `ocrRegion`, rejects a crop reading >1.6× the value = half-box offset — not the cached display words). C5 position-
+  only, C6 same writer. **⚠ C7 (glyph second reader) DEFERRED** — no glyph IPC in the renderer; UNIQUE is protected by
+  the fresh-RAW verify + human Confirm, merged-column ambiguity → picker; glyph = Slice-1b. Pins `test_suggest_teach.js`
+  (reducer + C1/C3/C4/C5/C6 WIRING) + `test_migration220_suggested_teach.js`.
+- **⚠ NOT DRIVEN LIVE** (renderer change → reopen Review). **FLIP GATE OWED:** byte-identical OFF + a false-suggestion
+  IoU census incl. deskew-active statements + a merged-column class (0 verify-passed-but-box-wrong) + realdoc M=0/no
+  accuracy drop on the confirmed supplier's siblings. **Slice 2 (reggie's `TEACH_SUGGEST_CANDIDATES` candidate retention
+  in `keyword.extract_fields`, the two-different-labels case) NOT built — its own census + Oracle first; do NOT touch
+  `extract_fields` without that go.** Ledger `docs/DARK_SWITCH_LEDGER.md` + `docs/oracle_log.md` (2026-09-25).
+
+## ⏭ 2026-09-25 EVENING (mig 219 label tail-bound DARK+census-gated · deskew invalid-date note · Review banner reconciliation BUILT · suggested-teach census → picker):
 **READ `HANDOVER_2026-09-25_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `2bb483f` = origin (all
 pushed); migs → 219; `TEST_SWITCH_KEYS` 17; run-pins 459/459 (full run pre-cut-2; cut-2 pins green alone — re-run to
 confirm ~460); tree clean.** Four threads (owner "continue"/"go"/"push and continue"):

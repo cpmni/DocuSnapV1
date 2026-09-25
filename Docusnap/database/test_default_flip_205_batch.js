@@ -55,6 +55,7 @@ const HELD = [
   'issuer_sibling_dominant_hold',  // mig 218, 2026-09-25 — Tier C converging-siblings issuer hold (Chris card 5)
   'type_owner_uninstalled_block',  // mig 217, 2026-09-25 — an uninstalled shipped title BLOCKS the owner-precedence steal (Ironclad statements typed Invoice)
   'keyword_label_tail_bound',      // mig 219, 2026-09-25 — a multi-word label stops prefix-hitting its own printed heading (Chris card 4)
+  'suggested_teach_enabled',       // mig 220, 2026-09-25 — the ⊕ Review suggested-teach picker (Slice 1), DARK
   'glyph_confusable_release',      // mig 211, 2026-09-23 — second-reader agree + wide re-read POPS the soften note (auto-file loosener; yield 1/9 → stays DARK)
   // (glyph_fallback_enabled 207, glyph_confusable_resolve 210, glyph_slice_integrity 212, name_value_label_flag 213,
   //  taught_name_disagree_refuse 214 GRADUATED via the 215 batch, 2026-09-24 evening — see test_default_flip_215.js.)
@@ -64,10 +65,10 @@ console.log('== mig 205 BATCH graduation (34 fail-toward-review switches) ==');
 
 console.log(`0. the batch is exactly ${FLIP.length} keys and the two sets are disjoint + cover the list`);
 check('FLIP is 34 distinct keys', new Set(FLIP).size === 34);
-check('HELD is 17 distinct keys', new Set(HELD).size === 17);   // 16 → 17: keyword_label_tail_bound (mig 219, 2026-09-25)   // 15 → 16: issuer_sibling_dominant_hold (mig 218, 2026-09-25)   // 14 → 15: type_owner_uninstalled_block (mig 217, 2026-09-25)
+check('HELD is 18 distinct keys', new Set(HELD).size === 18);   // 17 → 18: suggested_teach_enabled (mig 220, 2026-09-25)   // 16 → 17: keyword_label_tail_bound (mig 219, 2026-09-25)   // 15 → 16: issuer_sibling_dominant_hold (mig 218, 2026-09-25)   // 14 → 15: type_owner_uninstalled_block (mig 217, 2026-09-25)
 check('FLIP ∩ HELD = ∅', FLIP.every(k => !HELD.includes(k)));
 check('TEST_SWITCH_KEYS == HELD (every flipped key delisted, every held key kept)',
-  TEST_SWITCH_KEYS.length === 17 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
+  TEST_SWITCH_KEYS.length === 18 && HELD.every(k => TEST_SWITCH_KEYS.includes(k)) && TEST_SWITCH_KEYS.every(k => HELD.includes(k)));
 
 console.log('1. a fresh install has every flipped key ON, every held key OFF');
 {

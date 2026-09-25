@@ -34,7 +34,7 @@ console.log('1. a fresh install');
   check('mig 215 stamped (and the five seeds 207/210/212/213/214)', [215, 207, 210, 212, 213, 214].every(v => !!db.prepare('SELECT 1 FROM migrations WHERE version = ?').get(v)));
   for (const k of FLIP) check(`${k} is DELISTED from TEST_SWITCH_KEYS`, !TEST_SWITCH_KEYS.includes(k));
   for (const k of STAY) check(`${k} is still LISTED (DARK)`, TEST_SWITCH_KEYS.includes(k));
-  check('TEST_SWITCH_KEYS is 17 (13 after this batch + quiet_redetect_on_type_change mig 216 + type_owner_uninstalled_block mig 217 + issuer_sibling_dominant_hold mig 218 + keyword_label_tail_bound mig 219, 2026-09-25)', TEST_SWITCH_KEYS.length === 17);
+  check('TEST_SWITCH_KEYS is 18 (13 after this batch + quiet_redetect_on_type_change mig 216 + type_owner_uninstalled_block mig 217 + issuer_sibling_dominant_hold mig 218 + keyword_label_tail_bound mig 219 + suggested_teach_enabled mig 220, 2026-09-25)', TEST_SWITCH_KEYS.length === 18);
   // the env mirrors follow the setting → every Python spawn on a fresh install sees the flipped engine gates
   const e = H._reconcileEnv(db);
   check('fresh install spawn env: GLYPH_FALLBACK_ENABLED / GLYPH_CONFUSABLE_RESOLVE / GLYPH_SLICE_INTEGRITY / NAME_VALUE_LABEL_FLAG all "1"',

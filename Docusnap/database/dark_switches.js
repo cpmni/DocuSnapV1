@@ -222,6 +222,20 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   KEYWORD_LABEL_TAIL_BOUND. FLIP GATE (ships alone): a label-hit census over the 605 cached texts listing every
   //   scalar hit the bound would refuse (eyeballed clean) + realdoc M=0 with zero per-field drop + Hard Set P==K==N.
   'keyword_label_tail_bound',
+  // suggested_teach_enabled (mig 220, 2026-09-25; owner idea "suggest the boxes I read"; advisor round
+  //   007+reggie+eric → Oracle SIGN-OFF-W/COND C1-C7): Slice 1 of the SUGGESTED-TEACH PICKER on the ⊕ Review
+  //   teach readout. Reconstruct the box(es) the machine read for the field's CURRENT value (ocr-page-words →
+  //   ValueLocate → the SuggestTeach reducer): UNIQUE → one pre-filled suggestion AFTER a live-frame placement
+  //   verify (fresh RAW crop re-read + geometry/IoU, glyph second reader; C4/C7); MULTIPLE → the picker, never
+  //   auto-pick (C1: back-transform each box display→raw before the picker so a deskewed statement is not
+  //   staged mis-registered; C3 frame-guard); NONE/verify-fail → manual draw (no regression). RENDERER/shared-JS
+  //   only — no Python, no extraction hot-path change (reggie's candidate retention = deferred Slice 2, own
+  //   census). Every confirmed box rides the IDENTICAL pendingAnchors → saveFieldAnchor Stage-2 path a hand-draw
+  //   uses: authority never exceeds a hand-draw, supplier-scoped (C6), position-only (C5: no value mutate, no
+  //   server-flag clear), persist on Confirm only. Byte-identical OFF. ⚑ FLIP GATE (Oracle): byte-identical OFF +
+  //   a false-suggestion IoU census over the corpus INCLUDING deskew-active statements (0 verify-passed-but-box-
+  //   wrong) + realdoc M=0 with no per-field accuracy drop on the confirmed supplier's siblings.
+  'suggested_teach_enabled',
   // glyph_slice_integrity (mig 212, 2026-09-23 night, Oracle C2/C3 of the Paddle corroboration vet — S1 of Part A):
   //   the second reader's crop rect is SNAPPED to the page-level word boxes on the value's row band before the re-read
   //   (extraction/slice_integrity.py, pure; words from the mapper's shared locate cache). A taught box that cuts a glyph
