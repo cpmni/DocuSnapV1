@@ -1607,7 +1607,12 @@ def main():
                             _stable2["page_provenance"] = (_prov2 or _provenance)
                             raw2 = engine.extract(
                                 ocr_text=ocr_text2, page_images=page_images2,
-                                trace=None, slice_dir=None,
+                                # Dev inspector (2026-09-25): the straightened re-read IS traced, tagged pass="straightened",
+                                # so the Review trace console can show it beside the raw pass instead of "no candidate" for
+                                # a value this pass produced (the owner's SFDEV question). Crops stay untraced (no
+                                # slice_dir) — the raw pass's crops remain the ones on screen. Byte-identical without --trace.
+                                trace=((lambda _ev: emit_trace({**_ev, "pass": "straightened"})) if args.trace else None),
+                                slice_dir=None,
                                 raw_page0=(_rp2[0] if _rp2 else None),
                                 page0_geometry=(_pg2 or None), cached_text=None,
                                 raw_pages=(_rp2 or None), deskew_angles=(_da2 or None),
@@ -1623,7 +1628,21 @@ def main():
                                     f"{len(_chg)} field(s) read differently — held to confirm once"
                                     + (": " + ", ".join(k for k, _w, _n in _chg) if _chg else ""))
                                 raw_extractions = raw2
+                                # Dev inspector (2026-09-25): one event per field the straightened pass changed (the value
+                                # the panel shows) + one doc-level receipt, so the console's winner line can say "after
+                                # straightening". Emitted AFTER the adoption — the C14 pin keeps apply_holds next to it.
+                                for _k, _w, _n in _chg:
+                                    _fd2 = raw2.get(_k) if isinstance(raw2.get(_k), dict) else {}
+                                    emit_trace({"event": "deskew_adopt", "field": _k, "was": _w, "now": _n,
+                                                "conf": _fd2.get("confidence"), "method": _fd2.get("method"),
+                                                "angle": round(_max_skew, 2), "overall_before": _oc0, "overall_after": _oc1})
+                                emit_trace({"event": "deskew_pass", "adopted": True, "angle": round(_max_skew, 2),
+                                            "overall_before": _oc0, "overall_after": _oc1,
+                                            "changed": [_k for _k, _w, _n in _chg]})
                             else:
+                                emit_trace({"event": "deskew_pass", "adopted": False, "angle": round(_max_skew, 2),
+                                            "overall_before": _oc0, "overall_after": _oc1,
+                                            "reason": ("not-higher" if _raw_flag else "note-only-hold")})
                                 if _raw_flag:
                                     log(f"  Straighten+reread: kept raw (straightened overall {_oc1:.0f} not higher than {_oc0:.0f})")
                                 else:

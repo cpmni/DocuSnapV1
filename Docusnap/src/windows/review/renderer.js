@@ -11402,15 +11402,30 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
     // sliceMap[field][stage] = [ {kind, bbox, page}, ... ] — links candidates to page regions
     const sliceMap = {};
     const get = (f) => {
-      if (!byField.has(f)) byField.set(f, { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null, steps: [], glyph: null });
+      if (!byField.has(f)) byField.set(f, { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null, steps: [], glyph: null,
+                                            s2: { merges: [], steps: [], final: null }, deskewAdopt: null });
       return byField.get(f);
     };
+    // The STRAIGHTENED re-read (2026-09-25, the owner's SFDEV question "why is the date not showing"): the whole-page
+    // straighten retry runs a SECOND extraction and, when adopted, its values are what the panel shows — while this
+    // console used to show only the raw pass ("no candidate" on a field that pass never read). process_docs.py now
+    // tags that pass's events `pass: 'straightened'` and emits `deskew_adopt` per changed field + one `deskew_pass`.
+    let deskewPass = null;
     for (const ev of events) {
       if (!ev) continue;
       // reconcile is a CROSS-field TOTAL calc (keyed by total_key, carries no `field`) — attach it
       // to the total field's block before the per-field guard below.
       if (ev.event === 'reconcile') { if (ev.total_key) get(ev.total_key).reconcile = ev; continue; }
+      if (ev.event === 'deskew_pass') { deskewPass = ev; continue; }
       if (ev.field == null) continue;
+      if (ev.event === 'deskew_adopt') { get(ev.field).deskewAdopt = ev; continue; }
+      if (ev.pass === 'straightened') {
+        const s2 = get(ev.field).s2;
+        if (ev.event === 'merge') s2.merges.push(ev);
+        else if (ev.event === 'step') s2.steps.push(ev);
+        else if (ev.event === 'final') s2.final = ev;
+        continue;   // its crops / rejects / validations are not shown — the raw pass's crops stay on screen
+      }
       if (ev.event === 'merge') get(ev.field).merges.push(ev);
       // Every-step ladder rows (owner demand 2026-08-12: "I need to ALWAYS see keyword with
       // either the keyword or a reason it wasn't used"). The engine already emits ONE `step`
@@ -11519,14 +11534,19 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
       return;
     }
     elEmpty.hidden = true;
-    const EMPTY_M = { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null, steps: [], glyph: null };
+    const EMPTY_M = { merges: [], rejects: [], transforms: [], validations: [], final: null, reconcile: null, steps: [], glyph: null,
+                      s2: { merges: [], steps: [], final: null }, deskewAdopt: null };
     const blocks = [];
     for (const field of orderedFields) {
       const m = byField.get(field) || EMPTY_M;
       const hadEvents = byField.has(field);
-      const finalVal = m.final ? m.final.value : null;
+      // A value the STRAIGHTENED re-read adopted is the one on the panel — the winner line says so instead of "—".
+      const da = m.deskewAdopt;
+      const finalVal = da ? da.now : (m.final ? m.final.value : null);
       const emptyCls = (finalVal == null || finalVal === '') ? ' empty' : '';
-      const winLine  = m.final
+      const winLine  = da
+        ? `${escHtml(shown(da.now))}${da.method ? ` · ${escHtml(da.method)}` : ''} · <b>after straightening</b> (${escHtml(String(da.angle))}°)${rxBadge(field, da.now)}`
+        : m.final
         ? `${escHtml(shown(finalVal))}${m.final.method ? ` · ${escHtml(m.final.method)}` : ''}${rxBadge(field, finalVal)}`
         : '—';
 
@@ -11617,6 +11637,27 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
         }
         rows.push(noteRow('2nd reader', txt, 'valid'));
       }
+      // The STRAIGHTENED re-read's rows (marked ↻): what that pass read for this field and whether it was adopted.
+      // Shown under the raw pass's rows so the two can be compared; crops are the raw pass's.
+      if (m.deskewAdopt || m.s2.merges.length || m.s2.steps.length) {
+        const s2 = m.s2;
+        if (m.deskewAdopt) {
+          const d = m.deskewAdopt;
+          rows.push(noteRow('↻ adopted', `<b>${escHtml(shown(d.now))}</b>${d.conf != null ? ` @${escHtml(String(d.conf))}%` : ''}${d.method ? ` · ${escHtml(d.method)}` : ''}`
+            + ` — raw pass read ${d.was != null && d.was !== '' ? escHtml(shown(d.was)) : 'nothing'}; page skew ${escHtml(String(d.angle))}°, overall ${escHtml(String(d.overall_before))} → ${escHtml(String(d.overall_after))}; held to confirm once`, 'valid'));
+        }
+        const seenS2 = new Set();
+        for (const c of [...s2.merges].sort((a, b) => (STAGE_ORDER[a.stage] ?? 9) - (STAGE_ORDER[b.stage] ?? 9))) {
+          seenS2.add(c.stage);
+          const won = c.decision === 'win';
+          rows.push(noteRow(`↻ ${STAGE_LABEL[c.stage] || c.stage}`, `${escHtml(shown(c.value))}${c.confidence != null ? ` @${escHtml(String(c.confidence))}%` : ''}${c.method ? ` · ${escHtml(c.method)}` : ''} — ${won ? 'won on the straightened page' : 'lost on the straightened page'}`, won ? 'valid' : 'skip'));
+        }
+        for (const st of [...s2.steps].sort((a, b) => (STAGE_ORDER[a.stage] ?? 9) - (STAGE_ORDER[b.stage] ?? 9))) {
+          if (!st.stage || seenS2.has(st.stage) || st.outcome === 'won' || st.outcome === 'lost') continue;
+          seenS2.add(st.stage);
+          rows.push(noteRow(`↻ ${STAGE_LABEL[st.stage] || st.stage}`, `${st.outcome === 'skipped' ? 'skipped' : st.outcome === 'already_resolved' ? 'already resolved' : 'no candidate'}${st.reason ? ` — ${escHtml(st.reason)}` : ''} (straightened page)`, 'skip'));
+        }
+      }
       if (!rows.length) rows.push(hadEvents
         ? `<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">matched on the OCR text layer (no per-stage crop trace)</span></div>`
         : `<div class="rdc-cand"><span class="rdc-reason" style="padding-left:0">no candidate reached this field on the last trace run${allSlices(field).length ? ' — see the crops below for what was read' : ''}</span></div>`);
@@ -11648,7 +11689,18 @@ document.getElementById('wiz-open-manager')?.addEventListener('click', () => {
         + `<span class="rdc-fwin${emptyCls}">${winLine}</span></div>`
         + `<div class="rdc-cands">${rows.join('')}${sliceStrip}</div></div>`);
     }
-    elFields.innerHTML = blocks.join('');
+    // Doc-level receipt of the straighten retry (dev-only): whether the straightened pass ran and was adopted.
+    const banner = deskewPass
+      ? `<div class="rdc-cand rdc-deskew-pass" style="margin:0 0 8px; padding:6px 8px; border-left:3px solid var(${deskewPass.adopted ? '--ok' : '--muted'});"><span class="rdc-reason" style="padding-left:0">`
+        + (deskewPass.adopted
+            ? `↻ Straightened re-read <b>adopted</b> — page skew ${escHtml(String(deskewPass.angle))}°, overall ${escHtml(String(deskewPass.overall_before))} → ${escHtml(String(deskewPass.overall_after))}`
+              + ((deskewPass.changed || []).length ? `; read differently: ${escHtml((deskewPass.changed || []).join(', '))}` : '')
+              + `. Rows marked ↻ are that pass; the crops shown are the raw pass's.`
+            : `↻ Straightened re-read ran (page skew ${escHtml(String(deskewPass.angle))}°, overall ${escHtml(String(deskewPass.overall_before))} vs ${escHtml(String(deskewPass.overall_after))}) but was <b>kept raw</b>`
+              + ` — ${deskewPass.reason === 'not-higher' ? 'the straightened read did not score higher' : 'a note-only hold, whole-doc adopt not applicable'}. Rows marked ↻ show what it read.`)
+        + `</span></div>`
+      : '';
+    elFields.innerHTML = banner + blocks.join('');
     // Lazy-load the crop images (dev-only; devGetSlice returns a data: URL under devSliceDir, or null).
     elFields.querySelectorAll('img[data-slice-path]').forEach(async (img) => {
       try {
