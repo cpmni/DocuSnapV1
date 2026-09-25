@@ -103,6 +103,20 @@ setflag("1")
 t_on = find(tlines, "Total")
 check("'Total' reads the same ON and OFF (the switch never touches single-word labels)", t_off == t_on)
 
+# ── 6. currency exclusion: a money label glued to a currency-code value is NOT bounded ──
+# The owner's-727 label-hit census found "Total DueGBP 21,778.54" (OCR glued the amount as a currency
+# CODE) would be REFUSED by the letter-only lookahead — a real balance lost. The card-4 class is
+# REFERENCE labels, never money, so val_type='currency' skips the bound.
+print("\n6. currency exclusion (val_type='currency' skips the bound):")
+mlines = ["Total DueGBP 21,778.54"]
+setflag("1")
+m_cur = keyword._search_for_label(mlines, "Total Due", ["right", "below"], val_type="currency")
+check("ON + currency: 'Total DueGBP…' still reads the glued amount (bound skipped)",
+      m_cur is not None and "21,778.54" in str(m_cur[0]))
+m_alnum = keyword._search_for_label(mlines, "Total Due", ["right", "below"], val_type="alphanumeric")
+check("ON + non-currency: the same glued line IS refused (letter-glued -> the accepted tradeoff)",
+      m_alnum is None)
+
 setflag(None)
 print(("\n%d FAILED" % fails) if fails else "\nALL OK")
 sys.exit(1 if fails else 0)

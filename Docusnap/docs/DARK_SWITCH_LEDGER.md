@@ -128,10 +128,15 @@ in `database/dark_switches.js`'s history comment; the LIVE list is `TEST_SWITCH_
   its own printed heading ("CREDIT NOTE", "DELIVERY NOTE") and the below-walk then adopts the next non-caption line as
   the value. ON adds the SCALAR twin of `LIST_CAPTION_TAIL_BOUND` — a letter-only lookahead `(?![a-z])` on the
   multi-word-alpha-tail scalar label: a digit-glued value ("Credit No1234") still matches; "Credit Note"/"Delivery
-  Note" no longer do. Engine env `KEYWORD_LABEL_TAIL_BOUND`; scalar path only; default OFF → byte-identical. Also
-  data-only (new catalog ticks): the Delivery Note preset labels reordered so "Delivery No" is no longer first. _Flip
-  gate (ships alone, Oracle C6): a label-hit census over the 605 cached texts listing every scalar hit the bound would
-  refuse (eyeballed clean) + realdoc M=0 with zero per-field drop + Hard Set P==K==N._ Pins
+  Note" no longer do. Engine env `KEYWORD_LABEL_TAIL_BOUND`; scalar path only; default OFF → byte-identical. **Currency
+  role EXCLUDED** (`val_type != 'currency'`): the owner-727 label-hit census found a money label OCR-glued to a currency
+  code ("Total DueGBP 21,778.54") would be wrongly refused — a real balance lost; the card-4 class is reference labels,
+  never money. Also data-only (new catalog ticks): the Delivery Note preset labels reordered so "Delivery No" is no
+  longer first. _Flip gate (ships alone, Oracle C6): (i) label-hit census **MET** —
+  `TESTING/_measure/label_tail_bound_census_20260925/RESULT.md`: on the owner's 758 texts + Chris's 200, every refused
+  hit is a heading/address/boilerplate garble, NO clean value lost (a real delivery note fills via "Delivery Note No"
+  identically OFF/ON — verified by the precedence replay); (ii) realdoc M=0 zero per-field drop (owed — needs a
+  confirmed-doc harness; the census+precedence indicate M=0) + (iii) Hard Set P==K==N._ Pins
   `python_backend/tests/test_keyword_label_tail_bound.py` (OFF preserves the bug, ON reads the real ref, digit-glued
   still matches, single-word labels untouched) + `database/modules/test_migration219_keyword_label_tail_bound.js`.
 

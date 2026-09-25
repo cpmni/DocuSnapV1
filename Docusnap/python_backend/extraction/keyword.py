@@ -2178,7 +2178,12 @@ def _search_for_label(lines: list[str], label: str,
     # letter-only lookahead: "Credit No1234" (digit-glued) still matches; "Credit Note"/"Delivery
     # Note" no longer do. Scalar path only, and never a digit-tail label. Inline env read (test can
     # flip without a module reload); default OFF -> byte-identical. See LIST_CAPTION_TAIL_BOUND.
-    elif (not collect) and os.environ.get('KEYWORD_LABEL_TAIL_BOUND', '0') == '1' and _label_tail_boundable(label):
+    # CURRENCY EXCLUSION (label-hit census on the owner's 727, 2026-09-25): a money label ("Total Due",
+    # "Amount Due", "Balance Due") whose amount OCR-glues to the label as a currency CODE ("Total DueGBP
+    # 21,778.54") would be REFUSED by the letter-only lookahead — a real balance lost. The card-4 class is
+    # REFERENCE labels prefix-hitting a TYPE heading, never money, so skip the currency role.
+    elif ((not collect) and os.environ.get('KEYWORD_LABEL_TAIL_BOUND', '0') == '1'
+          and val_type != 'currency' and _label_tail_boundable(label)):
         pattern = re.compile(pattern.pattern + r'(?![a-z])')
 
     _hits = [] if collect else None

@@ -59,10 +59,12 @@ const py = norm(fs.readFileSync(path.join(ROOT, 'python_backend', 'extraction', 
 check('the _label_tail_boundable helper is defined (multi-word, alphabetic last word)',
       /def _label_tail_boundable\(label: str\) -> bool:/.test(py)
       && /return len\(words\) > 1 and words\[-1\]\.isalpha\(\)/.test(py));
-check('the SCALAR elif block applies the tail bound, inline env read, default OFF, gated on the helper',
-      new RegExp(`elif \\(not collect\\) and os\\.environ\\.get\\('${ENV}', '0'\\) == '1' and _label_tail_boundable\\(label\\):\\s*\\n\\s*pattern = re\\.compile\\(pattern\\.pattern \\+ r'\\(\\?!\\[a-z\\]\\)'\\)`).test(py));
+check('the SCALAR elif block applies the tail bound, inline env read, default OFF, gated on the helper + currency exclusion',
+      new RegExp(`elif \\(\\(not collect\\) and os\\.environ\\.get\\('${ENV}', '0'\\) == '1'\\s*\\n\\s*and val_type != 'currency' and _label_tail_boundable\\(label\\)\\):\\s*\\n\\s*pattern = re\\.compile\\(pattern\\.pattern \\+ r'\\(\\?!\\[a-z\\]\\)'\\)`).test(py));
+check('a money label (val_type currency) is EXCLUDED — the owner-727 census "Total DueGBP…" loss',
+      /and val_type != 'currency' and _label_tail_boundable\(label\)/.test(py));
 check('it is an ELIF of the LIST branch (scalar path only; the list path keeps its own bound)',
-      /if collect and LIST_CAPTION_TAIL_BOUND:\s*\n\s*pattern = re\.compile\(pattern\.pattern \+ r'\(\?!\[a-z\]\)'\)\s*\n(?:\s*#[^\n]*\n)*\s*elif \(not collect\) and os\.environ\.get\('KEYWORD_LABEL_TAIL_BOUND'/.test(py));
+      /if collect and LIST_CAPTION_TAIL_BOUND:\s*\n\s*pattern = re\.compile\(pattern\.pattern \+ r'\(\?!\[a-z\]\)'\)\s*\n(?:\s*#[^\n]*\n)*\s*elif \(\(not collect\) and os\.environ\.get\('KEYWORD_LABEL_TAIL_BOUND'/.test(py));
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL OK');
 process.exit(fails ? 1 : 0);
