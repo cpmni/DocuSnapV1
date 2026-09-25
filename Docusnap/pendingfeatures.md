@@ -29,6 +29,28 @@ checking eligibility" must not both shout at once (sequence them, or fold the sc
 **Next:** barry (the copy + which counts a user actually needs, minimise-alerts rule) + eric (the three event
 streams — quiet lane, issuer_fill activity, reprocess completion — feeding one strip without collision) → Oracle.
 Guard: fail toward SHOWING LESS, never a wrong number; a stale/ahead count is worse than no count.
+**ADVISOR ROUND (barry + eric, 2026-09-25) — consensus, L1 must-have, ship FIRST:**
+- **DON'T fix the "7 of 18" fraction — DELETE it.** Both: the quiet job's `total` (frozen at start, population =
+  the sender's held docs, legitimately wider than the view) CANNOT be cheaply made queue-live. "Show less" is the
+  RIGHT answer, not a compromise. barry frames it as a TRUST WOUND (a number that disagrees with the user's own
+  eyes makes them distrust the auto-filing — worse than no number). Mostly SUBTRACTION, no engine work.
+- **What the user actually needs = two things, not four:** (1) the live queue count (the only number acted on;
+  already live + cheap via `getReviewQueue`/`review-count-changed`); (2) ONE calm working-indicator with NO
+  denominator ("Filing the ready ones for you…" → done receipt "Filed N for you"). Everything else → past-tense
+  receipts in the activity strip.
+- **eric's build (one approach): ONE `deriveReviewStatus()` reducer** owning ONE live-status element, recomputed
+  from CURRENT state on ANY input event — kills the cross-channel race by construction (the three streams arrive
+  on independent IPC channels with no ordering guarantee; one writer/one element removes the collision). Keep the
+  activity strip as a SEPARATE append-only history ledger — the "19" fix is COPY + placement (unmistakably
+  past-tense receipt), NOT a number change. Relabel the autofile bar to **"N left to check (this sender's batch)"**
+  counting DOWN (degrades gracefully; never implies the queue size). PHASE machine: while a quiet 'ready' job is
+  in flight show only "checking… N left" and SUPPRESS the overlapping "ready to file" offer until `job_done` (which
+  is already the sweep hand-off) → the "file now" vs "checking" clash becomes naturally SEQUENTIAL.
+- **Seams eric flagged:** the reducer must PRESERVE the in-view auto-file countdown's reuse of
+  `#reprocess-autofile-bar` as its click/cancel surface, and route the deferred/paused quiet state (`job_deferred`)
+  through the one writer; fold the three independent auto-hide timers into ONE (clear on doc-change + unload) — three
+  timers firing after a navigation is how a stale banner survives. Renderer-only change (Review window reopen to load).
+  Priority **L1 / must-have, ship FIRST**. NEXT: Oracle.
 
 ## 2026-09-25 — Suggested teach: auto-draw the value + label boxes from the keyword read, ask the user to confirm (owner idea; NOT built — barry → advisor → Oracle)
 Owner idea (live, on the Review teach readout "Check what I read for Quote Number"): instead of the user DRAWING
@@ -57,6 +79,33 @@ every future doc, so the confirm copy must make "value wrong? type it / redraw" 
 surface already does this). **Next:** barry (the full flow + the multi-candidate UX + copy) → reggie/007 (which
 read-geom to trust, when to suggest vs stay silent, the label-box derivation for a keyword-only read) → Oracle;
 likely a census (does auto-suggesting ever pre-draw a WRONG box the user would rubber-stamp?).
+**ADVISOR ROUND (007 + barry + eric, 2026-09-25) — a CORRECTION + a staged plan:**
+- **CORRECTED PREMISE (all three, load-bearing):** the read-geom this note assumed the engine "already exposes"
+  is (a) dev-TRACE-only — emitted just when `--trace` is on (`engine.py:5703 if not self._trace: return`), NOT in
+  the normal `file_done` payload — AND (b) EMPTY for the exact case teaching targets: an untaught sender's field
+  is a Stage-1 keyword read with NO located box (`_field_read_geom`/`_s05_read_geom` cover the ALREADY-taught
+  mapper/anchor case only). So auto-draw is NOT "wire the existing box to the surface" — the box must be
+  RECONSTRUCTED (eric: `ocrPageWords` words-only re-read → string-match the committed value → value box; nearest
+  word left/above → label box, reuse `captureAnchorContext`) or newly emitted on the normal path.
+- **007 safety gate (trust precedence + verify):** only suggest a genuinely LOCATED read — Stage-0.5 mapper box,
+  or Stage-2 `anchor_inline`/`anchor_crop_relocated`; NEVER a rigid `anchor_crop` taught_box (that's the taught
+  position, not this doc's value), a keyword/hint/memory/corroboration read (no box), or a low-conf read.
+  Then RE-READ the box on the LIVE display frame and require it to reproduce the committed value before showing
+  it (reuse the re-slice/glyph second-reader). Frame hazards (deskew-pages reprocess, the client Straighten
+  toggle, top-left↔centre convention) land a box aside — reuse `_captureDeskewSnap`/`deskewFinalizeAnchor`.
+- **eric plumbing:** commit path reuses **Stage-2 `saveFieldAnchor`** 1:1 (pre-fill just populates
+  `pendingAnchors[fk]` in the human-draw shape). ⚠ DECIDE THE HOST SURFACE FIRST — the ⊕ Review readout writes a
+  Stage-2 anchor; the Teach WIZARD / ⚓ writes a Stage-0.5 mapping — that choice dictates the artifact. Gotchas:
+  the focus-repair apparatus must run for a read fired on doc-open (else no caret on first click); abort on the
+  doc-changed-under-await race; word-reconstruction FAILS on repeated tokens / totals blocks (string not unique).
+- **barry UX:** confirm the VALUE, not the pixels; make "wrong (pick another / redraw / type)" as cheap as
+  "looks right"; the multi-candidate PICKER is the centrepiece + the real safety (forces a conscious choice
+  exactly where hand-draw goes wrong) — fire it proactively whenever a 2nd LOCATION-distinct candidate exists.
+- **STAGING (consensus): Slice 1** = emit/reconstruct geometry + pre-fill the SINGLE confident located read in
+  the existing surface; **census-gate** (does it ever pre-draw a wrong box a user rubber-stamps?). **Slice 2** =
+  candidate RETENTION in `keyword.py extract_fields` (today keeps only the winner; `_measure_candidates` scaffold
+  at :2640 is unused) + per-candidate boxes on the normal path → the proactive picker. Priority **L3** (picker
+  **L4** signature). NEXT: Oracle before any build.
 
 ## 2026-09-20 — 'Undetected' issuer: don't fabricate a heading from body text; bucket it in Review (owner idea; NOT built — barry + reggie/gary → Oracle)
 Symptom (owner, live): a long Ricoh MANUAL with no teaching/logo/template landed in Review with the Document
