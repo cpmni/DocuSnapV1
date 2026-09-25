@@ -70,8 +70,12 @@ check("put-back: the USEFUL inverse (new is garbage, old valid) still offers the
 _raw_g = {"statement_date": {"value": "42-04-2025", "confidence": 88}}
 _str_g = {"statement_date": {"value": "12-04-2025", "confidence": 96}}
 _deskew_retry_apply_holds(_raw_g, _str_g)
-check("apply: the exhibit — note names the garble, but corrected_to is ABSENT (no Use button)",
-      "was '42-04-2025', now '12-04-2025'" in _str_g["statement_date"]["validation_note"]
+# owner 2026-09-25 ("One of the dates isn't valid — this message is pointless"): a raw read the put-back
+# would NOT offer (an invalid date '42-04-2025') is a garble, not an alternative — the note must NOT name
+# it. It uses the "Found 'X'" framing (same as empty-before), and corrected_to stays ABSENT (no Use button).
+check("apply: the exhibit — invalid raw date NOT named; 'Found ...' framing, corrected_to ABSENT (no Use button)",
+      _str_g["statement_date"]["validation_note"] == _DESKEW_FOUND_NOTE.format(now="12-04-2025")
+      and "42-04-2025" not in _str_g["statement_date"]["validation_note"]
       and not str(_str_g["statement_date"].get("corrected_to") or "").strip())
 _raw_v = {"invoice_date": {"value": "11-04-2025", "confidence": 88}}
 _str_v = {"invoice_date": {"value": "12-04-2025", "confidence": 96}}

@@ -21,7 +21,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 from process_docs import (_deskew_retry_should_run, _deskew_field_adopt_door_keys, _deskew_retry_field_adopt,
                           _deskew_note_machine_clearable, _deskew_same_identity, _DESKEW_CHANGED_NOTE,
-                          _DESKEW_MACHINE_CLEARABLE_MARKS, _put_back_offerable)
+                          _DESKEW_FOUND_NOTE, _DESKEW_MACHINE_CLEARABLE_MARKS, _put_back_offerable)
 import process_docs as PD
 from extraction import engine as E
 
@@ -172,7 +172,9 @@ raw, st = date_case("the date looks unusual — please check", "12-04-2026")
 out = _deskew_retry_field_adopt(raw, st, ROLE, date_keys=DATES, enabled=True)
 check("date role: adopts a parseable corroborated straightened date; the deskew lane-hold is stamped (straightened dict had no note)",
       out == [("date", "42-04-2026", "12-04-2026")] and raw["date"]["value"] == "12-04-2026"
-      and raw["date"]["validation_note"] == _DESKEW_CHANGED_NOTE.format(was="42-04-2026", now="12-04-2026")
+      # owner 2026-09-25: the invalid raw date '42-04-2026' is a garble, not an alternative — 'Found' framing, not named.
+      and raw["date"]["validation_note"] == _DESKEW_FOUND_NOTE.format(now="12-04-2026")
+      and "42-04-2026" not in raw["date"]["validation_note"]
       and raw["date"]["validation_note"].endswith("— confirm once."))
 check("...and the garbled raw date ('42-04-2026') gets NO put-back button (the 08-30 rule)", not str(raw["date"].get("corrected_to") or "").strip())
 raw, st = date_case("the date looks unusual — please check", "12-04-2026")

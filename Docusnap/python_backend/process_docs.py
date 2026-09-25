@@ -103,11 +103,15 @@ _DESKEW_FOUND_NOTE = "Found '{now}' after straightening — confirm once."
 
 
 def _deskew_changed_note(was, now):
-    """Confirm-once hold note for a straighten-CHANGED field. Empty-before → "Found 'X'"; otherwise the
-    "was 'A', now 'B'" comparison. Both stay in the lane-hold family so behaviour (held for one confirm,
-    survives a reprocess merge) is unchanged — only the empty-before copy differs. Pure."""
+    """Confirm-once hold note for a straighten-CHANGED field. "Found 'X'" (no comparison) when there is
+    nothing meaningful to compare against — the field was EMPTY before, OR the raw read was a
+    type-implausible garble the straighten fixed (a value `_put_back_offerable` would not offer as a
+    button: an invalid date like '41-02-2025', a broken-money misread). Naming that garble in the note
+    is pointless noise (owner 2026-09-25: "One of the dates isn't valid — this message is pointless").
+    Otherwise the "was 'A', now 'B'" comparison, where 'A' was a plausible alternative worth showing.
+    All stay in the lane-hold family (held for one confirm, survive a reprocess merge). Pure."""
     w, n = str(was or "").strip(), str(now or "").strip()
-    if not w:
+    if not w or not _put_back_offerable(w, n):
         return _DESKEW_FOUND_NOTE.format(now=n or "(empty)")
     return _DESKEW_CHANGED_NOTE.format(was=w, now=n or "(empty)")
 
