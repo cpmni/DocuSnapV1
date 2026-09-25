@@ -90,6 +90,17 @@ in `database/dark_switches.js`'s history comment; the LIVE list is `TEST_SWITCH_
   lane's other arms also pick up placeholder-typed documents. _Flip gate: the sandbox arm (add an uninstalled catalog
   type → the redetect audit lists the held docs typed-wrong 0 / wrong-filed 0; then graduation → sweep files them) and a
   Generic-heavy copy with no detection OFF == ON row-identical (TESTING/_measure/quiet_redetect_gate_20260924/)._
+- **type_owner_uninstalled_block (mig 217, 2026-09-25)** — two Ironclad STATEMENTS were typed INVOICE with a confident
+  heading: the owner-precedence re-rank promoted a skew-sheared table cell "Invoice" (alone at reading line 15) because
+  the folded, uninstalled "STATEMENT" title can never be an owner. Under the switch an uninstalled SHIPPED type name
+  standing alone as a strict top-band heading is a BLOCKING owner → two owners → the sum → untyped + "Add Statement".
+  A CHILD of `type_uninstalled_heading_fold` (bridged inside its block; inert when the fold is off; the non-folded-name
+  class — Credit Note / Delivery Note / Receipt — is covered only while the fold is on). Installed names ∪ their aliases
+  never block (Oracle C1). Go-forward only; already mis-typed rows heal on reprocess only once the type is installed.
+  Engine env `TYPE_OWNER_UNINSTALLED_BLOCK`. Design `docs/designs/TYPE_OWNER_UNINSTALLED_BLOCK_2026-09-25.md`.
+  _Flip gate: Chris-copy text census (import-time type set) changes exactly {46, 52}; the owner's 727 → 0; the ablated
+  arm's confirmed types ∈ the ablated set + the third-type count decided (C5); separation arms identical (C4); realdoc
+  OFF md5-identical / ON M=0; Hard Set `statement_layout` + controls wrong+would-file 0 (C9)._
   _Oracle SIGN OFF WITH CONDITIONS (C0-C11). Evidence: the filtered census (18 look-alike cases: all 14 agreements
   correct, the 4 disagreements all genuine misreads the mig-207 hold catches) + the per-letter confidence census (the
   one clipped read both readers got wrong scored 0.505 — the 0.80 floor rejects it). Yield check on a copy of your

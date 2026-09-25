@@ -1016,8 +1016,10 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 if a:
                     name_alias_lc.add(a.lower())
 
-    # TYPE_UNINSTALLED_HEADING_FOLD (2026-09-05, log review Item 4b; herald → Oracle SIGN-OFF-W/COND; DARK,
-    # mig 122 `type_uninstalled_heading_fold`). Ironclad statements typed INVOICE @31: a table-cell "Invoice"
+    # TYPE_UNINSTALLED_HEADING_FOLD (2026-09-05, log review Item 4b; herald → Oracle SIGN-OFF-W/COND; built DARK
+    # as mig 122 `type_uninstalled_heading_fold`, GRADUATED to customer default in the mig-205 batch — the old
+    # "DARK" here was STALE, corrected 2026-09-25, Oracle C7. NB: this fold only puts the title on the SUM; the
+    # owner-precedence re-rank below could still steal the election — see TYPE_OWNER_UNINSTALLED_BLOCK). Ironclad statements typed INVOICE @31: a table-cell "Invoice"
     # in the top 15 lines earned the strong heading weight, while the legible 44-px "STATEMENT" scored
     # NOTHING — the shipped Statement bucket carries no bare name and ONLY installed names fold (above).
     # When armed, every shipped-but-UNINSTALLED bucket's bare NAME is folded as a HEADING-ONLY phrase: it
@@ -1192,7 +1194,9 @@ def detect_document_type(ocr_text: str, patterns: dict,
     else:
         best_type = max(scores, key=scores.get)
 
-    # TYPE_TITLE_OWNER_PRECEDENCE (kill switch, DEFAULT OFF — gary design 2026-08-08).
+    # TYPE_TITLE_OWNER_PRECEDENCE (kill switch; PROVEN_ON since mig 60 — `type_title_owner_precedence` in
+    # database/index.js PROVEN_ON_DEFAULTS, bridged by handler.js _reconcileEnv; gary design 2026-08-08. The old
+    # "DEFAULT OFF" here was STALE — corrected 2026-09-25, Oracle C7).
     # THE DEFECT: type election is a BUCKET SUM, and an install-created type owns exactly ONE
     # phrase (its own name, folded in above) while a built-in owns its whole shipped caption
     # vocabulary. 'ORDER CONFIRMATION' is itself a shipped *Sales Order* phrase, so a page titled
@@ -1212,12 +1216,10 @@ def detect_document_type(ocr_text: str, patterns: dict,
     # and the ambiguity guard both. Requiring a top-band heading forces position_weight >= ~1.9,
     # hence score >= 3.8, hence confidence >= 79. Do not relax it to "anywhere on the page".
     if os.environ.get('TYPE_TITLE_OWNER_PRECEDENCE', '0') != '0':
-        _owners = set()
-        for _name in (known_types or []):
-            _nm = (_name or '').strip()
-            if not _nm or _nm not in scores:
-                continue
-            _phrases = [_nm] + [str(a or '') for a in ((aliases_by_name or {}).get(_nm) or [])]
+        # ONE predicate for "this name stands alone as a strict top-band heading" — used by the OWNER loop below
+        # and by the UNINSTALLED-BLOCK loop (2026-09-25). The symmetry IS the invariant (Oracle C2): a blocker
+        # must be exactly as strict as an owner, so the two can never drift apart. Body = the original loop, verbatim.
+        def _top_band_owner(_phrases_lc):
             for _i, _line in enumerate(lines):
                 if not (_i <= _HEADING_TOP_BAND_LINES
                         or (total and _i / total <= _HEADING_TOP_BAND_FRAC)):
@@ -1225,11 +1227,53 @@ def detect_document_type(ocr_text: str, patterns: dict,
                 _seg0 = _COL_BREAK_RE.split(_line.strip().lower())[0].strip()
                 if not _seg0:
                     continue
-                if any(_p and _segment_is_heading(_seg0, _p.strip().lower(), caption_ok=False)
-                       for _p in _phrases):
-                    _owners.add(_nm)
-                    break
-        if len(_owners) == 1:
+                if any(_p and _segment_is_heading(_seg0, _p, caption_ok=False) for _p in _phrases_lc):
+                    return True
+            return False
+
+        _owners = set()
+        for _name in (known_types or []):
+            _nm = (_name or '').strip()
+            if not _nm or _nm not in scores:
+                continue
+            _phrases = [_nm] + [str(a or '') for a in ((aliases_by_name or {}).get(_nm) or [])]
+            if _top_band_owner([_p.strip().lower() for _p in _phrases if _p]):
+                _owners.add(_nm)
+
+        # TYPE_OWNER_UNINSTALLED_BLOCK (2026-09-25; herald forensics → gary → Oracle SIGN-OFF-W/COND C1-C10; DARK,
+        # mig 217 `type_owner_uninstalled_block`, a CHILD of the fold). THE DEFECT: the owner test enumerates
+        # `known_types` ONLY, so a shipped-but-UNINSTALLED type whose bare name IS the page's legible title (the
+        # fold puts "STATEMENT" on the board with the strong heading weight — the SUM is right) can never register
+        # as a competing owner. A stray installed bare name that lands ALONE as seg0 in the top band (a skew-sheared
+        # table cell "Invoice" at reading line 15 — or, on a straight page, a type-first column / a bare "Invoice"
+        # sub-head) is then the SOLE owner and is promoted over the sum with heading=True: a CONFIDENT wrong type,
+        # and one confirm/teach of it binds Invoice learning to statement layouts (the 2026-08-08 class in reverse).
+        # THE FIX: every uninstalled SHIPPED bucket name (config keys ∪ installed; the shipped set — a customer-edited
+        # keyword_patterns.json widens it) that scored AND stands alone as a strict top-band heading, by the SAME
+        # predicate as an owner, becomes a BLOCKING owner: two owners → untouched → the SUM decides → the legible
+        # uninstalled title wins → DETECTED_SLUG_FALLBACK → untyped + the "Add '<type>'" nudge (and into the
+        # mig-216 redetect's scope). A blocker NEVER enters `_owners` — an uninstalled name is never promoted.
+        # Oracle C1: an INSTALLED type's ALIAS equal to a shipped name ("Sales Invoice" alias "Invoice") must never
+        # self-block, so installed names ∪ their aliases are excluded (NOT `name_alias_lc`, which already carries
+        # the folded uninstalled names). Nested under the fold: inert whenever the fold is off. OFF = byte-identical.
+        _blockers = set()
+        if (os.environ.get('TYPE_OWNER_UNINSTALLED_BLOCK', '0') != '0'
+                and os.environ.get('TYPE_UNINSTALLED_HEADING_FOLD', '0') != '0'
+                and known_types is not None):
+            _installed_claims = {str(n or '').strip().lower() for n in known_types}
+            for _n in (known_types or []):
+                for _a in ((aliases_by_name or {}).get((_n or '').strip()) or []):
+                    _al = str(_a or '').strip().lower()
+                    if _al:
+                        _installed_claims.add(_al)
+            for _tname in type_keywords:
+                _t = str(_tname or '').strip()
+                if not _t or _t.lower() in _installed_claims or scores.get(_tname, 0) <= 0:
+                    continue
+                if _top_band_owner([_t.lower()]):
+                    _blockers.add(_tname)
+
+        if len(_owners) == 1 and not _blockers:
             _owner = next(iter(_owners))
             if scores.get(_owner, 0) > 0 and _owner != best_type:
                 best_type = _owner

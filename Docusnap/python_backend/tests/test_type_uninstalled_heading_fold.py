@@ -142,5 +142,39 @@ CAP = "\n".join(["Acme Widgets Ltd", "INVOICE", "Invoice No: INV-2201", "Stateme
 c_off, c_on = detect(CAP, on=False), detect(CAP, on=True)
 check("'Statement Date' caption: ON == OFF (Invoice)", c_off == c_on and c_on and c_on.get("type") == "Invoice")
 
+print("-- 9 the SHIPPED COMBINATION (Oracle C3, 2026-09-25): fold ON + owner-precedence ON on the REAL skewed exhibit --")
+# Until 2026-09-25 this file armed only the fold, and its EXHIBIT puts the date column first (the type cell is never
+# seg0) — so the shipped combination (owner-precedence PROVEN_ON since mig 60) was never pinned: on the real skewed
+# Ironclad page the row-rebuilder puts the type cell "Invoice" ALONE at reading line 15, the sole installed owner,
+# and the promotion STOLE the election from the folded title. Recorded against HEAD before the fix: fold+owner →
+# Invoice (heading True). With the child TYPE_OWNER_UNINSTALLED_BLOCK the folded title blocks it → Statement.
+_FIX = os.path.join(ROOT, 'python_backend', 'tests', 'fixtures', 'ironclad_statement_46_skewed.txt')
+with io.open(_FIX, encoding='utf-8') as _fh:
+    REAL_46 = _fh.read()
+IMPORT_SET = ['Invoice', 'Sales Order', 'Purchase Order', 'Quotation']
+
+
+def detect_combo(text, block):
+    os.environ["TYPE_UNINSTALLED_HEADING_FOLD"] = "1"
+    os.environ["TYPE_TITLE_OWNER_PRECEDENCE"] = "1"
+    if block:
+        os.environ["TYPE_OWNER_UNINSTALLED_BLOCK"] = "1"
+    else:
+        os.environ.pop("TYPE_OWNER_UNINSTALLED_BLOCK", None)
+    try:
+        return keyword.detect_document_type(text, copy.deepcopy(PATTERNS), IMPORT_SET, None)
+    finally:
+        for k in ("TYPE_UNINSTALLED_HEADING_FOLD", "TYPE_TITLE_OWNER_PRECEDENCE", "TYPE_OWNER_UNINSTALLED_BLOCK"):
+            os.environ.pop(k, None)
+
+
+s_off, s_on = detect_combo(REAL_46, block=False), detect_combo(REAL_46, block=True)
+check("HEAD (block OFF): fold + owner-precedence still types the real skewed statement INVOICE with heading=True (the C3 red-first fact)",
+      s_off is not None and s_off.get("type") == "Invoice" and s_off.get("heading") is True)
+check("... while the SUM already had Statement ahead (the fold works; the re-rank stole it)",
+      s_off is not None and s_off["all_scores"].get("Statement", 0) > s_off["all_scores"].get("Invoice", 0))
+check("block ON: the folded title BLOCKS the stray cell → Statement@95 heading True (untyped + nudge downstream)",
+      s_on is not None and s_on.get("type") == "Statement" and s_on.get("heading") is True and s_on.get("confidence", 0) >= 90)
+
 print(f"\n{'FAILED: ' + str(fails) if fails else 'ALL PASS'}")
 sys.exit(1 if fails else 0)

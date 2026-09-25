@@ -1,7 +1,9 @@
-# Type-owner uninstalled block — two Ironclad STATEMENTS typed INVOICE (DESIGN, not built)
+# Type-owner uninstalled block — two Ironclad STATEMENTS typed INVOICE (BUILT DARK 2026-09-25, mig 217)
 
 **Status:** herald forensics → gary design (generalised Option B) → Oracle **SIGN OFF WITH CONDITIONS C1-C10** (2026-09-25;
-`docs/oracle_log.md`). **Owner go/no-go pending.** DARK switch **`type_owner_uninstalled_block`** (Oracle C6 name; env
+`docs/oracle_log.md`) → owner "go" → **BUILT DARK the same day** (C1-C3, C6-C8, C10 applied; C4 arms run; C5 census MET —
+`TESTING/_measure/type_owner_block_20260925/RESULT.md`; C9 Hard Set class + the realdoc ON arm = the FLIP gate, queued in
+`NIGHT_RUN.md`). DARK switch **`type_owner_uninstalled_block`** (Oracle C6 name; env
 `TYPE_OWNER_UNINSTALLED_BLOCK` `!= '0'`, mig 217 seeds `'false'`, in `TEST_SWITCH_KEYS` → 15), bridged INSIDE the fold's `if`
 (`handler.js` ~585-587) so it is a child of `type_uninstalled_heading_fold`. Build DARK now; the Hard Set class (C9) is the
 FLIP precondition, not the build precondition.

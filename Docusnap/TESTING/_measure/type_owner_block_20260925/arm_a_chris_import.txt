@@ -1,0 +1,5 @@
+### (a) Chris copy, IMPORT-time set
+== chris: 200 docs · known=IMPORT (4 types) ==
+changed OFF→ON: 2 · third-type arm (ON winner INSTALLED, ≠ OFF winner): 0 · OLD-vs-NEW block-OFF mismatches: 0
+   {"id": 46, "file": "Ironclad-Tool-Hire_statement_0013.pdf", "off": ["Invoice", 81, true], "on": ["Statement", 95, true], "confirmed_type": "Invoice", "status": "needs_review", "confirmed_in_ablated": null, "on_winner_installed": false}
+   {"id": 52, "file": "Ironclad-Tool-Hire_statement_0019.pdf", "off": ["Invoice", 80, true], "on": ["Statement", 95, true], "confirmed_type": "Invoice", "status": "needs_review", "confirmed_in_ablated": null, "on_winner_installed": false}

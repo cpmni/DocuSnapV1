@@ -1,0 +1,3 @@
+### (c) live 727, ABLATED installed set
+== live727-ablated: 758 docs · known=installed ABLATED (8 types) ==
+changed OFF→ON: 0 · third-type arm (ON winner INSTALLED, ≠ OFF winner): 0

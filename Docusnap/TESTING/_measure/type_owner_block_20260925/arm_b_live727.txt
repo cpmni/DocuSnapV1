@@ -1,0 +1,3 @@
+### (b) live 727, installed set
+== live727: 758 docs · known=installed (12 types) ==
+changed OFF→ON: 0 · third-type arm (ON winner INSTALLED, ≠ OFF winner): 0 · OLD-vs-NEW block-OFF mismatches: 0

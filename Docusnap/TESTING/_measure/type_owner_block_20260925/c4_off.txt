@@ -1,0 +1,160 @@
+== stacks
+20 names -> 19 admitted: ['Castellan Security Systems', 'Harrowgate Timber Supplies', 'Ironclad Tool Hire', 'Marlowe Medical Supplies', 'Meadowvale Dairy Wholesale', 'Oakhaven Electrical Wholesale', 'Pelican Office Interiors', 'Print Tracker Doc', 'Ridgeway Plant Hire', 'Silverbeck Cleaning Supplies', 'Vellum & Crane Stationers', 'Veltrix Automotive Parts', 'Bramblewood Joinery Ltd', 'Copperfield Electrical', 'Ironbridge Fabrication', 'Nordwind Refrigeration Ltd', 'Northgate Textiles', 'Saltmarsh Seafoods', 'Thornbury Fasteners']
+bundle_01.pdf              exp=[1, 2, 3, 4] | base=[1, 2] r=2 lost=0 over=0 | both=[1, 2, 4] r=3 lost=0 over=0 | three=[1, 2, 4] r=3 lost=0 over=0 | veto_known=[1, 2, 4] r=3 lost=0 over=0
+     named/witness: [(['Saltmarsh Seafoods'], True, ['Saltmarsh Seafoods']), (['Ridgeway Plant Hire'], True, ['Ridgeway Plant Hire']), ([], True, []), (['Northgate Textiles'], True, ['Northgate Textiles'])]
+bundle_02.pdf              exp=[1, 2, 3] | base=[1, 3] r=2 lost=0 over=0 | both=[1, 3] r=2 lost=0 over=0 | three=[1, 2, 3] r=3 lost=0 over=0 | veto_known=[1, 2, 3] r=3 lost=0 over=0
+     named/witness: [(['Northgate Textiles'], True, ['Northgate Textiles']), (['Marlowe Medical Supplies'], True, ['Marlowe Medical Supplies']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners'])]
+bundle_03.pdf              exp=[1, 2, 3, 4] | base=[1, 2] r=2 lost=0 over=0 | both=[1, 2] r=2 lost=0 over=0 | three=[1, 2, 3] r=3 lost=0 over=0 | veto_known=[1, 2, 3] r=3 lost=0 over=0
+     named/witness: [([], True, []), (['Marlowe Medical Supplies'], True, ['Marlowe Medical Supplies']), (['Vellum & Crane Stationers'], True, ['Vellum & Crane Stationers']), ([], True, [])]
+bundle_04.pdf              exp=[1, 2, 3, 4, 5] | base=[1, 2, 3, 4] r=4 lost=0 over=0 | both=[1, 2, 3, 4] r=4 lost=0 over=0 | three=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | veto_known=[1, 2, 3, 4, 5] r=5 lost=0 over=0
+     named/witness: [(['Northgate Textiles'], True, ['Northgate Textiles']), (['Ridgeway Plant Hire'], True, ['Ridgeway Plant Hire']), (['Saltmarsh Seafoods'], True, ['Saltmarsh Seafoods']), (['Marlowe Medical Supplies'], True, ['Marlowe Medical Supplies']), (['Ironbridge Fabrication'], True, ['Ironbridge Fabrication'])]
+bundle_05.pdf              exp=[1, 2, 3] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1, 3] r=2 lost=0 over=0 | veto_known=[1, 3] r=2 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Northgate Textiles'], True, ['Northgate Textiles'])]
+bundle_06.pdf              exp=[1, 2, 3, 4, 5] | base=[1, 3, 5] r=3 lost=0 over=0 | both=[1, 3, 5] r=3 lost=0 over=0 | three=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | veto_known=[1, 2, 3, 4, 5] r=5 lost=0 over=0
+     named/witness: [(['Northgate Textiles'], True, ['Northgate Textiles']), (['Marlowe Medical Supplies'], True, ['Marlowe Medical Supplies']), (['Ridgeway Plant Hire'], True, ['Ridgeway Plant Hire']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Oakhaven Electrical Wholesale'], True, ['Oakhaven Electrical Wholesale'])]
+bundle_07.pdf              exp=[1, 2, 3, 4] | base=[1, 3, 4] r=3 lost=0 over=0 | both=[1, 3, 4] r=3 lost=0 over=0 | three=[1, 2, 3, 4] r=4 lost=0 over=0 | veto_known=[1, 2, 3, 4] r=4 lost=0 over=0
+     named/witness: [(['Ridgeway Plant Hire'], True, ['Ridgeway Plant Hire']), (['Saltmarsh Seafoods'], True, ['Saltmarsh Seafoods']), (['Marlowe Medical Supplies'], True, ['Marlowe Medical Supplies']), (['Ridgeway Plant Hire'], True, ['Ridgeway Plant Hire'])]
+bundle_08.pdf              exp=[1, 2, 3, 4] | base=[1, 2, 3] r=3 lost=0 over=0 | both=[1, 2, 3] r=3 lost=0 over=0 | three=[1, 2, 3, 4] r=4 lost=0 over=0 | veto_known=[1, 2, 3, 4] r=4 lost=0 over=0
+     named/witness: [(['Vellum & Crane Stationers'], True, ['Vellum & Crane Stationers']), (['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Saltmarsh Seafoods'], True, ['Saltmarsh Seafoods'])]
+bundle_mp_01.pdf           exp=[1, 2, 3, 5, 6] | base=[1, 2, 3] r=3 lost=0 over=0 | both=[1, 2, 3] r=3 lost=0 over=0 | three=[1, 2, 3] r=3 lost=0 over=0 | veto_known=[1, 2, 3] r=3 lost=0 over=0
+     named/witness: [([], True, []), (['Ridgeway Plant Hire'], True, ['Ridgeway Plant Hire']), ([], True, []), ([], True, []), (['Ironbridge Fabrication'], True, ['Ironbridge Fabrication']), (['Vellum & Crane Stationers'], True, ['Vellum & Crane Stationers'])]
+bundle_mp_02.pdf           exp=[1, 2, 3, 5, 6] | base=[1, 2, 3, 5, 6] r=5 lost=0 over=0 | both=[1, 2, 3, 5, 6] r=5 lost=0 over=0 | three=[1, 2, 3, 5, 6] r=5 lost=0 over=0 | veto_known=[1, 2, 3, 5, 6] r=5 lost=0 over=0
+     named/witness: [(['Marlowe Medical Supplies'], True, ['Marlowe Medical Supplies']), (['Marlowe Medical Supplies'], True, ['Marlowe Medical Supplies']), ([], True, []), ([], True, []), (['Northgate Textiles'], True, ['Northgate Textiles']), (['Northgate Textiles'], True, ['Northgate Textiles'])]
+tb_01.pdf                  exp=[1, 2, 3, 4, 5] | base=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | both=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | three=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | veto_known=[1, 2, 3, 4, 5] r=5 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Ridgeway Plant Hire'], True, ['Ridgeway Plant Hire']), (['Ironbridge Fabrication'], True, ['Ironbridge Fabrication']), (['Copperfield Electrical'], True, ['Copperfield Electrical'])]
+tb_02.pdf                  exp=[1, 2, 3, 4, 5] | base=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | both=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | three=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | veto_known=[1, 2, 3, 4, 5] r=5 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Vellum & Crane Stationers'], True, ['Vellum & Crane Stationers']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Ironbridge Fabrication'], True, ['Ironbridge Fabrication']), (['Ridgeway Plant Hire'], True, ['Ridgeway Plant Hire'])]
+tb_03.pdf                  exp=[1, 2, 3, 4, 5] | base=[1, 3, 4, 5] r=4 lost=0 over=0 | both=[1, 3, 4, 5] r=4 lost=0 over=0 | three=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | veto_known=[1, 2, 3, 4, 5] r=5 lost=0 over=0
+     named/witness: [(['Ridgeway Plant Hire'], True, ['Ridgeway Plant Hire']), (['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Saltmarsh Seafoods'], True, ['Saltmarsh Seafoods'])]
+tb_04.pdf                  exp=[1, 2, 3, 4, 5, 6, 7] | base=[1, 3, 5, 6] r=4 lost=0 over=0 | both=[1, 3, 5, 6, 7] r=5 lost=0 over=0 | three=[1, 2, 3, 4, 5, 6, 7] r=7 lost=0 over=0 | veto_known=[1, 2, 3, 4, 5, 6] r=6 lost=0 over=0
+     named/witness: [(['Vellum & Crane Stationers'], True, ['Vellum & Crane Stationers']), (['Saltmarsh Seafoods'], True, ['Saltmarsh Seafoods']), (['Northgate Textiles'], True, ['Northgate Textiles']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Northgate Textiles'], True, ['Northgate Textiles']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners'])]
+tb_05.pdf                  exp=[1, 2, 3, 4, 5] | base=[1, 3, 4, 5] r=4 lost=0 over=0 | both=[1, 3, 4, 5] r=4 lost=0 over=0 | three=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | veto_known=[1, 2, 3, 4, 5] r=5 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Ironbridge Fabrication'], True, ['Ironbridge Fabrication']), (['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Saltmarsh Seafoods'], True, ['Saltmarsh Seafoods'])]
+tb_06.pdf                  exp=[1, 2, 3, 4, 5] | base=[1, 3, 4, 5] r=4 lost=0 over=0 | both=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | three=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | veto_known=[1, 2, 3, 4, 5] r=5 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Marlowe Medical Supplies'], True, ['Marlowe Medical Supplies']), (['Vellum & Crane Stationers'], True, ['Vellum & Crane Stationers']), (['Meadowvale Dairy Wholesale'], True, ['Meadowvale Dairy Wholesale'])]
+tb_07.pdf                  exp=[1, 2, 3, 4, 5, 6] | base=[1, 3, 4, 5, 6] r=5 lost=0 over=0 | both=[1, 2, 3, 4, 5, 6] r=6 lost=0 over=0 | three=[1, 2, 3, 4, 5, 6] r=6 lost=0 over=0 | veto_known=[1, 2, 3, 4, 5, 6] r=6 lost=0 over=0
+     named/witness: [(['Vellum & Crane Stationers'], True, ['Vellum & Crane Stationers']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Castellan Security Systems'], True, ['Castellan Security Systems']), (['Vellum & Crane Stationers'], True, ['Vellum & Crane Stationers']), (['Northgate Textiles'], True, ['Northgate Textiles']), (['Saltmarsh Seafoods'], True, ['Saltmarsh Seafoods'])]
+tb_08.pdf                  exp=[1, 2, 3, 4, 5] | base=[1, 2, 4, 5] r=4 lost=0 over=0 | both=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | three=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | veto_known=[1, 2, 3, 4, 5] r=5 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Veltrix Automotive Parts'], True, ['Veltrix Automotive Parts']), (['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Vellum & Crane Stationers'], True, ['Vellum & Crane Stationers']), (['Marlowe Medical Supplies'], True, ['Marlowe Medical Supplies'])]
+tb_same_01.pdf             exp=[1, 2, 3, 4, 5] | base=[1, 2, 3] r=3 lost=0 over=0 | both=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | three=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | veto_known=[1, 2, 3] r=3 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical'])]
+tb_same_02.pdf             exp=[1, 2, 3, 4, 5] | base=[1, 2, 4, 5] r=4 lost=0 over=0 | both=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | three=[1, 2, 3, 4, 5] r=5 lost=0 over=0 | veto_known=[1, 2, 4, 5] r=4 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners'])]
+
+TOTAL files=20 expected=95 base: right=70 lost-vs-base=0 over-splits=0 | both: right=78 lost-vs-base=0 over-splits=0 | three: right=90 lost-vs-base=0 over-splits=0 | veto_known: right=86 lost-vs-base=0 over-splits=0
+== real/singles
+20 names -> 19 admitted: ['Castellan Security Systems', 'Harrowgate Timber Supplies', 'Ironclad Tool Hire', 'Marlowe Medical Supplies', 'Meadowvale Dairy Wholesale', 'Oakhaven Electrical Wholesale', 'Pelican Office Interiors', 'Print Tracker Doc', 'Ridgeway Plant Hire', 'Silverbeck Cleaning Supplies', 'Vellum & Crane Stationers', 'Veltrix Automotive Parts', 'Bramblewood Joinery Ltd', 'Copperfield Electrical', 'Ironbridge Fabrication', 'Nordwind Refrigeration Ltd', 'Northgate Textiles', 'Saltmarsh Seafoods', 'Thornbury Fasteners']
+
+TOTAL files=0 expected=0 base: right=0 lost-vs-base=0 over-splits=0 | both: right=0 lost-vs-base=0 over-splits=0 | three: right=0 lost-vs-base=0 over-splits=0 | veto_known: right=0 lost-vs-base=0 over-splits=0
+== controls
+20 names -> 19 admitted: ['Castellan Security Systems', 'Harrowgate Timber Supplies', 'Ironclad Tool Hire', 'Marlowe Medical Supplies', 'Meadowvale Dairy Wholesale', 'Oakhaven Electrical Wholesale', 'Pelican Office Interiors', 'Print Tracker Doc', 'Ridgeway Plant Hire', 'Silverbeck Cleaning Supplies', 'Vellum & Crane Stationers', 'Veltrix Automotive Parts', 'Bramblewood Joinery Ltd', 'Copperfield Electrical', 'Ironbridge Fabrication', 'Nordwind Refrigeration Ltd', 'Northgate Textiles', 'Saltmarsh Seafoods', 'Thornbury Fasteners']
+ctrl_i_copperfield.pdf     exp=[1] | base=[1, 2] r=1 lost=0 over=1 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical'])]
+ctrl_i_copperfield_so.pdf  exp=[1] | base=[1, 2] r=1 lost=0 over=1 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical'])]
+ctrl_i_thornbury.pdf       exp=[1] | base=[1, 2] r=1 lost=0 over=1 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners'])]
+ctrl_ii_copperfield.pdf    exp=[1] | base=[1, 2] r=1 lost=0 over=1 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical'])]
+ctrl_ii_copperfield_so.pdf exp=[1] | base=[1, 2] r=1 lost=0 over=1 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical'])]
+ctrl_ii_thornbury.pdf      exp=[1] | base=[1, 2] r=1 lost=0 over=1 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners'])]
+
+TOTAL files=6 expected=6 base: right=6 lost-vs-base=0 over-splits=6 | both: right=6 lost-vs-base=0 over-splits=0 | three: right=6 lost-vs-base=0 over-splits=0 | veto_known: right=6 lost-vs-base=0 over-splits=0
+== controls2
+20 names -> 19 admitted: ['Castellan Security Systems', 'Harrowgate Timber Supplies', 'Ironclad Tool Hire', 'Marlowe Medical Supplies', 'Meadowvale Dairy Wholesale', 'Oakhaven Electrical Wholesale', 'Pelican Office Interiors', 'Print Tracker Doc', 'Ridgeway Plant Hire', 'Silverbeck Cleaning Supplies', 'Vellum & Crane Stationers', 'Veltrix Automotive Parts', 'Bramblewood Joinery Ltd', 'Copperfield Electrical', 'Ironbridge Fabrication', 'Nordwind Refrigeration Ltd', 'Northgate Textiles', 'Saltmarsh Seafoods', 'Thornbury Fasteners']
+ctrl2_i_copperfield.pdf    exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], False, ['Copperfield Electrical'])]
+ctrl2_i_thornbury.pdf      exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], False, ['Thornbury Fasteners'])]
+ctrl2_ii_copperfield.pdf   exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], False, ['Copperfield Electrical'])]
+ctrl2_ii_thornbury.pdf     exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], False, ['Thornbury Fasteners'])]
+ctrl2_iii_copperfield.pdf  exp=[1] | base=[1, 2] r=1 lost=0 over=1 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical'])]
+ctrl2_iii_thornbury.pdf    exp=[1] | base=[1, 2] r=1 lost=0 over=1 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners'])]
+ctrl2_iv_copperfield.pdf   exp=[1, 3] | base=[1, 2] r=1 lost=0 over=1 | both=[1, 3] r=2 lost=0 over=0 | three=[1, 3] r=2 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical'])]
+ctrl2_iv_thornbury.pdf     exp=[1, 3] | base=[1, 2, 3] r=2 lost=0 over=1 | both=[1, 3] r=2 lost=0 over=0 | three=[1, 3] r=2 lost=0 over=0 | veto_known=[1, 3] r=2 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners'])]
+
+TOTAL files=8 expected=10 base: right=9 lost-vs-base=0 over-splits=4 | both: right=10 lost-vs-base=0 over-splits=0 | three: right=10 lost-vs-base=0 over-splits=0 | veto_known: right=9 lost-vs-base=0 over-splits=0
+== controls3
+20 names -> 19 admitted: ['Castellan Security Systems', 'Harrowgate Timber Supplies', 'Ironclad Tool Hire', 'Marlowe Medical Supplies', 'Meadowvale Dairy Wholesale', 'Oakhaven Electrical Wholesale', 'Pelican Office Interiors', 'Print Tracker Doc', 'Ridgeway Plant Hire', 'Silverbeck Cleaning Supplies', 'Vellum & Crane Stationers', 'Veltrix Automotive Parts', 'Bramblewood Joinery Ltd', 'Copperfield Electrical', 'Ironbridge Fabrication', 'Nordwind Refrigeration Ltd', 'Northgate Textiles', 'Saltmarsh Seafoods', 'Thornbury Fasteners']
+ctrl3_b2b_copperfield.pdf  exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], False, ['Copperfield Electrical'])]
+ctrl3_b2b_thornbury.pdf    exp=[1] | base=[1, 2] r=1 lost=0 over=1 | both=[1, 2] r=1 lost=0 over=1 | three=[1, 2] r=1 lost=0 over=1 | veto_known=[1, 2] r=1 lost=0 over=1
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], False, ['Thornbury Fasteners'])]
+ctrl3_b2bmk_copperfield.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], False, ['Copperfield Electrical'])]
+ctrl3_b2bmk_thornbury.pdf  exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], False, ['Thornbury Fasteners'])]
+ctrl3_switch_copperfield.pdf exp=[1, 2] | base=[1, 2] r=2 lost=0 over=0 | both=[1, 2] r=2 lost=0 over=0 | three=[1, 2] r=2 lost=0 over=0 | veto_known=[1, 2] r=2 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners'])]
+ctrl3_switch_thornbury.pdf exp=[1, 2] | base=[1, 2] r=2 lost=0 over=0 | both=[1, 2] r=2 lost=0 over=0 | three=[1, 2] r=2 lost=0 over=0 | veto_known=[1, 2] r=2 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Copperfield Electrical'], True, ['Copperfield Electrical'])]
+
+TOTAL files=6 expected=8 base: right=8 lost-vs-base=0 over-splits=1 | both: right=8 lost-vs-base=0 over-splits=1 | three: right=8 lost-vs-base=0 over-splits=1 | veto_known: right=8 lost-vs-base=0 over-splits=1
+== controls4
+20 names -> 19 admitted: ['Castellan Security Systems', 'Harrowgate Timber Supplies', 'Ironclad Tool Hire', 'Marlowe Medical Supplies', 'Meadowvale Dairy Wholesale', 'Oakhaven Electrical Wholesale', 'Pelican Office Interiors', 'Print Tracker Doc', 'Ridgeway Plant Hire', 'Silverbeck Cleaning Supplies', 'Vellum & Crane Stationers', 'Veltrix Automotive Parts', 'Bramblewood Joinery Ltd', 'Copperfield Electrical', 'Ironbridge Fabrication', 'Nordwind Refrigeration Ltd', 'Northgate Textiles', 'Saltmarsh Seafoods', 'Thornbury Fasteners']
+ctrl4_bareco_copperfield.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), ([], False, ['Thornbury Fasteners'])]
+ctrl4_bareco_thornbury.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), ([], False, ['Saltmarsh Seafoods'])]
+ctrl4_by_copperfield.pdf   exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical', 'Thornbury Fasteners'])]
+ctrl4_by_thornbury.pdf     exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners', 'Saltmarsh Seafoods'])]
+ctrl4_co_copperfield.pdf   exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical', 'Thornbury Fasteners'])]
+ctrl4_co_thornbury.pdf     exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners', 'Saltmarsh Seafoods'])]
+
+TOTAL files=6 expected=6 base: right=6 lost-vs-base=0 over-splits=0 | both: right=6 lost-vs-base=0 over-splits=0 | three: right=6 lost-vs-base=0 over-splits=0 | veto_known: right=6 lost-vs-base=0 over-splits=0
+== controls5
+20 names -> 19 admitted: ['Castellan Security Systems', 'Harrowgate Timber Supplies', 'Ironclad Tool Hire', 'Marlowe Medical Supplies', 'Meadowvale Dairy Wholesale', 'Oakhaven Electrical Wholesale', 'Pelican Office Interiors', 'Print Tracker Doc', 'Ridgeway Plant Hire', 'Silverbeck Cleaning Supplies', 'Vellum & Crane Stationers', 'Veltrix Automotive Parts', 'Bramblewood Joinery Ltd', 'Copperfield Electrical', 'Ironbridge Fabrication', 'Nordwind Refrigeration Ltd', 'Northgate Textiles', 'Saltmarsh Seafoods', 'Thornbury Fasteners']
+ctrl5_billto_copperfield.pdf exp=[1] | base=[1, 2] r=1 lost=0 over=1 | both=[1, 2] r=1 lost=0 over=1 | three=[1, 2] r=1 lost=0 over=1 | veto_known=[1, 2] r=1 lost=0 over=1
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical'])]
+ctrl5_billto_thornbury.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners'])]
+ctrl5_blur_copperfield.pdf exp=[1] | base=[1, 2] r=1 lost=0 over=1 | both=[1, 2] r=1 lost=0 over=1 | three=[1, 2] r=1 lost=0 over=1 | veto_known=[1, 2] r=1 lost=0 over=1
+     named/witness: [([], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical'])]
+ctrl5_blur_thornbury.pdf   exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [([], True, []), (['Thornbury Fasteners'], True, ['Thornbury Fasteners'])]
+ctrl5_coinv_copperfield.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), ([], True, ['Thornbury Fasteners'])]
+ctrl5_coinv_thornbury.pdf  exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), ([], True, ['Saltmarsh Seafoods'])]
+ctrl5_docket_copperfield.pdf exp=[1, 2] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1, 2] r=2 lost=0 over=0 | veto_known=[1, 2] r=2 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners'])]
+ctrl5_docket_thornbury.pdf exp=[1, 2] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1, 2] r=2 lost=0 over=0 | veto_known=[1, 2] r=2 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Saltmarsh Seafoods'], True, ['Saltmarsh Seafoods'])]
+ctrl5_envelope_copperfield.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners', 'Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical'])]
+ctrl5_envelope_thornbury.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Saltmarsh Seafoods'], True, ['Saltmarsh Seafoods', 'Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners'])]
+ctrl5_item_copperfield.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), ([], True, ['Print Tracker Doc'])]
+ctrl5_item_thornbury.pdf   exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), ([], True, ['Print Tracker Doc'])]
+ctrl5_itembare_copperfield.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), ([], True, ['Print Tracker Doc'])]
+ctrl5_itembare_thornbury.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), ([], True, ['Print Tracker Doc'])]
+ctrl5_nontpl2_a.pdf        exp=[1, 2] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1, 2] r=2 lost=0 over=0 | veto_known=[1, 2] r=2 lost=0 over=0
+     named/witness: [(['Marlowe Medical Supplies'], True, ['Marlowe Medical Supplies']), (['Ironbridge Fabrication'], True, ['Ironbridge Fabrication'])]
+ctrl5_nontpl3_b.pdf        exp=[1, 2, 3] | base=[1, 2, 3] r=3 lost=0 over=0 | both=[1, 2, 3] r=3 lost=0 over=0 | three=[1, 2, 3] r=3 lost=0 over=0 | veto_known=[1, 2, 3] r=3 lost=0 over=0
+     named/witness: [(['Ridgeway Plant Hire'], True, ['Ridgeway Plant Hire']), (['Saltmarsh Seafoods'], True, ['Saltmarsh Seafoods']), (['Northgate Textiles'], True, ['Northgate Textiles'])]
+ctrl5_prefix_copperfield.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], False, ['Copperfield Electrical'])]
+ctrl5_prefix_thornbury.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], False, ['Thornbury Fasteners'])]
+ctrl5_supplier_copperfield.pdf exp=[1] | base=[1, 2] r=1 lost=0 over=1 | both=[1, 2] r=1 lost=0 over=1 | three=[1, 2] r=1 lost=0 over=1 | veto_known=[1, 2] r=1 lost=0 over=1
+     named/witness: [(['Copperfield Electrical'], True, ['Copperfield Electrical']), (['Copperfield Electrical'], True, ['Copperfield Electrical'])]
+ctrl5_supplier_thornbury.pdf exp=[1] | base=[1] r=1 lost=0 over=0 | both=[1] r=1 lost=0 over=0 | three=[1] r=1 lost=0 over=0 | veto_known=[1] r=1 lost=0 over=0
+     named/witness: [(['Thornbury Fasteners'], True, ['Thornbury Fasteners']), (['Thornbury Fasteners'], True, ['Thornbury Fasteners'])]
+
+TOTAL files=20 expected=25 base: right=22 lost-vs-base=0 over-splits=3 | both: right=22 lost-vs-base=0 over-splits=3 | three: right=25 lost-vs-base=0 over-splits=3 | veto_known: right=25 lost-vs-base=0 over-splits=3

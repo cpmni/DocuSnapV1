@@ -1,0 +1,16 @@
+STATEMENT
+oO
+Statement Ref    Date    Account No
+ITH-0093    27-04-2025    ITH-0093
+CUSTOMER    SHIP TO
+Bramblewood Joinery Ltd    Bramblewood Joinery Ltd
+Unit 4, Sawpit Lane    Unit 4, Sawpit Lane
+Draymarket, DM2 6QF    Draymarket, DM2 6QF
+Statement of account — items outstanding at 27-04-2025
+25-03-2025    IH-15750-25    Invoice    £682.02
+22-02-2025    IH-54862-25    Invoice    £244.38
+02-02-2025    IH-99418-25    Invoice    £256.88
+28-02-2025    IH-71448-25    Invoice    £773.82
+22-04-2025    IH-95028-25    Invoice    £734.16
+Balance Due    £2,691.26
+Ironclad Tool Hire - Depot 3, Anvil Road - Forgeley, FG5 8HH - VAT Reg No GB 442 7719 06

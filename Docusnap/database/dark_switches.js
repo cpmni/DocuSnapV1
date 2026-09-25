@@ -192,6 +192,17 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   lists them typed-wrong 0 / wrong-filed 0; then graduation → the graduated lane lists the formerly-Generic docs →
   //   sweep files them; a Generic-heavy copy with no detection: OFF == ON row-identical.
   'quiet_redetect_on_type_change',
+  // type_owner_uninstalled_block (mig 217, 2026-09-25; Chris 09-24 "two Ironclad statements typed Invoice"; herald →
+  //   gary → Oracle SIGN-OFF-W/COND C1-C10): in the type election's owner-precedence re-rank, an uninstalled SHIPPED
+  //   type name standing alone as a strict top-band heading is a BLOCKING owner — two owners → the SUM decides → the
+  //   legible "STATEMENT" wins → untyped + "Add 'Statement'" instead of a CONFIDENT wrong Invoice from a skew-sheared
+  //   table cell. Never promotes an uninstalled name; installed names ∪ aliases never block (C1). CHILD of the fold
+  //   (inert when `type_uninstalled_heading_fold` is off). FLIP GATE: text census on Chris's 09-24 copy with the
+  //   import-time type set = exactly docs 46+52 change (→ untyped, detected Statement); the owner's 727 → 0 changes;
+  //   the ablated arm (Statement/Credit Note/Delivery Note/Receipt/Remittance/PO removed) → every change's confirmed
+  //   type ∈ the ablated set + the third-type arm count decided (C5); separation arms OFF == ON (C4); realdoc OFF
+  //   md5-identical + ON M=0; the Hard Set `statement_layout` class + scorer rule (C9) wrong+would-file 0.
+  'type_owner_uninstalled_block',
   // glyph_slice_integrity (mig 212, 2026-09-23 night, Oracle C2/C3 of the Paddle corroboration vet — S1 of Part A):
   //   the second reader's crop rect is SNAPPED to the page-level word boxes on the value's row band before the re-read
   //   (extraction/slice_integrity.py, pure; words from the mapper's shared locate cache). A taught box that cuts a glyph

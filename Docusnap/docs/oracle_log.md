@@ -3289,3 +3289,12 @@ Conditions C1 alias exclusion · C2 symmetry pin · C3 red-first fold twin · C4
 third-type count · C6 name `type_owner_uninstalled_block` + ledger · C7 three stale comments · C8 recipe-level efficacy pin
 · C9 Hard Set `statement_layout` + controls + scorer rule (FLIP precondition) · C10 mig 217 / TEST_SWITCH_KEYS 15 / count
 pins / bridge-nesting regex. OWNER GO/NO-GO pending (design, not built).
+APPLIED (2026-09-25, same day — owner "go" on the recommendation): `keyword.py` `_top_band_owner` helper (verbatim) used by
+BOTH loops + the blocker loop nested under fold+block with `_installed_claims` = names ∪ aliases (C1/C2); C7 comments
+fixed; bridge INSIDE the fold's block (C10); mig 217 seed 'false' + `TEST_SWITCH_KEYS` 15 + the three count pins +
+`test_migration217_type_owner_uninstalled_block.js`; ten new Python pins in `test_teach_side_gates.py` (36/36) with the
+two Ironclad fixtures + the fold pin's §9 red-first twin (C3: block OFF → Invoice heading True on the REAL skewed text,
+ON → Statement@95). Census `TESTING/_measure/type_owner_block_20260925/RESULT.md`: Chris copy import-time set → changes
+EXACTLY {46, 52} (C8); the owner's live copy 758 texts → 0 changes installed AND ablated (C5 third-type arm EMPTY →
+trade-off pinned, no review route needed); OLD-vs-NEW block-OFF identical on all 958 texts (the refactor). C4 separation
+arms + the realdoc ON arm + C9 Hard Set class = the FLIP gate (queued). DARK; nothing flipped.

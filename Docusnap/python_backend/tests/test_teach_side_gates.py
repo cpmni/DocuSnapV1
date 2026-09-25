@@ -259,6 +259,151 @@ def test_typeowner_on_declines_a_deep_page_heading():
     assert r and r['type'] == 'Sales Order', f'deep heading must not promote, got {r and r["type"]!r}'
 
 
+# ── TYPE_OWNER_UNINSTALLED_BLOCK (mig 217, 2026-09-25; herald → gary → Oracle C1-C10) ────────────
+# THE DEFECT: the owner loop above enumerates INSTALLED types only. Two real Ironclad STATEMENTS (fixtures = the
+# stored OCR text from Chris's 2026-09-24 sandbox; synthetic corpus issuer) were typed INVOICE with a CONFIDENT
+# heading: on the skewed page the row-rebuilder put the type cell "Invoice" ALONE at reading line 15 (the inclusive
+# band edge), it became the sole owner, and the folded, uninstalled "STATEMENT" title (which WINS the sum) could
+# never compete. Under the child switch an uninstalled SHIPPED name standing alone as a strict top-band heading is
+# a BLOCKING owner → two owners → the sum → Statement → untyped + "Add Statement" (review), never a promotion.
+def _fixture(name):
+    with open(os.path.join(_HERE, 'fixtures', name), encoding='utf-8') as fh:
+        return fh.read()
+
+
+IRONCLAD_46 = _fixture('ironclad_statement_46_skewed.txt')      # STATEMENT line 0; bare "Invoice" cells at 15, 17, …
+IRONCLAD_44 = _fixture('ironclad_statement_44_straight.txt')    # STATEMENT line 0; rows intact (control)
+IMPORT_SET = ['Invoice', 'Sales Order', 'Purchase Order', 'Quotation']   # Chris's install at import — Statement NOT installed
+
+
+def _arm(fold, owner, block):
+    _flag('TYPE_UNINSTALLED_HEADING_FOLD', fold)
+    _flag('TYPE_TITLE_OWNER_PRECEDENCE', owner)
+    _flag('TYPE_OWNER_UNINSTALLED_BLOCK', block)
+
+
+@case
+def test_owner_block_off_is_today_the_confident_wrong_type():
+    """OFF = today's shipped combination (fold ON + owner-precedence ON): the skewed statement is typed INVOICE with
+    heading=True — the C3 red-first fact. The straight sibling is Statement on the same env (control)."""
+    _arm(True, True, False)
+    r = kw.detect_document_type(IRONCLAD_46, PATTERNS, known_types=IMPORT_SET)
+    assert r and r['type'] == 'Invoice', f'OFF arm changed: {r and r["type"]!r}'
+    assert r['heading'] is True, 'the steal is CONFIDENT (heading=True → title_trusted) — that is the defect'
+    assert r['all_scores'].get('Statement', 0) > r['all_scores'].get('Invoice', 0), 'the SUM is right; the re-rank is wrong'
+    c = kw.detect_document_type(IRONCLAD_44, PATTERNS, known_types=IMPORT_SET)
+    assert c and c['type'] == 'Statement', f'straight control changed: {c and c["type"]!r}'
+
+
+@case
+def test_owner_block_blocks_never_promotes():
+    """ON: the uninstalled title BLOCKS the stray cell; the result equals the owner-precedence-OFF election (the sum),
+    i.e. the block leaves the re-rank UNTOUCHED — it never promotes the uninstalled name itself."""
+    _arm(True, True, True)
+    r = kw.detect_document_type(IRONCLAD_46, PATTERNS, known_types=IMPORT_SET)
+    assert r and r['type'] == 'Statement', f'got {r and r["type"]!r}'
+    assert r['confidence'] >= 90 and r['heading'] is True, 'the legible title wins as a HEADING (title_trusted stays armed)'
+    _arm(True, False, False)
+    base = kw.detect_document_type(IRONCLAD_46, PATTERNS, known_types=IMPORT_SET)
+    assert (r['type'], r['confidence']) == (base['type'], base['confidence']), 'ON must equal the sum election, not a new promotion'
+
+
+@case
+def test_owner_block_needs_fold():
+    """A CHILD of the fold: with the fold OFF the block is inert (== block OFF)."""
+    _arm(False, True, True)
+    r = kw.detect_document_type(IRONCLAD_46, PATTERNS, known_types=IMPORT_SET)
+    _arm(False, True, False)
+    b = kw.detect_document_type(IRONCLAD_46, PATTERNS, known_types=IMPORT_SET)
+    assert r['type'] == b['type'] and r['confidence'] == b['confidence'], f'block must be inert without the fold: {r["type"]} vs {b["type"]}'
+
+
+@case
+def test_owner_block_keeps_order_confirmation():
+    """The 2026-08-08 promotion still holds — no uninstalled standalone name on that page → blockers ∅."""
+    _arm(True, True, True)
+    r = kw.detect_document_type(ORDER_CONF_PAGE, PATTERNS, known_types=INSTALLED)
+    assert r and r['type'] == 'Order Confirmation', f'got {r and r["type"]!r}'
+
+
+@case
+def test_owner_block_declines_deep_uninstalled_heading():
+    """Band symmetry: an uninstalled title BELOW the top band is not a blocker — the promotion proceeds."""
+    _arm(True, True, True)
+    page = "\n".join(['Ironclad Tool Hire', 'Invoice'] + [f'line {i} of padding text' for i in range(40)] + ['STATEMENT'])
+    r = kw.detect_document_type(page, PATTERNS, known_types=IMPORT_SET)
+    assert r and r['type'] == 'Invoice', f'deep uninstalled heading must not block, got {r and r["type"]!r}'
+
+
+@case
+def test_owner_block_declines_a_mention():
+    """The fold's mention-never rule carries over: "VAT statement" is not a standalone heading → no blocker."""
+    _arm(True, True, True)
+    page = IRONCLAD_46.replace('STATEMENT', 'VAT statement', 1)
+    r = kw.detect_document_type(page, PATTERNS, known_types=IMPORT_SET)
+    assert r and r['type'] == 'Invoice', f'a mention must not block, got {r and r["type"]!r}'
+
+
+@case
+def test_owner_block_covers_scoring_phrase_names():
+    """Generalised beyond the fold's heading-only set: an uninstalled CREDIT NOTE title (already a scoring phrase in
+    its bucket) blocks a stray "Invoice" cell too. OFF: Invoice (the steal); ON: Credit Note (the sum)."""
+    page = "\n".join(['CREDIT NOTE', 'Credit Note No CN-4471', 'Credit Note Date 12-05-2026', 'Invoice', 'Reason: goods returned'])
+    _arm(True, True, False)
+    off = kw.detect_document_type(page, PATTERNS, known_types=IMPORT_SET)
+    assert off and off['type'] == 'Invoice', f'OFF fixture must reproduce the steal, got {off and off["type"]!r}'
+    _arm(True, True, True)
+    on = kw.detect_document_type(page, PATTERNS, known_types=IMPORT_SET)
+    assert on and on['type'] == 'Credit Note', f'got {on and on["type"]!r}'
+
+
+@case
+def test_owner_block_pins_the_sum_fallback():
+    """THE ACCEPTED TRADE-OFF, pinned (Oracle M2/C5): an installed custom title AND an uninstalled standalone name in
+    the band → two owners → the SUM decides — exactly today's outcome when both are installed. On this fixture the
+    sum lands on the UNINSTALLED name (→ untyped + "Add Delivery Note", review); on another it may land on the
+    built-in (the C5 census counts that arm). Narrower than lone-installed-owner-beats-uninstalled-title; do not
+    'restore' the promotion here."""
+    _arm(True, True, True)
+    page = ORDER_CONF_PAGE.replace('Unit 9, Parkway', 'Unit 9, Parkway\nDELIVERY NOTE')
+    r = kw.detect_document_type(page, PATTERNS, known_types=INSTALLED)
+    _arm(True, False, False)
+    base = kw.detect_document_type(page, PATTERNS, known_types=INSTALLED)
+    assert r and r['type'] == base['type'], f'the sum must decide ({base["type"]}), got {r and r["type"]!r}'
+    assert r['type'] != 'Order Confirmation', 'the promotion must NOT be taken with a blocker present'
+    assert r['type'] == 'Delivery Note', f'fixture drifted (the sum used to land on the uninstalled title): {r["type"]!r}'
+
+
+@case
+def test_owner_block_alias_never_self_blocks():
+    """Oracle C1 (ship-blocking): an INSTALLED type's ALIAS that equals a shipped bucket name must not block — a
+    "Sales Invoice" with alias "Invoice" and no type named Invoice keeps its promotion ON and OFF."""
+    page = "\n".join(['INVOICE', 'Invoice No INV-1001', 'Invoice Date 12-05-2026', 'Bill To: Someone Ltd'])
+    known, aliases = ['Sales Invoice', 'Purchase Order'], {'Sales Invoice': ['Invoice']}
+    _arm(True, True, False)
+    off = kw.detect_document_type(page, PATTERNS, known_types=known, type_aliases=aliases)
+    _arm(True, True, True)
+    on = kw.detect_document_type(page, PATTERNS, known_types=known, type_aliases=aliases)
+    assert off and off['type'] == 'Sales Invoice', f'OFF fixture must promote via the alias, got {off and off["type"]!r}'
+    assert on and on['type'] == 'Sales Invoice', f'C1: the alias self-blocked — got {on and on["type"]!r}'
+
+
+@case
+def test_owner_block_symmetry_a_blocker_is_an_owner_the_install_lacks():
+    """Oracle C2: a standalone DELIVERY NOTE + a bare Invoice cell → the election with Delivery Note INSTALLED (two
+    owners → the sum) equals the election with it UNINSTALLED under fold + block. One predicate, both loops."""
+    page = "\n".join(['DELIVERY NOTE', 'Delivery No DN-2231', 'Delivery Date 12-05-2026', 'Invoice', 'Goods as listed'])
+    _arm(True, True, False)
+    both = kw.detect_document_type(page, PATTERNS, known_types=['Invoice', 'Delivery Note'])
+    _arm(True, True, True)
+    one = kw.detect_document_type(page, PATTERNS, known_types=['Invoice'])
+    assert both and both['type'] == 'Delivery Note', f'installed-both fixture: {both and both["type"]!r}'
+    assert one and one['type'] == 'Delivery Note', f'blocked fixture: {one and one["type"]!r}'
+    # (confidence may differ by a few points: an INSTALLED name gets the column-aware heading SCORING, an uninstalled
+    #  one keeps the strict whole-line test — a pre-existing scoring difference, not the re-rank's. The ELECTION agrees.)
+    assert one['heading'] is both['heading'] is True, 'both roads elect the title as a heading'
+
+
 # ── FILING_VALUE_SANITY_FLAGS (Chris round 3) ────────────────────────────────
 # The reference and the date become the FILENAME and the FOLDER, so a wrong one decides where the
 # paper lives. Chris found four of eighteen auto-filed documents carrying a visibly wrong reference

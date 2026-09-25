@@ -237,6 +237,17 @@ scratch/sandbox, implementing a Chris card); **anything dangerous goes to the ag
 and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
+- **2026-09-25 · [FLIP GATE for mig 217 `type_owner_uninstalled_block` — BUILT DARK the same day]** (1) realdoc
+  `stress_test/realdoc_regression.js` at `RR_APP_ENV=1 OCR_RENDER_DPI=200`: OFF arm (`TYPE_OWNER_UNINSTALLED_BLOCK=0`)
+  md5-identical to the pre-change tree (`7057b87`) — expected vacuous (the text census proved the engine identical on
+  958 texts) — and ON arm M=0, zero per-field drop, type diffs ⊆ uninstalled-title docs; Chris's copy as the efficacy
+  arm ({46, 52} → untyped + detected Statement; wouldFile(ON) ⊆ wouldFile(OFF)). (2) Oracle C9: add the Hard Set
+  `statement_layout` class to `stress_test/gen_hard_set.py` (type-first column straight + 1.5° skew, subhead_invoice,
+  remittance_advice) + CONTROLS (a skewed INVOICE with a standalone "Statement" sub-head; an INVOICE with "Purchase
+  Order 45678" with PO uninstalled — both GT invoice) and teach `score_hard_set.js` that an uninstalled GT type scores
+  correct as untyped + `detected_type_name == GT` (also fixes balance_bf / sib_statement scoring); gate: digital + scan,
+  OFF/ON, wrong + would-file 0, controls clean. (3) C4 separation arms recorded in
+  `TESTING/_measure/type_owner_block_20260925/RESULT.md`. Then back to the Oracle with the numbers → owner flip.
 - **2026-09-25 · [DESIGNS SIGNED, owner go/no-go] card 5 sender split → `docs/designs/SIBLING_DOMINANT_HOLD_2026-09-25.md`
   (Oracle C1-C8; C1 teach-ask + C2 confirmed-siblings BLOCKING; census C5 = hand-adjudicated FALSE = 0 on Chris's copy /
   727 / 605) · Ironclad → `docs/designs/TYPE_OWNER_UNINSTALLED_BLOCK_2026-09-25.md` (Oracle C1-C10; C1 alias exclusion

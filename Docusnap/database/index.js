@@ -4357,6 +4357,22 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 216 (quiet_redetect_on_type_change): ${e.message}`); }
   }
 
+  // mig 217 (2026-09-25; Chris 09-24 "two Ironclad statements typed Invoice"; herald forensics → gary → Oracle
+  // SIGN-OFF-W/COND C1-C10): `type_owner_uninstalled_block` — in the type election's owner-precedence re-rank
+  // (keyword.py TYPE_TITLE_OWNER_PRECEDENCE), an uninstalled SHIPPED type name that stands alone as a strict top-band
+  // heading becomes a BLOCKING owner, so a stray installed bare-name cell (a skew-sheared "Invoice" table cell) can no
+  // longer be promoted over the sum; the legible "STATEMENT" wins → untyped + the "Add 'Statement'" nudge instead of a
+  // CONFIDENT wrong Invoice (a teach-poisoning vector). A CHILD of `type_uninstalled_heading_fold` (bridged only inside
+  // its block). Installed names ∪ their aliases never block (Oracle C1). Engine env TYPE_OWNER_UNINSTALLED_BLOCK. DARK,
+  // seeded OFF, byte-identical off. Single-key seed (no array literal — keeps the loose seed-pin regex honest).
+  if (!applied.has(217)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('type_owner_uninstalled_block', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (217)').run();
+      console.log('JS migration 217 applied: type_owner_uninstalled_block (an uninstalled shipped type title blocks the owner-precedence promotion of a stray installed bare-name cell) seeded OFF (DARK, byte-identical off)');
+    } catch (e) { console.warn(`  migration 217 (type_owner_uninstalled_block): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

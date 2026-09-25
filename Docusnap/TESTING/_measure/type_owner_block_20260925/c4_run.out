@@ -1,0 +1,10 @@
+arm off done: 153 lines, 0 tracebacks, 7 TOTAL lines
+arm on done: 153 lines, 0 tracebacks, 7 TOTAL lines
+C4: OFF == ON (boundaries identical)
+TOTAL files=20 expected=95 base: right=70 lost-vs-base=0 over-splits=0 | both: right=78 lost-vs-base=0 over-splits=0 | three: right=90 lost-vs-base=0 over-splits=0 | veto_known: right=86 lost-vs-base=
+TOTAL files=0 expected=0 base: right=0 lost-vs-base=0 over-splits=0 | both: right=0 lost-vs-base=0 over-splits=0 | three: right=0 lost-vs-base=0 over-splits=0 | veto_known: right=0 lost-vs-base=0 over
+TOTAL files=6 expected=6 base: right=6 lost-vs-base=0 over-splits=6 | both: right=6 lost-vs-base=0 over-splits=0 | three: right=6 lost-vs-base=0 over-splits=0 | veto_known: right=6 lost-vs-base=0 over
+TOTAL files=8 expected=10 base: right=9 lost-vs-base=0 over-splits=4 | both: right=10 lost-vs-base=0 over-splits=0 | three: right=10 lost-vs-base=0 over-splits=0 | veto_known: right=9 lost-vs-base=0 o
+TOTAL files=6 expected=8 base: right=8 lost-vs-base=0 over-splits=1 | both: right=8 lost-vs-base=0 over-splits=1 | three: right=8 lost-vs-base=0 over-splits=1 | veto_known: right=8 lost-vs-base=0 over
+TOTAL files=6 expected=6 base: right=6 lost-vs-base=0 over-splits=0 | both: right=6 lost-vs-base=0 over-splits=0 | three: right=6 lost-vs-base=0 over-splits=0 | veto_known: right=6 lost-vs-base=0 over
+TOTAL files=20 expected=25 base: right=22 lost-vs-base=0 over-splits=3 | both: right=22 lost-vs-base=0 over-splits=3 | three: right=25 lost-vs-base=0 over-splits=3 | veto_known: right=25 lost-vs-base=

@@ -1,0 +1,3 @@
+### (b2) warm_700, installed set
+== warm700: 0 docs · known=installed (8 types) ==
+changed OFF→ON: 0 · third-type arm (ON winner INSTALLED, ≠ OFF winner): 0 · OLD-vs-NEW block-OFF mismatches: 0

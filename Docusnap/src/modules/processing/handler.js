@@ -578,12 +578,22 @@ function _reconcileEnv(db) {
       env.TYPE_HEADING_ANY_SEGMENT = '1';
       env.TYPE_TIE_HEADING_PREF = '1';
     }
-    // TYPE_UNINSTALLED_HEADING_FOLD (2026-09-05, log review Item 4b; herald → Oracle SIGN-OFF-W/COND; DARK,
-    //   mig 122): a shipped-but-UNINSTALLED type's bare name competes in the election as a STRICT top-band
-    //   standalone heading only (never a mention) — a legible "STATEMENT" beats a table-cell "Invoice" and the
-    //   doc reaches review UNTYPED + the "Add 'Statement'" nudge instead of MIS-typed. Env wins for arms.
+    // TYPE_UNINSTALLED_HEADING_FOLD (2026-09-05, log review Item 4b; herald → Oracle SIGN-OFF-W/COND; built DARK
+    //   as mig 122, GRADUATED in the mig-205 batch): a shipped-but-UNINSTALLED type's bare name competes in the
+    //   election as a STRICT top-band standalone heading only (never a mention) — a legible "STATEMENT" beats a
+    //   table-cell "Invoice" ON THE SUM (the owner-precedence re-rank could still steal the election until the
+    //   child switch below, 2026-09-25 Oracle C7) and the doc reaches review UNTYPED + the "Add 'Statement'" nudge
+    //   instead of MIS-typed. Env wins for arms.
     if (env.TYPE_UNINSTALLED_HEADING_FOLD == null && learning.getSetting(db, 'type_uninstalled_heading_fold', 'false') === 'true') {
       env.TYPE_UNINSTALLED_HEADING_FOLD = '1';
+      // TYPE_OWNER_UNINSTALLED_BLOCK (2026-09-25; herald → gary → Oracle SIGN-OFF-W/COND C1-C10; DARK, mig 217
+      //   `type_owner_uninstalled_block`) — a CHILD of the fold (bridged only inside its block, the C7 nesting
+      //   precedent): an uninstalled shipped name standing alone as a strict top-band heading BLOCKS the
+      //   owner-precedence promotion of a stray installed bare-name cell (a skew-sheared "Invoice" table cell), so
+      //   the sum — and the legible title — decide. Never promotes an uninstalled name. Env wins for arms.
+      if (env.TYPE_OWNER_UNINSTALLED_BLOCK == null && learning.getSetting(db, 'type_owner_uninstalled_block', 'false') === 'true') {
+        env.TYPE_OWNER_UNINSTALLED_BLOCK = '1';
+      }
     }
     // CORROBORATION STEP 3, slice 1 (gary → Oracle W/COND 2026-08-12 NIGHT): a crosscheck
     // disagreement note on a DATE is released when a crop-side ledger witness corroborates the

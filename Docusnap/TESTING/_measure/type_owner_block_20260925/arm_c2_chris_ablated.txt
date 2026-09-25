@@ -1,0 +1,6 @@
+### (c2) Chris copy, ABLATED installed set
+== chris-ablated: 200 docs · known=installed ABLATED (4 types) ==
+changed OFF→ON: 2 · third-type arm (ON winner INSTALLED, ≠ OFF winner): 0
+ablated arm: changed docs whose CONFIRMED type is NOT in the ablated set (the regression class): 2
+   {"id": 46, "file": "Ironclad-Tool-Hire_statement_0013.pdf", "off": ["Invoice", 81, true], "on": ["Statement", 95, true], "confirmed_type": "Invoice", "status": "needs_review", "confirmed_in_ablated": false, "on_winner_installed": false}
+   {"id": 52, "file": "Ironclad-Tool-Hire_statement_0019.pdf", "off": ["Invoice", 80, true], "on": ["Statement", 95, true], "confirmed_type": "Invoice", "status": "needs_review", "confirmed_in_ablated": false, "on_winner_installed": false}
