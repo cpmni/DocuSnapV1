@@ -214,6 +214,14 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   real company, or the confirmed value was right); perf pin ≤ +25 ms per confirm / ≤ +100 ms per queue read; one
   //   client confirm of doc 69 shows the actionable 400 toast; then a Chris round (confirm 69 FIRST → held → Use → ONE folder).
   'issuer_sibling_dominant_hold',
+  // keyword_label_tail_bound (mig 219, 2026-09-25; Chris 09-24 card-4 class "letters offered as a reference"; Oracle C6):
+  //   the SCALAR twin of the LIST caption tail bound. _label_pattern gives a single-word ALPHABETIC label a trailing
+  //   bound but leaves a MULTI-WORD label ("Credit No", "Delivery No") without one, so it PREFIX-HITS its own printed
+  //   heading ("CREDIT NOTE") and the below-walk adopts the next line as the value ("Credit No" → "Meadowvale" @80).
+  //   ON adds the letter-only lookahead (?![a-z]) to the scalar path (a digit-glued value still matches). Engine env
+  //   KEYWORD_LABEL_TAIL_BOUND. FLIP GATE (ships alone): a label-hit census over the 605 cached texts listing every
+  //   scalar hit the bound would refuse (eyeballed clean) + realdoc M=0 with zero per-field drop + Hard Set P==K==N.
+  'keyword_label_tail_bound',
   // glyph_slice_integrity (mig 212, 2026-09-23 night, Oracle C2/C3 of the Paddle corroboration vet — S1 of Part A):
   //   the second reader's crop rect is SNAPPED to the page-level word boxes on the value's row band before the re-read
   //   (extraction/slice_integrity.py, pure; words from the mapper's shared locate cache). A taught box that cuts a glyph

@@ -4388,6 +4388,22 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 218 (issuer_sibling_dominant_hold): ${e.message}`); }
   }
 
+  // mig 219 (2026-09-25; Chris 09-24 card-4 class "letters offered as a reference"; Oracle C6, DARK):
+  // `keyword_label_tail_bound` — the SCALAR twin of the LIST caption tail bound (LIST_CAPTION_TAIL_BOUND).
+  // _label_pattern gives a single-word ALPHABETIC label a trailing bound but leaves a MULTI-WORD label
+  // ("Credit No", "Delivery No") without one, so it PREFIX-HITS its own printed heading ("CREDIT NOTE",
+  // "DELIVERY NOTE") and the below-walk adopts the next line as the value (the incident: "Credit No" →
+  // "Meadowvale" @80). ON adds a letter-only lookahead (?![a-z]) to the scalar label pattern: a digit-glued
+  // value still matches, "Credit Note"/"Delivery Note" no longer do. Engine env KEYWORD_LABEL_TAIL_BOUND.
+  // DARK, seeded OFF, byte-identical off. Single-key seed (no array literal — keeps the loose seed-pin honest).
+  if (!applied.has(219)) {
+    try {
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value) VALUES ('keyword_label_tail_bound', 'false')`).run();
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (219)').run();
+      console.log('JS migration 219 applied: keyword_label_tail_bound (a multi-word label stops prefix-hitting its own printed heading) seeded OFF (DARK, byte-identical off)');
+    } catch (e) { console.warn(`  migration 219 (keyword_label_tail_bound): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

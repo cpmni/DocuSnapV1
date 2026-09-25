@@ -874,6 +874,12 @@ function _reconcileEnv(db) {
     // EXPECT A THROUGHPUT CHANGE, NOT AN ACCURACY ONE: a document that used to commit a caption may
     // now arrive EMPTY and route to review. Default OFF. App RESTART to load the bridge.
     if (learning.getSetting(db, 'ref_role_digit_gate', 'false') === 'true') env.REF_ROLE_DIGIT_GATE = '1';
+    // KEYWORD_LABEL_TAIL_BOUND (mig 219, 2026-09-25; Chris card-4 class; Oracle C6; DARK, default OFF): the
+    // scalar twin of the LIST caption tail bound. A multi-word DB/preset label with an alphabetic last word
+    // ("Credit No", "Delivery No") gets a trailing letter-only lookahead so it stops prefix-hitting its own
+    // printed heading ("CREDIT NOTE") and the below-walk no longer adopts the next line as the value.
+    // Unset => off => byte-identical. App RESTART to load the bridge.
+    if (learning.getSetting(db, 'keyword_label_tail_bound', 'false') === 'true') env.KEYWORD_LABEL_TAIL_BOUND = '1';
     // A ⊕ TAUGHT ANCHOR HARVESTED THE NEXT BLOCK'S HEADING (2026-08-08, live defect). The label
     // locate searches a FULL-PAGE-WIDTH strip at the label's row on purpose — a key/value value can
     // sit in a far column — and cluster_value_words only splits the post-label words into gap-runs

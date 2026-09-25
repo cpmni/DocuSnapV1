@@ -27,7 +27,7 @@ check('migration 216 stamped', applied.has(216));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 216 applied/.test(l) && /seeded OFF/.test(l)));
 check(`a fresh install has ${KEY} === 'false'`, get(db, KEY) === 'false');
 check(`${KEY} is listed in TEST_SWITCH_KEYS`, TEST_SWITCH_KEYS.includes(KEY));
-check('TEST_SWITCH_KEYS is 16 keys (13 after the 215 batch + this one + migs 217 + 218)', TEST_SWITCH_KEYS.length === 16 && new Set(TEST_SWITCH_KEYS).size === 16);
+check('TEST_SWITCH_KEYS is 17 keys (13 after the 215 batch + this one + migs 217 + 218 + 219)', TEST_SWITCH_KEYS.length === 17 && new Set(TEST_SWITCH_KEYS).size === 17);
 const src = fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8');
 check('single-key INSERT OR IGNORE seed of false', new RegExp(`INSERT OR IGNORE INTO settings \\(key, value\\) VALUES \\('${KEY}', 'false'\\)`).test(src));
 check('NO force-ON of the key anywhere in the migrations', !new RegExp(`VALUES \\('${KEY}', 'true'\\)`).test(src) && !new RegExp(`'${KEY}'[^\\n]*'true'`).test(src.replace(/\/\/[^\n]*/g, '')));

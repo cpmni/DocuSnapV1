@@ -1742,6 +1742,15 @@ def _label_pattern(label: str) -> "re.Pattern | None":
     return re.compile(body)
 
 
+def _label_tail_boundable(label: str) -> bool:
+    """KEYWORD_LABEL_TAIL_BOUND (mig 219): True for a MULTI-WORD label whose last word is
+    alphabetic — the class that _label_pattern leaves without a trailing bound and that therefore
+    prefix-hits its own printed heading ("Credit No" ⊂ "CREDIT NOTE"). A single-word label already
+    has its bound; a digit-tail label ("Order No 5") must keep matching a glued value."""
+    words = str(label or '').lower().split()
+    return len(words) > 1 and words[-1].isalpha()
+
+
 def _type_keyword_pattern(label: str) -> "re.Pattern | None":
     """
     Whitespace-tolerant matcher for document-type keywords/names — same
@@ -2159,6 +2168,17 @@ def _search_for_label(lines: list[str], label: str,
     # (digit-glued) still matches; "Serial Nos"/"Serial Number" do not — the accepted loss (a plural
     # caption must be taught as printed). NEVER on the scalar path (shipped label precedence stays).
     if collect and LIST_CAPTION_TAIL_BOUND:
+        pattern = re.compile(pattern.pattern + r'(?![a-z])')
+    # KEYWORD_LABEL_TAIL_BOUND (mig 219, 2026-09-25; Chris card-4 class; Oracle C6, DARK default OFF):
+    # the SCALAR twin of the LIST tail bound above. A single-word ALPHABETIC label already gets a
+    # trailing bound in _label_pattern; a MULTI-WORD label with an alphabetic last word does not, so
+    # a short taught/DB caption PREFIX-HITS its own printed heading — "Credit No" fires inside
+    # "CREDIT NOTE" and "Delivery No" inside "DELIVERY NOTE", and the below-walk then adopts the next
+    # non-caption line as the value (the incident: "Credit No" -> "Meadowvale" @80). The same
+    # letter-only lookahead: "Credit No1234" (digit-glued) still matches; "Credit Note"/"Delivery
+    # Note" no longer do. Scalar path only, and never a digit-tail label. Inline env read (test can
+    # flip without a module reload); default OFF -> byte-identical. See LIST_CAPTION_TAIL_BOUND.
+    elif (not collect) and os.environ.get('KEYWORD_LABEL_TAIL_BOUND', '0') == '1' and _label_tail_boundable(label):
         pattern = re.compile(pattern.pattern + r'(?![a-z])')
 
     _hits = [] if collect else None

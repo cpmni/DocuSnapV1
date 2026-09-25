@@ -122,6 +122,19 @@ in `database/dark_switches.js`'s history comment; the LIVE list is `TEST_SWITCH_
   can't touch them), 1 is the Copperfield exhibit → yield 1. RECOMMENDATION: keep it built but OFF; mig 210 already
   fixes the wording on all 9. Depends on migs 207 + 210 being on._
 
+- **keyword_label_tail_bound (mig 219, 2026-09-25)** — Chris 09-24 card-4 class: on a Credit Note the app offered
+  "Meadowvale" (the issuer name) as the reference. Root cause: `_label_pattern` gives a single-word ALPHABETIC label a
+  trailing word bound but leaves a MULTI-WORD label ("Credit No", "Delivery No") without one, so the label PREFIX-HITS
+  its own printed heading ("CREDIT NOTE", "DELIVERY NOTE") and the below-walk then adopts the next non-caption line as
+  the value. ON adds the SCALAR twin of `LIST_CAPTION_TAIL_BOUND` — a letter-only lookahead `(?![a-z])` on the
+  multi-word-alpha-tail scalar label: a digit-glued value ("Credit No1234") still matches; "Credit Note"/"Delivery
+  Note" no longer do. Engine env `KEYWORD_LABEL_TAIL_BOUND`; scalar path only; default OFF → byte-identical. Also
+  data-only (new catalog ticks): the Delivery Note preset labels reordered so "Delivery No" is no longer first. _Flip
+  gate (ships alone, Oracle C6): a label-hit census over the 605 cached texts listing every scalar hit the bound would
+  refuse (eyeballed clean) + realdoc M=0 with zero per-field drop + Hard Set P==K==N._ Pins
+  `python_backend/tests/test_keyword_label_tail_bound.py` (OFF preserves the bug, ON reads the real ref, digit-glued
+  still matches, single-word labels untouched) + `database/modules/test_migration219_keyword_label_tail_bound.js`.
+
 - **glyph_slice_integrity (mig 212, 2026-09-23 night)** — before the second reader re-reads a reference crop, the crop
   rectangle is snapped to the page's own word boxes on that row (a box that cut a glyph grows to the whole word; a box that
   bled into the next line tightens; a neighbour touched by less than half a glyph is left out). Changes only the pixels the

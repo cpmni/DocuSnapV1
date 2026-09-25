@@ -683,7 +683,10 @@ const PRESET_CATALOG = [
       // number had no format gate at all — which is how the caption 'Delivery' was stored as one
       // and auto-filed. Migration 59 retypes existing installs; see the note there.
       { key: 'delivery_number', label: 'Delivery Number', type: 'reference_code', required: 1,
-        labels: ['Delivery No', 'Delivery Number', 'Delivery Note No', 'DN No', 'Despatch No', 'Dispatch No', 'Docket No', 'Note No'] },
+        // Specific forms FIRST so the colliding short "Delivery No" (a prefix of the "DELIVERY NOTE"
+        // heading — see keyword_label_tail_bound, mig 219) is not the first label a new tick seeds. Order
+        // affects NEW catalog ticks only; membership unchanged. The engine tail bound is the real cure.
+        labels: ['Delivery Note No', 'Delivery Number', 'Delivery No', 'DN No', 'Despatch No', 'Dispatch No', 'Docket No', 'Note No'] },
       { key: 'delivery_date',   label: 'Delivery Date',   type: 'date', required: 1 },
     ],
   },
