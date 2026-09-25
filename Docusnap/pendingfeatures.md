@@ -64,7 +64,7 @@ Guard: fail toward SHOWING LESS, never a wrong number; a stale/ahead count is wo
   orders + a mid-scan confirm + an active countdown, asserting exactly ONE live-status element, the countdown never
   hidden/cancelled by a reducer re-render, NO silent file, `job_deferred` through the one writer — plus a PIN that
   reproduces the ready-vs-checking clash and FAILS on today's code. Log: docs/oracle_log.md.
-- **BUILT 2026-09-25 (cuts 1+2, commits `8b17704`-area `fix(review)` B3 + `7af6d63` cut 2):** **B3** — the
+- **BUILT 2026-09-25 (cuts 1+2, commits `89d7145` B3 + `7af6d63` cut 2):** **B3** — the
   autofile-check bar is de-numbered (`_renderAutofileCheckBar` now shows the calm no-jargon "Checking which
   documents from <sender> can file on their own…", never a `done of total`). **Cut 2** — a pure reducer
   `src/windows/shared/reviewStatus.js` `deriveReviewStatus({inviewActive,offerActive,checkActive})` with a fixed
