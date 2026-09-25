@@ -359,7 +359,8 @@ const lane = quietLane.create({
   check('Review listens on quiet-reprocess and refreshes the LIST only (never the open document)',
         /onQuietReprocess\?\.\(async \(ev\) => \{/.test(rend) && /_quietRefreshList/.test(rend) && !/onQuietReprocess[\s\S]{0,1500}selectDoc\(/.test(rend));
   // window widened 200 → 1600 on 2026-09-24 (the redetect RECEIPT branch — Chris card 1 — sits inside the same block before the sweep call; the door is unchanged)
-  check('job_done re-asks the consent sweep (the one filing door)', /if \(ev\.type === 'job_done'\)[\s\S]{0,1600}_runQueueSweep\(\{ via: 'quiet' \}\)/.test(rend));   // Q4c: via quiet → "re-read just now" copy
+  // → 2200 on 2026-09-25 (the receipt maps type SLUGS to NAMES — four more lines inside the same block; the door is unchanged)
+  check('job_done re-asks the consent sweep (the one filing door)', /if \(ev\.type === 'job_done'\)[\s\S]{0,2200}_runQueueSweep\(\{ via: 'quiet' \}\)/.test(rend));   // Q4c: via quiet → "re-read just now" copy
   check('the redetect receipt branch ALSO re-asks the sweep and never touches the open document (refresh the list, toast, no selectDoc)',
         /if \(ev\.kind === 'redetect'\) \{[\s\S]{0,1400}?_refreshQueueFromBroadcast\(\)[\s\S]{0,900}?_runQueueSweep\(\{ via: 'quiet' \}\)/.test(rend)
         && !/if \(ev\.kind === 'redetect'\) \{[\s\S]{0,1600}?selectDoc\(/.test(rend));

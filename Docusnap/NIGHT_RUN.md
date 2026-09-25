@@ -237,6 +237,27 @@ scratch/sandbox, implementing a Chris card); **anything dangerous goes to the ag
 and, with no safe route, that item STOPS** — never improvise around a refusal.
 
 ## QUEUE — worth testing or checking (ranked; add freely, date each)
+- **2026-09-25 · [TYPE, herald-diagnosed, needs gary→Oracle + owner go] the two Ironclad statements typed INVOICE**
+  (Chris 09-24 one-liner; docs 46/52 in his sandbox) = `TYPE_TITLE_OWNER_PRECEDENCE` (keyword.py ~1214-1236, ON
+  since mig 60) promoting a lone `Invoice` TABLE CELL that lands alone on reading line 15 (= `_HEADING_TOP_BAND_LINES`,
+  `<=`) on the two SKEWED pages (+1.5°/+1.4° shear splits every row), while the folded UNINSTALLED `STATEMENT` heading
+  (read perfectly, line 0, sum Stmt 7.3 > Inv 4.3) can never count as an owner (`known_types` only). Confident WRONG
+  type (`heading=True` → `title_trusted`). SYSTEM: a straight statement with the type column FIRST is stolen the same
+  way (synthetic, measured). Census: Chris-200 OFF→ON = exactly {46, 52}; owner copies 0. Fix direction = Option B: a
+  folded heading-only name that stands alone as a strict top-band heading counts as a BLOCKING owner (two owners →
+  untouched → the sum wins → untyped + "Add Statement" nudge); never promotes an uninstalled name (keeps
+  `test_teach_side_gates.py` typeowner pins). Gate: typeowner pins + a "blocks, never promotes" pin · Chris-200 text
+  census = exactly {46,52} · realdoc M=0 at `RR_APP_ENV=1` · **a Hard Set statement/remittance class must be ADDED**
+  (skewed + type-first-column variants) — it does not exist. Probes: `%USERPROFILE%\.claude\jobs\68b38f39\tmp\herald\`
+  (`score_matrix.py`, `census2.py`, `synth.py`; job-mortal). Open: did the 09-06 fold census run with owner-prec ON?
+- **2026-09-25 · [Stage 1, Oracle C6, DARK arc] `KEYWORD_LABEL_TAIL_BOUND`** — a multi-word label whose last word
+  is alphabetic gets `(?![a-z])` (mirror `LIST_CAPTION_TAIL_BOUND`, keyword.py ~2117) so "Credit No" stops
+  prefix-hitting "CREDIT NOTE" and "Delivery No" its own "DELIVERY NOTE" heading (the card-4 class; the digit gate
+  catches only the digit-less walks — "Unit 12, Low Lane" under a heading hit still commits @80 while the real ref
+  lower down is never read: HYPOTHESIS, unmeasured). Ships ALONE: (i) a label-hit census over the 605 cached texts
+  listing every scalar hit the bound would refuse (eyeballed), (ii) realdoc M=0 + zero per-field drop, (iii) Hard Set
+  P==K==N. Separately (data-only, new ticks): reorder the Delivery Note / Credit Note preset labels so the colliding
+  short form is not first (document_types.js ~666/~686).
 - **2026-09-23 · [mig 210 flip gate] `glyph_confusable_resolve` realdoc OFF-vs-ON** — built DARK (12 pins green; D5
   live-confirmed 40/40 AGREE on the Print Tracker diag). Owed before any flip: the 605 realdoc at `RR_APP_ENV=1` with
   `GLYPH_FALLBACK_ENABLED=1` ON-vs-`GLYPH_CONFUSABLE_RESOLVE` OFF/ON → every field byte-identical EXCEPT the soften

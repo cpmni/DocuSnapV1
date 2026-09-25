@@ -1154,6 +1154,25 @@ function _reconcileEnv(db) {
   } catch { return {}; }
 }
 
+// ── ONE pipeline spawn env (Oracle C1, 2026-09-25 — Chris 2026-09-24 card 4 root cause) ──────────────
+// The engine's switches reach Python ONLY through these four setting→env bridges. Every road that STORES a
+// row composed all four (import workers via buildWorkerCommand, the single reprocess, the Quick/batch shard);
+// the fast on-open "second look" road (`_reextractFastCore`) was born when the bridge held two keys and was
+// never revisited as it grew to ~160 — so its suggestions came from a pipeline with NONE of the owner-gated
+// switches armed and could OFFER a value the committing pipeline refuses (a digit-less "credit-note number"
+// walked from the line under a heading), which the operator's ordinary Confirm then files and mints as
+// learned. The shard and the fast road now compose the SAME expression here — keys AND order — so the two
+// imageless roads cannot drift again. Pure: setting reads only, low single-digit ms. Pinned in
+// test_reextract_fast_gate.js.
+function _pipelineSpawnEnv(db) {
+  return {
+    ..._autoTitleEnv(db),
+    ..._ocrDpiEnv(db),
+    ..._anchorCropEnv(db),
+    ..._reconcileEnv(db),
+  };
+}
+
 // ── Shared worker COMMAND builder (watch/import unification, 2026-09-02; Oracle SIGN-OFF-W/COND) ──
 // THE PARITY GUARANTEE: field detection is per-file independent (ExtractionEngine.extract() resets
 // every per-run ledger at the top of each call), so what a worker READS is fully determined by its
@@ -4481,8 +4500,11 @@ function register(ctx) {
         resolve(v);
       };
       try {
+        // Oracle C1 (2026-09-25): the SAME switch set the Quick shard runs — a suggestion is "what a Quick reprocess
+        // would store", never a value the committing pipeline refuses. Kill `REEXTRACT_FAST_PIPELINE_ENV=0` restores
+        // the old switch-less spawn (the A/B lever; never the default).
         proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs),
-          { windowsHide: true, env: { ...process.env, ..._ocrDpiEnv(db) } });
+          { windowsHide: true, env: { ...process.env, ...(process.env.REEXTRACT_FAST_PIPELINE_ENV === '0' ? _ocrDpiEnv(db) : _pipelineSpawnEnv(db)) } });
       } catch (e) { return finish({ ok: false, reason: 'spawn' }); }
 
       // Imageless + cached → seconds at most; a short watchdog keeps a hung child from leaking.
@@ -4511,9 +4533,13 @@ function register(ctx) {
           { brandingBlankSupplier: process.env.REEXTRACT_UNPIN_BLANK_SUPPLIER !== '0' });
         // Chris 2026-09-24 card 4 ("nanann" offered as a credit-note number with "Found on a second look"): the fast
         // on-open suggestion filled an EMPTY reference-role input with a text-only read that no shape gate had seen —
-        // the engine's `ref_role_digit_gate` (ON) guards cold COMMITS, not this display-only suggestion road. Mirror it
-        // here: a suggestion for the type's REF ROLE must carry a digit, and any suggestion must carry at least one
-        // letter or digit. A dropped suggestion leaves the input empty (the honest state); nothing is stored.
+        // the spawn above ran WITHOUT the setting→env bridge, so the engine's `ref_role_digit_gate` (ON) never armed
+        // on this road (root cause fixed 2026-09-25: the spawn now composes `_pipelineSpawnEnv`, Oracle C1). This twin
+        // STAYS as a belt (Oracle C3): it covers an install whose operator turned `ref_role_digit_gate` OFF, and it
+        // does NOT cover a digit-bearing wrong below-walk ("Unit 12, Low Lane" under a heading-hit label) — that is
+        // the Stage-1 label tail-bound arc's job (DARK, gated separately). A suggestion for the type's REF ROLE must
+        // carry a digit, and any suggestion must carry at least one letter or digit. A dropped suggestion leaves the
+        // input empty (the honest state); nothing is stored.
         try {
           const _refKey = doc.document_type_slug
             ? ((db.prepare('SELECT ref_field_key FROM document_types WHERE slug = ?').get(doc.document_type_slug) || {}).ref_field_key || null)
@@ -5595,10 +5621,7 @@ function register(ctx) {
       const env = {
         ...process.env,
         ...(threadCap > 0 ? { OMP_THREAD_LIMIT: String(threadCap) } : {}),
-        ..._autoTitleEnv(db),
-        ..._ocrDpiEnv(db),
-        ..._anchorCropEnv(db),
-        ..._reconcileEnv(db),
+        ..._pipelineSpawnEnv(db),   // the ONE composition the fast on-open road shares (Oracle C1, 2026-09-25)
         ...(extraEnv || {}),
       };
       const proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs), { windowsHide: true, env });

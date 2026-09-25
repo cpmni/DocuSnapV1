@@ -3211,3 +3211,39 @@ APPLIED: the re-ask moved into `ocrCache.ocrCacheUsableForRedetect(row, current,
 the lane dep calls it; the batch partition untouched (pinned); `test_ocr_cache_born_digital.js` (C2, 17 checks);
 comments/docs reworded (C1); C3 read from the ON-arm snapshots: every doc's issuer unchanged (docs 3-6 NULL → NULL,
 no non-null change) — MET.
+
+## 2026-09-25 — Chris card 4 ("nanann" as a credit-note number): the fast on-open road's MISSING switch env — SIGN OFF WITH CONDITIONS C1-C7 (gary design (b) full env parity; (a) do-nothing and (c) a 4-switch bridge REFUSED)
+Premise upgraded, then verified at source: the "display-only" pill is NOT harmless in effect — `_applyReextractSuggestions`
+(review/renderer.js ~9587-9619) writes the suggestion straight into the EMPTY input and calls `validateConfirm()`, so a
+required ref that was BLOCKING Confirm becomes unblocked; the operator's ordinary Confirm then sends it in `allValues`,
+`reviewService.confirm` files it as `documents.reference_number` (→ the filename) and — no corrections entry, so
+`humanCorrected` false — `persistConfirmedValues` (`confirm_persist_values`, mig-93 all-on) MINTS it as an extraction row
+that enters the scope's learned shape and counts as a clean human confirm toward W. Defect by ACCRETION, not design: the
+fast spawn (`_reextractFastCore`, handler.js ~4484) was born 07-31/08-01 when `_reconcileEnv` held two keys and was never
+revisited as the bridge grew to ~160; every STORING road composes all four bridges (import workers, single reprocess,
+Quick shard). `_reconcileEnv` is pure (setting reads only). Direct reproduction: Chris's text + the six catalog labels →
+gate unset: `credit_note_number` = "Meadowvale" @80 via label "Credit No" prefix-hitting the "CREDIT NOTE" heading
+(multi-word labels carry no trailing boundary, keyword.py ~1684-1698; the below-walk takes the next non-caption line);
+gate armed: refused. Owner-sandbox doc 4 (same supplier, Quick road) stored no ref — corroborates. Seam: the sweep's
+Tier-2 OFFER runs on the fast road but every FILING path is `tier1Only` (`_sweepAcceptCore`, `test_queue_sweep.js:37`)
+→ zero filing change; the ~160 switches are the Quick road's exact set, gated on the 727 + the redetect gate; pixel-only
+arms self-abstain imageless. Bonus closure: `TEMPLATE_HIDDEN_FIELD_DROP` now arms on the pill too (it could resurrect a
+field the operator removed). **(c) is the wrong shape** — a third env composition is the drift class that made the bug.
+**Also found (the class): "Unit 12, Low Lane" under a heading-hit label passes the digit gate and commits @80 while the
+real ref lower down is never read (HYPOTHESIS, unmeasured); the catalog seeds "Delivery No" FIRST for the Delivery Note
+preset (document_types.js ~686) and "Credit No" 4th (~666) — both prefix-hit the type's OWN heading.**
+**C1** ONE env composition, keys and order identical to the shard — extract `_pipelineSpawnEnv(db)` and use it at BOTH
+spawns; do not touch 4285 / 2647 in this change. **C2** extend `test_reextract_fast_gate.js`: the fast spawn spreads the
+helper (fails on the pre-fix source), the twin still follows `mergeReextractRows(`. **C3** keep the display twin as a
+BELT (an install with the setting OFF); amend its comment — it does not cover a digit-bearing wrong walk. **C4** gary's
+`test_ref_role_digit_gate.py` case is a mechanism pin, not this fix's guard. **C5** A/B over a copy of a real queue
+(fast road per doc, OFF = old spawn vs ON): any GAINED/CHANGED suggestion disagreeing with truth → SEND BACK; any
+timeout/no-result delta → SEND BACK; DROPPED-but-correct = parity with the committing road, list for the owner; pinned
+exhibit: the owner-sandbox Meadowvale credit note yields NO ref suggestion ON. **C6** the Stage-1 label tail bound is the
+RIGHT LAYER for the class but ships ALONE as DARK `KEYWORD_LABEL_TAIL_BOUND` (mirror `LIST_CAPTION_TAIL_BOUND`) with a
+605 label-hit census + realdoc M=0 + Hard Set P==K==N; reorder the two presets' labels separately (data-only, new ticks).
+**C7** main-process change → restart; smoke: the Meadowvale credit note shows no ref pill and Confirm stays blocked.
+Fail direction of every arm: ON refuses → empty input + the ordinary required prompt (review); ON adds a read → equals
+what import/Quick stores; Tier-2 sweep → zero filing change.
+APPLIED (same day): `_pipelineSpawnEnv` at both spawns (kill `REEXTRACT_FAST_PIPELINE_ENV=0` = the A/B lever only), the
+pin extended (C2), the twin's comment (C3); C5 arms + C7 smoke in this session's handover.

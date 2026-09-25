@@ -36,5 +36,27 @@ ok('a gate failure falls back to the unfiltered list (fail-open on a display roa
 ok('the road never writes an extraction row (no INSERT/UPDATE extractions inside _reextractFastCore)',
    road.length > 0 && !/INSERT INTO extractions|UPDATE extractions/.test(road));
 
+// ── Oracle C1/C2 (2026-09-25): the ROOT CAUSE — the fast spawn ran without the setting→env bridge ──
+// One composition, shared by the fast road and the Quick shard, keys AND order; the fast spawn carries it
+// (behind the A/B kill only), so the two imageless roads cannot drift apart again.
+console.log('\n_pipelineSpawnEnv — one env for both imageless roads:');
+const helper = src.slice(src.indexOf('function _pipelineSpawnEnv(db)'));
+ok('the helper exists and composes the four bridges in the shard\'s order (autoTitle, ocrDpi, anchorCrop, reconcile)',
+   /function _pipelineSpawnEnv\(db\) \{\s*return \{\s*\.\.\._autoTitleEnv\(db\),\s*\.\.\._ocrDpiEnv\(db\),\s*\.\.\._anchorCropEnv\(db\),\s*\.\.\._reconcileEnv\(db\),\s*\};\s*\}/.test(helper));
+const spawnIdx = road.indexOf('proc = spawn(pythonExe(), pythonArgs(backendScript(), ...scriptArgs)');
+ok('the fast spawn is the --cached-ocr-file / --reextract road', /'--reextract',\s*'--cached-ocr-file', cachedFile,/.test(road) && spawnIdx > -1);
+const spawnLine = road.slice(spawnIdx, spawnIdx + 320);
+ok('the fast spawn env spreads _pipelineSpawnEnv(db) (so _reconcileEnv + _anchorCropEnv + _autoTitleEnv all reach Python)',
+   /_pipelineSpawnEnv\(db\)/.test(spawnLine));
+ok('... and the old switch-less spawn survives ONLY behind the explicit A/B kill REEXTRACT_FAST_PIPELINE_ENV=0',
+   /process\.env\.REEXTRACT_FAST_PIPELINE_ENV === '0' \? _ocrDpiEnv\(db\) : _pipelineSpawnEnv\(db\)/.test(spawnLine)
+   && !/env: \{ \.\.\.process\.env, \.\.\._ocrDpiEnv\(db\) \}/.test(spawnLine));
+const shardIdx = src.indexOf('function _runReprocessShard({');
+const shard = shardIdx > -1 ? src.slice(shardIdx, shardIdx + 6000) : '';
+ok('the Quick/batch shard composes its env from the SAME helper (byte-identical switch set)',
+   /\.\.\._pipelineSpawnEnv\(db\),/.test(shard) && !/\.\.\._reconcileEnv\(db\),/.test(shard));
+ok('the display twin still follows the merge (belt kept after the root-cause fix, Oracle C3)',
+   road.indexOf('mergeReextractRows(') < road.indexOf('ref_role_digit_gate twin') && /STAYS as a belt/.test(road));
+
 console.log(fails ? `\n${fails} FAILED` : '\nall green');
 process.exit(fails ? 1 : 0);

@@ -99,6 +99,36 @@ check("armed: the legacy pair behaves exactly as before",
       read("po_number", "PO Number: PO-1234\n") == "PO-1234"
       and read("po_number", "PO Number: Purchase\n") is None)
 
+# ── The HEADING-HIT below-walk (Chris 2026-09-24 card 4; Oracle C4 2026-09-25 — a MECHANISM pin, not the guard of the
+# fast-road env fix, which is `src/modules/processing/test_reextract_fast_gate.js`). A multi-word caption carries no
+# trailing boundary, so the catalog label "Credit No" prefix-hits the doc's own heading "CREDIT NOTE"; the right-read
+# residue "TE" is not a value, and the below-walk offers the next non-caption line — the first word of the ADDRESS.
+# Armed, the digit gate refuses that walk (the value has no digit) and the field stays EMPTY (review); unset, the
+# lowercase/word walk is accepted. Pins the accepted trade-off: a digit-less ref never survives on an armed road.
+print()
+print("HEADING-HIT below-walk (a multi-word caption inside the doc's own title):")
+_HEAD_TEXT = ("Meadowvale Dairy Wholesale    CREDIT NOTE\nMeadowvale Creamery, Low Lane - Butterwick, BW7 2JD\n"
+              "nannnan\npor    VAT Reg No GB 118 5540 63\nCredit Ref    MVC-2711\nDate    19-04-2025\n")
+_CAT_LABELS = ["Credit Note No", "Credit Note Number", "Credit Note #", "Credit No", "CN No", "Credit Memo No"]
+
+
+def read_catalog(text):
+    pats = json.loads(json.dumps(CFG))
+    pats = keyword.merge_label_overrides(
+        pats, [{"doc_type_slug": "credit_note", "field_key": "credit_note_number", "label": l} for l in _CAT_LABELS],
+        "credit_note")
+    return (keyword.extract_fields(text, ["credit_note_number"], pats).get("credit_note_number") or {}).get("value")
+
+
+setflag("REF_ROLE_DIGIT_GATE", None)
+check("unset: 'Credit No' prefix-hits 'CREDIT NOTE' and the below-walk offers the address word (the mechanism, pinned)",
+      read_catalog(_HEAD_TEXT) == "Meadowvale")
+setflag("REF_ROLE_DIGIT_GATE", "1")
+check("armed: the same walk is REFUSED — no digit-less credit-note number, field left empty",
+      read_catalog(_HEAD_TEXT) is None)
+check("armed: a real 'Credit Note No CN-4471' line still reads",
+      (read_catalog("CREDIT NOTE\nCredit Note No    CN-4471\n") or "").startswith("CN"))
+
 print()
 print("ARMED — non-reference roles are NOT digit-gated (the arming is by ROLE, not by field count):")
 check("armed: a DATE field still reads a date",
