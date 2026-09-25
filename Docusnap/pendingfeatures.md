@@ -156,6 +156,17 @@ likely a census (does auto-suggesting ever pre-draw a WRONG box the user would r
   Stage-0.5 mapping), and authority NEVER exceeding a hand-draw on first confirm. Log: docs/oracle_log.md. (Minor
   Oracle correction: the "_measure_candidates :2640" cite is actually `val_census`; the winner-only `extract_fields`
   claim — Slice 2 is real engine work — still holds.)
+- **CENSUS A2 DONE 2026-09-25 — `TESTING/_measure/teach_reconstruction_census_20260925/RESULT.md`** (48 real-doc
+  corpus docs, `region.py --page-words` = the teach path's own word geometry, ref+date matched against the GT
+  value). Result: **ref 77% UNIQUE / 23% MULTIPLE / 0 NONE; date 87% / 13% / 0.** Two load-bearing findings: (1)
+  **NONE=0** — the value is always findable, so a box can always be made; the risk is picking the WRONG instance,
+  not failing to find one. (2) The ambiguous ~20% is **entirely two predictable layout families** — Ironclad
+  STATEMENTS (list many invoices → ref/date recur) + Pelican invoices (template prints the ref twice); no random
+  one-offs. **Verdict:** blind single pre-fill FAILS the bar (~20% silent mis-locate) — stays dropped; the census
+  SUPPORTS the rule "UNIQUE → one safe suggestion, MULTIPLE → the PICKER, never auto-pick, always re-read-verify",
+  under which suggested-teach is measurably safer than a hand-draw. The picker is the right first cut. Caveat: the
+  corpus renders are clean (NONE=0); real SCANS add a NOT-FOUND tail that falls back to a manual draw — a
+  scan-corpus re-run would quantify it before a build. **NEXT: owner/Oracle go on the picker build.**
 
 ## 2026-09-20 — 'Undetected' issuer: don't fabricate a heading from body text; bucket it in Review (owner idea; NOT built — barry + reggie/gary → Oracle)
 Symptom (owner, live): a long Ricoh MANUAL with no teaching/logo/template landed in Review with the Document
