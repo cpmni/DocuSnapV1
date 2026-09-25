@@ -1,5 +1,33 @@
 # Pending Features & Deferred Work
 
+## 2026-09-25 — Suggested teach: auto-draw the value + label boxes from the keyword read, ask the user to confirm (owner idea; NOT built — barry → advisor → Oracle)
+Owner idea (live, on the Review teach readout "Check what I read for Quote Number"): instead of the user DRAWING
+a box round each value, the software should AUTO-DRAW the value box (green) + the label box (blue) from the keyword
+read it already did, and just ask "is this right?". Saves the drawing. Owner's own reasoning: the teach flow
+already takes the user's drawn value box, tightens it to the value, then builds a PADDED box outside it — so the
+same machinery can start from the machine's read instead of a human draw. Owner's key refinement: **this matters
+most when MORE THAN ONE keyword matches on the page** (e.g. "Job Ref No" vs "Job Sheet No") — the auto-suggest
+should surface the candidates and let the user pick the right one, which is exactly the case where drawing-by-hand
+is most error-prone.
+**Feasibility (verified at source, 2026-09-25):** the pieces exist.
+- The engine already records the box each read used: `engine._field_read_geom` (Stage-2 anchor winner box per
+  field), `_s05_read_geom` (Stage-0.5 mapper box), and `target_geom` on a candidate ("the box the WINNING rung
+  actually READ"). So the VALUE box is available for any confident keyword/anchor read.
+- The teach flow already turns a value box → tightened box → padded anchor box (`src/windows/teach`, and the
+  Review teach readout renders BOTH the green value box and the blue label box today — the confirm surface with
+  "Looks right / Redraw value / Redraw label" ALREADY EXISTS). So the only genuinely new bit is PRE-FILLING that
+  surface from the machine read instead of from a human draw — plus the multi-candidate picker.
+**Shape to design:** (1) after the read, for each field that got a confident located read, pre-draw value+label +
+run the existing padding → present in the existing "Check what I read" surface, one confirm per field (or a bulk
+"all correct"); (2) the DISAMBIGUATION case — when ≥2 labels/values are plausible for one field, show the
+candidates as pickable boxes and ask which; (3) fall back to a manual draw when no confident read (no regression
+to the current teach path). **Guard:** a confirmed suggested box must save the SAME anchor→mapping a hand-draw
+does — never a lower-quality shortcut; and a wrong auto-suggestion the user confirms teaches the wrong spot to
+every future doc, so the confirm copy must make "value wrong? type it / redraw" as easy as "looks right" (the
+surface already does this). **Next:** barry (the full flow + the multi-candidate UX + copy) → reggie/007 (which
+read-geom to trust, when to suggest vs stay silent, the label-box derivation for a keyword-only read) → Oracle;
+likely a census (does auto-suggesting ever pre-draw a WRONG box the user would rubber-stamp?).
+
 ## 2026-09-20 — 'Undetected' issuer: don't fabricate a heading from body text; bucket it in Review (owner idea; NOT built — barry + reggie/gary → Oracle)
 Symptom (owner, live): a long Ricoh MANUAL with no teaching/logo/template landed in Review with the Document
 Issuer read as **"shall not be responsible for any damage that may"** — a disclaimer sentence pulled off a page,
