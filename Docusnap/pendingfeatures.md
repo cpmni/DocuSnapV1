@@ -1,5 +1,35 @@
 # Pending Features & Deferred Work
 
+## 2026-09-25 — Review status banners: reconcile the four different counts into one honest live read (owner finding; NOT built — barry + eric → Oracle)
+Owner screenshot (Nordwind, mid auto-file): FOUR different numbers on one screen, none reconciled —
+sender group "9 documents" + "File 9"; the reprocess banner "9 read clean, ready to file"; the autofile
+bar "Checking eligible docs … for Autofile — 7 of **18**…"; the activity chip "**19** more offered in File
+All Ready". Owner: "there weren't 18 jobs in the queue — maybe 9 or 10, and I confirmed one as it appeared."
+Two complaints: (1) the counts don't match what's actually in the queue; (2) the messages **clash** — one says
+"File now", the other says "checking to see if they are fileable".
+**Diagnosed at source (2026-09-25) — four subsystems, four populations, none is the live queue except the 9:**
+- **9** = the live review queue (`getReviewQueue`, the sender group) — the only count that tracks reality.
+- **9 read clean** = the reprocess-completion banner (the batch that just finished).
+- **7 of 18** = the quiet autofile-check job's OWN list. `quietLane.js:510` `job.total = all.length + done +
+  dropped` is fixed AT JOB START and never shrinks; the bar shows `done of total` (`_renderAutofileCheckBar`,
+  renderer.js:10501). So as the user confirms docs the visible queue drops to 9 but the scan keeps counting its
+  starting 18 → a stale denominator that drifts from the queue. (Whether 18 was the right start scope at all —
+  vs the ~9-10 the owner saw — needs a live reproduce; the job's `all` = the sender's eligible held docs, which
+  may include docs outside the current view.)
+- **19 more offered** = an `issuer_fill` activity event's `count` (reviewService.js:764; the issuer sender-sweep
+  offered N siblings into File-All-Ready). A cumulative event receipt, not the queue.
+**The clash is real and has prior art:** renderer.js:2261 already carries a comment about a PAST collision
+("the old 'N more to file by itself' collided with the issuer_fill banner"). "File 9 now" (ready) + "Checking
+eligible … 7 of 18" (still deciding) narrate two states at once.
+**Shape to design:** (1) ONE honest, live-updating status line — or, if the autofile scan must show progress,
+label its population ("N of this sender's batch", never a bare denominator that reads as the queue) and make it
+track reality (or say "N left to check"); (2) resolve the semantic clash — "ready to file now" and "still
+checking eligibility" must not both shout at once (sequence them, or fold the scan into the ready banner);
+(3) the owner's ask — a live read of "what's in the queue now" vs "what's being scanned", clearly separated.
+**Next:** barry (the copy + which counts a user actually needs, minimise-alerts rule) + eric (the three event
+streams — quiet lane, issuer_fill activity, reprocess completion — feeding one strip without collision) → Oracle.
+Guard: fail toward SHOWING LESS, never a wrong number; a stale/ahead count is worse than no count.
+
 ## 2026-09-25 — Suggested teach: auto-draw the value + label boxes from the keyword read, ask the user to confirm (owner idea; NOT built — barry → advisor → Oracle)
 Owner idea (live, on the Review teach readout "Check what I read for Quote Number"): instead of the user DRAWING
 a box round each value, the software should AUTO-DRAW the value box (green) + the label box (blue) from the keyword
