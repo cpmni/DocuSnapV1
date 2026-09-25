@@ -51,6 +51,19 @@ Guard: fail toward SHOWING LESS, never a wrong number; a stale/ahead count is wo
   through the one writer; fold the three independent auto-hide timers into ONE (clear on doc-change + unload) — three
   timers firing after a navigation is how a stale banner survives. Renderer-only change (Review window reopen to load).
   Priority **L1 / must-have, ship FIRST**. NEXT: Oracle.
+- **ORACLE 2026-09-25 — SIGN OFF WITH CONDITIONS** (premise traced + HOLDS; deleting the denominator is the RIGHT
+  layer, not a compromise — the quiet population is legitimately wider than the queue). Ship-blockers/conditions:
+  **B1 (ship-blocker)** the reducer must NOT write `#reprocess-autofile-bar` while the in-view auto-file COUNTDOWN
+  (`_inviewCd`, renderer.js:10591/7783/10608 — it FILES ON EXPIRY with no click) is live, or it clobbers a
+  visible-cancellable auto-file into a hidden one (the single biggest risk). **B2** phase-suppression scoped to the
+  SAME sender + defer-and-replay a suppressed offer, never drop (an unrelated ready-to-file offer must not be
+  delayed). **B3** the relabeled "N left" still STARTS from the possibly-wrong 18 → ship barry's NO-denominator
+  indicator ("Filing the ready ones…" → "Filed N for you") FIRST, or verify the start scope by live reproduce
+  before showing ANY number. **B4** fold the three auto-hide timers into one (clear on doc-change + unload).
+  **GATE (renderer-only, no M-corpus):** an event-interleaving harness driving the 3 IPC streams in adversarial
+  orders + a mid-scan confirm + an active countdown, asserting exactly ONE live-status element, the countdown never
+  hidden/cancelled by a reducer re-render, NO silent file, `job_deferred` through the one writer — plus a PIN that
+  reproduces the ready-vs-checking clash and FAILS on today's code. Log: docs/oracle_log.md.
 
 ## 2026-09-25 — Suggested teach: auto-draw the value + label boxes from the keyword read, ask the user to confirm (owner idea; NOT built — barry → advisor → Oracle)
 Owner idea (live, on the Review teach readout "Check what I read for Quote Number"): instead of the user DRAWING
@@ -106,6 +119,27 @@ likely a census (does auto-suggesting ever pre-draw a WRONG box the user would r
   candidate RETENTION in `keyword.py extract_fields` (today keeps only the winner; `_measure_candidates` scaffold
   at :2640 is unused) + per-candidate boxes on the normal path → the proactive picker. Priority **L3** (picker
   **L4** signature). NEXT: Oracle before any build.
+- **ORACLE 2026-09-25 — SEND BACK (re-scope the staging).** The corrected premise is right (verified: read-geom is
+  trace-only + empty for the untaught keyword case). But **Slice 1 as written is internally contradictory**: 007's
+  "located-only" gate fires ONLY where the field is ALREADY taught (inert on the untaught sender the feature
+  targets), while the only path that DOES fire on the untaught case is eric's word-reconstruction — which 007's gate
+  won't bless (mis-locates on repeated tokens / totals blocks). Can't be both safe and useful. And a blind single
+  pre-fill is **WRONG LAYER for safety**: it removes the human's placement attention while keeping FULL authority —
+  a rubber-stamped mis-placed box becomes a high-authority `shape_mode='ignore'` all-supplier anchor that poisons
+  the whole scope (a system-wide misfile amplifier, strictly worse than a hand-draw slip). The owner's real prize —
+  the multi-label PICKER — is the RIGHT layer: it preserves attention (forces a conscious choice exactly where
+  hand-draw fails). **RE-SCOPE:** (a) DROP the blind single pre-fill; (b) build the reconstruction-geometry CENSUS
+  FIRST as pure measurement (no UI, no commit) — population = every keyword-read field on the untaught-sender
+  corpus; "a wrong box" = a reconstructed box whose LIVE-FRAME re-read fails to reproduce the committed value OR
+  overlaps another field's value region (report the repeated-token/totals class separately, don't average it); pass
+  bar = suggested-teach (census + mandatory re-read-verify + the picker's forced choice) is measurably SAFER than
+  today's hand-draw, not merely faster; this ONE census gates both ideas. (c) If it passes, build the PICKER as the
+  first user-facing cut — 007's live-frame re-read-verify (placement, not value — a same-page re-read of the value
+  is near-circular), the deskew/Straighten/top-left-vs-centre frame guards, barry's "confirm the VALUE" copy with
+  equally-cheap wrong/redraw/type, the HOST SURFACE decided first (Review readout = Stage-2 anchor vs wizard =
+  Stage-0.5 mapping), and authority NEVER exceeding a hand-draw on first confirm. Log: docs/oracle_log.md. (Minor
+  Oracle correction: the "_measure_candidates :2640" cite is actually `val_census`; the winner-only `extract_fields`
+  claim — Slice 2 is real engine work — still holds.)
 
 ## 2026-09-20 — 'Undetected' issuer: don't fabricate a heading from body text; bucket it in Review (owner idea; NOT built — barry + reggie/gary → Oracle)
 Symptom (owner, live): a long Ricoh MANUAL with no teaching/logo/template landed in Review with the Document
