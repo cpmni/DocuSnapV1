@@ -69,6 +69,12 @@ const state = {
   fieldIndex: 0,
   results: {},         // key -> {value, target:{x,y,w,h}, anchor:{x,y,w,h}|null, anchor_text|null, status:'done'|'skip'}
   targetDocId: null,
+  // SUGGESTED-TEACH (mig 220 `suggested_teach_enabled`, DARK): the per-field IMPORT keyword reads for
+  // this doc {field_key: value}, fetched once at the region step; null = not fetched (switch off /
+  // client transport lacks the method → stays null → manual draw). `suggestOffered` marks fields a
+  // suggestion has already fired for, so a declined suggestion → manual draw doesn't re-suggest in a loop.
+  importValues: null,
+  suggestOffered: null,
 };
 
 // The currently-taught document id, exposed as a window global (mirrors window.SearchState in search-ui) so an
@@ -844,6 +850,22 @@ async function startRegionStep(){
     if (!state.doc && m) state.doc = m;
     if (!state.doc){ _setPageLoading(false); $('rg-prompt').textContent = "Couldn't read that document — go back and pick another one."; return; }
   }
+  // SUGGESTED-TEACH (mig 220): pull this doc's IMPORT keyword reads ONCE so promptField can pre-draw
+  // each field's box. Gated on the switch (byte-identical OFF: no fetch) + the transport method (the
+  // /v1 client lacks it → stays null → manual draw, a clean no-op). raw_value is the LOCATE target
+  // (matches the printed form; Oracle efficacy note); fail → {} → manual draw. Fetched once per doc.
+  if (SUGGEST_ON && D.getDocumentWithExtractions && state.importValues === null && state.doc?.id != null){
+    state.importValues = {};
+    state.suggestOffered = new Set();
+    try {
+      const _dd = await D.getDocumentWithExtractions(state.doc.id);
+      for (const e of ((_dd && _dd.extractions) || [])){
+        if (!e || !e.field_key) continue;
+        const v = String(e.raw_value ?? e.display_value ?? '').trim();
+        if (v) state.importValues[e.field_key] = v;
+      }
+    } catch { /* leave {} → manual draw */ }
+  }
   const _loading = !state.img;
   if (_loading){
     // Prefer the background prefetch started when the doc was chosen; fetch now only if it's absent
@@ -1067,6 +1089,9 @@ function promptField(){
   const _r = state.results[f.key];
   if (_r && Number.isInteger(_r.page) && _r.page !== state.pageIndex) gotoTeachPage(_r.page);
   renderFieldPrompt();
+  // SUGGESTED-TEACH (mig 220): after arming the manual draw prompt, try to pre-locate + offer this
+  // field's import keyword read. Fire-and-forget; inert when the switch is off (byte-identical).
+  maybeSuggestField(f);
 }
 // The prompt/read-back panel, WITHOUT promptField's page-follow. Split out so a page change can
 // reset the panel without bouncing the canvas back to the page it just left (promptField would see
@@ -1196,6 +1221,13 @@ function showNoHit(f, v, saveAsFixed){
 // byte-identically (the search never runs).
 let TYPED_LOCATE_ON = true;
 try { D.getSetting?.('teach_typed_value_locate').then(v => { TYPED_LOCATE_ON = v !== 'false'; }); } catch {}
+// SUGGESTED-TEACH (mig 220 `suggested_teach_enabled`, DARK, default OFF; owner idea → 007+reggie+eric →
+// Oracle SIGN-OFF-W/COND). When ON, each field the wizard presents that had an IMPORT keyword read gets
+// its box(es) AUTO-DRAWN for Accept/Skip/Draw — reusing the typed-locate machinery (page-words →
+// ValueLocate → showLocatedPick/useLocatedBox), seeded with the import value instead of a typed one.
+// OFF → maybeSuggestField early-returns, no page-words spawn → byte-identical to today's manual teach.
+let SUGGEST_ON = false;
+try { D.getSetting?.('suggested_teach_enabled').then(v => { SUGGEST_ON = v === 'true'; }); } catch {}
 // LIST field type (2026-08-11): unlocks 'List (several values)' in the shared doctype editor,
 // and marks list-typed fields as caption-collected in the capture step (no box teach).
 try { D.getSetting?.('list_field_scan').then(v => { window.__listFieldTypeOn = v === 'true'; }); } catch {}
@@ -1231,7 +1263,7 @@ async function locateTypedValue(value){
 }
 // The pick step IS the gate: the candidate box is drawn on the page and nothing is stored until the
 // operator says that is the place. Same principle as the drawn-box word-snap — approved by being seen.
-function showLocatedPick(f, typed, hits, idx){
+function showLocatedPick(f, typed, hits, idx, opts){
   const h = hits[idx]; if (!h) return;
   // The pick step's whole job is SHOWING the box — Chris (r2 2026-08-11, finding 5) was asked
   // to approve a position he couldn't see. Reset zoom/pan so the full page (and therefore the
@@ -1265,10 +1297,13 @@ function showLocatedPick(f, typed, hits, idx){
       `<button class="btn ghost quiet" id="rb-loc-back">Back</button>`+
       `<button class="btn ghost quiet" id="rb-loc-fixed" title="Keep the value you typed and don't tie it to a place on the page">Keep it as typed</button>`+
     `</div>`);
-  onConfirm('rb-loc-yes', ()=>useLocatedBox(f, typed, h.box));
+  // opts.onYes (SUGGESTED-TEACH, mig 220) lets the import path commit with valueSource:'read'; the
+  // default is the shipped typed-locate commit — byte-identical when opts is absent.
+  const _yes = (opts && opts.onYes) || ((box)=>useLocatedBox(f, typed, box));
+  onConfirm('rb-loc-yes', ()=>_yes(h.box));
   if (hits.length > 1){
-    onConfirm('rb-loc-next', ()=>showLocatedPick(f, typed, hits, (idx+1) % hits.length));
-    onConfirm('rb-loc-prev', ()=>showLocatedPick(f, typed, hits, (idx-1+hits.length) % hits.length));
+    onConfirm('rb-loc-next', ()=>showLocatedPick(f, typed, hits, (idx+1) % hits.length, opts));
+    onConfirm('rb-loc-prev', ()=>showLocatedPick(f, typed, hits, (idx-1+hits.length) % hits.length, opts));
   }
   onConfirm('rb-loc-back', ()=>showFixedInput(f, typed));   // back to TYPE, input prefilled
   onConfirm('rb-loc-fixed', ()=>{
@@ -1280,16 +1315,22 @@ function showLocatedPick(f, typed, hits, idx){
 // Accepted: detect the label the same way a drawn box does, then store through the SAME `store`
 // the drawn path uses — so from here on a located field is indistinguishable from a drawn one and
 // doCommit needs no special case (it takes the saveTemplateMapping branch, not setTemplateFieldFixed).
-async function useLocatedBox(f, value, box){
+async function useLocatedBox(f, value, box, opts){
+  // valueSource (SUGGESTED-TEACH, mig 220): 'typed' = the operator hand-typed the value (the shipped
+  // path — `located` set so showValueConfirm treats it as a checked TYPE, no value-correction row);
+  // 'read' = the value came from the IMPORT keyword read (right or wrong) — `located` stays UNSET so
+  // showValueConfirm shows "Check what I read for" + the value-correction row (owner: reads used
+  // right-or-wrong, the user corrects). Default 'typed' → the shipped typed-locate path is byte-identical.
+  const src = (opts && opts.valueSource) || 'typed';
   // ISSUER: commit DIRECTLY (Chris-lens spec 2026-08-11 — this deletes the incoherent screenshot
   // state: "Confirm the label for / Document Issuer" over "no label needed"). The pick step WAS
   // the approval — the value is operator-typed, the spot operator-approved, and there is no label
   // to check, so a second confirm carried zero new information. The plausibility warning still
-  // fires inside finishIssuerField.
+  // fires inside finishIssuerField. (Suggest never routes the issuer here — it is excluded.)
   if (isIssuerField(f)){
     store(f, box, { box:null, anchor_text:null, dir:null, suspicious:false }, value, /*pending*/true);
-    state.results[f.key].located = true;
-    state.results[f.key].valueSource = 'typed';
+    if (src === 'typed') state.results[f.key].located = true;
+    state.results[f.key].valueSource = src;
     return finishIssuerField(f);
   }
   setConfirm('<span class="muted">Reading the label…</span>');
@@ -1298,12 +1339,48 @@ async function useLocatedBox(f, value, box){
   try { anchor = await autoLabel(box); } catch {}
   _teachReadBusy = false;
   if (anchor && anchor.box) anchor.box._ang = box._ang;
-  // The VALUE stays exactly what the operator typed — the page's own words are not substituted in.
-  // They were typed because the read was wrong, so re-reading them here would undo the correction.
+  // The VALUE stays exactly what the operator typed / the import read — the page's own words are not
+  // substituted in. (A typed value was typed because the read was wrong; a 'read' value keeps the
+  // value-correction row so the operator can fix it before Accept.)
   store(f, box, anchor, value, /*pending*/true);
-  state.results[f.key].located = true;
-  state.results[f.key].valueSource = 'typed';
+  if (src === 'typed') state.results[f.key].located = true;
+  state.results[f.key].valueSource = src;
   showValueConfirm(f, state.results[f.key]);
+}
+
+// SUGGESTED-TEACH (mig 220 `suggested_teach_enabled`, DARK; owner idea → 007+reggie+eric → Oracle
+// SIGN-OFF-W/COND C-A/C-B). Fired at the END of promptField for the current field: if the IMPORT
+// keyword read found this field's value, LOCATE it on the page and OFFER it — reusing the shipped
+// typed-locate path (`locateTypedValue` → `showLocatedPick` → `useLocatedBox`) so it auto-draws the
+// box, reveals+rings it (C-A: showLocatedPick does tzReset+emphasiseBox+scrollIntoView) and the
+// operator Accepts / steps a multi-spot pick / Redraws / Skips. Fire-and-forget: the manual "draw a
+// box / or type it" prompt is armed FIRST (renderFieldPrompt) and STANDS on none / any failure / any
+// race — a hand-draw always wins. OFF, issuer, list, barcode, no-import-value, already-taught → no-op.
+async function maybeSuggestField(f){
+  if (!SUGGEST_ON || !f) return;
+  // EXCLUSIONS (match the vetted scope): the issuer is position-only with its own plausibility/near-match
+  // and commits without the value-check panel; list/barcode fields have no box to teach.
+  if (isIssuerField(f) || isListField(f) || f.auto === 'barcode') return;
+  if (!state.importValues || !state.suggestOffered) return;   // switch was off at fetch / client transport
+  if (state.suggestOffered.has(f.key)) return;                // already offered (C-B: no re-suggest loop after Redraw)
+  if (state.results[f.key]) return;                           // already drawn / typed / skipped
+  const value = state.importValues[f.key];
+  if (!value || String(value).trim().length < 2) return;      // nothing (or too short) to locate → manual draw
+  state.suggestOffered.add(f.key);                            // MARK before the OCR await (C-B)
+  const openDocId = state.doc?.id, openPage = state.pageIndex, openAngle = state.deskewAngle;
+  let hits;
+  try { hits = await locateTypedValue(String(value)); } catch { return; }
+  // C-B race guards (mirror the Review suggest guards): a late resolve must never clobber the operator's
+  // own in-progress box or a moved frame — bail if the switch flipped, the frame changed, the operator
+  // began drawing, they moved to another field, or a result now exists for this field.
+  if (!SUGGEST_ON) return;
+  if (state.doc?.id !== openDocId || state.pageIndex !== openPage || state.deskewAngle !== openAngle) return;
+  if (curField() !== f || drag || state.results[f.key]) return;
+  if (!hits || !hits.length) return;                          // NONE → the manual draw prompt stands (no regression)
+  // UNIQUE or MULTIPLE both route through the shipped pick step — it reveals + rings the box (C-A) and is
+  // the "seen == approved" gate; it NEVER auto-picks (multi-spot steps through). onYes commits with
+  // valueSource:'read' so the value-correction row shows (owner: reads used right-or-wrong).
+  showLocatedPick(f, String(value), hits, 0, { onYes: (box) => useLocatedBox(f, String(value), box, { valueSource: 'read' }) });
 }
 function renderFieldRail(){
   // A field marked "not on this document" is NOT captured — counting it as done produced

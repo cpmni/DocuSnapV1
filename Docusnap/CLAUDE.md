@@ -21,31 +21,37 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-25 (later) — SUGGESTED-TEACH PICKER Slice 1 BUILT DARK (mig 220; owner "build the picker"):
-Branch `feat/teach-side-overnight`; **migs → 220; `TEST_SWITCH_KEYS` 18; run-pins 462/462 green; the Slice-1 commit is
-LOCAL/UNPUSHED (origin was `2bb483f`); tree otherwise clean (pre-existing untracked `TESTING/_measure/*`).** Owner "read
-the handover and continue" → chose **build the picker** (from the four evening threads). Full advisor round
-**007+reggie+eric → Oracle SIGN-OFF-W/COND C1-C7** (all four reports + the Oracle verdict this session).
-- **Idea A picker, Slice 1 = `suggested_teach_enabled` (mig 220, DARK, renderer/shared-JS ONLY, no Python):** on a ⊕
-  teach the app reconstructs the box(es) it read for the field's CURRENT value (`ocr-page-words` → new shared
-  `src/windows/shared/suggestTeach.js` reducer over `ValueLocate`): **UNIQUE** → one suggestion AFTER a fresh RAW-frame
-  placement verify → `showAnchorReadout`; **MULTIPLE** (the census's whole ambiguous class = same-value repeats:
-  statements, Pelican) → the shared resolve PICKER, never auto-pick; **NONE/verify-fail** → the manual draw (still
-  armed, no regression). Confirmed box rides the IDENTICAL `pendingAnchors → saveFieldAnchor` hand-draw tail (authority
-  never exceeds a hand-draw; **supplier-scoped** — 007 caught the CLAUDE.md ➜AN "all suppliers" line is STALE).
-- **Oracle SEAM caught + fixed (C1):** the shared picker (`resolveCandidatePick`) stages `cand.box` as RAW with no
-  deskew back-transform → a display-frame box on a **deskewed statement** would persist mis-registered (the exact
-  SEND-BACK failure). Fix: back-transform each candidate display→raw via `deskewFinalizeAnchor` before
-  `openResolveOverlay` (also gives C3 drop-on-frame-change). C4 = a TIGHT fresh RAW crop re-read (`getRawPageBase64`→
-  `ocrRegion`, rejects a crop reading >1.6× the value = half-box offset — not the cached display words). C5 position-
-  only, C6 same writer. **⚠ C7 (glyph second reader) DEFERRED** — no glyph IPC in the renderer; UNIQUE is protected by
-  the fresh-RAW verify + human Confirm, merged-column ambiguity → picker; glyph = Slice-1b. Pins `test_suggest_teach.js`
-  (reducer + C1/C3/C4/C5/C6 WIRING) + `test_migration220_suggested_teach.js`.
-- **⚠ NOT DRIVEN LIVE** (renderer change → reopen Review). **FLIP GATE OWED:** byte-identical OFF + a false-suggestion
-  IoU census incl. deskew-active statements + a merged-column class (0 verify-passed-but-box-wrong) + realdoc M=0/no
-  accuracy drop on the confirmed supplier's siblings. **Slice 2 (reggie's `TEACH_SUGGEST_CANDIDATES` candidate retention
-  in `keyword.extract_fields`, the two-different-labels case) NOT built — its own census + Oracle first; do NOT touch
-  `extract_fields` without that go.** Ledger `docs/DARK_SWITCH_LEDGER.md` + `docs/oracle_log.md` (2026-09-25).
+## ⏭ LATEST — 2026-09-25 (later) — SUGGESTED-TEACH auto-draw BUILT DARK in the GUIDED TEACH WIZARD (mig 220; owner re-scope):
+Branch `feat/teach-side-overnight`; **migs → 220; `TEST_SWITCH_KEYS` 18; run-pins 462/462 green; commits LOCAL/UNPUSHED
+(origin was `2bb483f`); tree otherwise clean (pre-existing untracked `TESTING/_measure/*`).** Owner "build the picker"
+→ built on the ⊕ Review readout → owner tested + rejected the surface ("I didn't want it in Review"; verbatim: "when you
+go to teach a doc, the keyword reads, whether right or wrong, are suggested and the boxes are drawn automatically for the
+user to confirm or redraw"). RE-HOSTED to the guided Teach WIZARD. Advisor round 007+reggie+eric → Oracle
+SIGN-OFF-W/COND (first build) → Oracle RE-VET SIGN-OFF-W/COND (the wizard + the C4 drop).
+- **`suggested_teach_enabled` (mig 220, DARK) now hosts in `src/windows/shared/teach-ui/teach.js`** (NOT Review — the
+  ⊕-Review wiring + the Review-only `src/windows/shared/suggestTeach.js` reducer were REMOVED). Near-pure REUSE of the
+  shipped `teach_typed_value_locate` machinery: the wizard fetches this doc's IMPORT keyword reads
+  (`getDocumentWithExtractions`, `raw_value` the locate target) → `state.importValues`; `promptField` fires
+  `maybeSuggestField(f)` after arming the manual prompt; it locates via the existing `locateTypedValue` and routes hits
+  through the shipped `showLocatedPick`→`useLocatedBox` (`valueSource:'read'`). **UNIQUE** → box revealed+ringed +
+  `showValueConfirm` (Accept / Redraw / value-correction row); **MULTIPLE** (statements, repeat-ref) → the shipped
+  "printed in N places" pick, **never auto-picks**; **NONE/any race** → the manual draw (still armed). Issuer/list/
+  barcode excluded. Commit UNCHANGED: `store`→`_teachBackBox`→`saveTemplateMapping` (a Stage-0.5 mapping = a hand-draw,
+  NARROWER than the Review anchor).
+- **No C1/C4 on the wizard** (they were Review-only): `_teachBackBox` already does display→raw (no half-box), and
+  `canAdvance` BLOCKS Next while any field is pending → no bulk-Confirm/rubber-stamp = the human checkpoint that replaces
+  C4 (Oracle re-vet verified this at source). Wired + pinned: **C-A** (UNIQUE reveals+rings the box before the confirm)
+  + **C-B** (async-race guards: `suggestOffered` pre-await; bail on doc/page/angle/`curField`/`drag`/`results`). Pins
+  `src/windows/teach/test_teach_suggest.js` + `test_migration220_suggested_teach.js`. Client copy synced
+  (`sync-client-teach.js`); /v1 is a clean no-op (transport lacks `getDocumentWithExtractions`).
+- **RUNNING LIVE with the switch ON** on the dev DB (`…\ScanFinder\docusnap.db`, mig 220) for the owner's test — teach a
+  doc: each field the import read found auto-draws its box for Accept/Skip/Draw. Byte-identical OFF (no page-words spawn).
+- **FLIP GATE OWED (Oracle):** byte-identical OFF + a suggestion-fidelity IoU census incl. deskew-active statements + a
+  wrong-value-caption class (0 verify-passed-but-box-wrong, zero cross-field bleed) + realdoc M=0/no accuracy drop on the
+  confirmed supplier's siblings. **Slice 2 (reggie's `TEACH_SUGGEST_CANDIDATES` candidate retention in
+  `keyword.extract_fields`, the two-DIFFERENT-labels case) NOT built — own census + Oracle first; do NOT touch
+  `extract_fields` without that go.** Ledger `docs/DARK_SWITCH_LEDGER.md` + `docs/oracle_log.md` (2026-09-25, the wizard
+  re-vet entry).
 
 ## ⏭ 2026-09-25 EVENING (mig 219 label tail-bound DARK+census-gated · deskew invalid-date note · Review banner reconciliation BUILT · suggested-teach census → picker):
 **READ `HANDOVER_2026-09-25_EVENING.md` FIRST.** Branch `feat/teach-side-overnight`; **HEAD `2bb483f` = origin (all

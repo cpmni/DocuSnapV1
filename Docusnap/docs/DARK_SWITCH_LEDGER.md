@@ -140,33 +140,37 @@ in `database/dark_switches.js`'s history comment; the LIVE list is `TEST_SWITCH_
   `python_backend/tests/test_keyword_label_tail_bound.py` (OFF preserves the bug, ON reads the real ref, digit-glued
   still matches, single-word labels untouched) + `database/modules/test_migration219_keyword_label_tail_bound.js`.
 
-- **suggested_teach_enabled (mig 220, 2026-09-25)** — owner idea "suggest the boxes I read": Slice 1 of the ⊕ Review
-  suggested-teach PICKER (advisor round 007+reggie+eric → Oracle SIGN-OFF-W/COND C1-C7). When a ⊕ teach arms on a
-  captioned field, reconstruct the box(es) the machine read for the field's CURRENT value (`ocr-page-words` →
-  `ValueLocate.locateValueInWords` → the `SuggestTeach` reducer, `src/windows/shared/suggestTeach.js`): **UNIQUE** (one
-  located spot) → pre-fill one suggestion AFTER a fresh RAW-frame placement verify → the existing `showAnchorReadout`
-  bar; **MULTIPLE** (2+ spots — the whole census-measured ambiguity: Ironclad statements + Pelican repeat-ref) → the
-  shared resolve PICKER, never auto-pick; **NONE / verify-fail** → the manual draw that is always still armed (no
-  regression). RENDERER/shared-JS only — **no Python, no extraction hot-path change** (reggie's candidate retention =
-  the deferred Slice 2, its own census). Every confirmed box rides the IDENTICAL `pendingAnchors → saveFieldAnchor`
-  Stage-2 path a hand-draw uses: authority never exceeds a hand-draw, **supplier-scoped** (007 correction: the
-  `saveAnchor` sweep is supplier-scoped, the CLAUDE.md ➜AN "all suppliers" line is STALE), position-only (no value
-  mutate, no server-flag clear), persist on Confirm only. **Oracle conditions wired + pinned:** C1 (back-transform each
-  picker box display→raw via `deskewFinalizeAnchor` BEFORE `openResolveOverlay` — the seam the Oracle caught: else a
-  deskewed statement stages a mis-registered anchor), C3 (drop on any doc/page/angle change under the await), C4 (the
-  verify is a TIGHT fresh RAW crop re-read via `getRawPageBase64`→`ocrRegion`, rejecting a crop that reads >1.6× the
-  value = a half-box offset — not the cached display words, not a padded presence check), C5, C6. **⚠ C7 (glyph second
-  reader) DEFERRED**: the renderer has no glyph IPC; the auto-staged UNIQUE path is protected by the tight fresh-RAW
-  re-read + the human Confirm (persist-on-Confirm, box visible) and merged-column ambiguity surfaces as MULTIPLE→picker
-  (human picks off raw-page markers), so there is no SILENT wrong-anchor path — glyph is the natural Slice-1b hardening.
-  Default OFF → `enterZoneMode` byte-identical (no page-words spawn). _Flip gate (Oracle): (1) byte-identical OFF
-  (Slice 1 touches no Python → realdoc extraction trivially md5-identical); (2) a false-suggestion IoU census over the
-  corpus INCLUDING deskew-active statements + a merged-column class — every blessed box overlaps the GT value on the
-  RAW page, 0 verify-passed-but-box-wrong; (3) realdoc M=0 with no per-field accuracy drop on the confirmed supplier's
-  siblings (poisoning check)._ Pins `src/windows/shared/test_suggest_teach.js` (reducer + the C1/C3/C4/C5/C6 WIRING
-  assertions) + `database/modules/test_migration220_suggested_teach.js`. Slice 2 (reggie's `TEACH_SUGGEST_CANDIDATES`
-  candidate retention in `keyword.extract_fields` for the two-different-labels case) is NOT built — its own census +
-  Oracle pass first; do NOT touch `extract_fields` without that go.
+- **suggested_teach_enabled (mig 220, 2026-09-25)** — owner idea "suggest the boxes I read": auto-draw the box(es) the
+  IMPORT keyword read for each field in the **guided Teach WIZARD** (owner re-scope, verbatim: "I didn't want it in
+  Review … when you go to teach a doc, the keyword reads, whether right or wrong, are suggested and the boxes are drawn
+  automatically for the user to confirm or redraw"). Host = `src/windows/shared/teach-ui/teach.js` (NOT Review — the
+  first build's ⊕-Review wiring + its `SuggestTeach` reducer were REMOVED). Advisor round 007+reggie+eric → Oracle
+  SIGN-OFF-W/COND (re-vet after the re-scope). **Near-pure REUSE of the shipped `teach_typed_value_locate` machinery:**
+  the wizard fetches this doc's import reads (`getDocumentWithExtractions`, `raw_value` the locate target) into
+  `state.importValues`; `promptField` fires `maybeSuggestField(f)` after arming the manual prompt; it locates the value
+  via the existing `locateTypedValue` (page-words → `ValueLocate`) and routes hits through the shipped
+  `showLocatedPick` → `useLocatedBox` with `valueSource:'read'`. **UNIQUE** → the box is revealed+ringed and offered in
+  `showValueConfirm` (Accept / Redraw + the value-correction row, since a read is correctable); **MULTIPLE** (the whole
+  census-measured ambiguity: Ironclad statements + Pelican repeat-ref) → the shipped "printed in N places, step n of N"
+  pick, **never auto-picks**; **NONE / any race** → the manual draw that is always armed (no regression). Issuer / list /
+  barcode EXCLUDED. Commit is UNCHANGED — `store()`→`_teachBackBox()`→`saveTemplateMapping`, byte-identical to a
+  hand-drawn field (a Stage-0.5 mapping; NARROWER than the Review anchor). **Why no C1/C4 (the Review conditions):**
+  `_teachBackBox` already does the display→raw transform a hand-draw uses (no new coordinate path → no half-box), and
+  every field is a DELIBERATE per-field visual confirm gated by `canAdvance` (a pending suggestion BLOCKS Next → no
+  bulk-Confirm / rubber-stamp) — the Oracle-signed "seen == approved" gate the shipped typed-locate already relies on.
+  **Oracle conditions wired + pinned:** C-A (UNIQUE reveals+rings the box before the confirm — `showLocatedPick`'s
+  `tzReset`+`emphasiseBox`+`scrollIntoView`), C-B (the async-race guards: `suggestOffered` marked BEFORE the OCR await;
+  bail on doc/page/angle/`curField`/`drag`/`results` change). Default OFF → `maybeSuggestField` early-returns, no
+  page-words spawn → byte-identical to today's manual teach. `getDocumentWithExtractions` is core-only in the transport,
+  so the /v1 client is a clean no-op (manual draw). _Flip gate (Oracle): (1) byte-identical OFF (no Python touched); (2)
+  a suggestion-fidelity IoU census over the corpus INCLUDING deskew-active statements + a wrong-value-caption class —
+  every blessed box overlaps the GT value on the RAW page, 0 verify-passed-but-box-wrong, zero cross-field bleed; (3)
+  realdoc M=0 with no per-field accuracy drop on the confirmed supplier's siblings; plus the C-A reveal, C-B race, and
+  the canAdvance-blocks-pending pins._ Pins `src/windows/teach/test_teach_suggest.js` (switch / source / hook / reuse /
+  C-A / C-B / exclusions / canAdvance) + `database/modules/test_migration220_suggested_teach.js`. Slice 2 (reggie's
+  `TEACH_SUGGEST_CANDIDATES` candidate retention in `keyword.extract_fields` for the two-DIFFERENT-labels case, e.g. Job
+  Ref No vs Job Sheet No) is NOT built — the census never measured multi-label ambiguity; its own census + Oracle pass
+  first; do NOT touch `extract_fields` without that go.
 
 - **glyph_slice_integrity (mig 212, 2026-09-23 night)** — before the second reader re-reads a reference crop, the crop
   rectangle is snapped to the page's own word boxes on that row (a box that cut a glyph grows to the whole word; a box that

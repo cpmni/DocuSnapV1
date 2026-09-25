@@ -167,23 +167,30 @@ likely a census (does auto-suggesting ever pre-draw a WRONG box the user would r
   under which suggested-teach is measurably safer than a hand-draw. The picker is the right first cut. Caveat: the
   corpus renders are clean (NONE=0); real SCANS add a NOT-FOUND tail that falls back to a manual draw — a
   scan-corpus re-run would quantify it before a build. **NEXT: owner/Oracle go on the picker build.**
-- **SLICE 1 BUILT DARK 2026-09-25 (owner "build the picker" → advisor round 007+reggie+eric → Oracle SIGN-OFF-W/COND
-  C1-C7): mig 220 `suggested_teach_enabled`.** Renderer/shared-JS only — the shared `SuggestTeach` reducer
-  (`src/windows/shared/suggestTeach.js`, unique/multiple/none over `ValueLocate`) + the `suggestTeachBoxes` hook on
-  `enterZoneMode`. Slice 1 locates the field's CURRENT value (which covers 100% of the census-measured ambiguity =
-  same-value repeats): UNIQUE → one suggestion after a fresh RAW-frame verify → `showAnchorReadout`; MULTIPLE → the
-  shared resolve picker (never auto-pick); NONE/verify-fail → the manual draw (still armed). Oracle C1 (picker box
-  display→raw back-transform — the seam the Oracle caught), C3 (frame-guard), C4 (tight fresh RAW re-read), C5
-  (position-only), C6 (same supplier-scoped writer) wired + pinned (`test_suggest_teach.js` WIRING + `test_migration220`).
-  ⚠ C7 (glyph second reader) DEFERRED — no glyph IPC in the renderer; the UNIQUE auto-stage is protected by the fresh
-  RAW verify + human Confirm, merged-column ambiguity goes to the picker; glyph = Slice-1b. Byte-identical OFF. **FLIP
-  GATE OWED** (Oracle): byte-identical OFF + a false-suggestion IoU census incl. deskew-active statements + a
-  merged-column class (0 verify-passed-but-box-wrong) + realdoc M=0/no accuracy drop on the confirmed supplier's
-  siblings. **NOT DRIVEN LIVE** (renderer change → needs the Review window reopened). **SLICE 2 (reggie's
-  `TEACH_SUGGEST_CANDIDATES` candidate retention in `keyword.extract_fields` for the two-different-labels case, e.g. Job
-  Ref No vs Job Sheet No) NOT built — the census never measured multi-label ambiguity; it needs its OWN census + a
-  fresh Oracle pass. Do NOT touch `extract_fields` without that go.** Log: `docs/oracle_log.md` (2026-09-25 two entries),
-  ledger `docs/DARK_SWITCH_LEDGER.md`.
+- **BUILT DARK 2026-09-25 in the GUIDED TEACH WIZARD (owner re-scope, NOT Review): mig 220 `suggested_teach_enabled`.**
+  Owner's verbatim spec: "when you go to teach a doc, the keyword reads, whether right or wrong, are suggested and the
+  boxes are drawn automatically for the user to confirm or redraw … Review is only for correction." The first cut wired
+  the ⊕ Review readout; the owner rejected that surface, so it + the Review-only `SuggestTeach` reducer were REMOVED and
+  the feature RE-HOSTED into `src/windows/shared/teach-ui/teach.js`. Advisor round (007+reggie+eric) → Oracle
+  SIGN-OFF-W/COND (re-vet). **Near-pure REUSE of the shipped `teach_typed_value_locate` machinery:** the wizard fetches
+  the doc's import reads (`getDocumentWithExtractions`, `raw_value` the locate target) into `state.importValues`;
+  `promptField` fires `maybeSuggestField(f)` after arming the manual prompt; it locates via the existing
+  `locateTypedValue` and routes hits through the shipped `showLocatedPick`→`useLocatedBox` with `valueSource:'read'`.
+  UNIQUE → box revealed+ringed + `showValueConfirm` (Accept / Redraw / value-correction row); MULTIPLE → the shipped
+  "printed in N places" pick, never auto-picks; NONE/any race → manual draw. Issuer/list/barcode excluded. Commit
+  UNCHANGED (`store`→`_teachBackBox`→`saveTemplateMapping`, a Stage-0.5 mapping = a hand-draw). **No C1/C4 needed** —
+  `_teachBackBox` already does display→raw (no half-box) and `canAdvance` blocks Next while a field is pending (no
+  bulk-Confirm/rubber-stamp = the human checkpoint that replaces Review's C4). Oracle **C-A** (UNIQUE reveals the box
+  before the confirm) + **C-B** (async-race guards: `suggestOffered` pre-await, bail on doc/page/angle/curField/drag/
+  results) wired + pinned (`src/windows/teach/test_teach_suggest.js` + `test_migration220`). Byte-identical OFF (no
+  page-words spawn); /v1 client = clean no-op (transport lacks the method). **RUNNING LIVE with the switch ON** on the
+  dev DB (`…\ScanFinder\docusnap.db`) for the owner's test. **FLIP GATE OWED** (Oracle): byte-identical OFF + a
+  suggestion-fidelity IoU census incl. deskew-active statements + a wrong-value-caption class (0 verify-passed-but-box-
+  wrong, zero cross-field bleed) + realdoc M=0/no accuracy drop on the confirmed supplier's siblings. **SLICE 2 (reggie's
+  `TEACH_SUGGEST_CANDIDATES` candidate retention in `keyword.extract_fields` for the two-DIFFERENT-labels case, e.g. Job
+  Ref No vs Job Sheet No) NOT built — the census never measured multi-label ambiguity; own census + Oracle first. Do NOT
+  touch `extract_fields` without that go.** Log: `docs/oracle_log.md` (2026-09-25, the wizard re-vet entry), ledger
+  `docs/DARK_SWITCH_LEDGER.md`.
 
 ## 2026-09-20 — 'Undetected' issuer: don't fabricate a heading from body text; bucket it in Review (owner idea; NOT built — barry + reggie/gary → Oracle)
 Symptom (owner, live): a long Ricoh MANUAL with no teaching/logo/template landed in Review with the Document

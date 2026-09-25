@@ -2,11 +2,12 @@
 'use strict';
 /**
  * test_migration220_suggested_teach.js — mig 220 seeds `suggested_teach_enabled` OFF (2026-09-25; owner idea
- * "suggest the boxes I read"; advisor round 007+reggie+eric → Oracle SIGN-OFF-W/COND C1-C7, DARK).
- * Slice 1 of the ⊕ Review suggested-teach picker: RENDERER/shared-JS only — no Python, no handler env bridge
+ * "suggest the boxes I read"; advisor round 007+reggie+eric → Oracle SIGN-OFF-W/COND, DARK). The host surface
+ * is the GUIDED TEACH WIZARD (owner re-scope: "I didn't want it in Review") — no Python, no handler env bridge
  * (contrast mig 219). Pins: stamped, seeded 'false', listed in TEST_SWITCH_KEYS (18 keys), single-key seed,
- * no force-ON twin, a later manual ON survives; the shared SuggestTeach reducer exists and stands on
- * ValueLocate; the review renderer gates the suggest hook on the setting. Byte-identical off.
+ * no force-ON twin, a later manual ON survives; the wizard reads the setting + fires maybeSuggestField reusing
+ * the shipped locateTypedValue; the ⊕ Review wiring + the Review-only SuggestTeach reducer were removed.
+ * Byte-identical off. (Deep C-A/C-B/exclusion wiring: src/windows/teach/test_teach_suggest.js.)
  *   ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/electron.exe database/modules/test_migration220_suggested_teach.js
  */
 const path = require('path');
@@ -43,21 +44,20 @@ console.log('\n2. RENDERER/shared-JS only — no Python engine env, no handler b
 const h = norm(fs.readFileSync(path.join(ROOT, 'src', 'modules', 'processing', 'handler.js'), 'utf8'));
 check('no engine env bridge for this key (Slice 1 touches no Python)', !/SUGGESTED_TEACH/.test(h));
 
-console.log('\n3. the shared SuggestTeach reducer stands on ValueLocate');
-const stPath = path.join(ROOT, 'src', 'windows', 'shared', 'suggestTeach.js');
-check('shared/suggestTeach.js exists', fs.existsSync(stPath));
-const st = norm(fs.readFileSync(stPath, 'utf8'));
-check('it delegates location to ValueLocate.locateValueInWords', /ValueLocate\.locateValueInWords/.test(st));
-check('it classifies none / unique / multiple', /'none'/.test(st) && /'unique'/.test(st) && /'multiple'/.test(st));
-global.window = global; require(stPath);
-const { suggestTeachState } = require(stPath);
-check('exported and callable, returns a state', typeof suggestTeachState === 'function'
-      && ['none', 'unique', 'multiple'].includes(suggestTeachState(['X'], { words: [], natW: 1, natH: 1 }).state));
+console.log('\n3. the GUIDED TEACH WIZARD gates the suggest hook on the setting (the host surface — NOT Review)');
+const w = norm(fs.readFileSync(path.join(ROOT, 'src', 'windows', 'shared', 'teach-ui', 'teach.js'), 'utf8'));
+check('the wizard reads suggested_teach_enabled into SUGGEST_ON (default OFF)',
+      /let SUGGEST_ON = false;/.test(w) && /getSetting\?\.\('suggested_teach_enabled'\)/.test(w));
+check('promptField fires maybeSuggestField (the per-field auto-suggest)', /maybeSuggestField\(f\);/.test(w));
+check('it reuses ValueLocate via the shipped locateTypedValue (no new engine, no removed reducer)',
+      /await locateTypedValue\(/.test(w) && !/SuggestTeach/.test(w));
+// The deep C-A/C-B/exclusion wiring is pinned in src/windows/teach/test_teach_suggest.js.
 
-console.log('\n4. the review renderer gates the suggest hook on the setting');
+console.log('\n4. the ⊕ Review surface was REMOVED (owner: not in Review) — the Review-only reducer is gone');
 const r = norm(fs.readFileSync(path.join(ROOT, 'src', 'windows', 'review', 'renderer.js'), 'utf8'));
-check('renderer reads suggested_teach_enabled', /suggested_teach_enabled/.test(r));
-check('renderer loads the SuggestTeach reducer', /SuggestTeach|suggestTeach\.js/.test(r) || /suggestTeach/.test(norm(fs.readFileSync(path.join(ROOT, 'src', 'windows', 'review', 'index.html'), 'utf8'))));
+check('the review renderer no longer references the suggest feature', !/suggested_teach_enabled|suggestTeachBoxes/.test(r));
+check('the Review-only shared/suggestTeach.js reducer was deleted',
+      !fs.existsSync(path.join(ROOT, 'src', 'windows', 'shared', 'suggestTeach.js')));
 
 console.log(fails ? `\n${fails} FAILED` : '\nALL OK');
 process.exit(fails ? 1 : 0);

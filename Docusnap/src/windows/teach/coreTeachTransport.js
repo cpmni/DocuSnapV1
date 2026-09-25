@@ -25,6 +25,7 @@
     getDocumentPages:        (...a) => d.getDocumentPages(...a),
     getPageDeskew:           (...a) => d.getPageDeskew(...a),
     getSetting:              (...a) => d.getSetting(...a),
+    getDocumentWithExtractions: (...a) => d.getDocumentWithExtractions(...a),   // SUGGESTED-TEACH (mig 220): the import keyword reads per field
     // OCR read-back (client-cropped image bytes — no path)
     ocrRegion:               (...a) => d.ocrRegion(...a),
     ocrRegionBoxes:          (...a) => d.ocrRegionBoxes(...a),
