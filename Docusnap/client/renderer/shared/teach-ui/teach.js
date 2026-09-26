@@ -224,6 +224,11 @@ function _showProvisionalCard(staged){
     `<div class="nm" style="font-size:13px;word-break:break-all">${esc(staged.filename||'')}</div>`+
     `<div class="muted" style="font-size:12px">Reading the document…</div>`;
   $('doc-picker-empty')?.classList.add('hidden');
+  // EXACTLY-ONE-SELECTED (owner 2026-09-26 "two ticks"): the importing card takes the selection, so
+  // clear the prior pick's tick first — the queue auto-pick (renderDocPicker) or a card the user
+  // clicked. Otherwise both the previous doc and the importing one show a checkmark. Mirrors the
+  // onclick toggle's "exactly one card is big by construction" invariant. Restored on import failure.
+  for (const el of grid.querySelectorAll('.card.sel')) el.classList.remove('sel');
   grid.prepend(c);
   (async()=>{
     try{
@@ -278,7 +283,7 @@ $('btn-import-teach')?.addEventListener('click', async () => {
       if (st) st.textContent = match ? 'Imported — selected below.' : 'Imported. Pick it below.';
       return match;
     } catch (e) {
-      if (token === state.importToken) { _stopReadTicker(); _prov.remove(); if (st) st.textContent = 'Import failed: ' + (e.message || 'unknown error'); }
+      if (token === state.importToken) { _stopReadTicker(); _prov.remove(); renderDocPicker(); if (st) st.textContent = 'Import failed: ' + (e.message || 'unknown error'); }   // re-render so the prior pick's tick is restored (the provisional cleared it)
       return null;
     } finally {
       if (token === state.importToken) {
