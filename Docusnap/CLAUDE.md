@@ -21,19 +21,31 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-26 — SUGGESTED-TEACH auto-draw in the GUIDED TEACH WIZARD (mig 220) + Chris double-confirm FIX (VERIFIED):
-Branch `feat/teach-side-overnight`; **migs → 220; `TEST_SWITCH_KEYS` 18; run-pins 462/462 green; commits LOCAL/UNPUSHED
-(`a8bee89` Review Slice 1 → `0486f5e` wizard re-host → `59d2fb0` double-confirm fix; origin was `2bb483f`); tree clean
-apart from a docs commit for the Chris review.** **CHRIS REVIEW CYCLE DONE (owner "going to bed", pre-authorised
-implementing Chris's fixes for this feature):** Chris r1 CONFIRMED the owner's complaint (a UNIQUE auto-suggested field
-took 2 taps across two near-identical screens — `showLocatedPick` "Yes teach this spot" THEN `showValueConfirm` "Looks
-right"); **FIX `59d2fb0`:** UNIQUE (`hits.length===1`) now reveals+rings the box inline (C-A) and goes STRAIGHT to the
-single value/label confirm — ONE screen, ONE tap; MULTIPLE keeps `showLocatedPick`; the shipped typed-locate flow
-untouched. **Chris r2 VERIFIED FIXED** (2 taps → 1). Chris's other cards (issuer warn-not-block on a hand-drawn box =
-pre-existing + not this feature; the type-it-instead path still double-asks = shipped Oracle-signed typed-locate;
-auto-draw only pre-draws fields read at import; "value/label" jargon) are LOGGED for the owner's morning vet in
-`docs/CHRIS_FULL_APP_REVIEW_2026-09-26.md` (the OWNER VET QUEUE section) — NOT changed overnight. Sandbox left running
-(port 9223; admin chris/`Sandbox123!`).
+## ⏭ LATEST — 2026-09-26 — SUGGESTED-TEACH auto-draw in the GUIDED TEACH WIZARD (mig 220) + 4 Chris-verified fixes:
+Branch `feat/teach-side-overnight`; **migs → 220; `TEST_SWITCH_KEYS` 18; run-pins 463 files (462 green + `test_ref_class_fix`
+flaky-under-load, green alone); commits LOCAL/UNPUSHED (`a8bee89` Review Slice 1 → `0486f5e` wizard re-host → `59d2fb0`
+double-confirm → `ba267bb` docs → `3bffe07` date locate → `69de2ae` type-path collapse → `1d8011b` issuer over-capture
+→ a docs commit; origin was `2bb483f`); tree clean (only pre-existing untracked `TESTING/_measure/*` + zip).**
+**FOUR fixes this session, EACH Chris-sandbox-verified (owner pre-authorised implementing Chris's findings; advisor gate
+used):**
+- **`59d2fb0` double-confirm:** UNIQUE auto-suggest → ONE screen (reveal+ring inline = C-A, then the value/label confirm),
+  was 2 taps. Chris r2 ✓.
+- **`3bffe07` date locate:** a date stored canonically ("22-01-2026") but printed "22/01/2026" didn't auto-draw —
+  `_locateCandidates` now tries the printed `/ - .` separators for numeric dates (first hit wins; a code with letters
+  gets no variants). Chris r3 ✓.
+- **`69de2ae` type-path collapse:** the "type it instead" path also double-asked → shared `offerLocatedBox(f,value,hits,
+  valueSource)` (UNIQUE one screen, MULTIPLE the shipped pick) now drives BOTH the auto-suggest + the two typed-locate
+  sites. Chris r3 ✓.
+- **`1d8011b` issuer over-capture warning (reggie design):** a loose Document-Issuer box that grabs name+address is now
+  WARNED (new shared node-tested `src/windows/shared/issuerQuality.js` `overCapture`: postcode/phone ⇒ warn; else
+  long+address; length alone never warns) — `_warnOnIssuerValue` gets a branch AFTER near-match, BEFORE `implausible`,
+  demoting "Looks right"→ghost "Use it as-is" + "Draw a tighter box"→primary; NEVER blocks. Chris r4 ✓ (tidy box silent).
+**STILL DARK; flip gate owed** (fidelity IoU census incl. deskew statements + M=0). **OWNER VET QUEUE (logged, NOT changed
+— cosmetic/product-taste):** issuer read-back name/address styling + a "Folder would be:" preview on Use-it-as-is (Chris
+r4); "Document Issuer" vs printed "Supplier"; "value/label" jargon; welcome copy underselling auto-draw; date shown
+dash-form on the confirm. Full detail `docs/CHRIS_FULL_APP_REVIEW_2026-09-26.md`. **Apps:** owner's dev app STOPPED (I
+stopped it to stay under the memory reaper while running the sandbox — relaunch `npm start`); Chris sandbox on port 9223
+(admin chris/`Sandbox123!`).
 Owner "build the picker"
 → built on the ⊕ Review readout → owner tested + rejected the surface ("I didn't want it in Review"; verbatim: "when you
 go to teach a doc, the keyword reads, whether right or wrong, are suggested and the boxes are drawn automatically for the

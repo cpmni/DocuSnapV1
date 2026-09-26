@@ -127,3 +127,70 @@ not proven a regression.
 - **r1-#4 / r1-#5 / r2-#4** copy: "Keep it as typed" needs a plain reason; "value"/"label" jargon (shipped copy).
 - **r1-#6** import "0 processed" vs Review badge 5 — confirm with a normal button click (probable harness artefact).
 - **onboarding** default Output points at the real `Documents\Scan Finder` (correct for a real user; noted).
+
+---
+
+## ROUND 3 — verify the date fix + the type-path collapse (Chris's report, as returned)
+
+Sandbox 9223, logged in as chris, imported Larkspur Interiors (slash-date POs). Switch confirmed ON.
+
+**Both fixes land:**
+- **Date auto-draw = WORKS** — the PO Date box now draws itself onto the printed slash-date ("22/01/2026") even though
+  the software stored it dash-form ("22-01-2026"). Accept = **1 tap**, ONE screen. (fix `3bffe07`)
+- **Type-it-instead = ONE SCREEN** — typing a printed value went straight to one confirm; the old "Yes — teach this spot"
+  screen NEVER appeared (polled 25 ticks). (fix `69de2ae`)
+- **Auto-draw double-confirm = still one-tap** — "Looks right →" advanced directly to the next field.
+- **2 of 3 fields auto-drew** on a Larkspur PO (Issuer excluded by design).
+- **Overall verdict: "Teaching now feels quick and trustworthy — yes."** Best bit: the PO Date auto-draw.
+
+**Findings (round 3, ranked):**
+1. **Loose Document-Issuer box filed a name+address blob as the sender, no warning — STILL-OPEN (top harm).** A loose box
+   grabbed *"Larkspur Interiors The Design Rooms, 3 Chapel Lane Harrogate HG1 2PZ T 01493 …"* and "Looks right →" accepted
+   the whole blob as the sender + folder name. Verified at source: `_warnOnIssuerValue` warns for garble + near-dupes but
+   has NO over-capture check. → **FIXED this session (reggie design → commit `1d8011b`):** a new shared, node-tested
+   module `src/windows/shared/issuerQuality.js` `overCapture(value)` — postcode OR phone ⇒ warn (a company name carries
+   neither); else warn only when the value is BOTH longer than a plausible name AND carries an address token; length
+   alone never warns. Wired into `_warnOnIssuerValue` additively (after the near-match tiers, before the generic garble
+   check): on over-capture it demotes "Looks right" to a ghost "Use it as-is" and promotes **"Draw a tighter box"** to
+   primary — **never blocks.** Precision-first (a tidy "Larkspur Interiors" and long legit / street-word names stay
+   silent — pinned). NB: partly a loose-draw user error; the warn nudges a tighter box.
+2. **Date shown dash-form on the confirm while the page prints slashes** — cosmetic "did it read it right?" wobble (the box
+   is correct). → owner: show the printed form on the confirm? (low priority.)
+3. **"Document Issuer" vs the printed "Supplier"** — carried copy item. → owner.
+4. **Welcome copy undersells the new auto-draw** ("you just draw a box…") — mild; → owner: mention the auto-draw.
+
+Screenshots `r3_step1…r3_step9` in the sandbox folder (job-mortal).
+
+---
+
+## ROUND 4 — verify the issuer over-capture warning (Chris's report, as returned)
+
+**Over-capture warning = WORKS.** A loose box that grabbed
+`Larkspur Interiors The Design Rooms, 3 Chapel Lane Harrogate HG1 2PZ T 01423 560118` → the app warned:
+*"⚠ That looks like the company name plus its address — a company name on its own won't include a postcode or
+phone number. Draw a tighter box around just the name at the top, or use it as-is if that really is the full
+name."* DOM confirmed: **"Draw a tighter box" = `btn primary`**, **"Use it as-is" = `btn ghost quiet`** — it warns,
+never blocks. **Tidy box = SILENT** (a tight box round just "Larkspur Interiors" → normal "Looks right →", no
+warning — doesn't cry wolf). **Regressions HOLD:** PO Date + PO Number both auto-drew (value + label) on one
+screen with a one-tap accept. Verdict: **"the issuer teach now feels safe without being naggy."**
+
+**Round-4 findings (2, minor — the fix itself is solid) → owner vet:**
+1. PREFERENCE/cosmetic — the over-captured read-back is one long green run; bold the suspected NAME and grey the
+   suspected ADDRESS so the picture matches the warning. (Keep the wording.)
+2. QUESTION/low — "Use it as-is" doesn't preview the resulting folder name (it'd be the whole blob); a tiny grey
+   "Folder would be: …" hint would show the consequence. Do NOT remove/soften the button (correct escape hatch).
+
+---
+
+## SESSION SUMMARY (2026-09-26) — the fix cycle, all Chris-verified
+| Finding | Fix | Verified |
+|---|---|---|
+| Auto-draw double-confirm (owner + Chris r1) | one screen for a unique field (`59d2fb0`) | Chris r2 ✓ |
+| Date field didn't auto-draw (owner: 22/01/2026 vs 22-01-2026) | locate the printed separators (`3bffe07`) | Chris r3 ✓ |
+| "Type it instead" also double-asked (Chris r2) | shared `offerLocatedBox`, one screen (`69de2ae`) | Chris r3 ✓ |
+| Loose issuer box → name+address filed silently (Chris r1/r3) | `issuerQuality` over-capture warning, non-blocking (`1d8011b`) | Chris r4 ✓ |
+
+**Still OPEN for the owner's vet** (logged above, not changed): r4-#1/#2 (issuer read-back styling + folder-name
+preview); the "type it instead" is now one screen but the SHIPPED copy items remain — "Document Issuer" vs printed
+"Supplier", "value/label" jargon, welcome copy underselling the auto-draw, date shown dash-form on the confirm.
+Feature stays **DARK**; flip gate (fidelity IoU census incl. deskew statements + M=0) still owed before default-on.
