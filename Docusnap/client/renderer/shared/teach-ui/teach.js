@@ -1356,6 +1356,19 @@ async function useLocatedBox(f, value, box, opts){
 // operator Accepts / steps a multi-spot pick / Redraws / Skips. Fire-and-forget: the manual "draw a
 // box / or type it" prompt is armed FIRST (renderFieldPrompt) and STANDS on none / any failure / any
 // race — a hand-draw always wins. OFF, issuer, list, barcode, no-import-value, already-taught → no-op.
+// Locate candidates for a value: the value itself, plus — for a numeric DATE (3 numeric parts, or a
+// field typed 'date') stored canonically DD-MM-YYYY — the same digits with /, -, . separators, since the
+// page may print the date with a different separator than extraction normalised to. Original first (so an
+// exact match wins without a variant); the committed value stays the canonical stored one either way.
+function _locateCandidates(value, f){
+  const out = [value];
+  const parts = String(value).split(/[\/.\-]/);
+  const dateish = (f && f.type === 'date') || (parts.length === 3 && parts.every(p => /^\d{1,4}$/.test(p)));
+  if (dateish && parts.length >= 2 && parts.every(p => /^\d{1,4}$/.test(p))){
+    for (const sep of ['/', '-', '.']){ const c = parts.join(sep); if (out.indexOf(c) === -1) out.push(c); }
+  }
+  return out;
+}
 async function maybeSuggestField(f){
   if (!SUGGEST_ON || !f) return;
   // EXCLUSIONS (match the vetted scope): the issuer is position-only with its own plausibility/near-match
@@ -1368,8 +1381,18 @@ async function maybeSuggestField(f){
   if (!value || String(value).trim().length < 2) return;      // nothing (or too short) to locate → manual draw
   state.suggestOffered.add(f.key);                            // MARK before the OCR await (C-B)
   const openDocId = state.doc?.id, openPage = state.pageIndex, openAngle = state.deskewAngle;
-  let hits;
-  try { hits = await locateTypedValue(String(value)); } catch { return; }
+  let hits = [];
+  try {
+    // Extraction stores a DATE canonically (DD-MM-YYYY) but the page may PRINT it with a different
+    // separator (owner: stored "22-01-2026", page shows "22/01/2026") — and ValueLocate is strict-exact
+    // and does NOT fold / . -, so the canonical form misses. Try the separator variants of a numeric
+    // date; the first that locates wins. locateTypedValue caches the page-words per frame, so the extra
+    // tries are cache hits (one OCR). The committed value stays the canonical stored one.
+    for (const cand of _locateCandidates(String(value), f)){
+      hits = await locateTypedValue(cand);
+      if (hits && hits.length) break;
+    }
+  } catch { return; }
   // C-B race guards (mirror the Review suggest guards): a late resolve must never clobber the operator's
   // own in-progress box or a moved frame — bail if the switch flipped, the frame changed, the operator
   // began drawing, they moved to another field, or a result now exists for this field.

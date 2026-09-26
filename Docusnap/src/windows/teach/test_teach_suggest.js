@@ -62,6 +62,11 @@ check('C-A: the UNIQUE box is revealed+ringed before the confirm (tzReset + emph
       /if \(hits\.length === 1\)\{[\s\S]{0,400}tzReset\(\);[\s\S]{0,200}emphasiseBox\(box\);[\s\S]{0,200}canvas\.scrollIntoView/.test(js));
 check('MULTIPLE routes through the shipped showLocatedPick (never a new picker, never auto-picks)',
       /showLocatedPick\(f, String\(value\), hits, 0, \{ onYes:/.test(js));
+check('DATE separator gap: _locateCandidates tries / - . variants of a numeric date (page 22/01/2026 vs stored 22-01-2026)',
+      /function _locateCandidates\(value, f\)\{[\s\S]{0,400}for \(const sep of \['\/', '-', '\.'\]\)/.test(js)
+      && /const dateish = \(f && f\.type === 'date'\)/.test(js));
+check('maybeSuggestField tries each locate candidate, first hit wins',
+      /for \(const cand of _locateCandidates\(String\(value\), f\)\)\{[\s\S]{0,120}hits = await locateTypedValue\(cand\);[\s\S]{0,80}if \(hits && hits\.length\) break;/.test(js));
 check('the commit is useLocatedBox with valueSource:read (value-correction row shows), both paths',
       /useLocatedBox\(f, String\(value\), box, \{ valueSource: 'read' \}\)/.test(js));
 check('useLocatedBox takes a valueSource opt (default typed = shipped behaviour)',
