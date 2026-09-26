@@ -1149,6 +1149,12 @@ function _wireTypeRow(handler, focus){
   const run=()=>{ const v=(inp.value||'').trim(); if(!v){ inp.style.borderColor='var(--err)'; return; } handler(v); };
   go.onclick=run;
   inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); run(); } });
+  // CLICK-TO-FOCUS FALLBACK (2026-09-26, the "type as printed box shows no caret" class): when the
+  // row is NOT auto-focused (showValueConfirm's focus:false), an occasional manual click landed no
+  // caret — the same intermittent focus-drop the modals fix (project_focus_repair_mechanism). If the
+  // click did not leave the input focused, re-focus it (via the shared repair path when present).
+  // Bubble-phase, post-click: it can only rescue the failure case, never disturb a caret that landed.
+  inp.addEventListener('click',()=>{ if (document.activeElement !== inp){ if (typeof focusField === 'function') focusField(inp); else { try{ inp.focus(); }catch{} } } });
   if (focus){
     // Programmatic focus goes through the shared repair (forward convention, owner 2026-08-02): a
     // bare .focus() can't trigger the preload pointerdown chokepoint.
