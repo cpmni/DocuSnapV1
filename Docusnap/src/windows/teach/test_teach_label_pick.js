@@ -81,6 +81,15 @@ check('the clip-gated pass-2 re-read stayed INSIDE the per-band function '
       + '(each side is scored on its own best reading)',
       /_bandResult = async \(band\) =>[\s\S]{0,6000}_rereadLabelTight\(/.test(js));
 
+console.log('\nTHE LEFT BAND IS FLOORED VIA THE SHARED PURE FN (the "above not left" garble fix)');
+// A glyph-tight suggested-teach auto-draw box collapsed the LEFT band to a sliver → null LEFT
+// candidate → the un-scored single-band fallback returned the blank ABOVE strip's garble. The band
+// geometry now comes from AnchorLabel.leftBandRect (floored to 0.028), not an inline box.h*1.8, so
+// the sliver can't be silently re-inlined un-floored.
+check('autoLabel builds the LEFT band through A.leftBandRect (not an inline sliver)',
+      /const left\s*=\s*A\.leftBandRect\(box\)/.test(js) && !/h:Math\.min\(1 - lY, box\.h \+ 2 \* lPad\)/.test(js));
+check('leftBandRect is a shared pure fn, not redefined in teach', !/function\s+leftBandRect/.test(js));
+
 console.log('\nBOTH-SUSPICIOUS GOES POSITION-ONLY, never a staged garble — but KEEPS THE LOCATED BOX');
 check('the synthetic position-only anchor is still the final fall-through',
       /anchor_text:null, dir:'left'\}/.test(js));

@@ -186,6 +186,26 @@
         } else run = 0;
       }
     }
+    // FRAGMENTED-NOISE (2026-09-26, the teach auto-draw "Me Nahe. a aero) AR oe" class): a BLANK
+    // above/left band OCRs into several tiny non-word pieces and slips every rule above (the parens
+    // are allowed punctuation, the ≤2-char lowercase fragments are separated by ≥4-char garble tokens
+    // that reset the decapitation run, no intra-token case flip because the pieces are space-split).
+    // It is separated from a real caption by three signals a real caption never combines: ≥3
+    // whitespace tokens carrying a letter, ZERO form-label vocab hits, and ≥half of them ≤2-letter
+    // fragments. Real multi-word captions carry vocab ("Date of Issue","Sales Order No.","Total (inc
+    // VAT)") or are ≤2 tokens ("Invoice No.","Site / Customer"); single-token non-vocab abbrevs
+    // (EORI/SKU/"Rote,") are protected by the ≥3-token floor. The bracket-glue arm reggie floated was
+    // DROPPED (Oracle C2): the short-fraction arm alone catches the exhibit, so the bracket arm was
+    // pure added blast radius. reggie-designed → Oracle SIGN-OFF-W/COND 2026-09-26. Shared predicate:
+    // hardening it here also demotes the garble on autoLabel's un-scored single-band fallback (_bandResult
+    // stamps `suspicious` on every band → the position-only downgrade), not just the picker path.
+    {
+      const wsToks = label.trim().split(/\s+/).filter(t => /[a-zA-Z]/.test(t));
+      if (wsToks.length >= 3 && labelVocabHits(label) === 0) {
+        const shortToks = wsToks.filter(t => t.replace(/[^a-zA-Z]/g, '').length <= 2).length;
+        if (shortToks / wsToks.length >= 0.5) return true;
+      }
+    }
     return false;
   }
 
@@ -224,6 +244,26 @@
     const right  = Math.min(1, clusterNorm.x + clusterNorm.w + hPad);
     const bottom = Math.min(1, clusterNorm.y + clusterNorm.h + vPad);
     return { x, y, w: Math.max(0, right - x), h: Math.max(0, bottom - y) };
+  }
+
+  // The teach LEFT label band, page-norm, with a vertical FLOOR (2026-09-26, gary + Oracle signed;
+  // the suggested-teach "above not left" garble). The height was OPEN-LOOP off the value box
+  // (box.h*1.8, no floor): the auto-draw feeds a GLYPH-TIGHT box (~half a hand-draw height) so the
+  // band collapsed to a ~1.6-line sliver, Tesseract read nothing → autoLabel's LEFT candidate came
+  // back null → control fell to the un-scored single-band fallback which returned the blank ABOVE
+  // strip's garble. Floor the band to 0.028 (the SAME floor the ABOVE band already uses ≈ two text
+  // lines), value-CENTRED. BYTE-IDENTICAL for any box with box.h*1.8 ≥ 0.028 (box.h ≳ 0.0156 — every
+  // normal hand draw): y = box.y+box.h/2 - 0.9·box.h = box.y - 0.4·box.h and h = 1.8·box.h, exactly
+  // the pre-floor values; the floor lifts ONLY the tight auto-draw regime. nearestRowTo (caller)
+  // keeps only the value-centre row, so a taller floored band can't pull in a neighbour caption.
+  // Pinned both ways in test_anchor_label.js (byte-identity above the threshold; the intended
+  // non-identity below it, so the sliver can't be silently "restored").
+  function leftBandRect(box) {
+    const leftW = Math.max(0, box.x);
+    const h0 = Math.max((box.h || 0) * 1.8, 0.028);
+    const y  = Math.max(0, (box.y + (box.h || 0) / 2) - h0 / 2);
+    const h  = Math.min(1 - y, h0);
+    return { x: Math.max(0, box.x - leftW), y, w: leftW, h, dir: 'left' };
   }
 
   // Convert an OCR word/cluster box from a CROP's own pixel frame back to page-norm coords.
@@ -396,7 +436,7 @@
     return out;
   }
 
-  root.AnchorLabel = { nearestLeftCluster, nearestAboveRow, nearestRowTo, extractLabel, sanitizeAnchorLabel, labelLooksSuspicious, scoreLabelCandidate, pickLabelCandidate, labelWordRatio, labelVocabHits, setRatioTiebreak, deskewedNormToRaw, deskewFinalizeAnchor, clusterTouchesClipEdge, labelRereadRect, isTypeHeadingLabel, cropBoxToPageNorm };
+  root.AnchorLabel = { nearestLeftCluster, nearestAboveRow, nearestRowTo, extractLabel, sanitizeAnchorLabel, labelLooksSuspicious, scoreLabelCandidate, pickLabelCandidate, labelWordRatio, labelVocabHits, setRatioTiebreak, deskewedNormToRaw, deskewFinalizeAnchor, clusterTouchesClipEdge, labelRereadRect, leftBandRect, isTypeHeadingLabel, cropBoxToPageNorm };
 })(typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
 
 // Node/test interop (the browser path uses window.AnchorLabel).

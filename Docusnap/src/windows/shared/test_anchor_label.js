@@ -308,6 +308,30 @@ console.log('\nDecapitation-fragment belt (labelLooksSuspicious):');
   check("'Sales Order No.' clean", A.labelLooksSuspicious('Sales Order No.') === false);
 }
 
+console.log('\nFragmented-noise belt (labelLooksSuspicious — the teach auto-draw "above not left" garble):');
+{
+  // POSITIVE — a blank band OCR'd into ≥3 letter-tokens, 0 vocab, ≥half ≤2-char fragments.
+  check("the exhibit 'Me Nahe. a aero) AR oe' → suspicious",
+        A.labelLooksSuspicious('Me Nahe. a aero) AR oe') === true);
+  check("'xz ae rn qp' → suspicious", A.labelLooksSuspicious('xz ae rn qp') === true);
+  check("'aa bb cc' → suspicious", A.labelLooksSuspicious('aa bb cc') === true);
+  // NEGATIVE — the ≥3-token/0-vocab guard must NOT flag any real caption:
+  check("'Rote,' clean (1 token < 3 floor — protects the ratio-tiebreak pin)",
+        A.labelLooksSuspicious('Rote,') === false);
+  check("'EORI' clean (single-token non-vocab abbrev, exposed class preserved)",
+        A.labelLooksSuspicious('EORI') === false);
+  check("'Total (inc VAT)' clean (vocab total/vat present → block skipped, bracket never judged)",
+        A.labelLooksSuspicious('Total (inc VAT)') === false);
+  // re-assert the ≥3-token real captions carry vocab so the new block is skipped:
+  check("'Date of Issue' still clean", A.labelLooksSuspicious('Date of Issue') === false);
+  check("'Sales Order No.' still clean", A.labelLooksSuspicious('Sales Order No.') === false);
+  check("'Company, Inc' still clean", A.labelLooksSuspicious('Company, Inc') === false);
+  check("'Ref, No' still clean", A.labelLooksSuspicious('Ref, No') === false);
+  // picker-level: blank LEFT + garble ABOVE → position-only (label dropped, box retained downstream)
+  const p = A.pickLabelCandidate('', 'Me Nahe. a aero) AR oe', []);
+  check("pickLabelCandidate('', garble) → position-only {null,''}", p.direction === null && p.label === '');
+}
+
 console.log('\nclusterTouchesClipEdge (mechanism evidence for a decapitated caption):');
 {
   // LEFT band, 59px tall: fragments hugging an edge = clipped; a centred cluster = healthy.
@@ -335,6 +359,34 @@ console.log('\nlabelRereadRect (pass-2 crop sizing — pads keyed to the LARGER 
   check('horizontal pad applied', Math.abs(r.x - (0.60 - 0.005)) < 1e-9);
   const edge = A.labelRereadRect({ x: 0.001, y: 0.001, w: 0.05, h: 0.01 }, { h: 0.01 });
   check('clamped to the page', edge.x >= 0 && edge.y >= 0 && edge.x + edge.w <= 1 && edge.y + edge.h <= 1);
+}
+
+console.log('\nleftBandRect (teach LEFT band — floored to 0.028; the "above not left" recall fix):');
+{
+  // BACKWARD-COMPAT: a normal hand-draw box (box.h*1.8 ≥ 0.028, i.e. box.h ≥ ~0.0156) is BYTE-IDENTICAL
+  // to the pre-floor formula (y = box.y - 0.4h, h = 1.8h). Do NOT let a future optimisation collapse it.
+  {
+    const box = { x: 0.30, y: 0.50, w: 0.10, h: 0.030 };
+    const r = A.leftBandRect(box);
+    check('loose box byte-identical: y = box.y - 0.4h', Math.abs(r.y - (0.50 - 0.4 * 0.030)) < 1e-9);
+    check('loose box byte-identical: h = 1.8h (floor inert)', Math.abs(r.h - (0.030 * 1.8)) < 1e-9);
+    check('band width === leftW (box.x)', Math.abs(r.w - 0.30) < 1e-9 && r.x === 0 && r.dir === 'left');
+  }
+  // FLOOR ENGAGED (the auto-draw regime): a glyph-tight box gets the 0.028 floor, value-CENTRED.
+  // This NON-identity is pinned so the sliver ('box.h*1.8') can't be silently restored.
+  {
+    const box = { x: 0.30, y: 0.50, w: 0.10, h: 0.011 };
+    const r = A.leftBandRect(box);
+    check('tight box floored: h === 0.028 (NOT the sliver 0.011*1.8=0.0198)',
+          Math.abs(r.h - 0.028) < 1e-9 && r.h > 0.011 * 1.8);
+    check('tight box value-centred: band centre === value centre',
+          Math.abs((r.y + r.h / 2) - (box.y + box.h / 2)) < 1e-9);
+  }
+  // top-edge clamp: y never negative, h clamped to the page
+  {
+    const r = A.leftBandRect({ x: 0.30, y: 0.004, w: 0.10, h: 0.010 });
+    check('top-edge box clamped: y >= 0 and y + h <= 1', r.y === 0 && r.y + r.h <= 1);
+  }
 }
 
 console.log('\nisTypeHeadingLabel (the a666b83 belt — pass-2 must never adopt a type heading):');

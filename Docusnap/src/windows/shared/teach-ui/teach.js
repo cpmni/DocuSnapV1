@@ -2030,14 +2030,14 @@ async function cropB64(box, pad){
 // ⊕ search. `forceDir` ('left'|'above') restricts the search to one direction (the toggle).
 async function autoLabel(box, forceDir){
   const A = window.AnchorLabel;
-  const leftW = Math.max(0, box.x);                                   // all the way to the left edge
-  // LEFT band vertically CENTRE-EXPANDED to 1.8× the value height (oscar+007, 2026-07-10):
-  // a one-line band at the value's own y decapitated a bolder/higher caption ("SO #"→'sok').
-  // nearestRowTo below keeps only the row nearest the value's centre.
-  const lPad  = box.h * 0.4;
-  const lY    = Math.max(0, box.y - lPad);
-  const left  = {x:Math.max(0,box.x-leftW), y:lY, w:leftW,
-                 h:Math.min(1 - lY, box.h + 2 * lPad), dir:'left'};
+  const leftW = Math.max(0, box.x);                                   // all the way to the left edge (drives the leftW>0.02 gate below)
+  // LEFT band vertically CENTRE-EXPANDED to 1.8× the value height (oscar+007, 2026-07-10) AND now
+  // FLOORED to 0.028 page-height (gary + Oracle, 2026-09-26): a one-line band at the value's own y
+  // decapitated a bolder/higher caption ("SO #"→'sok'), and a GLYPH-TIGHT suggested-teach auto-draw
+  // box collapsed the band to an unreadable sliver → null LEFT candidate → the un-scored single-band
+  // fallback returned the blank ABOVE strip's garble ("above not left"). The shared leftBandRect is
+  // byte-identical for a normal hand-draw box; nearestRowTo below still keeps only the value-centre row.
+  const left  = A.leftBandRect(box);
   // The ABOVE band must be tall enough to CONTAIN the caption line: line spacing routinely
   // exceeds the value's own height, so the old one-line band (y-1.3h, h×1.1) clipped the
   // caption to its bottom pixel-tips and OCR hallucinated junk from the sliver (mirrors the
