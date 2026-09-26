@@ -49,6 +49,7 @@ const deps = {
   doctypes: { getWithFields: () => ({ id: 1, name: 'Invoice', ref_field_key: 'invoice_number', date_field_key: 'invoice_date' }) },
   filing: {
     normaliseDate: require('../modules/filing/handler').normaliseDate,   // the real canonical normaliser
+    extractDate: require('../modules/filing/handler').extractDate,       // the real embedded-date rescue (2026-09-26)
     commitDocument: async ({ allValues }) => {
       calls.commit++; calls.commitAllValues = allValues;
       return filingMode === 'fail'
@@ -121,6 +122,38 @@ const basePayload = (id, extra = {}) => ({
   }));
   check('unparseable date-role value refused (INVALID_DATE)', rBad.ok === false && rBad.code === 'INVALID_DATE' && rBad.field === 'invoice_date');
   check('  → the bad-date doc was NOT filed (held, pre-claim)', get(db, dNorm2).status !== 'confirmed' && get(db, dNorm2).stored_path === null);
+
+  // ── EMBEDDED-DATE RESCUE (2026-09-26, extractDate belt at the confirm gate) ──────────────────
+  // A noisy whole-line DATE capture ("February 1, 2027 (159 days remaining)" — a Print Tracker
+  // depletion annotation) no longer BLOCKS: normaliseDate returns null, extractDate pulls the date out,
+  // and it files as 01-02-2027. Widens ADOPT, never widens FILE-TO-UNKNOWN (a true non-date still fails).
+  const dRescue = newDoc(db);
+  const rRescue = await svc.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(dRescue, {
+    allValues: { supplier_name: 'Acme', invoice_number: 'INV-11', invoice_date: 'February 1, 2027 (159 days remaining)' },
+  }));
+  check('embedded date RESCUED — the confirm succeeds (not INVALID_DATE)', rRescue.ok === true);
+  check('  → the CLEAN date is what files (01-02-2027), annotation dropped', calls.commitAllValues.invoice_date === '01-02-2027');
+  check('  → learning gets the clean date too', calls.lastAllValues.invoice_date === '01-02-2027');
+  // TRADE-OFF PIN — extractDate widens ADOPT, NEVER widens FILE-TO-UNKNOWN: a value with NO extractable
+  // date still hits norm===null and the silent-misfile guard STILL refuses it (a future dev cannot
+  // "improve" extractDate into swallowing non-dates without turning this red).
+  const dNoDate = newDoc(db);
+  const rNoDate = await svc.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(dNoDate, {
+    allValues: { supplier_name: 'Acme', invoice_number: 'INV-12', invoice_date: 'sometime next quarter' },
+  }));
+  check('a value with NO extractable date still refused (guard intact)', rNoDate.ok === false && rNoDate.code === 'INVALID_DATE');
+  // AMBIGUITY — two distinct dates in the box → extractDate refuses → guard holds (fail toward the human).
+  const dAmbig = newDoc(db);
+  const rAmbig = await svc.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(dAmbig, {
+    allValues: { supplier_name: 'Acme', invoice_number: 'INV-13', invoice_date: 'Invoice 01/02/2026 due 05/03/2026' },
+  }));
+  check('ambiguous two-date box still refused (extractDate returns null on ≥2 distinct)', rAmbig.ok === false && rAmbig.code === 'INVALID_DATE');
+  // BYTE-IDENTICAL — a clean date never routes through extractDate (adopt path unchanged).
+  const dClean = newDoc(db);
+  const rClean = await svc.confirm(db, { username: 'sarah', role: 'admin' }, basePayload(dClean, {
+    allValues: { supplier_name: 'Acme', invoice_number: 'INV-14', invoice_date: '15-12-2025' },
+  }));
+  check('clean date still files unchanged (byte-identical, extractDate not consulted)', rClean.ok === true && calls.commitAllValues.invoice_date === '15-12-2025');
 
   // ── ALREADY_FILED: a doc claimed by someone else (confirmed, no stored yet) ───
   const d3 = newDoc(db);

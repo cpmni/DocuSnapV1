@@ -385,7 +385,7 @@ function sanitiseFolderName(name) {
 // with trust._validDate — the auto-file gate + re-read holds — so the gate agrees exactly with this
 // confirm door). filing keeps calling parseDate/formatDate internally (commitDocument below) and
 // RE-EXPORTS normaliseDate so its existing importers are byte-identical. See date_parse.js header.
-const { parseDate, formatDate, normaliseDate } = require('../../../database/modules/date_parse');
+const { parseDate, formatDate, normaliseDate, extractDate } = require('../../../database/modules/date_parse');
 
 function _scheduleDelete(fs, filePath, attempts) {
   setTimeout(() => {
@@ -394,4 +394,4 @@ function _scheduleDelete(fs, filePath, attempts) {
   }, 2000);
 }
 
-module.exports = { register, commitDocument, removeSourceFile, sanitiseFolderName, normaliseDate };
+module.exports = { register, commitDocument, removeSourceFile, sanitiseFolderName, normaliseDate, extractDate };

@@ -12,7 +12,9 @@
  * Pure — no electron/fs/db deps — so it lives in database/modules (which never requires up into src/) and
  * both trees can require it (filing at src/ requires DOWN into database/modules, the allowed direction).
  * Mirrors the text_normalise.js twin-placement precedent. Twins to keep aligned (see the comments below):
- * validator._date_preclean / renderer._datePreclean (pre-clean), validator._wide_month_form (month-name).
+ * validator._date_preclean / renderer._datePreclean (pre-clean), validator._wide_month_form (month-name),
+ * and extractDate's FINDER regexes ↔ validator._NUMERIC_DATE_RE/_MONTH_NAME_DATE_RE (salvage_date_detail)
+ * + renderer _NUMERIC_DRAWN_DATE_RE/_MONTH_NAME_DRAWN_DATE_RE — FINDERS aligned, SELECTION policy NOT (see extractDate).
  */
 
 const MONTHS = {
@@ -75,6 +77,57 @@ function formatDate(d) {
   return `${dd}-${mm}-${yyyy}`;
 }
 
+// ── EMBEDDED-DATE EXTRACTION (2026-09-26, reggie + gary → Oracle SIGN-OFF-W/COND) ──────────────
+// A DATE box may capture MORE than the date: a Print Tracker depletion cell reads "February 1, 2027
+// (159 days remaining)" — the anchored parseDate above rejects the whole string, so the confirm gate
+// (reviewService, the silent-misfile guard) refused a value that WAS a date. extractDate finds the
+// fileable date WITHIN the noisy string. Callers MUST try normaliseDate FIRST and only fall back here
+// on null — a clean whole-string date is byte-identical and never routes through the multi-candidate path.
+//
+// FINDER REGEXES are VERBATIM twins of validator._NUMERIC_DATE_RE / _MONTH_NAME_DATE_RE (Python
+// salvage_date_detail) AND renderer _NUMERIC_DRAWN_DATE_RE / _MONTH_NAME_DRAWN_DATE_RE (Lever X). The
+// finders are deliberately PERMISSIVE (numeric needs TWO real /.- separators so "159"/"14:32"/"1,234.56"
+// never match; month-name needs a spelled month) — the strict `parseDate` below is the SOLE gatekeeper
+// (calendar round-trip refuses 31/04, 12-34-5678, 3-digit years, etc).
+//
+// ⚠ SELECTION POLICY DIFFERS ON PURPOSE — DO NOT "ALIGN" IT. This feeds the FILING door, so on >=2
+// DISTINCT dates it REFUSES (returns null → the guard holds → the human resolves), because a wrong date
+// files silently to the wrong Year/Month folder. That is deliberately different from BOTH the Python
+// review-bound salvage `_salvage_date_value` (picks CLOSEST-TO-TODAY, conf 80) AND the renderer draw-door
+// `_parseDrawnDate` (picks LEFTMOST) — those adopt a low-confidence/review-bound value where a human still
+// checks; this door files. A future dev who "aligns" this to pick-first re-opens a silent-misfile class.
+const _EXTRACT_NUMERIC_RE = /\d{1,4}\s*[/.\-]\s*\d{1,2}\s*[/.\-]\s*\d{1,4}/g;
+const _EXTRACT_MONTH = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+const _EXTRACT_MONTH_NAME_RE = new RegExp(
+  '\\d{1,2}(?:st|nd|rd|th)?\\s*[-/ ]\\s*' + _EXTRACT_MONTH + '\\s*[-/ ,]?\\s*\\d{2,4}' +   // 6th May 2024 / 1-May-24
+  '|' + _EXTRACT_MONTH + '\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{2,4}',                      // May 6th, 2024
+  'gi');
+const _EXTRACT_ORDINAL_RE = /\b(\d{1,2})(?:st|nd|rd|th)\b/gi;   // "1st" -> "1"
+
+// Returns { date: 'DD-MM-YYYY'|null, distinct: <count of distinct calendar dates found> }. The internal
+// split (mirrors Python's detail/scalar split) lets a softer caller read the count; the default is scalar.
+function extractDateDetail(text) {
+  if (text == null) return { date: null, distinct: 0 };
+  let s = String(text);
+  if (s.length > 4000) s = s.slice(0, 4000);    // DoS belt; a drawn OCR cell is short. Linear scan below.
+  const byKey = new Map();                       // calendar-date key -> canonical DD-MM-YYYY (dedup by day)
+  for (const rx of [_EXTRACT_NUMERIC_RE, _EXTRACT_MONTH_NAME_RE]) {
+    for (const m of s.matchAll(rx)) {
+      const cand = String(m[0])
+        .replace(/\s*([/.\-])\s*/g, '$1')        // collapse OCR ws around separators
+        .replace(_EXTRACT_ORDINAL_RE, '$1')      // "1st May" -> "1 May"
+        .trim();
+      const d = parseDate(cand);                 // the SOLE gatekeeper (anchored calendar round-trip)
+      if (!d) continue;
+      const key = d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+      if (!byKey.has(key)) byKey.set(key, formatDate(d));
+    }
+  }
+  if (byKey.size === 1) return { date: [...byKey.values()][0], distinct: 1 };
+  return { date: null, distinct: byKey.size };   // 0 -> null (true non-date); >=2 -> refuse (ambiguous)
+}
+function extractDate(text) { return extractDateDetail(text).date; }
+
 // The CANONICAL date normaliser — the ONE place a submitted date string is turned into the
 // core's stored/filed format (DD-MM-YYYY). Reused by the filename builder AND the confirm path
 // (reviewService) so a desktop or /v1 client never re-implements date parsing: they submit
@@ -85,4 +138,4 @@ function normaliseDate(raw) {
   return d ? formatDate(d) : null;
 }
 
-module.exports = { MONTHS, _datePreclean, parseDate, formatDate, normaliseDate };
+module.exports = { MONTHS, _datePreclean, parseDate, formatDate, normaliseDate, extractDate, extractDateDetail };

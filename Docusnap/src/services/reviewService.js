@@ -209,7 +209,14 @@ function createReviewService(deps = {}) {
       if (dtInfo.date_field_key) dateKeys.add(dtInfo.date_field_key);
       for (const k of dateKeys) {
         const rawDate = allValues[k];
-        const norm = filing.normaliseDate(rawDate);
+        // A noisy DATE box may capture more than the date ("February 1, 2027 (159 days remaining)" — a
+        // Print Tracker depletion annotation). normaliseDate (anchored) returns null on it, so fall back to
+        // extractDate: it locates the fileable date WITHIN the string via the strict parseDate, REFUSING on
+        // >=2 distinct dates (2026-09-26, reggie+gary→Oracle). Only reached on a normaliseDate miss, so a
+        // clean date is byte-identical; a value with NO extractable date still hits norm===null → the
+        // silent-misfile guard below (extractDate widens ADOPT, never widens FILE-TO-UNKNOWN).
+        let norm = filing.normaliseDate(rawDate);
+        if (!norm && typeof filing.extractDate === 'function') norm = filing.extractDate(rawDate);
         if (norm && norm !== rawDate) {
           allValues[k] = norm;
           if (corrections && corrections[k] && corrections[k].corrected_value != null) {

@@ -198,6 +198,27 @@ console.log('\nTHE MIRROR MUST NOT GO STALE — the renderer still implements th
   const py = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'python_backend', 'extraction', 'validator.py'), 'utf8');
   check('the Python twin uses the same separator rule (\\s*[,./\\\\-]?\\s*) behind its DATE_FORMS_WIDE switch', py.includes("_WIDE_SEP = r'\\s*[,./\\\\-]?\\s*'") && py.includes("if DATE_FORMS_WIDE:"));
   check('the Python twin keeps the digits→digits separator NON-EMPTY (twin of FRAG_MDY)', py.includes("_WIDE_SEP_D2D = r'(?:\\s*[,./\\\\-]\\s*|\\s+)'"));
+
+  // ── EMBEDDED-DATE EXTRACTION (2026-09-26, Oracle C1-C3): the FINDER regexes are twin-aligned across
+  // date_parse.js extractDate, the renderer draw-door (Lever X) and the teach coherence check; the
+  // SELECTION policy is deliberately NOT aligned (extractDate refuses ≥2, the door picks). ──────────
+  const dpSrc = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'database', 'modules', 'date_parse.js'), 'utf8');
+  const NUM_FINDER = '/\\d{1,4}\\s*[/.\\-]\\s*\\d{1,2}\\s*[/.\\-]\\s*\\d{1,4}/g';
+  check('date_parse.js extractDate carries the numeric finder (twin)', dpSrc.includes(NUM_FINDER));
+  check('renderer Lever-X carries the SAME numeric finder', rr.includes(NUM_FINDER));
+  check('teach coherence check carries the SAME numeric finder', tr.includes(NUM_FINDER));
+  check('date_parse.js exports extractDate + extractDateDetail', /extractDate,\s*extractDateDetail\s*\}/.test(dpSrc));
+  // extractDate is pure + node-requireable — assert the refuse-on-ambiguity SELECTION here too (the
+  // one thing a future dev must not "align" with the picking doors):
+  const DP = require(path.join(__dirname, '..', '..', '..', 'database', 'modules', 'date_parse.js'));
+  check('extractDate rescues the bug string → 01-02-2027', DP.extractDate('February 1, 2027 (159 days remaining)') === '01-02-2027');
+  check('extractDate REFUSES ≥2 distinct (feeds the filing door — must not pick)', DP.extractDate('Invoice 01/02/2026 due 05/03/2026') === null);
+  // teach surface (C3): the coherence warn no longer nags a whole-line capture that WILL file, and the
+  // date-field prompt reassures the operator it is safe to include the whole line.
+  check('teach _dateCoherenceWarn gates the isDate warn on _embeddedDateReads (no false "not a date")',
+        /isDate && !reads && !_embeddedDateReads\(value\)/.test(tr));
+  check('teach date-field prompt reassures a whole-line capture is safe',
+        /you can include the whole line[\s\S]{0,80}pick out the date/.test(tr));
 }
 
 console.log(fails ? `\n${fails} CHECK(S) FAILED\n` : '\nall validation-surface pins passed\n');

@@ -1100,7 +1100,12 @@ function setValueBanner(f){
     : (isListField(f)
         // LIST field (owner 2026-08-27): the CAPTION is what gets taught — one value box finds it.
         ? `This is a list: drag a rectangle over ONE of the values (not its caption). I'll read the caption printed beside it, and from then on every "${f.label}" caption on this kind of document fills the list.`
-        : `Drag a rectangle right over the value on the page (not the label next to it). I'll read it back before anything is saved.`);
+        // DATE field (owner 2026-09-26): reassure that a whole-LINE capture is safe — the file gate picks
+        // the date out of any trailing text ("February 1, 2027 (159 days remaining)" → files 01-02-2027),
+        // so an operator needn't draw a tight box that risks clipping the leading glyph.
+        : (_isDateField(f)
+            ? `Drag a rectangle over the date — you can include the whole line, any extra words are ignored. I'll pick out the date and read it back before anything is saved.`
+            : `Drag a rectangle right over the value on the page (not the label next to it). I'll read it back before anything is saved.`));
 }
 function promptField(){
   const f=curField(); if(!f) return;
@@ -1664,11 +1669,35 @@ function _parsesAsDate(s){
   const real = (dd, mm) => { const dt = new Date(y, mm - 1, dd); return dt.getFullYear() === y && dt.getMonth() === mm - 1 && dt.getDate() === dd; };
   return (real(d, m) || (!mon && real(m, d))) && y >= 1990 && y <= 2099;
 }
+// FINDER twins of date_parse.js extractDate / renderer _*_DRAWN_DATE_RE — locate a date-shaped
+// substring WITHIN a whole-line capture ("February 1, 2027 (159 days remaining)") so the coherence warn
+// below doesn't cry "not a date" on a value the confirm-gate extractDate WILL file (2026-09-26, Oracle
+// C3). `_parsesAsDate` is the disposer (the same gate the panel already uses); keep the FINDERS aligned
+// with date_parse.js — do NOT introduce a selection policy here, it is a boolean "is there a date in it".
+const _TEACH_DATE_NUM_RE = /\d{1,4}\s*[/.\-]\s*\d{1,2}\s*[/.\-]\s*\d{1,4}/g;
+const _TEACH_DATE_MON = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)';
+const _TEACH_DATE_MON_RE = new RegExp(
+  '\\d{1,2}(?:st|nd|rd|th)?\\s*[-/ ]\\s*' + _TEACH_DATE_MON + '\\s*[-/ ,]?\\s*\\d{2,4}'
+  + '|' + _TEACH_DATE_MON + '\\s+\\d{1,2}(?:st|nd|rd|th)?,?\\s+\\d{2,4}', 'gi');
+function _embeddedDateReads(value){
+  const s = String(value == null ? '' : value);
+  for (const rx of [_TEACH_DATE_NUM_RE, _TEACH_DATE_MON_RE]){
+    for (const m of s.matchAll(rx)){
+      const cand = String(m[0]).replace(/\s*([/.\-])\s*/g, '$1').trim();
+      if (_parsesAsDate(cand)) return true;
+    }
+  }
+  return false;
+}
 function _dateCoherenceWarn(f, value){
   // PLAIN TEXT — the caller escapes for HTML; the toast consumer uses it verbatim.
   if (isIssuerField(f)) return '';
   const isDate = _isDateField(f), reads = _parsesAsDate(value);
-  if (isDate && !reads){
+  // A whole-LINE capture that CONTAINS a fileable date is fine — the file gate extracts it (Oracle C3):
+  // don't tell the operator to redraw/retype a box that will file. Only the isDate warn is relaxed; the
+  // "!isDate but looks like a date" branch below keeps the strict whole-string `reads` (a ref field that
+  // merely contains a date-shaped run must NOT be nagged as "that's a date").
+  if (isDate && !reads && !_embeddedDateReads(value)){
     return `⚠ That doesn't read like a date. If the box caught the wrong text, redraw it — or type the ${f.label} below.`;
   }
   if (!isDate && reads){

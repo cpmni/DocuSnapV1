@@ -58,5 +58,45 @@ check("valid leap 29-02-2024 → valid",                  trust.validDate('29-02
 console.log('§5 re-export identity — filing.normaliseDate IS date_parse.normaliseDate');
 check('filing.normaliseDate === date_parse.normaliseDate', filing.normaliseDate === dp.normaliseDate);
 
+console.log('§6 extractDate — pull the fileable date out of a noisy whole-line capture (2026-09-26)');
+check("the BUG string 'February 1, 2027 (159 days remaining)' → 01-02-2027",
+  dp.extractDate('February 1, 2027 (159 days remaining)') === '01-02-2027'
+  && filing.extractDate('February 1, 2027 (159 days remaining)') === '01-02-2027');
+check("'Due: 31/12/2026' → 31-12-2026",                 dp.extractDate('Due: 31/12/2026') === '31-12-2026');
+check("'Expires 1 Jan 2027' → 01-01-2027",              dp.extractDate('Expires 1 Jan 2027') === '01-01-2027');
+check("'Depletion date 15-08-2026 (est.)' → 15-08-2026", dp.extractDate('Depletion date 15-08-2026 (est.)') === '15-08-2026');
+check("ISO within text 'Received 2026-08-15' → 15-08-2026", dp.extractDate('Received 2026-08-15') === '15-08-2026');
+check("two forms of ONE day dedup → the single date",   dp.extractDate('Dated 01/02/2026 (01 Feb 2026)') === '01-02-2026');
+// SILENT-MISFILE SAFETY — a true non-date / impossible date MUST return null so the guard still refuses
+// (a future dev cannot broaden extractDate to swallow non-dates without turning these red):
+check("'Unknown' → null",                               dp.extractDate('Unknown') === null);
+check("'see attached' → null",                          dp.extractDate('see attached') === null);
+check("'3.5.2' → null (no 4-digit year survives parseDate)", dp.extractDate('3.5.2') === null);
+check("'1,234.56' → null (comma ∉ separator class)",    dp.extractDate('1,234.56') === null);
+check("'ref 12-34-5678' → null (month 34 rolls over)",  dp.extractDate('ref 12-34-5678') === null);
+check("'31/04/2026 xyz' → null (Apr has 30 days)",      dp.extractDate('31/04/2026 xyz') === null);
+// AMBIGUITY — ≥2 DISTINCT dates → null. This feeds the FILING door, so it REFUSES and lets the human
+// resolve; a wrong pick files silently to the wrong Year/Month folder. DELIBERATELY DIFFERENT from the
+// Python review-bound salvage (_salvage_date_value picks CLOSEST-TO-TODAY, conf 80) AND the renderer
+// draw-door (_parseDrawnDate picks LEFTMOST). DO NOT "align" the SELECTION policy — that re-opens a
+// silent-misfile class at the filing door.
+check("ambiguous 'Invoice 01/02/2026 due 05/03/2026' → null", dp.extractDate('Invoice 01/02/2026 due 05/03/2026') === null);
+check("ambiguous '1/2/2026 3/4/2026' → null",           dp.extractDate('1/2/2026 3/4/2026') === null);
+// FALLBACK PRECEDENCE — a clean whole-string date returns identical to normaliseDate (extractDate is a
+// fallback the caller only reaches on a normaliseDate miss; the 99% path is byte-identical):
+check("clean '15-12-2025' extractDate === normaliseDate", dp.extractDate('15-12-2025') === dp.normaliseDate('15-12-2025'));
+// ReDoS belt — a long pathological repeat returns promptly (bounded, non-backtracking scan):
+{ const t0 = Date.now(); const r = dp.extractDate('1/1/'.repeat(3000)); check('long repeat bounded + null', r === null && (Date.now() - t0) < 1000); }
+
+console.log('§7 AUTO-FILE BOUNDARY — extractDate is NOT reachable from the auto-file gate (Oracle C4)');
+// The CONFIRM gate (a human is present) rescues an annotated date; the AUTO-FILE gate (no human) must
+// stay STRICT and hold it toward review. trust.validDate delegates to the anchored parseDate, never to
+// extractDate; processing/handler.js holds on normaliseDate===null. Lock both so nobody wires extractDate in.
+check("trust.validDate stays FALSE on the annotated form (auto-file gate strict)",
+  trust.validDate('February 1, 2027 (159 days remaining)') === false);
+check("normaliseDate stays null on the annotated form (the processing/handler date-hold stays armed)",
+  dp.normaliseDate('February 1, 2027 (159 days remaining)') === null
+  && filing.normaliseDate('February 1, 2027 (159 days remaining)') === null);
+
 console.log(`\n${fails ? 'FAIL' : 'PASS'} — ${fails} failure(s)`);
 process.exit(fails ? 1 : 0);
