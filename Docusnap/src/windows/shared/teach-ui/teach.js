@@ -1645,7 +1645,12 @@ async function _warnOnIssuerValue(f, r){
   if (curField() !== f || String((state.results[f.key]||{}).value||'').trim() !== v) return;
   const host = $('rg-confirm-top'); if (!host) return;
   host.querySelector('.rb-idwarn')?.remove();
-  let html = null, offer = null;
+  let html = null, offer = null, demoteToRedraw = false;
+  // OVER-CAPTURE (Chris r3 / reggie): a loose box caught the company NAME plus its address/phone. Pure,
+  // sync, precision-first (postcode/phone ⇒ warn; else long+address). Additive, never blocks; sits AFTER
+  // the near-match tiers (they carry a real known name to offer) and BEFORE the generic `implausible`.
+  const oc = (typeof window !== 'undefined' && window.IssuerQuality && window.IssuerQuality.overCapture)
+    ? window.IssuerQuality.overCapture(v) : { over: false };
   if (nm && nm.near && nm.kind === 'subrun') {
     // Chris r17 card 3: the box caught ONE line of a stacked name — offer the full name FIRST.
     const where = nm.source === 'prefix-template' ? 'the name this layout already uses'
@@ -1662,6 +1667,11 @@ async function _warnOnIssuerValue(f, r){
     html = `&#9888; That is <strong>${nm.distance === 1 ? 'one character' : nm.distance + ' characters'}</strong> different from `
          + `${known}. Two spellings file this sender into two folders.`;
     offer = nm.existing;
+  } else if (oc.over) {
+    html = (oc.hasPostcode || oc.hasPhone)
+      ? `&#9888; That looks like the company name plus its address — a company name on its own won't include a postcode or phone number. Draw a tighter box around just the name at the top, or use it as-is if that really is the full name.`
+      : `&#9888; That looks longer than a company name — it seems to include the address. Draw a tighter box around just the name, or use it as-is if that really is the full name.`;
+    demoteToRedraw = true;
   } else if (implausible) {
     html = `&#9888; That doesn't look like a company name. Redraw it, or type the name as printed below.`;
   }
@@ -1679,6 +1689,13 @@ async function _warnOnIssuerValue(f, r){
   if (offer) {
     const yes = host.querySelector('#rb-yes');
     if (yes) { yes.classList.remove('primary'); yes.classList.add('ghost', 'quiet'); yes.textContent = `Keep "${v}" anyway`; yes.title = 'File this sender under its own folder, separate from ' + offer; }
+  } else if (demoteToRedraw) {
+    // No known name to offer — the correction is a tighter box. Make "Draw a tighter box" the default;
+    // "Use it as-is" stays one click away (never blocked).
+    const yes = host.querySelector('#rb-yes');
+    if (yes) { yes.classList.remove('primary'); yes.classList.add('ghost', 'quiet'); yes.textContent = 'Use it as-is'; yes.title = 'File this sender under the full text you boxed'; }
+    const rd = host.querySelector('#rb-redraw');
+    if (rd) { rd.classList.remove('ghost', 'quiet'); rd.classList.add('primary'); rd.textContent = 'Draw a tighter box'; }
   }
   // Below the value line, above the actions — where the eye already is. (Explicit if/else, not
   // `?.before(div) || appendChild(div)`: `before()` returns undefined, so the fallback would ALWAYS
