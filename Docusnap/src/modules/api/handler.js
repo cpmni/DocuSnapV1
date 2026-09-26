@@ -894,6 +894,7 @@ function createRequestListener(ctx) {
         const script = ctx.resourcePath('python_backend', 'ocr', 'region.py');
         // Pipeline recipe env (render DPI + reconcile incl. light-text) so the read matches the pipeline (gary).
         let pwEnv = {}; try { pwEnv = (typeof ctx.pipelineOcrEnv === 'function') ? ctx.pipelineOcrEnv(getDb()) : {}; } catch { pwEnv = {}; }
+        pwEnv.DS_OCR_PARALLEL_FULLPAGE = '1';   // teach-locate speed (Oracle C1): concurrent PSM-3/PSM-6, byte-identical merge (parity with the desktop ocr-page-words spawn)
         _pageWordsInFlight++;
         let done = false;
         const finish = (status, payload) => { if (done) return; done = true; _pageWordsInFlight--; try { fsx.unlinkSync(tmp); } catch {} sendJson(res, status, payload); };

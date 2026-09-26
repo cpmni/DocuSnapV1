@@ -6107,6 +6107,12 @@ function register(ctx) {
     // typed value printed in faint grey is findable here on the same scans the pipeline reads it from.
     let _pwEnv = {};
     try { const _db = getDb(); _pwEnv = { ..._ocrDpiEnv(_db), ..._reconcileEnv(_db) }; } catch { _pwEnv = {}; }
+    // TEACH-LOCATE SPEED (2026-09-26, oscar+Oracle C1): run the PSM-3/PSM-6 full-page pair CONCURRENTLY on
+    // this interactive single-page spawn. Byte-identical merge (tesseract.py:676 — PSM-3 fixed base + append
+    // PSM-6 survivors, OMP floored to 1, any failure → sequential); already Oracle-signed for single-reprocess,
+    // just never set here. ~1.8-2× on the ~4.5s word read. No effect on any import/extraction path (this IPC
+    // is teach-locate only). NOT gated by the downscale kill switch — it changes nothing about the READ.
+    _pwEnv.DS_OCR_PARALLEL_FULLPAGE = '1';
     return new Promise((resolve) => {
       const proc = spawn(py, pythonArgs(script,
         '--image-file', tmpFile, '--tesseract', tesseractPath(), '--page-words'),
