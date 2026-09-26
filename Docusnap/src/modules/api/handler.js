@@ -898,8 +898,10 @@ function createRequestListener(ctx) {
         // Downscale toward the import DPI (Oracle C2/C3) — parity with the desktop spawn; the client teach
         // canvas also renders at 288 DPI (TEACH_RENDER_SCALE 4.0). importDpi rides pwEnv.OCR_RENDER_DPI (set
         // only when ≠300), else 300. Kill switch TEACH_PAGE_WORDS_DOWNSCALE=0 → omit → native read.
+        // OPT-IN downscale (default OFF — see the desktop handler: lower DPI misreads value digits on grainy
+        // scans → locate miss → no auto-draw; parallel passes stay on). Enable with TEACH_PAGE_WORDS_DOWNSCALE=1.
         const _pwArgs = ['--image-file', tmp, '--tesseract', ctx.tesseractPath(), '--page-words'];
-        if (process.env.TEACH_PAGE_WORDS_DOWNSCALE !== '0') {
+        if (process.env.TEACH_PAGE_WORDS_DOWNSCALE === '1') {
           const _impDpi = Number(pwEnv.OCR_RENDER_DPI || 300) || 300;
           const _tgt = Math.max(150, Math.min(288, _impDpi));
           _pwArgs.push('--page-words-src-dpi', '288', '--page-words-target-dpi', String(_tgt));

@@ -6113,13 +6113,15 @@ function register(ctx) {
     // just never set here. ~1.8-2× on the ~4.5s word read. No effect on any import/extraction path (this IPC
     // is teach-locate only). NOT gated by the downscale kill switch — it changes nothing about the READ.
     _pwEnv.DS_OCR_PARALLEL_FULLPAGE = '1';
-    // TEACH-LOCATE SPEED (2026-09-26, oscar+Oracle C2/C3): downscale the 288-DPI teach canvas (TEACH_RENDER_SCALE
-    // 4.0 × 72) toward the operator's import DPI before the full-page word OCR — cost ~DPI². DPI-aware target
-    // clamp(importDpi, 150, 288): a fresh install (ocr_dpi 200) reads at 200 (locate-recall == import-recall);
-    // an old/unset DB (300) reads native 288 but now TELLS Tesseract 288 (vs today's guessed ~70) — still a win,
-    // no recall trade. Kill switch TEACH_PAGE_WORDS_DOWNSCALE=0 → omit the args → native read (region.py dpi=None).
+    // TEACH-LOCATE SPEED (2026-09-26, oscar+Oracle C2/C3): OPT-IN downscale of the 288-DPI teach canvas toward
+    // the import DPI before the full-page word OCR (cost ~DPI²). DEFAULT OFF (2026-09-26 PM): the corpus recall
+    // gate passed, but on a real grainy SCAN the lower DPI misreads value digits/slashes (e.g. a date read
+    // "24/11/2026" at 288 but garbled at 200) → the locate string-match FAILS → the box does not auto-draw.
+    // Word COUNT was ~unchanged (107 vs 109), so the gate missed it; the loss is per-VALUE legibility, which
+    // needs a real-scan gate before this can default on. The parallel passes (above) stay on — a safe ~2×.
+    // Enable with TEACH_PAGE_WORDS_DOWNSCALE=1. DPI-aware target clamp(importDpi, 150, 288).
     const _pwArgs = ['--image-file', tmpFile, '--tesseract', tesseractPath(), '--page-words'];
-    if (process.env.TEACH_PAGE_WORDS_DOWNSCALE !== '0') {
+    if (process.env.TEACH_PAGE_WORDS_DOWNSCALE === '1') {
       const TEACH_SRC_DPI = 288;
       let _tgt = 200;
       try { _tgt = Math.max(150, Math.min(TEACH_SRC_DPI, _resolveOcrDpi(getDb()))); } catch {}

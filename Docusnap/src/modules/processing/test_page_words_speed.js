@@ -40,11 +40,12 @@ ok('C3 desktop passes --page-words-src-dpi + --page-words-target-dpi',
 ok('C3 region.py accepts both dpi args',
    /--page-words-src-dpi/.test(region) && /--page-words-target-dpi/.test(region));
 
-// C4 — kill switch gates the args on both callers; region.py defaults OFF = today
-ok('C4 desktop gates args on TEACH_PAGE_WORDS_DOWNSCALE !== \'0\'',
-   /process\.env\.TEACH_PAGE_WORDS_DOWNSCALE\s*!==\s*'0'/.test(desk));
-ok('C4 /v1 gates args on TEACH_PAGE_WORDS_DOWNSCALE !== \'0\'',
-   /process\.env\.TEACH_PAGE_WORDS_DOWNSCALE\s*!==\s*'0'/.test(v1));
+// C4 — downscale is OPT-IN (default OFF after the 2026-09-26 real-scan regression: lower DPI misreads
+// value digits → locate miss → no auto-draw). On ONLY when TEACH_PAGE_WORDS_DOWNSCALE=1. region.py native by default.
+ok('C4 desktop downscale is opt-in (=== \'1\'), default OFF',
+   /process\.env\.TEACH_PAGE_WORDS_DOWNSCALE\s*===\s*'1'/.test(desk));
+ok('C4 /v1 downscale is opt-in (=== \'1\'), default OFF',
+   /process\.env\.TEACH_PAGE_WORDS_DOWNSCALE\s*===\s*'1'/.test(v1));
 ok('C4 region.py defaults both dpi args to 0 (off = native dpi=None)',
    /--page-words-src-dpi'[\s\S]{0,80}default=0/.test(region) && /--page-words-target-dpi'[\s\S]{0,80}default=0/.test(region));
 ok('C4 region.py: dpi stays None until src dpi is supplied',
