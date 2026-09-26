@@ -71,6 +71,14 @@ check('DATE separator gap: _locateCandidates tries / - . variants of a numeric d
       && /const dateish = \(f && f\.type === 'date'\)/.test(js));
 check('maybeSuggestField tries each locate candidate, first hit wins',
       /for \(const cand of _locateCandidates\(String\(value\), f\)\)\{[\s\S]{0,120}hits = await locateTypedValue\(cand\);[\s\S]{0,80}if \(hits && hits\.length\) break;/.test(js));
+
+console.log('\nLATENCY — the page-words OCR is prefetched so the first field does not stall (owner "took a very long time")');
+check('the page-words fetch is factored into a shared _ensurePageWords (cache + one in-flight)',
+      /async function _ensurePageWords\(\)\{[\s\S]{0,400}_pageWordsInflight/.test(js)
+      && /async function locateTypedValue\(value\)\{[\s\S]{0,120}await _ensurePageWords\(\)/.test(js));
+check('startRegionStep WARMS the page-words in the background once the frame is ready, gated on the switch',
+      /function startRegionStep[\s\S]{0,3000}if \(SUGGEST_ON\) \{ try \{ _ensurePageWords\(\); \} catch \{\} \}/.test(js)
+      && /toggleTeachDeskew\(true\);[\s\S]{0,400}_ensurePageWords\(\);/.test(js));
 check('a read suggestion commits via useLocatedBox valueSource:read (keeps the value-correction row)',
       /onYes: \(box\) => useLocatedBox\(f, value, box, \{ valueSource: 'read' \}\)/.test(js));
 check('useLocatedBox takes a valueSource opt (default typed = shipped behaviour)',

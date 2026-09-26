@@ -887,6 +887,10 @@ async function startRegionStep(){
   // Runs once (deskewImg unset); if the page is already straight it's a silent no-op.
   if (state.rawImg && !state.deskewImg) await toggleTeachDeskew(true);
   if (_loading) _setPageLoading(false);           // page + deskew ready — drop the "Reading…" overlay
+  // SUGGESTED-TEACH latency (owner 2026-09-26 "took a very long time"): warm the full-page word OCR NOW,
+  // in the background, so the FIRST suggested field doesn't stall on it. The frame is settled (page +
+  // deskew applied); fire-and-forget, deduped with the per-field fetch. Only when the feature is on.
+  if (SUGGEST_ON) { try { _ensurePageWords(); } catch {} }
   // Open at TZ_DEFAULT rather than fit-to-pane: the fitted page is too small to draw an
   // accurate box on, so this is where the user was going to zoom to anyway. Deferred to
   // the next frame and set AFTER any deskew re-render, so tzApply measures the true
@@ -1236,18 +1240,31 @@ try { D.getSetting?.('barcode_field').then(v => { window.__barcodeFieldOn = v ==
 // Page words are cached per (page, straighten angle): the operator may type several fields on one
 // page, and a full-page OCR per field would be a visible stall for no new information.
 let _pageWordsCache = { key:null, res:null };
-async function locateTypedValue(value){
-  const im = state.img; if (!im || !window.ValueLocate) return [];
+let _pageWordsInflight = null;   // de-dupe a concurrent fetch (prefetch + a field firing at once)
+// Full-page OCR (word geometry) for the CURRENT frame, cached per (page, straighten angle). Extracted
+// so it can be PREFETCHED the moment the page is ready — a scanned page's word read takes seconds, and
+// on the first suggested field that stall is user-visible ("took a very long time" — owner 2026-09-26);
+// warming it while the operator is still on field 1 hides the latency. One in-flight fetch is shared.
+async function _ensurePageWords(){
+  const im = state.img; if (!im) return null;
   const key = state.pageIndex + '|' + (state.deskewAngle || 0);
-  let res = _pageWordsCache.key === key ? _pageWordsCache.res : null;
-  if (!res){
+  if (_pageWordsCache.key === key && _pageWordsCache.res) return _pageWordsCache.res;
+  if (_pageWordsInflight && _pageWordsInflight.key === key) return _pageWordsInflight.p;
+  const p = (async () => {
     _teachReadBusy = true;      // a page-wide read is in flight — block a straighten toggle mid-read
-    try { res = await D.ocrPageWords?.(await cropB64({x:0,y:0,w:1,h:1})); }
+    let res = null;
+    try { res = await D.ocrPageWords?.(await cropB64({ x:0, y:0, w:1, h:1 })); }
     catch { res = null; }
     finally { _teachReadBusy = false; }
-    // Only cache a real answer — caching a failure would make the retry silently impossible.
-    if (res && res.words) _pageWordsCache = { key, res };
-  }
+    if (res && res.words) _pageWordsCache = { key, res };   // only cache a real answer (retry stays possible)
+    return (res && res.words) ? res : null;
+  })();
+  _pageWordsInflight = { key, p };
+  try { return await p; } finally { if (_pageWordsInflight && _pageWordsInflight.p === p) _pageWordsInflight = null; }
+}
+async function locateTypedValue(value){
+  const im = state.img; if (!im || !window.ValueLocate) return [];
+  const res = await _ensurePageWords();
   if (!res || !res.words) return [];
   // The words come back in the pixels of the image we submitted, which is `state.img` at native
   // resolution. Prefer the dims the backend reports; fall back to the image's own.
