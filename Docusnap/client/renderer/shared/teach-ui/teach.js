@@ -1374,10 +1374,14 @@ function offerLocatedBox(f, value, hits, valueSource){
   if (!hits || !hits.length) return false;
   if (hits.length === 1){
     const box = hits[0].box;
-    try { tzReset(); } catch {}
+    // Owner 2026-09-26: on the AUTO-suggest ('read') path, DON'T zoom out — advancing supplier→ref was
+    // resetting the whole page to fit, losing the operator's working zoom. Keep the current zoom; still
+    // ring the box (visible if it's in view). The typed path keeps its reveal (the operator wants to see
+    // where the value they typed landed). The box is captured either way (store → the mapping's target).
+    if (valueSource === 'typed') { try { tzReset(); } catch {} }
     hideStoredBoxes = true; drawnBox = box; redrawCanvas();
     try { emphasiseBox(box); } catch {}
-    try { canvas.scrollIntoView({ block: 'nearest' }); } catch {}
+    if (valueSource === 'typed') { try { canvas.scrollIntoView({ block: 'nearest' }); } catch {} }
     useLocatedBox(f, value, box, { valueSource });
   } else {
     showLocatedPick(f, value, hits, 0,

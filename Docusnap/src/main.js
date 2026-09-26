@@ -846,7 +846,20 @@ function createWindow(name, options, htmlFile) {
   }
 
   win.loadFile(path.join(__dirname, 'windows', name, 'index.html'));
-  win.on('closed', () => { delete windows[name]; });
+  win.on('closed', () => {
+    delete windows[name];
+    // Return foreground to the PARENT (main window) when a child closes (owner 2026-09-26: after
+    // finishing Teach the main window "vanished to the background of other apps"). Closing a modal
+    // child on Windows can drop the app's foreground instead of handing it back; re-focus the parent
+    // so the app stays where it was before the child opened. ONE-SHOT on 'closed' (never inside a
+    // focus handler — that is the title-bar-flash storm), guarded, restore if the parent was minimised.
+    try {
+      if (parentWin && !parentWin.isDestroyed()) {
+        if (parentWin.isMinimized()) parentWin.restore();
+        parentWin.focus();
+      }
+    } catch { /* stale parent ref — nothing to focus */ }
+  });
   if (parentWin && childDockEnabled()) wireChildDock(win, name);
   // Minimise-to-tray: closing ANY primary window (login/license/onboarding/main)
   // hides it so the core keeps running for watch/processing/remote clients. The

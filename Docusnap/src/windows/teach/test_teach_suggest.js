@@ -61,9 +61,11 @@ check('both paths OFFER via the shared offerLocatedBox — auto-suggest (read) a
       && /offerLocatedBox\(f, String\(value\), hits, 'read'\)/.test(js)   // maybeSuggestField (auto)
       && (js.match(/offerLocatedBox\(f, v, hits, 'typed'\)/g) || []).length === 2);   // both typed-locate sites (Chris r2: type path double-asked)
 check('UNIQUE (one hit) is ONE screen — reveal the box then commit DIRECT, no separate pick step (Chris r1/r2)',
-      /function offerLocatedBox[\s\S]{0,300}if \(hits\.length === 1\)\{[\s\S]{0,300}useLocatedBox\(f, value, box, \{ valueSource \}\);/.test(js));
-check('C-A: the UNIQUE box is revealed+ringed before the confirm (tzReset + emphasiseBox + scrollIntoView)',
-      /if \(hits\.length === 1\)\{[\s\S]{0,300}tzReset\(\);[\s\S]{0,200}emphasiseBox\(box\);[\s\S]{0,200}canvas\.scrollIntoView/.test(js));
+      /function offerLocatedBox[\s\S]{0,300}if \(hits\.length === 1\)\{[\s\S]{0,700}useLocatedBox\(f, value, box, \{ valueSource \}\);/.test(js));
+check('UNIQUE rings the box (emphasiseBox) but does NOT zoom out on the auto path — tzReset/scrollIntoView gated on typed (owner: keep the working zoom)',
+      /if \(hits\.length === 1\)\{[\s\S]{0,600}emphasiseBox\(box\);/.test(js)
+      && /if \(valueSource === 'typed'\) \{ try \{ tzReset\(\); \} catch \{\} \}/.test(js)
+      && /if \(valueSource === 'typed'\) \{ try \{ canvas\.scrollIntoView/.test(js));
 check('MULTIPLE routes through the shipped showLocatedPick (never a new picker, never auto-picks)',
       /else \{\s*\n\s*showLocatedPick\(f, value, hits, 0,/.test(js));
 check('DATE separator gap: _locateCandidates tries / - . variants of a numeric date (page 22/01/2026 vs stored 22-01-2026)',
