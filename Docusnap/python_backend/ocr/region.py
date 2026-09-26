@@ -57,6 +57,12 @@ def main():
     # zone ladder above: the caller uses these boxes to decide where a value SITS so a template can
     # read it later, and the only honest test of that is the word geometry extraction itself sees.
     parser.add_argument('--page-words', action='store_true')
+    # TEACH-LOCATE SPEED (2026-09-26, oscar+Oracle C3): downscale the page toward the operator's import
+    # DPI before the full-page word OCR (cost ~DPI²), and tell Tesseract the TRUE dpi of the frame it reads
+    # (this path historically passed dpi=None → Tesseract guessed ~70 on a 288-DPI bitmap). Both default 0
+    # = OFF = today's native read (kill switch TEACH_PAGE_WORDS_DOWNSCALE=0 makes the caller omit them).
+    parser.add_argument('--page-words-src-dpi', type=int, default=0, help='DPI the page image was rendered at (e.g. 288 for the teach canvas); 0 = unknown/off')
+    parser.add_argument('--page-words-target-dpi', type=int, default=0, help='downscale toward this DPI (downscale-only); 0 = no downscale')
     # --skew: emit JSON {"angle": <deg>} — the page's detected skew (PIL CCW-positive, 0.0 when
     # < 0.2°). Straightens the DISPLAYED page so drawn ⊕ boxes align with the text. No OCR.
     parser.add_argument('--skew', action='store_true')
@@ -123,8 +129,20 @@ def main():
         words = []
         try:
             from ocr.tesseract import reconstruct_page_text
+            # Downscale-then-tell-dpi (Oracle C2/C3): REASSIGN `img` so the {w,h} emitted below reports the
+            # SAME frame the words came from — locate normalises boxes by that w/h, so placement stays exact
+            # with no forgettable second variable. Downscale ONLY (never upscale a low-res source).
+            _pw_dpi = None
+            _src = args.page_words_src_dpi or 0
+            _tgt = args.page_words_target_dpi or 0
+            if _src > 0:
+                _pw_dpi = _src
+                if _tgt > 0 and _tgt < _src:
+                    _s = float(_tgt) / float(_src)
+                    img = img.resize((max(1, round(img.width * _s)), max(1, round(img.height * _s))), Image.LANCZOS)
+                    _pw_dpi = _tgt
             wo = {}
-            reconstruct_page_text(img, words_out=wo)
+            reconstruct_page_text(img, dpi=_pw_dpi, words_out=wo)
             # BASE words + the light-text pass's recovered words (present only when that switch is on
             # and something was recovered — Oracle C1 2026-08-27: `words` stays the base-only contract;
             # a typed light-printed value must still be findable by the teach wizard).

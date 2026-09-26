@@ -21,7 +21,22 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-26 — SUGGESTED-TEACH auto-draw in the WIZARD: 4 Chris-verified fixes + FLIPPED default-ON (mig 221):
+## ⏭ LATEST — 2026-09-26 (PM) — TEACH-LOCATE SPEEDUP (owner "long time to first box"): oscar→Oracle SIGN-OFF-W/COND, 2 commits:
+The guided-teach auto-draw's first box took ~7-9s. MEASURED (main-process timers): render 1.5s → straighten 1.6-2.5s
+→ **page-words 4.3-4.7s** (serial). page-words = TWO full-page passes (PSM-3+PSM-6) on the 288-DPI teach canvas, called
+`dpi=None` (Tesseract guessed ~70). **Two levers (Oracle C1 DECOUPLE):** (1) **`ddb5605`** — `DS_OCR_PARALLEL_FULLPAGE`
+on BOTH page-words spawns (desktop + /v1), byte-identical merge, ~2×, pin `test_page_words_parallel.js`. (2) region.py
+`--page-words-src-dpi/--page-words-target-dpi`: DOWNSCALE the 288 canvas toward the import DPI (clamp 150-288) + TELL
+Tesseract the true dpi (C2 REASSIGN `img` → emitted {w,h} == OCR'd frame, placement transparent; C3 DPI-aware target;
+C4 kill `TEACH_PAGE_WORDS_DOWNSCALE=0` = native byte-for-byte), pin `test_page_words_speed.js`. **Ship gate PASS**
+`TESTING/_measure/teach_pagewords_recall_20260926/RESULT.md`: recall 90/90 OLD==NEW, 0 false-locate on wrong text,
+median IoU 0.975, ~1.5× on light corpus docs (more on heavy scans); the one unique IoU-0 verified benign (a twice-printed
+ref, both boxes on real value text — locate only ever returns runs EQUAL to the value, so a moved box = a different TRUE
+occurrence, human Accept/Redraw picks). **Q5 import-geometry reuse + the deskew-downscale bonus → `pendingfeatures.md`**
+(the root cure = delete the whole-page OCR; needs its own Oracle vet on the frame math). Oracle verdict `docs/oracle_log.md`
+2026-09-26. Commit 2 pending this same session.
+
+## ⏭ 2026-09-26 — SUGGESTED-TEACH auto-draw in the WIZARD: 4 Chris-verified fixes + FLIPPED default-ON (mig 221):
 **`suggested_teach_enabled` GRADUATED (mig 221 @DEFAULT_FLIP) — now customer-default-ON, DELISTED (`TEST_SWITCH_KEYS`
 18→17).** Owner "flip suggested-teach first" (the prerequisite for the table/muster teach). **Oracle SIGN-OFF-W/COND
 C1-C3 via a REFRAME:** the literal IoU-vs-GT-box census is uncomputable (GT has no box coords) AND mis-scoped onto

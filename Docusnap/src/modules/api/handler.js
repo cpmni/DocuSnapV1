@@ -895,12 +895,21 @@ function createRequestListener(ctx) {
         // Pipeline recipe env (render DPI + reconcile incl. light-text) so the read matches the pipeline (gary).
         let pwEnv = {}; try { pwEnv = (typeof ctx.pipelineOcrEnv === 'function') ? ctx.pipelineOcrEnv(getDb()) : {}; } catch { pwEnv = {}; }
         pwEnv.DS_OCR_PARALLEL_FULLPAGE = '1';   // teach-locate speed (Oracle C1): concurrent PSM-3/PSM-6, byte-identical merge (parity with the desktop ocr-page-words spawn)
+        // Downscale toward the import DPI (Oracle C2/C3) — parity with the desktop spawn; the client teach
+        // canvas also renders at 288 DPI (TEACH_RENDER_SCALE 4.0). importDpi rides pwEnv.OCR_RENDER_DPI (set
+        // only when ≠300), else 300. Kill switch TEACH_PAGE_WORDS_DOWNSCALE=0 → omit → native read.
+        const _pwArgs = ['--image-file', tmp, '--tesseract', ctx.tesseractPath(), '--page-words'];
+        if (process.env.TEACH_PAGE_WORDS_DOWNSCALE !== '0') {
+          const _impDpi = Number(pwEnv.OCR_RENDER_DPI || 300) || 300;
+          const _tgt = Math.max(150, Math.min(288, _impDpi));
+          _pwArgs.push('--page-words-src-dpi', '288', '--page-words-target-dpi', String(_tgt));
+        }
         _pageWordsInFlight++;
         let done = false;
         const finish = (status, payload) => { if (done) return; done = true; _pageWordsInFlight--; try { fsx.unlinkSync(tmp); } catch {} sendJson(res, status, payload); };
         try {
           const proc = (ctx.spawn || require('child_process').spawn)(ctx.pythonExe(),
-            ctx.pythonArgs(script, '--image-file', tmp, '--tesseract', ctx.tesseractPath(), '--page-words'),
+            ctx.pythonArgs(script, ..._pwArgs),
             { windowsHide: true, env: { ...process.env, ...pwEnv } });
           let out = '', err = '';
           proc.stdout.on('data', d => { out += d.toString(); });

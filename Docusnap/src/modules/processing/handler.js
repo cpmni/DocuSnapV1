@@ -6113,9 +6113,20 @@ function register(ctx) {
     // just never set here. ~1.8-2× on the ~4.5s word read. No effect on any import/extraction path (this IPC
     // is teach-locate only). NOT gated by the downscale kill switch — it changes nothing about the READ.
     _pwEnv.DS_OCR_PARALLEL_FULLPAGE = '1';
+    // TEACH-LOCATE SPEED (2026-09-26, oscar+Oracle C2/C3): downscale the 288-DPI teach canvas (TEACH_RENDER_SCALE
+    // 4.0 × 72) toward the operator's import DPI before the full-page word OCR — cost ~DPI². DPI-aware target
+    // clamp(importDpi, 150, 288): a fresh install (ocr_dpi 200) reads at 200 (locate-recall == import-recall);
+    // an old/unset DB (300) reads native 288 but now TELLS Tesseract 288 (vs today's guessed ~70) — still a win,
+    // no recall trade. Kill switch TEACH_PAGE_WORDS_DOWNSCALE=0 → omit the args → native read (region.py dpi=None).
+    const _pwArgs = ['--image-file', tmpFile, '--tesseract', tesseractPath(), '--page-words'];
+    if (process.env.TEACH_PAGE_WORDS_DOWNSCALE !== '0') {
+      const TEACH_SRC_DPI = 288;
+      let _tgt = 200;
+      try { _tgt = Math.max(150, Math.min(TEACH_SRC_DPI, _resolveOcrDpi(getDb()))); } catch {}
+      _pwArgs.push('--page-words-src-dpi', String(TEACH_SRC_DPI), '--page-words-target-dpi', String(_tgt));
+    }
     return new Promise((resolve) => {
-      const proc = spawn(py, pythonArgs(script,
-        '--image-file', tmpFile, '--tesseract', tesseractPath(), '--page-words'),
+      const proc = spawn(py, pythonArgs(script, ..._pwArgs),
         { windowsHide: true, env: { ...process.env, ..._pwEnv } });
       let out = '', err = '';
       proc.stdout.on('data', d => { out += d.toString(); });

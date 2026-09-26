@@ -5977,3 +5977,14 @@ Review has, so a client user hit by ANY near-match (Tier A/B today, Tier C when 
 Build: read `r.json.nearMatch` in `client/renderer/renderer.js rvConfirm`, render the two buttons inline (Use → swap
 the issuer input + re-confirm; Keep → re-confirm with `acknowledgeIssuerNearMatch: true` — the API road must accept that
 body flag; verify it is whitelisted, today it is not client-supplied). Pin the client's rendering + the API's ack pass.
+
+## Teach-locate: reuse import-time OCR geometry (root-cause latency fix) — 2026-09-26
+The teach auto-draw's cost is a WHOLE-PAGE OCR per doc (~4.5s → ~1.3s after the 2026-09-26 downscale+parallel
+speedup, Oracle-signed). The root cure is to DELETE that OCR: the import pipeline already OCR'd the page, but
+stores only the reconstructed page TEXT, not per-word geometry, and at a different DPI/deskew frame than the
+288-DPI teach canvas. Caching word boxes at import + reprojecting them to the teach frame would make teach-locate
+near-zero-OCR. NOT a detour off the current fix — but a schema/reprojection change that needs its OWN Oracle vet
+on the frame math (the 2026-09-07 placement root cause was exactly an import-frame → display-frame composition that
+misplaced boxes), and still a re-read verify (the value can vary). oscar+Oracle both flagged it as the right target.
+Bonus lever, same idea: `get-page-deskew` (1.6-2.5s, serial before page-words) detects the angle on the full 8 MP —
+skew is scale-invariant, so detect on a ~150-DPI copy (~4× cheaper) and rotate the full-res only for display.
