@@ -81,6 +81,31 @@ Guard: fail toward SHOWING LESS, never a wrong number; a stale/ahead count is wo
   preferred. A live in-app drive on a reopened Review window is still owed (renderer change). The "19 more offered"
   stays a past-tense activity-strip receipt (barry/Oracle: copy/placement, not a number) — unchanged.
 
+## 2026-09-26 — TABLE teach: review-all instead of a step-by-step field walk (owner idea; NOT built — barry → advisor → Oracle when the owner wants it)
+Owner idea, building on the just-shipped suggested-teach auto-draw (mig 220): stop walking the fields one at a time. Flow:
+select the type → draw the **supplier** (the one box you always draw) → the app CREATES the boxes for every keyword-read
+field but does NOT show them → present a **TABLE of detected keyword + value per field**. Click a keyword row → its box is
+shown on the page. If a value is wrong → **skip to the next value**, or **draw the box to correct it** (writes a new
+value + keyword/label for that field on this doc's template). Common case (detection correct) = **review and confirm, one
+supplier draw** — no per-field stepping. Values that weren't detected still get drawn + confirmed.
+- **Scope (owner-confirmed 2026-09-26): PER DOC** — you still review each new doc separately; the table just makes teaching
+  ONE doc fast, and its template then covers that supplier's batch. NOT a docs-×-fields grid. Owner: "we may explore a
+  simpler solution later down the line" (so this table is a candidate, not a commitment).
+- **Feasibility: mostly a UI RE-SHAPE, not new engine** — reuses the shipped pieces: the value→box locate
+  (`ValueLocate`/`SuggestTeach`/`_locateCandidates`), the mapping commit (`store`→`_teachBackBox`→`saveTemplateMapping`
+  writes the value box + label per field), and the import values (`getDocumentWithExtractions`). The new part is the table
+  surface + per-row show/skip/draw, replacing the wizard's step-3 field walk.
+- **THE SAFETY SEAM to design (the recurring one, Oracle-relevant):** a bulk "confirm all" can rubber-stamp a box that is
+  in the WRONG PLACE even when the VALUE is right — the statement / printed-twice class the reconstruction census found
+  (~13-23% of refs/dates: `TESTING/_measure/teach_reconstruction_census_20260925`). The table must SPLIT rows: **uniquely
+  located → safe to bulk-confirm (no box check)**; **ambiguous (found in >1 place) or undetected → flagged, require a
+  box-check or a draw before they count.** That preserves "one supplier draw + confirm" for clean docs and only demands
+  attention where the machine genuinely can't be sure. Owner's click-keyword-to-show-box + skip + draw is the right
+  correction affordance for the flagged rows.
+- **Path:** brainstorm-stage. barry (full flow + table UX + where it sits vs the current step-through wizard + when to
+  fall back to the manual draw) → reggie/eric/007 → Oracle (chiefly the bulk-confirm-vs-box-verify split above) → build.
+  Related: [[suggested_teach_picker]] arc (the auto-draw this builds on; `docs/CHRIS_FULL_APP_REVIEW_2026-09-26.md`).
+
 ## 2026-09-25 — Suggested teach: auto-draw the value + label boxes from the keyword read, ask the user to confirm (owner idea; NOT built — barry → advisor → Oracle)
 Owner idea (live, on the Review teach readout "Check what I read for Quote Number"): instead of the user DRAWING
 a box round each value, the software should AUTO-DRAW the value box (green) + the label box (blue) from the keyword
