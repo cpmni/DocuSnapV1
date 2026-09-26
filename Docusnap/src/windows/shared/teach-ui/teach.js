@@ -1163,7 +1163,7 @@ function showFixedInput(f, prefill){
     let hits=[];
     try{ hits=await locateTypedValue(v); }catch{}
     if(!hits.length){ showNoHit(f, v, saveAsFixed); return; }
-    showLocatedPick(f,v,hits,0);
+    offerLocatedBox(f, v, hits, 'typed');   // UNIQUE → one screen; MULTIPLE → the pick (Chris r2: the type path double-asked too)
   }, /*focus*/true);
   const c=$('rb-type-cancel'); if (c) c.onclick=()=>promptField();
   drawnBox=null; redrawCanvas();
@@ -1346,6 +1346,27 @@ async function useLocatedBox(f, value, box, opts){
   state.results[f.key].valueSource = src;
   showValueConfirm(f, state.results[f.key]);
 }
+// Offer a located value box to the operator — the SUGGESTED-TEACH auto-draw AND the shipped typed-locate
+// share this (Chris r1/r2: the separate "Yes — teach this spot" pick was a second near-identical confirm on
+// BOTH paths, ~2 taps per field). UNIQUE → ONE screen: reveal + ring the box (C-A: in view before the
+// confirm) then straight to the value/label confirm (Accept / Redraw / Type). MULTIPLE → the shipped
+// "printed in N places" pick, NEVER auto-picks. valueSource 'read' = an import suggestion (keeps the
+// value-correction row); 'typed' = the operator typed the value (the shipped commit).
+function offerLocatedBox(f, value, hits, valueSource){
+  if (!hits || !hits.length) return false;
+  if (hits.length === 1){
+    const box = hits[0].box;
+    try { tzReset(); } catch {}
+    hideStoredBoxes = true; drawnBox = box; redrawCanvas();
+    try { emphasiseBox(box); } catch {}
+    try { canvas.scrollIntoView({ block: 'nearest' }); } catch {}
+    useLocatedBox(f, value, box, { valueSource });
+  } else {
+    showLocatedPick(f, value, hits, 0,
+      valueSource === 'read' ? { onYes: (box) => useLocatedBox(f, value, box, { valueSource: 'read' }) } : undefined);
+  }
+  return true;
+}
 
 // SUGGESTED-TEACH (mig 220 `suggested_teach_enabled`, DARK; owner idea → 007+reggie+eric → Oracle
 // SIGN-OFF-W/COND C-A/C-B). Fired at the END of promptField for the current field: if the IMPORT
@@ -1399,21 +1420,10 @@ async function maybeSuggestField(f){
   if (state.doc?.id !== openDocId || state.pageIndex !== openPage || state.deskewAngle !== openAngle) return;
   if (curField() !== f || drag || state.results[f.key]) return;
   if (!hits || !hits.length) return;                          // NONE → the manual draw prompt stands (no regression)
-  if (hits.length === 1){
-    // UNIQUE → ONE combined screen (Chris r1 / owner: the separate "Yes — teach this spot" pick was a
-    // second near-identical confirm — ~2 taps per field, "too many requests"). Reveal + ring the box
-    // HERE (C-A: the box is in view before the confirm — showValueConfirm alone only scrollIntoViews),
-    // then go STRAIGHT to the value/label confirm (Accept / Redraw / Type the correction) — one screen.
-    const box = hits[0].box;
-    try { tzReset(); } catch {}
-    hideStoredBoxes = true; drawnBox = box; redrawCanvas();
-    try { emphasiseBox(box); } catch {}
-    try { canvas.scrollIntoView({ block: 'nearest' }); } catch {}
-    return useLocatedBox(f, String(value), box, { valueSource: 'read' });
-  }
-  // MULTIPLE → the pick step is REQUIRED (owner: "printed in N places, pick one") — it reveals each box
-  // and NEVER auto-picks. onYes commits with valueSource:'read' so the value-correction row shows.
-  showLocatedPick(f, String(value), hits, 0, { onYes: (box) => useLocatedBox(f, String(value), box, { valueSource: 'read' }) });
+  // UNIQUE → one screen (reveal + confirm); MULTIPLE → the shipped "printed in N places" pick (never
+  // auto-picks). Shared with the typed-locate path via offerLocatedBox. valueSource 'read' keeps the
+  // value-correction row (owner: reads used right-or-wrong).
+  offerLocatedBox(f, String(value), hits, 'read');
 }
 function renderFieldRail(){
   // A field marked "not on this document" is NOT captured — counting it as done produced
@@ -1764,7 +1774,7 @@ function showValueConfirm(f, r){
     if (TYPED_LOCATE_ON && v !== String(r.value||'').trim()){
       setConfirm('<span class="muted">Looking for that on the page…</span>');
       let hits=[]; try{ hits=await locateTypedValue(v); }catch{}
-      if (hits.length){ showLocatedPick(f, v, hits, 0); return; }
+      if (hits.length){ offerLocatedBox(f, v, hits, 'typed'); return; }   // UNIQUE → one screen (Chris r2: the type path double-asked)
     }
     r.value = v; r.valueSource = 'typed';
     if (issuer) return finishIssuerField(f);

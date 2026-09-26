@@ -56,19 +56,23 @@ check('promptField calls renderFieldPrompt THEN maybeSuggestField',
 console.log('\nREUSE the shipped typed-locate path (no second OCR / picker)');
 check('maybeSuggestField locates via the shared locateTypedValue',
       /function maybeSuggestField[\s\S]{0,900}await locateTypedValue\(/.test(js));
-check('UNIQUE (one hit) is ONE screen — reveal the box then commit DIRECT (no separate pick step; Chris r1 double-confirm)',
-      /if \(hits\.length === 1\)\{[\s\S]{0,600}return useLocatedBox\(f, String\(value\), box, \{ valueSource: 'read' \}\);/.test(js));
+check('both paths OFFER via the shared offerLocatedBox — auto-suggest (read) and typed-locate',
+      /function offerLocatedBox\(f, value, hits, valueSource\)\{/.test(js)
+      && /offerLocatedBox\(f, String\(value\), hits, 'read'\)/.test(js)   // maybeSuggestField (auto)
+      && (js.match(/offerLocatedBox\(f, v, hits, 'typed'\)/g) || []).length === 2);   // both typed-locate sites (Chris r2: type path double-asked)
+check('UNIQUE (one hit) is ONE screen — reveal the box then commit DIRECT, no separate pick step (Chris r1/r2)',
+      /function offerLocatedBox[\s\S]{0,300}if \(hits\.length === 1\)\{[\s\S]{0,300}useLocatedBox\(f, value, box, \{ valueSource \}\);/.test(js));
 check('C-A: the UNIQUE box is revealed+ringed before the confirm (tzReset + emphasiseBox + scrollIntoView)',
-      /if \(hits\.length === 1\)\{[\s\S]{0,400}tzReset\(\);[\s\S]{0,200}emphasiseBox\(box\);[\s\S]{0,200}canvas\.scrollIntoView/.test(js));
+      /if \(hits\.length === 1\)\{[\s\S]{0,300}tzReset\(\);[\s\S]{0,200}emphasiseBox\(box\);[\s\S]{0,200}canvas\.scrollIntoView/.test(js));
 check('MULTIPLE routes through the shipped showLocatedPick (never a new picker, never auto-picks)',
-      /showLocatedPick\(f, String\(value\), hits, 0, \{ onYes:/.test(js));
+      /else \{\s*\n\s*showLocatedPick\(f, value, hits, 0,/.test(js));
 check('DATE separator gap: _locateCandidates tries / - . variants of a numeric date (page 22/01/2026 vs stored 22-01-2026)',
       /function _locateCandidates\(value, f\)\{[\s\S]{0,400}for \(const sep of \['\/', '-', '\.'\]\)/.test(js)
       && /const dateish = \(f && f\.type === 'date'\)/.test(js));
 check('maybeSuggestField tries each locate candidate, first hit wins',
       /for \(const cand of _locateCandidates\(String\(value\), f\)\)\{[\s\S]{0,120}hits = await locateTypedValue\(cand\);[\s\S]{0,80}if \(hits && hits\.length\) break;/.test(js));
-check('the commit is useLocatedBox with valueSource:read (value-correction row shows), both paths',
-      /useLocatedBox\(f, String\(value\), box, \{ valueSource: 'read' \}\)/.test(js));
+check('a read suggestion commits via useLocatedBox valueSource:read (keeps the value-correction row)',
+      /onYes: \(box\) => useLocatedBox\(f, value, box, \{ valueSource: 'read' \}\)/.test(js));
 check('useLocatedBox takes a valueSource opt (default typed = shipped behaviour)',
       /async function useLocatedBox\(f, value, box, opts\)\{[\s\S]{0,200}const src\s*=\s*\(opts && opts\.valueSource\)\s*\|\|\s*'typed';/.test(js));
 check('located is set ONLY when typed (a read value keeps the correction row)',
