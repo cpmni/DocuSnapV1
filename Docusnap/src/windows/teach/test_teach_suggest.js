@@ -55,7 +55,7 @@ check('promptField calls renderFieldPrompt THEN maybeSuggestField',
 
 console.log('\nREUSE the shipped typed-locate path (no second OCR / picker)');
 check('maybeSuggestField locates via the shared locateTypedValue',
-      /function maybeSuggestField[\s\S]{0,900}await locateTypedValue\(/.test(js));
+      /function maybeSuggestField[\s\S]{0,1500}await locateTypedValue\(/.test(js));
 check('both paths OFFER via the shared offerLocatedBox — auto-suggest (read) and typed-locate',
       /function offerLocatedBox\(f, value, hits, valueSource\)\{/.test(js)
       && /offerLocatedBox\(f, String\(value\), hits, 'read'\)/.test(js)   // maybeSuggestField (auto)
@@ -73,6 +73,25 @@ check('DATE separator gap: _locateCandidates tries / - . variants of a numeric d
       && /const dateish = \(f && f\.type === 'date'\)/.test(js));
 check('maybeSuggestField tries each locate candidate, first hit wins',
       /for \(const cand of _locateCandidates\(String\(value\), f\)\)\{[\s\S]{0,120}hits = await locateTypedValue\(cand\);[\s\S]{0,80}if \(hits && hits\.length\) break;/.test(js));
+
+console.log('\nROLE FALLBACK — the taught type\'s role may differ from the imported key (Oracle 2026-09-26)');
+check('the value lookup goes through ImportRoleResolve.resolveImportValueForField, not the bare exact key',
+      /window\.ImportRoleResolve[\s\S]{0,120}resolveImportValueForField\(f, state\.importValues,/.test(js));
+check('it is DEFENSIVELY guarded — a missing global degrades to the exact-key lookup',
+      /window\.ImportRoleResolve\s*\?[\s\S]{0,400}:\s*state\.importValues\[f\.key\]/.test(js));
+check('the strict role keys (NOT _isDateField) are threaded to the resolver',
+      /resolveImportValueForField\(f, state\.importValues,[\s\S]{0,200}refFieldKey: state\.refFieldKey, dateFieldKey: state\.dateFieldKey/.test(js));
+check('the drift-free alias sets are built once per doc from getAllDocTypes',
+      /state\.roleAliases = window\.ImportRoleResolve\.buildRoleAliases\(await D\.getAllDocTypes\(\)/.test(js));
+{
+  const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+  check('teach/index.html loads importRoleResolve.js BEFORE teach.js',
+        html.indexOf('importRoleResolve.js') > -1
+        && html.indexOf('importRoleResolve.js') < html.indexOf('teach-ui/teach.js'));
+  const sync = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'scripts', 'sync-client-teach.js'), 'utf8');
+  check('sync-client-teach SUBSCRIPTS carries importRoleResolve.js (client mirror stays in step — Oracle C3)',
+        /SUBSCRIPTS[\s\S]{0,400}'importRoleResolve\.js'/.test(sync));
+}
 
 console.log('\nLATENCY — the page-words OCR is prefetched so the first field does not stall (owner "took a very long time")');
 check('the page-words fetch is factored into a shared _ensurePageWords (cache + one in-flight)',

@@ -227,6 +227,7 @@
   <script src="../shared/boxSnap.js"></script>   <!-- the drawn-box word-snap, shared with the Template Manager -->
   <script src="../shared/valueLocate.js"></script>   <!-- find a TYPED value in the page's words so it still teaches a position -->
   <script src="../shared/issuerQuality.js"></script> <!-- teach-time issuer over-capture warning (name + address) -->
+  <script src="../shared/importRoleResolve.js"></script> <!-- suggested-teach role fallback: route the doc's date/ref to the taught type's role when keys differ -->
   <!-- Teach-over-client parity (2026-09-14): the wizard is a SHARED screen (src/windows/shared/teach-ui/teach.js)
        driven through window.TeachTransport (data) + window.TeachHost (chrome). These CORE adapters are pure
        pass-throughs to the preload bridge and MUST load before the shared wizard. The client ships its own

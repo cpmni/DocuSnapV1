@@ -75,6 +75,7 @@ const state = {
   // suggestion has already fired for, so a declined suggestion → manual draw doesn't re-suggest in a loop.
   importValues: null,
   suggestOffered: null,
+  roleAliases: null,   // {dateAlias,refAlias} built once per doc from getAllDocTypes — role-fallback resolver (Oracle 2026-09-26)
 };
 
 // The currently-taught document id, exposed as a window global (mirrors window.SearchState in search-ui) so an
@@ -869,6 +870,17 @@ async function startRegionStep(){
         const v = String(e.raw_value ?? e.display_value ?? '').trim();
         if (v) state.importValues[e.field_key] = v;
       }
+      // ROLE ALIASES (reggie + gary → Oracle C1-C3, 2026-09-26): an untyped import stores its reads
+      // under speculative keys (invoice_date/order_date/reference_number…) that differ from the
+      // TAUGHT type's role keys, so the exact-key suggest lookup missed a value that WAS read. Build
+      // the drift-free date/ref alias sets from every type's role keys so the resolver can route the
+      // doc's single agreed date/ref to this type's role. Fetched once per doc; failure → null →
+      // resolver degrades to exact-key only.
+      try {
+        if (window.ImportRoleResolve && D.getAllDocTypes){
+          state.roleAliases = window.ImportRoleResolve.buildRoleAliases(await D.getAllDocTypes() || []);
+        }
+      } catch { /* leave roleAliases null → exact-key only */ }
     } catch { /* leave {} → manual draw */ }
   }
   const _loading = !state.img;
@@ -1424,7 +1436,15 @@ async function maybeSuggestField(f){
   if (!state.importValues || !state.suggestOffered) return;   // switch was off at fetch / client transport
   if (state.suggestOffered.has(f.key)) return;                // already offered (C-B: no re-suggest loop after Redraw)
   if (state.results[f.key]) return;                           // already drawn / typed / skipped
-  const value = state.importValues[f.key];
+  // Exact-key first (byte-identical); else route the doc's agreed date/ref to this type's ROLE when
+  // the taught key differs from the speculative key import stored under (Oracle C1-C3, 2026-09-26).
+  // Defensive: a missing global degrades to the original exact-key lookup, like every shared-global site.
+  const value = window.ImportRoleResolve
+    ? window.ImportRoleResolve.resolveImportValueForField(f, state.importValues,
+        { refFieldKey: state.refFieldKey, dateFieldKey: state.dateFieldKey,
+          dateAlias: state.roleAliases && state.roleAliases.dateAlias,
+          refAlias:  state.roleAliases && state.roleAliases.refAlias })
+    : state.importValues[f.key];
   if (!value || String(value).trim().length < 2) return;      // nothing (or too short) to locate → manual draw
   state.suggestOffered.add(f.key);                            // MARK before the OCR await (C-B)
   const openDocId = state.doc?.id, openPage = state.pageIndex, openAngle = state.deskewAngle;
