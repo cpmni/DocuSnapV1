@@ -194,3 +194,120 @@ screen with a one-tap accept. Verdict: **"the issuer teach now feels safe withou
 preview); the "type it instead" is now one screen but the SHIPPED copy items remain — "Document Issuer" vs printed
 "Supplier", "value/label" jargon, welcome copy underselling the auto-draw, date shown dash-form on the confirm.
 Feature stays **DARK**; flip gate (fidelity IoU census incl. deskew statements + M=0) still owed before default-on.
+
+---
+
+# ROUND 2 — 2026-09-26 (PM) — GUIDED TEACH WIZARD + auto-draw FLIP (sandboxed)
+
+> Sandbox conditions: fresh install, isolated userData (CDP 9223, port 9223), migration 221 (`suggested_teach_enabled` ON by default), synthetic Demo Docs (clean scans, NOT real grainy paper). Focus = verify the flipped auto-draw + hunt 3 owner-observed bugs. Report is VERBATIM below; findings queue for the owner's vet, nothing implemented.
+
+## TL;DR (3 lines)
+- The auto-draw works and is genuinely nice for the **Document Issuer** and **Invoice Date** (green value box + blue label box + a "printed in 2 places, step through" picker), but the **Invoice Number** auto-draw captured a **garbled label ("Me Nahe. a aero) AR oe")** and offered it as a real keyword to teach — that's the headline risk.
+- Of your three suspected bugs: **#1 = DIFFERENT** (not "Date" — I got "none found" on the date and *gibberish* on the number), **#2 = NOT SEEN in the grid** (clean single-select; the two-selected condition lives in the "Import a PDF to teach…" path I couldn't drive), **#3 = NOT SEEN** (caret appears, typing lands every time).
+- Every destructive button told the truth. Delete→restore round-trips; File All and Delete All warnings were accurate. Nothing left the sandbox (verified on disk after each action).
+
+## Walkthrough (with screenshots, all under `...\chris-sandbox\`)
+1. **First contact** — Created admin (`step01`), recovery-code screen (`step02`, clear "works once" warning), Terms gate (`step03`, honest), onboarding welcome (`step04`, "Everything stays on this computer"), output-folder step (`step05`), organise/preview step (`step06` — preview correctly showed the sandbox Output path), "You're all set" (`step07`). Welcome tour card 1 (`step08_tour`), Practice run intro + teach step (`step09/step10`).
+2. **Real work** — Imported 6 invoices (`step12`→`step13`: read companies, dates, references cleanly, 6/6 in ~12s, moved originals to Processed). Taught **LarkspurInteriors_invoice_02** end to end: doc picker (`step15`), type-select (`step16`), field-pointing (`step17`), issuer type-path (`step18`), issuer located box (`step19`), **Invoice Date auto-draw** (`step20`+`step20_crop`), **Invoice Number auto-draw** (`step21`), label-direction flip (`step22`), summary (`step23`), done (`step24`). Then Review (`step25`/`step26`), confirmed & filed a Marlowe doc, searched it (`step27`), recycle bin (`step28`).
+3. **Scary buttons** — Delete→recycle bin→Restore, Reprocess, Split (`step29`), File All Ready, Delete All Review (`step30`).
+
+---
+
+## The 3 focus bugs — verdicts
+
+**#1 Auto-label too generic ("Date" not "Invoice Date") — DIFFERENT (not reproduced as described; found something worse)**
+On my clean docs I never saw the label captured as bare "Date". Instead:
+- **Invoice Date** (`step20_crop`): a blue box was drawn around the *full* "Invoice Date" caption on the page, yet the readout said **"Label: none found — I'll remember the spot instead."** A contradiction (see card 2).
+- **Invoice Number** (`step21`): value read correctly (INV-95206) but the captured label was **"Me Nahe. a aero) AR oe (above the value)"** — pure gibberish, direction defaulted to "Above" (empty space, real caption "Invoice No." is to the left), and it was *not* flagged as unreadable. See card 1 — this is the same weak label-capture area your live "Date" symptom comes from, just showing up differently on cleaner paper.
+
+**#2 Import picker sticky selection — NOT SEEN in the on-screen grid; likely in the "Import a PDF to teach…" path**
+Clicking a different card in the doc grid moved the blue selection cleanly — exactly one card selected, checked at 0ms/400ms/1900ms/3900ms after the click (no sticky). The "two selected at once" state does exist specifically when you use **"Import a PDF to teach…"**: while a newly-imported PDF reads (~30s), a provisional "reading…" card is added *already selected*, while the queue card that was auto-selected on open keeps its blue selection too. I couldn't drive that path because it opens a native file chooser the sandbox can't operate, so I'm flagging it as the probable locus rather than claiming a live screenshot. If you saw it live, that's almost certainly the "Import a PDF" flow.
+
+**#3 "Type it as printed" box has no caret / won't type — NOT SEEN**
+Tested repeatedly: clicking the "…as printed" box lands focus with a caret at position 0 and characters type in fine ("INV-95206"). The auto-focus-on-appear path (via "Or type it instead") also accepted typing *without* a click. The box's caret colour is the normal dark text colour (visible), nothing hides it. Caveat: a purely visual caret-paint flicker on a real grainy scan can't be fully ruled out by automation, and my synthetic docs may not trigger your intermittent case — but functionally it worked every time.
+
+---
+
+## NEW finding cards (ranked by harm)
+
+**Card 1 — Auto-draw offers a GARBLED label as a real keyword to teach · MAJOR · CONFUSION/trust**
+- Citation (Invoice Number step, verbatim): "Value: **INV-95206** · Label: **Me Nahe. a aero) AR oe** (above the value)" with a primary "Looks right →".
+- User-moment: confirming the boxes the software drew for me during teaching.
+- Observed confusion: I'd read "Me Nahe. a aero" and think "that's not on my invoice." A less careful user just clicks the big blue "Looks right" and teaches nonsense. Worse, the gibberish label never appears on the final "Here's what Scan Finder found" summary (`step23`) — so it's taught *invisibly*.
+- Harm: trust-eroded + quietly degrades future auto-filing for that supplier.
+- Proposed alternative: if the captured label reads as junk (as the date field already does — "couldn't read it cleanly / none found"), fall back to position-only silently instead of showing the garble as a valid label; and default the label direction to the side where a caption was actually found, not "Above" onto blank space.
+- What I may be missing: the engine may have gates that would drop this on save; I only saw the confirm screen offer it.
+
+**Card 2 — Date shows a blue label box on "Invoice Date" but the text says "none found" · MINOR · QUESTION/trust**
+- Citation (verbatim): "The green box is the value; the blue box is the printed label I'll look for next time." … "Value: 02-04-2026 · Label: **none found — I'll remember the spot instead**." (`step20_crop` shows a clear blue box round the whole "Invoice Date".)
+- User-moment: checking what it read for the date.
+- Observed confusion: the sentence promises the blue box *is* the label, I can *see* a blue box on "Invoice Date", but the words say it found no label. I can't tell whether it will use that caption or not.
+- Harm: trust-eroded (mixed signals).
+- Proposed alternative: if no label text was kept, don't draw the blue label box (or label it "spot only — no caption used").
+- What I may be missing: the blue box may be a "candidate" it deliberately rejected; if so, say that.
+
+**Card 3 — "File All Ready" files documents it had just told me "need a quick check" · MAJOR · QUESTION/trust**
+- Citation: per-doc screen said "Needs a quick check — 1 field was read below the level needed to file on its own" and "please confirm it's the sender, not the customer, before filing" (Document Issuer · Check · 63–69%). File All Ready warned "File **4 ready** documents… filed exactly as if you confirmed it yourself. Anything that turns out to need a detail is left in the queue."
+- User-moment: clearing the queue in one click after teaching.
+- Observed confusion: the app called two Marlowe docs "needs a quick check" at 63%, then File All Ready counted them as "ready" and filed them without that check. (The values were in fact correct and filed to the right folder, so no misfile — but the mismatch between "this one needs checking" and "File All filed it" made me nervous.)
+- Harm: trust-eroded (the "ready" label and the "needs a check" flag disagree).
+- Proposed alternative (NOT a safety removal): either exclude docs that carry an unresolved "quick check" flag from the "ready" count, or say in the warning "…includes N that were flagged for a quick check." Keep the confirm exactly as strong.
+- What I may be missing: teaching/confirming a sibling may have legitimately graduated the scope; the count may be technically correct even if it reads oddly.
+
+**Card 4 — Teach welcome still sells the OLD "draw every box by hand" method · MINOR · CONFUSION**
+- Citation (verbatim): "For each detail you just **draw a box around its value**… **Draw every detail you can find** on the page, wherever it is printed — the footer counts."
+- User-moment: reading the intro before I start teaching.
+- Observed confusion: it never mentions that it now draws the boxes *for* me and asks me to confirm — so I braced to hand-draw three boxes, then it auto-drew them. Pleasant surprise, but the copy undersells the best new thing.
+- Harm: slowed/mis-set expectations.
+- Proposed alternative: "For each detail, Scan Finder draws a box around what it already read and asks you to confirm or fix it — you only draw by hand when it didn't find something."
+- What I may be missing: maybe kept deliberately generic so it still reads right when auto-draw finds nothing.
+
+**Card 5 — The Practice run teaches the OLD hand-draw method, not the new auto-draw · MINOR · CONFUSION**
+- Citation: practice teach step says "Draw a box around the company name at the top" with every field showing "Draw a box on the document…" / "Waiting…" (`step10`).
+- User-moment: doing the guided practice a brand-new user is pointed to.
+- Observed confusion: the practice trains me to draw every box; the real wizard then auto-draws. Two different mental models for the same task on my first day.
+- Harm: slowed (small).
+- Proposed alternative: mirror the real auto-draw (pre-draw a sample box to accept) in the practice, or add one line "in the real thing it draws these for you."
+- What I may be missing: the practice is a self-contained sim; updating it may be non-trivial.
+
+**Card 6 — Type-select doesn't pre-pick the type it already read · POLISH · PREFERENCE**
+- Citation: "What kind of document is this?" with Invoice / Sales Order / Purchase Order / "It's something new" — none pre-selected (`step16`), even though import had read it as an Invoice.
+- User-moment: middle of teaching.
+- Observed confusion: I already know it read this as an Invoice; being asked cold to pick again is a small redundant decision.
+- Proposed alternative: pre-select the type it detected (still fully changeable), or note "Read as: Invoice".
+- What I may be missing: you may intentionally force a conscious choice here.
+
+**Card 7 — Two near-identical "2 more offered in File All Ready" banners stack · POLISH · PREFERENCE**
+- Citation: two banners side by side — "2 more offered in File All Ready · Marlowe Medical Supplies" and "…· Larkspur Interiors" (`step29`).
+- User-moment: back in Review after teaching + a confirm.
+- Observed confusion: looks like a duplicate at a glance; I had to read both to see they're different senders.
+- Proposed alternative: merge into one ("4 more offered in File All Ready — 2 senders") or stack vertically with the sender leading.
+- What I may be missing: two events genuinely happened; separate banners may be intentional history.
+
+---
+
+## Warnings truth-table
+| Button | What it warned | What actually happened | Truthful? |
+|---|---|---|---|
+| Delete (one doc) | "goes to the app's recycle bin — you can restore it from Search" | Doc appeared in Search → **Recycle bin**, restorable | ✅ TRUE |
+| Restore all | "go back to where they were deleted from (review queue, or filed folder)" | Returned to Review queue (count 3→4); bin emptied | ✅ TRUE |
+| Reprocess (this doc) | *(no warning)* | Non-destructive re-read; values refreshed, nothing lost/moved | ✅ TRUE (warning not needed) |
+| Split PDF | "This document is only one page — there's nothing to split" | Did nothing (all my docs are 1 page) | ✅ TRUE |
+| File All Ready | "File 4 ready documents… as if you confirmed it yourself. Anything needing a detail is left in the queue" | Filed all 4 to correct sender/year/month folders; none held | ✅ TRUE (but see card 3 re: "ready" incl. flagged docs) |
+| Delete All Review | "Delete ALL 2… recycle bin, restorable… **Files on disk are kept. Confirmed and deferred NOT affected**" | Count→0; original PDFs still on disk in Processed; filed docs untouched | ✅ TRUE (best-written warning of the lot) |
+
+## What genuinely worked well
+- The **located-box step-through** on the issuer/value: green value box, blue label box, and "It's printed in 2 places. Step through until the green box sits on the right one." with a "1 of 2" pager (`step19`). That's automation *showing its work* — I trusted it immediately.
+- The **destructive-button safety net**: single-delete → recycle bin → one-click restore, plus consistently honest, count-specific, scoped warnings. I never felt one click from losing paper.
+- The **teach "Done" screen** (`step24`): "nothing files on a guess," the Now → Next few → Soon progression, and "Confirm 2 more… and the rest will file themselves." Reassuring and accurate — the two Larkspur siblings did become "ready."
+- Filing itself: all 6 landed as `Company/Year/Month/Invoice.DD-MM-YYYY.Ref.pdf` with sidecar metadata, exactly as the preview promised.
+
+## Top friction point
+The auto-draw's **label capture is unreliable and can silently teach gibberish** (card 1) — and because the bad label never shows on the final summary, the one screen meant to "show its work" hides the one thing most likely to quietly poison future filing. That undercuts the trust the rest of the wizard earns.
+
+## Two-week verdict
+**Yes — I'd keep using it**, with one reservation. The import → review → confirm → search loop is fast and pleasant, the filing is exactly the shelf I picture, and the safety net (restore, truthful warnings) is the best I've seen in this app. But I'd want the auto-draw to never offer a garbled label as a real keyword, and I'd want "File All Ready" and the per-doc "needs a check" flag to stop contradicting each other — because the moment I catch the software confidently teaching itself nonsense, I start double-checking everything, which defeats the point.
+
+## Safety / humility
+- **Sandbox contract honoured.** Output redirected into `...\chris-sandbox\Output`; verified after *every* file action that nothing was written to the owner's `Documents\Scan Finder` (all my per-action checks were empty; the only recent files there were the owner's *other* running instance — companies I never imported). All 6 docs filed to the sandbox. App still running.
+- I'm **one simulated, non-technical user** on **clean synthetic scans**, not a user test and not real grainy paper. These are opinions to vet, not confirmed defects — especially bug #2 (couldn't drive the native file chooser) and bug #3 (visual caret glitches resist automation).
