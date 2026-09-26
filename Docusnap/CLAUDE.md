@@ -21,8 +21,18 @@ touches that area — read the pointed-to doc BEFORE working in it:
 - `docs/architecture-notes.md` — the long per-file design notes moved out of the directory map (marked
   ➜AN there). Read the matching block before changing one of those files.
 
-## ⏭ LATEST — 2026-09-26 — SUGGESTED-TEACH auto-draw in the GUIDED TEACH WIZARD (mig 220) + 4 Chris-verified fixes:
-Branch `feat/teach-side-overnight`; **migs → 220; `TEST_SWITCH_KEYS` 18; run-pins 463 files (462 green + `test_ref_class_fix`
+## ⏭ LATEST — 2026-09-26 — SUGGESTED-TEACH auto-draw in the WIZARD: 4 Chris-verified fixes + FLIPPED default-ON (mig 221):
+**`suggested_teach_enabled` GRADUATED (mig 221 @DEFAULT_FLIP) — now customer-default-ON, DELISTED (`TEST_SWITCH_KEYS`
+18→17).** Owner "flip suggested-teach first" (the prerequisite for the table/muster teach). **Oracle SIGN-OFF-W/COND
+C1-C3 via a REFRAME:** the literal IoU-vs-GT-box census is uncomputable (GT has no box coords) AND mis-scoped onto
+Slice 1, which NEVER auto-commits — every field is a per-field human confirm (`canAdvance` blocks a pending field).
+Substitute accepted: uniqueness-by-construction + the human confirm; byte-identical OFF (no Python → M=0 sound on the
+mechanism, `suggested_teach_enabled` absent from all `python_backend/`). **C1** `doCommit` refuses a pending field
+(defense-in-depth) + **C2** pin; **C3** the FULL IoU/cross-field-bleed/silent-placement census is RE-ASSIGNED to the
+future MUSTER (auto-places silently → owes it before its own flip). Pin `database/test_default_flip_221.js`. NOT
+required: a scan-corpus census (efficacy, not safety). Also brainstormed (barry) the **TABLE/muster teach** (owner idea)
+→ `pendingfeatures.md` 2026-09-26; owner picked "flip first" — muster deferred.
+Branch `feat/teach-side-overnight`; **migs → 221; `TEST_SWITCH_KEYS` 17; run-pins 464 files (463 green + `test_ref_class_fix`
 flaky-under-load, green alone); commits LOCAL/UNPUSHED (`a8bee89` Review Slice 1 → `0486f5e` wizard re-host → `59d2fb0`
 double-confirm → `ba267bb` docs → `3bffe07` date locate → `69de2ae` type-path collapse → `1d8011b` issuer over-capture
 → a docs commit; origin was `2bb483f`); tree clean (only pre-existing untracked `TESTING/_measure/*` + zip).**

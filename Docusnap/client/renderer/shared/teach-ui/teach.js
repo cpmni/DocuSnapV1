@@ -2257,7 +2257,19 @@ function addRow(parent,k,v,empty,isFixed){
 }
 async function doCommit(){
   $('commit-err').textContent='';
-  const next=$('btn-next'); next.disabled=true; next.textContent='Saving…';
+  const next=$('btn-next');
+  // C1 (Oracle 2026-09-26, the mig-220 flip vet — DEFENSE-IN-DEPTH): a suggested/located box is only ever
+  // written to the template after a per-field HUMAN confirm — canAdvance (case 3) blocks advancing while
+  // any field is `status:'pending'`, and that is the single interlock the flip's safety rests on. Assert
+  // it HERE too (covers both the desktop path and the client `commitTeach` below): REFUSE to commit if any
+  // field is still pending, fail toward review — so a future canAdvance regression cannot silently write
+  // an unconfirmed (possibly mis-placed) box. Never drop the field; ask the operator to finish it.
+  if (state.fields.some(f => { const r = state.results[f.key]; return r && r.status === 'pending'; })){
+    $('commit-err').textContent = 'Please finish confirming every detail before saving.';
+    next.disabled = false;              // leave Save active at its current label so they can retry
+    return;
+  }
+  next.disabled=true; next.textContent='Saving…';
   try{
     const allValues={};
     for (const f of state.fields){

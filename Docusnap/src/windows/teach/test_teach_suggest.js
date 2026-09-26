@@ -108,6 +108,13 @@ check('issuer / list / barcode are excluded from suggestion',
       /if\s*\(isIssuerField\(f\)\s*\|\|\s*isListField\(f\)\s*\|\|\s*f\.auto === 'barcode'\)\s*return;/.test(js));
 check('canAdvance step 3 BLOCKS advancing while any field is pending (replaces Review C4)',
       /case 3:\s*return state\.fields\.length>0 && state\.fields\.every\(f => \{[\s\S]{0,120}status !== 'pending'/.test(js));
+// C2 (Oracle flip vet 2026-09-26): the flip's whole safety rests on "a box is only written after a
+// per-field human confirm". doCommit REFUSES a pending field (defense-in-depth for a canAdvance
+// regression). This pin goes RED if that guard is removed — pair it with the canAdvance pin above.
+check('C1: doCommit refuses to commit while any field is still pending (fail toward review, both paths)',
+      /async function doCommit\(\)\{[\s\S]{0,600}state\.fields\.some\(f => \{ const r = state\.results\[f\.key\]; return r && r\.status === 'pending'; \}\)\)\{[\s\S]{0,200}commit-err[\s\S]{0,120}return;/.test(js));
+check('C1: the pending refusal sits ABOVE the mapping write (Saving… / allValues loop)',
+      /doCommit\(\)\{[\s\S]*?status === 'pending'[\s\S]*?return;[\s\S]*?next\.textContent='Saving…'/.test(js));
 
 console.log('\nNO dependency on the removed Review-only SuggestTeach reducer');
 check('the wizard does not reference SuggestTeach (it uses ValueLocate via locateTypedValue)',

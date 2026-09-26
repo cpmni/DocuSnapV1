@@ -29,7 +29,7 @@ check('migration 219 stamped', applied.has(219));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 219 applied/.test(l) && /seeded OFF/.test(l)));
 check(`a fresh install has ${KEY} === 'false'`, get(db, KEY) === 'false');
 check(`${KEY} is listed in TEST_SWITCH_KEYS`, TEST_SWITCH_KEYS.includes(KEY));
-check('TEST_SWITCH_KEYS is 18 keys (+ suggested_teach_enabled mig 220 the Review suggested-teach picker Slice 1 DARK 2026-09-25)', TEST_SWITCH_KEYS.length === 18 && new Set(TEST_SWITCH_KEYS).size === 18);
+check('TEST_SWITCH_KEYS is 17 keys (suggested_teach_enabled mig 220 graduated via @DEFAULT_FLIP 221 2026-09-26)', TEST_SWITCH_KEYS.length === 17 && new Set(TEST_SWITCH_KEYS).size === 17);
 const src = norm(fs.readFileSync(path.join(ROOT, 'database', 'index.js'), 'utf8'));
 check('single-key INSERT OR IGNORE seed of false', new RegExp(`INSERT OR IGNORE INTO settings \\(key, value\\) VALUES \\('${KEY}', 'false'\\)`).test(src));
 check('NO force-ON of the key anywhere in the migrations', !new RegExp(`VALUES \\('${KEY}', 'true'\\)`).test(src));

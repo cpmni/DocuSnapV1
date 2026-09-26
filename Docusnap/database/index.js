@@ -4424,6 +4424,26 @@ function runJsMigrations(db, applied) {
     } catch (e) { console.warn(`  migration 220 (suggested_teach_enabled): ${e.message}`); }
   }
 
+  // @DEFAULT_FLIP 221 (2026-09-26, owner "flip suggested-teach first"; Oracle SIGN-OFF-W/COND C1-C3):
+  // GRADUATE `suggested_teach_enabled` (mig 220) from DARK to customer-default-ON — the guided-teach
+  // auto-draw is now the default. Gate MET: byte-identical OFF (no Python changed → extraction untouched;
+  // the renderer gate is inert off, pinned); the switch is ABSENT from all of python_backend/ so the flip
+  // cannot change any read (realdoc M=0 sound on the mechanism); unique boxes are correct by construction
+  // (ValueLocate string-match) + the reconstruction census (ref 77% / date 87% unique, MULTIPLE entirely
+  // statements + repeat-ref → the picker) + the feature NEVER auto-commits (canAdvance blocks a pending
+  // field; C1 doCommit refuses one). DELISTED from dark_switches.js the SAME commit (else build_arming
+  // would disarm it on the first release launch). A deliberate 'false' set by the operator still turns it
+  // off. Pinned by database/test_default_flip_221.js. The FULL IoU/cross-field-bleed/silent-placement
+  // census is RE-ASSIGNED to the future MUSTER (auto-places unique boxes with NO per-field confirm — it
+  // owes that census before ITS own flip); see docs/DARK_SWITCH_LEDGER.md mig 220 + docs/oracle_log.md.
+  if (!applied.has(221)) {
+    try {
+      const nf = db.prepare(`INSERT INTO settings (key, value) VALUES ('suggested_teach_enabled', 'true') ON CONFLICT(key) DO UPDATE SET value = 'true'`).run().changes;
+      db.prepare('INSERT OR IGNORE INTO migrations (version) VALUES (221)').run();
+      console.log(`JS migration 221 applied: suggested_teach_enabled ON by default (@DEFAULT_FLIP; ${nf} row write)`);
+    } catch (e) { console.warn(`  migration 221 (suggested_teach_enabled default flip): ${e.message}`); }
+  }
+
   // …and the SAME heal UNCONDITIONALLY at every start (Oracle C1, the document_routes pattern below): a
   // road the stamped migration cannot see — a verbatim row copy (`scripts/seed-taught-state.js`), hand
   // SQL, a restore on a fixture without the hook — must not leave a role at required=0 until the next

@@ -140,6 +140,19 @@ in `database/dark_switches.js`'s history comment; the LIVE list is `TEST_SWITCH_
   `python_backend/tests/test_keyword_label_tail_bound.py` (OFF preserves the bug, ON reads the real ref, digit-glued
   still matches, single-word labels untouched) + `database/modules/test_migration219_keyword_label_tail_bound.js`.
 
+- **suggested_teach_enabled (mig 220, 2026-09-25) — GRADUATED via @DEFAULT_FLIP 221 (2026-09-26, owner "flip
+  suggested-teach first"; Oracle SIGN-OFF-W/COND C1-C3; `database/test_default_flip_221.js`).** Now
+  customer-default-ON + DELISTED from `dark_switches.js` (TEST_SWITCH_KEYS 18→17). **Gate met by a REFRAME
+  (Oracle):** the literal IoU-vs-GT-box census is UNCOMPUTABLE (the GT has no box coords) AND mis-scoped onto
+  Slice 1, which NEVER auto-commits — every field is a per-field human confirm (`canAdvance` blocks a pending
+  field; **C1** `doCommit` refuses one, **C2** pinned). Substitute accepted: uniqueness-by-construction (ValueLocate
+  string-match) + the human confirm; byte-identical OFF (no Python → extraction untouched, `suggested_teach_enabled`
+  absent from all `python_backend/` → realdoc M=0 sound on the mechanism); deskew round-trip = the shipped
+  `_teachBackBox`. **C3 — the FULL IoU / cross-field-bleed / silent-placement / bar≥hand-draw census is RE-ASSIGNED
+  to the future MUSTER** (the table/review-all teach, which would auto-place unique boxes with NO per-field confirm)
+  — the muster does NOT inherit Slice 1's human-confirm backstop and OWES that census in full before ITS own flip
+  (`pendingfeatures.md` 2026-09-26 TABLE teach). NOT required for this flip: a broadened scan-corpus census (the scan
+  tail degrades to NONE→manual = safe; efficacy, not safety). The DARK-era notes below stay as history.
 - **suggested_teach_enabled (mig 220, 2026-09-25)** — owner idea "suggest the boxes I read": auto-draw the box(es) the
   IMPORT keyword read for each field in the **guided Teach WIZARD** (owner re-scope, verbatim: "I didn't want it in
   Review … when you go to teach a doc, the keyword reads, whether right or wrong, are suggested and the boxes are drawn

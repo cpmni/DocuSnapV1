@@ -235,7 +235,14 @@ const TEST_SWITCH_KEYS = Object.freeze([
   //   server-flag clear), persist on Confirm only. Byte-identical OFF. ⚑ FLIP GATE (Oracle): byte-identical OFF +
   //   a false-suggestion IoU census over the corpus INCLUDING deskew-active statements (0 verify-passed-but-box-
   //   wrong) + realdoc M=0 with no per-field accuracy drop on the confirmed supplier's siblings.
-  'suggested_teach_enabled',
+  // 'suggested_teach_enabled' — GRADUATED via @DEFAULT_FLIP 221 (2026-09-26, owner "flip suggested-teach first";
+  //   Oracle SIGN-OFF-W/COND C1-C3) and DELISTED; the notes above stay as history. The flip gate was MET by a
+  //   REFRAME (Oracle): the literal IoU-vs-GT-box census is uncomputable (GT has no box coords) AND mis-scoped
+  //   onto Slice 1, which NEVER auto-commits — every field is a per-field human confirm (canAdvance blocks a
+  //   pending field; C1 doCommit refuses one). Substitute accepted: uniqueness-by-construction + the human
+  //   confirm; byte-identical OFF + no-Python = M=0. The FULL IoU/cross-field-bleed/silent-placement census is
+  //   RE-ASSIGNED to the future MUSTER (auto-places unique boxes with NO per-field confirm) — it owes that in
+  //   full before its own flip.
   // glyph_slice_integrity (mig 212, 2026-09-23 night, Oracle C2/C3 of the Paddle corroboration vet — S1 of Part A):
   //   the second reader's crop rect is SNAPPED to the page-level word boxes on the value's row band before the re-read
   //   (extraction/slice_integrity.py, pure; words from the mapper's shared locate cache). A taught box that cuts a glyph

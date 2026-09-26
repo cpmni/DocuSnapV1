@@ -31,7 +31,7 @@ check('migration 218 stamped', applied.has(218));
 check('the seed line says seeded OFF (DARK)', logs.some(l => /migration 218 applied/.test(l) && /seeded OFF/.test(l)));
 check(`a fresh install has ${KEY} === 'false'`, get(db, KEY) === 'false');
 check(`${KEY} is listed in TEST_SWITCH_KEYS`, TEST_SWITCH_KEYS.includes(KEY));
-check('TEST_SWITCH_KEYS is 18 keys (+ keyword_label_tail_bound mig 219 + suggested_teach_enabled mig 220 the Review suggested-teach picker Slice 1 DARK)', TEST_SWITCH_KEYS.length === 18 && new Set(TEST_SWITCH_KEYS).size === 18);
+check('TEST_SWITCH_KEYS is 17 keys (+ keyword_label_tail_bound mig 219; suggested_teach_enabled mig 220 graduated via 221)', TEST_SWITCH_KEYS.length === 17 && new Set(TEST_SWITCH_KEYS).size === 17);
 const idx = read('database', 'index.js');
 check('single-key INSERT OR IGNORE seed of false', new RegExp(`INSERT OR IGNORE INTO settings \\(key, value\\) VALUES \\('${KEY}', 'false'\\)`).test(idx));
 check('NO force-ON of the key anywhere in the migrations', !new RegExp(`VALUES \\('${KEY}', 'true'\\)`).test(idx) && !new RegExp(`'${KEY}'[^\\n]*'true'`).test(idx.replace(/\/\/[^\n]*/g, '')));
